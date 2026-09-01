@@ -1,14 +1,15 @@
 //! Argument-vector-only process supervision and sidecar control connection.
 
 use std::{
-    fs, io,
+    fs,
+    io::{self, Read},
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 
 #[cfg(windows)]
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
 #[cfg(windows)]
 use std::sync::Arc;
 
@@ -31,6 +32,8 @@ use crate::session::SessionWorkspace;
 
 pub const PROCESS_IO_TIMEOUT: Duration = Duration::from_secs(5);
 const DROP_REAP_POLL: Duration = Duration::from_millis(10);
+const STAGED_ROM_MARKER_PREFIX: &[u8] = b"pokecrossroads-coop-staged-rom-v1\n";
+const MAX_STAGED_ROM_MARKER_BYTES: u64 = 4096;
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
@@ -51,8 +54,31 @@ pub enum ProcessError {
     Protocol(#[source] serde_json::Error),
     #[error("child process termination failed")]
     Termination(#[source] io::Error),
+    #[error("startup failed ({startup}) and child cleanup was not confirmed ({cleanup})")]
+    StartupCleanup {
+        startup: Box<ProcessError>,
+        cleanup: Box<ProcessError>,
+    },
+    #[error("supervised event failed ({event}) and child cleanup was not confirmed ({cleanup})")]
+    EventCleanup {
+        event: Box<ProcessError>,
+        cleanup: Box<ProcessError>,
+    },
     #[error("a supervised child exited unsuccessfully")]
     ChildExited,
+}
+
+impl ProcessError {
+    /// Returns false when startup compensation could not prove that the
+    /// already-started child was terminated and reaped.  Callers holding a
+    /// lease must keep it fenced in that case rather than releasing it.
+    #[must_use]
+    pub const fn cleanup_confirmed(&self) -> bool {
+        !matches!(
+            self,
+            Self::StartupCleanup { .. } | Self::EventCleanup { .. }
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -62,6 +88,7 @@ pub struct CommandSpec {
     identity: Option<ExecutableIdentity>,
     rom_identity: Option<ExecutableIdentity>,
     rom_cleanup: Option<PathBuf>,
+    rom_marker_cleanup: Option<PathBuf>,
     #[cfg(windows)]
     executable_guards: Option<ExecutableGuards>,
     #[cfg(windows)]
@@ -101,6 +128,7 @@ impl CommandSpec {
             identity,
             rom_identity: None,
             rom_cleanup: None,
+            rom_marker_cleanup: None,
             #[cfg(windows)]
             executable_guards,
             #[cfg(windows)]
@@ -158,24 +186,124 @@ impl CommandSpec {
         #[cfg(not(windows))]
         let _ = rom_guards;
         spec.rom_identity = rom_identity;
-        // The CLI stages ROMs under this private launcher root.  Keep that
-        // copy alive until the supervised emulator exits, then remove it via
-        // RAII. Arbitrary caller-owned ROMs are never deleted by this API.
-        if is_launcher_staged_rom(&rom_path) {
-            spec.rom_cleanup = Some(rom_path);
-        }
         #[cfg(windows)]
         {
             spec.rom_guards = rom_guards;
         }
         Ok(spec)
     }
+
+    /// Binds cleanup ownership to the explicit marker emitted by the
+    /// launcher's ROM staging routine. `mgba` deliberately does not infer
+    /// ownership from a filename or directory, so an arbitrary caller-owned
+    /// `rom-*.gba` is never removed as a side effect of supervision.
+    ///
+    /// The marker is checked before any child starts and is retained until the
+    /// emulator has been reaped. The launcher writes the marker atomically
+    /// next to its staged ROM and includes the canonical ROM path in it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the executable, ROM, or ownership marker is
+    /// invalid.
+    pub fn mgba_owned_staged(
+        executable: impl Into<PathBuf>,
+        rom: impl AsRef<Path>,
+        marker: impl AsRef<Path>,
+    ) -> Result<Self, ProcessError> {
+        let rom_path = rom.as_ref().to_path_buf();
+        let marker_path = marker.as_ref().to_path_buf();
+        if !rom_path.is_absolute()
+            || !marker_path.is_absolute()
+            || !owned_rom_marker_matches(&rom_path, &marker_path)
+        {
+            return Err(ProcessError::InvalidArgument);
+        }
+        let mut spec = Self::mgba(executable, &rom_path)?;
+        spec.rom_cleanup = Some(rom_path);
+        spec.rom_marker_cleanup = Some(marker_path);
+        Ok(spec)
+    }
+}
+
+/// Returns the deterministic sidecar marker path for a staged ROM.  The
+/// marker is deliberately a hidden sibling, not a filename heuristic, and is
+/// created only by the launcher's verified staging routine.
+#[must_use]
+pub fn staged_rom_marker_path(rom: impl AsRef<Path>) -> PathBuf {
+    let rom = rom.as_ref();
+    let marker_name = rom.file_name().map_or_else(
+        || ".rom.owner".to_owned(),
+        |name| format!(".{}.owner", name.to_string_lossy()),
+    );
+    if let Some(parent) = rom.parent() {
+        parent.join(marker_name)
+    } else {
+        PathBuf::from(marker_name)
+    }
+}
+
+/// Returns the exact marker bytes that pair with a canonical staged ROM.
+/// Callers should write this file atomically beside the ROM before constructing
+/// [`mgba_owned_staged`].
+///
+/// # Errors
+///
+/// Returns an error when the ROM path cannot be canonicalized.
+pub fn staged_rom_marker_contents(rom: impl AsRef<Path>) -> Result<Vec<u8>, ProcessError> {
+    let canonical = fs::canonicalize(rom.as_ref()).map_err(|_| ProcessError::InvalidArgument)?;
+    let mut marker = STAGED_ROM_MARKER_PREFIX.to_vec();
+    marker.extend_from_slice(canonical.to_string_lossy().as_bytes());
+    marker.push(b'\n');
+    if marker.len() as u64 > MAX_STAGED_ROM_MARKER_BYTES {
+        return Err(ProcessError::InvalidArgument);
+    }
+    Ok(marker)
+}
+
+fn owned_rom_marker_matches(rom: &Path, marker: &Path) -> bool {
+    if marker != staged_rom_marker_path(rom)
+        || matches!(
+            fs::symlink_metadata(marker),
+            Ok(metadata) if metadata.file_type().is_symlink()
+        )
+    {
+        return false;
+    }
+    let Ok(file) = fs::File::open(marker) else {
+        return false;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() > MAX_STAGED_ROM_MARKER_BYTES {
+        return false;
+    }
+    let Ok(capacity) = usize::try_from(metadata.len()) else {
+        return false;
+    };
+    let mut contents = Vec::with_capacity(capacity);
+    if file
+        .take(MAX_STAGED_ROM_MARKER_BYTES.saturating_add(1))
+        .read_to_end(&mut contents)
+        .is_err()
+        || contents.len() as u64 > MAX_STAGED_ROM_MARKER_BYTES
+    {
+        return false;
+    }
+    let Ok(expected) = staged_rom_marker_contents(rom) else {
+        return false;
+    };
+    contents == expected
 }
 
 impl Drop for CommandSpec {
     fn drop(&mut self) {
         #[cfg(windows)]
         let _ = self.rom_guards.take();
+        if let Some(path) = self.rom_marker_cleanup.take() {
+            let _ = fs::remove_file(path);
+        }
         if let Some(path) = self.rom_cleanup.take() {
             let _ = fs::remove_file(path);
         }
@@ -194,6 +322,10 @@ impl std::fmt::Debug for CommandSpec {
                 &self.rom_identity.as_ref().map(|_| "[BOUND]"),
             )
             .field("rom_cleanup", &self.rom_cleanup.as_ref().map(|_| "[HELD]"));
+        debug.field(
+            "rom_marker_cleanup",
+            &self.rom_marker_cleanup.as_ref().map(|_| "[HELD]"),
+        );
         #[cfg(windows)]
         debug.field(
             "executable_guards",
@@ -295,6 +427,7 @@ pub fn materialize_bridge_session(
 /// A control-only connection; the secret is never serialized outside its handshake.
 pub struct ControlChannel {
     stream: TcpStream,
+    read_buffer: Vec<u8>,
 }
 
 impl std::fmt::Debug for ControlChannel {
@@ -343,7 +476,10 @@ impl ControlChannel {
         if response != b"{\"ok\":true}" {
             return Err(ProcessError::Descriptor);
         }
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            read_buffer: Vec::new(),
+        })
     }
 
     /// # Errors
@@ -363,24 +499,70 @@ impl ControlChannel {
             .map_err(ProcessError::Control)
     }
 
+    /// Receives the next event without imposing an idle timeout.  The
+    /// supervisor invokes this method in a cancellation-safe `select!`; a
+    /// healthy sidecar may remain quiet for longer than the I/O bound.
+    ///
     /// # Errors
     ///
     /// Returns an error when the event is incomplete, oversized, or malformed.
     pub async fn receive(&mut self) -> Result<ControlEvent, ProcessError> {
-        let bytes = timeout(
-            PROCESS_IO_TIMEOUT,
-            read_line(&mut self.stream, MAX_CONTROL_LINE_BYTES),
-        )
-        .await
-        .map_err(|_| {
-            ProcessError::Control(io::Error::new(io::ErrorKind::TimedOut, "read timeout"))
-        })??;
+        let bytes = self.read_line().await?;
         serde_json::from_slice(&bytes).map_err(ProcessError::Protocol)
+    }
+
+    /// Receives one response with the explicit bounded wait required by
+    /// request/response operations such as checkpoint grant and save update.
+    /// Partial bytes survive cancellation and can be completed by a later
+    /// call, which prevents a heartbeat tick from corrupting framing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the response is incomplete, oversized, malformed,
+    /// or does not arrive before [`PROCESS_IO_TIMEOUT`].
+    pub async fn receive_bounded(&mut self) -> Result<ControlEvent, ProcessError> {
+        let bytes = timeout(PROCESS_IO_TIMEOUT, self.read_line())
+            .await
+            .map_err(|_| {
+                ProcessError::Control(io::Error::new(io::ErrorKind::TimedOut, "read timeout"))
+            })??;
+        serde_json::from_slice(&bytes).map_err(ProcessError::Protocol)
+    }
+
+    async fn read_line(&mut self) -> Result<Vec<u8>, ProcessError> {
+        loop {
+            if let Some(newline) = self.read_buffer.iter().position(|byte| *byte == b'\n') {
+                if newline >= MAX_CONTROL_LINE_BYTES {
+                    return Err(ProcessError::Descriptor);
+                }
+                let mut line = self.read_buffer.drain(..=newline).collect::<Vec<_>>();
+                debug_assert_eq!(line.pop(), Some(b'\n'));
+                return Ok(line);
+            }
+            if self.read_buffer.len() >= MAX_CONTROL_LINE_BYTES {
+                return Err(ProcessError::Descriptor);
+            }
+            let remaining = MAX_CONTROL_LINE_BYTES - self.read_buffer.len();
+            let mut chunk = [0_u8; 1024];
+            let read_size = remaining.min(chunk.len());
+            let count = self
+                .stream
+                .read(&mut chunk[..read_size])
+                .await
+                .map_err(ProcessError::Control)?;
+            if count == 0 {
+                return Err(ProcessError::Descriptor);
+            }
+            self.read_buffer.extend_from_slice(&chunk[..count]);
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn from_stream_for_test(stream: TcpStream) -> Self {
-        Self { stream }
+        Self {
+            stream,
+            read_buffer: Vec::new(),
+        }
     }
 }
 
@@ -416,6 +598,45 @@ pub struct SupervisedChildren {
     mgba: Child,
     pub control: ControlChannel,
     rom_cleanup: Option<PathBuf>,
+    rom_marker_cleanup: Option<PathBuf>,
+    #[cfg(windows)]
+    rom_guards: Option<ExecutableGuards>,
+}
+
+/// Owns a sidecar child while asynchronous startup is in progress.  A
+/// canceled `start_internal` future cannot simply drop a Tokio child: this
+/// guard synchronously requests termination and boundedly reaps it before
+/// relinquishing the process handle.  Normal startup failures additionally
+/// attempt the async cleanup path so callers receive an explicit
+/// [`ProcessError::StartupCleanup`] when that proof fails.
+struct StartupChildGuard {
+    child: Option<Child>,
+}
+
+impl StartupChildGuard {
+    fn new(child: Child) -> Self {
+        Self { child: Some(child) }
+    }
+
+    fn child_mut(&mut self) -> &mut Child {
+        self.child
+            .as_mut()
+            .expect("startup child guard always owns its child")
+    }
+
+    fn into_child(mut self) -> Child {
+        self.child
+            .take()
+            .expect("startup child guard always owns its child")
+    }
+}
+
+impl Drop for StartupChildGuard {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            terminate_and_reap_sync(child);
+        }
+    }
 }
 
 /// One bounded event from the authenticated control stream or supervised
@@ -447,6 +668,9 @@ impl SupervisedChildren {
             mgba,
             control,
             rom_cleanup: None,
+            rom_marker_cleanup: None,
+            #[cfg(windows)]
+            rom_guards: None,
         }
     }
 
@@ -504,6 +728,12 @@ impl SupervisedChildren {
             || mgba.args.len() != 1
             || mgba.args[0].is_empty()
             || mgba.args[0].contains('\0')
+            || !Path::new(&mgba.args[0]).is_absolute()
+            || !sidecar.executable.is_absolute()
+            || !mgba.executable.is_absolute()
+            || sidecar.identity.is_none()
+            || mgba.identity.is_none()
+            || mgba.rom_identity.is_none()
         {
             return Err(ProcessError::InvalidArgument);
         }
@@ -518,11 +748,12 @@ impl SupervisedChildren {
             .args(&sidecar.args)
             .stdin(Stdio::null())
             .stderr(Stdio::null())
-            .stdout(Stdio::piped());
-        let mut child = sidecar_command.spawn().map_err(ProcessError::Spawn)?;
-        let Some(stdout) = child.stdout.take() else {
-            let _ = stop_child(&mut child).await;
-            return Err(ProcessError::Descriptor);
+            .stdout(Stdio::piped())
+            .kill_on_drop(true);
+        let child = sidecar_command.spawn().map_err(ProcessError::Spawn)?;
+        let mut startup_child = StartupChildGuard::new(child);
+        let Some(stdout) = startup_child.child_mut().stdout.take() else {
+            return Err(startup_failure(ProcessError::Descriptor, startup_child.child_mut()).await);
         };
         let mut stdout = tokio::io::BufReader::new(stdout);
         let line = timeout(
@@ -535,55 +766,61 @@ impl SupervisedChildren {
         let line = match line {
             Ok(line) => line,
             Err(error) => {
-                let _ = stop_child(&mut child).await;
-                return Err(error);
+                return Err(startup_failure(error, startup_child.child_mut()).await);
             }
         };
         let descriptor: SessionDescriptor = if let Ok(value) = serde_json::from_slice(&line) {
             value
         } else {
-            let _ = stop_child(&mut child).await;
-            return Err(ProcessError::Descriptor);
+            return Err(startup_failure(ProcessError::Descriptor, startup_child.child_mut()).await);
         };
         if let Err(error) = validate_descriptor(&descriptor, expected_epoch) {
-            let _ = stop_child(&mut child).await;
-            return Err(error);
+            return Err(startup_failure(error, startup_child.child_mut()).await);
         }
         let control = match ControlChannel::connect(&descriptor).await {
             Ok(control) => control,
             Err(error) => {
-                let _ = stop_child(&mut child).await;
-                return Err(error);
+                return Err(startup_failure(error, startup_child.child_mut()).await);
             }
         };
         if let Some((workspace, bridge_source)) = bridge
             && let Err(error) =
                 materialize_bridge_session(workspace, bridge_source, &descriptor, expected_epoch)
         {
-            let _ = stop_child(&mut child).await;
-            return Err(error);
+            return Err(startup_failure(error, startup_child.child_mut()).await);
         }
         let mut mgba = mgba;
-        let rom_cleanup = mgba.rom_cleanup.take();
         let mut mgba_command = Command::new(&mgba.executable);
         isolate_environment(&mut mgba_command);
         mgba_command
             .args(&mgba.args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
         let mgba_child = match mgba_command.spawn() {
             Ok(child) => child,
             Err(error) => {
-                let _ = stop_child(&mut child).await;
-                return Err(ProcessError::Spawn(error));
+                return Err(
+                    startup_failure(ProcessError::Spawn(error), startup_child.child_mut()).await,
+                );
             }
         };
+        // Keep cleanup ownership and Windows deny-delete handles in the
+        // supervisor until mGBA has been reaped.  On spawn failure these stay
+        // in `mgba`, so CommandSpec::drop removes only explicitly owned ROMs.
+        let rom_cleanup = mgba.rom_cleanup.take();
+        let rom_marker_cleanup = mgba.rom_marker_cleanup.take();
+        #[cfg(windows)]
+        let rom_guards = mgba.rom_guards.take();
         Ok(Self {
-            sidecar: child,
+            sidecar: startup_child.into_child(),
             mgba: mgba_child,
             control,
             rom_cleanup,
+            rom_marker_cleanup,
+            #[cfg(windows)]
+            rom_guards,
         })
     }
 
@@ -640,26 +877,47 @@ impl SupervisedChildren {
     ///
     /// # Errors
     ///
-    /// Returns an error when control I/O or child reaping fails.
+    /// Returns an error when control I/O or child reaping fails.  Any control
+    /// or protocol error first stops and reaps both children; if that proof
+    /// fails, the returned [`ProcessError::EventCleanup`] preserves both
+    /// failures for lease-release gating.
     pub async fn next_event(&mut self) -> Result<SupervisorEvent, ProcessError> {
-        tokio::select! {
+        let result = tokio::select! {
             result = self.control.receive() => result.map(SupervisorEvent::Control),
             result = self.sidecar.wait() => {
-                let status = result.map_err(ProcessError::Termination)?;
-                stop_child(&mut self.mgba).await?;
-                if !status.success() {
-                    return Err(ProcessError::ChildExited);
+                match result {
+                    Err(error) => Err(ProcessError::Termination(error)),
+                    Ok(status) => match stop_child(&mut self.mgba).await {
+                        Err(error) => Err(error),
+                        Ok(()) if status.success() => Ok(SupervisorEvent::ChildExited),
+                        Ok(()) => Err(ProcessError::ChildExited),
+                    },
                 }
-                Ok(SupervisorEvent::ChildExited)
             }
             result = self.mgba.wait() => {
-                let status = result.map_err(ProcessError::Termination)?;
-                stop_child(&mut self.sidecar).await?;
-                if !status.success() {
-                    return Err(ProcessError::ChildExited);
+                match result {
+                    Err(error) => Err(ProcessError::Termination(error)),
+                    Ok(status) => match stop_child(&mut self.sidecar).await {
+                        Err(error) => Err(error),
+                        Ok(()) if status.success() => Ok(SupervisorEvent::ChildExited),
+                        Ok(()) => Err(ProcessError::ChildExited),
+                    },
                 }
-                Ok(SupervisorEvent::ChildExited)
             }
+        };
+        match result {
+            Ok(event) => Ok(event),
+            Err(error) => Err(self.fail_closed(error).await),
+        }
+    }
+
+    async fn fail_closed(&mut self, event: ProcessError) -> ProcessError {
+        match self.stop_in_place().await {
+            Ok(()) => event,
+            Err(cleanup) => ProcessError::EventCleanup {
+                event: Box::new(event),
+                cleanup: Box::new(cleanup),
+            },
         }
     }
 }
@@ -871,7 +1129,12 @@ impl Drop for SupervisedChildren {
 
 impl SupervisedChildren {
     fn remove_owned_rom(&mut self) {
+        #[cfg(windows)]
+        drop(self.rom_guards.take());
         if let Some(path) = self.rom_cleanup.take() {
+            let _ = fs::remove_file(path);
+        }
+        if let Some(path) = self.rom_marker_cleanup.take() {
             let _ = fs::remove_file(path);
         }
     }
@@ -902,42 +1165,60 @@ fn isolate_environment(command: &mut Command) {
     }
 }
 
-fn is_launcher_staged_rom(path: &Path) -> bool {
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    if !name.starts_with("rom-")
-        || !Path::new(name)
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
-    {
-        return false;
+async fn startup_failure(startup: ProcessError, child: &mut Child) -> ProcessError {
+    match stop_child(child).await {
+        Ok(()) => startup,
+        Err(cleanup) => ProcessError::StartupCleanup {
+            startup: Box::new(startup),
+            cleanup: Box::new(cleanup),
+        },
     }
-    let root = std::env::temp_dir().join("pokecrossroads-coop-launcher");
-    let (Ok(path), Ok(root)) = (fs::canonicalize(path), fs::canonicalize(root)) else {
-        return false;
-    };
-    path.parent().is_some_and(|parent| parent.starts_with(root))
 }
 
 async fn stop_child(child: &mut Child) -> Result<(), ProcessError> {
-    if child
-        .try_wait()
-        .map_err(ProcessError::Termination)?
-        .is_none()
-    {
-        child.start_kill().map_err(ProcessError::Termination)?;
+    match child.try_wait().map_err(ProcessError::Termination)? {
+        Some(_) => return Ok(()),
+        None => {
+            if let Err(error) = child.start_kill() {
+                // A natural exit can race the kill request. Recheck before
+                // reporting uncertainty so normal process termination is not
+                // mistaken for a failed cleanup.
+                if child
+                    .try_wait()
+                    .map_err(ProcessError::Termination)?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+                return Err(ProcessError::Termination(error));
+            }
+        }
     }
-    timeout(PROCESS_IO_TIMEOUT, child.wait())
+    let waited = timeout(PROCESS_IO_TIMEOUT, child.wait())
         .await
         .map_err(|_| {
             ProcessError::Termination(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "child did not exit",
             ))
-        })?
-        .map(|_| ())
-        .map_err(ProcessError::Termination)
+        })?;
+    match waited {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            // Some platforms report a benign no-child race from `wait` after
+            // the process exits between the kill and reap calls. Confirm the
+            // terminal state before surfacing cleanup uncertainty.
+            if child
+                .try_wait()
+                .map_err(ProcessError::Termination)?
+                .is_some()
+            {
+                Ok(())
+            } else {
+                Err(ProcessError::Termination(error))
+            }
+        }
+    }
 }
 
 /// # Panics
@@ -962,7 +1243,10 @@ mod tests {
         SupervisorEvent, terminate_and_reap_sync,
     };
     #[cfg(windows)]
-    use super::{materialize_bridge_session, validate_executable_identity};
+    use super::{
+        materialize_bridge_session, staged_rom_marker_contents, staged_rom_marker_path,
+        validate_executable_identity,
+    };
     #[cfg(windows)]
     use crate::session::SessionWorkspace;
     #[cfg(windows)]
@@ -1055,10 +1339,13 @@ mod tests {
         fs::write(&executable, b"trusted emulator").unwrap();
         fs::write(&rom, b"trusted rom").unwrap();
         {
-            let spec = CommandSpec::mgba(&executable, &rom).unwrap();
+            let marker = staged_rom_marker_path(&rom);
+            fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+            let spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
             assert!(spec.rom_cleanup.is_some());
         }
         assert!(!rom.exists());
+        assert!(!staged_rom_marker_path(&rom).exists());
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -1101,7 +1388,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn startup_failure_is_reported_before_peer_launch() {
+    async fn identityless_specs_are_rejected_before_any_spawn() {
         let missing = std::env::temp_dir().join(format!(
             "coop-launcher-missing-{}.exe",
             uuid::Uuid::new_v4().simple()
@@ -1110,25 +1397,122 @@ mod tests {
         let mgba = CommandSpec::mgba(&missing, "rom.gba").unwrap();
         assert!(matches!(
             SupervisedChildren::start(sidecar, mgba, 1).await,
-            Err(ProcessError::Spawn(_))
+            Err(ProcessError::InvalidArgument)
         ));
+    }
+
+    #[tokio::test]
+    async fn control_idle_and_fragmented_frames_survive_select_cancellation() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::sync::oneshot;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (server_can_write_tx, server_can_write_rx) = oneshot::channel();
+        let (first_written_tx, first_written_rx) = oneshot::channel();
+        let (continue_tx, continue_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            server_can_write_rx.await.unwrap();
+            let frame =
+                b"{\"type\":\"checkpoint_expired\",\"session_epoch\":1,\"ready_sequence\":2}\n";
+            let split = frame.len() / 2;
+            stream.write_all(&frame[..split]).await.unwrap();
+            first_written_tx.send(()).unwrap();
+            continue_rx.await.unwrap();
+            stream.write_all(&frame[split..]).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut control = ControlChannel::from_stream_for_test(stream);
+        // Do not let the producer race the receiver setup; this barrier makes
+        // the cancellation point below deterministic on both Windows and
+        // Unix.
+        server_can_write_tx.send(()).unwrap();
+        first_written_rx.await.unwrap();
+
+        // This models a heartbeat winning the supervisor's select while a
+        // partial control frame is buffered. The frame must remain pending,
+        // rather than being discarded by a canceled receive future.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), control.receive())
+                .await
+                .is_err()
+        );
+        continue_tx.send(()).unwrap();
+        assert_eq!(
+            control.receive().await.unwrap(),
+            coop_sidecar::control::ControlEvent::CheckpointExpired {
+                session_epoch: 1,
+                ready_sequence: 2,
+            }
+        );
+        server.await.unwrap();
+    }
+
+    #[test]
+    fn unmarked_staged_name_is_never_owned_for_cleanup() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("rom-arbitrary.gba");
+        std::fs::write(&rom, b"caller-owned").unwrap();
+        let executable = directory.path().join("mgba.exe");
+        std::fs::write(&executable, b"placeholder").unwrap();
+
+        #[cfg(windows)]
+        {
+            let spec = CommandSpec::mgba(&executable, &rom).unwrap();
+            assert!(spec.rom_cleanup.is_none());
+            drop(spec);
+            assert!(rom.exists());
+        }
+        #[cfg(not(windows))]
+        {
+            // Existing executable bindings intentionally fail closed on
+            // portable hosts before a production process could start.
+            assert!(matches!(
+                CommandSpec::mgba(&executable, &rom),
+                Err(ProcessError::UnsupportedPlatform)
+            ));
+            assert!(rom.exists());
+        }
     }
 
     #[cfg(windows)]
     #[tokio::test]
     async fn invalid_mgba_identity_is_rejected_before_sidecar_spawn() {
         let directory = tempdir().unwrap();
-        let mgba_path = directory.path().join("mgba.exe");
-        fs::write(&mgba_path, b"trusted").unwrap();
-        let mut mgba = CommandSpec::mgba(&mgba_path, "rom.gba").unwrap();
+        let mgba_path = std::env::current_exe().unwrap();
+        let rom = directory.path().join("rom.gba");
+        fs::write(&rom, b"trusted rom").unwrap();
+        let mut mgba = CommandSpec::mgba(&mgba_path, &rom).unwrap();
         mgba.identity.as_mut().unwrap().digest[0] ^= 0xff;
 
-        let missing_sidecar = directory.path().join("sidecar.exe");
-        let sidecar = CommandSpec::sidecar(&missing_sidecar, 1).unwrap();
+        let sidecar = CommandSpec::sidecar(&mgba_path, 1).unwrap();
         assert!(matches!(
             SupervisedChildren::start(sidecar, mgba, 1).await,
             Err(ProcessError::InvalidArgument)
         ));
+    }
+
+    #[tokio::test]
+    async fn control_failure_reaps_both_supervised_children() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let control = ControlChannel::from_stream_for_test(stream);
+        let sidecar = long_running_child();
+        let mgba = long_running_child();
+        let mut children = SupervisedChildren::for_test(sidecar, mgba, control);
+        assert!(matches!(
+            children.next_event().await,
+            Err(ProcessError::Descriptor)
+        ));
+        assert!(children.sidecar.try_wait().unwrap().is_some());
+        assert!(children.mgba.try_wait().unwrap().is_some());
+        server.await.unwrap();
     }
 
     #[tokio::test]

@@ -45,12 +45,15 @@ pub enum HttpClientError {
     Response,
     #[error("cloud response returned status {0}")]
     Status(StatusCode),
+    #[error("authentication session is no longer active")]
+    SessionClosed,
 }
 
 #[allow(clippy::needless_pass_by_value)]
 fn map_cloud_error(error: HttpClientError) -> SessionError {
     match error {
         HttpClientError::Status(StatusCode::UNAUTHORIZED) => SessionError::Unauthorized,
+        HttpClientError::SessionClosed => SessionError::Auth(AuthError::SessionClosed),
         _ => SessionError::Cloud,
     }
 }
@@ -81,8 +84,9 @@ impl ReqwestCloudApi {
     pub fn new(base: &str) -> Result<Self, HttpClientError> {
         let raw_base = base;
         let base = Url::parse(raw_base).map_err(|_| HttpClientError::InvalidEndpoint)?;
-        if explicit_port(raw_base)
-            .is_some_and(|port| matches!((base.scheme(), port), ("https", 443) | ("http", 80)))
+        if has_noncanonical_authority(raw_base)
+            || explicit_port(raw_base)
+                .is_some_and(|port| matches!((base.scheme(), port), ("https", 443) | ("http", 80)))
         {
             return Err(HttpClientError::InvalidEndpoint);
         }
@@ -128,10 +132,12 @@ impl ReqwestCloudApi {
         method: Method,
         url: Url,
         auth: &AuthSession,
-    ) -> reqwest::RequestBuilder {
-        self.client
+    ) -> Result<reqwest::RequestBuilder, HttpClientError> {
+        let access_token = auth.access_token().ok_or(HttpClientError::SessionClosed)?;
+        Ok(self
+            .client
             .request(method, url)
-            .bearer_auth(auth.access_token().expose_secret())
+            .bearer_auth(access_token.expose_secret()))
     }
 
     fn authenticated_with_fence(
@@ -140,8 +146,9 @@ impl ReqwestCloudApi {
         url: Url,
         auth: &AuthSession,
         fence: LeaseFence,
-    ) -> reqwest::RequestBuilder {
-        self.authenticated(method, url, auth)
+    ) -> Result<reqwest::RequestBuilder, HttpClientError> {
+        Ok(self
+            .authenticated(method, url, auth)?
             .header("X-Coop-Session-Id", fence.session_id.to_string())
             .header(
                 "X-Coop-Session-Epoch",
@@ -150,12 +157,25 @@ impl ReqwestCloudApi {
             .header(
                 "X-Coop-Client-Instance-Id",
                 fence.client_instance_id.to_string(),
-            )
+            ))
     }
 }
 
+fn raw_authority(raw_url: &str) -> Option<&str> {
+    raw_url
+        .split_once("://")?
+        .1
+        .split(['/', '?', '#', '\\'])
+        .next()
+}
+
+fn has_noncanonical_authority(raw_url: &str) -> bool {
+    raw_authority(raw_url)
+        .is_none_or(|authority| authority.contains('@') || authority.ends_with(':'))
+}
+
 fn explicit_port(raw_url: &str) -> Option<u16> {
-    let authority = raw_url.split_once("://")?.1.split(['/', '?', '#']).next()?;
+    let authority = raw_authority(raw_url)?;
     let authority = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
@@ -268,7 +288,9 @@ impl CloudApi for ReqwestCloudApi {
                 .url("v1/sessions/acquire")
                 .map_err(|_| SessionError::Cloud)?;
             self.send_json(
-                self.authenticated(Method::POST, u, auth).json(&request),
+                self.authenticated(Method::POST, u, auth)
+                    .map_err(map_cloud_error)?
+                    .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
             .await
@@ -286,6 +308,7 @@ impl CloudApi for ReqwestCloudApi {
                 .map_err(|_| SessionError::Cloud)?;
             self.send_json(
                 self.authenticated_with_fence(Method::POST, u, auth, request.fence())
+                    .map_err(map_cloud_error)?
                     .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
@@ -304,6 +327,7 @@ impl CloudApi for ReqwestCloudApi {
                 .map_err(|_| SessionError::Cloud)?;
             self.send_json(
                 self.authenticated_with_fence(Method::POST, u, auth, request.fence())
+                    .map_err(map_cloud_error)?
                     .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
@@ -333,6 +357,7 @@ impl CloudApi for ReqwestCloudApi {
                         request.client_instance_id,
                     ),
                 )
+                .map_err(map_cloud_error)?
                 .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
@@ -356,7 +381,8 @@ impl CloudApi for ReqwestCloudApi {
             let req = match auth.active_fence() {
                 Some(fence) => self.authenticated_with_fence(Method::GET, u, auth, fence),
                 None => self.authenticated(Method::GET, u, auth),
-            };
+            }
+            .map_err(map_cloud_error)?;
             match req.send().await.map_err(|_| SessionError::Cloud)? {
                 r if r.status() == StatusCode::NOT_FOUND => Ok(None),
                 r if r.status().is_success() => Ok(Some(
@@ -390,7 +416,8 @@ impl CloudApi for ReqwestCloudApi {
             let request = match auth.active_fence() {
                 Some(fence) => self.authenticated_with_fence(Method::GET, u, auth, fence),
                 None => self.authenticated(Method::GET, u, auth),
-            };
+            }
+            .map_err(map_cloud_error)?;
             let r = request.send().await.map_err(|_| SessionError::Cloud)?;
             if r.status() == StatusCode::NOT_FOUND {
                 return Err(SessionError::ArtifactNotFound);
@@ -432,6 +459,7 @@ impl CloudApi for ReqwestCloudApi {
                         request.client_instance_id,
                     ),
                 )
+                .map_err(map_cloud_error)?
                 .send()
                 .await
                 .map_err(|_| SessionError::Cloud)?;
@@ -472,6 +500,7 @@ impl CloudApi for ReqwestCloudApi {
                         request.client_instance_id,
                     ),
                 )
+                .map_err(map_cloud_error)?
                 .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
@@ -504,6 +533,7 @@ impl CloudApi for ReqwestCloudApi {
                         request.client_instance_id,
                     ),
                 )
+                .map_err(map_cloud_error)?
                 .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
@@ -553,6 +583,7 @@ impl CloudApi for ReqwestCloudApi {
                         request.client_instance_id,
                     ),
                 )
+                .map_err(map_cloud_error)?
                 .json(&request),
                 MAX_JSON_RESPONSE_BYTES,
             )
@@ -565,7 +596,7 @@ impl CloudApi for ReqwestCloudApi {
 #[cfg(test)]
 mod tests {
     use super::{HttpClientError, ReqwestCloudApi, bounded_body, map_cloud_error};
-    use crate::{AuthSession, CloudApi, RefreshTokenStore, SessionError};
+    use crate::{AuthError, AuthSession, CloudApi, RefreshTokenStore, SessionError};
     use coop_cloud::{
         AccessToken, ArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
         LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId, RefreshToken,
@@ -589,11 +620,15 @@ mod tests {
             "http://127.0.0.2:8080",
             "ftp://127.0.0.1:8080",
             "https://user:password@cloud.example",
+            "https://@cloud.example",
             "https://cloud.example/api",
             "https://cloud.example:443",
             "https://cloud.example:0443",
+            "https://cloud.example:",
+            "https://cloud.example:\\",
             "http://127.0.0.1:80",
             "http://[::1]:80",
+            "http://127.0.0.1:",
             "https://cloud.example/?redirect=http://evil",
             "https://cloud.example/#fragment",
         ] {
@@ -613,6 +648,10 @@ mod tests {
         assert!(matches!(
             map_cloud_error(HttpClientError::Status(StatusCode::FORBIDDEN)),
             SessionError::Cloud
+        ));
+        assert!(matches!(
+            map_cloud_error(HttpClientError::SessionClosed),
+            SessionError::Auth(AuthError::SessionClosed)
         ));
     }
 

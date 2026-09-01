@@ -13,7 +13,7 @@ use std::{
 use coop_cloud::{
     AcquireLeaseRequest, ArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
     IdempotencyKey, LeaseContract, PrepareSnapshotRequest, ReconnectLeaseRequest,
-    ReleaseLeaseRequest, ResumePackageManifest, ResumeSelection, Revision, SessionId, Sha256Digest,
+    ReleaseLeaseRequest, ResumePackageManifest, ResumeSelection, Revision, Sha256Digest,
     SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
     SnapshotId, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence,
     SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
@@ -24,6 +24,10 @@ use tempfile::TempDir;
 use thiserror::Error;
 
 const MAX_SESSION_FILE_BYTES: usize = 64 * 1024 * 1024;
+/// Discovery may be short, but once a checkpoint starts it gets enough time
+/// for the sidecar save notification and the bounded cloud round trips.
+const SHUTDOWN_READY_DISCOVERY: Duration = Duration::from_millis(100);
+const CHECKPOINT_PROTOCOL_DEADLINE: Duration = Duration::from_secs(10);
 
 use crate::{
     auth::{AuthApi, AuthError, AuthSession},
@@ -125,6 +129,8 @@ pub enum SessionError {
     CheckpointNotAuthorized,
     #[error("checkpoint response did not correlate to the active request")]
     CheckpointCorrelation,
+    #[error("checkpoint protocol deadline exceeded")]
+    CheckpointTimeout,
     #[error("snapshot finalization conflicted with a newer revision")]
     FinalizeConflict,
 }
@@ -258,6 +264,7 @@ impl SessionWorkspace {
     pub fn preserve_recovery(&mut self) -> Result<PathBuf, SessionError> {
         for name in [
             "pending_commits.json",
+            "resume.input.ss1",
             "resume.ss1",
             "session.lua",
             "main.lua",
@@ -290,10 +297,11 @@ impl SessionWorkspace {
                 return Err(SessionError::Package);
             }
         }
-        let sav = fixed_path(self.path(), "character.sav")?;
-        if let Ok(metadata) = std::fs::symlink_metadata(&sav)
-            && (metadata.file_type().is_symlink() || !metadata.is_file())
-        {
+        // Recovery is useful only when it contains a regular, bounded,
+        // non-empty SAV.  Do the final no-follow read after scrubbing so a
+        // zero-byte placeholder or an over-sized replacement is never kept.
+        let sav = self.read_fixed("character.sav")?;
+        if sav.is_empty() {
             return Err(SessionError::Package);
         }
         self.write_atomic("recovery.marker", b"coop-recovery-v1\n")?;
@@ -319,10 +327,10 @@ impl SessionWorkspace {
         let _ = self.recovery_shadow.take();
     }
 
-    /// Detaches a workspace when recovery scrubbing itself failed.  This is a
-    /// deliberately conservative last resort: the private directory remains
-    /// owner-controlled for manual recovery instead of being deleted with its
-    /// only unfinalized SAV.  The caller must abort the cloud release.
+    /// Detaches only a separately scrubbed recovery copy when recovery
+    /// scrubbing itself failed. The original workspace is never retained,
+    /// because it may still contain loopback or control secrets. The caller
+    /// must abort the cloud release.
     fn retain_private_on_scrub_failure(&mut self) {
         // The shadow was fully written before any cloud upload. Keep it
         // directly, without copying from a workspace whose scrub may have
@@ -335,10 +343,9 @@ impl SessionWorkspace {
             return;
         }
         // Never detach the partially scrubbed original.  It may still contain
-        // Lua/control secrets when an injected removal fails halfway through.
-        // Instead quarantine only a bounded, no-follow SAV copy in a fresh
-        // private directory, then let TempDir remove the original best effort.
-        let mut quarantined = false;
+        // Lua/control secrets or unknown files when an injected removal fails
+        // halfway through. Instead quarantine only a bounded, no-follow SAV
+        // copy in a fresh private directory, then drop the original.
         if let Some(parent) = self.stable_path.parent()
             && let Ok(mut quarantine) = Self::create(parent)
             && let Ok(sav) = self.read_fixed("character.sav")
@@ -351,66 +358,18 @@ impl SessionWorkspace {
             if let Some(temp) = quarantine.temp.take() {
                 let _ = temp.keep();
             }
-            quarantined = true;
+            #[cfg(windows)]
+            let _ = std::mem::take(&mut self.ancestor_guards);
+            let _ = self.temp.take();
+            return;
         }
-        let scrubbed = if quarantined {
-            false
-        } else {
-            // If even the quarantine cannot be created or written, retain the
-            // original only when absence or an inert, verified session.lua is
-            // proven.  Keeping an unverified workspace would turn recovery
-            // compensation into a credential disclosure.
-            self.scrub_session_lua_verified()
-        };
+
+        // No bounded quarantine could be created. Confidentiality wins over
+        // retaining a possibly secret-bearing directory: do not keep any
+        // unknown file, partially scrubbed Lua, or control material.
         #[cfg(windows)]
         let _ = std::mem::take(&mut self.ancestor_guards);
-        if quarantined {
-            let _ = self.temp.take();
-        } else if scrubbed {
-            if let Some(temp) = self.temp.take() {
-                let kept = temp.keep();
-                debug_assert_eq!(kept, self.stable_path);
-            }
-        } else {
-            // Fail closed on confidentiality when the only remaining copy is
-            // not verifiably scrubbed.  A pre-created recovery shadow normally
-            // prevents this durability tradeoff; without one, dropping the
-            // original is safer than retaining a control secret.
-            let _ = self.temp.take();
-        }
-    }
-
-    fn scrub_session_lua_verified(&self) -> bool {
-        let Ok(path) = fixed_path(self.path(), "session.lua") else {
-            return false;
-        };
-        let metadata = match std::fs::symlink_metadata(&path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-            Err(_) => return false,
-        };
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return false;
-        }
-        // Windows cannot atomically replace an existing fixed file with the
-        // portable rename API. Remove it first; absence after a failed create
-        // is still secret-free, while any remaining file must be verified.
-        #[cfg(windows)]
-        if std::fs::remove_file(&path).is_err()
-            && !matches!(
-                std::fs::symlink_metadata(&path),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound
-            )
-        {
-            return false;
-        }
-        if self.write_atomic("session.lua", b"return {}\n").is_ok() {
-            return std::fs::read(&path).is_ok_and(|bytes| bytes == b"return {}\n");
-        }
-        matches!(
-            std::fs::symlink_metadata(&path),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound
-        )
+        let _ = self.temp.take();
     }
 
     /// Atomically writes one fixed session filename.
@@ -592,6 +551,7 @@ fn fixed_path(root: &Path, name: &str) -> Result<PathBuf, SessionError> {
         name,
         "character.sav"
             | "pending_commits.json"
+            | "resume.input.ss1"
             | "resume.ss1"
             | "session.lua"
             | "main.lua"
@@ -710,6 +670,7 @@ pub struct SessionLifecycle {
     keychain: Option<Arc<dyn RefreshTokenStore>>,
     checkpoint_authorized: bool,
     checkpoint_key: Option<(u32, u32)>,
+    fresh_resume_save_digest: Option<Sha256Digest>,
 }
 
 impl std::fmt::Debug for SessionLifecycle {
@@ -725,6 +686,7 @@ impl std::fmt::Debug for SessionLifecycle {
             .field("keychain", &self.keychain.as_ref().map(|_| "[CONFIGURED]"))
             .field("checkpoint_authorized", &self.checkpoint_authorized)
             .field("checkpoint_key", &self.checkpoint_key)
+            .field("fresh_resume_save_digest", &self.fresh_resume_save_digest)
             .field("workspace", &self.workspace)
             .finish_non_exhaustive()
     }
@@ -799,16 +761,27 @@ impl SessionLifecycle {
         revision: Revision,
     ) -> Result<Vec<u8>, SessionError> {
         self.refresh_if_needed(api).await?;
-        match api
-            .artifact(&self.auth, character, artifact, revision)
-            .await
-        {
+        let first = self
+            .run_with_heartbeats(api, |auth| {
+                api.artifact(auth, character, artifact, revision)
+            })
+            .await;
+        match first {
+            Ok((bytes, lease)) => {
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(bytes)
+            }
             Err(SessionError::Unauthorized) => {
                 self.refresh_required(api).await?;
-                api.artifact(&self.auth, character, artifact, revision)
-                    .await
+                let (bytes, lease) = self
+                    .run_with_heartbeats(api, |auth| {
+                        api.artifact(auth, character, artifact, revision)
+                    })
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(bytes)
             }
-            result => result,
+            Err(error) => Err(error),
         }
     }
 
@@ -819,13 +792,206 @@ impl SessionLifecycle {
         revision: Revision,
     ) -> Result<Option<SignedManifestEnvelope>, SessionError> {
         self.refresh_if_needed(api).await?;
-        match api.resume_package(&self.auth, character, revision).await {
+        let first = self
+            .run_with_heartbeats(api, |auth| api.resume_package(auth, character, revision))
+            .await;
+        match first {
+            Ok((package, lease)) => {
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(package)
+            }
             Err(SessionError::Unauthorized) => {
                 self.refresh_required(api).await?;
-                api.resume_package(&self.auth, character, revision).await
+                let (package, lease) = self
+                    .run_with_heartbeats(api, |auth| api.resume_package(auth, character, revision))
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(package)
             }
-            result => result,
+            Err(error) => Err(error),
         }
+    }
+
+    async fn list_snapshots_with_heartbeat<A: CloudApi>(
+        &mut self,
+        api: &A,
+        request: SnapshotListRequest,
+    ) -> Result<SnapshotListResponse, SessionError> {
+        self.refresh_if_needed(api).await?;
+        let deadline = tokio::time::Instant::now() + CHECKPOINT_PROTOCOL_DEADLINE;
+        let first = tokio::time::timeout_at(
+            deadline,
+            self.run_with_heartbeats(api, |auth| api.list_snapshots(auth, request)),
+        )
+        .await
+        .map_err(|_| SessionError::History)?;
+        match first {
+            Ok((response, lease)) => {
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(response)
+            }
+            Err(SessionError::Unauthorized) => {
+                self.refresh_required(api).await?;
+                let (response, lease) = tokio::time::timeout_at(
+                    deadline,
+                    self.run_with_heartbeats(api, |auth| api.list_snapshots(auth, request)),
+                )
+                .await
+                .map_err(|_| SessionError::History)??;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(response)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Runs one potentially slow cloud operation while sending fenced
+    /// heartbeats.  The operation and heartbeat borrow the immutable auth
+    /// session concurrently; the returned lease is installed only after the
+    /// operation future has finished, so a checkpoint cannot observe a
+    /// partially-mutated fence.  A heartbeat failure aborts the operation and
+    /// is deliberately not converted into a successful checkpoint.
+    async fn run_with_heartbeats<'a, A, T, F>(
+        &'a self,
+        api: &'a A,
+        operation: F,
+    ) -> Result<(T, LeaseContract), SessionError>
+    where
+        A: CloudApi,
+        F: FnOnce(&'a AuthSession) -> CloudFuture<'a, T>,
+    {
+        self.run_with_heartbeats_mode(api, operation, false, |_| true)
+            .await
+    }
+
+    /// Runs a revision-mutating operation while allowing one old-fence lease
+    /// response to race with the server's commit.  A finalize or restore can
+    /// commit before its response reaches us; in that narrow window the
+    /// heartbeat for revision N quite correctly reports the new head N+1.
+    /// Keep polling the idempotent operation so its response (or a retry using
+    /// the same request key) can prove the commit instead of discarding it as
+    /// an unrelated lease failure.  Read-only artifact operations remain
+    /// strict through `run_with_heartbeats`.
+    async fn run_with_mutating_heartbeats<'a, A, T, F>(
+        &'a self,
+        api: &'a A,
+        operation: F,
+        committed: impl FnOnce(&T) -> bool,
+    ) -> Result<(T, LeaseContract), SessionError>
+    where
+        A: CloudApi,
+        F: FnOnce(&'a AuthSession) -> CloudFuture<'a, T>,
+    {
+        self.run_with_heartbeats_mode(api, operation, true, committed)
+            .await
+    }
+
+    async fn run_with_heartbeats_mode<'a, A, T, F, V>(
+        &'a self,
+        api: &'a A,
+        operation: F,
+        allow_commit_race: bool,
+        committed: V,
+    ) -> Result<(T, LeaseContract), SessionError>
+    where
+        A: CloudApi,
+        F: FnOnce(&'a AuthSession) -> CloudFuture<'a, T>,
+        V: FnOnce(&T) -> bool,
+    {
+        let expected = self.lease;
+        let expected_revision = self.revision;
+        let mut lease = expected;
+        let mut commit_race = false;
+        let mut committed = Some(committed);
+        let operation = operation(&self.auth);
+        tokio::pin!(operation);
+        let heartbeat_interval =
+            Duration::from_millis((u64::from(expected.heartbeat_interval_ms) / 2).max(1));
+        // Do not generate an extra heartbeat for every short request. The
+        // first tick is deliberately half the server interval in the future;
+        // subsequent ticks keep a slow operation from crossing the lease
+        // expiry window.
+        let mut heartbeat = tokio::time::interval_at(
+            tokio::time::Instant::now() + heartbeat_interval,
+            heartbeat_interval,
+        );
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                result = &mut operation => {
+                    let value = result?;
+                    if commit_race
+                        && !committed
+                            .take()
+                            .is_some_and(|is_committed| is_committed(&value))
+                    {
+                        return Err(SessionError::Lease);
+                    }
+                    return Ok((value, lease));
+                },
+                _ = heartbeat.tick(), if !commit_race => {
+                    let request = HeartbeatLeaseRequest::new(lease.fence());
+                    match api.heartbeat(&self.auth, request).await {
+                        Ok(next) => {
+                            next.validate().map_err(|_| SessionError::Lease)?;
+                            if next.session_id != expected.session_id
+                                || next.character_id != expected.character_id
+                                || next.session_epoch != expected.session_epoch
+                                || next.client_instance_id != expected.client_instance_id
+                            {
+                                return Err(SessionError::Lease);
+                            }
+                            if next.current_revision == expected_revision {
+                                lease = next;
+                            } else if allow_commit_race
+                                && expected_revision.next().ok() == Some(next.current_revision)
+                            {
+                                // A mutating operation may have committed
+                                // the next revision before its response was
+                                // observed. Stop sending the old-fence
+                                // heartbeat, but keep the idempotent
+                                // operation alive to obtain proof.
+                                commit_race = true;
+                            } else {
+                                return Err(SessionError::Lease);
+                            }
+                        }
+                        Err(SessionError::Unauthorized) => {
+                            return Err(SessionError::Unauthorized);
+                        }
+                        Err(SessionError::Lease) if allow_commit_race => {
+                            // The generic API error does not reveal whether an
+                            // old fence expired or a mutation just committed.
+                            // Keep the idempotent operation alive, then accept
+                            // it only if its typed response proves the exact
+                            // next revision and identity. Otherwise the
+                            // operation fails closed below.
+                            commit_race = true;
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
+        }
+    }
+
+    fn install_heartbeat_lease(
+        &mut self,
+        lease: LeaseContract,
+        expected_revision: Revision,
+    ) -> Result<(), SessionError> {
+        lease.validate().map_err(|_| SessionError::Lease)?;
+        if lease.session_id != self.lease.session_id
+            || lease.character_id != self.lease.character_id
+            || lease.session_epoch != self.lease.session_epoch
+            || lease.current_revision != expected_revision
+            || lease.client_instance_id != self.lease.client_instance_id
+        {
+            return Err(SessionError::Lease);
+        }
+        self.lease = lease;
+        self.auth.set_active_fence(self.lease.fence());
+        Ok(())
     }
 
     /// Acquire a lease without inventing a revision or epoch, then verify or
@@ -877,6 +1043,12 @@ impl SessionLifecycle {
                 refresh_required(&mut auth, api, keychain.as_ref()).await?;
                 api.acquire(&auth, request).await?
             }
+            Err(SessionError::Cloud) => {
+                // The first response may have been lost after the server
+                // committed the idempotent acquire. Replay the exact request
+                // once; never mint a new operation key here.
+                api.acquire(&auth, request).await?
+            }
             result => result?,
         };
         if lease.validate().is_err() {
@@ -914,6 +1086,7 @@ impl SessionLifecycle {
             keychain,
             checkpoint_authorized: false,
             checkpoint_key: None,
+            fresh_resume_save_digest: None,
         };
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
         if let Err(error) = lifecycle.restore_or_bootstrap(api).await {
@@ -928,14 +1101,7 @@ impl SessionLifecycle {
     async fn restore_or_bootstrap<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
         let character = self.lease.character_id;
         let revision = self.revision;
-        self.refresh_if_needed(api).await?;
-        let package = match api.resume_package(&self.auth, character, revision).await {
-            Err(SessionError::Unauthorized) => {
-                self.refresh_required(api).await?;
-                api.resume_package(&self.auth, character, revision).await?
-            }
-            result => result?,
-        };
+        let package = self.resume_package_retry(api, character, revision).await?;
         if self.revision.is_initial() {
             if package.is_some() {
                 return Err(SessionError::InvalidBootstrap);
@@ -950,7 +1116,9 @@ impl SessionLifecycle {
         let verified = self.fetch_verified_at(api, envelope, self.revision).await;
         match verified {
             Ok(package) => {
+                self.heartbeat(api).await?;
                 self.materialize_package(&package)?;
+                self.heartbeat(api).await?;
                 Ok(())
             }
             Err(SessionError::CorruptActiveSav) => self.recover_corrupt_active(api).await,
@@ -1039,17 +1207,64 @@ impl SessionLifecycle {
         }
     }
 
-    fn materialize_package(&self, package: &VerifiedPackage) -> Result<(), SessionError> {
+    fn materialize_package(&mut self, package: &VerifiedPackage) -> Result<(), SessionError> {
         if package.manifest.revision != self.revision {
             return Err(SessionError::Package);
         }
+        // A downloaded savestate is useful for a manual resume, but it was
+        // captured before this session's next SAVE_DATA_UPDATED event. It is
+        // never eligible for a future upload until an operator/adapter marks
+        // a fresh capture correlated to the current SAV.
+        self.fresh_resume_save_digest = None;
         self.workspace.write_atomic("character.sav", &package.sav)?;
         self.workspace
             .write_atomic("pending_commits.json", &package.pending)?;
         if let Some(resume) = &package.resume {
-            self.workspace.write_atomic("resume.ss1", resume)?;
+            self.workspace.write_atomic("resume.input.ss1", resume)?;
+        } else {
+            self.retire_optional_resume()?;
         }
         self.copy_generated_addresses()
+    }
+
+    /// Marks an emulator-produced savestate as eligible for the next
+    /// checkpoint. The save digest is captured at the same moment so a later
+    /// SAV mutation automatically retires the state instead of uploading a
+    /// stale pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when either fixed artifact is absent, malformed, or
+    /// empty.
+    pub fn mark_fresh_resume_capture(&mut self) -> Result<(), SessionError> {
+        let sav = self.workspace.read_fixed("character.sav")?;
+        if sav.is_empty() {
+            return Err(SessionError::Package);
+        }
+        let resume = self.read_optional_resume()?.ok_or(SessionError::Package)?;
+        if resume.is_empty() {
+            return Err(SessionError::Package);
+        }
+        self.fresh_resume_save_digest = Some(Sha256Digest::of_bytes(&sav));
+        Ok(())
+    }
+
+    /// Removes an optional savestate that is no longer correlated with the
+    /// active SAV.  A stale savestate must never be re-uploaded as if it were
+    /// produced by the next authorized checkpoint.
+    fn retire_optional_resume(&self) -> Result<(), SessionError> {
+        for name in ["resume.input.ss1", "resume.ss1"] {
+            let path = fixed_path(self.workspace.path(), name)?;
+            match std::fs::symlink_metadata(&path) {
+                Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                    return Err(SessionError::Package);
+                }
+                Ok(_) => std::fs::remove_file(path).map_err(SessionError::Filesystem)?,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(SessionError::Filesystem(error)),
+            }
+        }
+        Ok(())
     }
 
     fn copy_generated_addresses(&self) -> Result<(), SessionError> {
@@ -1080,87 +1295,140 @@ impl SessionLifecycle {
             20,
         )
         .map_err(|_| SessionError::History)?;
-        self.refresh_if_needed(api).await?;
-        let response = match api.list_snapshots(&self.auth, request).await {
-            Err(SessionError::Unauthorized) => {
-                self.refresh_required(api).await?;
-                api.list_snapshots(&self.auth, request).await?
-            }
-            result => result?,
-        };
+        let response = self.list_snapshots_with_heartbeat(api, request).await?;
         response.validate().map_err(|_| SessionError::History)?;
-        validate_history_records(
-            &response.snapshots,
-            self.revision,
-            self.lease.character_id,
-            self.lease.session_id,
-        )?;
+        validate_history_records(&response.snapshots, self.revision, self.lease.character_id)?;
         for record in response.snapshots {
             let revision = record.revision;
             let character = self.lease.character_id;
             if let Some(envelope) = self.resume_package_retry(api, character, revision).await?
                 && let Ok(package) = self.fetch_verified_at(api, envelope, revision).await
-                && record.session_id == self.lease.session_id
-                // Historical epochs are provenance for the signed snapshot,
-                // not the current lease fence.  A prior reconnect epoch is
-                // valid as long as the record and detached package agree.
-                && record.session_epoch == package.manifest.session_epoch
-                && record.revision == revision
-                && record.snapshot_id == package.manifest.snapshot_id
-                && record.parent_revision == package.manifest.parent_revision
-                && record.pending_commits_sha256 == package.manifest.pending_commits_sha256
-                && record.files.iter().any(|file| {
-                    file.artifact == ArtifactIdentity::CharacterSav
-                        && file.sha256 == package.manifest.save_sha256
-                })
-                && record.files.iter().any(|file| {
-                    file.artifact == ArtifactIdentity::PendingCommits
-                        && file.sha256 == package.manifest.pending_commits_sha256
-                })
+                && history_record_matches(&record, &package)
             {
-                let restore = SnapshotRestoreRequest::new(
-                    record.snapshot_id,
-                    self.lease.session_id,
-                    self.lease.character_id,
-                    self.revision,
-                    self.lease.session_epoch,
-                    self.lease.client_instance_id,
-                    random_idempotency_key()?,
-                );
-                self.refresh_if_needed(api).await?;
-                let restored = match api.restore(&self.auth, restore.clone()).await {
-                    Err(SessionError::Unauthorized) => {
-                        self.refresh_required(api).await?;
-                        api.restore(&self.auth, restore).await?
-                    }
-                    result => result?,
-                };
-                if restored.snapshot.character_id != self.lease.character_id
-                    || restored.snapshot.session_id != self.lease.session_id
-                    || restored.snapshot.session_epoch != self.lease.session_epoch
-                    || restored.snapshot.parent_revision != self.revision
-                {
-                    return Err(SessionError::History);
-                }
-                if restored.snapshot.revision.value() != self.revision.value().saturating_add(1) {
-                    return Err(SessionError::History);
-                }
-                self.revision = restored.snapshot.revision;
-                let character = self.lease.character_id;
-                let active_revision = self.revision;
-                let active = self
-                    .resume_package_retry(api, character, active_revision)
-                    .await?
-                    .ok_or(SessionError::History)?;
-                let active_package = self
-                    .fetch_verified_at(api, active, self.revision)
-                    .await
-                    .map_err(|_| SessionError::History)?;
-                self.materialize_package(&active_package)?;
+                self.restore_and_materialize_historical(api, &record)
+                    .await?;
                 return Ok(());
             }
         }
         Err(SessionError::History)
+    }
+
+    async fn restore_and_materialize_historical<A: CloudApi>(
+        &mut self,
+        api: &A,
+        record: &SnapshotRecord,
+    ) -> Result<(), SessionError> {
+        let expected_revision = self.revision;
+        let restore = SnapshotRestoreRequest::new(
+            record.snapshot_id,
+            self.lease.session_id,
+            self.lease.character_id,
+            expected_revision,
+            self.lease.session_epoch,
+            self.lease.client_instance_id,
+            random_idempotency_key()?,
+        );
+        let restored = self
+            .restore_with_retry(api, restore, record.snapshot_id, expected_revision)
+            .await?;
+        restored.validate().map_err(|_| SessionError::History)?;
+        if restored.snapshot.snapshot_id != record.snapshot_id
+            || restored.snapshot.character_id != self.lease.character_id
+            || restored.snapshot.session_id != self.lease.session_id
+            || restored.snapshot.session_epoch != self.lease.session_epoch
+            || restored.snapshot.parent_revision != expected_revision
+            || restored.snapshot.revision.value() != expected_revision.value().saturating_add(1)
+        {
+            return Err(SessionError::History);
+        }
+        self.revision = restored.snapshot.revision;
+        self.lease.current_revision = self.revision;
+        self.auth.set_active_fence(self.lease.fence());
+        let active = self
+            .resume_package_retry(api, self.lease.character_id, self.revision)
+            .await?
+            .ok_or(SessionError::History)?;
+        let mut active_package = self
+            .fetch_verified_at(api, active, self.revision)
+            .await
+            .map_err(|_| SessionError::History)?;
+        if !history_record_matches(&restored.snapshot, &active_package) {
+            return Err(SessionError::History);
+        }
+        // The SAV is newly restored, so any historical optional savestate is
+        // stale and must be retired before the next checkpoint.
+        active_package.resume = None;
+        self.heartbeat(api)
+            .await
+            .map_err(|_| SessionError::History)?;
+        self.materialize_package(&active_package)?;
+        self.retire_optional_resume()?;
+        self.heartbeat(api)
+            .await
+            .map_err(|_| SessionError::History)?;
+        Ok(())
+    }
+
+    async fn restore_with_retry<A: CloudApi>(
+        &mut self,
+        api: &A,
+        request: SnapshotRestoreRequest,
+        snapshot_id: SnapshotId,
+        expected_revision: Revision,
+    ) -> Result<SnapshotRestoreResponse, SessionError> {
+        let expected_lease = self.lease;
+        self.refresh_if_needed(api).await?;
+        let first = self
+            .run_with_mutating_heartbeats(
+                api,
+                |auth| api.restore(auth, request.clone()),
+                move |response| {
+                    restore_response_proves_commit(
+                        response,
+                        snapshot_id,
+                        expected_lease,
+                        expected_revision,
+                    )
+                },
+            )
+            .await;
+        let (restored, lease) = match first {
+            Ok(result) => result,
+            Err(SessionError::Unauthorized) => {
+                self.refresh_required(api).await?;
+                self.run_with_mutating_heartbeats(
+                    api,
+                    |auth| api.restore(auth, request.clone()),
+                    move |response| {
+                        restore_response_proves_commit(
+                            response,
+                            snapshot_id,
+                            expected_lease,
+                            expected_revision,
+                        )
+                    },
+                )
+                .await?
+            }
+            Err(SessionError::Cloud | SessionError::Lease) => {
+                self.run_with_mutating_heartbeats(
+                    api,
+                    |auth| api.restore(auth, request.clone()),
+                    move |response| {
+                        restore_response_proves_commit(
+                            response,
+                            snapshot_id,
+                            expected_lease,
+                            expected_revision,
+                        )
+                    },
+                )
+                .await?
+            }
+            Err(error) => return Err(error),
+        };
+        self.install_heartbeat_lease(lease, expected_revision)?;
+        Ok(restored)
     }
 
     /// Renews the server-owned lease using the complete active fence.
@@ -1303,7 +1571,9 @@ impl SessionLifecycle {
                 event = children.next_event() => match event.map_err(SessionError::Control) {
                     Ok(SupervisorEvent::ChildExited) => break Ok(()),
                     Ok(SupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. })) => {
-                        self.checkpoint(api, &mut children.control, ready).await.map(|_| ())
+                        self.checkpoint_with_deadline(api, &mut children.control, ready)
+                            .await
+                            .map(|_| ())
                     }
                     Ok(SupervisorEvent::Control(_)) => Ok(()),
                     Err(error) => Err(error),
@@ -1330,24 +1600,19 @@ impl SessionLifecycle {
         // A ready event already in the authenticated FIFO is safe to complete;
         // one absolute deadline prevents an immediately-ready untrusted stream
         // from starving child termination and reaping.
-        let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+        let discovery_deadline = tokio::time::Instant::now() + SHUTDOWN_READY_DISCOVERY;
         loop {
-            let next = tokio::time::timeout_at(deadline, children.next_event()).await;
+            let next = tokio::time::timeout_at(discovery_deadline, children.next_event()).await;
             let Ok(next) = next else {
                 return Ok(());
             };
             match next.map_err(SessionError::Control)? {
                 SupervisorEvent::ChildExited => return Ok(()),
                 SupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
-                    return match tokio::time::timeout_at(
-                        deadline,
-                        self.checkpoint(api, &mut children.control, ready),
-                    )
-                    .await
-                    {
-                        Ok(result) => result.map(|_| ()),
-                        Err(_) => Ok(()),
-                    };
+                    return self
+                        .checkpoint_with_deadline(api, &mut children.control, ready)
+                        .await
+                        .map(|_| ());
                 }
                 SupervisorEvent::Control(_) => {}
             }
@@ -1382,6 +1647,16 @@ impl SessionLifecycle {
         control: &mut ControlChannel,
         ready: ControlEvent,
     ) -> Result<Revision, SessionError> {
+        self.checkpoint_with_deadline(api, control, ready).await
+    }
+
+    async fn checkpoint_until<A: CloudApi>(
+        &mut self,
+        api: &A,
+        control: &mut ControlChannel,
+        ready: ControlEvent,
+        deadline: tokio::time::Instant,
+    ) -> Result<Revision, SessionError> {
         let ControlEvent::CheckpointReady {
             session_epoch,
             ready_sequence,
@@ -1402,24 +1677,46 @@ impl SessionLifecycle {
             return Err(SessionError::CheckpointNotAuthorized);
         }
         let command_id = new_command_id();
-        control
-            .send(&ControlCommand::CheckpointGrant(CheckpointGrant {
+        // Once a grant is attempted, the transport outcome is ambiguous: the
+        // sidecar may have applied it even if the write or response is lost.
+        // Mark this before sending so every such path preserves recovery.
+        self.checkpoint_authorized = true;
+        self.checkpoint_key = Some((session_epoch, ready_sequence));
+        tokio::time::timeout_at(
+            deadline,
+            control.send(&ControlCommand::CheckpointGrant(CheckpointGrant {
                 command_id,
                 session_epoch,
                 ready_sequence,
-            }))
-            .await?;
-        match control.receive().await? {
+            })),
+        )
+        .await
+        .map_err(|_| SessionError::CheckpointTimeout)??;
+        match self
+            .receive_checkpoint_event(api, control, deadline)
+            .await?
+        {
             ControlEvent::CommandResult {
                 command_id: echoed,
                 status: CommandStatus::Applied | CommandStatus::Replayed,
                 ..
             } if echoed == command_id => {}
+            ControlEvent::CommandResult {
+                command_id: echoed,
+                status: CommandStatus::Rejected | CommandStatus::Conflict,
+                ..
+            } if echoed == command_id => {
+                // A matching explicit rejection proves that no grant was
+                // applied, so recovery preservation is no longer required.
+                self.checkpoint_authorized = false;
+                self.checkpoint_key = None;
+                return Err(SessionError::CheckpointNotAuthorized);
+            }
             _ => return Err(SessionError::CheckpointNotAuthorized),
         }
-        self.checkpoint_authorized = true;
-        self.checkpoint_key = Some((session_epoch, ready_sequence));
-        let updated = control.receive().await?;
+        let updated = self
+            .receive_checkpoint_event(api, control, deadline)
+            .await?;
         let ControlEvent::SaveDataUpdated {
             session_epoch: updated_epoch,
             ready_sequence: updated_ready,
@@ -1437,6 +1734,51 @@ impl SessionLifecycle {
                 Ok(revision)
             }
             Err(error) => Err(error),
+        }
+    }
+
+    async fn checkpoint_with_deadline<A: CloudApi>(
+        &mut self,
+        api: &A,
+        control: &mut ControlChannel,
+        ready: ControlEvent,
+    ) -> Result<Revision, SessionError> {
+        let deadline = tokio::time::Instant::now() + CHECKPOINT_PROTOCOL_DEADLINE;
+        tokio::time::timeout_at(
+            deadline,
+            self.checkpoint_until(api, control, ready, deadline),
+        )
+        .await
+        .map_err(|_| SessionError::CheckpointTimeout)?
+    }
+
+    /// Receives checkpoint responses without abandoning the lease while the
+    /// sidecar is slow. `receive_bounded` preserves its persistent framing
+    /// buffer when this select is cancelled for a heartbeat tick.
+    async fn receive_checkpoint_event<A: CloudApi>(
+        &mut self,
+        api: &A,
+        control: &mut ControlChannel,
+        deadline: tokio::time::Instant,
+    ) -> Result<ControlEvent, SessionError> {
+        let interval =
+            Duration::from_millis((u64::from(self.lease.heartbeat_interval_ms) / 2).max(1));
+        let mut heartbeat =
+            tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                event = tokio::time::timeout_at(deadline, control.receive_bounded()) => {
+                    match event {
+                        Ok(Ok(event)) => return Ok(event),
+                        Ok(Err(ProcessError::Control(error)))
+                            if error.kind() == io::ErrorKind::TimedOut => {}
+                        Ok(Err(error)) => return Err(SessionError::Control(error)),
+                        Err(_) => return Err(SessionError::CheckpointTimeout),
+                    }
+                }
+                _ = heartbeat.tick() => self.heartbeat(api).await?,
+            }
         }
     }
 
@@ -1460,7 +1802,19 @@ impl SessionLifecycle {
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, &pending)
                 .map_err(|_| SessionError::Package)?,
         ];
-        let resume = self.read_optional_resume()?;
+        let resume = match self.fresh_resume_save_digest {
+            Some(expected) if expected == Sha256Digest::of_bytes(&sav) => {
+                self.read_optional_resume()?
+            }
+            _ => {
+                // A resume package downloaded during startup (or left by a
+                // prior revision) is not a fresh capture for this SAV. Keep
+                // the canonical SAV checkpoint and retire the stale state.
+                self.retire_optional_resume()?;
+                self.fresh_resume_save_digest = None;
+                None
+            }
+        };
         if let Some(resume) = &resume {
             files.push(
                 SnapshotFile::from_bytes(ArtifactIdentity::ResumeSs1, resume)
@@ -1492,7 +1846,7 @@ impl SessionLifecycle {
                 ArtifactIdentity::PendingCommits => pending.clone(),
                 ArtifactIdentity::ResumeSs1 => resume.clone().ok_or(SessionError::Package)?,
             };
-            upload_with_retry(api, target, bytes).await?;
+            self.upload_with_retry(api, target, bytes).await?;
         }
         let finalize_fence = SnapshotFinalizeFence::new(
             self.lease.session_id,
@@ -1548,20 +1902,30 @@ impl SessionLifecycle {
         request: PrepareSnapshotRequest,
     ) -> Result<SnapshotPrepareResponse, SessionError> {
         self.refresh_if_needed(api).await?;
-        let first = api.prepare(&self.auth, request.clone()).await;
+        let first = self
+            .run_with_heartbeats(api, |auth| api.prepare(auth, request.clone()))
+            .await;
         match first {
+            Ok((response, lease)) => {
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(response)
+            }
             Err(SessionError::Unauthorized) => {
                 self.refresh_required(api).await?;
-                api.prepare(&self.auth, request).await
+                let (response, lease) = self
+                    .run_with_heartbeats(api, |auth| api.prepare(auth, request.clone()))
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(response)
             }
-            Ok(response) => Ok(response),
-            Err(_) => match api.prepare(&self.auth, request.clone()).await {
-                Err(SessionError::Unauthorized) => {
-                    self.refresh_required(api).await?;
-                    api.prepare(&self.auth, request).await
-                }
-                result => result,
-            },
+            Err(SessionError::Cloud) => {
+                let (response, lease) = self
+                    .run_with_heartbeats(api, |auth| api.prepare(auth, request.clone()))
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(response)
+            }
+            Err(error) => Err(error),
         }
     }
 
@@ -1571,20 +1935,69 @@ impl SessionLifecycle {
         request: SnapshotFinalizeRequest,
     ) -> Result<SnapshotRecord, SessionError> {
         self.refresh_if_needed(api).await?;
-        let first = api.finalize(&self.auth, request.clone()).await;
+        let first = self
+            .run_with_mutating_heartbeats(
+                api,
+                |auth| api.finalize(auth, request.clone()),
+                |record| finalize_response_proves_commit(record, &request),
+            )
+            .await;
         match first {
+            Ok((record, lease)) => {
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(record)
+            }
             Err(SessionError::Unauthorized) => {
                 self.refresh_required(api).await?;
-                api.finalize(&self.auth, request).await
+                let (record, lease) = self
+                    .run_with_mutating_heartbeats(
+                        api,
+                        |auth| api.finalize(auth, request.clone()),
+                        |record| finalize_response_proves_commit(record, &request),
+                    )
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(record)
             }
-            Ok(record) => Ok(record),
-            Err(_) => match api.finalize(&self.auth, request.clone()).await {
-                Err(SessionError::Unauthorized) => {
-                    self.refresh_required(api).await?;
-                    api.finalize(&self.auth, request).await
-                }
-                result => result,
-            },
+            Err(SessionError::Cloud | SessionError::Lease) => {
+                let (record, lease) = self
+                    .run_with_mutating_heartbeats(
+                        api,
+                        |auth| api.finalize(auth, request.clone()),
+                        |record| finalize_response_proves_commit(record, &request),
+                    )
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(record)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn upload_with_retry<A: CloudApi>(
+        &mut self,
+        api: &A,
+        target: &UploadTarget,
+        bytes: Vec<u8>,
+    ) -> Result<(), SessionError> {
+        self.refresh_if_needed(api).await?;
+        let first = self
+            .run_with_heartbeats(api, |_auth| api.upload(target, bytes.clone()))
+            .await;
+        match first {
+            Ok(((), lease)) => {
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(())
+            }
+            Err(SessionError::Unauthorized) => Err(SessionError::Unauthorized),
+            Err(SessionError::Cloud) => {
+                let ((), lease) = self
+                    .run_with_heartbeats(api, |_auth| api.upload(target, bytes.clone()))
+                    .await?;
+                self.install_heartbeat_lease(lease, self.revision)?;
+                Ok(())
+            }
+            Err(error) => Err(error),
         }
     }
 
@@ -1657,6 +2070,12 @@ impl SessionLifecycle {
                             Err(error) => Err(error),
                             Ok(()) => api.release(&self.auth, request).await.map(|_| ()),
                         },
+                        Err(SessionError::Cloud) => {
+                            // The release may have committed after the
+                            // transport was lost. Replay the same request and
+                            // idempotency key exactly once.
+                            api.release(&self.auth, request).await.map(|_| ())
+                        }
                         Err(error) => Err(error),
                         Ok(_) => Ok(()),
                     },
@@ -1675,16 +2094,17 @@ fn validate_history_records(
     records: &[SnapshotRecord],
     current_revision: Revision,
     character_id: CharacterId,
-    session_id: SessionId,
 ) -> Result<(), SessionError> {
     if records.len() > 20 {
         return Err(SessionError::History);
     }
-    let mut last = current_revision.value().saturating_add(1);
+    // Recovery candidates must be strictly older than the corrupt active
+    // revision and strictly decreasing thereafter. A same-revision record is
+    // not historical, even if its bytes happen to validate.
+    let mut last = current_revision.value();
     for record in records {
         if record.validate().is_err()
             || record.character_id != character_id
-            || record.session_id != session_id
             || record.session_epoch.value() == 0
             || record.revision.value() == 0
             || record.revision.value() >= last
@@ -1694,6 +2114,58 @@ fn validate_history_records(
         last = record.revision.value();
     }
     Ok(())
+}
+
+fn history_record_matches(record: &SnapshotRecord, package: &VerifiedPackage) -> bool {
+    // Historical epochs and session IDs are provenance, not the current lease
+    // fence. The detached signature and both mandatory artifact digests still
+    // have to identify this exact character snapshot.
+    record.session_epoch == package.manifest.session_epoch
+        && record.revision == package.manifest.revision
+        && record.snapshot_id == package.manifest.snapshot_id
+        && record.parent_revision == package.manifest.parent_revision
+        && record.pending_commits_sha256 == package.manifest.pending_commits_sha256
+        && record.files.iter().any(|file| {
+            file.artifact == ArtifactIdentity::CharacterSav
+                && file.sha256 == package.manifest.save_sha256
+        })
+        && record.files.iter().any(|file| {
+            file.artifact == ArtifactIdentity::PendingCommits
+                && file.sha256 == package.manifest.pending_commits_sha256
+        })
+}
+
+fn restore_response_proves_commit(
+    response: &SnapshotRestoreResponse,
+    snapshot_id: SnapshotId,
+    lease: LeaseContract,
+    expected_revision: Revision,
+) -> bool {
+    response.validate().is_ok()
+        && response.snapshot.snapshot_id == snapshot_id
+        && response.snapshot.session_id == lease.session_id
+        && response.snapshot.character_id == lease.character_id
+        && response.snapshot.session_epoch == lease.session_epoch
+        && response.snapshot.parent_revision == expected_revision
+        && expected_revision
+            .next()
+            .ok()
+            .is_some_and(|next| response.snapshot.revision == next)
+}
+
+fn finalize_response_proves_commit(
+    response: &SnapshotRecord,
+    request: &SnapshotFinalizeRequest,
+) -> bool {
+    response.validate().is_ok()
+        && response.snapshot_id == request.snapshot_id
+        && response.session_id == request.session_id
+        && response.character_id == request.character_id
+        && response.session_epoch == request.session_epoch
+        && response.parent_revision == request.expected_parent_revision
+        && response.revision == request.revision
+        && response.files == request.files
+        && response.pending_commits_sha256 == request.pending_commits_sha256
 }
 
 fn has_expected_lineage(manifest: &ResumePackageManifest, revision: Revision) -> bool {
@@ -1757,38 +2229,39 @@ async fn release_best_effort<A: CloudApi>(
             return;
         }
         let request = ReleaseLeaseRequest::new(lease.fence(), idempotency_key);
-        if let Err(SessionError::Unauthorized) = api.release(auth, request).await
-            && refresh_required(auth, api, keychain).await.is_ok()
-        {
-            let _ = api.release(auth, request).await;
+        match api.release(auth, request).await {
+            Err(SessionError::Unauthorized) => {
+                if refresh_required(auth, api, keychain).await.is_ok() {
+                    let _ = api.release(auth, request).await;
+                }
+            }
+            Err(SessionError::Cloud) => {
+                // Preserve the cleanup request identity when the first
+                // response is ambiguous; the server owns idempotency.
+                let _ = api.release(auth, request).await;
+            }
+            _ => {}
         }
-    }
-}
-
-async fn upload_with_retry<A: CloudApi>(
-    api: &A,
-    target: &UploadTarget,
-    bytes: Vec<u8>,
-) -> Result<(), SessionError> {
-    match api.upload(target, bytes.clone()).await {
-        Ok(()) => Ok(()),
-        Err(_) => api.upload(target, bytes).await,
     }
 }
 
 #[cfg(test)]
 mod lifecycle_tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
     use coop_cloud::{
         AccessToken, ApiVersion, ArtifactIdentity, BridgeAbiVersion, CharacterId, ClientInstanceId,
         CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest, LeaseContract, LeaseFence,
         LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, MgbaVersion, Password,
-        PrepareSnapshotRequest, ProtocolVersion, RefreshFamilyId, RefreshRequest, RefreshResponse,
-        RefreshToken, ResumePackageManifest, Revision, SessionEpoch, SessionId, Sha256Digest,
-        SnapshotFence, SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
-        SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
-        TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
+        PrepareSnapshotRequest, ProtocolVersion, ReconnectLeaseRequest, RefreshFamilyId,
+        RefreshRequest, RefreshResponse, RefreshToken, ReleaseLeaseRequest, ResumePackageManifest,
+        Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotFence, SnapshotFinalizeRequest,
+        SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord,
+        SnapshotRestoreRequest, SnapshotRestoreResponse, TrustedManifestKey, UnixTimestampMillis,
+        UploadTarget, UserId,
     };
     use serde_json::json;
     use tempfile::{TempDir, tempdir};
@@ -1808,7 +2281,7 @@ mod lifecycle_tests {
         KeychainError, RefreshTokenStore, SessionConfig, SessionError, SessionLifecycle,
         SupervisedChildren, auth::AuthFuture,
     };
-    use coop_sidecar::control::{CommandStatus, ControlEvent};
+    use coop_sidecar::control::{CommandStatus, ControlCommand, ControlEvent};
 
     #[derive(Default)]
     struct TestKeychain {
@@ -1846,13 +2319,21 @@ mod lifecycle_tests {
         fail_prepare: bool,
         reconnect_epoch: Mutex<Option<u32>>,
         reconnect_transport_once: Mutex<bool>,
+        reconnect_requests: Mutex<Vec<ReconnectLeaseRequest>>,
         heartbeats: Mutex<usize>,
+        heartbeat_requests: Mutex<Vec<HeartbeatLeaseRequest>>,
         heartbeat_unauthorized_once: Mutex<bool>,
+        heartbeat_revision: Mutex<Option<Revision>>,
+        heartbeat_character: Mutex<Option<CharacterId>>,
         refresh_enabled: Mutex<bool>,
+        artifact_bytes: Mutex<Option<Vec<u8>>>,
+        artifact_delay: Mutex<Duration>,
+        finalize_delay: Mutex<Duration>,
         prepares: Mutex<usize>,
         uploads: Mutex<Vec<(coop_cloud::ArtifactIdentity, Vec<u8>)>>,
         finalizes: Mutex<usize>,
         releases: Mutex<usize>,
+        release_requests: Mutex<Vec<ReleaseLeaseRequest>>,
         logouts: Mutex<usize>,
     }
 
@@ -1864,13 +2345,21 @@ mod lifecycle_tests {
                 fail_prepare,
                 reconnect_epoch: Mutex::new(None),
                 reconnect_transport_once: Mutex::new(false),
+                reconnect_requests: Mutex::new(Vec::new()),
                 heartbeats: Mutex::new(0),
+                heartbeat_requests: Mutex::new(Vec::new()),
                 heartbeat_unauthorized_once: Mutex::new(false),
+                heartbeat_revision: Mutex::new(None),
+                heartbeat_character: Mutex::new(None),
                 refresh_enabled: Mutex::new(false),
+                artifact_bytes: Mutex::new(None),
+                artifact_delay: Mutex::new(Duration::ZERO),
+                finalize_delay: Mutex::new(Duration::ZERO),
                 prepares: Mutex::new(0),
                 uploads: Mutex::new(Vec::new()),
                 finalizes: Mutex::new(0),
                 releases: Mutex::new(0),
+                release_requests: Mutex::new(Vec::new()),
                 logouts: Mutex::new(0),
             }
         }
@@ -1885,6 +2374,23 @@ mod lifecycle_tests {
 
         fn set_heartbeat_unauthorized_once(&self) {
             *self.heartbeat_unauthorized_once.lock().unwrap() = true;
+        }
+
+        fn set_heartbeat_revision(&self, revision: Revision) {
+            *self.heartbeat_revision.lock().unwrap() = Some(revision);
+        }
+
+        fn set_heartbeat_character(&self, character: CharacterId) {
+            *self.heartbeat_character.lock().unwrap() = Some(character);
+        }
+
+        fn set_delayed_artifact(&self, bytes: Vec<u8>, delay: Duration) {
+            *self.artifact_bytes.lock().unwrap() = Some(bytes);
+            *self.artifact_delay.lock().unwrap() = delay;
+        }
+
+        fn set_finalize_delay(&self, delay: Duration) {
+            *self.finalize_delay.lock().unwrap() = delay;
         }
 
         fn enable_refresh(&self) {
@@ -1932,22 +2438,30 @@ mod lifecycle_tests {
         fn heartbeat<'a>(
             &'a self,
             _auth: &'a crate::AuthSession,
-            _request: HeartbeatLeaseRequest,
+            request: HeartbeatLeaseRequest,
         ) -> CloudFuture<'a, LeaseContract> {
             *self.heartbeats.lock().unwrap() += 1;
+            self.heartbeat_requests.lock().unwrap().push(request);
             if *self.heartbeat_unauthorized_once.lock().unwrap() {
                 *self.heartbeat_unauthorized_once.lock().unwrap() = false;
                 return Box::pin(async { Err(SessionError::Unauthorized) });
             }
-            let lease = self.lease;
+            let mut lease = self.lease;
+            if let Some(revision) = *self.heartbeat_revision.lock().unwrap() {
+                lease.current_revision = revision;
+            }
+            if let Some(character) = *self.heartbeat_character.lock().unwrap() {
+                lease.character_id = character;
+            }
             Box::pin(async move { Ok(lease) })
         }
 
         fn reconnect<'a>(
             &'a self,
             _auth: &'a crate::AuthSession,
-            _request: coop_cloud::ReconnectLeaseRequest,
+            request: ReconnectLeaseRequest,
         ) -> CloudFuture<'a, LeaseContract> {
+            self.reconnect_requests.lock().unwrap().push(request);
             if *self.reconnect_transport_once.lock().unwrap() {
                 *self.reconnect_transport_once.lock().unwrap() = false;
                 return Box::pin(async { Err(SessionError::Cloud) });
@@ -1974,9 +2488,10 @@ mod lifecycle_tests {
         fn release<'a>(
             &'a self,
             _auth: &'a crate::AuthSession,
-            _request: coop_cloud::ReleaseLeaseRequest,
+            request: ReleaseLeaseRequest,
         ) -> CloudFuture<'a, LogoutResponse> {
             *self.releases.lock().unwrap() += 1;
+            self.release_requests.lock().unwrap().push(request);
             Box::pin(async { Ok(LogoutResponse::default()) })
         }
 
@@ -1996,7 +2511,12 @@ mod lifecycle_tests {
             _artifact: coop_cloud::ArtifactIdentity,
             _revision: Revision,
         ) -> CloudFuture<'a, Vec<u8>> {
-            Box::pin(async { Err(SessionError::ArtifactNotFound) })
+            let bytes = self.artifact_bytes.lock().unwrap().clone();
+            let delay = *self.artifact_delay.lock().unwrap();
+            Box::pin(async move {
+                tokio::time::sleep(delay).await;
+                bytes.ok_or(SessionError::ArtifactNotFound)
+            })
         }
 
         fn list_snapshots<'a>(
@@ -2062,6 +2582,7 @@ mod lifecycle_tests {
             request: SnapshotFinalizeRequest,
         ) -> CloudFuture<'a, coop_cloud::SnapshotRecord> {
             *self.finalizes.lock().unwrap() += 1;
+            let delay = *self.finalize_delay.lock().unwrap();
             let record = coop_cloud::SnapshotRecord::new(
                 request.snapshot_id,
                 SnapshotFence::new(
@@ -2077,7 +2598,10 @@ mod lifecycle_tests {
                 UnixTimestampMillis::new(4_000_000_000_000),
             )
             .unwrap();
-            Box::pin(async move { Ok(record) })
+            Box::pin(async move {
+                tokio::time::sleep(delay).await;
+                Ok(record)
+            })
         }
     }
 
@@ -2253,18 +2777,43 @@ mod lifecycle_tests {
             session.reconnect(cloud.as_ref()).await,
             Err(SessionError::Lease)
         ));
+        cloud.reconnect_requests.lock().unwrap().clear();
 
         cloud.set_reconnect_epoch(2);
         let first_key = session.reconnect_key;
         session.reconnect(cloud.as_ref()).await.unwrap();
         assert_ne!(session.reconnect_key, first_key);
         assert_eq!(session.lease.session_epoch.value(), 2);
+        let request = cloud.reconnect_requests.lock().unwrap()[0];
+        assert_eq!(request.idempotency_key(), first_key);
+        assert_eq!(
+            request.fence(),
+            LeaseFence::new(
+                session.lease.session_id,
+                session.lease.character_id,
+                session.lease.current_revision,
+                SessionEpoch::new(1).unwrap(),
+                session.lease.client_instance_id,
+            )
+        );
 
         cloud.set_reconnect_epoch(3);
         let second_key = session.reconnect_key;
         session.reconnect(cloud.as_ref()).await.unwrap();
         assert_ne!(session.reconnect_key, second_key);
         assert_eq!(session.lease.session_epoch.value(), 3);
+        let request = cloud.reconnect_requests.lock().unwrap()[1];
+        assert_eq!(request.idempotency_key(), second_key);
+        assert_eq!(
+            request.fence(),
+            LeaseFence::new(
+                session.lease.session_id,
+                session.lease.character_id,
+                session.lease.current_revision,
+                SessionEpoch::new(2).unwrap(),
+                session.lease.client_instance_id,
+            )
+        );
     }
 
     #[tokio::test]
@@ -2279,6 +2828,13 @@ mod lifecycle_tests {
         session.reconnect(cloud.as_ref()).await.unwrap();
         assert_eq!(session.lease.session_epoch.value(), 2);
         assert_ne!(session.reconnect_key, key);
+        let requests = cloud.reconnect_requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0], requests[1],
+            "transport retry changed reconnect identity"
+        );
+        assert_eq!(requests[0].idempotency_key(), key);
     }
 
     #[test]
@@ -2320,6 +2876,7 @@ mod lifecycle_tests {
     #[tokio::test]
     async fn checkpoint_runs_heartbeat_grant_save_prepare_upload_finalize_and_release() {
         let (_root, mut session, cloud) = bootstrap(false).await;
+        let expected_heartbeat_fence = session.lease.fence();
         session.heartbeat(cloud.as_ref()).await.unwrap();
         session
             .workspace
@@ -2338,14 +2895,209 @@ mod lifecycle_tests {
             .await
             .unwrap();
         assert_eq!(revision, Revision::new(1));
-        assert_eq!(*cloud.heartbeats.lock().unwrap(), 1);
+        assert!(*cloud.heartbeats.lock().unwrap() >= 1);
         assert_eq!(*cloud.prepares.lock().unwrap(), 1);
         assert_eq!(cloud.uploads.lock().unwrap().len(), 2);
         assert_eq!(*cloud.finalizes.lock().unwrap(), 1);
         server.await.unwrap();
+        let expected_release_fence = session.lease.fence();
         session.release(cloud.as_ref()).await.unwrap();
         assert_eq!(*cloud.releases.lock().unwrap(), 1);
         assert_eq!(*cloud.logouts.lock().unwrap(), 1);
+        let heartbeat = cloud.heartbeat_requests.lock().unwrap()[0];
+        assert_eq!(heartbeat.fence(), expected_heartbeat_fence);
+        let release = cloud.release_requests.lock().unwrap()[0];
+        assert_eq!(release.session_id, expected_release_fence.session_id);
+        assert_eq!(release.character_id, expected_release_fence.character_id);
+        assert_eq!(
+            release.current_revision,
+            expected_release_fence.current_revision
+        );
+        assert_eq!(release.session_epoch, expected_release_fence.session_epoch);
+        assert_eq!(
+            release.client_instance_id,
+            expected_release_fence.client_instance_id
+        );
+    }
+
+    #[tokio::test]
+    async fn downloaded_resume_is_retired_until_a_fresh_capture_is_marked() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", b"canonical-save")
+            .unwrap();
+        session
+            .workspace
+            .write_atomic("resume.input.ss1", b"downloaded-state")
+            .unwrap();
+        let (mut control, server) = control_pair(1, 11).await;
+
+        session
+            .checkpoint(
+                cloud.as_ref(),
+                &mut control,
+                ControlEvent::CheckpointReady {
+                    session_epoch: 1,
+                    ready_sequence: 11,
+                },
+            )
+            .await
+            .unwrap();
+        server.await.unwrap();
+
+        let uploads = cloud.uploads.lock().unwrap();
+        assert_eq!(uploads.len(), 2);
+        assert!(
+            uploads
+                .iter()
+                .all(|(artifact, _)| *artifact != ArtifactIdentity::ResumeSs1)
+        );
+        assert!(!session.workspace.path().join("resume.input.ss1").exists());
+    }
+
+    #[tokio::test]
+    async fn delayed_finalize_commit_race_requires_the_exact_next_revision() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", b"commit-race-save")
+            .unwrap();
+        cloud.set_heartbeat_revision(Revision::new(1));
+        cloud.set_finalize_delay(Duration::from_millis(20));
+        let (mut control, server) = control_pair(1, 12).await;
+
+        let revision = session
+            .checkpoint(
+                cloud.as_ref(),
+                &mut control,
+                ControlEvent::CheckpointReady {
+                    session_epoch: 1,
+                    ready_sequence: 12,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(revision, Revision::new(1));
+        assert!(*cloud.heartbeats.lock().unwrap() > 0);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delayed_finalize_rejects_an_unrelated_heartbeat_identity() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", b"identity-race-save")
+            .unwrap();
+        cloud.set_heartbeat_character(CharacterId::new(Uuid::from_u128(999)).unwrap());
+        cloud.set_finalize_delay(Duration::from_millis(20));
+        let (mut control, server) = control_pair(1, 13).await;
+
+        let error = session
+            .checkpoint(
+                cloud.as_ref(),
+                &mut control,
+                ControlEvent::CheckpointReady {
+                    session_epoch: 1,
+                    ready_sequence: 13,
+                },
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, SessionError::Lease));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn slow_checkpoint_responses_keep_the_active_lease_alive() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", b"slow-safe-save")
+            .unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut line = Vec::new();
+            loop {
+                let mut byte = [0_u8; 1];
+                stream.read_exact(&mut byte).await.unwrap();
+                if byte[0] == b'\n' {
+                    break;
+                }
+                line.push(byte[0]);
+            }
+            let command: ControlCommand = serde_json::from_slice(&line).unwrap();
+            let ControlCommand::CheckpointGrant(grant) = command else {
+                panic!("test expected checkpoint grant");
+            };
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let result = ControlEvent::CommandResult {
+                command_id: grant.command_id,
+                status: CommandStatus::Applied,
+                reason: None,
+            };
+            let updated = ControlEvent::SaveDataUpdated {
+                session_epoch: grant.session_epoch,
+                ready_sequence: grant.ready_sequence,
+                save_sequence: 1,
+            };
+            for event in [result, updated] {
+                let mut bytes = serde_json::to_vec(&event).unwrap();
+                bytes.push(b'\n');
+                stream.write_all(&bytes).await.unwrap();
+            }
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut control = ControlChannel::from_stream_for_test(stream);
+        let before = *cloud.heartbeats.lock().unwrap();
+        session
+            .checkpoint(
+                cloud.as_ref(),
+                &mut control,
+                ControlEvent::CheckpointReady {
+                    session_epoch: 1,
+                    ready_sequence: 9,
+                },
+            )
+            .await
+            .unwrap();
+        server.await.unwrap();
+        assert!(*cloud.heartbeats.lock().unwrap() > before);
+    }
+
+    #[tokio::test]
+    async fn historical_artifact_fetch_keeps_the_active_revision_fence() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(3);
+        session.lease.current_revision = Revision::new(3);
+        session.auth.set_active_fence(session.lease.fence());
+        cloud.set_heartbeat_revision(Revision::new(3));
+        cloud.set_delayed_artifact(b"historical-save".to_vec(), Duration::from_millis(20));
+        let character = session.lease.character_id;
+
+        let bytes = session
+            .authenticated_artifact(
+                cloud.as_ref(),
+                character,
+                ArtifactIdentity::CharacterSav,
+                Revision::new(2),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(bytes, b"historical-save");
+        let requests = cloud.heartbeat_requests.lock().unwrap();
+        assert!(!requests.is_empty());
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.current_revision == Revision::new(3))
+        );
     }
 
     #[tokio::test]
@@ -2356,7 +3108,11 @@ mod lifecycle_tests {
         session.heartbeat(cloud.as_ref()).await.unwrap();
         assert_eq!(*cloud.heartbeats.lock().unwrap(), 2);
         assert_eq!(
-            session.auth.access_token().expose_secret(),
+            session
+                .auth
+                .access_token()
+                .expect("test auth session remains active")
+                .expose_secret(),
             "refreshed-access"
         );
     }
@@ -2495,7 +3251,7 @@ mod lifecycle_tests {
 
     #[test]
     fn historical_validation_rejects_malformed_or_repeated_tail_before_selection() {
-        let (character, session, _, _, _) = ids();
+        let (character, _, _, _, _) = ids();
         let first = historical_record(2);
         let mut malformed_tail = historical_record(1);
         malformed_tail.revision = Revision::new(0);
@@ -2504,20 +3260,80 @@ mod lifecycle_tests {
                 &[first.clone(), malformed_tail],
                 Revision::new(3),
                 character,
-                session,
             ),
+            Err(SessionError::History)
+        ));
+
+        assert!(matches!(
+            super::validate_history_records(&[historical_record(3)], Revision::new(3), character,),
             Err(SessionError::History)
         ));
 
         let repeated_tail = historical_record(2);
         assert!(matches!(
-            super::validate_history_records(
-                &[first, repeated_tail],
-                Revision::new(3),
-                character,
-                session,
-            ),
+            super::validate_history_records(&[first, repeated_tail], Revision::new(3), character,),
             Err(SessionError::History)
+        ));
+    }
+
+    #[test]
+    fn historical_validation_accepts_a_prior_session_with_verified_lineage() {
+        let (character, _, _, _, _) = ids();
+        let mut prior = historical_record(2);
+        prior.session_id = SessionId::new(Uuid::new_v4()).unwrap();
+        assert!(super::validate_history_records(&[prior], Revision::new(3), character).is_ok());
+    }
+
+    #[test]
+    fn historical_validation_is_bounded_to_twenty_candidates() {
+        let (character, _, _, _, _) = ids();
+        let records = vec![historical_record(2); 21];
+        assert!(matches!(
+            super::validate_history_records(&records, Revision::new(3), character),
+            Err(SessionError::History)
+        ));
+    }
+
+    #[test]
+    fn historical_snapshot_id_correlation_rejects_a_different_active_package() {
+        let (character, _, _, _, _) = ids();
+        let record = historical_record(2);
+        let manifest = ResumePackageManifest {
+            package_version: 1,
+            character_id: character,
+            parent_revision: record.parent_revision,
+            revision: record.revision,
+            game_build_id: GameBuildId::new("pokeemerald-coop").unwrap(),
+            rom_sha256: Sha256Digest::of_bytes(b"rom"),
+            mgba_version: MgbaVersion::new("0.10.5").unwrap(),
+            bridge_abi: BridgeAbiVersion::new(1).unwrap(),
+            protocol_version: ProtocolVersion::new(1).unwrap(),
+            save_sha256: Sha256Digest::of_bytes(b"save"),
+            savestate_sha256: None,
+            savestate_compatible: false,
+            created_at: coop_cloud::CreatedAt::new("2026-09-01T00:00:00Z").unwrap(),
+            last_commit_id: None,
+            snapshot_id: coop_cloud::SnapshotId::new(Uuid::new_v4()).unwrap(),
+            session_epoch: record.session_epoch,
+            pending_commits_sha256: Sha256Digest::of_bytes(b"[]"),
+        };
+        let package = super::VerifiedPackage {
+            manifest,
+            sav: b"save".to_vec(),
+            pending: b"[]".to_vec(),
+            resume: None,
+        };
+        assert!(!super::history_record_matches(&record, &package));
+    }
+
+    #[test]
+    fn recovery_requires_a_regular_nonempty_bounded_sav() {
+        let root = tempdir().unwrap();
+        let mut workspace = super::SessionWorkspace::create(root.path()).unwrap();
+        workspace.write_atomic("character.sav", b"").unwrap();
+        assert!(matches!(
+            workspace.preserve_recovery(),
+            Err(SessionError::Package)
         ));
     }
 
@@ -2692,6 +3508,7 @@ mod lifecycle_tests {
         // This models a failure before the pre-created shadow exists and
         // proves the launcher never retains a directory that could contain a
         // loopback secret.
+        std::fs::write(original.join("unknown.secret"), b"unclassified-secret").unwrap();
         std::fs::create_dir(original.join("character.sav")).unwrap();
         std::fs::create_dir(original.join("session.lua")).unwrap();
         session.checkpoint_authorized = true;

@@ -67,21 +67,46 @@ fn epoch_store_is_atomic_monotonic_and_fail_closed() {
 }
 
 #[test]
-fn epoch_store_rejects_corruption_and_exhaustion_without_resetting() {
+fn epoch_store_rejects_corruption_without_resetting_or_rewriting_state() {
     let directory = tempdir().unwrap();
     let store = EpochStore::new(directory.path().join("state/epoch.json"));
     store
         .accept(character(), session(), SessionEpoch::new(4).unwrap())
         .unwrap();
     std::fs::write(store.path(), b"not-json").unwrap();
+    let before = std::fs::read(store.path()).unwrap();
     assert!(matches!(
         store.read(character(), session()),
         Err(EpochError::Corrupt)
     ));
     assert!(matches!(
-        store.accept(character(), session(), SessionEpoch::new(u32::MAX).unwrap()),
+        store.accept(character(), session(), SessionEpoch::new(5).unwrap()),
         Err(EpochError::Corrupt)
     ));
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
+}
+
+#[test]
+fn epoch_store_rejects_exhaustion_without_rewriting_accepted_state() {
+    let directory = tempdir().unwrap();
+    let store = EpochStore::new(directory.path().join("state/epoch.json"));
+    store
+        .accept(character(), session(), SessionEpoch::new(4).unwrap())
+        .unwrap();
+    let before = std::fs::read(store.path()).unwrap();
+    assert!(matches!(
+        store.accept(character(), session(), SessionEpoch::new(u32::MAX).unwrap()),
+        Err(EpochError::Exhausted)
+    ));
+    assert_eq!(std::fs::read(store.path()).unwrap(), before);
+    assert_eq!(
+        store
+            .read(character(), session())
+            .unwrap()
+            .unwrap()
+            .greatest_epoch,
+        4
+    );
 }
 
 #[test]
@@ -280,10 +305,13 @@ fn authorized_recovery_preserves_only_sav_and_nonsecret_marker() {
 
 #[test]
 fn production_keychain_fails_closed_and_test_keychain_contract_is_secret_scoped() {
+    #[cfg(not(windows))]
     assert!(matches!(
         OsKeychain.load(KEYCHAIN_SERVICE, "ash"),
         Err(KeychainError::Unavailable) | Ok(None)
     ));
+    #[cfg(windows)]
+    assert_eq!(format!("{OsKeychain:?}"), "OsKeychain");
     let seen = Arc::new(Mutex::new(Vec::new()));
     let fake = FakeKeychain {
         seen: Arc::clone(&seen),
@@ -303,7 +331,10 @@ fn production_keychain_fails_closed_and_test_keychain_contract_is_secret_scoped(
 #[tokio::test]
 async fn access_expiry_proactively_rotates_and_keychain_failure_keeps_old_pair() {
     let keychain = MemoryKeychain::default();
-    let api = FakeAuthApi::with_refresh_response(refresh_response("new-access", "new-refresh"));
+    let api = FakeAuthApi::with_refresh_responses(vec![
+        refresh_response("final-access", "final-refresh"),
+        refresh_response("new-access", "new-refresh"),
+    ]);
     let login = LoginResponse::new(
         user(),
         character(),
@@ -327,7 +358,12 @@ async fn access_expiry_proactively_rotates_and_keychain_failure_keeps_old_pair()
 
     let mut auth = auth;
     auth.refresh_at(&api, &keychain, 180_001).await.unwrap();
-    assert_eq!(auth.access_token().expose_secret(), "new-access");
+    assert_eq!(
+        auth.access_token()
+            .expect("refreshed session remains active")
+            .expose_secret(),
+        "new-access"
+    );
     assert_eq!(
         keychain
             .load(KEYCHAIN_SERVICE, "ash")
@@ -342,13 +378,43 @@ async fn access_expiry_proactively_rotates_and_keychain_failure_keeps_old_pair()
         fail_store: true,
     };
     let mut auth = auth;
-    let old_access = auth.access_token().expose_secret().to_owned();
+    let old_access = auth
+        .access_token()
+        .expect("session remains active before failed refresh")
+        .expose_secret()
+        .to_owned();
     let error = auth.refresh_at(&api, &failing, 180_001).await.unwrap_err();
     assert!(matches!(
         error,
         AuthError::Keychain(KeychainError::Operation)
     ));
-    assert_eq!(auth.access_token().expose_secret(), old_access);
+    assert_eq!(
+        auth.access_token()
+            .expect("failed refresh preserves active access token")
+            .expose_secret(),
+        old_access
+    );
+    assert_eq!(
+        auth.refresh_token()
+            .expect("failed refresh preserves active refresh token")
+            .expose_secret(),
+        "new-refresh"
+    );
+    assert_eq!(
+        api.refresh_calls.lock().unwrap().as_slice(),
+        [
+            RefreshToken::new("old-refresh").unwrap(),
+            RefreshToken::new("new-refresh").unwrap()
+        ]
+    );
+    assert_eq!(
+        failing
+            .load(KEYCHAIN_SERVICE, "ash")
+            .unwrap()
+            .unwrap()
+            .expose_secret(),
+        "new-refresh"
+    );
     assert!(!format!("{auth:?}").contains("new-access"));
 }
 
@@ -382,7 +448,6 @@ async fn expired_refresh_is_rejected_before_network_call() {
 
 #[tokio::test]
 async fn logout_revokes_session_and_deletes_rotating_refresh_token() {
-    let keychain = MemoryKeychain::default();
     let login = LoginResponse::new(
         user(),
         character(),
@@ -393,18 +458,30 @@ async fn logout_revokes_session_and_deletes_rotating_refresh_token() {
         UnixTimestampMillis::new(300_000),
     )
     .unwrap();
-    let login_api = LoginPassthrough(login);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let api = LogoutSpyApi::new(login, Arc::clone(&events));
+    let keychain = LogoutSpyKeychain::new(Arc::clone(&events));
     let mut auth = coop_launcher::AuthSession::login(
-        &login_api,
+        &api,
         &keychain,
         "ash",
         coop_launcher::AuthSession::password("password").unwrap(),
     )
     .await
     .unwrap();
-    assert!(keychain.load(KEYCHAIN_SERVICE, "ash").unwrap().is_some());
-    auth.logout(&login_api, &keychain).await.unwrap();
-    assert!(keychain.load(KEYCHAIN_SERVICE, "ash").unwrap().is_none());
+    events.lock().unwrap().clear();
+    auth.logout(&api, &keychain).await.unwrap();
+    assert_eq!(
+        api.revoked.lock().unwrap().as_slice(),
+        [RefreshToken::new("old-refresh").unwrap()]
+    );
+    assert_eq!(
+        events.lock().unwrap().as_slice(),
+        ["delete".to_owned(), "revoke".to_owned()]
+    );
+    assert!(keychain.token.lock().unwrap().is_none());
+    assert!(auth.access_token().is_none());
+    assert!(auth.refresh_token().is_none());
 }
 
 #[tokio::test]
@@ -432,6 +509,8 @@ async fn logout_deletes_local_refresh_token_when_remote_revoke_fails() {
     let error = auth.logout(&LogoutFailureApi, &keychain).await.unwrap_err();
     assert!(matches!(error, AuthError::Transport));
     assert!(keychain.load(KEYCHAIN_SERVICE, "ash").unwrap().is_none());
+    assert!(auth.access_token().is_none());
+    assert!(auth.refresh_token().is_none());
 }
 
 fn user() -> UserId {
@@ -490,8 +569,12 @@ struct FakeAuthApi {
 
 impl FakeAuthApi {
     fn with_refresh_response(response: RefreshResponse) -> Self {
+        Self::with_refresh_responses(vec![response.clone(), response])
+    }
+
+    fn with_refresh_responses(responses: Vec<RefreshResponse>) -> Self {
         Self {
-            refresh_responses: Mutex::new(vec![response.clone(), response]),
+            refresh_responses: Mutex::new(responses),
             refresh_calls: Mutex::new(Vec::new()),
         }
     }
@@ -533,6 +616,78 @@ impl AuthApi for LoginPassthrough {
         _request: coop_cloud::LogoutRequest,
     ) -> AuthFuture<'_, coop_cloud::LogoutResponse> {
         Box::pin(async { Ok(coop_cloud::LogoutResponse::default()) })
+    }
+}
+
+struct LogoutSpyApi {
+    login: LoginResponse,
+    revoked: Arc<Mutex<Vec<RefreshToken>>>,
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl LogoutSpyApi {
+    fn new(login: LoginResponse, events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            login,
+            revoked: Arc::new(Mutex::new(Vec::new())),
+            events,
+        }
+    }
+}
+
+impl AuthApi for LogoutSpyApi {
+    fn login(&self, _request: coop_cloud::LoginRequest) -> AuthFuture<'_, LoginResponse> {
+        let response = self.login.clone();
+        Box::pin(async move { Ok(response) })
+    }
+
+    fn refresh(&self, _request: coop_cloud::RefreshRequest) -> AuthFuture<'_, RefreshResponse> {
+        Box::pin(async { Err(AuthError::Transport) })
+    }
+
+    fn logout(
+        &self,
+        request: coop_cloud::LogoutRequest,
+    ) -> AuthFuture<'_, coop_cloud::LogoutResponse> {
+        self.revoked.lock().unwrap().push(request.refresh_token);
+        self.events.lock().unwrap().push("revoke".to_owned());
+        Box::pin(async { Ok(coop_cloud::LogoutResponse::default()) })
+    }
+}
+
+struct LogoutSpyKeychain {
+    token: Mutex<Option<RefreshToken>>,
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl LogoutSpyKeychain {
+    fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            token: Mutex::new(None),
+            events,
+        }
+    }
+}
+
+impl RefreshTokenStore for LogoutSpyKeychain {
+    fn load(&self, _service: &str, _user: &str) -> Result<Option<RefreshToken>, KeychainError> {
+        Ok(self.token.lock().unwrap().clone())
+    }
+
+    fn store(
+        &self,
+        _service: &str,
+        _user: &str,
+        token: &RefreshToken,
+    ) -> Result<(), KeychainError> {
+        *self.token.lock().unwrap() = Some(token.clone());
+        Ok(())
+    }
+
+    fn delete(&self, _service: &str, _user: &str) -> Result<(), KeychainError> {
+        self.events.lock().unwrap().push("delete".to_owned());
+        *self.token.lock().unwrap() = None;
+        Ok(())
     }
 }
 

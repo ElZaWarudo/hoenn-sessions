@@ -15,6 +15,7 @@ use coop_launcher::{
     compat::BuildCompatibility,
     epoch::EpochStore,
     keychain::{OsKeychain, RefreshTokenStore},
+    process::{ProcessError, staged_rom_marker_contents, staged_rom_marker_path},
     session::{SessionConfig, SessionLifecycle},
 };
 use thiserror::Error;
@@ -271,7 +272,7 @@ fn open_read_nofollow(path: &Path) -> io::Result<fs::File> {
     options.open(path)
 }
 
-fn stage_verified_rom(source: &Path, private_root: &Path) -> Result<PathBuf, CliError> {
+fn stage_verified_rom(source: &Path, private_root: &Path) -> Result<(PathBuf, PathBuf), CliError> {
     reject_symlink_components(source)?;
     let metadata = fs::symlink_metadata(source).map_err(|_| CliError::Value)?;
     if !metadata.is_file() || metadata.len() > MAX_ROM_BYTES {
@@ -279,6 +280,9 @@ fn stage_verified_rom(source: &Path, private_root: &Path) -> Result<PathBuf, Cli
     }
     fs::create_dir_all(private_root).map_err(|_| CliError::Value)?;
     let staged = private_root.join(format!("rom-{}.gba", uuid::Uuid::new_v4().simple()));
+    let marker = staged_rom_marker_path(&staged);
+    let marker_temporary =
+        private_root.join(format!(".rom-owner-{}.tmp", uuid::Uuid::new_v4().simple()));
     let result = (|| {
         let mut input = open_read_nofollow(source).map_err(|_| CliError::Value)?;
         let mut output = fs::OpenOptions::new()
@@ -302,9 +306,23 @@ fn stage_verified_rom(source: &Path, private_root: &Path) -> Result<PathBuf, Cli
                 .map_err(|_| CliError::Value)?;
         }
         output.sync_all().map_err(|_| CliError::Value)?;
-        Ok(staged.clone())
+        let marker_contents = staged_rom_marker_contents(&staged).map_err(|_| CliError::Value)?;
+        let mut marker_output = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&marker_temporary)
+            .map_err(|_| CliError::Value)?;
+        marker_output
+            .write_all(&marker_contents)
+            .map_err(|_| CliError::Value)?;
+        marker_output.sync_all().map_err(|_| CliError::Value)?;
+        drop(marker_output);
+        fs::rename(&marker_temporary, &marker).map_err(|_| CliError::Value)?;
+        Ok((staged.clone(), marker.clone()))
     })();
     if result.is_err() {
+        let _ = fs::remove_file(&marker_temporary);
+        let _ = fs::remove_file(&marker);
         let _ = fs::remove_file(&staged);
     }
     result
@@ -342,11 +360,16 @@ async fn run() -> Result<(), CliError> {
     let mgba = canonicalize_executable(&options.mgba)?;
     let sidecar = canonicalize_executable(&options.sidecar)?;
     let private_root = private_temp_root()?;
-    let verified_rom = stage_verified_rom(&options.rom, &private_root)?;
+    let (verified_rom, verified_rom_marker) = stage_verified_rom(&options.rom, &private_root)?;
     // Capture executable identities before any asynchronous authentication or
     // lease work.  The process supervisor revalidates these bindings at the
     // exact spawn boundary, denying replacement of a trusted file or ancestor.
-    let mgba_spec = CommandSpec::mgba(&mgba, &verified_rom).map_err(|_| CliError::Runtime)?;
+    let Ok(mgba_spec) = CommandSpec::mgba_owned_staged(&mgba, &verified_rom, &verified_rom_marker)
+    else {
+        let _ = fs::remove_file(&verified_rom_marker);
+        let _ = fs::remove_file(&verified_rom);
+        return Err(CliError::Runtime);
+    };
     let sidecar_template =
         CommandSpec::sidecar_template(&sidecar).map_err(|_| CliError::Runtime)?;
     let compatibility = BuildCompatibility::validate(&options.manifest, &verified_rom, &mgba)
@@ -382,7 +405,7 @@ async fn run() -> Result<(), CliError> {
         session.workspace.path().join("resume.ss1").display()
     );
     let expected_epoch = session.lease.session_epoch.value();
-    let Ok(mut children) = SupervisedChildren::start_with_bridge(
+    let children = SupervisedChildren::start_with_bridge(
         sidecar_template
             .with_session_epoch(expected_epoch)
             .map_err(|_| CliError::Runtime)?,
@@ -391,10 +414,15 @@ async fn run() -> Result<(), CliError> {
         &session.workspace,
         &bridge,
     )
-    .await
-    else {
-        let _ = session.release(&api).await;
-        return Err(CliError::Runtime);
+    .await;
+    let mut children = match children {
+        Ok(children) => children,
+        Err(error) => {
+            if should_release_after_start_failure(&error) {
+                let _ = session.release(&api).await;
+            }
+            return Err(CliError::Runtime);
+        }
     };
     let shutdown = async {
         // Ctrl-C only requests a safe drain.  The lifecycle decides whether a
@@ -420,10 +448,12 @@ async fn run() -> Result<(), CliError> {
     }
 }
 
-fn should_release_after_children_stop(
-    result: &Result<(), coop_launcher::process::ProcessError>,
-) -> bool {
+fn should_release_after_children_stop(result: &Result<(), ProcessError>) -> bool {
     result.is_ok()
+}
+
+fn should_release_after_start_failure(error: &ProcessError) -> bool {
+    error.cleanup_confirmed()
 }
 
 // The non-Windows implementation returns the typed boundary error before any
@@ -466,9 +496,13 @@ mod tests {
         let source = directory.path().join("source.gba");
         let private = directory.path().join("private");
         std::fs::write(&source, b"verified-rom").unwrap();
-        let staged = stage_verified_rom(&source, &private).unwrap();
+        let (staged, marker) = stage_verified_rom(&source, &private).unwrap();
         std::fs::write(&source, b"replacement-rom").unwrap();
-        assert_eq!(std::fs::read(staged).unwrap(), b"verified-rom");
+        assert_eq!(std::fs::read(&staged).unwrap(), b"verified-rom");
+        assert_eq!(
+            std::fs::read(marker).unwrap(),
+            staged_rom_marker_contents(staged).unwrap()
+        );
     }
 
     #[test]
@@ -477,6 +511,20 @@ mod tests {
             coop_launcher::process::ProcessError::ChildExited,
         )));
         assert!(should_release_after_children_stop(&Ok(())));
+    }
+
+    #[test]
+    fn startup_cleanup_uncertainty_blocks_lease_release() {
+        let uncertain = ProcessError::StartupCleanup {
+            startup: Box::new(ProcessError::Descriptor),
+            cleanup: Box::new(ProcessError::Termination(std::io::Error::other(
+                "test cleanup failure",
+            ))),
+        };
+        assert!(!should_release_after_start_failure(&uncertain));
+        assert!(should_release_after_start_failure(
+            &ProcessError::Descriptor
+        ));
     }
 
     #[cfg(not(windows))]
