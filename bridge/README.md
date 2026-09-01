@@ -6,6 +6,31 @@ with a launcher-generated 32-hex-character ephemeral secret, then forwards
 fixed 144-byte bridge frames. Lua runs while the emulated CPU is paused; queue
 entries are copied before the producer publishes its `u16` write counter.
 
+## Local Phase 2 checkpoint smoke
+
+From the repository root, run the bounded shell-free local proof:
+
+```text
+python tools/smoke_phase2.py --local
+```
+
+It starts no remote service and requires no Docker, Firebase, PostgreSQL, or
+credentials. The real coop-server binary is started by its Rust integration
+target on a literal `127.0.0.1` ephemeral port with explicit `phase2-local`
+configuration. The launcher target uses the real `LocalSidecar`, real
+bridge/control codecs, a deterministic fake cloud, and a temporary private
+workspace while directly driving the launcher lifecycle. It does not start
+mGBA or claim to exercise real-ROM timing.
+
+The bridge and control listeners use distinct per-process ephemeral secrets.
+The launcher authenticates control first, then writes only the bridge address
+and bridge secret to its private generated `session.lua`; never copy the
+control secret into Lua or an environment variable. Do not print any secret or
+token. If the local process is interrupted, stop its children and remove only
+the private temporary session directory before retrying. Reconnect must use the
+server-issued epoch and the persisted monotonic epoch record; never hand-edit
+or wrap it.
+
 After linking a legal local ROM build, generate the address module and manifest:
 
 ```text
@@ -40,5 +65,15 @@ The sidecar refuses to start without this value and does not invent monotonic
 state on the launcher's behalf.
 
 The launcher must create ignored `bridge/session.lua` from the example, start
-the sidecar, and then load `bridge/main.lua` in the matching mGBA build. Never
-commit the generated session file, ROM, save, savestate, or BIOS.
+the sidecar, and then manually choose **Tools → Scripting → Load Script** in
+stock mGBA 0.10.5 to load `bridge/main.lua` in the matching build. Do not rely
+on an unsupported script-autoload flag. Never commit the generated session
+file, ROM, save, savestate, or BIOS.
+
+The synthetic SAV used by the local smoke is an opaque serialized
+`CharacterCloudState` fixture containing region-qualified Hoenn, Kanto, Johto,
+and Sevii progress. It proves serialization, regional tier selection, and
+snapshot CAS plumbing only; it is not a real PokéCrossroads save-block and
+does not claim real-ROM `.sav` compatibility. The local in-memory adapter also
+does not claim Firebase/PostgreSQL persistence or production deployment
+readiness.
