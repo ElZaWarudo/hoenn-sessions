@@ -109,13 +109,9 @@ class _ProcessContainment:
         self._kernel32 = kernel32
         self._job_handle = handle
 
-    def terminate(self, process: subprocess.Popen[bytes]) -> None:
+    def terminate(self, process: subprocess.Popen[bytes]) -> bool:
         if self._job_handle is not None and self._kernel32 is not None:
-            if self._kernel32.TerminateJobObject(self._job_handle, 1):
-                return
-            if os.name == "nt":
-                _terminate_windows_tree(process)
-            return
+            return bool(self._kernel32.TerminateJobObject(self._job_handle, 1))
         if os.name != "nt":
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -123,6 +119,7 @@ class _ProcessContainment:
                 pass
         else:
             process.kill()
+        return True
 
     def close(self) -> None:
         if self._job_handle is not None and self._kernel32 is not None:
@@ -130,69 +127,67 @@ class _ProcessContainment:
             self._job_handle = None
 
 
-def _trusted_taskkill() -> Path | None:
-    """Return only the pinned Windows tree-kill binary."""
+def _run_worker_target(index: int) -> int:
+    """Release a job-contained target only after the parent attaches the job."""
 
-    if os.name != "nt":
-        return None
-    path = Path(r"C:\Windows\System32\taskkill.exe")
+    if index < 0 or index >= len(TARGETS):
+        return 2
     try:
-        canonical = path.resolve(strict=True)
+        release = sys.stdin.buffer.read(1)
     except OSError:
-        return None
-    if not path.is_file() or not canonical.is_file():
-        return None
-    canonical_text = os.path.normcase(os.path.normpath(str(canonical))).removeprefix(
-        os.path.normcase("\\\\?\\")
-    )
-    if canonical_text != os.path.normcase(os.path.normpath(str(path))):
-        return None
-    return path
-
-
-def _terminate_windows_tree(process: subprocess.Popen[bytes]) -> bool:
-    """Terminate and reap a process tree with the trusted system utility."""
-
-    taskkill = _trusted_taskkill()
-    if taskkill is None:
-        return False
+        return 2
+    if release != b"\x01":
+        return 2
     try:
-        killer = subprocess.Popen(
-            (str(taskkill), "/PID", str(process.pid), "/T", "/F"),
+        target = subprocess.Popen(
+            TARGETS[index][1],
+            cwd=ROOT,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             shell=False,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
     except OSError:
-        return False
+        return 127
     try:
-        killer.wait(timeout=REAP_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        killer.kill()
+        return target.wait()
+    except BaseException:
         try:
-            killer.wait(timeout=REAP_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            return False
-    return killer.returncode == 0
+            target.kill()
+        except OSError:
+            pass
+        try:
+            target.wait(timeout=REAP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        return 2
 
 
-def run_target(name: str, command: tuple[str, ...]) -> dict[str, object]:
+def run_target(name: str, command: tuple[str, ...], index: int) -> dict[str, object]:
     """Execute one fixed target with a finite wall-clock budget."""
 
     process_options: dict[str, object]
     if os.name == "nt":
+        # The helper blocks before creating Cargo.  This lets the parent attach
+        # the helper to a kill-on-close Job Object before any descendant exists.
+        launch_command = (
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--worker-target",
+            str(index),
+        )
         process_options = {
             "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
+            "stdin": subprocess.PIPE,
         }
     else:
+        launch_command = command
         process_options = {"start_new_session": True}
     try:
         process = subprocess.Popen(
-            command,
+            launch_command,
             cwd=ROOT,
-            stdin=subprocess.DEVNULL,
+            stdin=process_options.pop("stdin", subprocess.DEVNULL),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             shell=False,
@@ -204,25 +199,52 @@ def run_target(name: str, command: tuple[str, ...]) -> dict[str, object]:
     try:
         containment = _ProcessContainment(process)
     except OSError:
-        if not _terminate_windows_tree(process):
+        # The Windows helper is still blocked on its private pipe, so it has
+        # no descendants; direct kill is safe only on this assignment-failure
+        # path.
+        try:
+            process.kill()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=REAP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
             try:
                 process.kill()
             except OSError:
                 pass
-        try:
-            process.wait(timeout=REAP_TIMEOUT_SECONDS)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+            try:
+                process.wait(timeout=REAP_TIMEOUT_SECONDS)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         return {"name": name, "status": "unavailable"}
+
+    if os.name == "nt":
+        try:
+            if process.stdin is None:
+                raise OSError("worker release pipe unavailable")
+            process.stdin.write(b"\x01")
+            process.stdin.close()
+        except OSError:
+            containment.terminate(process)
+            containment.close()
+            try:
+                process.wait(timeout=REAP_TIMEOUT_SECONDS)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            return {"name": name, "status": "failed", "returncode": 2}
 
     try:
         returncode = process.wait(timeout=TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        containment.terminate(process)
+        if not containment.terminate(process):
+            containment.close()
         try:
             process.wait(timeout=REAP_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            process.kill()
+            # Closing a successful Job Object is the final tree-kill fallback;
+            # never reduce this to a direct child kill after descendants exist.
+            containment.close()
             try:
                 process.wait(timeout=REAP_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
@@ -239,6 +261,11 @@ def run_target(name: str, command: tuple[str, ...]) -> dict[str, object]:
 
 
 def main() -> int:
+    if len(sys.argv) == 3 and sys.argv[1] == "--worker-target":
+        try:
+            return _run_worker_target(int(sys.argv[2]))
+        except ValueError:
+            return 2
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--local",
@@ -246,7 +273,18 @@ def main() -> int:
         help="document that both targets use only local deterministic adapters",
     )
     parser.parse_args()
-    results = [run_target(name, command) for name, command in TARGETS]
+    if os.name != "nt" and not sys.platform.startswith("linux"):
+        output = {
+            "ok": False,
+            "runner": "smoke_phase2",
+            "status": "unsupported",
+            "targets": [],
+            "version": 1,
+        }
+        json.dump(output, sys.stdout, sort_keys=True, separators=(",", ":"))
+        sys.stdout.write("\n")
+        return 1
+    results = [run_target(name, command, index) for index, (name, command) in enumerate(TARGETS)]
     ok = all(result["status"] == "passed" for result in results)
     output = {"runner": "smoke_phase2", "version": 1, "ok": ok, "targets": results}
     json.dump(output, sys.stdout, sort_keys=True, separators=(",", ":"))

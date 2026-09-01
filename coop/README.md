@@ -80,8 +80,10 @@ or deployment readiness.
 
 This hardened Phase 2 launcher process-supervision slice is supported on
 Windows; it fails closed before probing or spawning child processes on other
-operating systems. Cross-platform secure process binding is a later milestone;
-the server and integration tests remain cross-platform.
+operating systems. The local integration runner supports Windows and Linux
+listener ownership checks and likewise fails before launching any target on
+other operating systems. Cross-platform secure process binding is a later
+milestone; the server and integration test code remains portable to compile.
 
 ## Run the sidecar and mGBA bridge
 

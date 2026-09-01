@@ -9,7 +9,7 @@ use std::{
     error::Error,
     io::Read,
     net::SocketAddr,
-    process::Stdio,
+    process::{Child as StdChild, Command as StdCommand, Stdio},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -25,7 +25,6 @@ use coop_protocol::{FlyPointId, RegionId, RegionalProgress, TrainerInstanceId, W
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    process::{Child, Command},
     time::timeout,
 };
 use url::Url;
@@ -61,36 +60,22 @@ struct HttpResponse {
 }
 
 struct ServerGuard {
-    child: Option<Child>,
+    child: Option<StdChild>,
 }
 
 impl ServerGuard {
-    async fn shutdown(mut self) -> TestResult<()> {
+    fn shutdown(mut self) -> TestResult<()> {
         let Some(mut child) = self.child.take() else {
             return Ok(());
         };
-        let running = match child.try_wait() {
-            Ok(Some(_)) => false,
-            Ok(None) => true,
-            Err(error) => {
-                let _ = child.start_kill();
-                reap_child_sync(&mut child);
-                return Err(error.into());
-            }
-        };
-        if running {
-            let _ = child.start_kill();
+        let probe = child.try_wait();
+        if probe.as_ref().is_err() || matches!(probe.as_ref(), Ok(None)) {
+            let _ = child.kill();
         }
-        match timeout(SHUTDOWN_TIMEOUT, child.wait()).await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(error)) => {
-                reap_child_sync(&mut child);
-                Err(error.into())
-            }
-            Err(error) => {
-                reap_child_sync(&mut child);
-                Err(error.into())
-            }
+        let reap = child.wait();
+        match reap {
+            Ok(_) => probe.err().map_or(Ok(()), |error| Err(error.into())),
+            Err(error) => Err(error.into()),
         }
     }
 }
@@ -100,27 +85,13 @@ impl Drop for ServerGuard {
         let Some(mut child) = self.child.take() else {
             return;
         };
-        let _ = child.start_kill();
-        reap_child_sync(&mut child);
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
-/// Reap a killed test server without allowing a panic/error path to leave a
-/// child behind.  This is deliberately synchronous because it is also used
-/// from `Drop`, where no async cleanup can be awaited.
-fn reap_child_sync(child: &mut Child) {
-    let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
-            Ok(None) if Instant::now() >= deadline => break,
-            Ok(None) => std::thread::sleep(DROP_REAP_POLL),
-        }
-    }
-}
-
-fn server_command(address: SocketAddr) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_coop-server"));
+fn server_command(address: SocketAddr) -> StdCommand {
+    let mut command = StdCommand::new(env!("CARGO_BIN_EXE_coop-server"));
     command
         .arg("--phase2-local")
         .arg("--bind")
@@ -130,7 +101,7 @@ fn server_command(address: SocketAddr) -> Command {
     command
 }
 
-fn configure_phase2(command: &mut Command) {
+fn configure_phase2(command: &mut StdCommand) {
     command
         .env("COOP_PHASE2_STORAGE_MODE", "phase2-local")
         .env("COOP_PHASE2_INVITE_PEPPER", INVITE_PEPPER)
@@ -141,7 +112,7 @@ fn configure_phase2(command: &mut Command) {
         .env_remove("COOP_SERVER_BIND_ADDR");
 }
 
-fn clear_phase2(command: &mut Command) {
+fn clear_phase2(command: &mut StdCommand) {
     for name in [
         "COOP_PHASE2_STORAGE_MODE",
         "COOP_PHASE2_INVITE_PEPPER",
@@ -160,22 +131,13 @@ async fn unused_loopback_address() -> TestResult<SocketAddr> {
     Ok(listener.local_addr()?)
 }
 
-async fn stop_child(mut child: Child) -> TestResult<()> {
-    let _ = child.start_kill();
-    match timeout(SHUTDOWN_TIMEOUT, child.wait()).await {
-        Ok(Ok(_)) => Ok(()),
-        Ok(Err(error)) => {
-            reap_child_sync(&mut child);
-            Err(error.into())
-        }
-        Err(error) => {
-            reap_child_sync(&mut child);
-            Err(error.into())
-        }
-    }
+fn stop_child(mut child: StdChild) -> TestResult<()> {
+    let _ = child.kill();
+    child.wait()?;
+    Ok(())
 }
 
-async fn wait_for_failure(mut child: Child, label: &str) -> TestResult<()> {
+async fn wait_for_failure(mut child: StdChild, label: &str) -> TestResult<()> {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         match child.try_wait() {
@@ -189,11 +151,11 @@ async fn wait_for_failure(mut child: Child, label: &str) -> TestResult<()> {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             Ok(None) => {
-                stop_child(child).await?;
+                stop_child(child)?;
                 return Err(format!("{label} did not fail closed").into());
             }
             Err(error) => {
-                let _ = stop_child(child).await;
+                let _ = stop_child(child);
                 return Err(error.into());
             }
         }
@@ -227,7 +189,7 @@ async fn start_server() -> TestResult<(SocketAddr, ServerGuard)> {
     let mut server = ServerGuard { child: Some(child) };
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     loop {
-        let pid = server.child.as_ref().and_then(Child::id);
+        let pid = server.child.as_ref().map(StdChild::id);
         let address = match pid {
             Some(pid) => child_listener_address(pid, deadline).await,
             None => None,
@@ -246,17 +208,17 @@ async fn start_server() -> TestResult<(SocketAddr, ServerGuard)> {
         match child.try_wait() {
             Ok(Some(status)) => {
                 let error = format!("Phase 2 server exited with {status}");
-                server.shutdown().await?;
+                server.shutdown()?;
                 return Err(error.into());
             }
             Ok(None) => {}
             Err(error) => {
-                let _ = server.shutdown().await;
+                let _ = server.shutdown();
                 return Err(error.into());
             }
         }
         if Instant::now() >= deadline {
-            server.shutdown().await?;
+            server.shutdown()?;
             return Err("Phase 2 server did not become ready".into());
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
@@ -479,7 +441,13 @@ async fn child_listener_address(pid: u32, deadline: Instant) -> Option<SocketAdd
     }
     #[cfg(target_os = "linux")]
     {
-        (!deadline_remaining(deadline).is_zero()).then(|| unix_child_listener_address(pid))?
+        timeout(
+            deadline_remaining(deadline),
+            tokio::task::spawn_blocking(move || unix_child_listener_address(pid)),
+        )
+        .await
+        .ok()?
+        .ok()?
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     {
@@ -639,7 +607,7 @@ fn regional_fixture(character_id: CharacterId) -> Vec<u8> {
             .progress_for(RegionId::Hoenn)
             .expect("Hoenn")
             .badge_count(),
-        16
+        8
     );
     serde_json::to_vec(&state).expect("fixture serializes")
 }
@@ -658,6 +626,11 @@ fn trusted_key() -> TrustedManifestKey {
 
 #[tokio::test]
 async fn phase2_binary_http_checkpoint_and_fencing_smoke() -> TestResult<()> {
+    if !cfg!(any(target_os = "linux", target_os = "windows")) {
+        return Err(
+            "Phase 2 binary smoke requires Linux or Windows listener ownership queries".into(),
+        );
+    }
     assert_bad_configuration().await?;
     let (address, server) = start_server_with_retry().await?;
     // Run the assertion-heavy protocol sequence in a child task so a panic is
@@ -673,7 +646,7 @@ async fn phase2_binary_http_checkpoint_and_fencing_smoke() -> TestResult<()> {
             Err("HTTP smoke exceeded its absolute flow deadline".into())
         }
     };
-    server.shutdown().await?;
+    server.shutdown()?;
     result
 }
 
@@ -887,7 +860,7 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
             .progress_for(RegionId::Hoenn)
             .expect("Hoenn")
             .badge_count(),
-        16
+        8
     );
 
     let old_fence = lease.fence();

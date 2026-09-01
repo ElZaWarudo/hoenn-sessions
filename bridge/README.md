@@ -14,8 +14,10 @@ From the repository root, run the bounded shell-free local proof:
 python tools/smoke_phase2.py --local
 ```
 
-It starts no remote service and requires no Docker, Firebase, PostgreSQL, or
-credentials. The real coop-server binary is started by its Rust integration
+The runner supports Windows and Linux for this child-boundary smoke and fails
+before launching a target on other operating systems. It starts no remote
+service and requires no Docker, Firebase, PostgreSQL, or credentials. The real
+coop-server binary is started by its Rust integration
 target on a literal `127.0.0.1` ephemeral port with explicit `phase2-local`
 configuration. The launcher target uses the real `LocalSidecar`, real
 bridge/control codecs, a deterministic fake cloud, and a temporary private
