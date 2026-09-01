@@ -66,7 +66,7 @@ mod tests {
         let kanto = RegionalProgress::new(RegionId::Kanto, 0xffff, 9, vec![], vec![]).unwrap();
         CharacterCloudState::new(
             id(CharacterId::new),
-            WorldZone::new(RegionId::Hoenn, "ROUTE_101", 1).unwrap(),
+            WorldZone::new(RegionId::Hoenn, "ROUTE101", 1).unwrap(),
             vec![kanto, hoenn],
         )
         .unwrap()
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(decoded.active_region_badge_tier().unwrap(), 2);
         assert!(
             serde_json::from_str::<CharacterCloudState>(
-                &json.replace("ROUTE_101", "ROUTE_101\",\"extra\":true")
+                &json.replace("ROUTE101", "ROUTE101\",\"extra\":true")
             )
             .is_err()
         );
@@ -414,7 +414,7 @@ mod tests {
         assert!(
             CharacterCloudState::new(
                 character_id,
-                WorldZone::new(RegionId::Hoenn, "ROUTE_101", 1).unwrap(),
+                WorldZone::new(RegionId::Hoenn, "ROUTE101", 1).unwrap(),
                 progress,
             )
             .is_err()
