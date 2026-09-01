@@ -342,7 +342,10 @@ impl WorldLocation {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::UnspecifiedRegion`] when no region is given.
+    /// Returns [`ProtocolError::UnspecifiedRegion`] when no region is given,
+    /// [`ProtocolError::MapCoordinateRegionMismatch`] when the numeric pair
+    /// belongs to another region, or [`ProtocolError::UnknownMapCoordinates`]
+    /// when the pair is absent from the authoritative catalog.
     pub fn new(
         region: RegionId,
         map_group: u16,
@@ -351,6 +354,11 @@ impl WorldLocation {
         y: i16,
     ) -> Result<Self, ProtocolError> {
         let region = region.ensure_concrete()?;
+        // Numeric map coordinates are an identity, not merely opaque engine
+        // metadata. Resolve the complete triple before constructing the
+        // value so callers cannot manufacture a cross-region or unknown
+        // location and defer validation indefinitely.
+        catalog::resolve_map_coordinates(region, map_group, map_number)?;
         Ok(Self {
             region,
             map_group,
@@ -363,9 +371,12 @@ impl WorldLocation {
     ///
     /// # Errors
     ///
-    /// Returns [`ProtocolError::UnspecifiedRegion`] for the reserved region.
+    /// Returns [`ProtocolError::UnspecifiedRegion`] for the reserved region,
+    /// or a typed catalog error when the numeric pair is not valid for the
+    /// location's region.
     pub fn validate(&self) -> Result<(), ProtocolError> {
-        self.region.ensure_concrete().map(|_| ())
+        let region = self.region.ensure_concrete()?;
+        catalog::resolve_map_coordinates(region, self.map_group, self.map_number).map(|_| ())
     }
 
     /// Resolves this location's exact map in the generated catalog.
@@ -1064,6 +1075,18 @@ pub fn atomic_group_travel(
                 character_id: participant.character_id,
             });
         }
+
+        // A route's thresholds describe the departure-region requirements,
+        // while the destination record is the explicit region-unlocked bit.
+        // Require it here, in the shared atomic primitive, so direct callers
+        // cannot bypass the same cross-region access rule enforced by the
+        // server facade.
+        participant
+            .progress_for(route.to)
+            .ok_or(ProtocolError::MissingRegionalProgress {
+                character_id: participant.character_id,
+                region: route.to,
+            })?;
     }
 
     *current_zone = destination;
@@ -1402,10 +1425,53 @@ mod tests {
 
     #[test]
     fn world_contracts_are_fixed_width_and_deterministic() {
-        let location = WorldLocation::new(RegionId::Kanto, 2, 7, -4, 9).unwrap();
+        let location = WorldLocation::new(RegionId::Kanto, 37, 0, -4, 9).unwrap();
         assert_eq!(
             serde_json::to_string(&location).unwrap(),
-            r#"{"region":"KANTO","map_group":2,"map_number":7,"x":-4,"y":9}"#
+            r#"{"region":"KANTO","map_group":37,"map_number":0,"x":-4,"y":9}"#
+        );
+        assert!(matches!(
+            WorldLocation::new(RegionId::Hoenn, 37, 0, 0, 0),
+            Err(ProtocolError::MapCoordinateRegionMismatch {
+                expected: RegionId::Hoenn,
+                actual: RegionId::Kanto,
+                ..
+            })
+        ));
+        assert!(matches!(
+            WorldLocation::new(RegionId::Kanto, 2, 7, 0, 0),
+            Err(ProtocolError::UnknownMapCoordinates {
+                region: RegionId::Kanto,
+                map_group: 2,
+                map_number: 7,
+            })
+        ));
+        let contradictory = WorldLocation {
+            region: RegionId::Hoenn,
+            map_group: 37,
+            map_number: 0,
+            x: 0,
+            y: 0,
+        };
+        assert!(matches!(
+            contradictory.validate(),
+            Err(ProtocolError::MapCoordinateRegionMismatch {
+                expected: RegionId::Hoenn,
+                actual: RegionId::Kanto,
+                ..
+            })
+        ));
+        assert!(
+            serde_json::from_str::<WorldLocation>(
+                r#"{"region":"HOENN","map_group":37,"map_number":0,"x":0,"y":0}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<WorldLocation>(
+                r#"{"region":"KANTO","map_group":2,"map_number":7,"x":0,"y":0}"#
+            )
+            .is_err()
         );
         let zone = WorldZone::new(RegionId::Kanto, "PALLET_TOWN", 1).unwrap();
         assert_eq!(
@@ -1557,13 +1623,46 @@ mod tests {
         let mut source = WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).unwrap();
         let destination = WorldZone::new(RegionId::Kanto, "PALLET_TOWN", 1).unwrap();
         let entitled = [
-            participant(10, vec![regional(RegionId::Hoenn, 8)]),
-            participant(11, vec![regional(RegionId::Hoenn, 8)]),
+            participant(
+                10,
+                vec![regional(RegionId::Hoenn, 8), regional(RegionId::Kanto, 0)],
+            ),
+            participant(
+                11,
+                vec![regional(RegionId::Hoenn, 8), regional(RegionId::Kanto, 0)],
+            ),
         ];
         group
             .transfer(&mut source, destination.clone(), &entitled, &route)
             .unwrap();
         assert_eq!(source, destination);
+
+        let mut missing_destination_source =
+            WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).unwrap();
+        let missing_destination = [
+            participant(10, vec![regional(RegionId::Hoenn, 8)]),
+            participant(
+                11,
+                vec![regional(RegionId::Hoenn, 8), regional(RegionId::Kanto, 0)],
+            ),
+        ];
+        assert!(matches!(
+            group.transfer(
+                &mut missing_destination_source,
+                destination.clone(),
+                &missing_destination,
+                &route,
+            ),
+            Err(ProtocolError::MissingRegionalProgress {
+                character_id: 10,
+                region: RegionId::Kanto,
+            })
+        ));
+        assert_eq!(
+            missing_destination_source.region,
+            RegionId::Hoenn,
+            "destination-region access is checked before the atomic mutation"
+        );
 
         let mut denied_source = WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).unwrap();
         let denied_destination = WorldZone::new(RegionId::Kanto, "PALLET_TOWN", 1).unwrap();
