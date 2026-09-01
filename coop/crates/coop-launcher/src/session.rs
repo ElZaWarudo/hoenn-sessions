@@ -13,7 +13,7 @@ use std::{
 use coop_cloud::{
     AcquireLeaseRequest, ArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
     IdempotencyKey, LeaseContract, PrepareSnapshotRequest, ReconnectLeaseRequest,
-    ReleaseLeaseRequest, ResumePackageManifest, ResumeSelection, Revision, Sha256Digest,
+    ReleaseLeaseRequest, ResumePackageManifest, ResumeSelection, Revision, SessionId, Sha256Digest,
     SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
     SnapshotId, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence,
     SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
@@ -155,9 +155,10 @@ impl std::fmt::Debug for SessionConfig {
 
 pub struct SessionWorkspace {
     #[cfg(windows)]
-    parent_guard: Option<File>,
-    #[cfg(windows)]
-    directory_guard: Option<File>,
+    // Keep deny-delete handles for the complete parent and workspace
+    // ancestry.  Holding only the immediate parent permits an ancestor
+    // reparse/rename swap while a fixed file is being materialized.
+    ancestor_guards: Vec<File>,
     temp: Option<TempDir>,
     stable_path: PathBuf,
     recovery_shadow: Option<RecoveryShadow>,
@@ -225,15 +226,15 @@ impl SessionWorkspace {
             .map_err(SessionError::Filesystem)?;
         let stable_path = temp.path().to_path_buf();
         #[cfg(windows)]
-        let parent_guard = open_directory_guard(parent).map_err(SessionError::Filesystem)?;
+        let mut ancestor_guards =
+            open_directory_ancestor_guards(parent).map_err(SessionError::Filesystem)?;
         #[cfg(windows)]
-        let directory_guard =
-            open_directory_guard(&stable_path).map_err(SessionError::Filesystem)?;
+        ancestor_guards.extend(
+            open_directory_ancestor_guards(&stable_path).map_err(SessionError::Filesystem)?,
+        );
         Ok(Self {
             #[cfg(windows)]
-            parent_guard: Some(parent_guard),
-            #[cfg(windows)]
-            directory_guard: Some(directory_guard),
+            ancestor_guards,
             temp: Some(temp),
             stable_path,
             recovery_shadow: None,
@@ -329,10 +330,7 @@ impl SessionWorkspace {
         if let Some(shadow) = self.recovery_shadow.take() {
             shadow.keep();
             #[cfg(windows)]
-            {
-                let _ = self.directory_guard.take();
-                let _ = self.parent_guard.take();
-            }
+            let _ = std::mem::take(&mut self.ancestor_guards);
             let _ = self.temp.take();
             return;
         }
@@ -355,42 +353,64 @@ impl SessionWorkspace {
             }
             quarantined = true;
         }
-        if !quarantined {
+        let scrubbed = if quarantined {
+            false
+        } else {
             // If even the quarantine cannot be created or written, retain the
-            // owner-private original rather than dropping its only SAV. The
-            // only session secret ever written locally is in session.lua;
-            // replace it best-effort with inert Lua before retaining it.
-            self.scrub_session_lua_best_effort();
-        }
+            // original only when absence or an inert, verified session.lua is
+            // proven.  Keeping an unverified workspace would turn recovery
+            // compensation into a credential disclosure.
+            self.scrub_session_lua_verified()
+        };
         #[cfg(windows)]
-        {
-            let _ = self.directory_guard.take();
-            let _ = self.parent_guard.take();
-        }
+        let _ = std::mem::take(&mut self.ancestor_guards);
         if quarantined {
             let _ = self.temp.take();
-        } else if let Some(temp) = self.temp.take() {
-            let kept = temp.keep();
-            debug_assert_eq!(kept, self.stable_path);
+        } else if scrubbed {
+            if let Some(temp) = self.temp.take() {
+                let kept = temp.keep();
+                debug_assert_eq!(kept, self.stable_path);
+            }
+        } else {
+            // Fail closed on confidentiality when the only remaining copy is
+            // not verifiably scrubbed.  A pre-created recovery shadow normally
+            // prevents this durability tradeoff; without one, dropping the
+            // original is safer than retaining a control secret.
+            let _ = self.temp.take();
         }
     }
 
-    fn scrub_session_lua_best_effort(&self) {
+    fn scrub_session_lua_verified(&self) -> bool {
         let Ok(path) = fixed_path(self.path(), "session.lua") else {
-            return;
+            return false;
         };
-        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
-            return;
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+            Err(_) => return false,
         };
         if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return;
+            return false;
         }
-        // A replacement is safe only after confirming the fixed path is a
-        // regular file. On Windows remove-before-create is the fail-closed
-        // fallback because rename cannot atomically replace an existing file.
+        // Windows cannot atomically replace an existing fixed file with the
+        // portable rename API. Remove it first; absence after a failed create
+        // is still secret-free, while any remaining file must be verified.
         #[cfg(windows)]
-        let _ = std::fs::remove_file(&path);
-        let _ = self.write_atomic("session.lua", b"return {}\n");
+        if std::fs::remove_file(&path).is_err()
+            && !matches!(
+                std::fs::symlink_metadata(&path),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound
+            )
+        {
+            return false;
+        }
+        if self.write_atomic("session.lua", b"return {}\n").is_ok() {
+            return std::fs::read(&path).is_ok_and(|bytes| bytes == b"return {}\n");
+        }
+        matches!(
+            std::fs::symlink_metadata(&path),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound
+        )
     }
 
     /// Atomically writes one fixed session filename.
@@ -482,7 +502,8 @@ impl SessionWorkspace {
     pub fn copy_bridge_inputs(&self, source: &Path) -> Result<(), SessionError> {
         reject_symlink_ancestors(source).map_err(SessionError::Filesystem)?;
         #[cfg(windows)]
-        let _bridge_guard = open_directory_guard(source).map_err(SessionError::Filesystem)?;
+        let _bridge_guards =
+            open_directory_ancestor_guards(source).map_err(SessionError::Filesystem)?;
         if !is_canonical_path(source).map_err(SessionError::Filesystem)? {
             return Err(SessionError::Package);
         }
@@ -547,6 +568,23 @@ fn open_directory_guard(path: &Path) -> io::Result<File> {
         .share_mode(0x0000_0003)
         .custom_flags(0x0220_0000);
     options.open(path)
+}
+
+#[cfg(windows)]
+fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<File>> {
+    let mut guards = Vec::new();
+    let mut current = path;
+    loop {
+        guards.push(open_directory_guard(current)?);
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        if parent == current {
+            break;
+        }
+        current = parent;
+    }
+    Ok(guards)
 }
 
 fn fixed_path(root: &Path, name: &str) -> Result<PathBuf, SessionError> {
@@ -1051,23 +1089,14 @@ impl SessionLifecycle {
             result => result?,
         };
         response.validate().map_err(|_| SessionError::History)?;
-        if response.snapshots.len() > 20 {
-            return Err(SessionError::History);
-        }
-        let mut last = self.revision.value().saturating_add(1);
+        validate_history_records(
+            &response.snapshots,
+            self.revision,
+            self.lease.character_id,
+            self.lease.session_id,
+        )?;
         for record in response.snapshots {
-            if record.validate().is_err()
-                || record.character_id != self.lease.character_id
-                || record.session_id != self.lease.session_id
-                || record.session_epoch.value() == 0
-            {
-                return Err(SessionError::History);
-            }
             let revision = record.revision;
-            if revision.value() >= last || revision.value() == 0 {
-                return Err(SessionError::History);
-            }
-            last = revision.value();
             let character = self.lease.character_id;
             if let Some(envelope) = self.resume_package_retry(api, character, revision).await?
                 && let Ok(package) = self.fetch_verified_at(api, envelope, revision).await
@@ -1569,6 +1598,28 @@ impl SessionLifecycle {
             .map_err(SessionError::Auth)
     }
 
+    /// Preserves an authorized checkpoint when child supervision cannot prove
+    /// that both processes were reaped.  The caller must not release the
+    /// remote lease in that case: a still-live child could emit fenced
+    /// traffic.  Recovery scrubbing remains fail-closed and never detaches a
+    /// workspace containing an unverified loopback secret.
+    ///
+    /// # Errors
+    ///
+    /// Returns the scrub error when recovery preservation is incomplete.
+    pub fn preserve_recovery_after_child_failure(&mut self) -> Result<(), SessionError> {
+        if !self.checkpoint_authorized {
+            return Ok(());
+        }
+        match self.workspace.preserve_recovery() {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                self.workspace.retain_private_on_scrub_failure();
+                Err(error)
+            }
+        }
+    }
+
     /// Releases the exact active lease fence and revokes the rotating auth
     /// family.  Recovery is scrubbed before either remote mutation, and the
     /// keychain logout is attempted even when lease release fails.
@@ -1586,10 +1637,7 @@ impl SessionLifecycle {
             if let Some(shadow) = self.workspace.recovery_shadow.take() {
                 shadow.keep();
                 #[cfg(windows)]
-                {
-                    let _ = self.workspace.directory_guard.take();
-                    let _ = self.workspace.parent_guard.take();
-                }
+                let _ = std::mem::take(&mut self.workspace.ancestor_guards);
                 let _ = self.workspace.temp.take();
                 let _ = self.logout_credentials(api).await;
                 return Err(error);
@@ -1621,6 +1669,31 @@ impl SessionLifecycle {
             Ok(()) => logout_result,
         }
     }
+}
+
+fn validate_history_records(
+    records: &[SnapshotRecord],
+    current_revision: Revision,
+    character_id: CharacterId,
+    session_id: SessionId,
+) -> Result<(), SessionError> {
+    if records.len() > 20 {
+        return Err(SessionError::History);
+    }
+    let mut last = current_revision.value().saturating_add(1);
+    for record in records {
+        if record.validate().is_err()
+            || record.character_id != character_id
+            || record.session_id != session_id
+            || record.session_epoch.value() == 0
+            || record.revision.value() == 0
+            || record.revision.value() >= last
+        {
+            return Err(SessionError::History);
+        }
+        last = record.revision.value();
+    }
+    Ok(())
 }
 
 fn has_expected_lineage(manifest: &ResumePackageManifest, revision: Revision) -> bool {
@@ -1708,13 +1781,13 @@ mod lifecycle_tests {
     use std::sync::{Arc, Mutex};
 
     use coop_cloud::{
-        AccessToken, ApiVersion, BridgeAbiVersion, CharacterId, ClientInstanceId,
+        AccessToken, ApiVersion, ArtifactIdentity, BridgeAbiVersion, CharacterId, ClientInstanceId,
         CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest, LeaseContract, LeaseFence,
         LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, MgbaVersion, Password,
         PrepareSnapshotRequest, ProtocolVersion, RefreshFamilyId, RefreshRequest, RefreshResponse,
         RefreshToken, ResumePackageManifest, Revision, SessionEpoch, SessionId, Sha256Digest,
         SnapshotFence, SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
-        SnapshotPrepareResponse, SnapshotRestoreRequest, SnapshotRestoreResponse,
+        SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
         TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
     };
     use serde_json::json;
@@ -1728,10 +1801,12 @@ mod lifecycle_tests {
     use uuid::Uuid;
 
     use super::CloudFuture;
+    #[cfg(windows)]
+    use crate::SessionWorkspace;
     use crate::{
         AuthApi, AuthError, AuthSession, BuildCompatibility, CloudApi, ControlChannel, EpochStore,
         KeychainError, RefreshTokenStore, SessionConfig, SessionError, SessionLifecycle,
-        SessionWorkspace, SupervisedChildren, auth::AuthFuture,
+        SupervisedChildren, auth::AuthFuture,
     };
     use coop_sidecar::control::{CommandStatus, ControlEvent};
 
@@ -2399,6 +2474,53 @@ mod lifecycle_tests {
         assert!(super::has_expected_lineage(&contiguous, Revision::new(3)));
     }
 
+    fn historical_record(revision: u32) -> SnapshotRecord {
+        let (character, session, _, _, _) = ids();
+        let files = vec![
+            coop_cloud::SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"save").unwrap(),
+            coop_cloud::SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"[]").unwrap(),
+        ];
+        SnapshotRecord::new(
+            coop_cloud::SnapshotId::new(Uuid::new_v4()).unwrap(),
+            SnapshotFence::new(session, character, SessionEpoch::new(1).unwrap()),
+            Revision::new((revision - 1).into()),
+            Revision::new(revision.into()),
+            files,
+            Sha256Digest::of_bytes(b"[]"),
+            None,
+            UnixTimestampMillis::new(4_000_000_000_000),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn historical_validation_rejects_malformed_or_repeated_tail_before_selection() {
+        let (character, session, _, _, _) = ids();
+        let first = historical_record(2);
+        let mut malformed_tail = historical_record(1);
+        malformed_tail.revision = Revision::new(0);
+        assert!(matches!(
+            super::validate_history_records(
+                &[first.clone(), malformed_tail],
+                Revision::new(3),
+                character,
+                session,
+            ),
+            Err(SessionError::History)
+        ));
+
+        let repeated_tail = historical_record(2);
+        assert!(matches!(
+            super::validate_history_records(
+                &[first, repeated_tail],
+                Revision::new(3),
+                character,
+                session,
+            ),
+            Err(SessionError::History)
+        ));
+    }
+
     #[cfg(windows)]
     #[test]
     fn workspace_directory_guard_denies_root_replacement() {
@@ -2406,6 +2528,8 @@ mod lifecycle_tests {
         let workspace = SessionWorkspace::create(root.path()).unwrap();
         let replacement = root.path().join("replacement");
         assert!(std::fs::rename(workspace.path(), replacement).is_err());
+        let moved_root = root.path().with_extension("moved");
+        assert!(std::fs::rename(root.path(), moved_root).is_err());
     }
 
     #[tokio::test]
@@ -2449,6 +2573,34 @@ mod lifecycle_tests {
         assert!(!recovery_path.join("session.lua").exists());
         let entries = std::fs::read_dir(&recovery_path).unwrap().count();
         assert_eq!(entries, 2);
+    }
+
+    #[tokio::test]
+    async fn child_reap_failure_preserves_authorized_recovery_before_returning() {
+        let (_root, mut session, _cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", b"reap-recovery-save")
+            .unwrap();
+        session
+            .workspace
+            .write_atomic(
+                "session.lua",
+                b"return { secret = \"0123456789abcdef0123456789abcdef\" }",
+            )
+            .unwrap();
+        session.checkpoint_authorized = true;
+
+        session.preserve_recovery_after_child_failure().unwrap();
+        assert_eq!(
+            std::fs::read(session.workspace.path().join("character.sav")).unwrap(),
+            b"reap-recovery-save"
+        );
+        assert_eq!(
+            std::fs::read(session.workspace.path().join("recovery.marker")).unwrap(),
+            b"coop-recovery-v1\n"
+        );
+        assert!(!session.workspace.path().join("session.lua").exists());
     }
 
     #[tokio::test]
@@ -2530,5 +2682,24 @@ mod lifecycle_tests {
             b"coop-recovery-v1\n"
         );
         assert_eq!(std::fs::read_dir(quarantined.path()).unwrap().count(), 2);
+    }
+
+    #[tokio::test]
+    async fn release_drops_unverified_secret_workspace_instead_of_retaining_it() {
+        let (_root, mut session, cloud) = bootstrap(true).await;
+        let original = session.workspace.path().to_owned();
+        // Make both the quarantine source and the scrub target unverifiable.
+        // This models a failure before the pre-created shadow exists and
+        // proves the launcher never retains a directory that could contain a
+        // loopback secret.
+        std::fs::create_dir(original.join("character.sav")).unwrap();
+        std::fs::create_dir(original.join("session.lua")).unwrap();
+        session.checkpoint_authorized = true;
+
+        assert!(matches!(
+            session.release(cloud.as_ref()).await,
+            Err(SessionError::Package)
+        ));
+        assert!(!original.exists());
     }
 }

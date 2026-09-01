@@ -405,21 +405,35 @@ async fn run() -> Result<(), CliError> {
         .run_until_shutdown(&api, &mut children, shutdown)
         .await;
     let child_result = children.stop().await;
+    if !should_release_after_children_stop(&child_result) {
+        // A failed stop does not prove that the child processes are gone.
+        // Preserve an authorized SAV locally and leave the lease fenced rather
+        // than releasing it while a live child could still emit traffic.
+        let _ = session.preserve_recovery_after_child_failure();
+        return Err(CliError::Runtime);
+    }
     let release_result = session.release(&api).await;
-    if lifecycle_result.is_err() || child_result.is_err() || release_result.is_err() {
+    if lifecycle_result.is_err() || release_result.is_err() {
         Err(CliError::Runtime)
     } else {
         Ok(())
     }
 }
 
+fn should_release_after_children_stop(
+    result: &Result<(), coop_launcher::process::ProcessError>,
+) -> bool {
+    result.is_ok()
+}
+
 // The non-Windows implementation returns the typed boundary error before any
 // path canonicalization, workspace creation, or mGBA probing. Windows has no
 // error at this boundary.
+#[allow(clippy::unnecessary_wraps)]
 fn platform_error() -> Option<CliError> {
     #[cfg(not(windows))]
     {
-        return Some(CliError::UnsupportedPlatform);
+        Some(CliError::UnsupportedPlatform)
     }
     #[cfg(windows)]
     {
@@ -455,6 +469,14 @@ mod tests {
         let staged = stage_verified_rom(&source, &private).unwrap();
         std::fs::write(&source, b"replacement-rom").unwrap();
         assert_eq!(std::fs::read(staged).unwrap(), b"verified-rom");
+    }
+
+    #[test]
+    fn child_reap_failure_blocks_lease_release() {
+        assert!(!should_release_after_children_stop(&Err(
+            coop_launcher::process::ProcessError::ChildExited,
+        )));
+        assert!(should_release_after_children_stop(&Ok(())));
     }
 
     #[cfg(not(windows))]

@@ -317,6 +317,7 @@ fn persist_record(path: &Path, bytes: &[u8], epoch: u32) -> io::Result<()> {
     atomic_write(path, bytes)
 }
 
+#[cfg(windows)]
 fn prune_versioned_records(path: &Path, newest_epoch: u32) -> io::Result<()> {
     let parent = path
         .parent()
@@ -448,11 +449,13 @@ impl FileLock {
                 let file = options.open(path).map_err(EpochError::Io)?;
                 match file.try_lock() {
                     Ok(()) => return Ok(Self { file: Some(file) }),
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    Err(std::fs::TryLockError::WouldBlock) => {
                         drop(file);
                         thread::sleep(LOCK_WAIT);
                     }
-                    Err(error) => return Err(EpochError::Io(error)),
+                    Err(std::fs::TryLockError::Error(error)) => {
+                        return Err(EpochError::Io(error));
+                    }
                 }
             }
             Err(EpochError::Busy)

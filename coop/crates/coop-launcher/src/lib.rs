@@ -81,7 +81,9 @@ impl ReqwestCloudApi {
     pub fn new(base: &str) -> Result<Self, HttpClientError> {
         let raw_base = base;
         let base = Url::parse(raw_base).map_err(|_| HttpClientError::InvalidEndpoint)?;
-        if base.scheme() == "https" && explicit_port(raw_base) == Some(443) {
+        if explicit_port(raw_base)
+            .is_some_and(|port| matches!((base.scheme(), port), ("https", 443) | ("http", 80)))
+        {
             return Err(HttpClientError::InvalidEndpoint);
         }
         validate_endpoint(&base)?;
@@ -588,7 +590,10 @@ mod tests {
             "ftp://127.0.0.1:8080",
             "https://user:password@cloud.example",
             "https://cloud.example/api",
+            "https://cloud.example:443",
             "https://cloud.example:0443",
+            "http://127.0.0.1:80",
+            "http://[::1]:80",
             "https://cloud.example/?redirect=http://evil",
             "https://cloud.example/#fragment",
         ] {

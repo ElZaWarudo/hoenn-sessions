@@ -43,6 +43,8 @@ pub enum CompatibilityError {
     Mgba(#[source] io::Error),
     #[error("mGBA output is too large")]
     MgbaOutput,
+    #[error("mGBA probe descendant cleanup could not be confirmed")]
+    MgbaCleanup,
     #[error("mGBA version probe timed out")]
     MgbaTimeout,
     #[error("unsupported mGBA version")]
@@ -269,19 +271,33 @@ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
         .stderr(Stdio::piped())
         .spawn()
         .map_err(CompatibilityError::Mgba)?;
-    let stdout = child.stdout.take().ok_or(CompatibilityError::MgbaOutput)?;
-    let stderr = child.stderr.take().ok_or(CompatibilityError::MgbaOutput)?;
+    let Some(stdout) = child.stdout.take() else {
+        if !terminate_probe_child(&mut child) {
+            return Err(CompatibilityError::MgbaCleanup);
+        }
+        return Err(CompatibilityError::MgbaOutput);
+    };
+    let Some(stderr) = child.stderr.take() else {
+        if !terminate_probe_child(&mut child) {
+            return Err(CompatibilityError::MgbaCleanup);
+        }
+        return Err(CompatibilityError::MgbaOutput);
+    };
     let (sender, receiver) = mpsc::channel();
     spawn_bounded_reader(stdout, false, sender.clone());
     spawn_bounded_reader(stderr, true, sender);
 
     let deadline = Instant::now() + MGBA_PROBE_TIMEOUT;
+    let mut early_outputs = Vec::with_capacity(2);
     let status = loop {
-        if let Ok(result) = receiver.try_recv()
-            && result.oversized
-        {
-            terminate_probe_child(&mut child);
-            return Err(CompatibilityError::MgbaOutput);
+        while let Ok(result) = receiver.try_recv() {
+            if result.oversized {
+                if !terminate_probe_child(&mut child) {
+                    return Err(CompatibilityError::MgbaCleanup);
+                }
+                return Err(CompatibilityError::MgbaOutput);
+            }
+            early_outputs.push(result);
         }
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -292,18 +308,33 @@ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
                 break status;
             }
             Ok(None) if Instant::now() >= deadline => {
-                terminate_probe_child(&mut child);
+                if !terminate_probe_child(&mut child) {
+                    return Err(CompatibilityError::MgbaCleanup);
+                }
                 return Err(CompatibilityError::MgbaTimeout);
             }
             Ok(None) => thread::sleep(Duration::from_millis(10)),
             Err(error) => {
-                terminate_probe_child(&mut child);
+                if !terminate_probe_child(&mut child) {
+                    return Err(CompatibilityError::MgbaCleanup);
+                }
                 return Err(CompatibilityError::Mgba(error));
             }
         }
     };
-    let (stdout, stderr) = receive_probe_outputs(&receiver, deadline)?;
+    let (stdout, stderr) = match receive_probe_outputs(&receiver, deadline, early_outputs) {
+        Ok(outputs) => outputs,
+        Err(error) => {
+            if !terminate_probe_child(&mut child) {
+                return Err(CompatibilityError::MgbaCleanup);
+            }
+            return Err(error);
+        }
+    };
     if stdout.1 || stderr.1 {
+        if !terminate_probe_child(&mut child) {
+            return Err(CompatibilityError::MgbaCleanup);
+        }
         return Err(CompatibilityError::MgbaOutput);
     }
     let mut text = String::from_utf8_lossy(&stdout.0).into_owned();
@@ -361,30 +392,42 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
 fn receive_probe_outputs(
     receiver: &Receiver<ProbeOutput>,
     deadline: Instant,
+    initial: Vec<ProbeOutput>,
 ) -> Result<(ProbeCapture, ProbeCapture), CompatibilityError> {
     // A descendant may retain an inherited pipe after the probe root exits.
     // Bound this join independently and abandon the reader rather than using
     // a potentially recycled root PID for tree termination.
-    let remaining = deadline
-        .checked_duration_since(Instant::now())
-        .unwrap_or_default()
-        .saturating_add(Duration::from_secs(1));
+    let now = Instant::now();
+    let collection_deadline = if deadline <= now {
+        deadline
+    } else {
+        deadline + Duration::from_secs(1)
+    };
     let mut stdout = None;
     let mut stderr = None;
+    for result in initial {
+        store_probe_output(result, &mut stdout, &mut stderr)?;
+    }
     while stdout.is_none() || stderr.is_none() {
+        let remaining = collection_deadline
+            .checked_duration_since(Instant::now())
+            .unwrap_or_default();
+        if remaining.is_zero() {
+            return Err(CompatibilityError::MgbaTimeout);
+        }
         let result = receiver
             .recv_timeout(remaining)
             .map_err(|error| match error {
                 RecvTimeoutError::Timeout => CompatibilityError::MgbaTimeout,
                 RecvTimeoutError::Disconnected => CompatibilityError::MgbaOutput,
             })?;
-        if result.stderr {
-            if stderr.replace((result.bytes, result.oversized)).is_some() {
-                return Err(CompatibilityError::MgbaOutput);
-            }
-        } else if stdout.replace((result.bytes, result.oversized)).is_some() {
+        if result.oversized {
+            // Stop waiting for the sibling reader. The caller will terminate
+            // the root while it is still live, or return MgbaCleanup when the
+            // root has already exited and descendants cannot be proven gone.
             return Err(CompatibilityError::MgbaOutput);
         }
+        store_probe_output(result, &mut stdout, &mut stderr)?;
     }
     Ok((
         stdout.expect("stdout result checked"),
@@ -392,18 +435,37 @@ fn receive_probe_outputs(
     ))
 }
 
-fn terminate_probe_child(child: &mut std::process::Child) {
+fn store_probe_output(
+    result: ProbeOutput,
+    stdout: &mut Option<ProbeCapture>,
+    stderr: &mut Option<ProbeCapture>,
+) -> Result<(), CompatibilityError> {
+    let destination = if result.stderr { stderr } else { stdout };
+    if destination
+        .replace((result.bytes, result.oversized))
+        .is_some()
+    {
+        return Err(CompatibilityError::MgbaOutput);
+    }
+    Ok(())
+}
+
+fn terminate_probe_child(child: &mut std::process::Child) -> bool {
+    // If the root has already exited, its PID is no longer a safe process-tree
+    // handle. A descendant may still own either pipe, and without a Job Object
+    // there is no safe std-only way to prove those descendants are gone.
+    let root_exited = matches!(child.try_wait(), Ok(Some(_)));
+    let mut cleanup_confirmed = !root_exited;
     #[cfg(windows)]
     {
         // `Child::kill` only terminates the direct process on Windows.  Use
         // the OS-provided process-tree terminator with a bounded wait only
         // while the root is still live (timeout/output failure). Calling it
         // after `try_wait` observed exit could target a recycled PID.
-        let root_exited = matches!(child.try_wait(), Ok(Some(_)));
         if !root_exited {
             let pid = child.id();
             if pid != 0
-                && let Some((taskkill, _taskkill_guard, _system32_guard)) = trusted_taskkill()
+                && let Some((taskkill, _taskkill_guard, _system32_guards)) = trusted_taskkill()
             {
                 let mut command = Command::new(taskkill);
                 command
@@ -419,8 +481,16 @@ fn terminate_probe_child(child: &mut std::process::Child) {
                     let deadline = Instant::now() + Duration::from_secs(1);
                     loop {
                         match killer.try_wait() {
-                            Ok(Some(_)) | Err(_) => break,
+                            Ok(Some(status)) => {
+                                cleanup_confirmed = status.success();
+                                break;
+                            }
+                            Err(_) => {
+                                cleanup_confirmed = false;
+                                break;
+                            }
                             Ok(None) if Instant::now() >= deadline => {
+                                cleanup_confirmed = false;
                                 let _ = killer.kill();
                                 let _ = killer.wait();
                                 break;
@@ -428,26 +498,45 @@ fn terminate_probe_child(child: &mut std::process::Child) {
                             Ok(None) => thread::sleep(Duration::from_millis(10)),
                         }
                     }
+                } else {
+                    cleanup_confirmed = false;
                 }
+            } else {
+                cleanup_confirmed = false;
             }
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    if child.kill().is_err() && !matches!(child.try_wait(), Ok(Some(_))) {
+        cleanup_confirmed = false;
+    }
+    if child.wait().is_err() {
+        cleanup_confirmed = false;
+    }
+    cleanup_confirmed
 }
 
 #[cfg(windows)]
-fn trusted_taskkill() -> Option<(std::path::PathBuf, std::fs::File, std::fs::File)> {
+fn trusted_taskkill() -> Option<(std::path::PathBuf, std::fs::File, Vec<std::fs::File>)> {
     use std::os::windows::fs::OpenOptionsExt;
     // System32 is the only accepted process-tree terminator location.  A
     // missing or redirected installation fails closed to direct-child kill.
     let taskkill = std::path::PathBuf::from(r"C:\Windows\System32\taskkill.exe");
-    let mut parent_options = std::fs::OpenOptions::new();
-    parent_options
-        .read(true)
-        .share_mode(0x0000_0003)
-        .custom_flags(0x0220_0000);
-    let parent = parent_options.open(taskkill.parent()?).ok()?;
+    let parent = taskkill.parent()?;
+    let mut system32_guards = Vec::new();
+    let mut ancestor = parent;
+    loop {
+        let mut parent_options = std::fs::OpenOptions::new();
+        parent_options
+            .read(true)
+            .share_mode(0x0000_0003)
+            .custom_flags(0x0220_0000);
+        system32_guards.push(parent_options.open(ancestor).ok()?);
+        let next = ancestor.parent()?;
+        if next == ancestor {
+            break;
+        }
+        ancestor = next;
+    }
     let canonical = std::fs::canonicalize(&taskkill).ok()?;
     if canonical != taskkill {
         return None;
@@ -458,7 +547,7 @@ fn trusted_taskkill() -> Option<(std::path::PathBuf, std::fs::File, std::fs::Fil
         .share_mode(0x0000_0001)
         .custom_flags(0x0020_0000);
     let file = file_options.open(&taskkill).ok()?;
-    Some((taskkill, file, parent))
+    Some((taskkill, file, system32_guards))
 }
 
 fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
@@ -471,7 +560,15 @@ fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_MGBA_OUTPUT_BYTES, append_bounded_probe_bytes};
+    use std::{
+        sync::mpsc,
+        time::{Duration, Instant},
+    };
+
+    use super::{
+        CompatibilityError, MAX_MGBA_OUTPUT_BYTES, ProbeOutput, append_bounded_probe_bytes,
+        receive_probe_outputs,
+    };
 
     #[test]
     fn probe_output_is_bounded_without_storing_untrusted_bytes() {
@@ -480,5 +577,69 @@ mod tests {
         assert!(!append_bounded_probe_bytes(&mut output, &input));
         assert!(append_bounded_probe_bytes(&mut output, b"x"));
         assert_eq!(output.len(), MAX_MGBA_OUTPUT_BYTES);
+    }
+
+    #[test]
+    fn probe_output_collection_uses_one_absolute_deadline() {
+        let (_sender, receiver) = mpsc::channel();
+        let started = Instant::now();
+        assert!(matches!(
+            receive_probe_outputs(&receiver, Instant::now(), Vec::new()),
+            Err(CompatibilityError::MgbaTimeout)
+        ));
+        assert!(started.elapsed() < Duration::from_millis(80));
+    }
+
+    #[test]
+    fn oversized_probe_output_aborts_collection_immediately() {
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(ProbeOutput {
+                stderr: false,
+                bytes: Vec::new(),
+                oversized: true,
+            })
+            .unwrap();
+        assert!(matches!(
+            receive_probe_outputs(
+                &receiver,
+                Instant::now() + Duration::from_secs(1),
+                Vec::new(),
+            ),
+            Err(CompatibilityError::MgbaOutput)
+        ));
+    }
+
+    #[test]
+    fn early_probe_output_is_preserved_for_final_collection() {
+        let (sender, receiver) = mpsc::channel();
+        sender
+            .send(ProbeOutput {
+                stderr: true,
+                bytes: b"mGBA 0.10.5".to_vec(),
+                oversized: false,
+            })
+            .unwrap();
+        let early = vec![ProbeOutput {
+            stderr: false,
+            bytes: b"version".to_vec(),
+            oversized: false,
+        }];
+        let (stdout, stderr) =
+            receive_probe_outputs(&receiver, Instant::now() + Duration::from_secs(1), early)
+                .unwrap();
+        assert_eq!(stdout.0, b"version");
+        assert_eq!(stderr.0, b"mGBA 0.10.5");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn exited_probe_root_does_not_claim_descendant_cleanup() {
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/C", "exit", "0"])
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+        assert!(!super::terminate_probe_child(&mut child));
     }
 }

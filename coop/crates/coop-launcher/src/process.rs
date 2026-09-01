@@ -1,13 +1,14 @@
 //! Argument-vector-only process supervision and sidecar control connection.
 
 use std::{
-    fs,
-    io::{self, Read, Seek, SeekFrom},
+    fs, io,
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 
+#[cfg(windows)]
+use std::io::{Read, Seek, SeekFrom};
 #[cfg(windows)]
 use std::sync::Arc;
 
@@ -59,8 +60,12 @@ pub struct CommandSpec {
     pub executable: PathBuf,
     pub args: Vec<String>,
     identity: Option<ExecutableIdentity>,
+    rom_identity: Option<ExecutableIdentity>,
+    rom_cleanup: Option<PathBuf>,
     #[cfg(windows)]
     executable_guards: Option<ExecutableGuards>,
+    #[cfg(windows)]
+    rom_guards: Option<ExecutableGuards>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,7 +80,7 @@ struct ExecutableIdentity {
 #[derive(Clone)]
 struct ExecutableGuards {
     file: Arc<fs::File>,
-    parent: Arc<fs::File>,
+    ancestors: Vec<Arc<fs::File>>,
 }
 
 impl CommandSpec {
@@ -88,12 +93,18 @@ impl CommandSpec {
             return Err(ProcessError::InvalidArgument);
         }
         let (identity, executable_guards) = executable_binding(&executable)?;
+        #[cfg(not(windows))]
+        let _ = executable_guards;
         Ok(Self {
             executable,
             args,
             identity,
+            rom_identity: None,
+            rom_cleanup: None,
             #[cfg(windows)]
             executable_guards,
+            #[cfg(windows)]
+            rom_guards: None,
         })
     }
 
@@ -140,8 +151,34 @@ impl CommandSpec {
         executable: impl Into<PathBuf>,
         rom: impl AsRef<Path>,
     ) -> Result<Self, ProcessError> {
-        let rom = rom.as_ref().to_str().ok_or(ProcessError::InvalidArgument)?;
-        Self::new(executable, vec![rom.to_owned()])
+        let rom_path = rom.as_ref().to_path_buf();
+        let rom = rom_path.to_str().ok_or(ProcessError::InvalidArgument)?;
+        let mut spec = Self::new(executable, vec![rom.to_owned()])?;
+        let (rom_identity, rom_guards) = executable_binding(&rom_path)?;
+        #[cfg(not(windows))]
+        let _ = rom_guards;
+        spec.rom_identity = rom_identity;
+        // The CLI stages ROMs under this private launcher root.  Keep that
+        // copy alive until the supervised emulator exits, then remove it via
+        // RAII. Arbitrary caller-owned ROMs are never deleted by this API.
+        if is_launcher_staged_rom(&rom_path) {
+            spec.rom_cleanup = Some(rom_path);
+        }
+        #[cfg(windows)]
+        {
+            spec.rom_guards = rom_guards;
+        }
+        Ok(spec)
+    }
+}
+
+impl Drop for CommandSpec {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        let _ = self.rom_guards.take();
+        if let Some(path) = self.rom_cleanup.take() {
+            let _ = fs::remove_file(path);
+        }
     }
 }
 
@@ -151,12 +188,19 @@ impl std::fmt::Debug for CommandSpec {
         debug
             .field("executable", &self.executable)
             .field("args", &self.args)
-            .field("identity", &self.identity.as_ref().map(|_| "[BOUND]"));
+            .field("identity", &self.identity.as_ref().map(|_| "[BOUND]"))
+            .field(
+                "rom_identity",
+                &self.rom_identity.as_ref().map(|_| "[BOUND]"),
+            )
+            .field("rom_cleanup", &self.rom_cleanup.as_ref().map(|_| "[HELD]"));
         #[cfg(windows)]
         debug.field(
             "executable_guards",
             &self.executable_guards.as_ref().map(|_| "[HELD]"),
         );
+        #[cfg(windows)]
+        debug.field("rom_guards", &self.rom_guards.as_ref().map(|_| "[HELD]"));
         debug.finish()
     }
 }
@@ -166,6 +210,7 @@ impl PartialEq for CommandSpec {
         self.executable == other.executable
             && self.args == other.args
             && self.identity == other.identity
+            && self.rom_identity == other.rom_identity
     }
 }
 
@@ -370,6 +415,7 @@ pub struct SupervisedChildren {
     sidecar: Child,
     mgba: Child,
     pub control: ControlChannel,
+    rom_cleanup: Option<PathBuf>,
 }
 
 /// One bounded event from the authenticated control stream or supervised
@@ -400,6 +446,7 @@ impl SupervisedChildren {
             sidecar,
             mgba,
             control,
+            rom_cleanup: None,
         }
     }
 
@@ -461,6 +508,10 @@ impl SupervisedChildren {
             return Err(ProcessError::InvalidArgument);
         }
         validate_executable_identity(&sidecar)?;
+        // Validate both executable bindings before any child is spawned. A
+        // later mGBA identity failure must never strand a live sidecar while
+        // descriptor/control startup is in progress.
+        validate_executable_identity(&mgba)?;
         let mut sidecar_command = Command::new(&sidecar.executable);
         isolate_environment(&mut sidecar_command);
         sidecar_command
@@ -512,7 +563,8 @@ impl SupervisedChildren {
             let _ = stop_child(&mut child).await;
             return Err(error);
         }
-        validate_executable_identity(&mgba)?;
+        let mut mgba = mgba;
+        let rom_cleanup = mgba.rom_cleanup.take();
         let mut mgba_command = Command::new(&mgba.executable);
         isolate_environment(&mut mgba_command);
         mgba_command
@@ -531,6 +583,7 @@ impl SupervisedChildren {
             sidecar: child,
             mgba: mgba_child,
             control,
+            rom_cleanup,
         })
     }
 
@@ -627,8 +680,8 @@ fn executable_binding(
     }
     reject_symlink_ancestors(path)?;
     let parent = path.parent().ok_or(ProcessError::InvalidArgument)?;
-    let parent_guard =
-        Arc::new(open_directory_guard(parent).map_err(|_| ProcessError::InvalidArgument)?);
+    let ancestor_guards =
+        open_directory_ancestor_guards(parent).map_err(|_| ProcessError::InvalidArgument)?;
     let Some(file) = open_executable_file(path)? else {
         return Ok((None, None));
     };
@@ -650,7 +703,7 @@ fn executable_binding(
         }),
         Some(ExecutableGuards {
             file: file_guard,
-            parent: parent_guard,
+            ancestors: ancestor_guards,
         }),
     ))
 }
@@ -708,6 +761,23 @@ fn open_directory_guard(path: &Path) -> io::Result<fs::File> {
 }
 
 #[cfg(windows)]
+fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<Arc<fs::File>>> {
+    let mut guards = Vec::new();
+    let mut current = path;
+    loop {
+        guards.push(Arc::new(open_directory_guard(current)?));
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        if parent == current {
+            break;
+        }
+        current = parent;
+    }
+    Ok(guards)
+}
+
+#[cfg(windows)]
 fn hash_file_handle(handle: &fs::File) -> io::Result<[u8; 32]> {
     use sha2::{Digest, Sha256};
     let mut file = handle.try_clone()?;
@@ -731,17 +801,33 @@ fn validate_executable_identity(spec: &CommandSpec) -> Result<(), ProcessError> 
         // through this immediate validation-to-spawn boundary and documents
         // that they are security-critical, not incidental storage.
         let _ = guards.file.metadata();
-        let _ = guards.parent.metadata();
+        for ancestor in &guards.ancestors {
+            let _ = ancestor.metadata();
+        }
     }
-    let Some(expected) = &spec.identity else {
-        return Ok(());
-    };
-    let (actual, _) = executable_binding(&spec.executable)?;
-    let Some(actual) = actual else {
-        return Err(ProcessError::InvalidArgument);
-    };
-    if &actual != expected {
-        return Err(ProcessError::InvalidArgument);
+    if let Some(expected) = &spec.identity {
+        let (actual, _) = executable_binding(&spec.executable)?;
+        let Some(actual) = actual else {
+            return Err(ProcessError::InvalidArgument);
+        };
+        if &actual != expected {
+            return Err(ProcessError::InvalidArgument);
+        }
+    }
+    if spec.args.len() == 1 {
+        let rom = Path::new(&spec.args[0]);
+        if let Some(expected_rom) = &spec.rom_identity {
+            let Some(actual_rom) = executable_binding(rom)?.0 else {
+                return Err(ProcessError::InvalidArgument);
+            };
+            if &actual_rom != expected_rom {
+                return Err(ProcessError::InvalidArgument);
+            }
+        } else if fs::symlink_metadata(rom).is_ok() {
+            // A missing ROM at binding time must not become an unbound input
+            // just before spawn. This closes the create-after-validation race.
+            return Err(ProcessError::InvalidArgument);
+        }
     }
     Ok(())
 }
@@ -779,6 +865,15 @@ impl Drop for SupervisedChildren {
         // deadline so a cancelled launcher future cannot orphan processes.
         terminate_and_reap_sync(&mut self.mgba);
         terminate_and_reap_sync(&mut self.sidecar);
+        self.remove_owned_rom();
+    }
+}
+
+impl SupervisedChildren {
+    fn remove_owned_rom(&mut self) {
+        if let Some(path) = self.rom_cleanup.take() {
+            let _ = fs::remove_file(path);
+        }
     }
 }
 
@@ -805,6 +900,24 @@ fn isolate_environment(command: &mut Command) {
     if let Some(path) = path {
         command.env("PATH", path);
     }
+}
+
+fn is_launcher_staged_rom(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    if !name.starts_with("rom-")
+        || !Path::new(name)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("gba"))
+    {
+        return false;
+    }
+    let root = std::env::temp_dir().join("pokecrossroads-coop-launcher");
+    let (Ok(path), Ok(root)) = (fs::canonicalize(path), fs::canonicalize(root)) else {
+        return false;
+    };
+    path.parent().is_some_and(|parent| parent.starts_with(root))
 }
 
 async fn stop_child(child: &mut Child) -> Result<(), ProcessError> {
@@ -846,9 +959,10 @@ const _: Option<ProtocolVersion> = None;
 mod tests {
     use super::{
         CommandSpec, ControlChannel, PROCESS_IO_TIMEOUT, ProcessError, SupervisedChildren,
-        SupervisorEvent, materialize_bridge_session, terminate_and_reap_sync,
-        validate_executable_identity,
+        SupervisorEvent, terminate_and_reap_sync,
     };
+    #[cfg(windows)]
+    use super::{materialize_bridge_session, validate_executable_identity};
     #[cfg(windows)]
     use crate::session::SessionWorkspace;
     #[cfg(windows)]
@@ -914,6 +1028,41 @@ mod tests {
     }
 
     #[cfg(windows)]
+    #[test]
+    fn rom_binding_denies_replacement_until_spec_is_dropped() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = directory.path().join("rom.gba");
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        let spec = CommandSpec::mgba(&executable, &rom).unwrap();
+        assert!(spec.rom_identity.is_some());
+        assert!(fs::remove_file(&rom).is_err());
+        drop(spec);
+        fs::remove_file(&rom).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn staged_rom_is_removed_when_unspawned_spec_is_dropped() {
+        let root = std::env::temp_dir()
+            .join("pokecrossroads-coop-launcher")
+            .join(format!("test-{}", uuid::Uuid::new_v4().simple()));
+        fs::create_dir_all(&root).unwrap();
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = root.join(format!("rom-{}.gba", uuid::Uuid::new_v4().simple()));
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        {
+            let spec = CommandSpec::mgba(&executable, &rom).unwrap();
+            assert!(spec.rom_cleanup.is_some());
+        }
+        assert!(!rom.exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(windows)]
     #[tokio::test]
     async fn materialize_bridge_session_uses_validated_descriptor_path() {
         let root = tempdir().unwrap();
@@ -962,6 +1111,23 @@ mod tests {
         assert!(matches!(
             SupervisedChildren::start(sidecar, mgba, 1).await,
             Err(ProcessError::Spawn(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn invalid_mgba_identity_is_rejected_before_sidecar_spawn() {
+        let directory = tempdir().unwrap();
+        let mgba_path = directory.path().join("mgba.exe");
+        fs::write(&mgba_path, b"trusted").unwrap();
+        let mut mgba = CommandSpec::mgba(&mgba_path, "rom.gba").unwrap();
+        mgba.identity.as_mut().unwrap().digest[0] ^= 0xff;
+
+        let missing_sidecar = directory.path().join("sidecar.exe");
+        let sidecar = CommandSpec::sidecar(&missing_sidecar, 1).unwrap();
+        assert!(matches!(
+            SupervisedChildren::start(sidecar, mgba, 1).await,
+            Err(ProcessError::InvalidArgument)
         ));
     }
 
