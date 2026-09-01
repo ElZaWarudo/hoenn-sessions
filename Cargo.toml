@@ -9,13 +9,17 @@ rust-version = "1.93.1"
 [workspace.dependencies]
 axum = "0.8.9"
 crc32fast = "1.5.1"
+ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
 http-body-util = "0.1.5"
+serde_jcs = "0.2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10.9"
 thiserror = "2.0"
 tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tower = { version = "0.5.3", features = ["util"] }
 uuid = { version = "1.26.0", features = ["serde", "v4"] }
+zeroize = { version = "1.8.2", features = ["derive"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
