@@ -4,6 +4,7 @@
 //! a fixed 144-byte little-endian frame with no transport length prefix.
 
 mod codec;
+pub mod control;
 mod server;
 
 pub use codec::{
@@ -11,6 +12,6 @@ pub use codec::{
     FrameCodecError, GAME_PROTOCOL_VERSION, MessageType,
 };
 pub use server::{
-    AuthenticatedConnection, HANDSHAKE_ACCEPTED_LINE, LocalSidecar, MAX_HANDSHAKE_BYTES,
-    SessionDescriptor, SidecarError,
+    BridgeDescriptor, ControlDescriptor, HANDSHAKE_ACCEPTED_LINE, LocalSidecar,
+    MAX_DESCRIPTOR_BYTES, MAX_HANDSHAKE_BYTES, SessionDescriptor, SidecarError,
 };

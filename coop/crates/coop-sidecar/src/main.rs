@@ -38,10 +38,10 @@ fn parse_session_epoch(arguments: impl IntoIterator<Item = OsString>) -> Result<
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let session_epoch = parse_session_epoch(env::args_os().skip(1))?;
     let server = LocalSidecar::bind_with_epoch(session_epoch).await?;
-    let descriptor = serde_json::to_string(&server.session_descriptor())?;
+    let descriptor = server.session_descriptor().to_bounded_json_line()?;
 
     // This is the sole intentional disclosure of the per-process secret.
-    println!("{descriptor}");
+    io::stdout().write_all(&descriptor)?;
     io::stdout().flush()?;
 
     server.serve().await?;
