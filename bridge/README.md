@@ -39,6 +39,26 @@ After linking a legal local ROM build, generate the address module and manifest:
 python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
 ```
 
+## Canonical save and compatible-state lifecycle
+
+The launcher writes their three distinct normalized absolute paths into private
+`session.lua`. The bridge workspace uses these fixed, non-interchangeable artifacts:
+`character.sav` is the canonical battery save, optional `resume.input.ss1` is
+the previously verified state, and `resume.ss1` is reserved for a new capture.
+On script load, the bridge binds `character.sav` with writeback enabled, then
+loads `resume.input.ss1` with mGBA state flags `29` (all compatible state except
+savedata). A missing or rejected input state resets into the bound SAV instead.
+The restored input is never used as the next upload output.
+
+Every ROM `SAVE_DATA_UPDATED` payload is exactly one little-endian `u32`
+`save_generation`. Lua withholds that frame until a `savedataUpdated` callback
+after the matching checkpoint grant observes the same live generation through
+the generated save manifest. It then completes one `resume.ss1` capture attempt
+with flags `29` before forwarding the frame. A failed optional state capture is
+removed and reported, but the canonical SAV completion can still proceed;
+missing manifest metadata, legacy empty payloads, epoch mismatches, and stale or
+skipped generations fail closed.
+
 Before writing `bridge/session.lua` or starting the sidecar, the launcher MUST
 compute the SHA-256 of the exact built ROM and compare it with
 `game_build.rom_sha256` in `dist/bridge_manifest.json`. It must fail closed on a

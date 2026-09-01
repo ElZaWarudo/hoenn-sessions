@@ -1,2 +1,9 @@
 -- The launcher writes bridge/session.lua with a fresh value for every run.
-return { host = "127.0.0.1", port = 0, secret = "" }
+return {
+  host = "127.0.0.1",
+  port = 0,
+  secret = "",
+  character_save = "",
+  resume_input = "",
+  resume_output = "",
+}
