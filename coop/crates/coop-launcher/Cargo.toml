@@ -1,26 +1,31 @@
 [package]
-name = "coop-server"
+name = "coop-launcher"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-argon2.workspace = true
-axum.workspace = true
 base64.workspace = true
 coop-cloud = { path = "../coop-cloud" }
-coop-protocol = { path = "../coop-protocol" }
+coop-sidecar = { path = "../coop-sidecar" }
+ed25519-dalek.workspace = true
 getrandom.workspace = true
-hmac.workspace = true
+keyring-core.workspace = true
+reqwest.workspace = true
+rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true
