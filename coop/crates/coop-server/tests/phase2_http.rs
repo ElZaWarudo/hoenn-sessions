@@ -41,8 +41,10 @@ const INVITE_PEPPER: &str = "phase2-local-invite-pepper";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+#[cfg(windows)]
 const DROP_REAP_POLL: Duration = Duration::from_millis(10);
 const SERVER_START_ATTEMPTS: usize = 3;
+#[cfg(windows)]
 const OS_QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_OS_QUERY_BYTES: usize = 1_048_576;
 #[cfg(target_os = "linux")]
@@ -310,6 +312,7 @@ fn windows_child_listener_address(pid: u32) -> Option<SocketAddr> {
     (listeners.len() == 1).then(|| listeners[0])
 }
 
+#[cfg(windows)]
 fn reap_std_child(child: &mut std::process::Child) {
     let deadline = Instant::now() + SHUTDOWN_TIMEOUT;
     loop {
@@ -329,7 +332,7 @@ fn parse_proc_tcp_listeners(
     let mut listeners = Vec::new();
     for line in table.lines().skip(1) {
         let fields: Vec<_> = line.split_whitespace().collect();
-        if fields.len() <= 10 || fields[3] != "0A" || !socket_inodes.contains(fields[10]) {
+        if fields.len() <= 9 || fields[3] != "0A" || !socket_inodes.contains(fields[9]) {
             continue;
         }
         let (address, port) = fields[1].split_once(':')?;
@@ -401,13 +404,13 @@ fn read_capped_proc_file(path: &str) -> Option<String> {
 #[test]
 fn proc_tcp_listener_parser_uses_inode_column() {
     let table = "sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode ref pointer\n0: 0100007F:C350 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 4242 9876\n";
-    let socket_inodes = std::collections::HashSet::from(["9876".to_owned()]);
+    let socket_inodes = std::collections::HashSet::from(["4242".to_owned()]);
     assert_eq!(
         parse_proc_tcp_listeners(table, &socket_inodes, false),
         Some(vec![SocketAddr::from(([127, 0, 0, 1], 50_000))])
     );
-    let table_v6 = "sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode ref pointer\n0: 00000000000000000000000001000000:C350 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 4242 9877\n";
-    let socket_inodes = std::collections::HashSet::from(["9877".to_owned()]);
+    let table_v6 = "sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode ref pointer\n0: 00000000000000000000000001000000:C350 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 4243 9877\n";
+    let socket_inodes = std::collections::HashSet::from(["4243".to_owned()]);
     assert_eq!(
         parse_proc_tcp_listeners(table_v6, &socket_inodes, true),
         Some(vec![SocketAddr::from((
@@ -416,7 +419,7 @@ fn proc_tcp_listener_parser_uses_inode_column() {
         ))])
     );
     let wildcard = table.replace("0100007F", "00000000");
-    let socket_inodes = std::collections::HashSet::from(["9876".to_owned()]);
+    let socket_inodes = std::collections::HashSet::from(["4242".to_owned()]);
     assert_eq!(
         parse_proc_tcp_listeners(&wildcard, &socket_inodes, false),
         None
