@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "unit_id": "rom-netbridge",
+  "status": "accepted_with_seneschal_corrections",
+  "base_revision": "144f14ced0de2f82a85c222bf8dbec718f71793d",
+  "authoritative_contract": "README_pokeemerald_coop_cloud.md",
+  "supersedes_worker_claims": [
+    "The worker terminal's 152-byte message claim is not the accepted ABI.",
+    "The worker terminal's build-tooling blocker was removed by installing a disposable local ARM toolchain in WSL."
+  ],
+  "accepted_abi": {
+    "message_size": 144,
+    "message_checksum": "CRC-32/IEEE over bytes 0..139, stored little-endian at offset 140",
+    "queue_capacity": 32,
+    "queue_size": 4612,
+    "bridge_size": 9244,
+    "bridge_symbol": "gCoopNetBridge",
+    "bridge_address": "0x020376D8",
+    "progress_symbol": "gCoopProgress",
+    "progress_address": "0x02039AF4"
+  },
+  "seneschal_corrections": [
+    "Replaced the provisional layout with the exact 144-byte authoritative message ABI and golden CRC vectors.",
+    "Added compiler barriers and publish-index-last queue semantics for the mGBA stop-the-world scripting boundary.",
+    "Bounded corrupt queue handling so impossible occupancy cannot hang the ROM.",
+    "Made message sealing, validation, direction checks, padding rules, and sequence advancement fail closed.",
+    "Preserved sequence domains on same-epoch reconnect and reset both queues and sequences on a new epoch.",
+    "Added lifecycle-safe player export and rejected hybrid map/object locations.",
+    "Reserved Johto identities while rejecting Johto locations until the pinned game contains Johto maps.",
+    "Kept badge and checkpoint progress regional; trainer and Fly-point sets remain server-side until stable ROM registries exist."
+  ],
+  "verification": {
+    "focused_arm_tests": {
+      "command": "DEVKITARM=/home/teb/.cache/codex-arm-none-eabi-13.2/root/usr make -s -j8 check TESTS='Cloud Coop' 'ARMCC=arm-none-eabi-gcc -B/home/teb/.cache/codex-arm-none-eabi-13.2/root/usr/lib/arm-none-eabi/newlib/'",
+      "result": "16 passed, 0 failed"
+    },
+    "production_build": {
+      "command": "DEVKITARM=/home/teb/.cache/codex-arm-none-eabi-13.2/root/usr make -s -j8 modern 'ARMCC=arm-none-eabi-gcc -B/home/teb/.cache/codex-arm-none-eabi-13.2/root/usr/lib/arm-none-eabi/newlib/'",
+      "result": "passed",
+      "ewram": "236308 / 262144 bytes (90.14%; 25836 free)",
+      "iwram": "28644 / 32768 bytes (87.41%; 4124 free)",
+      "rom": "28573804 / 33554432 bytes (85.16%; 4980628 free)",
+      "retained_symbols": [
+        "08242EA8 0000009C T CoopNetBridge_Init",
+        "020376D8 0000241C B gCoopNetBridge",
+        "02039AF4 00000020 B gCoopProgress"
+      ]
+    },
+    "manifest_generation": {
+      "result": "passed against the verified linked ELF and ROM",
+      "rom_sha256": "528b3ed8d76f5eab85bf59a5a303d2e673b1c75dc19adcc14827483ecf1c6266"
+    }
+  },
+  "residual_risk": "A live mGBA 0.10.5 Lua-to-sidecar-to-ROM smoke test remains required before claiming emulator integration complete."
+}

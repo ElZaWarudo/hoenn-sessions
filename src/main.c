@@ -25,6 +25,7 @@
 #include "trainer_hill.h"
 #include "test_runner.h"
 #include "constants/rgb.h"
+#include "coop/net_bridge.h"
 
 static void VBlankIntr(void);
 static void HBlankIntr(void);
@@ -114,6 +115,7 @@ void AgbMain(void)
     ResetBgs();
     SetDefaultFontsPointer();
     InitHeap(gHeap, HEAP_SIZE);
+    CoopNetBridge_Init();
 
     gSoftResetDisabled = FALSE;
 
@@ -169,6 +171,7 @@ void AgbMainLoop(void)
             }
         }
 
+        CoopNetBridge_Poll();
         PlayTimeCounter_Update();
         MapMusicMain();
         WaitForVBlank();

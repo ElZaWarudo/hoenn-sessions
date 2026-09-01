@@ -1,0 +1,54 @@
+{
+  "base_revision": "144f14ced0de2f82a85c222bf8dbec718f71793d",
+  "baseline_digest": "sha256:ba4589ef4bda7741623d67b8a1484fc63bc87a5ba7dedf99fdbf5a9e0e9da5ac",
+  "baseline_tree": "2cf565fff0a47e6eedb72f0022f86843e1b05478",
+  "changed_files": [
+    {
+      "digest": "sha256:e1f18706b2c0b2fcd783c661d8ea9e331d9b4b7bb0b83bb8cdff4072fdc24995",
+      "path": "include/coop/net_bridge.h"
+    },
+    {
+      "digest": "sha256:68df519d2478662ad383b3ca5c60b8b3e39e863fe10c9fe34f10a61828f60d11",
+      "path": "include/coop/progress.h"
+    },
+    {
+      "digest": "sha256:7ba63f41a7222d002d37be80c024c9cbd8cb33245aa7b8042ef35089b6c43e2d",
+      "path": "include/coop/region.h"
+    },
+    {
+      "digest": "sha256:5afb6b29bba4c3afd01dffb93eff43a3c0edb7df4faed608911b6318ed9c59cf",
+      "path": "src/coop/net_bridge.c"
+    },
+    {
+      "digest": "sha256:c29f5c990555255a5feffd089ff99be37542421555da0888cfaa391a578d03b7",
+      "path": "src/coop/progress.c"
+    },
+    {
+      "digest": "sha256:0ebe211c23369216684c9a9b6d7faa862b3ac90368d9511b36b682b2b95637ca",
+      "path": "src/coop/region.c"
+    },
+    {
+      "digest": "sha256:f00fb9598dad351c8f293f84c97af47aa37c166edcdd3a44d507e0a557d6dda5",
+      "path": "src/main.c"
+    }
+  ],
+  "contract_hash": "sha256:8fa26d5cc97834839e8baf95b44e51d0764d9d12fd75f5895c0e2f31ea430cae",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:53088044e912c12cd2bc34dcbdad32d84d1d309fd13c1e6d7ab177fa83b8734d",
+  "manifest_hash": "sha256:d9e844d63e0865b4911e6711f20706186c9bd9e3fd4b07ac2fea2a4fb85781b9",
+  "owned_paths": [
+    "include/coop/net_bridge.h",
+    "include/coop/progress.h",
+    "include/coop/region.h",
+    "src/coop/net_bridge.c",
+    "src/coop/progress.c",
+    "src/coop/region.c",
+    "src/main.c"
+  ],
+  "patch_sha256": "sha256:eea1d064501d34a27900cb857239303c674711be35d9001ccafcdf2814029342",
+  "role": "implementer",
+  "schema_version": 1,
+  "unit_id": "rom-netbridge",
+  "worker_id": "rom_netbridge_implementer",
+  "workspace_id": "pokecrossroads-cloud-coop-20260901-rom-netbridge-implementer"
+}

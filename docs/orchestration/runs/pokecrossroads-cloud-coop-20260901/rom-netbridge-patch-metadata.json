@@ -1,0 +1,19 @@
+{
+  "workspace_id": "pokecrossroads-cloud-coop-20260901-rom-netbridge-implementer",
+  "worker_id": "rom_netbridge_implementer",
+  "unit_id": "rom-netbridge",
+  "role": "implementer",
+  "base_revision": "144f14ced0de2f82a85c222bf8dbec718f71793d",
+  "baseline_tree": "2cf565fff0a47e6eedb72f0022f86843e1b05478",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "include/coop/net_bridge.h",
+    "include/coop/progress.h",
+    "include/coop/region.h",
+    "src/coop/net_bridge.c",
+    "src/coop/progress.c",
+    "src/coop/region.c",
+    "src/main.c"
+  ],
+  "contract_hash": "sha256:8fa26d5cc97834839e8baf95b44e51d0764d9d12fd75f5895c0e2f31ea430cae"
+}

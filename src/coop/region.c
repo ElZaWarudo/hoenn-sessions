@@ -1,0 +1,133 @@
+#include "global.h"
+#include "coop/region.h"
+#include "constants/region_map_sections.h"
+#include "field_player_avatar.h"
+#include "regions.h"
+
+static bool8 IsKnownMapSection(u32 section_id)
+{
+    /* MAPSEC_NONE is the generated sentinel, not a valid location. */
+    return section_id < MAPSEC_NONE;
+}
+
+enum CoopRegion CoopRegion_FromEngineRegion(enum Region region)
+{
+    switch (region)
+    {
+    case REGION_HOENN:
+        return COOP_REGION_HOENN;
+    case REGION_KANTO:
+        return COOP_REGION_KANTO;
+    case REGION_JOHTO:
+        return COOP_REGION_JOHTO;
+    default:
+        return COOP_REGION_UNSPECIFIED;
+    }
+}
+
+enum CoopRegion CoopRegion_FromSectionId(u32 section_id)
+{
+    if (!IsKnownMapSection(section_id))
+        return COOP_REGION_UNSPECIFIED;
+
+    if (section_id >= KANTO_MAPSEC_START && section_id < MAPSEC_SPECIAL_AREA)
+    {
+        if (GetKantoSubregion(section_id) != KANTO_SUBREGION_KANTO)
+            return COOP_REGION_SEVII;
+        return COOP_REGION_KANTO;
+    }
+
+    /* All remaining generated sections are Hoenn, including special areas. */
+    return COOP_REGION_HOENN;
+}
+
+bool8 CoopRegion_Normalize(enum CoopRegion *out, enum Region engine_region, u32 section_id)
+{
+    enum CoopRegion section_region;
+
+    if (out == NULL)
+        return FALSE;
+
+    switch (engine_region)
+    {
+    case REGION_JOHTO:
+        /* Johto has an identity ordinal but no playable map registry in the
+         * pinned engine. Do not manufacture a location for an unknown map. */
+        return FALSE;
+    case REGION_HOENN:
+        section_region = CoopRegion_FromSectionId(section_id);
+        if (section_region != COOP_REGION_HOENN)
+            return FALSE;
+        *out = section_region;
+        return TRUE;
+    case REGION_KANTO:
+        section_region = CoopRegion_FromSectionId(section_id);
+        if (section_region != COOP_REGION_KANTO && section_region != COOP_REGION_SEVII)
+            return FALSE;
+        *out = section_region;
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+bool8 CoopRegion_TryFromSectionId(enum CoopRegion *out, u32 section_id)
+{
+    enum CoopRegion region;
+
+    if (out == NULL)
+        return FALSE;
+
+    region = CoopRegion_FromSectionId(section_id);
+    if (region == COOP_REGION_UNSPECIFIED)
+        return FALSE;
+
+    *out = region;
+    return TRUE;
+}
+
+bool8 CoopRegion_IsValid(enum CoopRegion region)
+{
+    return region >= COOP_REGION_HOENN && region < COOP_REGION_COUNT;
+}
+
+bool8 CoopWorldLocation_Export(struct WorldLocation *out)
+{
+    enum CoopRegion region;
+    s32 map_group;
+    s32 map_number;
+    s16 x;
+    s16 y;
+
+    if (out == NULL || gSaveBlock1Ptr == NULL)
+        return FALSE;
+
+    if (gPlayerAvatar.objectEventId >= OBJECT_EVENTS_COUNT
+     || !gObjectEvents[gPlayerAvatar.objectEventId].active
+     || !gObjectEvents[gPlayerAvatar.objectEventId].isPlayer)
+        return FALSE;
+
+    region = CoopRegion_FromSectionId(gMapHeader.regionMapSectionId);
+    if (!CoopRegion_IsValid(region))
+        return FALSE;
+
+    /* SaveBlock's map components are signed engine fields; reject sentinels
+     * before widening them into the unsigned bridge representation. */
+    map_group = gSaveBlock1Ptr->location.mapGroup;
+    map_number = gSaveBlock1Ptr->location.mapNum;
+    if (map_group < 0 || map_group > 0xFFFF || map_number < 0 || map_number > 0xFFFF)
+        return FALSE;
+    if (gObjectEvents[gPlayerAvatar.objectEventId].mapGroup != (u16)map_group
+     || gObjectEvents[gPlayerAvatar.objectEventId].mapNum != (u16)map_number)
+        return FALSE;
+
+    PlayerGetDestCoords(&x, &y);
+
+    out->region = (u8)region;
+    out->reserved = 0;
+    out->map_group = (u16)map_group;
+    out->map_number = (u16)map_number;
+    out->x = x;
+    out->y = y;
+    return TRUE;
+}

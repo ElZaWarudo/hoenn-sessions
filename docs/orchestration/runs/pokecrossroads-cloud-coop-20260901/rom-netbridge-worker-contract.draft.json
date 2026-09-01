@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-cloud-coop-20260901-rom-netbridge-v2",
+  "unit_id": "rom-netbridge",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Implement and verify the first region-safe ROM-side NetBridge core on the pinned PokéCrossroads engine.",
+  "owned_files": [
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c",
+    "include/coop/region.h",
+    "src/coop/region.c",
+    "include/coop/progress.h",
+    "src/coop/progress.c",
+    "src/main.c"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-20260901/rom-netbridge-discovery-observation.json",
+    "include/constants/regions.h",
+    "include/global.h",
+    "include/global.fieldmap.h",
+    "include/regions.h",
+    "include/main.h",
+    "src/regions.c",
+    "src/main.c",
+    "src/overworld.c",
+    "src/caps.c",
+    "include/constants/flags.h",
+    "ld_script_modern.ld",
+    "Makefile"
+  ],
+  "closed_decisions": [
+    "The bridge uses independent ABI ordinals UNSPECIFIED=0, HOENN=1, KANTO=2, JOHTO=3, and SEVII=4; engine Region ordinals never cross the ABI.",
+    "Sevii is detected through GetKantoSubregion; playerRegion is not current location and generic badge flags are not regional progress.",
+    "WorldLocation widens map group and number to u16 and uses i16 coordinates with explicit conversion checks.",
+    "ABI version 1 uses magic 0x504B434F, 128-byte payloads, 32-slot game-to-network and network-to-game ring queues, monotonic sequence/session epoch fields, CRC32 integrity, status flags, and heartbeat.",
+    "The EWRAM symbol is named gCoopNetBridge; host tooling will resolve it from a generated symbol manifest in the next unit.",
+    "Initialize after heap setup and poll once per outer frame after callbacks and before PlayTimeCounter_Update; never poll from VBlank.",
+    "The first command flow is ROM_READY to SESSION_READY plus heartbeat and player/world snapshot support.",
+    "Regional progress is a fixed four-slot bridge snapshot initialized independently from legacy flags; persistent SaveBlock changes are deferred.",
+    "All C layouts use fixed-width fields, compile-time size/offset assertions, no heap allocation, and no unsafe buffer overwrite."
+  ],
+  "forbidden_changes": [
+    "Do not modify SaveBlock structures, save migration, battle setup/controllers, level projection, trainer scripts/constants, maps, legacy link/RFU behavior, or build output naming.",
+    "Do not derive regional progress from FLAG_BADGE01_GET through FLAG_BADGE08_GET.",
+    "Do not hard-code an EWRAM address or implement Lua, symbol-manifest, sidecar, cloud, authentication, TLS, persistence, launcher UI, remote sprites, or battle lockstep behavior in this unit.",
+    "Do not edit any unowned file or docs/orchestration artifact.",
+    "Do not stage, commit, switch branches, fetch, push, contact remotes, or add ROM/save/savestate artifacts."
+  ],
+  "acceptance_criteria": [
+    {"id": "NB-001", "description": "The bridge ABI has explicit fixed layouts, compile-time assertions, safe queue full/empty behavior, CRC32 validation, and monotonic sequence/session fields."},
+    {"id": "NB-002", "description": "Region normalization returns Hoenn, Kanto, Johto, and first-class Sevii correctly and rejects unknown regions instead of falling back to Hoenn."},
+    {"id": "NB-003", "description": "WorldLocation exports widened map identity and player coordinates without serializing engine structs or using playerRegion as current location."},
+    {"id": "NB-004", "description": "Regional progress has four fixed independent slots and its minimum-tier API consults only the requested battle region."},
+    {"id": "NB-005", "description": "main.c initializes and polls the bridge at the audited non-VBlank hooks, with ROM_READY/SESSION_READY, heartbeat, and world-snapshot behavior implemented without heap allocation."},
+    {"id": "NB-006", "description": "The modern ROM build and git diff checks pass, or any environment-only failure is reported exactly without false success."}
+  ],
+  "commands": {
+    "exact": ["rtk git status --short"],
+    "read_only_prefixes": ["rtk rg --files include", "rtk rg --files src"],
+    "verification": {
+      "focused": ["rtk wsl.exe -d Ubuntu-24.04 -- make -j2 modern"],
+      "natural": ["rtk git diff --check"],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 2,
+    "fix_rounds": 2,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 1200000
+  },
+  "supervision": {"mode": "discovery-checkpoint", "transition_after_ms": 0},
+  "terminal_protocol": {
+    "return_when": [
+      "All acceptance criteria are resolved and every required verification command has a recorded outcome.",
+      "A concrete blocker prevents further progress within the owned files and execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": ["reviewer"],
+  "evidence_policy": {"minimum_command_trust": "runtime-audited", "changed_files_source": "root-diff"}
+}
