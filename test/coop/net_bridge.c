@@ -280,17 +280,20 @@ TEST("Cloud Coop session epoch change clears both queues and reissues ROM ready"
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
 }
 
-TEST("Cloud Coop same epoch reconnect preserves the outbound sequence")
+TEST("Cloud Coop same epoch reconnect rejects stale replay and preserves sequences")
 {
     struct CoopBridgeMessage message;
     u32 pollCount;
+    u16 outboundReadIndex;
+    u16 outboundWriteIndex;
+    u16 inboundIndex;
 
     CoopNetBridge_Init();
     PopInitialRomReady();
 
     EXPECT(CoopBridgeMessage_Seal(&message,
                                   COOP_BRIDGE_MESSAGE_SESSION_READY,
-                                  1,
+                                  10,
                                   17,
                                   NULL,
                                   0));
@@ -313,9 +316,53 @@ TEST("Cloud Coop same epoch reconnect preserves the outbound sequence")
     EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE);
     EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY));
 
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_CHECKPOINT_READY,
+                                               NULL,
+                                               0));
+    outboundReadIndex = gCoopNetBridge.game_to_network.read_index;
+    outboundWriteIndex = gCoopNetBridge.game_to_network.write_index;
+    inboundIndex = gCoopNetBridge.network_to_game.read_index;
+    EXPECT_EQ(gCoopNetBridge.network_to_game.write_index, inboundIndex);
+
+    /* A replay must be consumed without resetting either queue or re-arming
+     * the disconnected session. */
     EXPECT(CoopBridgeMessage_Seal(&message,
                                   COOP_BRIDGE_MESSAGE_SESSION_READY,
-                                  2,
+                                  10,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+
+    inboundIndex++;
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE);
+    EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY));
+    EXPECT_EQ(gCoopNetBridge.game_to_network.read_index, outboundReadIndex);
+    EXPECT_EQ(gCoopNetBridge.game_to_network.write_index, outboundWriteIndex);
+    EXPECT_EQ(gCoopNetBridge.network_to_game.read_index, inboundIndex);
+    EXPECT_EQ(gCoopNetBridge.network_to_game.write_index, inboundIndex);
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  9,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+
+    inboundIndex++;
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE);
+    EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY));
+    EXPECT_EQ(gCoopNetBridge.game_to_network.read_index, outboundReadIndex);
+    EXPECT_EQ(gCoopNetBridge.game_to_network.write_index, outboundWriteIndex);
+    EXPECT_EQ(gCoopNetBridge.network_to_game.read_index, inboundIndex);
+    EXPECT_EQ(gCoopNetBridge.network_to_game.write_index, inboundIndex);
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  11,
                                   17,
                                   NULL,
                                   0));
@@ -326,7 +373,7 @@ TEST("Cloud Coop same epoch reconnect preserves the outbound sequence")
     EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE));
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
-    EXPECT_EQ(message.sequence, 3);
+    EXPECT_EQ(message.sequence, 4);
     EXPECT_EQ(message.session_epoch, 17);
 }
 

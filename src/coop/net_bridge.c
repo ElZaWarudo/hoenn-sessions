@@ -353,13 +353,14 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
                     sCoopNetRuntime.rx_sequence = message->sequence;
                 return FALSE;
             }
+            if (!IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+                return FALSE;
 
             /* Re-arm a disconnected transport without rewinding either
              * sequence domain inside the still-current epoch. */
             CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
-            if (IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
-                sCoopNetRuntime.rx_sequence = message->sequence;
+            sCoopNetRuntime.rx_sequence = message->sequence;
             sCoopNetRuntime.last_player_state_frame = 0;
             sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
             sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
