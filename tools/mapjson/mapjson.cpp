@@ -36,6 +36,15 @@ using json11::Json;
 #define TRUE  1
 #define FALSE 0
 
+enum
+{
+    MAP_ENGINE_REGION_HOENN_VALUE = 0,
+    MAP_ENGINE_REGION_KANTO_VALUE = 1,
+};
+
+static_assert(MAP_ENGINE_REGION_HOENN_VALUE == 0, "Hoenn map header byte");
+static_assert(MAP_ENGINE_REGION_KANTO_VALUE == 1, "Kanto map header byte");
+
 // expansion headers
 #include "../../include/config/frlg.h"
 
@@ -106,6 +115,21 @@ string json_to_string(const Json &data, const string &field = "", bool silent = 
     return output;
 }
 
+int get_map_engine_region_value(const Json &map_data) {
+    /* An absent region is the only form that inherits the original Emerald
+     * default. The emitted byte intentionally uses stable assembly values;
+     * data/maps.s cannot import the C Region enum header. */
+    if (map_data.object_items().find("region") == map_data.object_items().end())
+        return MAP_ENGINE_REGION_HOENN_VALUE;
+
+    string region = json_to_string(map_data, "region");
+    if (region == "REGION_HOENN")
+        return MAP_ENGINE_REGION_HOENN_VALUE;
+    if (region == "REGION_KANTO")
+        return MAP_ENGINE_REGION_KANTO_VALUE;
+    FATAL_ERROR("Unknown or unsupported map engine region '%s'.\n", region.c_str());
+}
+
 string get_generated_warning(const string &filename, bool isAsm) {
     string comment = isAsm ? "@" : "//";
 
@@ -147,6 +171,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
     ostringstream text;
 
     string mapName = json_to_string(map_data, "name");
+    int engine_region = get_map_engine_region_value(map_data);
     text << get_generated_warning("data/maps/" + mapName + "/map.json", true);
 
     text << mapName << ":\n"
@@ -181,7 +206,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
     else
         text << "\t.byte " << floor_number << "\n";
 
-    text << "\t.byte 0\n";
+    text << "\t.byte " << engine_region << "\n";
 
     if (version == "ruby")
         text << "\t.byte " << json_to_string(map_data, "show_map_name") << "\n";
@@ -728,21 +753,6 @@ void process_groups(string groups_filepath, vector<string> &map_filepaths, strin
     Json groups_data = Json::parse(read_text_file(groups_filepath), err);
     vector<string> invalid_maps;
     vector<string> valid_map_ids;
-
-    for (const string &filepath : map_filepaths) {
-        string err;
-        string map_json_text = read_text_file(filepath);
-        Json map_data = Json::parse(map_json_text, err);
-        if (map_data == Json())
-            FATAL_ERROR("Failed to read '%s' while processing groups: %s\n", filepath.c_str(), err.c_str());
-
-        string region = json_to_string(map_data, "region", true);
-
-        if (region.empty()) {
-            region = "REGION_HOENN";
-        }
-        string map_name = json_to_string(map_data, "name");
-    }
 
     if (groups_data == Json())
         FATAL_ERROR("%s\n", err.c_str());

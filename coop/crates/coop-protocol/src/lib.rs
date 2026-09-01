@@ -9,6 +9,10 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize, Serializer, de::Deserializer};
 use thiserror::Error;
 
+pub mod catalog;
+
+pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
+
 /// Regions understood by the co-op wire protocol.
 ///
 /// Unspecified is reserved for low-level wire adapters; world and identity
@@ -363,6 +367,25 @@ impl WorldLocation {
     pub fn validate(&self) -> Result<(), ProtocolError> {
         self.region.ensure_concrete().map(|_| ())
     }
+
+    /// Resolves this location's exact map in the generated catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when this region and numeric coordinate pair is
+    /// absent or belongs to another region.
+    pub fn map(&self) -> Result<&'static MapCatalogEntry, ProtocolError> {
+        catalog::resolve_map_coordinates(self.region, self.map_group, self.map_number)
+    }
+
+    /// Translates this numeric location into the version-1 world-zone shape.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed catalog error when this location's map is unknown.
+    pub fn to_zone(&self, channel: u16) -> Result<WorldZone, ProtocolError> {
+        WorldZone::from_location(self, channel)
+    }
 }
 
 impl<'de> Deserialize<'de> for WorldLocation {
@@ -423,6 +446,7 @@ impl WorldZone {
         let region = region.ensure_concrete()?;
         let map = map.into();
         validate_map_key(&map)?;
+        catalog::resolve_map(region, &map)?;
         Ok(Self {
             region,
             map,
@@ -436,7 +460,59 @@ impl WorldZone {
     /// Returns an error when the region or map key is invalid.
     pub fn validate(&self) -> Result<(), ProtocolError> {
         self.region.ensure_concrete()?;
-        validate_map_key(&self.map)
+        validate_map_key(&self.map)?;
+        catalog::resolve_map(self.region, &self.map).map(|_| ())
+    }
+
+    /// Resolves this zone's exact map in the generated catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed error when the zone's region/map pair is absent or
+    /// belongs to another region.
+    pub fn map_entry(&self) -> Result<&'static MapCatalogEntry, ProtocolError> {
+        catalog::resolve_map(self.region, &self.map)
+    }
+
+    /// Translates this zone into the numeric location used by the ROM bridge.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed catalog error when this zone's map is unknown.
+    pub fn to_location(&self, x: i16, y: i16) -> Result<WorldLocation, ProtocolError> {
+        let entry = self.map_entry()?;
+        WorldLocation::new(self.region, entry.map_group, entry.map_number, x, y)
+    }
+
+    /// Alias for [`WorldZone::to_location`] for callers using the full name.
+    ///
+    /// # Errors
+    ///
+    /// Propagates the errors from [`WorldZone::to_location`].
+    pub fn to_world_location(&self, x: i16, y: i16) -> Result<WorldLocation, ProtocolError> {
+        self.to_location(x, y)
+    }
+
+    /// Translates an exact numeric location into a canonical world zone.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed catalog error when this location's map is unknown.
+    pub fn from_location(location: &WorldLocation, channel: u16) -> Result<Self, ProtocolError> {
+        let entry = location.map()?;
+        Self::new(location.region, entry.map, channel)
+    }
+
+    /// Alias for [`WorldZone::from_location`] for callers using the full name.
+    ///
+    /// # Errors
+    ///
+    /// Propagates the errors from [`WorldZone::from_location`].
+    pub fn from_world_location(
+        location: &WorldLocation,
+        channel: u16,
+    ) -> Result<Self, ProtocolError> {
+        Self::from_location(location, channel)
     }
 }
 
@@ -1172,6 +1248,27 @@ pub enum ProtocolError {
     },
     #[error("invalid map key: {value}")]
     InvalidMapKey { value: String },
+    #[error("map {map} belongs to {actual}, expected {expected}")]
+    MapRegionMismatch {
+        map: String,
+        expected: RegionId,
+        actual: RegionId,
+    },
+    #[error("map coordinates {map_group}:{map_number} belong to {actual}, expected {expected}")]
+    MapCoordinateRegionMismatch {
+        map_group: u16,
+        map_number: u16,
+        expected: RegionId,
+        actual: RegionId,
+    },
+    #[error("map {map} does not exist in {region}")]
+    UnknownMap { region: RegionId, map: String },
+    #[error("map coordinates {map_group}:{map_number} do not exist in {region}")]
+    UnknownMapCoordinates {
+        region: RegionId,
+        map_group: u16,
+        map_number: u16,
+    },
     #[error("identity belongs to {actual}, expected {expected}")]
     IdentityRegionMismatch {
         expected: RegionId,
@@ -1295,6 +1392,19 @@ mod tests {
         );
         assert!(WorldZone::new(RegionId::Unspecified, "PALLET_TOWN", 1).is_err());
         assert!(WorldZone::new(RegionId::Kanto, "pallet_town", 1).is_err());
+        assert!(matches!(
+            WorldZone::new(RegionId::Kanto, "LITTLEROOT_TOWN", 1),
+            Err(ProtocolError::MapRegionMismatch { .. })
+        ));
+
+        let sevii_zone = WorldZone::new(RegionId::Sevii, "ONE_ISLAND", 2).unwrap();
+        let location = sevii_zone.to_location(-3, 8).unwrap();
+        assert_eq!((location.map_group, location.map_number), (37, 12));
+        assert_eq!(WorldZone::from_location(&location, 2).unwrap(), sevii_zone);
+        assert!(matches!(
+            WorldZone::new(RegionId::Hoenn, "NOT_A_MAP", 1),
+            Err(ProtocolError::UnknownMap { .. })
+        ));
     }
 
     #[test]

@@ -6,8 +6,30 @@
 
 static bool8 IsKnownMapSection(u32 section_id)
 {
-    /* MAPSEC_NONE is the generated sentinel, not a valid location. */
-    return section_id < MAPSEC_NONE;
+    /* MAPSEC_NONE is the generated sentinel, not a valid location. The
+     * explicit count also rejects unused values between the table and the
+     * sentinel. */
+    return section_id < MAPSEC_COUNT && section_id != MAPSEC_NONE;
+}
+
+static enum Region EngineRegion_FromMapHeaderValue(u8 value)
+{
+    switch (value)
+    {
+    case COOP_MAP_ENGINE_REGION_HOENN:
+        return REGION_HOENN;
+    case COOP_MAP_ENGINE_REGION_KANTO:
+        return REGION_KANTO;
+    default:
+        /* Also accept an already-expanded C enum value for callers that
+         * construct a MapHeader in tests or tooling. Generated assembly uses
+         * only the stable values above. */
+        if (value == REGION_HOENN)
+            return REGION_HOENN;
+        if (value == REGION_KANTO)
+            return REGION_KANTO;
+        return REGION_NONE;
+    }
 }
 
 enum CoopRegion CoopRegion_FromEngineRegion(enum Region region)
@@ -63,7 +85,14 @@ bool8 CoopRegion_Normalize(enum CoopRegion *out, enum Region engine_region, u32 
     case REGION_KANTO:
         section_region = CoopRegion_FromSectionId(section_id);
         if (section_region != COOP_REGION_KANTO && section_region != COOP_REGION_SEVII)
-            return FALSE;
+        {
+            /* FRLG's special-area maps retain MAPSEC_SPECIAL_AREA even
+             * though that section is outside the ordinary Kanto range. The
+             * generated engine region is the authority for this case. */
+            if (section_id != MAPSEC_SPECIAL_AREA)
+                return FALSE;
+            section_region = COOP_REGION_KANTO;
+        }
         *out = section_region;
         return TRUE;
     default:
@@ -107,8 +136,8 @@ bool8 CoopWorldLocation_Export(struct WorldLocation *out)
      || !gObjectEvents[gPlayerAvatar.objectEventId].isPlayer)
         return FALSE;
 
-    region = CoopRegion_FromSectionId(gMapHeader.regionMapSectionId);
-    if (!CoopRegion_IsValid(region))
+    if (!CoopRegion_Normalize(&region, EngineRegion_FromMapHeaderValue(gMapHeader.engineRegion),
+                              gMapHeader.regionMapSectionId))
         return FALSE;
 
     /* SaveBlock's map components are signed engine fields; reject sentinels

@@ -4,6 +4,11 @@
 #include "test/test.h"
 
 _Static_assert(sizeof(struct WorldLocation) == 10, "tested world location ABI size");
+_Static_assert(sizeof(struct MapHeader) == 0x1C, "tested map header size");
+_Static_assert(offsetof(struct MapHeader, engineRegion) == 0x19, "tested engine region offset");
+_Static_assert(offsetof(struct MapHeader, battleType) == 0x1B, "tested battle type offset");
+_Static_assert(COOP_MAP_ENGINE_REGION_HOENN == 0, "Hoenn map header byte");
+_Static_assert(COOP_MAP_ENGINE_REGION_KANTO == 1, "Kanto map header byte");
 _Static_assert(offsetof(struct WorldLocation, region) == 0, "tested location region offset");
 _Static_assert(offsetof(struct WorldLocation, map_group) == 2, "tested location map group offset");
 _Static_assert(offsetof(struct WorldLocation, map_number) == 4, "tested location map number offset");
@@ -33,6 +38,7 @@ TEST("Cloud Coop map-section adapter distinguishes Hoenn Kanto and Sevii")
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_LITTLEROOT_TOWN), COOP_REGION_HOENN);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_PALLET_TOWN), COOP_REGION_KANTO);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_ONE_ISLAND), COOP_REGION_SEVII);
+    EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_SPECIAL_AREA), COOP_REGION_HOENN);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_NONE), COOP_REGION_UNSPECIFIED);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_COUNT), COOP_REGION_UNSPECIFIED);
     EXPECT_EQ(CoopRegion_FromSectionId(0xFFFFFFFFu), COOP_REGION_UNSPECIFIED);
@@ -61,6 +67,14 @@ TEST("Cloud Coop normalization rejects contradictory engine and map regions")
     EXPECT_EQ(region, COOP_REGION_SEVII);
 
     region = COOP_REGION_UNSPECIFIED;
+    EXPECT(CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_SPECIAL_AREA));
+    EXPECT_EQ(region, COOP_REGION_KANTO);
+
+    region = COOP_REGION_UNSPECIFIED;
+    EXPECT(CoopRegion_Normalize(&region, REGION_HOENN, MAPSEC_SPECIAL_AREA));
+    EXPECT_EQ(region, COOP_REGION_HOENN);
+
+    region = COOP_REGION_UNSPECIFIED;
     EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_NONE));
     EXPECT_EQ(region, COOP_REGION_UNSPECIFIED);
 
@@ -68,6 +82,8 @@ TEST("Cloud Coop normalization rejects contradictory engine and map regions")
     EXPECT(!CoopRegion_Normalize(&region, REGION_HOENN, MAPSEC_PALLET_TOWN));
     EXPECT_EQ(region, COOP_REGION_SEVII);
     EXPECT(!CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_LITTLEROOT_TOWN));
+    EXPECT_EQ(region, COOP_REGION_SEVII);
+    EXPECT(!CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_AQUA_HIDEOUT));
     EXPECT_EQ(region, COOP_REGION_SEVII);
     EXPECT(!CoopRegion_Normalize(&region, REGION_NONE, MAPSEC_LITTLEROOT_TOWN));
     EXPECT_EQ(region, COOP_REGION_SEVII);

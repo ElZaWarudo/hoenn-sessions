@@ -20,6 +20,14 @@ enum CoopRegion
     COOP_REGION_COUNT = 5,
 };
 
+/* Stable values emitted in map-header assembly. These are deliberately not
+ * the ordinals of enum Region, which is a C implementation detail. */
+enum CoopMapEngineRegion
+{
+    COOP_MAP_ENGINE_REGION_HOENN = 0,
+    COOP_MAP_ENGINE_REGION_KANTO = 1,
+};
+
 #define COOP_PROGRESS_REGION_COUNT 4
 
 /*
