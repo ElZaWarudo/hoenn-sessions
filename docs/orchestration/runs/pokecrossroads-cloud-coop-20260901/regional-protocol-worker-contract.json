@@ -1,0 +1,123 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The workspace resolves on Rust 1.93.1 and exposes only the coop-protocol member in this wave.",
+      "id": "RP-001"
+    },
+    {
+      "description": "RegionId ordinals and conversions are explicit, tested, and independent of the engine Region enum.",
+      "id": "RP-002"
+    },
+    {
+      "description": "TrainerInstanceId, BadgeId, FlyPointId, and EventId reject bare, lowercase, malformed, unknown-region, and cross-kind confusion while round-tripping canonical identities.",
+      "id": "RP-003"
+    },
+    {
+      "description": "WorldLocation, WorldZone, RegionalProgress, and compatibility/version types use fixed-width fields and deterministic serialization.",
+      "id": "RP-004"
+    },
+    {
+      "description": "Regional tier tests prove the supplied Hoenn/Kanto example and prove badges from other regions cannot influence the battle region.",
+      "id": "RP-005"
+    },
+    {
+      "description": "Symmetric group and atomic travel tests prove denial preserves the group and source zone, while an all-entitled transfer succeeds.",
+      "id": "RP-006"
+    },
+    {
+      "description": "Format, clippy with warnings denied, all workspace tests, and git diff checks pass.",
+      "id": "RP-007"
+    }
+  ],
+  "closed_decisions": [
+    "Use explicit independent wire ordinals UNSPECIFIED=0, HOENN=1, KANTO=2, JOHTO=3, and SEVII=4; never reuse engine enum ordinals.",
+    "Use strict canonical REGION:LOCAL_KEY identities with uppercase ASCII local keys and type-distinct wrappers for trainer instances, badges, fly points, and events.",
+    "WorldLocation contains region, u16 map_group, u16 map_number, i16 x, and i16 y; raw engine structs never cross the host protocol.",
+    "RegionalProgress contains one concrete region, u16 badge_mask, u32 story_checkpoint, and deterministic duplicate-free collections of same-region trainer and fly identities.",
+    "Group battle tier requires complete progress for the battle region and returns the minimum badge count in that region; missing progress fails closed and other-region badges are ignored.",
+    "Groups are symmetric sets of exactly two distinct character IDs with no leader, owner, or host field.",
+    "Cross-region group travel is atomic: any missing route entitlement denies the transfer without mutating the group or current world zone.",
+    "Use serde JSON contracts plus repr(u8) and explicit wire conversion methods; reject unknown protocol/schema versions and unknown region ordinals.",
+    "Keep dependencies minimal and forbid unsafe Rust."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg --files coop/crates/coop-protocol"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-protocol --all-features"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings",
+        "rtk cargo test --workspace --all-features",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:ada420536d91c336ddbfa8110081a05555eeca74e236f3266a845d8ace38b9fc",
+  "contract_id": "pokecrossroads-cloud-coop-20260901-regional-protocol-v2",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 900000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit any Pok\u00e9Crossroads C, assembly, map, save, battle, or build files.",
+    "Do not implement authentication, persistence, networking, server state, sidecar behavior, launcher UI, or ROM bridge behavior in this unit.",
+    "Do not stage, commit, switch branches, fetch, push, contact remotes, or mutate docs/orchestration.",
+    "Do not add a leader, host, or owner concept to groups.",
+    "Do not infer Sevii as Kanto in the shared protocol and do not assume Johto is currently playable.",
+    "Do not relax clippy warnings or add allow attributes merely to silence diagnostics."
+  ],
+  "lane": "deep",
+  "objective": "Implement and verify the minimal Rust workspace and region-safe shared protocol contract for Pok\u00e9Crossroads cloud co-op.",
+  "owned_files": [
+    "Cargo.toml",
+    "rust-toolchain.toml",
+    "coop/crates/coop-protocol/Cargo.toml",
+    "coop/crates/coop-protocol/src/lib.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/product/roadmap.md",
+    "docs/swarm/queue-state.yaml",
+    "include/constants/regions.h",
+    "include/global.fieldmap.h",
+    "include/global.h",
+    "include/link.h",
+    "src/regions.c",
+    "test/save.c"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "All acceptance criteria are resolved and every required verification command has a recorded outcome.",
+      "A concrete blocker prevents further progress within the owned files and execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "regional-protocol"
+}

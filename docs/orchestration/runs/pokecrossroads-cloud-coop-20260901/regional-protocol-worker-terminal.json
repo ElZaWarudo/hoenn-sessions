@@ -1,0 +1,39 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {"criterion_id": "RP-001", "status": "satisfied", "evidence": "Cargo metadata resolved Rust 1.93.1 and exactly one coop-protocol workspace member; rust-toolchain.toml pins 1.93.1."},
+    {"criterion_id": "RP-002", "status": "satisfied", "evidence": "Explicit RegionId ordinals, wire conversions, and region serialization are implemented and tested."},
+    {"criterion_id": "RP-003", "status": "satisfied", "evidence": "Typed region-qualified identities enforce canonical uppercase keys and reject malformed, unknown-region, and cross-kind values."},
+    {"criterion_id": "RP-004", "status": "satisfied", "evidence": "WorldLocation, WorldZone, RegionalProgress, TravelRoute, and Compatibility use fixed-width fields, validation, normalized collections, and deterministic JSON serialization."},
+    {"criterion_id": "RP-005", "status": "satisfied", "evidence": "Regional tier tests prove the Hoenn/Kanto example, ignore other-region badges, and fail closed on missing regional progress."},
+    {"criterion_id": "RP-006", "status": "satisfied", "evidence": "Group and atomic travel tests prove symmetric membership, denial without source-zone mutation, and successful all-entitled transfer."},
+    {"criterion_id": "RP-007", "status": "satisfied", "evidence": "Metadata, focused tests, formatting, clippy with warnings denied, workspace tests, and git diff checks passed."}
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {"command": "rtk cargo test -p coop-protocol --all-features", "attempts": 2, "outcome": "passed"},
+      {"command": "rtk cargo fmt --all -- --check", "attempts": 3, "outcome": "passed"},
+      {"command": "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings", "attempts": 2, "outcome": "passed"},
+      {"command": "rtk cargo test --workspace --all-features", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk git diff --check", "attempts": 1, "outcome": "passed"}
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-protocol --all-features",
+    "rtk cargo test -p coop-protocol --all-features",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "rtk cargo test --workspace --all-features",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

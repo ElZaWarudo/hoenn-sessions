@@ -4,6 +4,10 @@
 *.elf
 *.gba
 !data/*.gba
+*.ups
+*.sav
+*.srm
+*.bios
 *.sgm
 *.sa1
 *.ss[0-9]
@@ -35,6 +39,13 @@ build/
 porymap.*.cfg
 prefabs.json
 .vscode/
+.env
+.env.*
+!.env.example
+/coop/target/
+/target/
+/dist/bridge_manifest.json
+/bridge/generated_addresses.lua
 *.a
 .fuse_hidden*
 *.sna

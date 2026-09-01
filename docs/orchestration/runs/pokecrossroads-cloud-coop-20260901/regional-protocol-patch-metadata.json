@@ -1,0 +1,16 @@
+{
+  "workspace_id": "pokecrossroads-cloud-coop-20260901-regional-protocol-implementer",
+  "worker_id": "regional_protocol_implementer_retry",
+  "unit_id": "regional-protocol",
+  "role": "implementer",
+  "base_revision": "144f14ced0de2f82a85c222bf8dbec718f71793d",
+  "baseline_tree": "2cf565fff0a47e6eedb72f0022f86843e1b05478",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "Cargo.toml",
+    "rust-toolchain.toml",
+    "coop/crates/coop-protocol/Cargo.toml",
+    "coop/crates/coop-protocol/src/lib.rs"
+  ],
+  "contract_hash": "sha256:ada420536d91c336ddbfa8110081a05555eeca74e236f3266a845d8ace38b9fc"
+}

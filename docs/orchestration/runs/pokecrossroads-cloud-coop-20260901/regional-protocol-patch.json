@@ -1,0 +1,39 @@
+{
+  "base_revision": "144f14ced0de2f82a85c222bf8dbec718f71793d",
+  "baseline_digest": "sha256:ba4589ef4bda7741623d67b8a1484fc63bc87a5ba7dedf99fdbf5a9e0e9da5ac",
+  "baseline_tree": "2cf565fff0a47e6eedb72f0022f86843e1b05478",
+  "changed_files": [
+    {
+      "digest": "sha256:27dd7746fdeac60990e65abf913630016772f31d08a68c8ae6a9fb7d02dd6c6a",
+      "path": "Cargo.toml"
+    },
+    {
+      "digest": "sha256:fc5b631df0f19c356f78c08866b962f37771c8736dc4e2e9c8d7cee77f530690",
+      "path": "coop/crates/coop-protocol/Cargo.toml"
+    },
+    {
+      "digest": "sha256:12ad245b923423d91afab64e467b00774a3ed7d52a128b0c90ad6a336b4b443c",
+      "path": "coop/crates/coop-protocol/src/lib.rs"
+    },
+    {
+      "digest": "sha256:e1633ee4dccddc1fd314c184e83109e96a8366e1fbc8f8e51e505f8aa879a929",
+      "path": "rust-toolchain.toml"
+    }
+  ],
+  "contract_hash": "sha256:ada420536d91c336ddbfa8110081a05555eeca74e236f3266a845d8ace38b9fc",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:97199b154b159c7744b2d68e016efa7258a81f4b25c9c9374c25ac19c48ec178",
+  "manifest_hash": "sha256:10a10f7bfc06de2171ba65d57ef832f7abb787d617642b68b591c2693bcf882e",
+  "owned_paths": [
+    "Cargo.toml",
+    "coop/crates/coop-protocol/Cargo.toml",
+    "coop/crates/coop-protocol/src/lib.rs",
+    "rust-toolchain.toml"
+  ],
+  "patch_sha256": "sha256:7f6454fbd93c860dc41bd9a52898292d485e219c1cbc44b130a251549c26180f",
+  "role": "implementer",
+  "schema_version": 1,
+  "unit_id": "regional-protocol",
+  "worker_id": "regional_protocol_implementer_retry",
+  "workspace_id": "pokecrossroads-cloud-coop-20260901-regional-protocol-implementer"
+}

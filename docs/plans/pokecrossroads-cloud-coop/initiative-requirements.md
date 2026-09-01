@@ -15,7 +15,7 @@ The product specification is `C:/Users/User/Downloads/README_pokeemerald_coop_cl
 
 Build a private two-player online cooperative mode for PokéCrossroads, mGBA, a Lua memory bridge, a Rust/Tauri launcher, and a dedicated Rust service. The server owns social and transactional state; the ROM owns Pokémon mechanics; neither player is a host or group leader. Hoenn is the first runnable campaign slice, while wire, server, persistence, and ROM bridge identities are region-safe from version 1.
 
-The engine is pinned to tag `Beta-1.4` and commit `e05c82865d38a6638173fd30b2c830d1250aa50d`. Existing Emerald saves are not a compatibility target because PokéCrossroads documents an expanded save layout. The build output name is taken from the Makefile (`pokeemerald.gba`) until upstream resolves its README drift.
+The engine is pinned to tag `Beta-1.4` and commit `e05c82865d38a6638173fd30b2c830d1250aa50d`. Its embedded Expansion version identifies itself as unreleased `1.16.0`. Existing Emerald saves are not a compatibility target because PokéCrossroads documents an expanded save layout. The build output name is taken from the Makefile (`pokeemerald.gba`) until upstream resolves its README drift.
 
 ## Regional contract
 
