@@ -93,6 +93,7 @@ struct FakeCloud {
     lease: LeaseContract,
     login: LoginResponse,
     calls: Mutex<Vec<String>>,
+    uploads: Mutex<Vec<(coop_cloud::ArtifactIdentity, Vec<u8>)>>,
 }
 
 impl FakeCloud {
@@ -240,6 +241,10 @@ impl CloudApi for FakeCloud {
             target.artifact.as_str(),
             bytes.len()
         ));
+        self.uploads
+            .lock()
+            .expect("upload lock")
+            .push((target.artifact, bytes));
         Box::pin(async { Ok(()) })
     }
 
@@ -352,6 +357,7 @@ async fn fixture() -> TestResult<(TempDir, SessionLifecycle, Arc<FakeCloud>)> {
         lease,
         login,
         calls: Mutex::new(Vec::new()),
+        uploads: Mutex::new(Vec::new()),
     });
     let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
     let auth = AuthSession::login(
@@ -446,11 +452,22 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
     if descriptor.secret() == descriptor.control_secret() {
         return Err("bridge and control secrets must be independent".into());
     }
+    let sidecar_task = SidecarTaskGuard {
+        handle: Some(tokio::spawn(sidecar.serve())),
+    };
+
+    // Control authentication is intentionally completed before the ROM bridge
+    // is connected, matching the launcher's control-first lifecycle.
+    let control_deadline = std::time::Instant::now() + IO_TIMEOUT;
+    let mut control = timeout(
+        deadline_remaining(control_deadline),
+        ControlChannel::connect(&descriptor),
+    )
+    .await??;
+
     // Exercise the same production orchestration helper used by
-    // ProcessSupervisor::start_with_bridge.  The helper selects bridge fields
-    // from the authenticated descriptor before mGBA starts; this injectable
-    // smoke then checks the persisted credential boundary without spawning
-    // stock mGBA.
+    // ProcessSupervisor::start_with_bridge. Control authentication succeeds
+    // before any bridge credential is materialized for mGBA.
     let session_lua_path = lifecycle.workspace.path().join("session.lua");
     let bridge_source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../bridge")
@@ -470,18 +487,7 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
         std::fs::read(lifecycle.workspace.path().join("main.lua"))?,
         std::fs::read(bridge_source.join("main.lua"))?
     );
-    let sidecar_task = SidecarTaskGuard {
-        handle: Some(tokio::spawn(sidecar.serve())),
-    };
 
-    // Control authentication is intentionally completed before the ROM bridge
-    // is connected, matching the launcher's control-first lifecycle.
-    let control_deadline = std::time::Instant::now() + IO_TIMEOUT;
-    let mut control = timeout(
-        deadline_remaining(control_deadline),
-        ControlChannel::connect(&descriptor),
-    )
-    .await??;
     let bridge_deadline = std::time::Instant::now() + IO_TIMEOUT;
     let mut bridge = timeout(
         deadline_remaining(bridge_deadline),
@@ -576,9 +582,20 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
             .any(|call| call.starts_with("upload:character.sav"))
     );
     assert!(calls.iter().any(|call| call == "finalize"));
+    assert_eq!(
+        cloud.uploads.lock().expect("upload lock").as_slice(),
+        &[
+            (
+                coop_cloud::ArtifactIdentity::CharacterSav,
+                b"synthetic-character-state".to_vec(),
+            ),
+            (coop_cloud::ArtifactIdentity::PendingCommits, b"[]".to_vec(),),
+        ]
+    );
 
     drop(control);
     drop(bridge);
+    sidecar_task.shutdown().await;
     lifecycle.release(cloud.as_ref()).await?;
     assert!(
         cloud
@@ -588,6 +605,5 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
             .iter()
             .any(|call| call == "release:00000000-0000-0000-0000-000000000102:7:1")
     );
-    sidecar_task.shutdown().await;
     Ok(())
 }

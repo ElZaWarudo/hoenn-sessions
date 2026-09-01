@@ -250,6 +250,20 @@ def run_target(name: str, command: tuple[str, ...], index: int) -> dict[str, obj
             except subprocess.TimeoutExpired:
                 return {"name": name, "status": "timed_out"}
         return {"name": name, "status": "timed_out"}
+    except BaseException:
+        # POSIX start_new_session and the Windows Job both require explicit
+        # tree teardown when Ctrl-C or another asynchronous exception escapes
+        # wait(). Merely closing containment is a no-op on POSIX.
+        containment.terminate(process)
+        try:
+            process.wait(timeout=REAP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            containment.close()
+            try:
+                process.wait(timeout=REAP_TIMEOUT_SECONDS)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        raise
     finally:
         containment.close()
 
