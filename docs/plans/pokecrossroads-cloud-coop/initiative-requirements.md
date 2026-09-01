@@ -5,6 +5,7 @@ initiative: pokecrossroads-cloud-coop
 source_sha256: 47cd8dfc2653d6e52708e0a12f758c1da2fa2d9cf7b62e4fbb7540fd897be553
 engine_tag: Beta-1.4
 engine_commit: e05c82865d38a6638173fd30b2c830d1250aa50d
+mgba_version: 0.10.5
 ---
 
 # PokéCrossroads Cloud Co-op initiative contract
@@ -16,6 +17,10 @@ The product specification is `C:/Users/User/Downloads/README_pokeemerald_coop_cl
 Build a private two-player online cooperative mode for PokéCrossroads, mGBA, a Lua memory bridge, a Rust/Tauri launcher, and a dedicated Rust service. The server owns social and transactional state; the ROM owns Pokémon mechanics; neither player is a host or group leader. Hoenn is the first runnable campaign slice, while wire, server, persistence, and ROM bridge identities are region-safe from version 1.
 
 The engine is pinned to tag `Beta-1.4` and commit `e05c82865d38a6638173fd30b2c830d1250aa50d`. Its embedded Expansion version identifies itself as unreleased `1.16.0`. Existing Emerald saves are not a compatibility target because PokéCrossroads documents an expanded save layout. The build output name is taken from the Makefile (`pokeemerald.gba`) until upstream resolves its README drift.
+
+mGBA is pinned to stable `0.10.5`, whose documented Lua API provides frame callbacks, bus memory access, and loopback TCP sockets. Bridge ABI v1 follows the README's exact 144-byte message and 9,244-byte bridge layout, uses CRC-32/IEEE over bytes 0 through 139, and publishes queue indices last. Numeric `game_build_id` `0x00010000` denotes the first co-op development schema; the generated manifest additionally pins the complete ROM SHA-256 and is the stronger compatibility identity.
+
+The Phase 1 HTTP adapter is deliberately unauthenticated and therefore refuses non-loopback binds. It is an executable domain harness, not the future public service boundary. The launcher will own and persist the monotonic nonzero `u32` session epoch; the sidecar refuses to invent one. Server route and trainer catalog entries own exact logical zones. A bounded final-state hash proves only that the transport field is present in this slice; two-client deterministic hash consensus remains part of the later lockstep milestone.
 
 ## Regional contract
 
@@ -58,4 +63,4 @@ Authentication, exclusive leases, cloud snapshots, deterministic battle lockstep
 
 Host code: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features`.
 
-ROM code: `git diff --check`, generated-address fixture tests, `make modern`, and focused `make check TESTS="Cloud Coop"` when the ARM toolchain is available. The current host lacks `arm-none-eabi-*`; this is a tooling blocker, not permission to claim a ROM build passed.
+ROM code: `git diff --check`, generated-address fixture tests, `make modern`, and focused `make check TESTS="Cloud Coop"`. A local extracted GNU Arm Embedded 13.2 toolchain is available for this run; final claims require both the linked ROM build and focused tests to pass.

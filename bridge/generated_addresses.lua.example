@@ -1,0 +1,22 @@
+-- Run tools/generate_bridge_manifest.py after linking the ROM.
+return {
+  schema_version = 1,
+  game_build_id = 0x00010000,
+  rom_sha256 = string.rep("0", 64),
+  magic = 0x504B434F,
+  abi_version = 1,
+  protocol_version = 1,
+  address = 0x02000000,
+  size = 9244,
+  offsets = {
+    status_flags = 12,
+    last_sidecar_heartbeat = 16,
+    game_to_network = 20,
+    network_to_game = 4632,
+  },
+  queue = { capacity = 32, size = 4612, read_index = 0, write_index = 2, entries = 4 },
+  message = {
+    size = 144, payload_size = 128, type = 0, length = 2,
+    sequence = 4, session_epoch = 8, payload = 12, checksum = 140,
+  },
+}

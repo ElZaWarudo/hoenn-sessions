@@ -46,6 +46,7 @@ prefabs.json
 /target/
 /dist/bridge_manifest.json
 /bridge/generated_addresses.lua
+/bridge/session.lua
 *.a
 .fuse_hidden*
 *.sna
