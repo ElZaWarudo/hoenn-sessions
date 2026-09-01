@@ -1,0 +1,31 @@
+schema_version: 1
+updated_at: "2026-09-01T00:00:00Z"
+blockers:
+  - id: BLK-ARM-TOOLCHAIN
+    unit_id: rom-netbridge
+    risk: high
+    status: open
+    description: Native Windows and WSL currently lack arm-none-eabi GCC, binutils, and newlib.
+    impact_if_ignored: ROM compilation and mGBA test claims cannot be certified.
+    next_action: Provision the documented WSL ARM packages or a compatible devkitARM toolchain, then run make modern and focused make check.
+  - id: BLK-MGBA-PIN
+    unit_id: sidecar-slice
+    risk: elevated
+    status: open
+    description: The specification requires a pinned mGBA build, but no exact supported binary/version has been selected.
+    impact_if_ignored: Emulator automation and savestate compatibility remain unproven.
+    next_action: Select an mGBA version with the required Lua socket and memory APIs and record its checksum.
+  - id: BLK-PROVENANCE
+    unit_id: distribution
+    risk: high
+    status: open
+    description: PokéCrossroads has no top-level license declaration in the pinned snapshot; upstream ancestry is shallow and redistribution permissions are unclear.
+    impact_if_ignored: Publishing or redistributing derived code/assets may exceed granted rights.
+    next_action: Obtain maintainer permission or a clear license before any remote publication. Local private implementation may continue.
+  - id: BLK-FIREBASE
+    unit_id: cloud-storage
+    risk: elevated
+    status: open
+    description: No Firebase project, emulator configuration, or credentials were supplied.
+    impact_if_ignored: Cloud object persistence cannot be integration-tested; only storage contracts and local fakes can be validated.
+    next_action: Supply non-production Firebase emulator or project settings outside Git.

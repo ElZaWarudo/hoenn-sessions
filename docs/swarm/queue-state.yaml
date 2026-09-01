@@ -1,0 +1,50 @@
+schema_version: 2
+updated_at: "2026-09-01T00:00:00Z"
+mode: autonomous-team-flow
+documentation_gate:
+  status: in_review
+  initiative_contract: docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
+  feedback_log:
+    - at: "2026-09-01T00:00:00Z"
+      by: user
+      summary: "Authorized immediate local implementation and subagent dispatch; denied all remote mutation."
+    - at: "2026-09-01T00:00:01Z"
+      by: user
+      summary: "Changed the engine basis to eonlynx/pokecrossroads."
+    - at: "2026-09-01T00:00:02Z"
+      by: user
+      summary: "Required region-qualified identities, regional tier calculation, one cross-region world, and gated group travel."
+source_artifacts:
+  specification:
+    path: C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md
+    sha256: 47cd8dfc2653d6e52708e0a12f758c1da2fa2d9cf7b62e4fbb7540fd897be553
+  engine:
+    repository: https://github.com/eonlynx/pokecrossroads
+    tag: Beta-1.4
+    commit: e05c82865d38a6638173fd30b2c830d1250aa50d
+units:
+  discovery:
+    status: active
+    lane: read-only-parallel
+    owns: [build-audit, integration-seams, provenance]
+  regional-protocol:
+    status: ready
+    depends_on: [discovery]
+    owns: [Cargo.toml, rust-toolchain.toml, coop/crates/coop-protocol]
+  rom-netbridge:
+    status: ready
+    depends_on: [discovery]
+    owns: [include/coop, src/coop, test/coop, bridge, tools/generate_bridge_manifest.py, src/main.c]
+  server-slice:
+    status: planned
+    depends_on: [regional-protocol]
+    owns: [coop/crates/coop-server, coop/migrations]
+  sidecar-slice:
+    status: planned
+    depends_on: [regional-protocol, rom-netbridge]
+    owns: [coop/crates/coop-sidecar]
+  integration:
+    status: planned
+    depends_on: [rom-netbridge, server-slice, sidecar-slice]
+    owns: [aggregate-validation, review, local-commits]
+wave_history: []
