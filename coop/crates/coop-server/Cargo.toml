@@ -12,6 +12,7 @@ coop-cloud = { path = "../coop-cloud" }
 coop-protocol = { path = "../coop-protocol" }
 getrandom.workspace = true
 hmac.workspace = true
+http-body-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

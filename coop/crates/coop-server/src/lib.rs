@@ -4,6 +4,12 @@
 //! state is guarded by one process-local lock, which makes domain transitions
 //! atomic and leaves an explicit adapter boundary for a future repository.
 
+pub mod phase2;
+
+pub use phase2::{
+    AuthenticatedActor, Phase2App, Phase2Config, Phase2Error, ProductionConfig, serve_phase2_local,
+};
+
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
