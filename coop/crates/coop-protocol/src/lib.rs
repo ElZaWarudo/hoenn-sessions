@@ -533,10 +533,21 @@ impl<'de> Deserialize<'de> for WorldZone {
     }
 }
 
+/// Badge bits currently assigned by every protocol and ROM implementation.
+///
+/// `RegionalProgress::badge_mask` remains `u16` on the wire and in storage so
+/// the contract can grow without a representation migration. Until such a
+/// protocol revision exists, bits outside this low-eight-bit mask are reserved
+/// and cannot contribute to a tier or satisfy an entitlement. This is the Rust
+/// counterpart of the ROM's `COOP_PROGRESS_BADGE_MASK`.
+pub const VALID_REGIONAL_BADGE_MASK: u16 = 0x00FF;
+
 /// A player's progress for one concrete region.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegionalProgress {
     pub region: RegionId,
+    /// Raw `u16` wire/storage representation; only
+    /// [`VALID_REGIONAL_BADGE_MASK`] bits have badge semantics.
     pub badge_mask: u16,
     pub story_checkpoint: u32,
     pub defeated_trainers: Vec<TrainerInstanceId>,
@@ -589,15 +600,21 @@ impl RegionalProgress {
         })
     }
 
-    /// Returns the number of earned badges in this region only.
+    /// Returns the number of assigned badge bits earned in this region only.
+    /// Reserved high bits are ignored.
     #[must_use]
     pub fn badge_count(&self) -> u8 {
-        u8::try_from(self.badge_mask.count_ones()).unwrap_or(u8::MAX)
+        u8::try_from((self.badge_mask & VALID_REGIONAL_BADGE_MASK).count_ones()).unwrap_or(0)
     }
 
+    /// Returns whether every required assigned badge bit is present.
+    ///
+    /// A requirement containing any reserved bit fails closed, even if the
+    /// same bit happens to be present in the raw stored mask.
     #[must_use]
     pub const fn has_badges(&self, required_mask: u16) -> bool {
-        self.badge_mask & required_mask == required_mask
+        required_mask & !VALID_REGIONAL_BADGE_MASK == 0
+            && self.badge_mask & VALID_REGIONAL_BADGE_MASK & required_mask == required_mask
     }
 
     /// Validates public fields and their regional identity invariants.
@@ -1321,6 +1338,11 @@ mod tests {
             .expect("test progress is valid")
     }
 
+    fn regional_with_mask(region: RegionId, badge_mask: u16) -> RegionalProgress {
+        RegionalProgress::new(region, badge_mask, 8, vec![], vec![])
+            .expect("test progress is valid")
+    }
+
     fn participant(id: u64, records: Vec<RegionalProgress>) -> ParticipantProgress {
         ParticipantProgress::new(id, records).expect("test participant is valid")
     }
@@ -1432,6 +1454,47 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn badge_entitlements_use_only_the_canonical_low_eight_bits() {
+        let high_only = regional_with_mask(RegionId::Hoenn, 0xFF00);
+        let wire = serde_json::to_string(&high_only).unwrap();
+        let decoded: RegionalProgress = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded.badge_mask, 0xFF00);
+        assert_eq!(high_only.badge_count(), 0);
+        assert!(!high_only.has_badges(0x0100));
+
+        let low_and_high = regional_with_mask(RegionId::Hoenn, 0xFF07);
+        assert_eq!(low_and_high.badge_count(), 3);
+        assert!(low_and_high.has_badges(0x0007));
+        assert!(!low_and_high.has_badges(0x0107));
+    }
+
+    #[test]
+    fn group_tier_and_travel_ignore_reserved_badge_bits() {
+        let first = participant(10, vec![regional_with_mask(RegionId::Hoenn, 0xFF07)]);
+        let second = participant(11, vec![regional_with_mask(RegionId::Hoenn, 0xFF03)]);
+        assert_eq!(
+            group_battle_tier(&[first.clone(), second.clone()], RegionId::Hoenn),
+            Ok(2)
+        );
+
+        let high_only = [
+            participant(10, vec![regional_with_mask(RegionId::Hoenn, 0xFF00)]),
+            participant(11, vec![regional_with_mask(RegionId::Hoenn, 0xFF00)]),
+        ];
+        let group = Group::new(10, 11).unwrap();
+        let mut source = WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).unwrap();
+        let original_source = source.clone();
+        let destination = WorldZone::new(RegionId::Kanto, "PALLET_TOWN", 1).unwrap();
+        let route = TravelRoute::new(RegionId::Hoenn, RegionId::Kanto, 1, 0).unwrap();
+        assert!(
+            group
+                .transfer(&mut source, destination, &high_only, &route)
+                .is_err()
+        );
+        assert_eq!(source, original_source);
     }
 
     #[test]

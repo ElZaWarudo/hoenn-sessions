@@ -1719,6 +1719,15 @@ mod tests {
         .expect("test progress is valid")
     }
 
+    fn progress_with_mask(
+        region: RegionId,
+        badge_mask: u16,
+        story_checkpoint: u32,
+    ) -> RegionalProgress {
+        RegionalProgress::new(region, badge_mask, story_checkpoint, vec![], vec![])
+            .expect("test progress is valid")
+    }
+
     fn participant(
         id: u64,
         hoenn_badges: u8,
@@ -1736,6 +1745,22 @@ mod tests {
                     vec![],
                 ),
                 progress(RegionId::Kanto, kanto_badges, kanto_story, defeated),
+            ],
+        )
+        .expect("test participant is valid")
+    }
+
+    fn participant_with_mask(id: u64, region: RegionId, badge_mask: u16) -> ParticipantProgress {
+        let other_region = if region == RegionId::Hoenn {
+            RegionId::Kanto
+        } else {
+            RegionId::Hoenn
+        };
+        ParticipantProgress::new(
+            id,
+            vec![
+                progress_with_mask(region, badge_mask, 8),
+                progress_with_mask(other_region, 0, 0),
             ],
         )
         .expect("test participant is valid")
@@ -1897,6 +1922,46 @@ mod tests {
         assert_eq!(moved.zone, zone(RegionId::Kanto, "PALLET_TOWN"));
         assert_eq!(state.participant_zone(10).expect("zone"), moved.zone);
         assert_eq!(state.participant_zone(11).expect("zone"), moved.zone);
+    }
+
+    #[test]
+    fn reserved_badge_bits_do_not_authorize_travel_or_raise_battle_tier() {
+        let travel_state = AppState::new();
+        for id in [10, 11] {
+            register(
+                &travel_state,
+                id,
+                participant_with_mask(id, RegionId::Hoenn, 0xFF00),
+                zone(RegionId::Hoenn, "LITTLEROOT_TOWN"),
+            );
+        }
+        let group = travel_state.create_group(10, 11).expect("group");
+        let before = travel_state.group(group.group_id).expect("group");
+        assert!(matches!(
+            travel_state.travel(group.group_id, "HOENN_TO_KANTO"),
+            Err(ServiceError::Forbidden {
+                code: "protocol_boundary_denied",
+                ..
+            })
+        ));
+        assert_eq!(travel_state.group(group.group_id).expect("group"), before);
+
+        let battle_state = AppState::new();
+        for id in [20, 21] {
+            register(
+                &battle_state,
+                id,
+                participant_with_mask(id, RegionId::Kanto, 0xFF00),
+                zone(RegionId::Kanto, "PALLET_TOWN"),
+            );
+        }
+        let group = battle_state.create_group(20, 21).expect("group");
+        let trainer = TrainerInstanceId::new(RegionId::Kanto, "TRAINER_BROCK").expect("trainer");
+        let reservation = battle_state
+            .reserve_battle(group.group_id, 20, trainer)
+            .expect("tier-zero battle remains available");
+        assert_eq!(reservation.tier, 0);
+        assert_eq!(reservation.level_cap, level_cap_for_tier(0).unwrap());
     }
 
     #[test]
