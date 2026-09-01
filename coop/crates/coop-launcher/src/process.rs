@@ -995,8 +995,8 @@ mod tests {
             .expect("long-running test child")
     }
 
-    #[test]
-    fn cancellation_termination_reaps_child_within_bound() {
+    #[tokio::test]
+    async fn cancellation_termination_reaps_child_within_bound() {
         let started = std::time::Instant::now();
         let mut child = long_running_child();
         terminate_and_reap_sync(&mut child);
