@@ -7,13 +7,26 @@ import argparse
 import hashlib
 import json
 import os
+import stat
+import struct
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from coop.generate_regional_identities import (
+    DIGEST_SIZE as REGISTRY_DIGEST_SIZE,
+    RegistryError,
+    canonical_registry_bytes,
+)
 
 
 BRIDGE_SYMBOL = "gCoopNetBridge"
+SAVE_BLOCK3_SYMBOL = "gSaveblock3"
+SAVE_DESCRIPTOR_SYMBOL = "gCoopSaveSchemaDescriptor"
+ABI_SYMBOLS = frozenset((BRIDGE_SYMBOL, SAVE_BLOCK3_SYMBOL, SAVE_DESCRIPTOR_SYMBOL))
+MANIFEST_SCHEMA_VERSION = 2
 BRIDGE_MAGIC = 0x504B434F
 BRIDGE_ABI_VERSION = 1
 GAME_PROTOCOL_VERSION = 1
@@ -24,6 +37,35 @@ MESSAGE_SIZE = 144
 QUEUE_SIZE = 4612
 EWRAM_START = 0x02000000
 EWRAM_END = 0x02040000
+ROM_START = 0x08000000
+ROM_END = 0x0A000000
+UINT32_LIMIT = 1 << 32
+
+SAVE_DESCRIPTOR_MAGIC = 0x31445343
+SAVE_DESCRIPTOR_VERSION = 1
+SAVE_DESCRIPTOR_SIZE = 64
+SAVE_MAGIC = 0x31505343
+SAVE_SCHEMA_VERSION = 1
+SAVE_STRUCT_SIZE = 672
+SAVE_BLOCK3_OFFSET = 4
+SAVE_GENERATION_OFFSET = 28
+SAVE_CRC_OFFSET = 668
+SAVE_SECTOR_DATA_SIZE = 3968
+SAVE_BLOCK3_CHUNK_SIZE = 116
+SAVE_SECTOR_SIZE = 4096
+SAVE_SECTORS_PER_SLOT = 15
+SAVE_SLOT_COUNT = 2
+SAVE_BLOCK3_PERSISTED_SECTORS = 6
+SAVE_BLOCK3_MIN_SIZE = SAVE_BLOCK3_OFFSET + SAVE_STRUCT_SIZE
+SAVE_BLOCK3_MAX_SIZE = SAVE_BLOCK3_CHUNK_SIZE * SAVE_BLOCK3_PERSISTED_SECTORS
+REGISTRY_VERSION = 1
+SAVE_TRAINER_BITS_OFFSET = 68
+SAVE_EVENT_BITS_OFFSET = 324
+SAVE_FLY_BITS_OFFSET = 580
+SAVE_GYM_BITS_OFFSET = 596
+SAVE_STATUS_FLAGS_OFFSET = 32
+SAVE_REGIONAL_PROGRESS_OFFSET = 36
+SAVE_DESCRIPTOR_STRUCT = struct.Struct("<IHHI10HI16s6H")
 
 
 class ManifestError(RuntimeError):
@@ -36,6 +78,38 @@ class Symbol:
     address: int
     size: int
     kind: str
+
+
+@dataclass(frozen=True)
+class RegistryContract:
+    version: int
+    digest: bytes
+
+
+@dataclass(frozen=True)
+class SaveSchemaDescriptor:
+    descriptor_magic: int
+    descriptor_version: int
+    descriptor_size: int
+    save_magic: int
+    save_schema_version: int
+    save_struct_size: int
+    save_block3_offset: int
+    generation_offset: int
+    crc32_offset: int
+    sector_data_size: int
+    save_block3_chunk_size: int
+    sector_size: int
+    sectors_per_slot: int
+    save_slot_count: int
+    registry_version: int
+    registry_digest: bytes
+    trainer_bits_offset: int
+    event_bits_offset: int
+    fly_bits_offset: int
+    gym_bits_offset: int
+    status_flags_offset: int
+    regional_progress_offset: int
 
 
 def parse_nm_symbols(output: str) -> dict[str, Symbol]:
@@ -56,9 +130,9 @@ def parse_nm_symbols(output: str) -> dict[str, Symbol]:
         size_hex = parts[3] if len(parts) == 4 else "0"
         if name in symbols:
             # Linked ROMs can legitimately contain repeated local or weak
-            # names. Only ambiguity in the ABI anchor itself is unsafe.
-            if name == BRIDGE_SYMBOL:
-                raise ManifestError(f"duplicate bridge symbol in nm output: {name}")
+            # names. Ambiguity in any externally consumed ABI anchor is unsafe.
+            if name in ABI_SYMBOLS:
+                raise ManifestError(f"duplicate ABI symbol in nm output: {name}")
             continue
         try:
             address = int(address_hex, 16)
@@ -82,22 +156,133 @@ def inspect_elf(elf_path: Path, nm_command: str) -> dict[str, Symbol]:
     return parse_nm_symbols(completed.stdout)
 
 
+def checked_u32_add(*values: int, context: str) -> int:
+    total = 0
+    for value in values:
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ManifestError(f"{context} contains an invalid unsigned value")
+        total += value
+        if total >= UINT32_LIMIT:
+            raise ManifestError(f"{context} overflows a 32-bit address")
+    return total
+
+
+def validate_symbol_range(
+    symbol: Symbol,
+    *,
+    start: int,
+    end: int,
+    minimum_size: int,
+    maximum_size: int,
+    region: str,
+) -> None:
+    if symbol.size < minimum_size or symbol.size > maximum_size:
+        expected = (
+            str(minimum_size)
+            if minimum_size == maximum_size
+            else f"{minimum_size}..{maximum_size}"
+        )
+        raise ManifestError(
+            f"{symbol.name} has size {symbol.size}, expected {expected} bytes"
+        )
+    symbol_end = checked_u32_add(symbol.address, symbol.size, context=f"{symbol.name} range")
+    if symbol.address < start or symbol_end > end:
+        raise ManifestError(
+            f"{symbol.name} range 0x{symbol.address:08X}..0x{symbol_end:08X} "
+            f"is outside {region}"
+        )
+
+
 def validate_bridge_symbol(symbols: dict[str, Symbol]) -> Symbol:
     try:
         bridge = symbols[BRIDGE_SYMBOL]
     except KeyError as error:
         raise ManifestError(f"linked ELF does not define {BRIDGE_SYMBOL}") from error
+    if bridge.name != BRIDGE_SYMBOL:
+        raise ManifestError(f"linked ELF has an inconsistent {BRIDGE_SYMBOL} record")
+    if bridge.address % 4 != 0:
+        raise ManifestError(f"{BRIDGE_SYMBOL} is not 4-byte aligned")
 
-    if bridge.size != BRIDGE_SIZE:
-        raise ManifestError(
-            f"{BRIDGE_SYMBOL} has size {bridge.size}, expected ABI size {BRIDGE_SIZE}"
-        )
-    if bridge.address < EWRAM_START or bridge.address + bridge.size > EWRAM_END:
-        raise ManifestError(
-            f"{BRIDGE_SYMBOL} range 0x{bridge.address:08X}.."
-            f"0x{bridge.address + bridge.size:08X} is outside EWRAM"
-        )
+    validate_symbol_range(
+        bridge,
+        start=EWRAM_START,
+        end=EWRAM_END,
+        minimum_size=BRIDGE_SIZE,
+        maximum_size=BRIDGE_SIZE,
+        region="EWRAM",
+    )
     return bridge
+
+
+def validate_save_block3_layout(block3: Symbol) -> None:
+    if block3.address % 4 != 0:
+        raise ManifestError(f"{SAVE_BLOCK3_SYMBOL} is not 4-byte aligned")
+    validate_symbol_range(
+        block3,
+        start=EWRAM_START,
+        end=EWRAM_END,
+        minimum_size=SAVE_BLOCK3_MIN_SIZE,
+        maximum_size=SAVE_BLOCK3_MAX_SIZE,
+        region="EWRAM",
+    )
+
+
+def validate_save_descriptor_symbol_layout(descriptor: Symbol) -> None:
+    if descriptor.address % 4 != 0:
+        raise ManifestError(f"{SAVE_DESCRIPTOR_SYMBOL} is not 4-byte aligned")
+    validate_symbol_range(
+        descriptor,
+        start=ROM_START,
+        end=ROM_END,
+        minimum_size=SAVE_DESCRIPTOR_SIZE,
+        maximum_size=SAVE_DESCRIPTOR_SIZE,
+        region="the GBA ROM window",
+    )
+
+
+def validate_save_symbols(symbols: dict[str, Symbol]) -> tuple[Symbol, Symbol]:
+    try:
+        block3 = symbols[SAVE_BLOCK3_SYMBOL]
+    except KeyError as error:
+        raise ManifestError(f"linked ELF does not define {SAVE_BLOCK3_SYMBOL}") from error
+    try:
+        descriptor = symbols[SAVE_DESCRIPTOR_SYMBOL]
+    except KeyError as error:
+        raise ManifestError(f"linked ELF does not define {SAVE_DESCRIPTOR_SYMBOL}") from error
+    if block3.name != SAVE_BLOCK3_SYMBOL:
+        raise ManifestError(f"linked ELF has an inconsistent {SAVE_BLOCK3_SYMBOL} record")
+    if descriptor.name != SAVE_DESCRIPTOR_SYMBOL:
+        raise ManifestError(
+            f"linked ELF has an inconsistent {SAVE_DESCRIPTOR_SYMBOL} record"
+        )
+    validate_save_block3_layout(block3)
+    validate_save_descriptor_symbol_layout(descriptor)
+    return block3, descriptor
+
+
+def read_save_descriptor_bytes(rom_path: Path, symbol: Symbol) -> bytes:
+    if symbol.name != SAVE_DESCRIPTOR_SYMBOL:
+        raise ManifestError(f"ROM symbol must be {SAVE_DESCRIPTOR_SYMBOL}")
+    validate_save_descriptor_symbol_layout(symbol)
+    offset = symbol.address - ROM_START
+    end = offset + symbol.size
+    try:
+        with rom_path.open("rb") as stream:
+            metadata = os.fstat(stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                raise ManifestError(f"ROM input is not a regular file: {rom_path}")
+            if end > metadata.st_size:
+                raise ManifestError(
+                    f"{symbol.name} ROM range 0x{offset:X}..0x{end:X} exceeds "
+                    f"{rom_path} ({metadata.st_size} bytes)"
+                )
+            stream.seek(offset)
+            payload = stream.read(symbol.size)
+    except OSError as error:
+        raise ManifestError(f"failed to read ROM {rom_path}: {error}") from error
+    if len(payload) != symbol.size:
+        raise ManifestError(f"short read for {symbol.name} from {rom_path}")
+    return payload
 
 
 def sha256_file(path: Path) -> str:
@@ -106,6 +291,86 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def registry_contract(value: Any) -> RegistryContract:
+    if not isinstance(value, dict):
+        raise ManifestError("identity registry root must be a JSON object")
+    version = value.get("registry_version")
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise ManifestError("identity registry version must be an integer")
+    if version != REGISTRY_VERSION:
+        raise ManifestError(
+            f"identity registry version {version} does not match supported version "
+            f"{REGISTRY_VERSION}"
+        )
+    try:
+        canonical = canonical_registry_bytes(value)
+    except RegistryError as error:
+        raise ManifestError("identity registry is not canonical JSON data") from error
+    return RegistryContract(
+        version=version,
+        digest=hashlib.sha256(canonical).digest()[:REGISTRY_DIGEST_SIZE],
+    )
+
+
+def load_registry_contract(path: Path) -> RegistryContract:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ManifestError(f"failed to read identity registry {path}: {error}") from error
+    return registry_contract(value)
+
+
+def parse_save_descriptor(payload: bytes) -> SaveSchemaDescriptor:
+    if len(payload) != SAVE_DESCRIPTOR_STRUCT.size:
+        raise ManifestError(
+            f"save schema descriptor has size {len(payload)}, expected "
+            f"{SAVE_DESCRIPTOR_STRUCT.size}"
+        )
+    return SaveSchemaDescriptor(*SAVE_DESCRIPTOR_STRUCT.unpack(payload))
+
+
+def validate_save_descriptor(
+    descriptor: SaveSchemaDescriptor,
+    registry: RegistryContract,
+) -> None:
+    expected = {
+        "descriptor_magic": SAVE_DESCRIPTOR_MAGIC,
+        "descriptor_version": SAVE_DESCRIPTOR_VERSION,
+        "descriptor_size": SAVE_DESCRIPTOR_SIZE,
+        "save_magic": SAVE_MAGIC,
+        "save_schema_version": SAVE_SCHEMA_VERSION,
+        "save_struct_size": SAVE_STRUCT_SIZE,
+        "save_block3_offset": SAVE_BLOCK3_OFFSET,
+        "generation_offset": SAVE_GENERATION_OFFSET,
+        "crc32_offset": SAVE_CRC_OFFSET,
+        "sector_data_size": SAVE_SECTOR_DATA_SIZE,
+        "save_block3_chunk_size": SAVE_BLOCK3_CHUNK_SIZE,
+        "sector_size": SAVE_SECTOR_SIZE,
+        "sectors_per_slot": SAVE_SECTORS_PER_SLOT,
+        "save_slot_count": SAVE_SLOT_COUNT,
+        "registry_version": registry.version,
+        "registry_digest": registry.digest,
+        "trainer_bits_offset": SAVE_TRAINER_BITS_OFFSET,
+        "event_bits_offset": SAVE_EVENT_BITS_OFFSET,
+        "fly_bits_offset": SAVE_FLY_BITS_OFFSET,
+        "gym_bits_offset": SAVE_GYM_BITS_OFFSET,
+        "status_flags_offset": SAVE_STATUS_FLAGS_OFFSET,
+        "regional_progress_offset": SAVE_REGIONAL_PROGRESS_OFFSET,
+    }
+    for field, wanted in expected.items():
+        actual = getattr(descriptor, field)
+        if actual != wanted:
+            if isinstance(wanted, bytes):
+                actual_text = actual.hex()
+                wanted_text = wanted.hex()
+            else:
+                actual_text = str(actual)
+                wanted_text = str(wanted)
+            raise ManifestError(
+                f"{SAVE_DESCRIPTOR_SYMBOL}.{field} is {actual_text}, expected {wanted_text}"
+            )
 
 
 def validate_game_build_id(build_id: str) -> str:
@@ -127,12 +392,59 @@ def validate_game_build_id(build_id: str) -> str:
     return build_id
 
 
-def build_manifest(bridge: Symbol, rom_sha256: str) -> dict[str, object]:
-    if len(rom_sha256) != 64 or any(character not in "0123456789abcdef" for character in rom_sha256):
+def build_manifest(
+    bridge: Symbol,
+    block3: Symbol,
+    descriptor: SaveSchemaDescriptor,
+    registry: RegistryContract,
+    rom_sha256: str,
+) -> dict[str, object]:
+    if not isinstance(rom_sha256, str) or len(rom_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in rom_sha256
+    ):
         raise ManifestError("ROM SHA-256 must be 64 lowercase hexadecimal characters")
+    validate_bridge_symbol({BRIDGE_SYMBOL: bridge})
+    if block3.name != SAVE_BLOCK3_SYMBOL:
+        raise ManifestError(f"save block symbol must be {SAVE_BLOCK3_SYMBOL}")
+    validate_save_block3_layout(block3)
+    validate_save_descriptor(descriptor, registry)
+
+    coop_address = checked_u32_add(
+        block3.address,
+        descriptor.save_block3_offset,
+        context="co-op save address",
+    )
+    coop_end = checked_u32_add(
+        coop_address,
+        descriptor.save_struct_size,
+        context="co-op save range",
+    )
+    block3_end = checked_u32_add(
+        block3.address,
+        block3.size,
+        context=f"{SAVE_BLOCK3_SYMBOL} range",
+    )
+    generation_address = checked_u32_add(
+        coop_address,
+        descriptor.generation_offset,
+        context="live save generation address",
+    )
+    generation_end = checked_u32_add(
+        generation_address,
+        4,
+        context="live save generation range",
+    )
+    crc_end = checked_u32_add(
+        coop_address,
+        descriptor.crc32_offset,
+        4,
+        context="co-op save CRC range",
+    )
+    if coop_end > block3_end or generation_end > coop_end or crc_end > coop_end:
+        raise ManifestError("co-op save descriptor exceeds the linked gSaveblock3 range")
 
     return {
-        "schema_version": 1,
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "game_build": {
             "id": validate_game_build_id(GAME_BUILD_TEXT_ID),
             "numeric_id": GAME_BUILD_ID,
@@ -181,14 +493,27 @@ def build_manifest(bridge: Symbol, rom_sha256: str) -> dict[str, object]:
                 },
             },
         },
+        "save": {
+            "block3_address": block3.address,
+            "coop_offset": descriptor.save_block3_offset,
+            "generation_offset": descriptor.generation_offset,
+            "generation_address": generation_address,
+            "crc_offset": descriptor.crc32_offset,
+            "schema_version": descriptor.save_schema_version,
+            "struct_size": descriptor.save_struct_size,
+            "registry_version": descriptor.registry_version,
+            "registry_digest": descriptor.registry_digest.hex(),
+        },
     }
 
 
 def render_lua(manifest: dict[str, object]) -> str:
     bridge = manifest["net_bridge"]
     build = manifest["game_build"]
+    save = manifest["save"]
     assert isinstance(bridge, dict)
     assert isinstance(build, dict)
+    assert isinstance(save, dict)
     offsets = bridge["offsets"]
     queue = bridge["queue"]
     message = bridge["message"]
@@ -208,6 +533,17 @@ return {{
   protocol_version = {bridge['game_protocol_version']},
   address = 0x{int(bridge['address']):08X},
   size = {bridge['size']},
+  save = {{
+    block3_address = 0x{int(save['block3_address']):08X},
+    coop_offset = {save['coop_offset']},
+    generation_offset = {save['generation_offset']},
+    generation_address = 0x{int(save['generation_address']):08X},
+    crc_offset = {save['crc_offset']},
+    schema_version = {save['schema_version']},
+    struct_size = {save['struct_size']},
+    registry_version = {save['registry_version']},
+    registry_digest = "{save['registry_digest']}",
+  }},
   offsets = {{
     status_flags = {offsets['status_flags']},
     last_sidecar_heartbeat = {offsets['last_sidecar_heartbeat']},
@@ -252,13 +588,29 @@ def main() -> int:
     parser.add_argument("--elf", type=Path, required=True)
     parser.add_argument("--rom", type=Path, required=True)
     parser.add_argument("--nm", default=os.environ.get("ARM_NM", "arm-none-eabi-nm"))
+    parser.add_argument(
+        "--registry",
+        type=Path,
+        default=Path("data/coop/regional_identities.json"),
+    )
     parser.add_argument("--manifest", type=Path, default=Path("dist/bridge_manifest.json"))
     parser.add_argument("--lua", type=Path, default=Path("bridge/generated_addresses.lua"))
     args = parser.parse_args()
 
     symbols = inspect_elf(args.elf, args.nm)
     bridge = validate_bridge_symbol(symbols)
-    manifest = build_manifest(bridge, sha256_file(args.rom))
+    block3, descriptor_symbol = validate_save_symbols(symbols)
+    registry = load_registry_contract(args.registry)
+    descriptor = parse_save_descriptor(
+        read_save_descriptor_bytes(args.rom, descriptor_symbol)
+    )
+    manifest = build_manifest(
+        bridge,
+        block3,
+        descriptor,
+        registry,
+        sha256_file(args.rom),
+    )
     atomic_write(args.manifest, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     atomic_write(args.lua, render_lua(manifest))
     return 0

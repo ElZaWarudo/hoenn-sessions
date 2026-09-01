@@ -1,6 +1,6 @@
 -- Run tools/generate_bridge_manifest.py after linking the ROM.
 return {
-  schema_version = 1,
+  schema_version = 2,
   game_build_id = 0x00010000,
   rom_sha256 = string.rep("0", 64),
   magic = 0x504B434F,
@@ -8,6 +8,17 @@ return {
   protocol_version = 1,
   address = 0x02000000,
   size = 9244,
+  save = {
+    block3_address = 0x02000000,
+    coop_offset = 4,
+    generation_offset = 28,
+    generation_address = 0x02000020,
+    crc_offset = 668,
+    schema_version = 1,
+    struct_size = 672,
+    registry_version = 1,
+    registry_digest = string.rep("0", 32),
+  },
   offsets = {
     status_flags = 12,
     last_sidecar_heartbeat = 16,
