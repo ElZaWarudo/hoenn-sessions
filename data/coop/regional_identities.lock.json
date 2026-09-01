@@ -1,0 +1,6385 @@
+{
+  "lock_schema_version": 1,
+  "snapshots": [
+    {
+      "schema_version": 1,
+      "registry_version": 1,
+      "regions": [
+        {
+          "id": "HOENN",
+          "wire": 1
+        },
+        {
+          "id": "KANTO",
+          "wire": 2
+        },
+        {
+          "id": "JOHTO",
+          "wire": 3
+        },
+        {
+          "id": "SEVII",
+          "wire": 4
+        }
+      ],
+      "capacities": {
+        "trainers": 2048,
+        "events": 2048,
+        "fly_points": 128,
+        "gyms": 64
+      },
+      "badges_per_region": 8,
+      "identities": [
+        {
+          "kind": "trainer",
+          "ordinal": 0,
+          "id": "HOENN:TRAINER_SAWYER_1",
+          "legacy_value": 1,
+          "legacy_symbol": "TRAINER_SAWYER_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 1,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_1",
+          "legacy_value": 2,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 2,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_2",
+          "legacy_value": 3,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 3,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_3",
+          "legacy_value": 4,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 4,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_4",
+          "legacy_value": 5,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 5,
+          "id": "HOENN:TRAINER_GRUNT_SEAFLOOR_CAVERN_1",
+          "legacy_value": 6,
+          "legacy_symbol": "TRAINER_GRUNT_SEAFLOOR_CAVERN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 6,
+          "id": "HOENN:TRAINER_GRUNT_SEAFLOOR_CAVERN_2",
+          "legacy_value": 7,
+          "legacy_symbol": "TRAINER_GRUNT_SEAFLOOR_CAVERN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 7,
+          "id": "HOENN:TRAINER_GRUNT_SEAFLOOR_CAVERN_3",
+          "legacy_value": 8,
+          "legacy_symbol": "TRAINER_GRUNT_SEAFLOOR_CAVERN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 8,
+          "id": "HOENN:TRAINER_GABRIELLE_1",
+          "legacy_value": 9,
+          "legacy_symbol": "TRAINER_GABRIELLE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 9,
+          "id": "HOENN:TRAINER_GRUNT_PETALBURG_WOODS",
+          "legacy_value": 10,
+          "legacy_symbol": "TRAINER_GRUNT_PETALBURG_WOODS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 10,
+          "id": "HOENN:TRAINER_MARCEL",
+          "legacy_value": 11,
+          "legacy_symbol": "TRAINER_MARCEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 11,
+          "id": "HOENN:TRAINER_ALBERTO",
+          "legacy_value": 12,
+          "legacy_symbol": "TRAINER_ALBERTO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 12,
+          "id": "HOENN:TRAINER_ED",
+          "legacy_value": 13,
+          "legacy_symbol": "TRAINER_ED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 13,
+          "id": "HOENN:TRAINER_GRUNT_SEAFLOOR_CAVERN_4",
+          "legacy_value": 14,
+          "legacy_symbol": "TRAINER_GRUNT_SEAFLOOR_CAVERN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 14,
+          "id": "HOENN:TRAINER_DECLAN",
+          "legacy_value": 15,
+          "legacy_symbol": "TRAINER_DECLAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 15,
+          "id": "HOENN:TRAINER_GRUNT_RUSTURF_TUNNEL",
+          "legacy_value": 16,
+          "legacy_symbol": "TRAINER_GRUNT_RUSTURF_TUNNEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 16,
+          "id": "HOENN:TRAINER_GRUNT_WEATHER_INST_1",
+          "legacy_value": 17,
+          "legacy_symbol": "TRAINER_GRUNT_WEATHER_INST_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 17,
+          "id": "HOENN:TRAINER_GRUNT_WEATHER_INST_2",
+          "legacy_value": 18,
+          "legacy_symbol": "TRAINER_GRUNT_WEATHER_INST_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 18,
+          "id": "HOENN:TRAINER_GRUNT_WEATHER_INST_3",
+          "legacy_value": 19,
+          "legacy_symbol": "TRAINER_GRUNT_WEATHER_INST_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 19,
+          "id": "HOENN:TRAINER_GRUNT_MUSEUM_1",
+          "legacy_value": 20,
+          "legacy_symbol": "TRAINER_GRUNT_MUSEUM_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 20,
+          "id": "HOENN:TRAINER_GRUNT_MUSEUM_2",
+          "legacy_value": 21,
+          "legacy_symbol": "TRAINER_GRUNT_MUSEUM_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 21,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_1",
+          "legacy_value": 22,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 22,
+          "id": "HOENN:TRAINER_GRUNT_MT_PYRE_1",
+          "legacy_value": 23,
+          "legacy_symbol": "TRAINER_GRUNT_MT_PYRE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 23,
+          "id": "HOENN:TRAINER_GRUNT_MT_PYRE_2",
+          "legacy_value": 24,
+          "legacy_symbol": "TRAINER_GRUNT_MT_PYRE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 24,
+          "id": "HOENN:TRAINER_GRUNT_MT_PYRE_3",
+          "legacy_value": 25,
+          "legacy_symbol": "TRAINER_GRUNT_MT_PYRE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 25,
+          "id": "HOENN:TRAINER_GRUNT_WEATHER_INST_4",
+          "legacy_value": 26,
+          "legacy_symbol": "TRAINER_GRUNT_WEATHER_INST_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 26,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_5",
+          "legacy_value": 27,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 27,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_6",
+          "legacy_value": 28,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_6"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 28,
+          "id": "HOENN:TRAINER_FREDRICK",
+          "legacy_value": 29,
+          "legacy_symbol": "TRAINER_FREDRICK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 29,
+          "id": "HOENN:TRAINER_MATT",
+          "legacy_value": 30,
+          "legacy_symbol": "TRAINER_MATT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 30,
+          "id": "HOENN:TRAINER_ZANDER",
+          "legacy_value": 31,
+          "legacy_symbol": "TRAINER_ZANDER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 31,
+          "id": "HOENN:TRAINER_SHELLY_WEATHER_INSTITUTE",
+          "legacy_value": 32,
+          "legacy_symbol": "TRAINER_SHELLY_WEATHER_INSTITUTE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 32,
+          "id": "HOENN:TRAINER_SHELLY_SEAFLOOR_CAVERN",
+          "legacy_value": 33,
+          "legacy_symbol": "TRAINER_SHELLY_SEAFLOOR_CAVERN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 33,
+          "id": "HOENN:TRAINER_ARCHIE",
+          "legacy_value": 34,
+          "legacy_symbol": "TRAINER_ARCHIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 34,
+          "id": "HOENN:TRAINER_LEAH",
+          "legacy_value": 35,
+          "legacy_symbol": "TRAINER_LEAH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 35,
+          "id": "HOENN:TRAINER_DAISY",
+          "legacy_value": 36,
+          "legacy_symbol": "TRAINER_DAISY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 36,
+          "id": "HOENN:TRAINER_ROSE_1",
+          "legacy_value": 37,
+          "legacy_symbol": "TRAINER_ROSE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 37,
+          "id": "HOENN:TRAINER_FELIX",
+          "legacy_value": 38,
+          "legacy_symbol": "TRAINER_FELIX"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 38,
+          "id": "HOENN:TRAINER_VIOLET",
+          "legacy_value": 39,
+          "legacy_symbol": "TRAINER_VIOLET"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 39,
+          "id": "HOENN:TRAINER_ROSE_2",
+          "legacy_value": 40,
+          "legacy_symbol": "TRAINER_ROSE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 40,
+          "id": "HOENN:TRAINER_ROSE_3",
+          "legacy_value": 41,
+          "legacy_symbol": "TRAINER_ROSE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 41,
+          "id": "HOENN:TRAINER_ROSE_4",
+          "legacy_value": 42,
+          "legacy_symbol": "TRAINER_ROSE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 42,
+          "id": "HOENN:TRAINER_ROSE_5",
+          "legacy_value": 43,
+          "legacy_symbol": "TRAINER_ROSE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 43,
+          "id": "HOENN:TRAINER_DUSTY_1",
+          "legacy_value": 44,
+          "legacy_symbol": "TRAINER_DUSTY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 44,
+          "id": "HOENN:TRAINER_CHIP",
+          "legacy_value": 45,
+          "legacy_symbol": "TRAINER_CHIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 45,
+          "id": "HOENN:TRAINER_FOSTER",
+          "legacy_value": 46,
+          "legacy_symbol": "TRAINER_FOSTER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 46,
+          "id": "HOENN:TRAINER_DUSTY_2",
+          "legacy_value": 47,
+          "legacy_symbol": "TRAINER_DUSTY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 47,
+          "id": "HOENN:TRAINER_DUSTY_3",
+          "legacy_value": 48,
+          "legacy_symbol": "TRAINER_DUSTY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 48,
+          "id": "HOENN:TRAINER_DUSTY_4",
+          "legacy_value": 49,
+          "legacy_symbol": "TRAINER_DUSTY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 49,
+          "id": "HOENN:TRAINER_DUSTY_5",
+          "legacy_value": 50,
+          "legacy_symbol": "TRAINER_DUSTY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 50,
+          "id": "HOENN:TRAINER_GABBY_AND_TY_1",
+          "legacy_value": 51,
+          "legacy_symbol": "TRAINER_GABBY_AND_TY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 51,
+          "id": "HOENN:TRAINER_GABBY_AND_TY_2",
+          "legacy_value": 52,
+          "legacy_symbol": "TRAINER_GABBY_AND_TY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 52,
+          "id": "HOENN:TRAINER_GABBY_AND_TY_3",
+          "legacy_value": 53,
+          "legacy_symbol": "TRAINER_GABBY_AND_TY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 53,
+          "id": "HOENN:TRAINER_GABBY_AND_TY_4",
+          "legacy_value": 54,
+          "legacy_symbol": "TRAINER_GABBY_AND_TY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 54,
+          "id": "HOENN:TRAINER_GABBY_AND_TY_5",
+          "legacy_value": 55,
+          "legacy_symbol": "TRAINER_GABBY_AND_TY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 55,
+          "id": "HOENN:TRAINER_GABBY_AND_TY_6",
+          "legacy_value": 56,
+          "legacy_symbol": "TRAINER_GABBY_AND_TY_6"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 56,
+          "id": "HOENN:TRAINER_LOLA_1",
+          "legacy_value": 57,
+          "legacy_symbol": "TRAINER_LOLA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 57,
+          "id": "HOENN:TRAINER_AUSTINA",
+          "legacy_value": 58,
+          "legacy_symbol": "TRAINER_AUSTINA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 58,
+          "id": "HOENN:TRAINER_GWEN",
+          "legacy_value": 59,
+          "legacy_symbol": "TRAINER_GWEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 59,
+          "id": "HOENN:TRAINER_LOLA_2",
+          "legacy_value": 60,
+          "legacy_symbol": "TRAINER_LOLA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 60,
+          "id": "HOENN:TRAINER_LOLA_3",
+          "legacy_value": 61,
+          "legacy_symbol": "TRAINER_LOLA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 61,
+          "id": "HOENN:TRAINER_LOLA_4",
+          "legacy_value": 62,
+          "legacy_symbol": "TRAINER_LOLA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 62,
+          "id": "HOENN:TRAINER_LOLA_5",
+          "legacy_value": 63,
+          "legacy_symbol": "TRAINER_LOLA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 63,
+          "id": "HOENN:TRAINER_RICKY_1",
+          "legacy_value": 64,
+          "legacy_symbol": "TRAINER_RICKY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 64,
+          "id": "HOENN:TRAINER_SIMON",
+          "legacy_value": 65,
+          "legacy_symbol": "TRAINER_SIMON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 65,
+          "id": "HOENN:TRAINER_CHARLIE",
+          "legacy_value": 66,
+          "legacy_symbol": "TRAINER_CHARLIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 66,
+          "id": "HOENN:TRAINER_RICKY_2",
+          "legacy_value": 67,
+          "legacy_symbol": "TRAINER_RICKY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 67,
+          "id": "HOENN:TRAINER_RICKY_3",
+          "legacy_value": 68,
+          "legacy_symbol": "TRAINER_RICKY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 68,
+          "id": "HOENN:TRAINER_RICKY_4",
+          "legacy_value": 69,
+          "legacy_symbol": "TRAINER_RICKY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 69,
+          "id": "HOENN:TRAINER_RICKY_5",
+          "legacy_value": 70,
+          "legacy_symbol": "TRAINER_RICKY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 70,
+          "id": "HOENN:TRAINER_RANDALL",
+          "legacy_value": 71,
+          "legacy_symbol": "TRAINER_RANDALL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 71,
+          "id": "HOENN:TRAINER_PARKER",
+          "legacy_value": 72,
+          "legacy_symbol": "TRAINER_PARKER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 72,
+          "id": "HOENN:TRAINER_GEORGE",
+          "legacy_value": 73,
+          "legacy_symbol": "TRAINER_GEORGE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 73,
+          "id": "HOENN:TRAINER_BERKE",
+          "legacy_value": 74,
+          "legacy_symbol": "TRAINER_BERKE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 74,
+          "id": "HOENN:TRAINER_BRAXTON",
+          "legacy_value": 75,
+          "legacy_symbol": "TRAINER_BRAXTON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 75,
+          "id": "HOENN:TRAINER_VINCENT",
+          "legacy_value": 76,
+          "legacy_symbol": "TRAINER_VINCENT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 76,
+          "id": "HOENN:TRAINER_LEROY",
+          "legacy_value": 77,
+          "legacy_symbol": "TRAINER_LEROY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 77,
+          "id": "HOENN:TRAINER_WILTON_1",
+          "legacy_value": 78,
+          "legacy_symbol": "TRAINER_WILTON_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 78,
+          "id": "HOENN:TRAINER_EDGAR",
+          "legacy_value": 79,
+          "legacy_symbol": "TRAINER_EDGAR"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 79,
+          "id": "HOENN:TRAINER_ALBERT",
+          "legacy_value": 80,
+          "legacy_symbol": "TRAINER_ALBERT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 80,
+          "id": "HOENN:TRAINER_SAMUEL",
+          "legacy_value": 81,
+          "legacy_symbol": "TRAINER_SAMUEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 81,
+          "id": "HOENN:TRAINER_VITO",
+          "legacy_value": 82,
+          "legacy_symbol": "TRAINER_VITO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 82,
+          "id": "HOENN:TRAINER_OWEN",
+          "legacy_value": 83,
+          "legacy_symbol": "TRAINER_OWEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 83,
+          "id": "HOENN:TRAINER_WILTON_2",
+          "legacy_value": 84,
+          "legacy_symbol": "TRAINER_WILTON_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 84,
+          "id": "HOENN:TRAINER_WILTON_3",
+          "legacy_value": 85,
+          "legacy_symbol": "TRAINER_WILTON_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 85,
+          "id": "HOENN:TRAINER_WILTON_4",
+          "legacy_value": 86,
+          "legacy_symbol": "TRAINER_WILTON_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 86,
+          "id": "HOENN:TRAINER_WILTON_5",
+          "legacy_value": 87,
+          "legacy_symbol": "TRAINER_WILTON_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 87,
+          "id": "HOENN:TRAINER_WARREN",
+          "legacy_value": 88,
+          "legacy_symbol": "TRAINER_WARREN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 88,
+          "id": "HOENN:TRAINER_MARY",
+          "legacy_value": 89,
+          "legacy_symbol": "TRAINER_MARY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 89,
+          "id": "HOENN:TRAINER_ALEXIA",
+          "legacy_value": 90,
+          "legacy_symbol": "TRAINER_ALEXIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 90,
+          "id": "HOENN:TRAINER_JODY",
+          "legacy_value": 91,
+          "legacy_symbol": "TRAINER_JODY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 91,
+          "id": "HOENN:TRAINER_WENDY",
+          "legacy_value": 92,
+          "legacy_symbol": "TRAINER_WENDY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 92,
+          "id": "HOENN:TRAINER_KEIRA",
+          "legacy_value": 93,
+          "legacy_symbol": "TRAINER_KEIRA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 93,
+          "id": "HOENN:TRAINER_BROOKE_1",
+          "legacy_value": 94,
+          "legacy_symbol": "TRAINER_BROOKE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 94,
+          "id": "HOENN:TRAINER_JENNIFER",
+          "legacy_value": 95,
+          "legacy_symbol": "TRAINER_JENNIFER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 95,
+          "id": "HOENN:TRAINER_HOPE",
+          "legacy_value": 96,
+          "legacy_symbol": "TRAINER_HOPE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 96,
+          "id": "HOENN:TRAINER_SHANNON",
+          "legacy_value": 97,
+          "legacy_symbol": "TRAINER_SHANNON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 97,
+          "id": "HOENN:TRAINER_MICHELLE",
+          "legacy_value": 98,
+          "legacy_symbol": "TRAINER_MICHELLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 98,
+          "id": "HOENN:TRAINER_CAROLINE",
+          "legacy_value": 99,
+          "legacy_symbol": "TRAINER_CAROLINE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 99,
+          "id": "HOENN:TRAINER_JULIE",
+          "legacy_value": 100,
+          "legacy_symbol": "TRAINER_JULIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 100,
+          "id": "HOENN:TRAINER_BROOKE_2",
+          "legacy_value": 101,
+          "legacy_symbol": "TRAINER_BROOKE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 101,
+          "id": "HOENN:TRAINER_BROOKE_3",
+          "legacy_value": 102,
+          "legacy_symbol": "TRAINER_BROOKE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 102,
+          "id": "HOENN:TRAINER_BROOKE_4",
+          "legacy_value": 103,
+          "legacy_symbol": "TRAINER_BROOKE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 103,
+          "id": "HOENN:TRAINER_BROOKE_5",
+          "legacy_value": 104,
+          "legacy_symbol": "TRAINER_BROOKE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 104,
+          "id": "HOENN:TRAINER_PATRICIA",
+          "legacy_value": 105,
+          "legacy_symbol": "TRAINER_PATRICIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 105,
+          "id": "HOENN:TRAINER_KINDRA",
+          "legacy_value": 106,
+          "legacy_symbol": "TRAINER_KINDRA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 106,
+          "id": "HOENN:TRAINER_TAMMY",
+          "legacy_value": 107,
+          "legacy_symbol": "TRAINER_TAMMY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 107,
+          "id": "HOENN:TRAINER_VALERIE_1",
+          "legacy_value": 108,
+          "legacy_symbol": "TRAINER_VALERIE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 108,
+          "id": "HOENN:TRAINER_TASHA",
+          "legacy_value": 109,
+          "legacy_symbol": "TRAINER_TASHA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 109,
+          "id": "HOENN:TRAINER_VALERIE_2",
+          "legacy_value": 110,
+          "legacy_symbol": "TRAINER_VALERIE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 110,
+          "id": "HOENN:TRAINER_VALERIE_3",
+          "legacy_value": 111,
+          "legacy_symbol": "TRAINER_VALERIE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 111,
+          "id": "HOENN:TRAINER_VALERIE_4",
+          "legacy_value": 112,
+          "legacy_symbol": "TRAINER_VALERIE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 112,
+          "id": "HOENN:TRAINER_VALERIE_5",
+          "legacy_value": 113,
+          "legacy_symbol": "TRAINER_VALERIE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 113,
+          "id": "HOENN:TRAINER_CINDY_1",
+          "legacy_value": 114,
+          "legacy_symbol": "TRAINER_CINDY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 114,
+          "id": "HOENN:TRAINER_DAPHNE",
+          "legacy_value": 115,
+          "legacy_symbol": "TRAINER_DAPHNE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 115,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_2",
+          "legacy_value": 116,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 116,
+          "id": "HOENN:TRAINER_CINDY_2",
+          "legacy_value": 117,
+          "legacy_symbol": "TRAINER_CINDY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 117,
+          "id": "HOENN:TRAINER_BRIANNA",
+          "legacy_value": 118,
+          "legacy_symbol": "TRAINER_BRIANNA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 118,
+          "id": "HOENN:TRAINER_NAOMI",
+          "legacy_value": 119,
+          "legacy_symbol": "TRAINER_NAOMI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 119,
+          "id": "HOENN:TRAINER_CINDY_3",
+          "legacy_value": 120,
+          "legacy_symbol": "TRAINER_CINDY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 120,
+          "id": "HOENN:TRAINER_CINDY_4",
+          "legacy_value": 121,
+          "legacy_symbol": "TRAINER_CINDY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 121,
+          "id": "HOENN:TRAINER_CINDY_5",
+          "legacy_value": 122,
+          "legacy_symbol": "TRAINER_CINDY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 122,
+          "id": "HOENN:TRAINER_CINDY_6",
+          "legacy_value": 123,
+          "legacy_symbol": "TRAINER_CINDY_6"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 123,
+          "id": "HOENN:TRAINER_MELISSA",
+          "legacy_value": 124,
+          "legacy_symbol": "TRAINER_MELISSA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 124,
+          "id": "HOENN:TRAINER_SHEILA",
+          "legacy_value": 125,
+          "legacy_symbol": "TRAINER_SHEILA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 125,
+          "id": "HOENN:TRAINER_SHIRLEY",
+          "legacy_value": 126,
+          "legacy_symbol": "TRAINER_SHIRLEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 126,
+          "id": "HOENN:TRAINER_JESSICA_1",
+          "legacy_value": 127,
+          "legacy_symbol": "TRAINER_JESSICA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 127,
+          "id": "HOENN:TRAINER_CONNIE",
+          "legacy_value": 128,
+          "legacy_symbol": "TRAINER_CONNIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 128,
+          "id": "HOENN:TRAINER_BRIDGET",
+          "legacy_value": 129,
+          "legacy_symbol": "TRAINER_BRIDGET"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 129,
+          "id": "HOENN:TRAINER_OLIVIA",
+          "legacy_value": 130,
+          "legacy_symbol": "TRAINER_OLIVIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 130,
+          "id": "HOENN:TRAINER_TIFFANY",
+          "legacy_value": 131,
+          "legacy_symbol": "TRAINER_TIFFANY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 131,
+          "id": "HOENN:TRAINER_JESSICA_2",
+          "legacy_value": 132,
+          "legacy_symbol": "TRAINER_JESSICA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 132,
+          "id": "HOENN:TRAINER_JESSICA_3",
+          "legacy_value": 133,
+          "legacy_symbol": "TRAINER_JESSICA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 133,
+          "id": "HOENN:TRAINER_JESSICA_4",
+          "legacy_value": 134,
+          "legacy_symbol": "TRAINER_JESSICA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 134,
+          "id": "HOENN:TRAINER_JESSICA_5",
+          "legacy_value": 135,
+          "legacy_symbol": "TRAINER_JESSICA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 135,
+          "id": "HOENN:TRAINER_WINSTON_1",
+          "legacy_value": 136,
+          "legacy_symbol": "TRAINER_WINSTON_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 136,
+          "id": "HOENN:TRAINER_MOLLIE",
+          "legacy_value": 137,
+          "legacy_symbol": "TRAINER_MOLLIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 137,
+          "id": "HOENN:TRAINER_GARRET",
+          "legacy_value": 138,
+          "legacy_symbol": "TRAINER_GARRET"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 138,
+          "id": "HOENN:TRAINER_WINSTON_2",
+          "legacy_value": 139,
+          "legacy_symbol": "TRAINER_WINSTON_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 139,
+          "id": "HOENN:TRAINER_WINSTON_3",
+          "legacy_value": 140,
+          "legacy_symbol": "TRAINER_WINSTON_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 140,
+          "id": "HOENN:TRAINER_WINSTON_4",
+          "legacy_value": 141,
+          "legacy_symbol": "TRAINER_WINSTON_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 141,
+          "id": "HOENN:TRAINER_WINSTON_5",
+          "legacy_value": 142,
+          "legacy_symbol": "TRAINER_WINSTON_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 142,
+          "id": "HOENN:TRAINER_STEVE_1",
+          "legacy_value": 143,
+          "legacy_symbol": "TRAINER_STEVE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 143,
+          "id": "HOENN:TRAINER_THALIA_1",
+          "legacy_value": 144,
+          "legacy_symbol": "TRAINER_THALIA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 144,
+          "id": "HOENN:TRAINER_MARK",
+          "legacy_value": 145,
+          "legacy_symbol": "TRAINER_MARK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 145,
+          "id": "HOENN:TRAINER_GRUNT_MT_CHIMNEY_1",
+          "legacy_value": 146,
+          "legacy_symbol": "TRAINER_GRUNT_MT_CHIMNEY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 146,
+          "id": "HOENN:TRAINER_STEVE_2",
+          "legacy_value": 147,
+          "legacy_symbol": "TRAINER_STEVE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 147,
+          "id": "HOENN:TRAINER_STEVE_3",
+          "legacy_value": 148,
+          "legacy_symbol": "TRAINER_STEVE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 148,
+          "id": "HOENN:TRAINER_STEVE_4",
+          "legacy_value": 149,
+          "legacy_symbol": "TRAINER_STEVE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 149,
+          "id": "HOENN:TRAINER_STEVE_5",
+          "legacy_value": 150,
+          "legacy_symbol": "TRAINER_STEVE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 150,
+          "id": "HOENN:TRAINER_LUIS",
+          "legacy_value": 151,
+          "legacy_symbol": "TRAINER_LUIS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 151,
+          "id": "HOENN:TRAINER_DOMINIK",
+          "legacy_value": 152,
+          "legacy_symbol": "TRAINER_DOMINIK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 152,
+          "id": "HOENN:TRAINER_DOUGLAS",
+          "legacy_value": 153,
+          "legacy_symbol": "TRAINER_DOUGLAS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 153,
+          "id": "HOENN:TRAINER_DARRIN",
+          "legacy_value": 154,
+          "legacy_symbol": "TRAINER_DARRIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 154,
+          "id": "HOENN:TRAINER_TONY_1",
+          "legacy_value": 155,
+          "legacy_symbol": "TRAINER_TONY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 155,
+          "id": "HOENN:TRAINER_JEROME",
+          "legacy_value": 156,
+          "legacy_symbol": "TRAINER_JEROME"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 156,
+          "id": "HOENN:TRAINER_MATTHEW",
+          "legacy_value": 157,
+          "legacy_symbol": "TRAINER_MATTHEW"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 157,
+          "id": "HOENN:TRAINER_DAVID",
+          "legacy_value": 158,
+          "legacy_symbol": "TRAINER_DAVID"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 158,
+          "id": "HOENN:TRAINER_SPENCER",
+          "legacy_value": 159,
+          "legacy_symbol": "TRAINER_SPENCER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 159,
+          "id": "HOENN:TRAINER_ROLAND",
+          "legacy_value": 160,
+          "legacy_symbol": "TRAINER_ROLAND"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 160,
+          "id": "HOENN:TRAINER_NOLEN",
+          "legacy_value": 161,
+          "legacy_symbol": "TRAINER_NOLEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 161,
+          "id": "HOENN:TRAINER_STAN",
+          "legacy_value": 162,
+          "legacy_symbol": "TRAINER_STAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 162,
+          "id": "HOENN:TRAINER_BARRY",
+          "legacy_value": 163,
+          "legacy_symbol": "TRAINER_BARRY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 163,
+          "id": "HOENN:TRAINER_DEAN",
+          "legacy_value": 164,
+          "legacy_symbol": "TRAINER_DEAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 164,
+          "id": "HOENN:TRAINER_RODNEY",
+          "legacy_value": 165,
+          "legacy_symbol": "TRAINER_RODNEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 165,
+          "id": "HOENN:TRAINER_RICHARD",
+          "legacy_value": 166,
+          "legacy_symbol": "TRAINER_RICHARD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 166,
+          "id": "HOENN:TRAINER_HERMAN",
+          "legacy_value": 167,
+          "legacy_symbol": "TRAINER_HERMAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 167,
+          "id": "HOENN:TRAINER_SANTIAGO",
+          "legacy_value": 168,
+          "legacy_symbol": "TRAINER_SANTIAGO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 168,
+          "id": "HOENN:TRAINER_GILBERT",
+          "legacy_value": 169,
+          "legacy_symbol": "TRAINER_GILBERT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 169,
+          "id": "HOENN:TRAINER_FRANKLIN",
+          "legacy_value": 170,
+          "legacy_symbol": "TRAINER_FRANKLIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 170,
+          "id": "HOENN:TRAINER_KEVIN",
+          "legacy_value": 171,
+          "legacy_symbol": "TRAINER_KEVIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 171,
+          "id": "HOENN:TRAINER_JACK",
+          "legacy_value": 172,
+          "legacy_symbol": "TRAINER_JACK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 172,
+          "id": "HOENN:TRAINER_DUDLEY",
+          "legacy_value": 173,
+          "legacy_symbol": "TRAINER_DUDLEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 173,
+          "id": "HOENN:TRAINER_CHAD",
+          "legacy_value": 174,
+          "legacy_symbol": "TRAINER_CHAD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 174,
+          "id": "HOENN:TRAINER_TONY_2",
+          "legacy_value": 175,
+          "legacy_symbol": "TRAINER_TONY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 175,
+          "id": "HOENN:TRAINER_TONY_3",
+          "legacy_value": 176,
+          "legacy_symbol": "TRAINER_TONY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 176,
+          "id": "HOENN:TRAINER_TONY_4",
+          "legacy_value": 177,
+          "legacy_symbol": "TRAINER_TONY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 177,
+          "id": "HOENN:TRAINER_TONY_5",
+          "legacy_value": 178,
+          "legacy_symbol": "TRAINER_TONY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 178,
+          "id": "HOENN:TRAINER_TAKAO",
+          "legacy_value": 179,
+          "legacy_symbol": "TRAINER_TAKAO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 179,
+          "id": "HOENN:TRAINER_HITOSHI",
+          "legacy_value": 180,
+          "legacy_symbol": "TRAINER_HITOSHI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 180,
+          "id": "HOENN:TRAINER_KIYO",
+          "legacy_value": 181,
+          "legacy_symbol": "TRAINER_KIYO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 181,
+          "id": "HOENN:TRAINER_KOICHI",
+          "legacy_value": 182,
+          "legacy_symbol": "TRAINER_KOICHI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 182,
+          "id": "HOENN:TRAINER_NOB_1",
+          "legacy_value": 183,
+          "legacy_symbol": "TRAINER_NOB_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 183,
+          "id": "HOENN:TRAINER_NOB_2",
+          "legacy_value": 184,
+          "legacy_symbol": "TRAINER_NOB_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 184,
+          "id": "HOENN:TRAINER_NOB_3",
+          "legacy_value": 185,
+          "legacy_symbol": "TRAINER_NOB_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 185,
+          "id": "HOENN:TRAINER_NOB_4",
+          "legacy_value": 186,
+          "legacy_symbol": "TRAINER_NOB_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 186,
+          "id": "HOENN:TRAINER_NOB_5",
+          "legacy_value": 187,
+          "legacy_symbol": "TRAINER_NOB_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 187,
+          "id": "HOENN:TRAINER_YUJI",
+          "legacy_value": 188,
+          "legacy_symbol": "TRAINER_YUJI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 188,
+          "id": "HOENN:TRAINER_DAISUKE",
+          "legacy_value": 189,
+          "legacy_symbol": "TRAINER_DAISUKE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 189,
+          "id": "HOENN:TRAINER_ATSUSHI",
+          "legacy_value": 190,
+          "legacy_symbol": "TRAINER_ATSUSHI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 190,
+          "id": "HOENN:TRAINER_KIRK",
+          "legacy_value": 191,
+          "legacy_symbol": "TRAINER_KIRK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 191,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_7",
+          "legacy_value": 192,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_7"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 192,
+          "id": "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_8",
+          "legacy_value": 193,
+          "legacy_symbol": "TRAINER_GRUNT_AQUA_HIDEOUT_8"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 193,
+          "id": "HOENN:TRAINER_SHAWN",
+          "legacy_value": 194,
+          "legacy_symbol": "TRAINER_SHAWN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 194,
+          "id": "HOENN:TRAINER_FERNANDO_1",
+          "legacy_value": 195,
+          "legacy_symbol": "TRAINER_FERNANDO_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 195,
+          "id": "HOENN:TRAINER_DALTON_1",
+          "legacy_value": 196,
+          "legacy_symbol": "TRAINER_DALTON_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 196,
+          "id": "HOENN:TRAINER_DALTON_2",
+          "legacy_value": 197,
+          "legacy_symbol": "TRAINER_DALTON_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 197,
+          "id": "HOENN:TRAINER_DALTON_3",
+          "legacy_value": 198,
+          "legacy_symbol": "TRAINER_DALTON_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 198,
+          "id": "HOENN:TRAINER_DALTON_4",
+          "legacy_value": 199,
+          "legacy_symbol": "TRAINER_DALTON_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 199,
+          "id": "HOENN:TRAINER_DALTON_5",
+          "legacy_value": 200,
+          "legacy_symbol": "TRAINER_DALTON_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 200,
+          "id": "HOENN:TRAINER_COLE",
+          "legacy_value": 201,
+          "legacy_symbol": "TRAINER_COLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 201,
+          "id": "HOENN:TRAINER_JEFF",
+          "legacy_value": 202,
+          "legacy_symbol": "TRAINER_JEFF"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 202,
+          "id": "HOENN:TRAINER_AXLE",
+          "legacy_value": 203,
+          "legacy_symbol": "TRAINER_AXLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 203,
+          "id": "HOENN:TRAINER_JACE",
+          "legacy_value": 204,
+          "legacy_symbol": "TRAINER_JACE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 204,
+          "id": "HOENN:TRAINER_KEEGAN",
+          "legacy_value": 205,
+          "legacy_symbol": "TRAINER_KEEGAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 205,
+          "id": "HOENN:TRAINER_BERNIE_1",
+          "legacy_value": 206,
+          "legacy_symbol": "TRAINER_BERNIE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 206,
+          "id": "HOENN:TRAINER_BERNIE_2",
+          "legacy_value": 207,
+          "legacy_symbol": "TRAINER_BERNIE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 207,
+          "id": "HOENN:TRAINER_BERNIE_3",
+          "legacy_value": 208,
+          "legacy_symbol": "TRAINER_BERNIE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 208,
+          "id": "HOENN:TRAINER_BERNIE_4",
+          "legacy_value": 209,
+          "legacy_symbol": "TRAINER_BERNIE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 209,
+          "id": "HOENN:TRAINER_BERNIE_5",
+          "legacy_value": 210,
+          "legacy_symbol": "TRAINER_BERNIE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 210,
+          "id": "HOENN:TRAINER_DREW",
+          "legacy_value": 211,
+          "legacy_symbol": "TRAINER_DREW"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 211,
+          "id": "HOENN:TRAINER_BEAU",
+          "legacy_value": 212,
+          "legacy_symbol": "TRAINER_BEAU"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 212,
+          "id": "HOENN:TRAINER_LARRY",
+          "legacy_value": 213,
+          "legacy_symbol": "TRAINER_LARRY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 213,
+          "id": "HOENN:TRAINER_SHANE",
+          "legacy_value": 214,
+          "legacy_symbol": "TRAINER_SHANE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 214,
+          "id": "HOENN:TRAINER_JUSTIN",
+          "legacy_value": 215,
+          "legacy_symbol": "TRAINER_JUSTIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 215,
+          "id": "HOENN:TRAINER_ETHAN_1",
+          "legacy_value": 216,
+          "legacy_symbol": "TRAINER_ETHAN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 216,
+          "id": "HOENN:TRAINER_AUTUMN",
+          "legacy_value": 217,
+          "legacy_symbol": "TRAINER_AUTUMN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 217,
+          "id": "HOENN:TRAINER_TRAVIS",
+          "legacy_value": 218,
+          "legacy_symbol": "TRAINER_TRAVIS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 218,
+          "id": "HOENN:TRAINER_ETHAN_2",
+          "legacy_value": 219,
+          "legacy_symbol": "TRAINER_ETHAN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 219,
+          "id": "HOENN:TRAINER_ETHAN_3",
+          "legacy_value": 220,
+          "legacy_symbol": "TRAINER_ETHAN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 220,
+          "id": "HOENN:TRAINER_ETHAN_4",
+          "legacy_value": 221,
+          "legacy_symbol": "TRAINER_ETHAN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 221,
+          "id": "HOENN:TRAINER_ETHAN_5",
+          "legacy_value": 222,
+          "legacy_symbol": "TRAINER_ETHAN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 222,
+          "id": "HOENN:TRAINER_BRENT",
+          "legacy_value": 223,
+          "legacy_symbol": "TRAINER_BRENT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 223,
+          "id": "HOENN:TRAINER_DONALD",
+          "legacy_value": 224,
+          "legacy_symbol": "TRAINER_DONALD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 224,
+          "id": "HOENN:TRAINER_TAYLOR",
+          "legacy_value": 225,
+          "legacy_symbol": "TRAINER_TAYLOR"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 225,
+          "id": "HOENN:TRAINER_JEFFREY_1",
+          "legacy_value": 226,
+          "legacy_symbol": "TRAINER_JEFFREY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 226,
+          "id": "HOENN:TRAINER_DEREK",
+          "legacy_value": 227,
+          "legacy_symbol": "TRAINER_DEREK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 227,
+          "id": "HOENN:TRAINER_JEFFREY_2",
+          "legacy_value": 228,
+          "legacy_symbol": "TRAINER_JEFFREY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 228,
+          "id": "HOENN:TRAINER_JEFFREY_3",
+          "legacy_value": 229,
+          "legacy_symbol": "TRAINER_JEFFREY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 229,
+          "id": "HOENN:TRAINER_JEFFREY_4",
+          "legacy_value": 230,
+          "legacy_symbol": "TRAINER_JEFFREY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 230,
+          "id": "HOENN:TRAINER_JEFFREY_5",
+          "legacy_value": 231,
+          "legacy_symbol": "TRAINER_JEFFREY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 231,
+          "id": "HOENN:TRAINER_EDWARD",
+          "legacy_value": 232,
+          "legacy_symbol": "TRAINER_EDWARD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 232,
+          "id": "HOENN:TRAINER_PRESTON",
+          "legacy_value": 233,
+          "legacy_symbol": "TRAINER_PRESTON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 233,
+          "id": "HOENN:TRAINER_VIRGIL",
+          "legacy_value": 234,
+          "legacy_symbol": "TRAINER_VIRGIL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 234,
+          "id": "HOENN:TRAINER_BLAKE",
+          "legacy_value": 235,
+          "legacy_symbol": "TRAINER_BLAKE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 235,
+          "id": "HOENN:TRAINER_WILLIAM",
+          "legacy_value": 236,
+          "legacy_symbol": "TRAINER_WILLIAM"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 236,
+          "id": "HOENN:TRAINER_JOSHUA",
+          "legacy_value": 237,
+          "legacy_symbol": "TRAINER_JOSHUA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 237,
+          "id": "HOENN:TRAINER_CAMERON_1",
+          "legacy_value": 238,
+          "legacy_symbol": "TRAINER_CAMERON_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 238,
+          "id": "HOENN:TRAINER_CAMERON_2",
+          "legacy_value": 239,
+          "legacy_symbol": "TRAINER_CAMERON_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 239,
+          "id": "HOENN:TRAINER_CAMERON_3",
+          "legacy_value": 240,
+          "legacy_symbol": "TRAINER_CAMERON_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 240,
+          "id": "HOENN:TRAINER_CAMERON_4",
+          "legacy_value": 241,
+          "legacy_symbol": "TRAINER_CAMERON_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 241,
+          "id": "HOENN:TRAINER_CAMERON_5",
+          "legacy_value": 242,
+          "legacy_symbol": "TRAINER_CAMERON_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 242,
+          "id": "HOENN:TRAINER_JACLYN",
+          "legacy_value": 243,
+          "legacy_symbol": "TRAINER_JACLYN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 243,
+          "id": "HOENN:TRAINER_HANNAH",
+          "legacy_value": 244,
+          "legacy_symbol": "TRAINER_HANNAH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 244,
+          "id": "HOENN:TRAINER_SAMANTHA",
+          "legacy_value": 245,
+          "legacy_symbol": "TRAINER_SAMANTHA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 245,
+          "id": "HOENN:TRAINER_MAURA",
+          "legacy_value": 246,
+          "legacy_symbol": "TRAINER_MAURA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 246,
+          "id": "HOENN:TRAINER_KAYLA",
+          "legacy_value": 247,
+          "legacy_symbol": "TRAINER_KAYLA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 247,
+          "id": "HOENN:TRAINER_ALEXIS",
+          "legacy_value": 248,
+          "legacy_symbol": "TRAINER_ALEXIS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 248,
+          "id": "HOENN:TRAINER_JACKI_1",
+          "legacy_value": 249,
+          "legacy_symbol": "TRAINER_JACKI_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 249,
+          "id": "HOENN:TRAINER_JACKI_2",
+          "legacy_value": 250,
+          "legacy_symbol": "TRAINER_JACKI_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 250,
+          "id": "HOENN:TRAINER_JACKI_3",
+          "legacy_value": 251,
+          "legacy_symbol": "TRAINER_JACKI_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 251,
+          "id": "HOENN:TRAINER_JACKI_4",
+          "legacy_value": 252,
+          "legacy_symbol": "TRAINER_JACKI_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 252,
+          "id": "HOENN:TRAINER_JACKI_5",
+          "legacy_value": 253,
+          "legacy_symbol": "TRAINER_JACKI_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 253,
+          "id": "HOENN:TRAINER_WALTER_1",
+          "legacy_value": 254,
+          "legacy_symbol": "TRAINER_WALTER_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 254,
+          "id": "HOENN:TRAINER_MICAH",
+          "legacy_value": 255,
+          "legacy_symbol": "TRAINER_MICAH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 255,
+          "id": "HOENN:TRAINER_THOMAS",
+          "legacy_value": 256,
+          "legacy_symbol": "TRAINER_THOMAS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 256,
+          "id": "HOENN:TRAINER_WALTER_2",
+          "legacy_value": 257,
+          "legacy_symbol": "TRAINER_WALTER_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 257,
+          "id": "HOENN:TRAINER_WALTER_3",
+          "legacy_value": 258,
+          "legacy_symbol": "TRAINER_WALTER_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 258,
+          "id": "HOENN:TRAINER_WALTER_4",
+          "legacy_value": 259,
+          "legacy_symbol": "TRAINER_WALTER_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 259,
+          "id": "HOENN:TRAINER_WALTER_5",
+          "legacy_value": 260,
+          "legacy_symbol": "TRAINER_WALTER_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 260,
+          "id": "HOENN:TRAINER_SIDNEY",
+          "legacy_value": 261,
+          "legacy_symbol": "TRAINER_SIDNEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 261,
+          "id": "HOENN:TRAINER_PHOEBE",
+          "legacy_value": 262,
+          "legacy_symbol": "TRAINER_PHOEBE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 262,
+          "id": "HOENN:TRAINER_GLACIA",
+          "legacy_value": 263,
+          "legacy_symbol": "TRAINER_GLACIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 263,
+          "id": "HOENN:TRAINER_DRAKE",
+          "legacy_value": 264,
+          "legacy_symbol": "TRAINER_DRAKE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 264,
+          "id": "HOENN:TRAINER_ROXANNE_1",
+          "legacy_value": 265,
+          "legacy_symbol": "TRAINER_ROXANNE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 265,
+          "id": "HOENN:TRAINER_BRAWLY_1",
+          "legacy_value": 266,
+          "legacy_symbol": "TRAINER_BRAWLY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 266,
+          "id": "HOENN:TRAINER_WATTSON_1",
+          "legacy_value": 267,
+          "legacy_symbol": "TRAINER_WATTSON_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 267,
+          "id": "HOENN:TRAINER_FLANNERY_1",
+          "legacy_value": 268,
+          "legacy_symbol": "TRAINER_FLANNERY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 268,
+          "id": "HOENN:TRAINER_NORMAN_1",
+          "legacy_value": 269,
+          "legacy_symbol": "TRAINER_NORMAN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 269,
+          "id": "HOENN:TRAINER_WINONA_1",
+          "legacy_value": 270,
+          "legacy_symbol": "TRAINER_WINONA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 270,
+          "id": "HOENN:TRAINER_TATE_AND_LIZA_1",
+          "legacy_value": 271,
+          "legacy_symbol": "TRAINER_TATE_AND_LIZA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 271,
+          "id": "HOENN:TRAINER_JUAN_1",
+          "legacy_value": 272,
+          "legacy_symbol": "TRAINER_JUAN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 272,
+          "id": "HOENN:TRAINER_JERRY_1",
+          "legacy_value": 273,
+          "legacy_symbol": "TRAINER_JERRY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 273,
+          "id": "HOENN:TRAINER_TED",
+          "legacy_value": 274,
+          "legacy_symbol": "TRAINER_TED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 274,
+          "id": "HOENN:TRAINER_PAUL",
+          "legacy_value": 275,
+          "legacy_symbol": "TRAINER_PAUL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 275,
+          "id": "HOENN:TRAINER_JERRY_2",
+          "legacy_value": 276,
+          "legacy_symbol": "TRAINER_JERRY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 276,
+          "id": "HOENN:TRAINER_JERRY_3",
+          "legacy_value": 277,
+          "legacy_symbol": "TRAINER_JERRY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 277,
+          "id": "HOENN:TRAINER_JERRY_4",
+          "legacy_value": 278,
+          "legacy_symbol": "TRAINER_JERRY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 278,
+          "id": "HOENN:TRAINER_JERRY_5",
+          "legacy_value": 279,
+          "legacy_symbol": "TRAINER_JERRY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 279,
+          "id": "HOENN:TRAINER_KAREN_1",
+          "legacy_value": 280,
+          "legacy_symbol": "TRAINER_KAREN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 280,
+          "id": "HOENN:TRAINER_GEORGIA",
+          "legacy_value": 281,
+          "legacy_symbol": "TRAINER_GEORGIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 281,
+          "id": "HOENN:TRAINER_KAREN_2",
+          "legacy_value": 282,
+          "legacy_symbol": "TRAINER_KAREN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 282,
+          "id": "HOENN:TRAINER_KAREN_3",
+          "legacy_value": 283,
+          "legacy_symbol": "TRAINER_KAREN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 283,
+          "id": "HOENN:TRAINER_KAREN_4",
+          "legacy_value": 284,
+          "legacy_symbol": "TRAINER_KAREN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 284,
+          "id": "HOENN:TRAINER_KAREN_5",
+          "legacy_value": 285,
+          "legacy_symbol": "TRAINER_KAREN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 285,
+          "id": "HOENN:TRAINER_KATE_AND_JOY",
+          "legacy_value": 286,
+          "legacy_symbol": "TRAINER_KATE_AND_JOY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 286,
+          "id": "HOENN:TRAINER_ANNA_AND_MEG_1",
+          "legacy_value": 287,
+          "legacy_symbol": "TRAINER_ANNA_AND_MEG_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 287,
+          "id": "HOENN:TRAINER_ANNA_AND_MEG_2",
+          "legacy_value": 288,
+          "legacy_symbol": "TRAINER_ANNA_AND_MEG_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 288,
+          "id": "HOENN:TRAINER_ANNA_AND_MEG_3",
+          "legacy_value": 289,
+          "legacy_symbol": "TRAINER_ANNA_AND_MEG_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 289,
+          "id": "HOENN:TRAINER_ANNA_AND_MEG_4",
+          "legacy_value": 290,
+          "legacy_symbol": "TRAINER_ANNA_AND_MEG_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 290,
+          "id": "HOENN:TRAINER_ANNA_AND_MEG_5",
+          "legacy_value": 291,
+          "legacy_symbol": "TRAINER_ANNA_AND_MEG_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 291,
+          "id": "HOENN:TRAINER_VICTOR",
+          "legacy_value": 292,
+          "legacy_symbol": "TRAINER_VICTOR"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 292,
+          "id": "HOENN:TRAINER_MIGUEL_1",
+          "legacy_value": 293,
+          "legacy_symbol": "TRAINER_MIGUEL_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 293,
+          "id": "HOENN:TRAINER_COLTON",
+          "legacy_value": 294,
+          "legacy_symbol": "TRAINER_COLTON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 294,
+          "id": "HOENN:TRAINER_MIGUEL_2",
+          "legacy_value": 295,
+          "legacy_symbol": "TRAINER_MIGUEL_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 295,
+          "id": "HOENN:TRAINER_MIGUEL_3",
+          "legacy_value": 296,
+          "legacy_symbol": "TRAINER_MIGUEL_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 296,
+          "id": "HOENN:TRAINER_MIGUEL_4",
+          "legacy_value": 297,
+          "legacy_symbol": "TRAINER_MIGUEL_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 297,
+          "id": "HOENN:TRAINER_MIGUEL_5",
+          "legacy_value": 298,
+          "legacy_symbol": "TRAINER_MIGUEL_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 298,
+          "id": "HOENN:TRAINER_VICTORIA",
+          "legacy_value": 299,
+          "legacy_symbol": "TRAINER_VICTORIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 299,
+          "id": "HOENN:TRAINER_VANESSA",
+          "legacy_value": 300,
+          "legacy_symbol": "TRAINER_VANESSA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 300,
+          "id": "HOENN:TRAINER_BETHANY",
+          "legacy_value": 301,
+          "legacy_symbol": "TRAINER_BETHANY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 301,
+          "id": "HOENN:TRAINER_ISABEL_1",
+          "legacy_value": 302,
+          "legacy_symbol": "TRAINER_ISABEL_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 302,
+          "id": "HOENN:TRAINER_ISABEL_2",
+          "legacy_value": 303,
+          "legacy_symbol": "TRAINER_ISABEL_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 303,
+          "id": "HOENN:TRAINER_ISABEL_3",
+          "legacy_value": 304,
+          "legacy_symbol": "TRAINER_ISABEL_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 304,
+          "id": "HOENN:TRAINER_ISABEL_4",
+          "legacy_value": 305,
+          "legacy_symbol": "TRAINER_ISABEL_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 305,
+          "id": "HOENN:TRAINER_ISABEL_5",
+          "legacy_value": 306,
+          "legacy_symbol": "TRAINER_ISABEL_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 306,
+          "id": "HOENN:TRAINER_TIMOTHY_1",
+          "legacy_value": 307,
+          "legacy_symbol": "TRAINER_TIMOTHY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 307,
+          "id": "HOENN:TRAINER_TIMOTHY_2",
+          "legacy_value": 308,
+          "legacy_symbol": "TRAINER_TIMOTHY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 308,
+          "id": "HOENN:TRAINER_TIMOTHY_3",
+          "legacy_value": 309,
+          "legacy_symbol": "TRAINER_TIMOTHY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 309,
+          "id": "HOENN:TRAINER_TIMOTHY_4",
+          "legacy_value": 310,
+          "legacy_symbol": "TRAINER_TIMOTHY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 310,
+          "id": "HOENN:TRAINER_TIMOTHY_5",
+          "legacy_value": 311,
+          "legacy_symbol": "TRAINER_TIMOTHY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 311,
+          "id": "HOENN:TRAINER_VICKY",
+          "legacy_value": 312,
+          "legacy_symbol": "TRAINER_VICKY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 312,
+          "id": "HOENN:TRAINER_SHELBY_1",
+          "legacy_value": 313,
+          "legacy_symbol": "TRAINER_SHELBY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 313,
+          "id": "HOENN:TRAINER_SHELBY_2",
+          "legacy_value": 314,
+          "legacy_symbol": "TRAINER_SHELBY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 314,
+          "id": "HOENN:TRAINER_SHELBY_3",
+          "legacy_value": 315,
+          "legacy_symbol": "TRAINER_SHELBY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 315,
+          "id": "HOENN:TRAINER_SHELBY_4",
+          "legacy_value": 316,
+          "legacy_symbol": "TRAINER_SHELBY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 316,
+          "id": "HOENN:TRAINER_SHELBY_5",
+          "legacy_value": 317,
+          "legacy_symbol": "TRAINER_SHELBY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 317,
+          "id": "HOENN:TRAINER_CALVIN_1",
+          "legacy_value": 318,
+          "legacy_symbol": "TRAINER_CALVIN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 318,
+          "id": "HOENN:TRAINER_BILLY",
+          "legacy_value": 319,
+          "legacy_symbol": "TRAINER_BILLY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 319,
+          "id": "HOENN:TRAINER_JOSH",
+          "legacy_value": 320,
+          "legacy_symbol": "TRAINER_JOSH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 320,
+          "id": "HOENN:TRAINER_TOMMY",
+          "legacy_value": 321,
+          "legacy_symbol": "TRAINER_TOMMY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 321,
+          "id": "HOENN:TRAINER_JOEY",
+          "legacy_value": 322,
+          "legacy_symbol": "TRAINER_JOEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 322,
+          "id": "HOENN:TRAINER_BEN",
+          "legacy_value": 323,
+          "legacy_symbol": "TRAINER_BEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 323,
+          "id": "HOENN:TRAINER_QUINCY",
+          "legacy_value": 324,
+          "legacy_symbol": "TRAINER_QUINCY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 324,
+          "id": "HOENN:TRAINER_KATELYNN",
+          "legacy_value": 325,
+          "legacy_symbol": "TRAINER_KATELYNN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 325,
+          "id": "HOENN:TRAINER_JAYLEN",
+          "legacy_value": 326,
+          "legacy_symbol": "TRAINER_JAYLEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 326,
+          "id": "HOENN:TRAINER_DILLON",
+          "legacy_value": 327,
+          "legacy_symbol": "TRAINER_DILLON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 327,
+          "id": "HOENN:TRAINER_CALVIN_2",
+          "legacy_value": 328,
+          "legacy_symbol": "TRAINER_CALVIN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 328,
+          "id": "HOENN:TRAINER_CALVIN_3",
+          "legacy_value": 329,
+          "legacy_symbol": "TRAINER_CALVIN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 329,
+          "id": "HOENN:TRAINER_CALVIN_4",
+          "legacy_value": 330,
+          "legacy_symbol": "TRAINER_CALVIN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 330,
+          "id": "HOENN:TRAINER_CALVIN_5",
+          "legacy_value": 331,
+          "legacy_symbol": "TRAINER_CALVIN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 331,
+          "id": "HOENN:TRAINER_EDDIE",
+          "legacy_value": 332,
+          "legacy_symbol": "TRAINER_EDDIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 332,
+          "id": "HOENN:TRAINER_ALLEN",
+          "legacy_value": 333,
+          "legacy_symbol": "TRAINER_ALLEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 333,
+          "id": "HOENN:TRAINER_TIMMY",
+          "legacy_value": 334,
+          "legacy_symbol": "TRAINER_TIMMY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 334,
+          "id": "HOENN:TRAINER_WALLACE",
+          "legacy_value": 335,
+          "legacy_symbol": "TRAINER_WALLACE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 335,
+          "id": "HOENN:TRAINER_ANDREW",
+          "legacy_value": 336,
+          "legacy_symbol": "TRAINER_ANDREW"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 336,
+          "id": "HOENN:TRAINER_IVAN",
+          "legacy_value": 337,
+          "legacy_symbol": "TRAINER_IVAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 337,
+          "id": "HOENN:TRAINER_CLAUDE",
+          "legacy_value": 338,
+          "legacy_symbol": "TRAINER_CLAUDE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 338,
+          "id": "HOENN:TRAINER_ELLIOT_1",
+          "legacy_value": 339,
+          "legacy_symbol": "TRAINER_ELLIOT_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 339,
+          "id": "HOENN:TRAINER_NED",
+          "legacy_value": 340,
+          "legacy_symbol": "TRAINER_NED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 340,
+          "id": "HOENN:TRAINER_DALE",
+          "legacy_value": 341,
+          "legacy_symbol": "TRAINER_DALE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 341,
+          "id": "HOENN:TRAINER_NOLAN",
+          "legacy_value": 342,
+          "legacy_symbol": "TRAINER_NOLAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 342,
+          "id": "HOENN:TRAINER_BARNY",
+          "legacy_value": 343,
+          "legacy_symbol": "TRAINER_BARNY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 343,
+          "id": "HOENN:TRAINER_WADE",
+          "legacy_value": 344,
+          "legacy_symbol": "TRAINER_WADE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 344,
+          "id": "HOENN:TRAINER_CARTER",
+          "legacy_value": 345,
+          "legacy_symbol": "TRAINER_CARTER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 345,
+          "id": "HOENN:TRAINER_ELLIOT_2",
+          "legacy_value": 346,
+          "legacy_symbol": "TRAINER_ELLIOT_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 346,
+          "id": "HOENN:TRAINER_ELLIOT_3",
+          "legacy_value": 347,
+          "legacy_symbol": "TRAINER_ELLIOT_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 347,
+          "id": "HOENN:TRAINER_ELLIOT_4",
+          "legacy_value": 348,
+          "legacy_symbol": "TRAINER_ELLIOT_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 348,
+          "id": "HOENN:TRAINER_ELLIOT_5",
+          "legacy_value": 349,
+          "legacy_symbol": "TRAINER_ELLIOT_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 349,
+          "id": "HOENN:TRAINER_RONALD",
+          "legacy_value": 350,
+          "legacy_symbol": "TRAINER_RONALD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 350,
+          "id": "HOENN:TRAINER_JACOB",
+          "legacy_value": 351,
+          "legacy_symbol": "TRAINER_JACOB"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 351,
+          "id": "HOENN:TRAINER_ANTHONY",
+          "legacy_value": 352,
+          "legacy_symbol": "TRAINER_ANTHONY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 352,
+          "id": "HOENN:TRAINER_BENJAMIN_1",
+          "legacy_value": 353,
+          "legacy_symbol": "TRAINER_BENJAMIN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 353,
+          "id": "HOENN:TRAINER_BENJAMIN_2",
+          "legacy_value": 354,
+          "legacy_symbol": "TRAINER_BENJAMIN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 354,
+          "id": "HOENN:TRAINER_BENJAMIN_3",
+          "legacy_value": 355,
+          "legacy_symbol": "TRAINER_BENJAMIN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 355,
+          "id": "HOENN:TRAINER_BENJAMIN_4",
+          "legacy_value": 356,
+          "legacy_symbol": "TRAINER_BENJAMIN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 356,
+          "id": "HOENN:TRAINER_BENJAMIN_5",
+          "legacy_value": 357,
+          "legacy_symbol": "TRAINER_BENJAMIN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 357,
+          "id": "HOENN:TRAINER_ABIGAIL_1",
+          "legacy_value": 358,
+          "legacy_symbol": "TRAINER_ABIGAIL_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 358,
+          "id": "HOENN:TRAINER_JASMINE",
+          "legacy_value": 359,
+          "legacy_symbol": "TRAINER_JASMINE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 359,
+          "id": "HOENN:TRAINER_ABIGAIL_2",
+          "legacy_value": 360,
+          "legacy_symbol": "TRAINER_ABIGAIL_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 360,
+          "id": "HOENN:TRAINER_ABIGAIL_3",
+          "legacy_value": 361,
+          "legacy_symbol": "TRAINER_ABIGAIL_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 361,
+          "id": "HOENN:TRAINER_ABIGAIL_4",
+          "legacy_value": 362,
+          "legacy_symbol": "TRAINER_ABIGAIL_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 362,
+          "id": "HOENN:TRAINER_ABIGAIL_5",
+          "legacy_value": 363,
+          "legacy_symbol": "TRAINER_ABIGAIL_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 363,
+          "id": "HOENN:TRAINER_DYLAN_1",
+          "legacy_value": 364,
+          "legacy_symbol": "TRAINER_DYLAN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 364,
+          "id": "HOENN:TRAINER_DYLAN_2",
+          "legacy_value": 365,
+          "legacy_symbol": "TRAINER_DYLAN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 365,
+          "id": "HOENN:TRAINER_DYLAN_3",
+          "legacy_value": 366,
+          "legacy_symbol": "TRAINER_DYLAN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 366,
+          "id": "HOENN:TRAINER_DYLAN_4",
+          "legacy_value": 367,
+          "legacy_symbol": "TRAINER_DYLAN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 367,
+          "id": "HOENN:TRAINER_DYLAN_5",
+          "legacy_value": 368,
+          "legacy_symbol": "TRAINER_DYLAN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 368,
+          "id": "HOENN:TRAINER_MARIA_1",
+          "legacy_value": 369,
+          "legacy_symbol": "TRAINER_MARIA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 369,
+          "id": "HOENN:TRAINER_MARIA_2",
+          "legacy_value": 370,
+          "legacy_symbol": "TRAINER_MARIA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 370,
+          "id": "HOENN:TRAINER_MARIA_3",
+          "legacy_value": 371,
+          "legacy_symbol": "TRAINER_MARIA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 371,
+          "id": "HOENN:TRAINER_MARIA_4",
+          "legacy_value": 372,
+          "legacy_symbol": "TRAINER_MARIA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 372,
+          "id": "HOENN:TRAINER_MARIA_5",
+          "legacy_value": 373,
+          "legacy_symbol": "TRAINER_MARIA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 373,
+          "id": "HOENN:TRAINER_CAMDEN",
+          "legacy_value": 374,
+          "legacy_symbol": "TRAINER_CAMDEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 374,
+          "id": "HOENN:TRAINER_DEMETRIUS",
+          "legacy_value": 375,
+          "legacy_symbol": "TRAINER_DEMETRIUS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 375,
+          "id": "HOENN:TRAINER_ISAIAH_1",
+          "legacy_value": 376,
+          "legacy_symbol": "TRAINER_ISAIAH_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 376,
+          "id": "HOENN:TRAINER_PABLO_1",
+          "legacy_value": 377,
+          "legacy_symbol": "TRAINER_PABLO_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 377,
+          "id": "HOENN:TRAINER_CHASE",
+          "legacy_value": 378,
+          "legacy_symbol": "TRAINER_CHASE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 378,
+          "id": "HOENN:TRAINER_ISAIAH_2",
+          "legacy_value": 379,
+          "legacy_symbol": "TRAINER_ISAIAH_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 379,
+          "id": "HOENN:TRAINER_ISAIAH_3",
+          "legacy_value": 380,
+          "legacy_symbol": "TRAINER_ISAIAH_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 380,
+          "id": "HOENN:TRAINER_ISAIAH_4",
+          "legacy_value": 381,
+          "legacy_symbol": "TRAINER_ISAIAH_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 381,
+          "id": "HOENN:TRAINER_ISAIAH_5",
+          "legacy_value": 382,
+          "legacy_symbol": "TRAINER_ISAIAH_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 382,
+          "id": "HOENN:TRAINER_ISOBEL",
+          "legacy_value": 383,
+          "legacy_symbol": "TRAINER_ISOBEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 383,
+          "id": "HOENN:TRAINER_DONNY",
+          "legacy_value": 384,
+          "legacy_symbol": "TRAINER_DONNY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 384,
+          "id": "HOENN:TRAINER_TALIA",
+          "legacy_value": 385,
+          "legacy_symbol": "TRAINER_TALIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 385,
+          "id": "HOENN:TRAINER_KATELYN_1",
+          "legacy_value": 386,
+          "legacy_symbol": "TRAINER_KATELYN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 386,
+          "id": "HOENN:TRAINER_ALLISON",
+          "legacy_value": 387,
+          "legacy_symbol": "TRAINER_ALLISON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 387,
+          "id": "HOENN:TRAINER_KATELYN_2",
+          "legacy_value": 388,
+          "legacy_symbol": "TRAINER_KATELYN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 388,
+          "id": "HOENN:TRAINER_KATELYN_3",
+          "legacy_value": 389,
+          "legacy_symbol": "TRAINER_KATELYN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 389,
+          "id": "HOENN:TRAINER_KATELYN_4",
+          "legacy_value": 390,
+          "legacy_symbol": "TRAINER_KATELYN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 390,
+          "id": "HOENN:TRAINER_KATELYN_5",
+          "legacy_value": 391,
+          "legacy_symbol": "TRAINER_KATELYN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 391,
+          "id": "HOENN:TRAINER_NICOLAS_1",
+          "legacy_value": 392,
+          "legacy_symbol": "TRAINER_NICOLAS_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 392,
+          "id": "HOENN:TRAINER_NICOLAS_2",
+          "legacy_value": 393,
+          "legacy_symbol": "TRAINER_NICOLAS_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 393,
+          "id": "HOENN:TRAINER_NICOLAS_3",
+          "legacy_value": 394,
+          "legacy_symbol": "TRAINER_NICOLAS_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 394,
+          "id": "HOENN:TRAINER_NICOLAS_4",
+          "legacy_value": 395,
+          "legacy_symbol": "TRAINER_NICOLAS_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 395,
+          "id": "HOENN:TRAINER_NICOLAS_5",
+          "legacy_value": 396,
+          "legacy_symbol": "TRAINER_NICOLAS_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 396,
+          "id": "HOENN:TRAINER_AARON",
+          "legacy_value": 397,
+          "legacy_symbol": "TRAINER_AARON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 397,
+          "id": "HOENN:TRAINER_PERRY",
+          "legacy_value": 398,
+          "legacy_symbol": "TRAINER_PERRY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 398,
+          "id": "HOENN:TRAINER_HUGH",
+          "legacy_value": 399,
+          "legacy_symbol": "TRAINER_HUGH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 399,
+          "id": "HOENN:TRAINER_PHIL",
+          "legacy_value": 400,
+          "legacy_symbol": "TRAINER_PHIL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 400,
+          "id": "HOENN:TRAINER_JARED",
+          "legacy_value": 401,
+          "legacy_symbol": "TRAINER_JARED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 401,
+          "id": "HOENN:TRAINER_HUMBERTO",
+          "legacy_value": 402,
+          "legacy_symbol": "TRAINER_HUMBERTO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 402,
+          "id": "HOENN:TRAINER_PRESLEY",
+          "legacy_value": 403,
+          "legacy_symbol": "TRAINER_PRESLEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 403,
+          "id": "HOENN:TRAINER_EDWARDO",
+          "legacy_value": 404,
+          "legacy_symbol": "TRAINER_EDWARDO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 404,
+          "id": "HOENN:TRAINER_COLIN",
+          "legacy_value": 405,
+          "legacy_symbol": "TRAINER_COLIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 405,
+          "id": "HOENN:TRAINER_ROBERT_1",
+          "legacy_value": 406,
+          "legacy_symbol": "TRAINER_ROBERT_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 406,
+          "id": "HOENN:TRAINER_BENNY",
+          "legacy_value": 407,
+          "legacy_symbol": "TRAINER_BENNY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 407,
+          "id": "HOENN:TRAINER_CHESTER",
+          "legacy_value": 408,
+          "legacy_symbol": "TRAINER_CHESTER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 408,
+          "id": "HOENN:TRAINER_ROBERT_2",
+          "legacy_value": 409,
+          "legacy_symbol": "TRAINER_ROBERT_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 409,
+          "id": "HOENN:TRAINER_ROBERT_3",
+          "legacy_value": 410,
+          "legacy_symbol": "TRAINER_ROBERT_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 410,
+          "id": "HOENN:TRAINER_ROBERT_4",
+          "legacy_value": 411,
+          "legacy_symbol": "TRAINER_ROBERT_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 411,
+          "id": "HOENN:TRAINER_ROBERT_5",
+          "legacy_value": 412,
+          "legacy_symbol": "TRAINER_ROBERT_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 412,
+          "id": "HOENN:TRAINER_ALEX",
+          "legacy_value": 413,
+          "legacy_symbol": "TRAINER_ALEX"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 413,
+          "id": "HOENN:TRAINER_BECK",
+          "legacy_value": 414,
+          "legacy_symbol": "TRAINER_BECK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 414,
+          "id": "HOENN:TRAINER_YASU",
+          "legacy_value": 415,
+          "legacy_symbol": "TRAINER_YASU"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 415,
+          "id": "HOENN:TRAINER_TAKASHI",
+          "legacy_value": 416,
+          "legacy_symbol": "TRAINER_TAKASHI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 416,
+          "id": "HOENN:TRAINER_DIANNE",
+          "legacy_value": 417,
+          "legacy_symbol": "TRAINER_DIANNE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 417,
+          "id": "HOENN:TRAINER_JANI",
+          "legacy_value": 418,
+          "legacy_symbol": "TRAINER_JANI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 418,
+          "id": "HOENN:TRAINER_LAO_1",
+          "legacy_value": 419,
+          "legacy_symbol": "TRAINER_LAO_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 419,
+          "id": "HOENN:TRAINER_LUNG",
+          "legacy_value": 420,
+          "legacy_symbol": "TRAINER_LUNG"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 420,
+          "id": "HOENN:TRAINER_LAO_2",
+          "legacy_value": 421,
+          "legacy_symbol": "TRAINER_LAO_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 421,
+          "id": "HOENN:TRAINER_LAO_3",
+          "legacy_value": 422,
+          "legacy_symbol": "TRAINER_LAO_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 422,
+          "id": "HOENN:TRAINER_LAO_4",
+          "legacy_value": 423,
+          "legacy_symbol": "TRAINER_LAO_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 423,
+          "id": "HOENN:TRAINER_LAO_5",
+          "legacy_value": 424,
+          "legacy_symbol": "TRAINER_LAO_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 424,
+          "id": "HOENN:TRAINER_JOCELYN",
+          "legacy_value": 425,
+          "legacy_symbol": "TRAINER_JOCELYN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 425,
+          "id": "HOENN:TRAINER_LAURA",
+          "legacy_value": 426,
+          "legacy_symbol": "TRAINER_LAURA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 426,
+          "id": "HOENN:TRAINER_CYNDY_1",
+          "legacy_value": 427,
+          "legacy_symbol": "TRAINER_CYNDY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 427,
+          "id": "HOENN:TRAINER_CORA",
+          "legacy_value": 428,
+          "legacy_symbol": "TRAINER_CORA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 428,
+          "id": "HOENN:TRAINER_PAULA",
+          "legacy_value": 429,
+          "legacy_symbol": "TRAINER_PAULA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 429,
+          "id": "HOENN:TRAINER_CYNDY_2",
+          "legacy_value": 430,
+          "legacy_symbol": "TRAINER_CYNDY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 430,
+          "id": "HOENN:TRAINER_CYNDY_3",
+          "legacy_value": 431,
+          "legacy_symbol": "TRAINER_CYNDY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 431,
+          "id": "HOENN:TRAINER_CYNDY_4",
+          "legacy_value": 432,
+          "legacy_symbol": "TRAINER_CYNDY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 432,
+          "id": "HOENN:TRAINER_CYNDY_5",
+          "legacy_value": 433,
+          "legacy_symbol": "TRAINER_CYNDY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 433,
+          "id": "HOENN:TRAINER_MADELINE_1",
+          "legacy_value": 434,
+          "legacy_symbol": "TRAINER_MADELINE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 434,
+          "id": "HOENN:TRAINER_CLARISSA",
+          "legacy_value": 435,
+          "legacy_symbol": "TRAINER_CLARISSA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 435,
+          "id": "HOENN:TRAINER_ANGELICA",
+          "legacy_value": 436,
+          "legacy_symbol": "TRAINER_ANGELICA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 436,
+          "id": "HOENN:TRAINER_MADELINE_2",
+          "legacy_value": 437,
+          "legacy_symbol": "TRAINER_MADELINE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 437,
+          "id": "HOENN:TRAINER_MADELINE_3",
+          "legacy_value": 438,
+          "legacy_symbol": "TRAINER_MADELINE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 438,
+          "id": "HOENN:TRAINER_MADELINE_4",
+          "legacy_value": 439,
+          "legacy_symbol": "TRAINER_MADELINE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 439,
+          "id": "HOENN:TRAINER_MADELINE_5",
+          "legacy_value": 440,
+          "legacy_symbol": "TRAINER_MADELINE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 440,
+          "id": "HOENN:TRAINER_BEVERLY",
+          "legacy_value": 441,
+          "legacy_symbol": "TRAINER_BEVERLY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 441,
+          "id": "HOENN:TRAINER_IMANI",
+          "legacy_value": 442,
+          "legacy_symbol": "TRAINER_IMANI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 442,
+          "id": "HOENN:TRAINER_KYLA",
+          "legacy_value": 443,
+          "legacy_symbol": "TRAINER_KYLA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 443,
+          "id": "HOENN:TRAINER_DENISE",
+          "legacy_value": 444,
+          "legacy_symbol": "TRAINER_DENISE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 444,
+          "id": "HOENN:TRAINER_BETH",
+          "legacy_value": 445,
+          "legacy_symbol": "TRAINER_BETH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 445,
+          "id": "HOENN:TRAINER_TARA",
+          "legacy_value": 446,
+          "legacy_symbol": "TRAINER_TARA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 446,
+          "id": "HOENN:TRAINER_MISSY",
+          "legacy_value": 447,
+          "legacy_symbol": "TRAINER_MISSY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 447,
+          "id": "HOENN:TRAINER_ALICE",
+          "legacy_value": 448,
+          "legacy_symbol": "TRAINER_ALICE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 448,
+          "id": "HOENN:TRAINER_JENNY_1",
+          "legacy_value": 449,
+          "legacy_symbol": "TRAINER_JENNY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 449,
+          "id": "HOENN:TRAINER_GRACE",
+          "legacy_value": 450,
+          "legacy_symbol": "TRAINER_GRACE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 450,
+          "id": "HOENN:TRAINER_TANYA",
+          "legacy_value": 451,
+          "legacy_symbol": "TRAINER_TANYA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 451,
+          "id": "HOENN:TRAINER_SHARON",
+          "legacy_value": 452,
+          "legacy_symbol": "TRAINER_SHARON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 452,
+          "id": "HOENN:TRAINER_NIKKI",
+          "legacy_value": 453,
+          "legacy_symbol": "TRAINER_NIKKI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 453,
+          "id": "HOENN:TRAINER_BRENDA",
+          "legacy_value": 454,
+          "legacy_symbol": "TRAINER_BRENDA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 454,
+          "id": "HOENN:TRAINER_KATIE",
+          "legacy_value": 455,
+          "legacy_symbol": "TRAINER_KATIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 455,
+          "id": "HOENN:TRAINER_SUSIE",
+          "legacy_value": 456,
+          "legacy_symbol": "TRAINER_SUSIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 456,
+          "id": "HOENN:TRAINER_KARA",
+          "legacy_value": 457,
+          "legacy_symbol": "TRAINER_KARA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 457,
+          "id": "HOENN:TRAINER_DANA",
+          "legacy_value": 458,
+          "legacy_symbol": "TRAINER_DANA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 458,
+          "id": "HOENN:TRAINER_SIENNA",
+          "legacy_value": 459,
+          "legacy_symbol": "TRAINER_SIENNA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 459,
+          "id": "HOENN:TRAINER_DEBRA",
+          "legacy_value": 460,
+          "legacy_symbol": "TRAINER_DEBRA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 460,
+          "id": "HOENN:TRAINER_LINDA",
+          "legacy_value": 461,
+          "legacy_symbol": "TRAINER_LINDA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 461,
+          "id": "HOENN:TRAINER_KAYLEE",
+          "legacy_value": 462,
+          "legacy_symbol": "TRAINER_KAYLEE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 462,
+          "id": "HOENN:TRAINER_LAUREL",
+          "legacy_value": 463,
+          "legacy_symbol": "TRAINER_LAUREL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 463,
+          "id": "HOENN:TRAINER_CARLEE",
+          "legacy_value": 464,
+          "legacy_symbol": "TRAINER_CARLEE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 464,
+          "id": "HOENN:TRAINER_JENNY_2",
+          "legacy_value": 465,
+          "legacy_symbol": "TRAINER_JENNY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 465,
+          "id": "HOENN:TRAINER_JENNY_3",
+          "legacy_value": 466,
+          "legacy_symbol": "TRAINER_JENNY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 466,
+          "id": "HOENN:TRAINER_JENNY_4",
+          "legacy_value": 467,
+          "legacy_symbol": "TRAINER_JENNY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 467,
+          "id": "HOENN:TRAINER_JENNY_5",
+          "legacy_value": 468,
+          "legacy_symbol": "TRAINER_JENNY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 468,
+          "id": "HOENN:TRAINER_HEIDI",
+          "legacy_value": 469,
+          "legacy_symbol": "TRAINER_HEIDI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 469,
+          "id": "HOENN:TRAINER_BECKY",
+          "legacy_value": 470,
+          "legacy_symbol": "TRAINER_BECKY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 470,
+          "id": "HOENN:TRAINER_CAROL",
+          "legacy_value": 471,
+          "legacy_symbol": "TRAINER_CAROL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 471,
+          "id": "HOENN:TRAINER_NANCY",
+          "legacy_value": 472,
+          "legacy_symbol": "TRAINER_NANCY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 472,
+          "id": "HOENN:TRAINER_MARTHA",
+          "legacy_value": 473,
+          "legacy_symbol": "TRAINER_MARTHA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 473,
+          "id": "HOENN:TRAINER_DIANA_1",
+          "legacy_value": 474,
+          "legacy_symbol": "TRAINER_DIANA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 474,
+          "id": "HOENN:TRAINER_CEDRIC",
+          "legacy_value": 475,
+          "legacy_symbol": "TRAINER_CEDRIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 475,
+          "id": "HOENN:TRAINER_IRENE",
+          "legacy_value": 476,
+          "legacy_symbol": "TRAINER_IRENE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 476,
+          "id": "HOENN:TRAINER_DIANA_2",
+          "legacy_value": 477,
+          "legacy_symbol": "TRAINER_DIANA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 477,
+          "id": "HOENN:TRAINER_DIANA_3",
+          "legacy_value": 478,
+          "legacy_symbol": "TRAINER_DIANA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 478,
+          "id": "HOENN:TRAINER_DIANA_4",
+          "legacy_value": 479,
+          "legacy_symbol": "TRAINER_DIANA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 479,
+          "id": "HOENN:TRAINER_DIANA_5",
+          "legacy_value": 480,
+          "legacy_symbol": "TRAINER_DIANA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 480,
+          "id": "HOENN:TRAINER_AMY_AND_LIV_1",
+          "legacy_value": 481,
+          "legacy_symbol": "TRAINER_AMY_AND_LIV_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 481,
+          "id": "HOENN:TRAINER_AMY_AND_LIV_2",
+          "legacy_value": 482,
+          "legacy_symbol": "TRAINER_AMY_AND_LIV_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 482,
+          "id": "HOENN:TRAINER_GINA_AND_MIA_1",
+          "legacy_value": 483,
+          "legacy_symbol": "TRAINER_GINA_AND_MIA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 483,
+          "id": "HOENN:TRAINER_MIU_AND_YUKI",
+          "legacy_value": 484,
+          "legacy_symbol": "TRAINER_MIU_AND_YUKI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 484,
+          "id": "HOENN:TRAINER_AMY_AND_LIV_3",
+          "legacy_value": 485,
+          "legacy_symbol": "TRAINER_AMY_AND_LIV_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 485,
+          "id": "HOENN:TRAINER_GINA_AND_MIA_2",
+          "legacy_value": 486,
+          "legacy_symbol": "TRAINER_GINA_AND_MIA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 486,
+          "id": "HOENN:TRAINER_AMY_AND_LIV_4",
+          "legacy_value": 487,
+          "legacy_symbol": "TRAINER_AMY_AND_LIV_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 487,
+          "id": "HOENN:TRAINER_AMY_AND_LIV_5",
+          "legacy_value": 488,
+          "legacy_symbol": "TRAINER_AMY_AND_LIV_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 488,
+          "id": "HOENN:TRAINER_AMY_AND_LIV_6",
+          "legacy_value": 489,
+          "legacy_symbol": "TRAINER_AMY_AND_LIV_6"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 489,
+          "id": "HOENN:TRAINER_HUEY",
+          "legacy_value": 490,
+          "legacy_symbol": "TRAINER_HUEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 490,
+          "id": "HOENN:TRAINER_EDMOND",
+          "legacy_value": 491,
+          "legacy_symbol": "TRAINER_EDMOND"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 491,
+          "id": "HOENN:TRAINER_ERNEST_1",
+          "legacy_value": 492,
+          "legacy_symbol": "TRAINER_ERNEST_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 492,
+          "id": "HOENN:TRAINER_DWAYNE",
+          "legacy_value": 493,
+          "legacy_symbol": "TRAINER_DWAYNE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 493,
+          "id": "HOENN:TRAINER_PHILLIP",
+          "legacy_value": 494,
+          "legacy_symbol": "TRAINER_PHILLIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 494,
+          "id": "HOENN:TRAINER_LEONARD",
+          "legacy_value": 495,
+          "legacy_symbol": "TRAINER_LEONARD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 495,
+          "id": "HOENN:TRAINER_DUNCAN",
+          "legacy_value": 496,
+          "legacy_symbol": "TRAINER_DUNCAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 496,
+          "id": "HOENN:TRAINER_ERNEST_2",
+          "legacy_value": 497,
+          "legacy_symbol": "TRAINER_ERNEST_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 497,
+          "id": "HOENN:TRAINER_ERNEST_3",
+          "legacy_value": 498,
+          "legacy_symbol": "TRAINER_ERNEST_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 498,
+          "id": "HOENN:TRAINER_ERNEST_4",
+          "legacy_value": 499,
+          "legacy_symbol": "TRAINER_ERNEST_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 499,
+          "id": "HOENN:TRAINER_ERNEST_5",
+          "legacy_value": 500,
+          "legacy_symbol": "TRAINER_ERNEST_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 500,
+          "id": "HOENN:TRAINER_ELI",
+          "legacy_value": 501,
+          "legacy_symbol": "TRAINER_ELI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 501,
+          "id": "HOENN:TRAINER_ANNIKA",
+          "legacy_value": 502,
+          "legacy_symbol": "TRAINER_ANNIKA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 502,
+          "id": "HOENN:TRAINER_JAZMYN",
+          "legacy_value": 503,
+          "legacy_symbol": "TRAINER_JAZMYN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 503,
+          "id": "HOENN:TRAINER_JONAS",
+          "legacy_value": 504,
+          "legacy_symbol": "TRAINER_JONAS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 504,
+          "id": "HOENN:TRAINER_KAYLEY",
+          "legacy_value": 505,
+          "legacy_symbol": "TRAINER_KAYLEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 505,
+          "id": "HOENN:TRAINER_AURON",
+          "legacy_value": 506,
+          "legacy_symbol": "TRAINER_AURON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 506,
+          "id": "HOENN:TRAINER_KELVIN",
+          "legacy_value": 507,
+          "legacy_symbol": "TRAINER_KELVIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 507,
+          "id": "HOENN:TRAINER_MARLEY",
+          "legacy_value": 508,
+          "legacy_symbol": "TRAINER_MARLEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 508,
+          "id": "HOENN:TRAINER_REYNA",
+          "legacy_value": 509,
+          "legacy_symbol": "TRAINER_REYNA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 509,
+          "id": "HOENN:TRAINER_HUDSON",
+          "legacy_value": 510,
+          "legacy_symbol": "TRAINER_HUDSON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 510,
+          "id": "HOENN:TRAINER_CONOR",
+          "legacy_value": 511,
+          "legacy_symbol": "TRAINER_CONOR"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 511,
+          "id": "HOENN:TRAINER_EDWIN_1",
+          "legacy_value": 512,
+          "legacy_symbol": "TRAINER_EDWIN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 512,
+          "id": "HOENN:TRAINER_HECTOR",
+          "legacy_value": 513,
+          "legacy_symbol": "TRAINER_HECTOR"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 513,
+          "id": "HOENN:TRAINER_TABITHA_MOSSDEEP",
+          "legacy_value": 514,
+          "legacy_symbol": "TRAINER_TABITHA_MOSSDEEP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 514,
+          "id": "HOENN:TRAINER_EDWIN_2",
+          "legacy_value": 515,
+          "legacy_symbol": "TRAINER_EDWIN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 515,
+          "id": "HOENN:TRAINER_EDWIN_3",
+          "legacy_value": 516,
+          "legacy_symbol": "TRAINER_EDWIN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 516,
+          "id": "HOENN:TRAINER_EDWIN_4",
+          "legacy_value": 517,
+          "legacy_symbol": "TRAINER_EDWIN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 517,
+          "id": "HOENN:TRAINER_EDWIN_5",
+          "legacy_value": 518,
+          "legacy_symbol": "TRAINER_EDWIN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 518,
+          "id": "HOENN:TRAINER_WALLY_1",
+          "legacy_value": 519,
+          "legacy_symbol": "TRAINER_WALLY_VR_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 519,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_103_MUDKIP",
+          "legacy_value": 520,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_103_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 520,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_110_MUDKIP",
+          "legacy_value": 521,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_110_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 521,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_119_MUDKIP",
+          "legacy_value": 522,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_119_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 522,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_103_TREECKO",
+          "legacy_value": 523,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_103_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 523,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_110_TREECKO",
+          "legacy_value": 524,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_110_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 524,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_119_TREECKO",
+          "legacy_value": 525,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_119_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 525,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_103_TORCHIC",
+          "legacy_value": 526,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_103_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 526,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_110_TORCHIC",
+          "legacy_value": 527,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_110_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 527,
+          "id": "HOENN:TRAINER_BRENDAN_ROUTE_119_TORCHIC",
+          "legacy_value": 528,
+          "legacy_symbol": "TRAINER_BRENDAN_ROUTE_119_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 528,
+          "id": "HOENN:TRAINER_MAY_ROUTE_103_MUDKIP",
+          "legacy_value": 529,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_103_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 529,
+          "id": "HOENN:TRAINER_MAY_ROUTE_110_MUDKIP",
+          "legacy_value": 530,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_110_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 530,
+          "id": "HOENN:TRAINER_MAY_ROUTE_119_MUDKIP",
+          "legacy_value": 531,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_119_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 531,
+          "id": "HOENN:TRAINER_MAY_ROUTE_103_TREECKO",
+          "legacy_value": 532,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_103_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 532,
+          "id": "HOENN:TRAINER_MAY_ROUTE_110_TREECKO",
+          "legacy_value": 533,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_110_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 533,
+          "id": "HOENN:TRAINER_MAY_ROUTE_119_TREECKO",
+          "legacy_value": 534,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_119_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 534,
+          "id": "HOENN:TRAINER_MAY_ROUTE_103_TORCHIC",
+          "legacy_value": 535,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_103_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 535,
+          "id": "HOENN:TRAINER_MAY_ROUTE_110_TORCHIC",
+          "legacy_value": 536,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_110_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 536,
+          "id": "HOENN:TRAINER_MAY_ROUTE_119_TORCHIC",
+          "legacy_value": 537,
+          "legacy_symbol": "TRAINER_MAY_ROUTE_119_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 537,
+          "id": "HOENN:TRAINER_ISAAC_1",
+          "legacy_value": 538,
+          "legacy_symbol": "TRAINER_ISAAC_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 538,
+          "id": "HOENN:TRAINER_DAVIS",
+          "legacy_value": 539,
+          "legacy_symbol": "TRAINER_DAVIS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 539,
+          "id": "HOENN:TRAINER_MITCHELL",
+          "legacy_value": 540,
+          "legacy_symbol": "TRAINER_MITCHELL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 540,
+          "id": "HOENN:TRAINER_ISAAC_2",
+          "legacy_value": 541,
+          "legacy_symbol": "TRAINER_ISAAC_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 541,
+          "id": "HOENN:TRAINER_ISAAC_3",
+          "legacy_value": 542,
+          "legacy_symbol": "TRAINER_ISAAC_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 542,
+          "id": "HOENN:TRAINER_ISAAC_4",
+          "legacy_value": 543,
+          "legacy_symbol": "TRAINER_ISAAC_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 543,
+          "id": "HOENN:TRAINER_ISAAC_5",
+          "legacy_value": 544,
+          "legacy_symbol": "TRAINER_ISAAC_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 544,
+          "id": "HOENN:TRAINER_LYDIA_1",
+          "legacy_value": 545,
+          "legacy_symbol": "TRAINER_LYDIA_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 545,
+          "id": "HOENN:TRAINER_HALLE",
+          "legacy_value": 546,
+          "legacy_symbol": "TRAINER_HALLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 546,
+          "id": "HOENN:TRAINER_GARRISON",
+          "legacy_value": 547,
+          "legacy_symbol": "TRAINER_GARRISON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 547,
+          "id": "HOENN:TRAINER_LYDIA_2",
+          "legacy_value": 548,
+          "legacy_symbol": "TRAINER_LYDIA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 548,
+          "id": "HOENN:TRAINER_LYDIA_3",
+          "legacy_value": 549,
+          "legacy_symbol": "TRAINER_LYDIA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 549,
+          "id": "HOENN:TRAINER_LYDIA_4",
+          "legacy_value": 550,
+          "legacy_symbol": "TRAINER_LYDIA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 550,
+          "id": "HOENN:TRAINER_LYDIA_5",
+          "legacy_value": 551,
+          "legacy_symbol": "TRAINER_LYDIA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 551,
+          "id": "HOENN:TRAINER_JACKSON_1",
+          "legacy_value": 552,
+          "legacy_symbol": "TRAINER_JACKSON_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 552,
+          "id": "HOENN:TRAINER_LORENZO",
+          "legacy_value": 553,
+          "legacy_symbol": "TRAINER_LORENZO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 553,
+          "id": "HOENN:TRAINER_SEBASTIAN",
+          "legacy_value": 554,
+          "legacy_symbol": "TRAINER_SEBASTIAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 554,
+          "id": "HOENN:TRAINER_JACKSON_2",
+          "legacy_value": 555,
+          "legacy_symbol": "TRAINER_JACKSON_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 555,
+          "id": "HOENN:TRAINER_JACKSON_3",
+          "legacy_value": 556,
+          "legacy_symbol": "TRAINER_JACKSON_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 556,
+          "id": "HOENN:TRAINER_JACKSON_4",
+          "legacy_value": 557,
+          "legacy_symbol": "TRAINER_JACKSON_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 557,
+          "id": "HOENN:TRAINER_JACKSON_5",
+          "legacy_value": 558,
+          "legacy_symbol": "TRAINER_JACKSON_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 558,
+          "id": "HOENN:TRAINER_CATHERINE_1",
+          "legacy_value": 559,
+          "legacy_symbol": "TRAINER_CATHERINE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 559,
+          "id": "HOENN:TRAINER_JENNA",
+          "legacy_value": 560,
+          "legacy_symbol": "TRAINER_JENNA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 560,
+          "id": "HOENN:TRAINER_SOPHIA",
+          "legacy_value": 561,
+          "legacy_symbol": "TRAINER_SOPHIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 561,
+          "id": "HOENN:TRAINER_CATHERINE_2",
+          "legacy_value": 562,
+          "legacy_symbol": "TRAINER_CATHERINE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 562,
+          "id": "HOENN:TRAINER_CATHERINE_3",
+          "legacy_value": 563,
+          "legacy_symbol": "TRAINER_CATHERINE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 563,
+          "id": "HOENN:TRAINER_CATHERINE_4",
+          "legacy_value": 564,
+          "legacy_symbol": "TRAINER_CATHERINE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 564,
+          "id": "HOENN:TRAINER_CATHERINE_5",
+          "legacy_value": 565,
+          "legacy_symbol": "TRAINER_CATHERINE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 565,
+          "id": "HOENN:TRAINER_JULIO",
+          "legacy_value": 566,
+          "legacy_symbol": "TRAINER_JULIO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 566,
+          "id": "HOENN:TRAINER_GRUNT_SEAFLOOR_CAVERN_5",
+          "legacy_value": 567,
+          "legacy_symbol": "TRAINER_GRUNT_SEAFLOOR_CAVERN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 567,
+          "id": "HOENN:TRAINER_GRUNT_UNUSED",
+          "legacy_value": 568,
+          "legacy_symbol": "TRAINER_GRUNT_UNUSED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 568,
+          "id": "HOENN:TRAINER_GRUNT_MT_PYRE_4",
+          "legacy_value": 569,
+          "legacy_symbol": "TRAINER_GRUNT_MT_PYRE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 569,
+          "id": "HOENN:TRAINER_GRUNT_JAGGED_PASS",
+          "legacy_value": 570,
+          "legacy_symbol": "TRAINER_GRUNT_JAGGED_PASS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 570,
+          "id": "HOENN:TRAINER_MARC",
+          "legacy_value": 571,
+          "legacy_symbol": "TRAINER_MARC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 571,
+          "id": "HOENN:TRAINER_BRENDEN",
+          "legacy_value": 572,
+          "legacy_symbol": "TRAINER_BRENDEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 572,
+          "id": "HOENN:TRAINER_LILITH",
+          "legacy_value": 573,
+          "legacy_symbol": "TRAINER_LILITH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 573,
+          "id": "HOENN:TRAINER_CRISTIAN",
+          "legacy_value": 574,
+          "legacy_symbol": "TRAINER_CRISTIAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 574,
+          "id": "HOENN:TRAINER_SYLVIA",
+          "legacy_value": 575,
+          "legacy_symbol": "TRAINER_SYLVIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 575,
+          "id": "HOENN:TRAINER_LEONARDO",
+          "legacy_value": 576,
+          "legacy_symbol": "TRAINER_LEONARDO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 576,
+          "id": "HOENN:TRAINER_ATHENA",
+          "legacy_value": 577,
+          "legacy_symbol": "TRAINER_ATHENA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 577,
+          "id": "HOENN:TRAINER_HARRISON",
+          "legacy_value": 578,
+          "legacy_symbol": "TRAINER_HARRISON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 578,
+          "id": "HOENN:TRAINER_GRUNT_MT_CHIMNEY_2",
+          "legacy_value": 579,
+          "legacy_symbol": "TRAINER_GRUNT_MT_CHIMNEY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 579,
+          "id": "HOENN:TRAINER_CLARENCE",
+          "legacy_value": 580,
+          "legacy_symbol": "TRAINER_CLARENCE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 580,
+          "id": "HOENN:TRAINER_TERRY",
+          "legacy_value": 581,
+          "legacy_symbol": "TRAINER_TERRY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 581,
+          "id": "HOENN:TRAINER_NATE",
+          "legacy_value": 582,
+          "legacy_symbol": "TRAINER_NATE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 582,
+          "id": "HOENN:TRAINER_KATHLEEN",
+          "legacy_value": 583,
+          "legacy_symbol": "TRAINER_KATHLEEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 583,
+          "id": "HOENN:TRAINER_CLIFFORD",
+          "legacy_value": 584,
+          "legacy_symbol": "TRAINER_CLIFFORD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 584,
+          "id": "HOENN:TRAINER_NICHOLAS",
+          "legacy_value": 585,
+          "legacy_symbol": "TRAINER_NICHOLAS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 585,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_3",
+          "legacy_value": 586,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 586,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_4",
+          "legacy_value": 587,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 587,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_5",
+          "legacy_value": 588,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 588,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_6",
+          "legacy_value": 589,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_6"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 589,
+          "id": "HOENN:TRAINER_GRUNT_SPACE_CENTER_7",
+          "legacy_value": 590,
+          "legacy_symbol": "TRAINER_GRUNT_SPACE_CENTER_7"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 590,
+          "id": "HOENN:TRAINER_MACEY",
+          "legacy_value": 591,
+          "legacy_symbol": "TRAINER_MACEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 591,
+          "id": "HOENN:TRAINER_BRENDAN_RUSTBORO_TREECKO",
+          "legacy_value": 592,
+          "legacy_symbol": "TRAINER_BRENDAN_RUSTBORO_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 592,
+          "id": "HOENN:TRAINER_BRENDAN_RUSTBORO_MUDKIP",
+          "legacy_value": 593,
+          "legacy_symbol": "TRAINER_BRENDAN_RUSTBORO_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 593,
+          "id": "HOENN:TRAINER_PAXTON",
+          "legacy_value": 594,
+          "legacy_symbol": "TRAINER_PAXTON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 594,
+          "id": "HOENN:TRAINER_ISABELLA",
+          "legacy_value": 595,
+          "legacy_symbol": "TRAINER_ISABELLA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 595,
+          "id": "HOENN:TRAINER_GRUNT_WEATHER_INST_5",
+          "legacy_value": 596,
+          "legacy_symbol": "TRAINER_GRUNT_WEATHER_INST_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 596,
+          "id": "HOENN:TRAINER_TABITHA_MT_CHIMNEY",
+          "legacy_value": 597,
+          "legacy_symbol": "TRAINER_TABITHA_MT_CHIMNEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 597,
+          "id": "HOENN:TRAINER_JONATHAN",
+          "legacy_value": 598,
+          "legacy_symbol": "TRAINER_JONATHAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 598,
+          "id": "HOENN:TRAINER_BRENDAN_RUSTBORO_TORCHIC",
+          "legacy_value": 599,
+          "legacy_symbol": "TRAINER_BRENDAN_RUSTBORO_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 599,
+          "id": "HOENN:TRAINER_MAY_RUSTBORO_MUDKIP",
+          "legacy_value": 600,
+          "legacy_symbol": "TRAINER_MAY_RUSTBORO_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 600,
+          "id": "HOENN:TRAINER_MAXIE_MAGMA_HIDEOUT",
+          "legacy_value": 601,
+          "legacy_symbol": "TRAINER_MAXIE_MAGMA_HIDEOUT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 601,
+          "id": "HOENN:TRAINER_MAXIE_MT_CHIMNEY",
+          "legacy_value": 602,
+          "legacy_symbol": "TRAINER_MAXIE_MT_CHIMNEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 602,
+          "id": "HOENN:TRAINER_TIANA",
+          "legacy_value": 603,
+          "legacy_symbol": "TRAINER_TIANA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 603,
+          "id": "HOENN:TRAINER_HALEY_1",
+          "legacy_value": 604,
+          "legacy_symbol": "TRAINER_HALEY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 604,
+          "id": "HOENN:TRAINER_JANICE",
+          "legacy_value": 605,
+          "legacy_symbol": "TRAINER_JANICE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 605,
+          "id": "HOENN:TRAINER_VIVI",
+          "legacy_value": 606,
+          "legacy_symbol": "TRAINER_VIVI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 606,
+          "id": "HOENN:TRAINER_HALEY_2",
+          "legacy_value": 607,
+          "legacy_symbol": "TRAINER_HALEY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 607,
+          "id": "HOENN:TRAINER_HALEY_3",
+          "legacy_value": 608,
+          "legacy_symbol": "TRAINER_HALEY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 608,
+          "id": "HOENN:TRAINER_HALEY_4",
+          "legacy_value": 609,
+          "legacy_symbol": "TRAINER_HALEY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 609,
+          "id": "HOENN:TRAINER_HALEY_5",
+          "legacy_value": 610,
+          "legacy_symbol": "TRAINER_HALEY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 610,
+          "id": "HOENN:TRAINER_SALLY",
+          "legacy_value": 611,
+          "legacy_symbol": "TRAINER_SALLY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 611,
+          "id": "HOENN:TRAINER_ROBIN",
+          "legacy_value": 612,
+          "legacy_symbol": "TRAINER_ROBIN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 612,
+          "id": "HOENN:TRAINER_ANDREA",
+          "legacy_value": 613,
+          "legacy_symbol": "TRAINER_ANDREA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 613,
+          "id": "HOENN:TRAINER_CRISSY",
+          "legacy_value": 614,
+          "legacy_symbol": "TRAINER_CRISSY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 614,
+          "id": "HOENN:TRAINER_RICK",
+          "legacy_value": 615,
+          "legacy_symbol": "TRAINER_RICK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 615,
+          "id": "HOENN:TRAINER_LYLE",
+          "legacy_value": 616,
+          "legacy_symbol": "TRAINER_LYLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 616,
+          "id": "HOENN:TRAINER_JOSE",
+          "legacy_value": 617,
+          "legacy_symbol": "TRAINER_JOSE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 617,
+          "id": "HOENN:TRAINER_DOUG",
+          "legacy_value": 618,
+          "legacy_symbol": "TRAINER_DOUG"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 618,
+          "id": "HOENN:TRAINER_GREG",
+          "legacy_value": 619,
+          "legacy_symbol": "TRAINER_GREG"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 619,
+          "id": "HOENN:TRAINER_KENT",
+          "legacy_value": 620,
+          "legacy_symbol": "TRAINER_KENT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 620,
+          "id": "HOENN:TRAINER_JAMES_1",
+          "legacy_value": 621,
+          "legacy_symbol": "TRAINER_JAMES_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 621,
+          "id": "HOENN:TRAINER_JAMES_2",
+          "legacy_value": 622,
+          "legacy_symbol": "TRAINER_JAMES_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 622,
+          "id": "HOENN:TRAINER_JAMES_3",
+          "legacy_value": 623,
+          "legacy_symbol": "TRAINER_JAMES_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 623,
+          "id": "HOENN:TRAINER_JAMES_4",
+          "legacy_value": 624,
+          "legacy_symbol": "TRAINER_JAMES_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 624,
+          "id": "HOENN:TRAINER_JAMES_5",
+          "legacy_value": 625,
+          "legacy_symbol": "TRAINER_JAMES_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 625,
+          "id": "HOENN:TRAINER_BRICE",
+          "legacy_value": 626,
+          "legacy_symbol": "TRAINER_BRICE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 626,
+          "id": "HOENN:TRAINER_TRENT_1",
+          "legacy_value": 627,
+          "legacy_symbol": "TRAINER_TRENT_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 627,
+          "id": "HOENN:TRAINER_LENNY",
+          "legacy_value": 628,
+          "legacy_symbol": "TRAINER_LENNY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 628,
+          "id": "HOENN:TRAINER_LUCAS_1",
+          "legacy_value": 629,
+          "legacy_symbol": "TRAINER_LUCAS_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 629,
+          "id": "HOENN:TRAINER_ALAN",
+          "legacy_value": 630,
+          "legacy_symbol": "TRAINER_ALAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 630,
+          "id": "HOENN:TRAINER_CLARK",
+          "legacy_value": 631,
+          "legacy_symbol": "TRAINER_CLARK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 631,
+          "id": "HOENN:TRAINER_ERIC",
+          "legacy_value": 632,
+          "legacy_symbol": "TRAINER_ERIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 632,
+          "id": "HOENN:TRAINER_LUCAS_2",
+          "legacy_value": 633,
+          "legacy_symbol": "TRAINER_LUCAS_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 633,
+          "id": "HOENN:TRAINER_MIKE_1",
+          "legacy_value": 634,
+          "legacy_symbol": "TRAINER_MIKE_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 634,
+          "id": "HOENN:TRAINER_MIKE_2",
+          "legacy_value": 635,
+          "legacy_symbol": "TRAINER_MIKE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 635,
+          "id": "HOENN:TRAINER_TRENT_2",
+          "legacy_value": 636,
+          "legacy_symbol": "TRAINER_TRENT_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 636,
+          "id": "HOENN:TRAINER_TRENT_3",
+          "legacy_value": 637,
+          "legacy_symbol": "TRAINER_TRENT_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 637,
+          "id": "HOENN:TRAINER_TRENT_4",
+          "legacy_value": 638,
+          "legacy_symbol": "TRAINER_TRENT_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 638,
+          "id": "HOENN:TRAINER_TRENT_5",
+          "legacy_value": 639,
+          "legacy_symbol": "TRAINER_TRENT_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 639,
+          "id": "HOENN:TRAINER_DEZ_AND_LUKE",
+          "legacy_value": 640,
+          "legacy_symbol": "TRAINER_DEZ_AND_LUKE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 640,
+          "id": "HOENN:TRAINER_LEA_AND_JED",
+          "legacy_value": 641,
+          "legacy_symbol": "TRAINER_LEA_AND_JED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 641,
+          "id": "HOENN:TRAINER_KIRA_AND_DAN_1",
+          "legacy_value": 642,
+          "legacy_symbol": "TRAINER_KIRA_AND_DAN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 642,
+          "id": "HOENN:TRAINER_KIRA_AND_DAN_2",
+          "legacy_value": 643,
+          "legacy_symbol": "TRAINER_KIRA_AND_DAN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 643,
+          "id": "HOENN:TRAINER_KIRA_AND_DAN_3",
+          "legacy_value": 644,
+          "legacy_symbol": "TRAINER_KIRA_AND_DAN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 644,
+          "id": "HOENN:TRAINER_KIRA_AND_DAN_4",
+          "legacy_value": 645,
+          "legacy_symbol": "TRAINER_KIRA_AND_DAN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 645,
+          "id": "HOENN:TRAINER_KIRA_AND_DAN_5",
+          "legacy_value": 646,
+          "legacy_symbol": "TRAINER_KIRA_AND_DAN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 646,
+          "id": "HOENN:TRAINER_JOHANNA",
+          "legacy_value": 647,
+          "legacy_symbol": "TRAINER_JOHANNA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 647,
+          "id": "HOENN:TRAINER_GERALD",
+          "legacy_value": 648,
+          "legacy_symbol": "TRAINER_GERALD"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 648,
+          "id": "HOENN:TRAINER_VIVIAN",
+          "legacy_value": 649,
+          "legacy_symbol": "TRAINER_VIVIAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 649,
+          "id": "HOENN:TRAINER_DANIELLE",
+          "legacy_value": 650,
+          "legacy_symbol": "TRAINER_DANIELLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 650,
+          "id": "HOENN:TRAINER_HIDEO",
+          "legacy_value": 651,
+          "legacy_symbol": "TRAINER_HIDEO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 651,
+          "id": "HOENN:TRAINER_KEIGO",
+          "legacy_value": 652,
+          "legacy_symbol": "TRAINER_KEIGO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 652,
+          "id": "HOENN:TRAINER_RILEY",
+          "legacy_value": 653,
+          "legacy_symbol": "TRAINER_RILEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 653,
+          "id": "HOENN:TRAINER_FLINT",
+          "legacy_value": 654,
+          "legacy_symbol": "TRAINER_FLINT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 654,
+          "id": "HOENN:TRAINER_ASHLEY",
+          "legacy_value": 655,
+          "legacy_symbol": "TRAINER_ASHLEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 655,
+          "id": "HOENN:TRAINER_WALLY_MAUVILLE",
+          "legacy_value": 656,
+          "legacy_symbol": "TRAINER_WALLY_MAUVILLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 656,
+          "id": "HOENN:TRAINER_WALLY_VR_2",
+          "legacy_value": 657,
+          "legacy_symbol": "TRAINER_WALLY_VR_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 657,
+          "id": "HOENN:TRAINER_WALLY_VR_3",
+          "legacy_value": 658,
+          "legacy_symbol": "TRAINER_WALLY_VR_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 658,
+          "id": "HOENN:TRAINER_WALLY_VR_4",
+          "legacy_value": 659,
+          "legacy_symbol": "TRAINER_WALLY_VR_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 659,
+          "id": "HOENN:TRAINER_WALLY_VR_5",
+          "legacy_value": 660,
+          "legacy_symbol": "TRAINER_WALLY_VR_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 660,
+          "id": "HOENN:TRAINER_BRENDAN_LILYCOVE_MUDKIP",
+          "legacy_value": 661,
+          "legacy_symbol": "TRAINER_BRENDAN_LILYCOVE_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 661,
+          "id": "HOENN:TRAINER_BRENDAN_LILYCOVE_TREECKO",
+          "legacy_value": 662,
+          "legacy_symbol": "TRAINER_BRENDAN_LILYCOVE_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 662,
+          "id": "HOENN:TRAINER_BRENDAN_LILYCOVE_TORCHIC",
+          "legacy_value": 663,
+          "legacy_symbol": "TRAINER_BRENDAN_LILYCOVE_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 663,
+          "id": "HOENN:TRAINER_MAY_LILYCOVE_MUDKIP",
+          "legacy_value": 664,
+          "legacy_symbol": "TRAINER_MAY_LILYCOVE_MUDKIP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 664,
+          "id": "HOENN:TRAINER_MAY_LILYCOVE_TREECKO",
+          "legacy_value": 665,
+          "legacy_symbol": "TRAINER_MAY_LILYCOVE_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 665,
+          "id": "HOENN:TRAINER_MAY_LILYCOVE_TORCHIC",
+          "legacy_value": 666,
+          "legacy_symbol": "TRAINER_MAY_LILYCOVE_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 666,
+          "id": "HOENN:TRAINER_JONAH",
+          "legacy_value": 667,
+          "legacy_symbol": "TRAINER_JONAH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 667,
+          "id": "HOENN:TRAINER_HENRY",
+          "legacy_value": 668,
+          "legacy_symbol": "TRAINER_HENRY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 668,
+          "id": "HOENN:TRAINER_ROGER",
+          "legacy_value": 669,
+          "legacy_symbol": "TRAINER_ROGER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 669,
+          "id": "HOENN:TRAINER_ALEXA",
+          "legacy_value": 670,
+          "legacy_symbol": "TRAINER_ALEXA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 670,
+          "id": "HOENN:TRAINER_RUBEN",
+          "legacy_value": 671,
+          "legacy_symbol": "TRAINER_RUBEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 671,
+          "id": "HOENN:TRAINER_KOJI_1",
+          "legacy_value": 672,
+          "legacy_symbol": "TRAINER_KOJI_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 672,
+          "id": "HOENN:TRAINER_WAYNE",
+          "legacy_value": 673,
+          "legacy_symbol": "TRAINER_WAYNE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 673,
+          "id": "HOENN:TRAINER_AIDAN",
+          "legacy_value": 674,
+          "legacy_symbol": "TRAINER_AIDAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 674,
+          "id": "HOENN:TRAINER_REED",
+          "legacy_value": 675,
+          "legacy_symbol": "TRAINER_REED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 675,
+          "id": "HOENN:TRAINER_TISHA",
+          "legacy_value": 676,
+          "legacy_symbol": "TRAINER_TISHA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 676,
+          "id": "HOENN:TRAINER_TORI_AND_TIA",
+          "legacy_value": 677,
+          "legacy_symbol": "TRAINER_TORI_AND_TIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 677,
+          "id": "HOENN:TRAINER_KIM_AND_IRIS",
+          "legacy_value": 678,
+          "legacy_symbol": "TRAINER_KIM_AND_IRIS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 678,
+          "id": "HOENN:TRAINER_TYRA_AND_IVY",
+          "legacy_value": 679,
+          "legacy_symbol": "TRAINER_TYRA_AND_IVY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 679,
+          "id": "HOENN:TRAINER_MEL_AND_PAUL",
+          "legacy_value": 680,
+          "legacy_symbol": "TRAINER_MEL_AND_PAUL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 680,
+          "id": "HOENN:TRAINER_JOHN_AND_JAY_1",
+          "legacy_value": 681,
+          "legacy_symbol": "TRAINER_JOHN_AND_JAY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 681,
+          "id": "HOENN:TRAINER_JOHN_AND_JAY_2",
+          "legacy_value": 682,
+          "legacy_symbol": "TRAINER_JOHN_AND_JAY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 682,
+          "id": "HOENN:TRAINER_JOHN_AND_JAY_3",
+          "legacy_value": 683,
+          "legacy_symbol": "TRAINER_JOHN_AND_JAY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 683,
+          "id": "HOENN:TRAINER_JOHN_AND_JAY_4",
+          "legacy_value": 684,
+          "legacy_symbol": "TRAINER_JOHN_AND_JAY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 684,
+          "id": "HOENN:TRAINER_JOHN_AND_JAY_5",
+          "legacy_value": 685,
+          "legacy_symbol": "TRAINER_JOHN_AND_JAY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 685,
+          "id": "HOENN:TRAINER_RELI_AND_IAN",
+          "legacy_value": 686,
+          "legacy_symbol": "TRAINER_RELI_AND_IAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 686,
+          "id": "HOENN:TRAINER_LILA_AND_ROY_1",
+          "legacy_value": 687,
+          "legacy_symbol": "TRAINER_LILA_AND_ROY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 687,
+          "id": "HOENN:TRAINER_LILA_AND_ROY_2",
+          "legacy_value": 688,
+          "legacy_symbol": "TRAINER_LILA_AND_ROY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 688,
+          "id": "HOENN:TRAINER_LILA_AND_ROY_3",
+          "legacy_value": 689,
+          "legacy_symbol": "TRAINER_LILA_AND_ROY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 689,
+          "id": "HOENN:TRAINER_LILA_AND_ROY_4",
+          "legacy_value": 690,
+          "legacy_symbol": "TRAINER_LILA_AND_ROY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 690,
+          "id": "HOENN:TRAINER_LILA_AND_ROY_5",
+          "legacy_value": 691,
+          "legacy_symbol": "TRAINER_LILA_AND_ROY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 691,
+          "id": "HOENN:TRAINER_LISA_AND_RAY",
+          "legacy_value": 692,
+          "legacy_symbol": "TRAINER_LISA_AND_RAY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 692,
+          "id": "HOENN:TRAINER_CHRIS",
+          "legacy_value": 693,
+          "legacy_symbol": "TRAINER_CHRIS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 693,
+          "id": "HOENN:TRAINER_DAWSON",
+          "legacy_value": 694,
+          "legacy_symbol": "TRAINER_DAWSON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 694,
+          "id": "HOENN:TRAINER_SARAH",
+          "legacy_value": 695,
+          "legacy_symbol": "TRAINER_SARAH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 695,
+          "id": "HOENN:TRAINER_DARIAN",
+          "legacy_value": 696,
+          "legacy_symbol": "TRAINER_DARIAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 696,
+          "id": "HOENN:TRAINER_HAILEY",
+          "legacy_value": 697,
+          "legacy_symbol": "TRAINER_HAILEY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 697,
+          "id": "HOENN:TRAINER_CHANDLER",
+          "legacy_value": 698,
+          "legacy_symbol": "TRAINER_CHANDLER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 698,
+          "id": "HOENN:TRAINER_KALEB",
+          "legacy_value": 699,
+          "legacy_symbol": "TRAINER_KALEB"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 699,
+          "id": "HOENN:TRAINER_JOSEPH",
+          "legacy_value": 700,
+          "legacy_symbol": "TRAINER_JOSEPH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 700,
+          "id": "HOENN:TRAINER_ALYSSA",
+          "legacy_value": 701,
+          "legacy_symbol": "TRAINER_ALYSSA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 701,
+          "id": "HOENN:TRAINER_MARCOS",
+          "legacy_value": 702,
+          "legacy_symbol": "TRAINER_MARCOS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 702,
+          "id": "HOENN:TRAINER_RHETT",
+          "legacy_value": 703,
+          "legacy_symbol": "TRAINER_RHETT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 703,
+          "id": "HOENN:TRAINER_TYRON",
+          "legacy_value": 704,
+          "legacy_symbol": "TRAINER_TYRON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 704,
+          "id": "HOENN:TRAINER_CELINA",
+          "legacy_value": 705,
+          "legacy_symbol": "TRAINER_CELINA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 705,
+          "id": "HOENN:TRAINER_BIANCA",
+          "legacy_value": 706,
+          "legacy_symbol": "TRAINER_BIANCA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 706,
+          "id": "HOENN:TRAINER_HAYDEN",
+          "legacy_value": 707,
+          "legacy_symbol": "TRAINER_HAYDEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 707,
+          "id": "HOENN:TRAINER_SOPHIE",
+          "legacy_value": 708,
+          "legacy_symbol": "TRAINER_SOPHIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 708,
+          "id": "HOENN:TRAINER_COBY",
+          "legacy_value": 709,
+          "legacy_symbol": "TRAINER_COBY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 709,
+          "id": "HOENN:TRAINER_LAWRENCE",
+          "legacy_value": 710,
+          "legacy_symbol": "TRAINER_LAWRENCE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 710,
+          "id": "HOENN:TRAINER_WYATT",
+          "legacy_value": 711,
+          "legacy_symbol": "TRAINER_WYATT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 711,
+          "id": "HOENN:TRAINER_ANGELINA",
+          "legacy_value": 712,
+          "legacy_symbol": "TRAINER_ANGELINA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 712,
+          "id": "HOENN:TRAINER_KAI",
+          "legacy_value": 713,
+          "legacy_symbol": "TRAINER_KAI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 713,
+          "id": "HOENN:TRAINER_CHARLOTTE",
+          "legacy_value": 714,
+          "legacy_symbol": "TRAINER_CHARLOTTE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 714,
+          "id": "HOENN:TRAINER_DEANDRE",
+          "legacy_value": 715,
+          "legacy_symbol": "TRAINER_DEANDRE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 715,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_1",
+          "legacy_value": 716,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 716,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_2",
+          "legacy_value": 717,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 717,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_3",
+          "legacy_value": 718,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 718,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_4",
+          "legacy_value": 719,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 719,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_5",
+          "legacy_value": 720,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 720,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_6",
+          "legacy_value": 721,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_6"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 721,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_7",
+          "legacy_value": 722,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_7"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 722,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_8",
+          "legacy_value": 723,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_8"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 723,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_9",
+          "legacy_value": 724,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_9"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 724,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_10",
+          "legacy_value": 725,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_10"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 725,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_11",
+          "legacy_value": 726,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_11"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 726,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_12",
+          "legacy_value": 727,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_12"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 727,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_13",
+          "legacy_value": 728,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_13"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 728,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_14",
+          "legacy_value": 729,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_14"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 729,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_15",
+          "legacy_value": 730,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_15"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 730,
+          "id": "HOENN:TRAINER_GRUNT_MAGMA_HIDEOUT_16",
+          "legacy_value": 731,
+          "legacy_symbol": "TRAINER_GRUNT_MAGMA_HIDEOUT_16"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 731,
+          "id": "HOENN:TRAINER_TABITHA_MAGMA_HIDEOUT",
+          "legacy_value": 732,
+          "legacy_symbol": "TRAINER_TABITHA_MAGMA_HIDEOUT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 732,
+          "id": "HOENN:TRAINER_DARCY",
+          "legacy_value": 733,
+          "legacy_symbol": "TRAINER_DARCY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 733,
+          "id": "HOENN:TRAINER_MAXIE_MOSSDEEP",
+          "legacy_value": 734,
+          "legacy_symbol": "TRAINER_MAXIE_MOSSDEEP"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 734,
+          "id": "HOENN:TRAINER_PETE",
+          "legacy_value": 735,
+          "legacy_symbol": "TRAINER_PETE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 735,
+          "id": "HOENN:TRAINER_ISABELLE",
+          "legacy_value": 736,
+          "legacy_symbol": "TRAINER_ISABELLE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 736,
+          "id": "HOENN:TRAINER_ANDRES_1",
+          "legacy_value": 737,
+          "legacy_symbol": "TRAINER_ANDRES_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 737,
+          "id": "HOENN:TRAINER_JOSUE",
+          "legacy_value": 738,
+          "legacy_symbol": "TRAINER_JOSUE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 738,
+          "id": "HOENN:TRAINER_CAMRON",
+          "legacy_value": 739,
+          "legacy_symbol": "TRAINER_CAMRON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 739,
+          "id": "HOENN:TRAINER_CORY_1",
+          "legacy_value": 740,
+          "legacy_symbol": "TRAINER_CORY_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 740,
+          "id": "HOENN:TRAINER_CAROLINA",
+          "legacy_value": 741,
+          "legacy_symbol": "TRAINER_CAROLINA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 741,
+          "id": "HOENN:TRAINER_ELIJAH",
+          "legacy_value": 742,
+          "legacy_symbol": "TRAINER_ELIJAH"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 742,
+          "id": "HOENN:TRAINER_CELIA",
+          "legacy_value": 743,
+          "legacy_symbol": "TRAINER_CELIA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 743,
+          "id": "HOENN:TRAINER_BRYAN",
+          "legacy_value": 744,
+          "legacy_symbol": "TRAINER_BRYAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 744,
+          "id": "HOENN:TRAINER_BRANDEN",
+          "legacy_value": 745,
+          "legacy_symbol": "TRAINER_BRANDEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 745,
+          "id": "HOENN:TRAINER_BRYANT",
+          "legacy_value": 746,
+          "legacy_symbol": "TRAINER_BRYANT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 746,
+          "id": "HOENN:TRAINER_SHAYLA",
+          "legacy_value": 747,
+          "legacy_symbol": "TRAINER_SHAYLA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 747,
+          "id": "HOENN:TRAINER_KYRA",
+          "legacy_value": 748,
+          "legacy_symbol": "TRAINER_KYRA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 748,
+          "id": "HOENN:TRAINER_JAIDEN",
+          "legacy_value": 749,
+          "legacy_symbol": "TRAINER_JAIDEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 749,
+          "id": "HOENN:TRAINER_ALIX",
+          "legacy_value": 750,
+          "legacy_symbol": "TRAINER_ALIX"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 750,
+          "id": "HOENN:TRAINER_HELENE",
+          "legacy_value": 751,
+          "legacy_symbol": "TRAINER_HELENE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 751,
+          "id": "HOENN:TRAINER_MARLENE",
+          "legacy_value": 752,
+          "legacy_symbol": "TRAINER_MARLENE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 752,
+          "id": "HOENN:TRAINER_DEVAN",
+          "legacy_value": 753,
+          "legacy_symbol": "TRAINER_DEVAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 753,
+          "id": "HOENN:TRAINER_JOHNSON",
+          "legacy_value": 754,
+          "legacy_symbol": "TRAINER_JOHNSON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 754,
+          "id": "HOENN:TRAINER_MELINA",
+          "legacy_value": 755,
+          "legacy_symbol": "TRAINER_MELINA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 755,
+          "id": "HOENN:TRAINER_BRANDI",
+          "legacy_value": 756,
+          "legacy_symbol": "TRAINER_BRANDI"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 756,
+          "id": "HOENN:TRAINER_AISHA",
+          "legacy_value": 757,
+          "legacy_symbol": "TRAINER_AISHA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 757,
+          "id": "HOENN:TRAINER_MAKAYLA",
+          "legacy_value": 758,
+          "legacy_symbol": "TRAINER_MAKAYLA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 758,
+          "id": "HOENN:TRAINER_FABIAN",
+          "legacy_value": 759,
+          "legacy_symbol": "TRAINER_FABIAN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 759,
+          "id": "HOENN:TRAINER_DAYTON",
+          "legacy_value": 760,
+          "legacy_symbol": "TRAINER_DAYTON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 760,
+          "id": "HOENN:TRAINER_RACHEL",
+          "legacy_value": 761,
+          "legacy_symbol": "TRAINER_RACHEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 761,
+          "id": "HOENN:TRAINER_LEONEL",
+          "legacy_value": 762,
+          "legacy_symbol": "TRAINER_LEONEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 762,
+          "id": "HOENN:TRAINER_CALLIE",
+          "legacy_value": 763,
+          "legacy_symbol": "TRAINER_CALLIE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 763,
+          "id": "HOENN:TRAINER_CALE",
+          "legacy_value": 764,
+          "legacy_symbol": "TRAINER_CALE"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 764,
+          "id": "HOENN:TRAINER_MYLES",
+          "legacy_value": 765,
+          "legacy_symbol": "TRAINER_MYLES"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 765,
+          "id": "HOENN:TRAINER_PAT",
+          "legacy_value": 766,
+          "legacy_symbol": "TRAINER_PAT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 766,
+          "id": "HOENN:TRAINER_CRISTIN_1",
+          "legacy_value": 767,
+          "legacy_symbol": "TRAINER_CRISTIN_1"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 767,
+          "id": "HOENN:TRAINER_MAY_RUSTBORO_TREECKO",
+          "legacy_value": 768,
+          "legacy_symbol": "TRAINER_MAY_RUSTBORO_TREECKO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 768,
+          "id": "HOENN:TRAINER_MAY_RUSTBORO_TORCHIC",
+          "legacy_value": 769,
+          "legacy_symbol": "TRAINER_MAY_RUSTBORO_TORCHIC"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 769,
+          "id": "HOENN:TRAINER_ROXANNE_2",
+          "legacy_value": 770,
+          "legacy_symbol": "TRAINER_ROXANNE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 770,
+          "id": "HOENN:TRAINER_ROXANNE_3",
+          "legacy_value": 771,
+          "legacy_symbol": "TRAINER_ROXANNE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 771,
+          "id": "HOENN:TRAINER_ROXANNE_4",
+          "legacy_value": 772,
+          "legacy_symbol": "TRAINER_ROXANNE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 772,
+          "id": "HOENN:TRAINER_ROXANNE_5",
+          "legacy_value": 773,
+          "legacy_symbol": "TRAINER_ROXANNE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 773,
+          "id": "HOENN:TRAINER_BRAWLY_2",
+          "legacy_value": 774,
+          "legacy_symbol": "TRAINER_BRAWLY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 774,
+          "id": "HOENN:TRAINER_BRAWLY_3",
+          "legacy_value": 775,
+          "legacy_symbol": "TRAINER_BRAWLY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 775,
+          "id": "HOENN:TRAINER_BRAWLY_4",
+          "legacy_value": 776,
+          "legacy_symbol": "TRAINER_BRAWLY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 776,
+          "id": "HOENN:TRAINER_BRAWLY_5",
+          "legacy_value": 777,
+          "legacy_symbol": "TRAINER_BRAWLY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 777,
+          "id": "HOENN:TRAINER_WATTSON_2",
+          "legacy_value": 778,
+          "legacy_symbol": "TRAINER_WATTSON_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 778,
+          "id": "HOENN:TRAINER_WATTSON_3",
+          "legacy_value": 779,
+          "legacy_symbol": "TRAINER_WATTSON_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 779,
+          "id": "HOENN:TRAINER_WATTSON_4",
+          "legacy_value": 780,
+          "legacy_symbol": "TRAINER_WATTSON_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 780,
+          "id": "HOENN:TRAINER_WATTSON_5",
+          "legacy_value": 781,
+          "legacy_symbol": "TRAINER_WATTSON_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 781,
+          "id": "HOENN:TRAINER_FLANNERY_2",
+          "legacy_value": 782,
+          "legacy_symbol": "TRAINER_FLANNERY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 782,
+          "id": "HOENN:TRAINER_FLANNERY_3",
+          "legacy_value": 783,
+          "legacy_symbol": "TRAINER_FLANNERY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 783,
+          "id": "HOENN:TRAINER_FLANNERY_4",
+          "legacy_value": 784,
+          "legacy_symbol": "TRAINER_FLANNERY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 784,
+          "id": "HOENN:TRAINER_FLANNERY_5",
+          "legacy_value": 785,
+          "legacy_symbol": "TRAINER_FLANNERY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 785,
+          "id": "HOENN:TRAINER_NORMAN_2",
+          "legacy_value": 786,
+          "legacy_symbol": "TRAINER_NORMAN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 786,
+          "id": "HOENN:TRAINER_NORMAN_3",
+          "legacy_value": 787,
+          "legacy_symbol": "TRAINER_NORMAN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 787,
+          "id": "HOENN:TRAINER_NORMAN_4",
+          "legacy_value": 788,
+          "legacy_symbol": "TRAINER_NORMAN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 788,
+          "id": "HOENN:TRAINER_NORMAN_5",
+          "legacy_value": 789,
+          "legacy_symbol": "TRAINER_NORMAN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 789,
+          "id": "HOENN:TRAINER_WINONA_2",
+          "legacy_value": 790,
+          "legacy_symbol": "TRAINER_WINONA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 790,
+          "id": "HOENN:TRAINER_WINONA_3",
+          "legacy_value": 791,
+          "legacy_symbol": "TRAINER_WINONA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 791,
+          "id": "HOENN:TRAINER_WINONA_4",
+          "legacy_value": 792,
+          "legacy_symbol": "TRAINER_WINONA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 792,
+          "id": "HOENN:TRAINER_WINONA_5",
+          "legacy_value": 793,
+          "legacy_symbol": "TRAINER_WINONA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 793,
+          "id": "HOENN:TRAINER_TATE_AND_LIZA_2",
+          "legacy_value": 794,
+          "legacy_symbol": "TRAINER_TATE_AND_LIZA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 794,
+          "id": "HOENN:TRAINER_TATE_AND_LIZA_3",
+          "legacy_value": 795,
+          "legacy_symbol": "TRAINER_TATE_AND_LIZA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 795,
+          "id": "HOENN:TRAINER_TATE_AND_LIZA_4",
+          "legacy_value": 796,
+          "legacy_symbol": "TRAINER_TATE_AND_LIZA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 796,
+          "id": "HOENN:TRAINER_TATE_AND_LIZA_5",
+          "legacy_value": 797,
+          "legacy_symbol": "TRAINER_TATE_AND_LIZA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 797,
+          "id": "HOENN:TRAINER_JUAN_2",
+          "legacy_value": 798,
+          "legacy_symbol": "TRAINER_JUAN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 798,
+          "id": "HOENN:TRAINER_JUAN_3",
+          "legacy_value": 799,
+          "legacy_symbol": "TRAINER_JUAN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 799,
+          "id": "HOENN:TRAINER_JUAN_4",
+          "legacy_value": 800,
+          "legacy_symbol": "TRAINER_JUAN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 800,
+          "id": "HOENN:TRAINER_JUAN_5",
+          "legacy_value": 801,
+          "legacy_symbol": "TRAINER_JUAN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 801,
+          "id": "HOENN:TRAINER_ANGELO",
+          "legacy_value": 802,
+          "legacy_symbol": "TRAINER_ANGELO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 802,
+          "id": "HOENN:TRAINER_DARIUS",
+          "legacy_value": 803,
+          "legacy_symbol": "TRAINER_DARIUS"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 803,
+          "id": "HOENN:TRAINER_STEVEN",
+          "legacy_value": 804,
+          "legacy_symbol": "TRAINER_STEVEN"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 804,
+          "id": "HOENN:TRAINER_ANABEL",
+          "legacy_value": 805,
+          "legacy_symbol": "TRAINER_ANABEL"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 805,
+          "id": "HOENN:TRAINER_TUCKER",
+          "legacy_value": 806,
+          "legacy_symbol": "TRAINER_TUCKER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 806,
+          "id": "HOENN:TRAINER_SPENSER",
+          "legacy_value": 807,
+          "legacy_symbol": "TRAINER_SPENSER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 807,
+          "id": "HOENN:TRAINER_GRETA",
+          "legacy_value": 808,
+          "legacy_symbol": "TRAINER_GRETA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 808,
+          "id": "HOENN:TRAINER_NOLAND",
+          "legacy_value": 809,
+          "legacy_symbol": "TRAINER_NOLAND"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 809,
+          "id": "HOENN:TRAINER_LUCY",
+          "legacy_value": 810,
+          "legacy_symbol": "TRAINER_LUCY"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 810,
+          "id": "HOENN:TRAINER_BRANDON",
+          "legacy_value": 811,
+          "legacy_symbol": "TRAINER_BRANDON"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 811,
+          "id": "HOENN:TRAINER_ANDRES_2",
+          "legacy_value": 812,
+          "legacy_symbol": "TRAINER_ANDRES_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 812,
+          "id": "HOENN:TRAINER_ANDRES_3",
+          "legacy_value": 813,
+          "legacy_symbol": "TRAINER_ANDRES_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 813,
+          "id": "HOENN:TRAINER_ANDRES_4",
+          "legacy_value": 814,
+          "legacy_symbol": "TRAINER_ANDRES_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 814,
+          "id": "HOENN:TRAINER_ANDRES_5",
+          "legacy_value": 815,
+          "legacy_symbol": "TRAINER_ANDRES_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 815,
+          "id": "HOENN:TRAINER_CORY_2",
+          "legacy_value": 816,
+          "legacy_symbol": "TRAINER_CORY_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 816,
+          "id": "HOENN:TRAINER_CORY_3",
+          "legacy_value": 817,
+          "legacy_symbol": "TRAINER_CORY_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 817,
+          "id": "HOENN:TRAINER_CORY_4",
+          "legacy_value": 818,
+          "legacy_symbol": "TRAINER_CORY_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 818,
+          "id": "HOENN:TRAINER_CORY_5",
+          "legacy_value": 819,
+          "legacy_symbol": "TRAINER_CORY_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 819,
+          "id": "HOENN:TRAINER_PABLO_2",
+          "legacy_value": 820,
+          "legacy_symbol": "TRAINER_PABLO_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 820,
+          "id": "HOENN:TRAINER_PABLO_3",
+          "legacy_value": 821,
+          "legacy_symbol": "TRAINER_PABLO_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 821,
+          "id": "HOENN:TRAINER_PABLO_4",
+          "legacy_value": 822,
+          "legacy_symbol": "TRAINER_PABLO_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 822,
+          "id": "HOENN:TRAINER_PABLO_5",
+          "legacy_value": 823,
+          "legacy_symbol": "TRAINER_PABLO_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 823,
+          "id": "HOENN:TRAINER_KOJI_2",
+          "legacy_value": 824,
+          "legacy_symbol": "TRAINER_KOJI_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 824,
+          "id": "HOENN:TRAINER_KOJI_3",
+          "legacy_value": 825,
+          "legacy_symbol": "TRAINER_KOJI_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 825,
+          "id": "HOENN:TRAINER_KOJI_4",
+          "legacy_value": 826,
+          "legacy_symbol": "TRAINER_KOJI_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 826,
+          "id": "HOENN:TRAINER_KOJI_5",
+          "legacy_value": 827,
+          "legacy_symbol": "TRAINER_KOJI_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 827,
+          "id": "HOENN:TRAINER_CRISTIN_2",
+          "legacy_value": 828,
+          "legacy_symbol": "TRAINER_CRISTIN_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 828,
+          "id": "HOENN:TRAINER_CRISTIN_3",
+          "legacy_value": 829,
+          "legacy_symbol": "TRAINER_CRISTIN_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 829,
+          "id": "HOENN:TRAINER_CRISTIN_4",
+          "legacy_value": 830,
+          "legacy_symbol": "TRAINER_CRISTIN_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 830,
+          "id": "HOENN:TRAINER_CRISTIN_5",
+          "legacy_value": 831,
+          "legacy_symbol": "TRAINER_CRISTIN_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 831,
+          "id": "HOENN:TRAINER_FERNANDO_2",
+          "legacy_value": 832,
+          "legacy_symbol": "TRAINER_FERNANDO_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 832,
+          "id": "HOENN:TRAINER_FERNANDO_3",
+          "legacy_value": 833,
+          "legacy_symbol": "TRAINER_FERNANDO_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 833,
+          "id": "HOENN:TRAINER_FERNANDO_4",
+          "legacy_value": 834,
+          "legacy_symbol": "TRAINER_FERNANDO_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 834,
+          "id": "HOENN:TRAINER_FERNANDO_5",
+          "legacy_value": 835,
+          "legacy_symbol": "TRAINER_FERNANDO_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 835,
+          "id": "HOENN:TRAINER_SAWYER_2",
+          "legacy_value": 836,
+          "legacy_symbol": "TRAINER_SAWYER_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 836,
+          "id": "HOENN:TRAINER_SAWYER_3",
+          "legacy_value": 837,
+          "legacy_symbol": "TRAINER_SAWYER_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 837,
+          "id": "HOENN:TRAINER_SAWYER_4",
+          "legacy_value": 838,
+          "legacy_symbol": "TRAINER_SAWYER_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 838,
+          "id": "HOENN:TRAINER_SAWYER_5",
+          "legacy_value": 839,
+          "legacy_symbol": "TRAINER_SAWYER_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 839,
+          "id": "HOENN:TRAINER_GABRIELLE_2",
+          "legacy_value": 840,
+          "legacy_symbol": "TRAINER_GABRIELLE_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 840,
+          "id": "HOENN:TRAINER_GABRIELLE_3",
+          "legacy_value": 841,
+          "legacy_symbol": "TRAINER_GABRIELLE_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 841,
+          "id": "HOENN:TRAINER_GABRIELLE_4",
+          "legacy_value": 842,
+          "legacy_symbol": "TRAINER_GABRIELLE_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 842,
+          "id": "HOENN:TRAINER_GABRIELLE_5",
+          "legacy_value": 843,
+          "legacy_symbol": "TRAINER_GABRIELLE_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 843,
+          "id": "HOENN:TRAINER_THALIA_2",
+          "legacy_value": 844,
+          "legacy_symbol": "TRAINER_THALIA_2"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 844,
+          "id": "HOENN:TRAINER_THALIA_3",
+          "legacy_value": 845,
+          "legacy_symbol": "TRAINER_THALIA_3"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 845,
+          "id": "HOENN:TRAINER_THALIA_4",
+          "legacy_value": 846,
+          "legacy_symbol": "TRAINER_THALIA_4"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 846,
+          "id": "HOENN:TRAINER_THALIA_5",
+          "legacy_value": 847,
+          "legacy_symbol": "TRAINER_THALIA_5"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 847,
+          "id": "HOENN:TRAINER_MARIELA",
+          "legacy_value": 848,
+          "legacy_symbol": "TRAINER_MARIELA"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 848,
+          "id": "HOENN:TRAINER_ALVARO",
+          "legacy_value": 849,
+          "legacy_symbol": "TRAINER_ALVARO"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 849,
+          "id": "HOENN:TRAINER_EVERETT",
+          "legacy_value": 850,
+          "legacy_symbol": "TRAINER_EVERETT"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 850,
+          "id": "HOENN:TRAINER_RED",
+          "legacy_value": 851,
+          "legacy_symbol": "TRAINER_RED"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 851,
+          "id": "HOENN:TRAINER_LEAF",
+          "legacy_value": 852,
+          "legacy_symbol": "TRAINER_LEAF"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 852,
+          "id": "HOENN:TRAINER_BRENDAN_PLACEHOLDER",
+          "legacy_value": 853,
+          "legacy_symbol": "TRAINER_BRENDAN_PLACEHOLDER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 853,
+          "id": "HOENN:TRAINER_MAY_PLACEHOLDER",
+          "legacy_value": 854,
+          "legacy_symbol": "TRAINER_MAY_PLACEHOLDER"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 854,
+          "id": "KANTO:TRAINER_BROCK",
+          "legacy_value": 1168,
+          "legacy_symbol": "TRAINER_LEADER_BROCK"
+        },
+        {
+          "kind": "trainer",
+          "ordinal": 855,
+          "id": "JOHTO:TRAINER_FALKNER",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 0,
+          "id": "HOENN:GYM_RUSTBORO",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 1,
+          "id": "HOENN:GYM_DEWFORD",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 2,
+          "id": "HOENN:GYM_MAUVILLE",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 3,
+          "id": "HOENN:GYM_LAVARIDGE",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 4,
+          "id": "HOENN:GYM_PETALBURG",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 5,
+          "id": "HOENN:GYM_FORTREE",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 6,
+          "id": "HOENN:GYM_MOSSDEEP",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 7,
+          "id": "HOENN:GYM_SOOTOPOLIS",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 8,
+          "id": "KANTO:GYM_PEWTER",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 9,
+          "id": "KANTO:GYM_CERULEAN",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 10,
+          "id": "KANTO:GYM_VERMILION",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 11,
+          "id": "KANTO:GYM_CELADON",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 12,
+          "id": "KANTO:GYM_FUCHSIA",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 13,
+          "id": "KANTO:GYM_SAFFRON",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 14,
+          "id": "KANTO:GYM_CINNABAR",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 15,
+          "id": "KANTO:GYM_VIRIDIAN",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 16,
+          "id": "JOHTO:GYM_VIOLET",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 17,
+          "id": "JOHTO:GYM_AZALEA",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 18,
+          "id": "JOHTO:GYM_GOLDENROD",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 19,
+          "id": "JOHTO:GYM_ECRUTEAK",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 20,
+          "id": "JOHTO:GYM_CIANWOOD",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 21,
+          "id": "JOHTO:GYM_OLIVINE",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 22,
+          "id": "JOHTO:GYM_MAHOGANY",
+          "legacy_value": null
+        },
+        {
+          "kind": "gym",
+          "ordinal": 23,
+          "id": "JOHTO:GYM_BLACKTHORN",
+          "legacy_value": null
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_STONE",
+          "legacy_value": 2909,
+          "legacy_symbol": "FLAG_BADGE01_GET",
+          "badge_bit": 0
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_KNUCKLE",
+          "legacy_value": 2910,
+          "legacy_symbol": "FLAG_BADGE02_GET",
+          "badge_bit": 1
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_DYNAMO",
+          "legacy_value": 2911,
+          "legacy_symbol": "FLAG_BADGE03_GET",
+          "badge_bit": 2
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_HEAT",
+          "legacy_value": 2912,
+          "legacy_symbol": "FLAG_BADGE04_GET",
+          "badge_bit": 3
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_BALANCE",
+          "legacy_value": 2913,
+          "legacy_symbol": "FLAG_BADGE05_GET",
+          "badge_bit": 4
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_FEATHER",
+          "legacy_value": 2914,
+          "legacy_symbol": "FLAG_BADGE06_GET",
+          "badge_bit": 5
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_MIND",
+          "legacy_value": 2915,
+          "legacy_symbol": "FLAG_BADGE07_GET",
+          "badge_bit": 6
+        },
+        {
+          "kind": "badge",
+          "id": "HOENN:BADGE_RAIN",
+          "legacy_value": 2916,
+          "legacy_symbol": "FLAG_BADGE08_GET",
+          "badge_bit": 7
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_BOULDER",
+          "legacy_value": 2909,
+          "legacy_symbol": "FLAG_BADGE01_GET",
+          "badge_bit": 0
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_CASCADE",
+          "legacy_value": 2910,
+          "legacy_symbol": "FLAG_BADGE02_GET",
+          "badge_bit": 1
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_THUNDER",
+          "legacy_value": 2911,
+          "legacy_symbol": "FLAG_BADGE03_GET",
+          "badge_bit": 2
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_RAINBOW",
+          "legacy_value": 2912,
+          "legacy_symbol": "FLAG_BADGE04_GET",
+          "badge_bit": 3
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_SOUL",
+          "legacy_value": 2913,
+          "legacy_symbol": "FLAG_BADGE05_GET",
+          "badge_bit": 4
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_MARSH",
+          "legacy_value": 2914,
+          "legacy_symbol": "FLAG_BADGE06_GET",
+          "badge_bit": 5
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_VOLCANO",
+          "legacy_value": 2915,
+          "legacy_symbol": "FLAG_BADGE07_GET",
+          "badge_bit": 6
+        },
+        {
+          "kind": "badge",
+          "id": "KANTO:BADGE_EARTH",
+          "legacy_value": 2916,
+          "legacy_symbol": "FLAG_BADGE08_GET",
+          "badge_bit": 7
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_ZEPHYR",
+          "legacy_value": null,
+          "badge_bit": 0
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_HIVE",
+          "legacy_value": null,
+          "badge_bit": 1
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_PLAIN",
+          "legacy_value": null,
+          "badge_bit": 2
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_FOG",
+          "legacy_value": null,
+          "badge_bit": 3
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_STORM",
+          "legacy_value": null,
+          "badge_bit": 4
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_MINERAL",
+          "legacy_value": null,
+          "badge_bit": 5
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_GLACIER",
+          "legacy_value": null,
+          "badge_bit": 6
+        },
+        {
+          "kind": "badge",
+          "id": "JOHTO:BADGE_RISING",
+          "legacy_value": null,
+          "badge_bit": 7
+        },
+        {
+          "kind": "fly",
+          "ordinal": 0,
+          "id": "HOENN:FLY_LITTLEROOT",
+          "legacy_value": 2917,
+          "legacy_symbol": "FLAG_VISITED_LITTLEROOT_TOWN"
+        },
+        {
+          "kind": "fly",
+          "ordinal": 1,
+          "id": "KANTO:FLY_PALLET_TOWN",
+          "legacy_value": 2683,
+          "legacy_symbol": "FLAG_WORLD_MAP_PALLET_TOWN"
+        },
+        {
+          "kind": "fly",
+          "ordinal": 2,
+          "id": "JOHTO:FLY_NEW_BARK_TOWN",
+          "legacy_value": null
+        },
+        {
+          "kind": "fly",
+          "ordinal": 3,
+          "id": "SEVII:FLY_ONE_ISLAND",
+          "legacy_value": 2694,
+          "legacy_symbol": "FLAG_WORLD_MAP_ONE_ISLAND"
+        },
+        {
+          "kind": "event",
+          "ordinal": 0,
+          "id": "HOENN:EVENT_POKEDEX_OBTAINED",
+          "legacy_value": 2903,
+          "legacy_symbol": "FLAG_SYS_POKEDEX_GET"
+        },
+        {
+          "kind": "event",
+          "ordinal": 1,
+          "id": "KANTO:EVENT_OAK_LEFT_PALLET_TOWN",
+          "legacy_value": 2057,
+          "legacy_symbol": "FLAG_HIDE_OAK_IN_PALLET_TOWN"
+        },
+        {
+          "kind": "event",
+          "ordinal": 2,
+          "id": "JOHTO:EVENT_ELM_ERRAND_COMPLETE",
+          "legacy_value": null
+        },
+        {
+          "kind": "event",
+          "ordinal": 3,
+          "id": "SEVII:EVENT_RECOVERED_SAPPHIRE",
+          "legacy_value": 2644,
+          "legacy_symbol": "FLAG_RECOVERED_SAPPHIRE"
+        }
+      ]
+    }
+  ]
+}

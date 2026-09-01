@@ -49,7 +49,7 @@ pub use snapshot::{
 
 #[cfg(test)]
 mod tests {
-    use coop_protocol::{RegionId, RegionalProgress, TrainerInstanceId, WorldZone};
+    use coop_protocol::{EventId, GymId, RegionId, RegionalProgress, TrainerInstanceId, WorldZone};
     use ed25519_dalek::{SigningKey as DalekSigningKey, VerifyingKey};
     use serde_json::json;
 
@@ -60,7 +60,7 @@ mod tests {
     }
 
     fn state() -> CharacterCloudState {
-        let hoenn_trainer = TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_RIVAL").unwrap();
+        let hoenn_trainer = TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_WALLY_1").unwrap();
         let hoenn =
             RegionalProgress::new(RegionId::Hoenn, 0b11, 4, vec![hoenn_trainer], vec![]).unwrap();
         let kanto = RegionalProgress::new(RegionId::Kanto, 0xffff, 9, vec![], vec![]).unwrap();
@@ -220,6 +220,29 @@ mod tests {
             .unwrap()
             .reverse();
         assert!(serde_json::from_value::<CharacterCloudState>(reversed).is_err());
+    }
+
+    #[test]
+    fn cloud_state_round_trips_registered_gyms_and_events() {
+        let progress = RegionalProgress::new_complete(
+            RegionId::Hoenn,
+            1,
+            2,
+            vec![],
+            vec![],
+            vec![GymId::new(RegionId::Hoenn, "GYM_RUSTBORO").unwrap()],
+            vec![EventId::new(RegionId::Hoenn, "EVENT_POKEDEX_OBTAINED").unwrap()],
+        )
+        .unwrap();
+        let original = CharacterCloudState::new(
+            id(CharacterId::new),
+            WorldZone::new(RegionId::Hoenn, "RUSTBORO_CITY", 1).unwrap(),
+            vec![progress],
+        )
+        .unwrap();
+        let wire = serde_json::to_string(&original).unwrap();
+        let decoded: CharacterCloudState = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded, original);
     }
 
     #[test]

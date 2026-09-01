@@ -1,6 +1,10 @@
 //! Character state and exclusive lease fencing contracts.
 
-use coop_protocol::{FlyPointId, RegionId, RegionalProgress, TrainerInstanceId, WorldZone};
+use coop_protocol::{
+    EVENT_IDENTITY_CAPACITY, EventId, FLY_POINT_IDENTITY_CAPACITY, FlyPointId,
+    GYM_IDENTITY_CAPACITY, GymId, RegionId, RegionalProgress, TRAINER_IDENTITY_CAPACITY,
+    TrainerInstanceId, WorldZone,
+};
 use serde::{
     Deserialize, Serialize,
     de::{self, SeqAccess, Visitor},
@@ -101,7 +105,7 @@ impl CharacterCloudState {
             return Err(SessionError::DuplicateRegionalProgress);
         }
         for progress in &regional_progress {
-            if progress.defeated_trainers.len() > 4096 || progress.unlocked_fly_points.len() > 256 {
+            if !regional_collections_within_bounds(progress) {
                 return Err(SessionError::TooManyRegionalEntries);
             }
             progress
@@ -146,7 +150,7 @@ impl CharacterCloudState {
             return Err(SessionError::NonCanonicalRegionalOrder);
         }
         for progress in &self.regional_progress {
-            if progress.defeated_trainers.len() > 4096 || progress.unlocked_fly_points.len() > 256 {
+            if !regional_collections_within_bounds(progress) {
                 return Err(SessionError::TooManyRegionalEntries);
             }
             progress
@@ -215,6 +219,17 @@ struct WireRegionalProgress {
     defeated_trainers: Vec<TrainerInstanceId>,
     #[serde(deserialize_with = "deserialize_fly_points")]
     unlocked_fly_points: Vec<FlyPointId>,
+    #[serde(default, deserialize_with = "deserialize_gyms")]
+    defeated_gyms: Vec<GymId>,
+    #[serde(default, deserialize_with = "deserialize_events")]
+    completed_events: Vec<EventId>,
+}
+
+fn regional_collections_within_bounds(progress: &RegionalProgress) -> bool {
+    progress.defeated_trainers.len() <= TRAINER_IDENTITY_CAPACITY
+        && progress.unlocked_fly_points.len() <= FLY_POINT_IDENTITY_CAPACITY
+        && progress.defeated_gyms.len() <= GYM_IDENTITY_CAPACITY
+        && progress.completed_events.len() <= EVENT_IDENTITY_CAPACITY
 }
 
 fn deserialize_bounded_vec<'de, D, T>(
@@ -287,7 +302,7 @@ where
 {
     deserialize_bounded_identity_vec(
         deserializer,
-        4096,
+        TRAINER_IDENTITY_CAPACITY,
         TrainerInstanceId::parse,
         "defeated trainer identity",
     )
@@ -299,9 +314,33 @@ where
 {
     deserialize_bounded_identity_vec(
         deserializer,
-        256,
+        FLY_POINT_IDENTITY_CAPACITY,
         FlyPointId::parse,
         "unlocked fly-point identity",
+    )
+}
+
+fn deserialize_gyms<'de, D>(deserializer: D) -> Result<Vec<GymId>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_identity_vec(
+        deserializer,
+        GYM_IDENTITY_CAPACITY,
+        GymId::parse,
+        "defeated gym identity",
+    )
+}
+
+fn deserialize_events<'de, D>(deserializer: D) -> Result<Vec<EventId>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_identity_vec(
+        deserializer,
+        EVENT_IDENTITY_CAPACITY,
+        EventId::parse,
+        "completed event identity",
     )
 }
 
@@ -457,17 +496,27 @@ impl<'de> Deserialize<'de> for CharacterCloudState {
                         .unlocked_fly_points
                         .windows(2)
                         .any(|window| window[0] >= window[1])
+                    || record
+                        .defeated_gyms
+                        .windows(2)
+                        .any(|window| window[0] >= window[1])
+                    || record
+                        .completed_events
+                        .windows(2)
+                        .any(|window| window[0] >= window[1])
                 {
                     return Err(serde::de::Error::custom(
                         SessionError::NonCanonicalRegionalEntries,
                     ));
                 }
-                RegionalProgress::new(
+                RegionalProgress::new_complete(
                     record.region,
                     record.badge_mask,
                     record.story_checkpoint,
                     record.defeated_trainers,
                     record.unlocked_fly_points,
+                    record.defeated_gyms,
+                    record.completed_events,
                 )
                 .map_err(serde::de::Error::custom)
             })

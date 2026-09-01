@@ -10,8 +10,14 @@ use serde::{Deserialize, Serialize, Serializer, de::Deserializer};
 use thiserror::Error;
 
 pub mod catalog;
+pub mod identity_catalog;
 
 pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
+pub use identity_catalog::{
+    BADGES_PER_REGION, EVENT_IDENTITY_CAPACITY, FLY_POINT_IDENTITY_CAPACITY,
+    GENERATED_IDENTITY_REGISTRY, GYM_IDENTITY_CAPACITY, IDENTITY_REGISTRY_DIGEST,
+    IDENTITY_REGISTRY_VERSION, IdentityCatalogEntry, TRAINER_IDENTITY_CAPACITY, all_identities,
+};
 
 /// Regions understood by the co-op wire protocol.
 ///
@@ -125,7 +131,7 @@ impl<'de> Deserialize<'de> for RegionId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IdentityKind {
     Trainer,
     Gym,
@@ -563,6 +569,13 @@ pub struct RegionalProgress {
     pub story_checkpoint: u32,
     pub defeated_trainers: Vec<TrainerInstanceId>,
     pub unlocked_fly_points: Vec<FlyPointId>,
+    /// Region-qualified gyms whose durable completion state is independent
+    /// from the badge mask.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub defeated_gyms: Vec<GymId>,
+    /// Region-qualified story/world events represented in the stable registry.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub completed_events: Vec<EventId>,
 }
 
 impl RegionalProgress {
@@ -576,8 +589,39 @@ impl RegionalProgress {
         region: RegionId,
         badge_mask: u16,
         story_checkpoint: u32,
+        defeated_trainers: Vec<TrainerInstanceId>,
+        unlocked_fly_points: Vec<FlyPointId>,
+    ) -> Result<Self, ProtocolError> {
+        Self::new_complete(
+            region,
+            badge_mask,
+            story_checkpoint,
+            defeated_trainers,
+            unlocked_fly_points,
+            Vec::new(),
+            Vec::new(),
+        )
+    }
+
+    /// Creates normalized progress including every registered identity kind.
+    ///
+    /// The original [`RegionalProgress::new`] constructor remains the
+    /// backwards-compatible shorthand for callers that do not yet persist
+    /// gyms or events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the region is unspecified, an identity belongs
+    /// to another region, or an identity has no stable registry ordinal.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_complete(
+        region: RegionId,
+        badge_mask: u16,
+        story_checkpoint: u32,
         mut defeated_trainers: Vec<TrainerInstanceId>,
         mut unlocked_fly_points: Vec<FlyPointId>,
+        mut defeated_gyms: Vec<GymId>,
+        mut completed_events: Vec<EventId>,
     ) -> Result<Self, ProtocolError> {
         let region = region.ensure_concrete()?;
         for trainer in &defeated_trainers {
@@ -587,6 +631,7 @@ impl RegionalProgress {
                     actual: trainer.region(),
                 });
             }
+            identity_catalog::trainer(trainer)?;
         }
         for fly_point in &unlocked_fly_points {
             if fly_point.region() != region {
@@ -595,12 +640,35 @@ impl RegionalProgress {
                     actual: fly_point.region(),
                 });
             }
+            identity_catalog::fly_point(fly_point)?;
+        }
+        for gym in &defeated_gyms {
+            if gym.region() != region {
+                return Err(ProtocolError::IdentityRegionMismatch {
+                    expected: region,
+                    actual: gym.region(),
+                });
+            }
+            identity_catalog::gym(gym)?;
+        }
+        for event in &completed_events {
+            if event.region() != region {
+                return Err(ProtocolError::IdentityRegionMismatch {
+                    expected: region,
+                    actual: event.region(),
+                });
+            }
+            identity_catalog::event(event)?;
         }
 
         defeated_trainers.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
         defeated_trainers.dedup();
         unlocked_fly_points.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
         unlocked_fly_points.dedup();
+        defeated_gyms.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
+        defeated_gyms.dedup();
+        completed_events.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
+        completed_events.dedup();
 
         Ok(Self {
             region,
@@ -608,6 +676,8 @@ impl RegionalProgress {
             story_checkpoint,
             defeated_trainers,
             unlocked_fly_points,
+            defeated_gyms,
+            completed_events,
         })
     }
 
@@ -643,6 +713,7 @@ impl RegionalProgress {
                     actual: trainer.region(),
                 });
             }
+            identity_catalog::trainer(trainer)?;
         }
         for fly_point in &self.unlocked_fly_points {
             if fly_point.region() != self.region {
@@ -651,6 +722,25 @@ impl RegionalProgress {
                     actual: fly_point.region(),
                 });
             }
+            identity_catalog::fly_point(fly_point)?;
+        }
+        for gym in &self.defeated_gyms {
+            if gym.region() != self.region {
+                return Err(ProtocolError::IdentityRegionMismatch {
+                    expected: self.region,
+                    actual: gym.region(),
+                });
+            }
+            identity_catalog::gym(gym)?;
+        }
+        for event in &self.completed_events {
+            if event.region() != self.region {
+                return Err(ProtocolError::IdentityRegionMismatch {
+                    expected: self.region,
+                    actual: event.region(),
+                });
+            }
+            identity_catalog::event(event)?;
         }
         if self
             .defeated_trainers
@@ -658,6 +748,14 @@ impl RegionalProgress {
             .any(|window| window[0].as_str() >= window[1].as_str())
             || self
                 .unlocked_fly_points
+                .windows(2)
+                .any(|window| window[0].as_str() >= window[1].as_str())
+            || self
+                .defeated_gyms
+                .windows(2)
+                .any(|window| window[0].as_str() >= window[1].as_str())
+            || self
+                .completed_events
                 .windows(2)
                 .any(|window| window[0].as_str() >= window[1].as_str())
         {
@@ -679,15 +777,21 @@ impl<'de> Deserialize<'de> for RegionalProgress {
             story_checkpoint: u32,
             defeated_trainers: Vec<TrainerInstanceId>,
             unlocked_fly_points: Vec<FlyPointId>,
+            #[serde(default)]
+            defeated_gyms: Vec<GymId>,
+            #[serde(default)]
+            completed_events: Vec<EventId>,
         }
 
         let wire = WireProgress::deserialize(deserializer)?;
-        Self::new(
+        Self::new_complete(
             wire.region,
             wire.badge_mask,
             wire.story_checkpoint,
             wire.defeated_trainers,
             wire.unlocked_fly_points,
+            wire.defeated_gyms,
+            wire.completed_events,
         )
         .map_err(serde::de::Error::custom)
     }
@@ -1286,6 +1390,18 @@ pub enum ProtocolError {
         expected: IdentityKind,
         actual: IdentityKind,
     },
+    #[error("{kind} identity has no persisted registry ordinal: {value}")]
+    UnknownIdentity { kind: IdentityKind, value: String },
+    #[error("{kind} identity ordinal is unassigned: {ordinal}")]
+    UnknownIdentityOrdinal { kind: IdentityKind, ordinal: u16 },
+    #[error("legacy {kind} identity {legacy_value:#x} is unassigned in {region}")]
+    UnknownLegacyIdentity {
+        kind: IdentityKind,
+        region: RegionId,
+        legacy_value: u16,
+    },
+    #[error("regional badge bit {badge_bit} is unassigned in {region}")]
+    UnknownRegionalBadgeBit { region: RegionId, badge_bit: u8 },
     #[error("invalid map key: {value}")]
     InvalidMapKey { value: String },
     #[error("map {map} belongs to {actual}, expected {expected}")]
@@ -1520,6 +1636,76 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn progress_persists_registered_gyms_and_events_with_wire_defaults() {
+        let gym = GymId::new(RegionId::Hoenn, "GYM_RUSTBORO").unwrap();
+        let event = EventId::new(RegionId::Hoenn, "EVENT_POKEDEX_OBTAINED").unwrap();
+        let progress = RegionalProgress::new_complete(
+            RegionId::Hoenn,
+            1,
+            7,
+            vec![],
+            vec![],
+            vec![gym.clone(), gym.clone()],
+            vec![event.clone(), event.clone()],
+        )
+        .unwrap();
+        assert_eq!(progress.defeated_gyms, vec![gym]);
+        assert_eq!(progress.completed_events, vec![event]);
+        assert!(progress.validate().is_ok());
+
+        let old_wire = r#"{
+            "region":"HOENN",
+            "badge_mask":0,
+            "story_checkpoint":0,
+            "defeated_trainers":[],
+            "unlocked_fly_points":[]
+        }"#;
+        let decoded: RegionalProgress = serde_json::from_str(old_wire).unwrap();
+        assert!(decoded.defeated_gyms.is_empty());
+        assert!(decoded.completed_events.is_empty());
+        let new_wire = serde_json::to_value(decoded).unwrap();
+        assert!(new_wire.get("defeated_gyms").is_none());
+        assert!(new_wire.get("completed_events").is_none());
+    }
+
+    #[test]
+    fn progress_rejects_unregistered_or_cross_region_extended_identities() {
+        let unknown = EventId::new(RegionId::Hoenn, "EVENT_NOT_REGISTERED").unwrap();
+        assert!(matches!(
+            RegionalProgress::new_complete(
+                RegionId::Hoenn,
+                0,
+                0,
+                vec![],
+                vec![],
+                vec![],
+                vec![unknown],
+            ),
+            Err(ProtocolError::UnknownIdentity {
+                kind: IdentityKind::Event,
+                ..
+            })
+        ));
+
+        let kanto_gym = GymId::new(RegionId::Kanto, "GYM_PEWTER").unwrap();
+        assert!(matches!(
+            RegionalProgress::new_complete(
+                RegionId::Hoenn,
+                0,
+                0,
+                vec![],
+                vec![],
+                vec![kanto_gym],
+                vec![],
+            ),
+            Err(ProtocolError::IdentityRegionMismatch {
+                expected: RegionId::Hoenn,
+                actual: RegionId::Kanto,
+            })
+        ));
     }
 
     #[test]
