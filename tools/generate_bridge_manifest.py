@@ -18,6 +18,7 @@ BRIDGE_MAGIC = 0x504B434F
 BRIDGE_ABI_VERSION = 1
 GAME_PROTOCOL_VERSION = 1
 GAME_BUILD_ID = 0x00010000
+GAME_BUILD_TEXT_ID = "pokecrossroads-beta-1.4-e05c8286-coop-v1"
 BRIDGE_SIZE = 9244
 MESSAGE_SIZE = 144
 QUEUE_SIZE = 4612
@@ -107,6 +108,25 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_game_build_id(build_id: str) -> str:
+    """Validate the canonical textual build ID using coop-cloud's wire contract."""
+    if not isinstance(build_id, str):
+        raise ManifestError("game build ID must be a string")
+    try:
+        encoded = build_id.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ManifestError("game build ID must contain only ASCII characters") from error
+
+    if not encoded or len(encoded) > 128:
+        raise ManifestError("game build ID must contain between 1 and 128 ASCII bytes")
+    allowed = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+:-"
+    if any(byte not in allowed for byte in encoded):
+        raise ManifestError(
+            "game build ID may contain only ASCII alphanumerics or ._+:-"
+        )
+    return build_id
+
+
 def build_manifest(bridge: Symbol, rom_sha256: str) -> dict[str, object]:
     if len(rom_sha256) != 64 or any(character not in "0123456789abcdef" for character in rom_sha256):
         raise ManifestError("ROM SHA-256 must be 64 lowercase hexadecimal characters")
@@ -114,6 +134,7 @@ def build_manifest(bridge: Symbol, rom_sha256: str) -> dict[str, object]:
     return {
         "schema_version": 1,
         "game_build": {
+            "id": validate_game_build_id(GAME_BUILD_TEXT_ID),
             "numeric_id": GAME_BUILD_ID,
             "rom_sha256": rom_sha256,
         },

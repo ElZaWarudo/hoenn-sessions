@@ -19,8 +19,18 @@ mismatch. Lua validates the in-memory bridge ABI header, but it cannot hash the
 whole ROM; the hash embedded in the generated Lua address module is therefore
 metadata, not runtime proof of the loaded ROM.
 
-The launcher owns the persisted session-epoch counter. Increment it by one for
-each new sidecar process using wrapping `u32` arithmetic, skip zero, then start:
+`game_build.id` is the canonical textual cloud build identity. The launcher
+MUST read it from the generated manifest, and the server MUST sign resume
+packages from a supported-build configuration generated from the same release
+manifest. A client-supplied value is never a server trust root, and neither
+process may offer a command-line override for this identity.
+`game_build.numeric_id` remains the compact ROM bridge ABI value and is not a
+substitute for the cloud identity.
+
+The cloud server owns the durable, nonzero session epoch. The launcher persists
+the greatest accepted server-issued epoch under a cross-process lock and starts
+a new sidecar only after acquire or reconnect returns a strictly greater value.
+Epoch exhaustion fails closed; it never wraps.
 
 ```text
 coop-sidecar --session-epoch <nonzero-u32>
