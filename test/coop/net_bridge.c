@@ -443,3 +443,488 @@ TEST("Cloud Coop raw unsupported inbound traffic cannot suppress a valid new epo
     EXPECT_EQ(message.sequence, 1);
     EXPECT_EQ(message.session_epoch, 21);
 }
+
+static void EstablishTestCloudSession(void)
+{
+    struct CoopBridgeMessage message;
+
+    CoopNetBridge_Init();
+    PopInitialRomReady();
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  1,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+static void StartTestCheckpoint(void)
+{
+    struct CoopBridgeMessage message;
+
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(message.session_epoch, 17);
+}
+
+static void DeliverTestGrant(u32 sequence, u32 epoch, u16 payloadSize)
+{
+    struct CoopBridgeMessage message;
+    u8 payload = 0xA5;
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_CHECKPOINT_GRANTED,
+                                  sequence,
+                                  epoch,
+                                  &payload,
+                                  payloadSize));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+}
+
+TEST("Cloud Coop checkpoint request is online-only and requires drained queues")
+{
+    struct CoopBridgeMessage message;
+
+    CoopNetBridge_Init();
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_OFFLINE);
+
+    EstablishTestCloudSession();
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+}
+
+TEST("Cloud Coop checkpoint grant accepts only a fresh empty current epoch")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+
+    /* The session-ready sequence is stale, and a different epoch is never a
+     * grant for the pending request. Neither may authorize a flash write. */
+    DeliverTestGrant(1, 17, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    DeliverTestGrant(2, 99, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+
+    /* A nonempty current-epoch grant is malformed and is not freshened. */
+    DeliverTestGrant(2, 17, 1);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
+
+    DeliverTestGrant(2, 17, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_GRANTED);
+    EXPECT(!CoopNetBridge_IsCheckpointAuthorizedForSave());
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(CoopNetBridge_IsCheckpointAuthorizedForSave());
+
+    /* A second consume cannot cause the normal save callback to run twice. */
+    EXPECT(!CoopNetBridge_ConsumeCheckpointGrant());
+    (void)message;
+}
+
+TEST("Cloud Coop checkpoint timeout never enters the save state")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    for (frame = 0; frame < COOP_NET_BRIDGE_CHECKPOINT_TIMEOUT_FRAMES; frame++)
+    {
+        gCoopNetBridge.last_sidecar_heartbeat++;
+        CoopNetBridge_Poll();
+    }
+
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE, NULL, 0));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PLAYER_STATE);
+}
+
+TEST("Cloud Coop epoch and heartbeat changes cancel a pending checkpoint")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  2,
+                                  18,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    for (frame = 0; frame < COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL; frame++)
+        CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_OFFLINE);
+    EXPECT(!CoopNetBridge_IsCheckpointAuthorizedForSave());
+    EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY));
+    EXPECT(CoopNetBridge_RequestCheckpoint() == COOP_CHECKPOINT_REQUEST_REJECTED);
+}
+
+TEST("Cloud Coop successful save emits one empty update and failure emits none")
+{
+    struct CoopBridgeMessage message;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    CoopNetBridge_NotifySaveResult(FALSE);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    StartTestCheckpoint();
+    DeliverTestGrant(3, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    CoopNetBridge_NotifySaveResult(TRUE);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED);
+    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopNetBridge_NotifySaveResult(TRUE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop retries a full critical save update without consuming sequence")
+{
+    struct CoopBridgeMessage message;
+    u16 sequenceBefore;
+    u32 i;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    for (i = 0; i < COOP_NET_BRIDGE_QUEUE_CAPACITY; i++)
+        EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0));
+
+    sequenceBefore = gCoopNetBridge.game_to_network.entries[
+        (gCoopNetBridge.game_to_network.write_index - 1)
+        & (COOP_NET_BRIDGE_QUEUE_CAPACITY - 1)].sequence;
+    CoopNetBridge_NotifySaveResult(TRUE);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(CoopBridgeQueue_IsFull(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(gCoopNetBridge.game_to_network.entries[
+        (gCoopNetBridge.game_to_network.write_index - 1)
+        & (COOP_NET_BRIDGE_QUEUE_CAPACITY - 1)].sequence, sequenceBefore);
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    while (!CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network))
+    {
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        if (message.type == COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED)
+            break;
+    }
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED);
+    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+TEST("Cloud Coop retains a pending update across same-epoch heartbeat recovery")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+    u32 updates = 0;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    for (frame = 0; frame < COOP_NET_BRIDGE_QUEUE_CAPACITY; frame++)
+        EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0));
+    CoopNetBridge_NotifySaveResult(TRUE);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+
+    for (frame = 0; frame < COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL; frame++)
+        CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(!CoopNetBridge_IsRecoveryRequired());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  3,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+
+    while (!CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network))
+    {
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        if (message.type == COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED)
+        {
+            updates++;
+            EXPECT_EQ(message.session_epoch, 17);
+            EXPECT_EQ(message.length, 0);
+        }
+    }
+    EXPECT_EQ(updates, 1);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+TEST("Cloud Coop preserves an enqueued undrained update across same-epoch heartbeat recovery")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+    u32 updates = 0;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    CoopNetBridge_NotifySaveResult(TRUE);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+
+    /* The update was accepted into the FIFO, but the sidecar has not
+     * advanced read_index yet. A stale reset must make it retryable. */
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.network_to_game));
+    for (frame = 0; frame < COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL; frame++)
+        CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  3,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+
+    while (!CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network))
+    {
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        if (message.type == COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED)
+        {
+            updates++;
+            EXPECT_EQ(message.session_epoch, 17);
+            EXPECT_EQ(message.length, 0);
+        }
+    }
+    EXPECT_EQ(updates, 1);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+TEST("Cloud Coop does not duplicate a drained update after heartbeat recovery")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+    u32 updates = 0;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    CoopNetBridge_NotifySaveResult(TRUE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+
+    for (frame = 0; frame < COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL; frame++)
+        CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_OFFLINE);
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  3,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    while (!CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network))
+    {
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        if (message.type == COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED)
+            updates++;
+    }
+    EXPECT_EQ(updates, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+TEST("Cloud Coop malformed consumer index cannot acknowledge a critical update")
+{
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    CoopNetBridge_NotifySaveResult(TRUE);
+
+    /* The sidecar owns read_index. An impossible depth must not be treated as
+     * proof that the queued SAVE_DATA_UPDATED was consumed. */
+    gCoopNetBridge.game_to_network.read_index =
+        gCoopNetBridge.game_to_network.write_index
+        + COOP_NET_BRIDGE_QUEUE_CAPACITY + 1;
+    CoopNetBridge_Poll();
+
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_QUEUE_ERROR);
+    EXPECT(CoopNetBridge_IsRecoveryRequired());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_RECOVERY_REQUIRED);
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+}
+
+TEST("Cloud Coop malformed consumer index without a critical update stays idle")
+{
+    EstablishTestCloudSession();
+    gCoopNetBridge.game_to_network.read_index =
+        gCoopNetBridge.game_to_network.write_index
+        + COOP_NET_BRIDGE_QUEUE_CAPACITY + 1;
+    CoopNetBridge_Poll();
+
+    EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_QUEUE_ERROR));
+    EXPECT(!CoopNetBridge_IsRecoveryRequired());
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+}
+
+TEST("Cloud Coop enters explicit recovery when a pending update crosses epochs")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+    for (frame = 0; frame < COOP_NET_BRIDGE_QUEUE_CAPACITY; frame++)
+        EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0));
+    CoopNetBridge_NotifySaveResult(TRUE);
+
+    for (frame = 0; frame < COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL; frame++)
+        CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  3,
+                                  18,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_RECOVERY_REQUIRED);
+    EXPECT(CoopNetBridge_IsRecoveryRequired());
+    EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_REJECTED);
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop production save callback waits for grant after confirmation")
+{
+    EstablishTestCloudSession();
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+
+    /* SaveDoSaveCallback is the first production callback after the existing
+     * Yes/No and overwrite prompts. It must wait instead of reaching flash. */
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+
+    {
+        struct CoopBridgeMessage message;
+        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+        EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    }
+
+    DeliverTestGrant(2, 17, 0);
+    EXPECT_EQ(CoopStartMenu_TestRunCheckpointWaitCallback(), COOP_START_MENU_TEST_SAVE_SUCCESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Cloud Coop rejected production save callback returns through interactive recovery")
+{
+    u32 i;
+
+    EstablishTestCloudSession();
+    for (i = 0; i < COOP_NET_BRIDGE_QUEUE_CAPACITY; i++)
+        EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0));
+
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT_EQ(CoopStartMenu_TestRunCheckpointAbortCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}
+
+TEST("Cloud Coop production save callback fails closed before TrySavingData on auth loss")
+{
+    struct CoopBridgeMessage message;
+    u32 frame;
+
+    EstablishTestCloudSession();
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(TRUE);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunSaveDoSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+
+    for (frame = 0; frame < COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL; frame++)
+        CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsCheckpointAuthorizedForSave());
+    EXPECT_EQ(CoopStartMenu_TestRunAuthorizedSaveCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunCheckpointAbortCallback(), COOP_START_MENU_TEST_SAVE_CANCELED);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopNetBridge_NotifySaveResult(FALSE);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+    (void)message;
+}
+
+TEST("Cloud Coop forced save callback bypasses checkpoint negotiation")
+{
+    EstablishTestCloudSession();
+    CoopStartMenu_TestSetSaveDryRun(TRUE);
+    CoopStartMenu_TestSetCheckpointRequired(FALSE);
+
+    EXPECT_EQ(CoopStartMenu_TestRunSaveSavingMessageCallback(), COOP_START_MENU_TEST_SAVE_IN_PROGRESS);
+    EXPECT_EQ(CoopStartMenu_TestRunAuthorizedSaveCallback(), COOP_START_MENU_TEST_SAVE_SUCCESS);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopStartMenu_TestSetSaveDryRun(FALSE);
+}

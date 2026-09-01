@@ -33,6 +33,7 @@
 #include "pokenav.h"
 #include "safari_zone.h"
 #include "save.h"
+#include "coop/net_bridge.h"
 #include "scanline_effect.h"
 #include "script.h"
 #include "sound.h"
@@ -95,6 +96,10 @@ EWRAM_DATA static u8 (*sSaveDialogCallback)(void) = NULL;
 EWRAM_DATA static u8 sSaveDialogTimer = 0;
 EWRAM_DATA static bool8 sSavingComplete = FALSE;
 EWRAM_DATA static u8 sSaveInfoWindowId = 0;
+EWRAM_DATA static bool8 sSaveCheckpointRequired = FALSE;
+#if TESTING
+static bool8 sSaveCheckpointDryRun;
+#endif
 
 // Menu action callbacks
 static bool8 StartMenuPokedexCallback(void);
@@ -130,6 +135,9 @@ static u8 SaveConfirmOverwriteCallback(void);
 static u8 SaveOverwriteInputCallback(void);
 static u8 SaveSavingMessageCallback(void);
 static u8 SaveDoSaveCallback(void);
+static u8 SaveDoSaveAuthorizedCallback(void);
+static u8 SaveCheckpointWaitCallback(void);
+static u8 SaveCheckpointAbortCallback(void);
 static u8 SaveSuccessCallback(void);
 static u8 SaveReturnSuccessCallback(void);
 static u8 SaveErrorCallback(void);
@@ -768,6 +776,7 @@ static bool8 StartMenuSaveCallback(void)
     if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
         RemoveExtraStartMenuWindows();
 
+    sSaveCheckpointRequired = TRUE;
     gMenuCallback = SaveStartCallback; // Display save menu
 
     return FALSE;
@@ -887,12 +896,22 @@ static bool8 SaveCallback(void)
     case SAVE_IN_PROGRESS:
         return FALSE;
     case SAVE_CANCELED: // Back to start menu
+        CoopNetBridge_NotifySaveResult(FALSE);
+        sSaveCheckpointRequired = FALSE;
         ClearDialogWindowAndFrameToTransparent(0, FALSE);
         InitStartMenu();
         gMenuCallback = HandleStartMenuInput;
         return FALSE;
-    case SAVE_SUCCESS:
+    case SAVE_SUCCESS: // Close start menu
+        sSaveCheckpointRequired = FALSE;
+        ClearDialogWindowAndFrameToTransparent(0, TRUE);
+        ScriptUnfreezeObjectEvents();
+        UnlockPlayerFieldControls();
+        SoftResetInBattlePyramid();
+        return TRUE;
     case SAVE_ERROR:    // Close start menu
+        CoopNetBridge_NotifySaveResult(FALSE);
+        sSaveCheckpointRequired = FALSE;
         ClearDialogWindowAndFrameToTransparent(0, TRUE);
         ScriptUnfreezeObjectEvents();
         UnlockPlayerFieldControls();
@@ -961,6 +980,7 @@ static u8 RunSaveCallback(void)
 
 void SaveGame(void)
 {
+    sSaveCheckpointRequired = FALSE;
     InitSave();
     CreateTask(SaveGameTask, 0x50);
 }
@@ -1148,13 +1168,96 @@ static u8 SaveOverwriteInputCallback(void)
 
 static u8 SaveSavingMessageCallback(void)
 {
-    ShowSaveMessage(gText_SavingDontTurnOff, SaveDoSaveCallback);
+#if TESTING
+    if (sSaveCheckpointDryRun)
+    {
+        sSaveDialogCallback = sSaveCheckpointRequired
+            ? SaveDoSaveCallback
+            : SaveDoSaveAuthorizedCallback;
+        return SAVE_IN_PROGRESS;
+    }
+#endif
+    ShowSaveMessage(gText_SavingDontTurnOff,
+                    sSaveCheckpointRequired
+                        ? SaveDoSaveCallback
+                        : SaveDoSaveAuthorizedCallback);
     return SAVE_IN_PROGRESS;
 }
 
 static u8 SaveDoSaveCallback(void)
 {
+    switch (CoopNetBridge_RequestCheckpoint())
+    {
+    case COOP_CHECKPOINT_REQUEST_STARTED:
+        /* All confirmation and overwrite prompts have completed. The bridge
+         * now waits at the last safe point before touching flash. */
+        sSaveDialogCallback = SaveCheckpointWaitCallback;
+        return SAVE_IN_PROGRESS;
+    case COOP_CHECKPOINT_REQUEST_REJECTED:
+        /* Never spin in this callback: return through the normal cancellation
+         * path so the player can interact with the menu again. */
+        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        return SAVE_IN_PROGRESS;
+    case COOP_CHECKPOINT_REQUEST_OFFLINE:
+        break;
+    }
+
+    return SaveDoSaveAuthorizedCallback();
+}
+
+static u8 SaveCheckpointWaitCallback(void)
+{
+    switch (CoopNetBridge_GetCheckpointState())
+    {
+    case COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT:
+        return SAVE_IN_PROGRESS;
+    case COOP_CHECKPOINT_STATE_GRANTED:
+        if (CoopNetBridge_ConsumeCheckpointGrant()
+         && CoopNetBridge_IsCheckpointAuthorizedForSave())
+            return SaveDoSaveAuthorizedCallback();
+        break;
+    case COOP_CHECKPOINT_STATE_OFFLINE:
+    case COOP_CHECKPOINT_STATE_IDLE:
+    case COOP_CHECKPOINT_STATE_SAVING:
+    case COOP_CHECKPOINT_STATE_RECOVERY_REQUIRED:
+    default:
+        break;
+    }
+
+    sSaveDialogCallback = SaveCheckpointAbortCallback;
+    return SAVE_IN_PROGRESS;
+}
+
+static u8 SaveCheckpointAbortCallback(void)
+{
+#if TESTING
+    if (sSaveCheckpointDryRun)
+        return SAVE_CANCELED;
+#endif
+    HideSaveInfoWindow();
+    HideSaveMessageWindow();
+    return SAVE_CANCELED;
+}
+
+static u8 SaveDoSaveAuthorizedCallback(void)
+{
     u8 saveStatus;
+
+    /* This is the final gate immediately adjacent to TrySavingData. It closes
+     * the race where the sidecar disappears between grant delivery and this
+     * callback, while retaining the legacy offline path before negotiation. */
+    if (sSaveCheckpointRequired
+     && CoopNetBridge_IsCloudMode()
+     && !CoopNetBridge_IsCheckpointAuthorizedForSave())
+    {
+        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        return SAVE_IN_PROGRESS;
+    }
+
+#if TESTING
+    if (sSaveCheckpointDryRun)
+        return SAVE_SUCCESS;
+#endif
 
     IncrementGameStat(GAME_STAT_SAVED_GAME);
     PausePyramidChallenge();
@@ -1170,13 +1273,56 @@ static u8 SaveDoSaveCallback(void)
     }
 
     if (saveStatus == SAVE_STATUS_OK)
+    {
+        CoopNetBridge_NotifySaveResult(TRUE);
         ShowSaveMessage(gText_PlayerSavedGame, SaveSuccessCallback);
+    }
     else
+    {
+        CoopNetBridge_NotifySaveResult(FALSE);
         ShowSaveMessage(gText_SaveError, SaveErrorCallback);
+    }
 
     SaveStartTimer();
     return SAVE_IN_PROGRESS;
 }
+
+#if TESTING
+void CoopStartMenu_TestSetSaveDryRun(bool8 enabled)
+{
+    sSaveCheckpointDryRun = enabled;
+}
+
+void CoopStartMenu_TestSetCheckpointRequired(bool8 required)
+{
+    sSaveCheckpointRequired = required;
+}
+
+u8 CoopStartMenu_TestRunSaveSavingMessageCallback(void)
+{
+    return SaveSavingMessageCallback();
+}
+
+u8 CoopStartMenu_TestRunSaveDoSaveCallback(void)
+{
+    return SaveDoSaveCallback();
+}
+
+u8 CoopStartMenu_TestRunCheckpointWaitCallback(void)
+{
+    return SaveCheckpointWaitCallback();
+}
+
+u8 CoopStartMenu_TestRunCheckpointAbortCallback(void)
+{
+    return SaveCheckpointAbortCallback();
+}
+
+u8 CoopStartMenu_TestRunAuthorizedSaveCallback(void)
+{
+    return SaveDoSaveAuthorizedCallback();
+}
+#endif
 
 static u8 SaveSuccessCallback(void)
 {

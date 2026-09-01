@@ -64,6 +64,33 @@ enum CoopBridgeStatus
 
 #define COOP_NET_BRIDGE_PLAYER_STATE_INTERVAL 6
 #define COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL 180
+#define COOP_NET_BRIDGE_CHECKPOINT_TIMEOUT_FRAMES 180
+
+/* Checkpoint coordination is deliberately kept outside the wire structure.
+ * The structure above is an ABI shared with Lua and changing it would make
+ * old sidecars unsafe to use. */
+enum CoopCheckpointState
+{
+    COOP_CHECKPOINT_STATE_OFFLINE = 0,
+    COOP_CHECKPOINT_STATE_IDLE,
+    COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT,
+    COOP_CHECKPOINT_STATE_GRANTED,
+    COOP_CHECKPOINT_STATE_SAVING,
+    /* A save completed, but its completion event belongs to an older epoch.
+     * Normal save/checkpoint work is prohibited until an operator recovers
+     * the unreported save. */
+    COOP_CHECKPOINT_STATE_RECOVERY_REQUIRED,
+};
+
+enum CoopCheckpointRequestResult
+{
+    /* No cloud epoch has ever been accepted; normal local saves are allowed. */
+    COOP_CHECKPOINT_REQUEST_OFFLINE = 0,
+    /* A ready message was queued and the caller must wait for a grant. */
+    COOP_CHECKPOINT_REQUEST_STARTED,
+    /* A cloud epoch exists, but the active session is not safe to checkpoint. */
+    COOP_CHECKPOINT_REQUEST_REJECTED,
+};
 
 /* Stable, compact, little-endian ROM/Lua message defined by the product ABI.
  * checksum is CRC-32/IEEE over bytes 0..139, including zero-filled payload. */
@@ -145,10 +172,42 @@ bool8 CoopBridgeQueue_Pop(struct CoopBridgeQueue *queue, struct CoopBridgeMessag
 
 void CoopNetBridge_Init(void);
 void CoopNetBridge_Poll(void);
+enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
+bool8 CoopNetBridge_IsCloudMode(void);
+bool8 CoopNetBridge_IsRecoveryRequired(void);
+enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
+bool8 CoopNetBridge_ConsumeCheckpointGrant(void);
+bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
+/* Called by the normal save path after TrySavingData has completed. A failed
+ * save never emits a wire message; a successful save queues one critical,
+ * empty SAVE_DATA_UPDATED message and retries it from the poll loop if the
+ * outbound ring is full. */
+void CoopNetBridge_NotifySaveResult(bool8 save_succeeded);
 bool8 CoopNetBridge_EnqueueGameToNetwork(u16 type, const void *payload, u16 payload_size);
 bool8 CoopNetBridge_DequeueGameToNetwork(struct CoopBridgeMessage *message);
 bool8 CoopNetBridge_EnqueueNetworkToGame(const struct CoopBridgeMessage *message);
 bool8 CoopNetBridge_DequeueNetworkToGame(struct CoopBridgeMessage *message);
+
+#if TESTING
+enum CoopStartMenuTestSaveResult
+{
+    COOP_START_MENU_TEST_SAVE_IN_PROGRESS = 0,
+    COOP_START_MENU_TEST_SAVE_SUCCESS,
+    COOP_START_MENU_TEST_SAVE_CANCELED,
+    COOP_START_MENU_TEST_SAVE_ERROR,
+};
+
+/* The ROM test image has no existing start-menu callback harness. These
+ * test-only entry points exercise the production post-confirmation callbacks
+ * without opening UI windows or touching flash. */
+void CoopStartMenu_TestSetSaveDryRun(bool8 enabled);
+void CoopStartMenu_TestSetCheckpointRequired(bool8 required);
+u8 CoopStartMenu_TestRunSaveSavingMessageCallback(void);
+u8 CoopStartMenu_TestRunSaveDoSaveCallback(void);
+u8 CoopStartMenu_TestRunCheckpointWaitCallback(void);
+u8 CoopStartMenu_TestRunCheckpointAbortCallback(void);
+u8 CoopStartMenu_TestRunAuthorizedSaveCallback(void);
+#endif
 
 #define CoopNetBridge_PushTx CoopNetBridge_EnqueueGameToNetwork
 #define CoopNetBridge_PopTx CoopNetBridge_DequeueGameToNetwork
