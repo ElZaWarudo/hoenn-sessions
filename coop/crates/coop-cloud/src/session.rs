@@ -568,6 +568,12 @@ impl LeaseFence {
             client_instance_id,
         }
     }
+
+    /// Returns the revision-independent identity for this lease session.
+    #[must_use]
+    pub const fn stable_runtime_session(&self) -> crate::StableRuntimeSession {
+        crate::StableRuntimeSession::from_lease_fence(self)
+    }
 }
 
 /// Server-owned active lease descriptor.
@@ -704,6 +710,12 @@ impl LeaseContract {
             self.session_epoch,
             self.client_instance_id,
         )
+    }
+
+    /// Returns the revision-independent identity for this active lease.
+    #[must_use]
+    pub const fn stable_runtime_session(&self) -> crate::StableRuntimeSession {
+        crate::StableRuntimeSession::from_lease_contract(self)
     }
 }
 

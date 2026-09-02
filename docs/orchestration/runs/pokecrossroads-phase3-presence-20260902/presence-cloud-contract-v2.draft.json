@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase3-presence-20260902-cloud-runtime-identity-v2",
+  "unit_id": "presence-cloud-runtime-identity-v2",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Finalize additive, revision-independent cloud runtime identities for authenticated world presence and replace the rejected singleton-version test claim with exact structural-preservation evidence.",
+  "owned_files": [
+    "coop/crates/coop-cloud/src/presence.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/lib.rs"
+  ],
+  "required_context": [
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-cloud-contract.json",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/session.rs"
+  ],
+  "closed_decisions": [
+    "RuntimeBuildIdentity consists exactly of game_build_id, rom_sha256, mgba_version, bridge_abi, and protocol_version. Save revision is deliberately absent.",
+    "StableRuntimeSession consists exactly of session_id, character_id, session_epoch, and client_instance_id. Save revision, lease expiry, heartbeat cadence, and secrets are absent.",
+    "RuntimeLeaseFence nests the stable session and build identities; all JSON is strict and reuses validated strong types.",
+    "CompatibilityTarget, LeaseFence, and LeaseContract retain their existing fields, constructors, serialization, and save-fencing semantics. New conversions and accessors are additive.",
+    "Equality tests must prove revision independence and inequality for every dimension whose strong type currently admits multiple valid values: game_build_id, rom_sha256, mgba_version, session_id, character_id, session_epoch, and client_instance_id.",
+    "BridgeAbiVersion and ProtocolVersion currently admit only value 1. Tests must prove those singleton fields are present, preserved by conversion, and round-trip in strict JSON. They must not falsely claim an impossible inequality test. When a future validated value is admitted, its owning change must add the corresponding inequality regression."
+  ],
+  "forbidden_changes": [
+    "Do not edit ids.rs, server/launcher/sidecar/protocol/save/bridge/ROM code, Cargo manifests or lockfiles, documentation, or orchestration state outside owned_files.",
+    "Do not add a test-only invalid constructor, unsafe layout trick, deserialization bypass, or broaden BridgeAbiVersion/ProtocolVersion solely to manufacture inequality evidence.",
+    "Do not add save revision, expiry, credentials, channels, maps, regions, or mutable runtime state to these identity records.",
+    "Do not change existing save lease wire formats or constructors.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, or revert others' work."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "PCC2-001",
+      "description": "RuntimeBuildIdentity, StableRuntimeSession, and RuntimeLeaseFence expose the exact closed fields through validated strong types and reject malformed or unknown JSON."
+    },
+    {
+      "id": "PCC2-002",
+      "description": "Additive conversions from CompatibilityTarget, LeaseFence, and LeaseContract preserve every stable value without changing existing save-fence constructors or serialized contracts."
+    },
+    {
+      "id": "PCC2-003",
+      "description": "Tests prove revision independence; inequality for every currently multi-valued build/session dimension; and explicit conversion plus strict-JSON preservation of singleton bridge ABI and protocol dimensions without claiming singleton inequality."
+    },
+    {
+      "id": "PCC2-004",
+      "description": "Cloud tests, strict clippy, workspace check, formatting, metadata, and diff checks pass with changes confined to owned_files."
+    }
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n RuntimeBuildIdentity coop/crates/coop-cloud/src"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud --all-features --locked",
+        "rtk cargo clippy -p coop-cloud --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo check --workspace --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 1,
+    "fix_rounds": 1,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 600000
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "A required change would broaden a singleton version type or cross owned_files."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "runtime-audited",
+    "changed_files_source": "root-diff"
+  }
+}

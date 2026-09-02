@@ -1,0 +1,105 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "RuntimeBuildIdentity and StableRuntimeSession/RuntimeLeaseFence expose only the exact closed fields, validate through existing strong types, and round-trip strict JSON.",
+      "id": "PCC-001"
+    },
+    {
+      "description": "CompatibilityTarget and lease/fence additive conversion methods produce revision-independent identities without changing any existing serialized contract or constructor.",
+      "id": "PCC-002"
+    },
+    {
+      "description": "Tests prove revision changes preserve runtime identity while every build/session/character/epoch/client change partitions it, and unknown/malformed JSON is rejected.",
+      "id": "PCC-003"
+    },
+    {
+      "description": "Cloud and workspace compilation tests, strict cloud clippy, formatting, locked metadata, and diff checks pass with changes confined to owned_files.",
+      "id": "PCC-004"
+    }
+  ],
+  "closed_decisions": [
+    "RuntimeBuildIdentity contains exactly GameBuildId, Sha256Digest, MgbaVersion, BridgeAbiVersion, and ProtocolVersion. It never contains save Revision, shard, region, username, or caller-controlled extension data.",
+    "StableRuntimeSession contains exactly SessionId, CharacterId, SessionEpoch, and ClientInstanceId. RuntimeLeaseFence combines StableRuntimeSession plus RuntimeBuildIdentity. It excludes Revision, expiry, heartbeat cadence, tokens, and mutable presence pose.",
+    "Additive conversions derive RuntimeBuildIdentity from CompatibilityTarget and StableRuntimeSession from LeaseFence/LeaseContract. Conversions must copy only validated strong types; do not parse arbitrary maps or JSON blobs.",
+    "Do not change the serialized shape, constructors, or semantics of LeaseFence, LeaseContract, CompatibilityTarget, resume manifests, snapshots, acquire/heartbeat/reconnect/release requests, or any existing API. Save operations continue to use the revision-bearing LeaseFence.",
+    "Runtime identity equality and hashing are revision-independent. Two CompatibilityTargets differing only in Revision yield equal RuntimeBuildIdentity values; any build field difference yields inequality. Two lease fences differing only in Revision yield equal StableRuntimeSession values; session, character, epoch, or client changes yield inequality.",
+    "All new public structured JSON types deny unknown fields and reuse existing bounded/validated strong ID and compatibility types. No token, password, ticket, secret, URL, or raw emulator path may enter these types or their Debug output.",
+    "This unit defines the trust-bearing types only. The later authenticated server adapter owns persistence/binding of RuntimeBuildIdentity to an active lease and ticket issuance; do not add server, launcher, sidecar, or transport behavior here."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-cloud/src/lib.rs coop/crates/coop-cloud/src/resume.rs coop/crates/coop-cloud/src/session.rs",
+      "rtk rg -n Runtime coop/crates/coop-cloud/src"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud --all-features --locked",
+        "rtk cargo clippy -p coop-cloud --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo check --workspace --all-features --locked"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:e1b03638d7e4da204a6219ffb064e7de742baebbc7259577aac05d720762e732",
+  "contract_id": "pokecrossroads-phase3-presence-20260902-cloud-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit Cargo manifests/lock, protocol/server/sidecar/launcher, C/ROM, Lua/bridge, generators/manifests, docs outside this contract, or orchestration artifacts.",
+    "Do not add runtime build fields to existing lease/save wire formats in this unit, remove or ignore Revision from save fencing, accept unvalidated strings for strong IDs, add dependencies, unsafe Rust, allow attributes, or secrets.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Add revision-independent runtime build and stable lease identity contracts for authenticated presence while preserving every existing revision-bearing save fence and wire schema.",
+  "owned_files": [
+    "coop/crates/coop-cloud/src/presence.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/lib.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/lib.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "An existing public wire contract would need a breaking change or the implementation would cross owned_files."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "presence-runtime-identity-contracts"
+}

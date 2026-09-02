@@ -8,6 +8,7 @@
 
 pub mod auth;
 pub mod ids;
+pub mod presence;
 pub mod resume;
 pub mod security;
 pub mod session;
@@ -23,6 +24,7 @@ pub use ids::{
     IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId, Revision, SessionEpoch,
     SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp, UnixTimestampMillis, UserId,
 };
+pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 pub use resume::{
     CompatibilityError, CompatibilityTarget, CreatedAt, ManifestBuildInfo, ManifestSignature,
     ManifestSigningKey, PackageArtifact, RESUME_MANIFEST_VERSION, ResumeError,

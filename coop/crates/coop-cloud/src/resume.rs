@@ -674,6 +674,13 @@ impl CompatibilityTarget {
             && self.protocol_version == manifest.protocol_version
             && self.revision == manifest.revision
     }
+
+    /// Returns the revision-independent identity of the runtime described by
+    /// this compatibility target.
+    #[must_use]
+    pub fn runtime_build_identity(&self) -> crate::RuntimeBuildIdentity {
+        crate::RuntimeBuildIdentity::from_compatibility_target(self)
+    }
 }
 
 /// A launcher trust root kept outside the package being verified.
