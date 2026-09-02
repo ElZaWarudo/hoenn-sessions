@@ -9,6 +9,7 @@
 pub mod auth;
 pub mod ids;
 pub mod presence;
+pub mod realtime;
 pub mod resume;
 pub mod security;
 pub mod session;
@@ -25,6 +26,16 @@ pub use ids::{
     SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp, UnixTimestampMillis, UserId,
 };
 pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
+pub use realtime::{
+    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
+    MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, MintRealtimeTicketRequest, MintRealtimeTicketResponse,
+    PRESENCE_INTERPOLATION_DELAY_MS, PRESENCE_SEND_RATE_HZ, PRESENCE_STALE_MS, PresenceReadyV1,
+    REALTIME_TICKET_ENCODED_LEN, REALTIME_TICKET_ENTROPY_BYTES,
+    REALTIME_TICKET_REQUEST_BODY_MAX_BYTES, REALTIME_TICKET_TTL_MS, RealtimeError, RealtimeVersion,
+    RealtimeVersionError, ServerRealtimeFrameV1, decode_client_frame, decode_client_realtime_frame,
+    decode_server_frame, decode_server_realtime_frame, encode_client_frame,
+    encode_client_realtime_frame, encode_server_frame, encode_server_realtime_frame,
+};
 pub use resume::{
     CompatibilityError, CompatibilityTarget, CreatedAt, ManifestBuildInfo, ManifestSignature,
     ManifestSigningKey, PackageArtifact, RESUME_MANIFEST_VERSION, ResumeError,
@@ -32,8 +43,8 @@ pub use resume::{
     SavestateFallbackReason, SignedManifestEnvelope, TrustedManifestKey,
 };
 pub use security::{
-    AccessToken, InvitationCode, LoopbackSecret, Password, RefreshToken, SecretError, SigningKey,
-    SigningPrivateKey,
+    AccessToken, InvitationCode, LoopbackSecret, Password, RealtimeTicket, RefreshToken,
+    SecretError, SigningKey, SigningPrivateKey,
 };
 pub use session::{
     AcquireLeaseRequest, AcquireRequest, CharacterCloudState, HeartbeatLeaseRequest,

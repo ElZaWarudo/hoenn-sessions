@@ -1,0 +1,128 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "RealtimeVersion is a closed numeric V1 value and strict mint request/response DTOs carry exactly realtime_version plus the complete RuntimeLeaseFence, with the response additionally carrying one validated ticket and nonzero expiry; request correlation is exact and revision-independent.",
+      "id": "RTC-001"
+    },
+    {
+      "description": "RealtimeTicket validates canonical unpadded base64url for exactly 32 nonzero entropy bytes, rejects aliases and malformed input, redacts Debug and Display, zeroizes its owned string, exposes secrets only explicitly, and produces the domain-separated golden SHA-256 fingerprint.",
+      "id": "RTC-002"
+    },
+    {
+      "description": "Client and server V1 frame enums round-trip exact three-key JSON envelopes for PLAYER_STATE, INTERACT_REMOTE_PLAYER, PRESENCE_READY, REMOTE_PLAYER_SPAWN, REMOTE_PLAYER_UPDATE, and REMOTE_PLAYER_DESPAWN while rejecting wrong direction, wrong case, duplicates, omissions, extras, and invalid nested presence invariants.",
+      "id": "RTC-003"
+    },
+    {
+      "description": "PresenceReadyV1 privately stores only the self handle, serializes the fixed 10 Hz, 100 ms interpolation, and 1500 ms staleness contract, and rejects any timing tampering; gameplay frames contain no credential, ticket, access token, lease, build, save revision, session envelope, or global protocol field.",
+      "id": "RTC-004"
+    },
+    {
+      "description": "Directional UTF-8 JSON encode/decode entry points enforce the 1024-byte client and 2048-byte server caps before Serde parsing and after encoding, return stable non-reflective errors, and prove maximum constructible valid variants fit their respective caps.",
+      "id": "RTC-005"
+    },
+    {
+      "description": "Deterministic tests cover golden ticket encoding/fingerprint/redaction, every malformed ticket and version class, exact mint/frame key sets, duplicate and nested unknown fields, expiry zero/overflow and 30000 ms TTL constants, direction confusion, readiness timing tampering, size boundaries, and absence of secret or runtime metadata from gameplay frames.",
+      "id": "RTC-006"
+    },
+    {
+      "description": "Focused and full coop-cloud/workspace tests, strict workspace clippy, formatting, locked metadata, and diff checks pass with changes confined to owned_files and without changing the global game/bridge protocol version.",
+      "id": "RTC-007"
+    }
+  ],
+  "closed_decisions": [
+    "This unit adds contract-only Rust DTOs and validation to coop-cloud. It does not add HTTP routes, WebSocket dependencies, ticket storage, server state, sidecar behavior, launcher behavior, Lua/C/ROM behavior, background tasks, or deployment configuration.",
+    "CURRENT_REALTIME_VERSION is 1 and is independent from auth ApiVersion and game ProtocolVersion. Keep bridge ABI and global game protocol at 1 in this unit; an atomic later activation package may move the game protocol to 2 while realtime frame version remains 1.",
+    "Export constants CURRENT_REALTIME_VERSION=1, REALTIME_TICKET_ENTROPY_BYTES=32, REALTIME_TICKET_ENCODED_LEN=43, REALTIME_TICKET_TTL_MS=30000, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES=8192, PRESENCE_SEND_RATE_HZ=10, PRESENCE_INTERPOLATION_DELAY_MS=100, PRESENCE_STALE_MS=1500, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES=1024, and MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES=2048.",
+    "RealtimeVersion is a private-field closed value with only V1 construction and numeric JSON. It accepts only the integer 1 and rejects 0, 2, strings, floats, negative values, and overflow. Wire fields are named realtime_version.",
+    "RealtimeTicket owns Zeroizing<String>. Canonical text is exactly 43 ASCII bytes in the unpadded base64url alphabet [A-Za-z0-9_-], with final character restricted to AEIMQUYcgkosw048, and the all-zero 43-A value rejected. Provide validated parsing/serde, construction from [u8;32], expose_secret, and a fingerprint returning the existing Sha256Digest over SHA256(ASCII domain pokecrossroads/realtime-ticket/v1 followed by NUL followed by canonical ticket ASCII). Debug and Display emit exactly [REDACTED]. Do not implement Copy, Default, Hash, Ord, AsRef<str>, or Clone.",
+    "The golden entropy bytes 00 through 1f encode to AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8 and fingerprint to 6a2e6257fae4c2cb8ca876142aa61c4ec641f5de9035241c88d8fa9f5a837884. No new dependency is needed: use existing sha2 and a small fixed-width canonical base64url codec.",
+    "MintRealtimeTicketRequest has only private realtime_version and runtime RuntimeLeaseFence fields. MintRealtimeTicketResponse has those fields plus private RealtimeTicket and nonzero UnixTimestampMillis expires_at. Both use strict custom or helper-wire serde, constructors, accessors, and exact matches_request correlation. Provide checked TTL addition over milliseconds so issued_at plus 30000 rejects u64 overflow; the later server remains responsible for issuance time and expiry enforcement.",
+    "Do not include access tokens in mint DTOs; HTTPS Authorization owns them. Do not include username, presence handle, state, location, revision, endpoint URL, or idempotency key. Replaying mint safely would require retaining plaintext capability material and is deliberately excluded.",
+    "ClientRealtimeFrameV1 variants are PlayerState(LocalPresenceStateV1) and InteractRemotePlayer(PresenceInteractionV1). ServerRealtimeFrameV1 variants are PresenceReady(PresenceReadyV1), RemotePlayerSpawn(RemotePlayerSpawnV1), RemotePlayerUpdate(RemotePlayerUpdateV1), and RemotePlayerDespawn(RemotePlayerDespawnV1). Constructors always bind RealtimeVersion V1.",
+    "Every frame serializes exactly three top-level keys: realtime_version, type, and payload. Type strings are exact uppercase PLAYER_STATE, INTERACT_REMOTE_PLAYER, PRESENCE_READY, REMOTE_PLAYER_SPAWN, REMOTE_PLAYER_UPDATE, and REMOTE_PLAYER_DESPAWN. The first client application frame in the later adapter is PLAYER_STATE; PRESENCE_READY is server-only and precedes initial spawns.",
+    "PresenceReadyV1 privately stores only PresenceHandle. Its custom wire projection emits self_handle, send_rate_hz 10, interpolation_delay_ms 100, and stale_presence_ms 1500; deserialization rejects any other timing. Accessors return the handle and fixed constants.",
+    "Frames deliberately omit session_id, session_epoch, RuntimeLeaseFence, build identity, global ProtocolVersion, ticket, access token, outer sequence, and acknowledgement fields. Ticket redemption binds runtime identity and accepted presence DTOs already carry source/server sequencing.",
+    "Public directional functions decode client/server frames from &[u8] and encode client/server frames to Vec<u8>. They reject oversized input before UTF-8 or Serde work, reject invalid UTF-8 as malformed, enforce the corresponding cap after encoding, and never embed attacker-controlled content in RealtimeError or its Display output. They model assembled text application messages only; the later WebSocket adapter must reject binary application messages and independently configure an assembly-level cap.",
+    "The ticket may later travel only in a WebSocket Authorization header over WSS, except literal 127.0.0.1 or ::1 loopback WS. It must never enter URL/query/path, subprotocol, frames, argv, environment, session files, tracing, or logs. This wrapper zeroizes only its owned allocation; no claim is made about serializer, network, or header buffers.",
+    "The later server adapter must store only the ticket fingerprint bound to authenticated UserId plus the complete RuntimeLeaseFence, replace any outstanding ticket for the same stable runtime atomically, revalidate the active lease during redemption, consume before upgrade, treat now >= expires_at as expired, use Cache-Control no-store, and collapse public authentication failures. Those behaviors are context for compatibility but are not implemented in this unit."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-cloud",
+      "rtk rg -n Realtime coop/crates/coop-cloud"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud realtime --all-features --locked",
+        "rtk cargo test -p coop-cloud --all-features --locked",
+        "rtk cargo clippy -p coop-cloud --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_id": "pokecrossroads-phase3-realtime-20260902-cloud-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1200000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit Cargo manifests/lock, coop-protocol, coop-server, launcher, sidecar, bridge/Lua, C/ROM, dist manifests, generated catalogs, database state, deployment files, general documentation, or orchestration artifacts outside this contract.",
+    "Do not add HTTP/WebSocket code or dependencies, ticket persistence, plaintext ticket fingerprinting/storage, secret logging, URL-borne credentials, compatibility fallback, global protocol bump, auth API change, arbitrary JSON Value-based public wire model, unsafe Rust, allow attributes, unbounded values, or regionless identities.",
+    "Do not weaken existing presence DTO validation, runtime fence validation, secret redaction, bounded deserialization, or compiler/lint policy.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Implement strict, bounded and secret-safe coop-cloud V1 realtime ticket, mint, readiness, and presence-frame contracts as the protocol-only foundation for later authenticated WebSocket transport activation.",
+  "owned_files": [
+    "coop/crates/coop-cloud/src/realtime.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/lib.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-wire-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-cloud-contract-v2.json",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/presence.rs",
+    "coop/crates/coop-protocol/src/presence.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "A required invariant cannot be implemented without changing a closed decision, adding transport/server behavior, or crossing owned_files."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "realtime-cloud-contracts"
+}
