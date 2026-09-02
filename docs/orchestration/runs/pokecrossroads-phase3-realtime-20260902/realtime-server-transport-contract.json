@@ -1,0 +1,141 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "POST /v1/realtime/tickets authenticates the existing access bearer, strictly correlates the complete RuntimeLeaseFence to the authenticated owner and active exact lease/build under the shared runtime transition gate, and returns one 30-second no-store V1 ticket response while storing only its domain-separated fingerprint.",
+      "id": "RST-001"
+    },
+    {
+      "description": "Ticket state enforces exactly one outstanding ticket per user plus StableRuntimeSession, 1024 unexpired tickets globally, 16 bounded entropy candidates, mutation-last forward/reverse indexes, atomic same-runtime replacement, exact expiry at now greater than or equal to expires_at, and one-use linearizable redemption with invalid/replayed/expired/fence/user/build cases collapsed to authentication_failed.",
+      "id": "RST-002"
+    },
+    {
+      "description": "GET /v1/realtime rejects every query and requested subprotocol, validates a single exact Authorization Bearer ticket header without placing credentials in URL/subprotocol/body/logs, reserves capacity before consuming, revalidates under the runtime gate, consumes before successful upgrade, applies exact WebSocket assembly caps, and adds Cache-Control no-store to every realtime route response including errors and 101.",
+      "id": "RST-003"
+    },
+    {
+      "description": "The WebSocket loop requires PLAYER_STATE as the first application frame within an absolute 3000 ms deadline, connects through PresenceService before emitting PRESENCE_READY then initial spawns, publishes/drains at 10 Hz, maps all presence outbound variants in FIFO order, validates interactions without claiming an unimplemented group result, and disconnects exactly once on every normal, error, cancellation, replacement, lease, and write-failure exit.",
+      "id": "RST-004"
+    },
+    {
+      "description": "Transport admission is cancellation-safe and bounded at 1024 global pending/upgraded sockets and 2 per user plus StableRuntimeSession; inbound text/control frames are limited to 64 per rolling 1000 ms, binary/wrong-direction/malformed/oversized frames fail closed, due ticks cannot be starved by input, outbound batches use an absolute 500 ms deadline, and close attempts are best-effort bounded to 250 ms.",
+      "id": "RST-005"
+    },
+    {
+      "description": "Deterministic unit and real-loopback HTTP/WebSocket tests cover mint response/fingerprint-only storage, replacement/expiry/collision/capacity/index corruption, concurrent mint/redeem/lease orderings, every public error collapse, exact body/header/query/subprotocol/no-store behavior, first-frame/decode/size/rate/write bounds, symmetric two-user ready-spawn-update-despawn flow, stale capability replacement, and RAII cleanup.",
+      "id": "RST-006"
+    },
+    {
+      "description": "Locked metadata, focused/full coop-server and workspace tests, strict workspace clippy, formatting, phase2 smoke validation, and diff checks pass with changes confined to owned files and without changing the global game/bridge protocol version or enabling non-loopback plaintext serving.",
+      "id": "RST-007"
+    }
+  ],
+  "closed_decisions": [
+    "This unit implements the first authenticated loopback WebSocket presence vertical slice on the existing Phase2 server. Production deployment still requires an external or later in-process TLS terminator providing WSS; serve_phase2_local must remain loopback-only and plaintext must never be enabled on a non-loopback interface.",
+    "Add POST /v1/realtime/tickets and GET /v1/realtime. Ticket mint uses the normal access bearer plus the strict MintRealtimeTicketRequest body. WebSocket redemption uses exactly one Authorization: Bearer <ticket> header. Tickets never appear in URL/query/path, Sec-WebSocket-Protocol, frames, argv, environment, session files, traces, diagnostics, or logs.",
+    "Every realtime response, including 101, 400, 401, 405, 413, 500, and 503, carries exactly Cache-Control: no-store. Reject any query (including an empty query marker) and any requested WebSocket subprotocol before parsing or burning the ticket. Resolve the framework upgrade rejection before ticket consumption.",
+    "Use the accepted coop-cloud V1 contracts unchanged. RealtimeVersion remains independent at 1; keep the global game/bridge protocol and ABI at 1. The frame envelope is the strict three-key realtime_version/type/payload contract, superseding README section 24.2 for this presence channel.",
+    "Ticket entropy is 32 bytes and TTL is 30000 ms. Generate at most 16 candidates outside locks, reject all-zero material through RealtimeTicket, store only RealtimeTicket::fingerprint, and never use the generic undomain-separated Store::token_fingerprint. Raw candidates should be zeroized where practical.",
+    "Bind the forward ticket record to authenticated UserId and the complete revision-independent RuntimeLeaseFence. Bind the reverse index to UserId plus StableRuntimeSession so a later mint atomically replaces the earlier capability for that runtime. Count only unexpired tickets toward the 1024 cap; allow replacement at cap; validate both indexes and construct all fallible outputs before mutation.",
+    "All mint and redemption lease decisions use the same Store runtime_transition_gate as acquire, heartbeat, reconnect, release, and PresenceService. The linearization order is gate then repository; do not hold ticket/admission/socket locks while acquiring the gate or repository. Because repository write callbacks are not rollback transactions on Err, use mutation-free errors or an explicit committed disposition and mutate only after validation succeeds.",
+    "Upgrade order is: reject query; reject subprotocol; validate the framework WebSocket handshake; parse the exact ticket header; reserve one global pending transport; preflight ticket/lease; bind the reservation to the discovered user plus StableRuntimeSession; repeat validation and atomically remove both ticket indexes; release synchronous locks; call on_upgrade. A capacity failure or malformed handshake does not burn a ticket; a successful 101 does.",
+    "Transport admission permits at most 1024 global pending/upgraded sockets and 2 per UserId plus StableRuntimeSession, allowing one replacement socket while the old socket drains. Permits are RAII and released on every handler/task cancellation or exit. PresenceConnection generation fencing ensures an old socket guard cannot remove its replacement.",
+    "Configure assembled message and frame caps to MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES (1024), a 1024-byte read buffer, eager writes, a 4096-byte maximum write buffer, and masked client frames. Reject binary application messages. Count Text, Binary, Ping, and Pong against a rolling 64-frame/1000-ms inbound limit; Close is exempt. Ping/Pong never extend the initial application deadline.",
+    "The first application message must be ClientRealtimeFrameV1::PlayerState within an absolute 3000 ms. Arm the generation-protected PresenceService disconnect guard immediately after connect_and_drain and before the first send. Send PresenceReady before the initial drained FIFO. Thereafter prioritize a due 100-ms tick over inbound traffic, submit state, call tick and drain, and map Spawn/Update/Despawn directly to server frame constructors.",
+    "INTERACT_REMOTE_PLAYER is validated by PresenceService and deliberately has no additional side effect or success frame in this unit because the group-invite/result contract is not yet defined. Invalid interaction closes generically; successful validation is consumed without claiming group functionality.",
+    "Use a 500-ms absolute deadline for each complete outbound ready/FIFO batch and a 250-ms best-effort close deadline. Binary uses close 1003; policy/malformed/direction/rate/sensitive presence failures use generic 1008; assembled size uses 1009 when observable; capacity uses 1013; internal service/codec failure uses 1011. A blocked or failed write terminates without an unbounded second write.",
+    "Public HTTP mapping is exact: malformed JSON/handshake/query/subprotocol is 400 invalid_request; mint body over 8192 is 413 payload_too_large; every ticket/identity/user/owner/lease/fence/epoch/client/build authentication failure is 401 authentication_failed; ticket/transport capacity is 503 service_busy; entropy/index poison/internal invariant failure is 500 internal_error. Never reflect attacker-controlled input or precise rejection causes.",
+    "Enable only Axum's ws feature for production. Add futures-util 0.3.34 and tokio-tungstenite 0.29.0 as direct test dependencies only if the real loopback client requires them. Do not add TLS, base64, SHA, random, tracing, or alternate WebSocket libraries.",
+    "Substantive deterministic tests live beside the service and use existing FixedClock, FixedEntropy, real register/login/header-auth/acquire fixtures, synchronization barriers, and bounded Tokio time. Extend phase2_http only as needed for one real-binary mint-upgrade-first-state-ready smoke and response header evidence."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-server Cargo.toml Cargo.lock",
+      "rtk rg -n realtime coop/crates/coop-server"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server realtime --all-features --locked",
+        "rtk cargo test -p coop-server --test phase2_http --all-features --locked",
+        "rtk cargo test -p coop-server --all-features --locked",
+        "rtk cargo clippy -p coop-server --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk python tools/smoke_phase2.py",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:45ce55e3ccf8324b19f95b510929014298f06ff2ec8d066fbd20e1b4b88698c7",
+  "contract_id": "pokecrossroads-phase3-realtime-20260902-server-transport-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 3,
+    "implementation_rounds": 3,
+    "max_elapsed_ms": 2400000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit coop-cloud, coop-protocol, presence.rs, auth.rs, sessions.rs, saves.rs, launcher, sidecar, Lua/C/ROM, deployment files, generated artifacts, general documentation, or orchestration state outside this contract.",
+    "Do not expose plaintext tickets/fingerprints, reuse generic token hashing, log credentials or fences, accept query/subprotocol credentials, burn tickets before handshake/capacity validation, return precise authentication causes, add unbounded queues/tasks/reads/writes, or hold synchronous locks across await.",
+    "Do not change the accepted realtime/presence DTOs, global protocol/ABI, build identity, lease semantics, regional partition identity, non-loopback bind policy, or enable plaintext remote serving.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Implement a bounded, secret-safe, one-use-ticket authenticated loopback WebSocket adapter that connects two real regional sessions through the accepted PresenceService and realtime contracts.",
+  "owned_files": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "coop/crates/coop-server/Cargo.toml",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2/realtime.rs",
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-server-contract-v3.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-realtime-20260902/realtime-cloud-contract.json",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/sessions.rs",
+    "coop/crates/coop-server/src/phase2/presence.rs",
+    "coop/crates/coop-server/tests/phase2_http.rs",
+    "coop/crates/coop-cloud/src/realtime.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "The accepted presence/realtime APIs lack a required safe seam that cannot be added inside owned files.",
+      "A production-TLS requirement is interpreted as requiring deployment or non-loopback plaintext changes, which are expressly outside this unit.",
+      "A concrete dependency/toolchain or isolated-worktree failure prevents further progress within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "realtime-server-transport"
+}
