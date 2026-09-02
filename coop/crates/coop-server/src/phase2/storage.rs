@@ -6,10 +6,11 @@ use argon2::{
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use coop_cloud::{
-    CharacterCloudState, CharacterId, ClientInstanceId, CommitId, IdempotencyKey, LeaseContract,
-    RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId, SigningPrivateKey, SnapshotFile,
-    SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
-    SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
+    CharacterCloudState, CharacterId, ClientInstanceId, CommitId, Group, GroupId,
+    GroupInvitationId, IdempotencyKey, LeaseContract, RefreshFamilyId, Revision, RuntimeLeaseFence,
+    SessionId, SigningPrivateKey, SnapshotFile, SnapshotFinalizeRequest, SnapshotId,
+    SnapshotPrepareRequest, SnapshotRecord, SnapshotRestoreRequest, StableRuntimeSession,
+    UnixTimestampMillis, UploadTarget, UserId,
 };
 use coop_protocol::{RegionId, RegionalProgress, WorldZone};
 use getrandom::fill as random_fill;
@@ -58,6 +59,10 @@ pub const MAX_FAMILY_RECORDS_GLOBAL: usize = 4_096;
 /// Maximum number of unexpired realtime capabilities retained by one local
 /// server process.
 pub const MAX_REALTIME_TICKETS_GLOBAL: usize = 1_024;
+pub const GROUP_INVITATION_TTL_MS: u64 = coop_cloud::GROUP_INVITATION_TTL_MS;
+pub const MAX_GROUP_INVITATIONS: usize = 1_024;
+pub const MAX_GROUP_IDEMPOTENCY: usize = 4_096;
+pub const GROUP_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StorageMode {
@@ -646,8 +651,50 @@ pub(crate) struct CharacterRecord {
     pub owner: UserId,
     pub state: CharacterCloudState,
     pub revision: Revision,
+    /// Runtime world revision, independent from snapshot/save revision.
+    pub world_revision: u64,
     pub active_snapshot: Option<SnapshotId>,
     pub last_session_epoch: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GroupStatus {
+    Active,
+    #[allow(
+        dead_code,
+        reason = "terminal group lifecycle is reserved for the later leave unit"
+    )]
+    Closed,
+}
+
+#[derive(Clone)]
+pub(crate) struct GroupRecord {
+    pub group: Group,
+    pub zone: WorldZone,
+    pub status: GroupStatus,
+}
+
+#[derive(Clone)]
+pub(crate) struct GroupInvitationRecord {
+    pub invitation_id: GroupInvitationId,
+    pub inviter: CharacterId,
+    pub invitee: CharacterId,
+    pub expires_at: u64,
+    pub consumed: bool,
+}
+
+#[derive(Clone)]
+pub(crate) enum GroupIdempotencyResponse {
+    Invitation(coop_cloud::CreateGroupInvitationResponse),
+    Accept(coop_cloud::AcceptGroupInvitationResponse),
+    Travel(coop_cloud::GroupTravelResponse),
+}
+
+#[derive(Clone)]
+pub(crate) struct GroupIdempotencyRecord {
+    pub fingerprint: [u8; 32],
+    pub response: GroupIdempotencyResponse,
+    pub expires_at: u64,
 }
 #[derive(Clone)]
 pub(crate) struct AccessRecord {
@@ -768,6 +815,11 @@ pub struct State {
     /// Repository-side ownership records close the check-then-delete race
     /// between failed uploads and concurrent finalization.
     pub(crate) upload_objects: HashMap<String, UploadObjectRecord>,
+    pub(crate) groups: HashMap<GroupId, GroupRecord>,
+    pub(crate) active_group_by_member: HashMap<CharacterId, GroupId>,
+    pub(crate) group_invitations: HashMap<GroupInvitationId, GroupInvitationRecord>,
+    pub(crate) group_idempotency:
+        HashMap<(CharacterId, String, IdempotencyKey), GroupIdempotencyRecord>,
 }
 #[derive(Clone)]
 pub(crate) struct Store {

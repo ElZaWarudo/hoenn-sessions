@@ -97,6 +97,7 @@ pub(crate) fn register(
                 owner: user_id,
                 state: character_state,
                 revision: Revision::initial(),
+                world_revision: 0,
                 active_snapshot: None,
                 last_session_epoch: 0,
             },

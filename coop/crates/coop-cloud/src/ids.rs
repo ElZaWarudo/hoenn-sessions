@@ -257,6 +257,14 @@ uuid_id!(
     /// A request idempotency key.
     IdempotencyKey
 );
+uuid_id!(
+    /// A server-issued symmetric group identifier.
+    GroupId
+);
+uuid_id!(
+    /// A server-issued group invitation identifier.
+    GroupInvitationId
+);
 
 /// A monotonically increasing snapshot or character revision.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

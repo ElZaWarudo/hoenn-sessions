@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod group;
 pub mod ids;
 pub mod presence;
 pub mod realtime;
@@ -20,10 +21,17 @@ pub use auth::{
     LogoutResponse, RefreshRequest, RefreshResponse, RefreshTokenRequest, RefreshTokenResponse,
     RegisterRequest, RegisterResponse, RegistrationRequest, RegistrationResponse, Username,
 };
+pub use group::{
+    AcceptGroupInvitationRequest, AcceptGroupInvitationResponse, CreateGroupInvitationRequest,
+    CreateGroupInvitationResponse, GROUP_INVITATION_TTL_MS, GROUP_REQUEST_BODY_MAX_BYTES,
+    GROUP_ROUTE_ID_MAX_BYTES, Group, GroupError, GroupInvitationView, GroupMemberView,
+    GroupTravelRequest, GroupTravelResponse, GroupView, MAX_WORLD_REVISION, RouteId,
+};
 pub use ids::{
-    BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, IdError,
-    IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId, Revision, SessionEpoch,
-    SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp, UnixTimestampMillis, UserId,
+    BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,
+    GroupInvitationId, IdError, IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId,
+    Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp,
+    UnixTimestampMillis, UserId,
 };
 pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 pub use realtime::{

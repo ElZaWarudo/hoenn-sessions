@@ -79,6 +79,7 @@ where
 use thiserror::Error;
 
 pub mod auth;
+pub(crate) mod group_travel;
 pub mod presence;
 pub(crate) mod realtime;
 pub mod saves;
@@ -250,7 +251,7 @@ impl Phase2App {
         Self::new(config).expect("test config is local")
     }
 
-    pub(crate) fn router(&self) -> Router {
+    pub fn router(&self) -> Router {
         Router::new()
             .merge(
                 Router::new()
@@ -299,6 +300,20 @@ impl Phase2App {
                 Router::new()
                     .route("/v1/uploads/{ticket}", put(upload))
                     .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024)),
+            )
+            .merge(
+                Router::new()
+                    .route("/v1/groups/invitations", post(create_group_invitation))
+                    .route(
+                        "/v1/groups/invitations/{invitation_id}/accept",
+                        post(accept_group_invitation),
+                    )
+                    .route("/v1/groups/{group_id}", get(inspect_group))
+                    .route("/v1/groups/{group_id}/travel", post(travel_group))
+                    .layer(axum::extract::DefaultBodyLimit::max(
+                        coop_cloud::GROUP_REQUEST_BODY_MAX_BYTES,
+                    ))
+                    .layer(axum::middleware::from_fn(group_no_store)),
             )
             .merge(realtime::router())
             .layer(axum::middleware::from_fn(reject_oversized_request_target))
@@ -507,7 +522,34 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: &SnapshotRestoreRequest,
     ) -> Result<coop_cloud::SnapshotRestoreResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        validate_restore_target(&self.store, actor, request.character_id)?;
         saves::restore(&self.store, actor, request)
+    }
+
+    /// Restores a selected finalized snapshot under the same runtime
+    /// transition boundary as ordinary restore.
+    ///
+    /// # Errors
+    ///
+    /// Returns an ownership, stale-fence, CAS, or infrastructure error.
+    pub fn restore_at(
+        &self,
+        actor: AuthenticatedActor,
+        request: &SnapshotRestoreRequest,
+        source_revision: u64,
+    ) -> Result<coop_cloud::SnapshotRestoreResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        validate_restore_target(&self.store, actor, request.character_id)?;
+        saves::restore_at(&self.store, actor, request, source_revision)
     }
     /// Adds a one-use invitation during local bootstrap.
     ///
@@ -516,6 +558,80 @@ impl Phase2App {
     /// Returns an infrastructure error if local state cannot be accessed.
     pub fn add_invitation(&self, code: &str) -> Result<(), Phase2Error> {
         auth::add_invitation(&self.store, code)
+    }
+
+    /// Creates one pending invitation under the caller's active lease.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, policy, conflict, capacity, or storage error.
+    pub fn create_group_invitation(
+        &self,
+        actor: AuthenticatedActor,
+        request: coop_cloud::CreateGroupInvitationRequest,
+    ) -> Result<coop_cloud::CreateGroupInvitationResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        group_travel::create_invitation(&self.store, actor, &request)
+    }
+
+    /// Consumes an invitation and creates a symmetric group atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, policy, conflict, capacity, or storage error.
+    pub fn accept_group_invitation(
+        &self,
+        actor: AuthenticatedActor,
+        invitation_id: coop_cloud::GroupInvitationId,
+        request: coop_cloud::AcceptGroupInvitationRequest,
+    ) -> Result<coop_cloud::AcceptGroupInvitationResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        group_travel::accept_invitation(&self.store, actor, invitation_id, &request)
+    }
+
+    /// Returns an active group owned by the caller and fenced to its lease.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found, fence, or storage error.
+    pub fn inspect_group(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::GroupView, Phase2Error> {
+        group_travel::inspect_group(&self.store, actor, group_id, fence)
+    }
+
+    /// Moves both members through one server-owned route atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, policy, conflict, capacity, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn travel_group(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::GroupTravelRequest,
+    ) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        group_travel::travel(&self.store, actor, group_id, &request)
     }
 }
 
@@ -535,6 +651,40 @@ fn phase2_app_from_values(
     let app = Phase2App::new(config)?;
     app.add_invitation(invitation.expose_secret())?;
     Ok(app)
+}
+
+fn validate_restore_target(
+    store: &Store,
+    actor: AuthenticatedActor,
+    character_id: CharacterId,
+) -> Result<(), Phase2Error> {
+    store.read_transaction(|state| {
+        let user = state
+            .users_by_id
+            .get(&actor.user_id)
+            .ok_or(Phase2Error::Authentication)?;
+        if user.user_id != actor.user_id || user.disabled {
+            return Err(Phase2Error::Authentication);
+        }
+        let character = state
+            .characters
+            .get(&character_id)
+            .ok_or(Phase2Error::NotFound)?;
+        if actor.character_id != character_id
+            || user.character_id != character_id
+            || character.owner != actor.user_id
+        {
+            return Err(Phase2Error::NotFound);
+        }
+        if character.state.character_id != character_id {
+            return Err(Phase2Error::Internal);
+        }
+        if state.active_group_by_member.contains_key(&character_id) {
+            Err(Phase2Error::Conflict)
+        } else {
+            Ok(())
+        }
+    })
 }
 
 fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error> {
@@ -628,7 +778,10 @@ async fn reject_oversized_request_target(request: Request, next: Next) -> Respon
         .saturating_add(query_len);
     if query_len > MAX_REQUEST_QUERY_BYTES || target_len > MAX_REQUEST_TARGET_BYTES {
         let mut response = Phase2Error::PayloadTooLarge.into_response();
-        if matches!(uri.path(), "/v1/realtime" | "/v1/realtime/tickets") {
+        if matches!(uri.path(), "/v1/realtime" | "/v1/realtime/tickets")
+            || uri.path() == "/v1/groups"
+            || uri.path().starts_with("/v1/groups/")
+        {
             response
                 .headers_mut()
                 .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -792,12 +945,7 @@ async fn restore_at(
         return Err(Phase2Error::NotFound);
     }
     let actor = actor(&headers, &app)?;
-    Ok(Json(saves::restore_at(
-        &app.store,
-        actor,
-        &request,
-        path.revision,
-    )?))
+    Ok(Json(app.restore_at(actor, &request, path.revision)?))
 }
 async fn upload(
     State(app): State<Phase2App>,
@@ -818,6 +966,68 @@ async fn upload(
     saves::upload_with_credential(&app.store, &path, query_ticket, body.to_vec())?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[derive(Deserialize)]
+struct GroupPath {
+    group_id: coop_cloud::GroupId,
+}
+
+#[derive(Deserialize)]
+struct GroupInvitationPath {
+    invitation_id: coop_cloud::GroupInvitationId,
+}
+
+async fn group_no_store(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+async fn create_group_invitation(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::CreateGroupInvitationRequest>,
+) -> Result<(StatusCode, Json<coop_cloud::CreateGroupInvitationResponse>), Phase2Error> {
+    let response = app.create_group_invitation(actor(&headers, &app)?, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn accept_group_invitation(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupInvitationPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::AcceptGroupInvitationRequest>,
+) -> Result<Json<coop_cloud::AcceptGroupInvitationResponse>, Phase2Error> {
+    let response =
+        app.accept_group_invitation(actor(&headers, &app)?, path.invitation_id, request)?;
+    Ok(Json(response))
+}
+
+async fn inspect_group(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+) -> Result<Json<coop_cloud::GroupView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.inspect_group(actor, path.group_id, fence)?))
+}
+
+async fn travel_group(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::GroupTravelRequest>,
+) -> Result<Json<coop_cloud::GroupTravelResponse>, Phase2Error> {
+    Ok(Json(app.travel_group(
+        actor(&headers, &app)?,
+        path.group_id,
+        request,
+    )?))
+}
+
 async fn resume_package(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
@@ -2475,6 +2685,15 @@ mod tests {
             user_id: foreign_login.user_id,
             character_id: id(CharacterId::new),
         };
+        let grouped_character = coop_cloud::GroupId::new(Uuid::new_v4()).expect("group");
+        app.store
+            .write_transaction(|state| {
+                state
+                    .active_group_by_member
+                    .insert(owner.character_id, grouped_character);
+                Ok::<(), Phase2Error>(())
+            })
+            .expect("group marker");
         assert_eq!(
             app.finalize(foreign_actor, finalize.clone()),
             Err(Phase2Error::NotFound)
@@ -2490,6 +2709,15 @@ mod tests {
         assert_eq!(
             app.restore(nonexistent_actor, &restore),
             Err(Phase2Error::NotFound)
+        );
+        assert_eq!(app.restore(owner, &restore), Err(Phase2Error::Conflict));
+        assert_eq!(
+            app.restore_at(foreign_actor, &restore, record.revision.value()),
+            Err(Phase2Error::NotFound)
+        );
+        assert_eq!(
+            app.restore_at(owner, &restore, record.revision.value()),
+            Err(Phase2Error::Conflict)
         );
         app.store
             .inspect_state(|state| {
