@@ -774,7 +774,7 @@ mod tests {
     };
     use coop_protocol::{
         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, MovementMode,
-        PlayerState, PresencePoseV1, RegionId, WorldLocation,
+        PlayerState, PresencePoseV1, RegionId, WorldLocation, all_maps,
     };
     use serde_json::{Value, json};
     use uuid::Uuid;
@@ -820,8 +820,34 @@ mod tests {
         LocalPresenceStateV1::new(pose, 1).unwrap()
     }
 
-    fn max_state() -> LocalPresenceStateV1 {
-        let location = WorldLocation::new(RegionId::Sevii, 35, 122, i16::MIN, i16::MIN).unwrap();
+    fn json_len<T: serde::Serialize>(value: &T) -> usize {
+        serde_json::to_vec(value).unwrap().len()
+    }
+
+    fn assert_longest_json_token<T: serde::Serialize>(selected: &T, candidates: &[T]) {
+        assert_eq!(
+            json_len(selected),
+            candidates.iter().map(json_len).max().unwrap()
+        );
+    }
+
+    fn maximum_serialized_state() -> LocalPresenceStateV1 {
+        let map = all_maps()
+            .iter()
+            .max_by_key(|entry| {
+                json_len(&entry.region)
+                    + entry.map_group.to_string().len()
+                    + entry.map_number.to_string().len()
+            })
+            .unwrap();
+        let location = WorldLocation::new(
+            map.region,
+            map.map_group,
+            map.map_number,
+            i16::MIN,
+            i16::MIN,
+        )
+        .unwrap();
         let pose = PresencePoseV1::new(
             location,
             u8::MAX,
@@ -835,6 +861,53 @@ mod tests {
         )
         .unwrap();
         LocalPresenceStateV1::new(pose, u32::MAX).unwrap()
+    }
+
+    fn maximum_client_frames() -> [ClientRealtimeFrameV1; 2] {
+        [
+            ClientRealtimeFrameV1::player_state(maximum_serialized_state()),
+            ClientRealtimeFrameV1::interact_remote_player(
+                PresenceInteractionV1::new(
+                    PresenceHandle::new(u64::MAX).unwrap(),
+                    u32::MAX,
+                    u32::MAX,
+                    i16::MIN,
+                    i16::MIN,
+                )
+                .unwrap(),
+            ),
+        ]
+    }
+
+    fn maximum_server_frames() -> [ServerRealtimeFrameV1; 4] {
+        [
+            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(u64::MAX).unwrap()),
+            ServerRealtimeFrameV1::remote_player_spawn(
+                RemotePlayerSpawnV1::new(
+                    PresenceHandle::new(u64::MAX).unwrap(),
+                    u32::MAX,
+                    maximum_serialized_state(),
+                    CanonicalUsername::new("a".repeat(32)).unwrap(),
+                )
+                .unwrap(),
+            ),
+            ServerRealtimeFrameV1::remote_player_update(
+                RemotePlayerUpdateV1::new(
+                    PresenceHandle::new(u64::MAX).unwrap(),
+                    u32::MAX,
+                    maximum_serialized_state(),
+                )
+                .unwrap(),
+            ),
+            ServerRealtimeFrameV1::remote_player_despawn(
+                RemotePlayerDespawnV1::new(
+                    PresenceHandle::new(u64::MAX).unwrap(),
+                    u32::MAX,
+                    DespawnReason::PartitionLeft,
+                )
+                .unwrap(),
+            ),
+        ]
     }
 
     fn handle() -> PresenceHandle {
@@ -958,13 +1031,9 @@ mod tests {
     }
 
     #[test]
-    fn bounds_are_enforced_before_and_after_json() {
+    fn directional_decoders_apply_caps_before_utf8_validation() {
         assert_eq!(
-            decode_client_realtime_frame(&vec![b' '; MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES + 1]),
-            Err(RealtimeError::MessageTooLarge)
-        );
-        assert_eq!(
-            decode_client_realtime_frame(&[0xff]),
+            decode_client_realtime_frame(&vec![0xff; MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES]),
             Err(RealtimeError::InvalidUtf8)
         );
         assert_eq!(
@@ -972,15 +1041,23 @@ mod tests {
             Err(RealtimeError::MessageTooLarge)
         );
         assert_eq!(
+            decode_server_realtime_frame(&vec![0xff; MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES]),
+            Err(RealtimeError::InvalidUtf8)
+        );
+        assert_eq!(
             decode_server_realtime_frame(&vec![0xff; MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES + 1]),
             Err(RealtimeError::MessageTooLarge)
         );
-        assert!(
-            MintRealtimeTicketResponse::checked_expires_at(UnixTimestampMillis::new(u64::MAX,))
-                .is_err()
-        );
+    }
+
+    #[test]
+    fn encode_json_rejects_serialized_output_above_supplied_limit() {
+        let value = "xy";
+        let encoded = serde_json::to_vec(value).unwrap();
+        assert_eq!(encoded, b"\"xy\"");
+        assert_eq!(encode_json(&value, encoded.len()).unwrap(), encoded);
         assert_eq!(
-            encode_json(&"x".repeat(2), 1),
+            encode_json(&value, encoded.len() - 1),
             Err(RealtimeError::EncodedMessageTooLarge)
         );
     }
@@ -1292,7 +1369,7 @@ mod tests {
     }
 
     #[test]
-    fn directional_codecs_enforce_preparse_caps_and_maximum_valid_shapes() {
+    fn directional_decoders_enforce_exact_byte_boundaries() {
         let client_at_limit = vec![b'x'; MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES];
         assert_eq!(
             decode_client_realtime_frame(&client_at_limit),
@@ -1311,51 +1388,77 @@ mod tests {
             decode_server_realtime_frame(&[b'x'; MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES + 1]),
             Err(RealtimeError::MessageTooLarge)
         );
+    }
 
-        let max_client = ClientRealtimeFrameV1::player_state(max_state());
+    #[test]
+    fn maximum_state_uses_longest_closed_enum_tokens() {
+        assert_longest_json_token(
+            &Direction::South,
+            &[
+                Direction::South,
+                Direction::North,
+                Direction::West,
+                Direction::East,
+            ],
+        );
+        assert_longest_json_token(
+            &MovementMode::Idle,
+            &[MovementMode::Idle, MovementMode::Walk, MovementMode::Run],
+        );
+        assert_longest_json_token(
+            &AnimationId::Locomotion,
+            &[AnimationId::Idle, AnimationId::Locomotion],
+        );
+        assert_longest_json_token(&AvatarId::Brendan, &[AvatarId::Brendan, AvatarId::May]);
+        assert_longest_json_token(
+            &PlayerState::Overworld,
+            &[PlayerState::Hidden, PlayerState::Overworld],
+        );
+        assert_longest_json_token(
+            &DespawnReason::PartitionLeft,
+            &[
+                DespawnReason::Hidden,
+                DespawnReason::Stale,
+                DespawnReason::Disconnected,
+                DespawnReason::LeaseInvalid,
+                DespawnReason::Replaced,
+                DespawnReason::PartitionLeft,
+            ],
+        );
+    }
+
+    #[test]
+    fn directional_codecs_cover_true_serialization_maxima() {
+        let maximum_client_frames = maximum_client_frames();
+        assert_eq!(
+            maximum_client_frames
+                .iter()
+                .map(json_len)
+                .collect::<Vec<_>>(),
+            [366, 190]
+        );
+        for frame in maximum_client_frames {
+            let encoded = encode_client_realtime_frame(&frame).unwrap();
+            assert_eq!(encoded.len(), json_len(&frame));
+            assert_eq!(decode_client_realtime_frame(&encoded).unwrap(), frame);
+        }
+
+        let maximum_server_frames = maximum_server_frames();
+        assert_eq!(
+            maximum_server_frames
+                .iter()
+                .map(json_len)
+                .collect::<Vec<_>>(),
+            [163, 486, 441, 148]
+        );
+        for frame in maximum_server_frames {
+            let encoded = encode_server_realtime_frame(&frame).unwrap();
+            assert_eq!(encoded.len(), json_len(&frame));
+            assert_eq!(decode_server_realtime_frame(&encoded).unwrap(), frame);
+        }
+
         assert_eq!(MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES, 1_024);
         assert_eq!(MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, 2_048);
-        assert_eq!(
-            encode_client_realtime_frame(&max_client).unwrap().len(),
-            366
-        );
-        let max_spawn = RemotePlayerSpawnV1::new(
-            PresenceHandle::new(u64::MAX).unwrap(),
-            u32::MAX,
-            max_state(),
-            CanonicalUsername::new("a".repeat(32)).unwrap(),
-        )
-        .unwrap();
-        let max_server = [
-            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(u64::MAX).unwrap()),
-            ServerRealtimeFrameV1::remote_player_spawn(max_spawn),
-            ServerRealtimeFrameV1::remote_player_update(
-                RemotePlayerUpdateV1::new(
-                    PresenceHandle::new(u64::MAX).unwrap(),
-                    u32::MAX,
-                    max_state(),
-                )
-                .unwrap(),
-            ),
-            ServerRealtimeFrameV1::remote_player_despawn(
-                RemotePlayerDespawnV1::new(
-                    PresenceHandle::new(u64::MAX).unwrap(),
-                    u32::MAX,
-                    DespawnReason::PartitionLeft,
-                )
-                .unwrap(),
-            ),
-        ];
-        assert_eq!(
-            encode_server_realtime_frame(&max_server[1]).unwrap().len(),
-            486
-        );
-        for frame in max_server {
-            assert!(
-                encode_server_realtime_frame(&frame).unwrap().len()
-                    <= MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES
-            );
-        }
     }
 
     #[test]
