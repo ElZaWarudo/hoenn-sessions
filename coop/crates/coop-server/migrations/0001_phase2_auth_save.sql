@@ -111,7 +111,7 @@ CREATE TABLE phase2_snapshot_artifacts (
         CHECK (object_key ~ '^characters/[0-9a-fA-F-]{36}/snapshots/[0-9a-fA-F-]{36}/(character\.sav|pending_commits\.json|resume\.ss1)$'),
     sha256 bytea NOT NULL CHECK (octet_length(sha256) = 32),
     size_bytes bigint NOT NULL CHECK (
-        (artifact = 'character.sav' AND size_bytes BETWEEN 1 AND 1048576)
+        (artifact = 'character.sav' AND size_bytes IN (131072, 131088))
         OR (artifact = 'pending_commits.json' AND size_bytes BETWEEN 0 AND 1048576)
         OR (artifact = 'resume.ss1' AND size_bytes BETWEEN 1 AND 33554432)
     ),

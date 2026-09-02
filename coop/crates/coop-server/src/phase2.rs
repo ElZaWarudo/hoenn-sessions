@@ -801,6 +801,165 @@ mod tests {
         Password::new("correct horse battery staple").expect("password")
     }
 
+    const TEST_SECTOR_ID_OFFSET: usize = 4_084;
+    const TEST_SECTOR_CHECKSUM_OFFSET: usize = 4_086;
+    const TEST_SECTOR_SIGNATURE_OFFSET: usize = 4_088;
+    const TEST_SECTOR_COUNTER_OFFSET: usize = 4_092;
+    const TEST_SECTOR_SIGNATURE: u32 = 0x0801_2025;
+
+    fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn read_u16(bytes: &[u8], offset: usize) -> u16 {
+        u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+    }
+
+    fn character_sav_with_generation(
+        with_rtc: bool,
+        generation: u32,
+        status_flags: u32,
+    ) -> Vec<u8> {
+        let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
+        write_u32(&mut payload, 0, coop_save::COOP_SAVE_V1_MAGIC);
+        write_u16(&mut payload, 4, coop_save::COOP_SAVE_V1_SCHEMA_VERSION);
+        write_u16(
+            &mut payload,
+            6,
+            u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("CSP1 size fits u16"),
+        );
+        write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
+        payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
+        write_u32(&mut payload, 28, generation);
+        write_u32(&mut payload, 32, status_flags);
+        for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
+            let offset = 36 + index * 8;
+            payload[offset] = region;
+            // Registry v1 intentionally assigns no Sevii badges.
+            write_u16(
+                &mut payload,
+                offset + 2,
+                if index == 3 { 0 } else { 1 << index },
+            );
+            write_u32(
+                &mut payload,
+                offset + 4,
+                100 + u32::try_from(index).expect("regional fixture index fits u32"),
+            );
+        }
+        let crc = crc32fast::hash(&payload[..668]);
+        write_u32(&mut payload, 668, crc);
+
+        let mut save_block3 = [0xff; coop_save::SAVE_BLOCK3_CAPACITY];
+        save_block3[coop_save::COOP_SAVE_OFFSET
+            ..coop_save::COOP_SAVE_OFFSET + coop_save::COOP_SAVE_V1_SIZE]
+            .copy_from_slice(&payload);
+        let mut bytes = vec![0xff; coop_save::FLASH_IMAGE_SIZE];
+        for (slot, counter, rotation) in [(0_usize, 20_u32, 4_usize), (1, 21, 11)] {
+            for physical in 0..coop_save::SECTORS_PER_SLOT {
+                let logical = (physical + rotation) % coop_save::SECTORS_PER_SLOT;
+                let start =
+                    (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+                let sector = &mut bytes[start..start + coop_save::SECTOR_SIZE];
+                let source = logical * coop_save::SAVE_BLOCK3_CHUNK_SIZE;
+                sector[coop_save::SAVE_BLOCK3_CHUNK_OFFSET
+                    ..coop_save::SAVE_BLOCK3_CHUNK_OFFSET + coop_save::SAVE_BLOCK3_CHUNK_SIZE]
+                    .copy_from_slice(
+                        &save_block3[source..source + coop_save::SAVE_BLOCK3_CHUNK_SIZE],
+                    );
+                write_u16(
+                    sector,
+                    TEST_SECTOR_ID_OFFSET,
+                    u16::try_from(logical).expect("logical sector fits u16"),
+                );
+                let checksum = coop_save::sector_checksum(
+                    &sector[..coop_save::LOGICAL_SECTOR_DATA_SIZES[logical]],
+                );
+                write_u16(sector, TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+                write_u32(sector, TEST_SECTOR_SIGNATURE_OFFSET, TEST_SECTOR_SIGNATURE);
+                write_u32(sector, TEST_SECTOR_COUNTER_OFFSET, counter);
+            }
+        }
+        if with_rtc {
+            bytes
+                .extend(0_u8..u8::try_from(coop_save::RTC_TRAILER_SIZE).expect("RTC size fits u8"));
+        }
+        bytes
+    }
+
+    fn character_sav_with_status(with_rtc: bool, status_flags: u32) -> Vec<u8> {
+        character_sav_with_generation(with_rtc, 1, status_flags)
+    }
+
+    fn valid_character_sav(with_rtc: bool) -> Vec<u8> {
+        character_sav_with_status(with_rtc, 0)
+    }
+
+    fn valid_character_sav_generation(with_rtc: bool, generation: u32) -> Vec<u8> {
+        character_sav_with_generation(with_rtc, generation, 0)
+    }
+
+    fn mutate_selected_coop_byte(bytes: &mut [u8], payload_offset: usize) {
+        let save_block3_offset = coop_save::COOP_SAVE_OFFSET + payload_offset;
+        let logical = save_block3_offset / coop_save::SAVE_BLOCK3_CHUNK_SIZE;
+        let within_chunk = save_block3_offset % coop_save::SAVE_BLOCK3_CHUNK_SIZE;
+        let physical = (0..coop_save::SECTORS_PER_SLOT)
+            .find(|physical| {
+                let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+                usize::from(read_u16(bytes, start + TEST_SECTOR_ID_OFFSET)) == logical
+            })
+            .expect("selected fixture slot contains every logical sector");
+        let offset = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE
+            + coop_save::SAVE_BLOCK3_CHUNK_OFFSET
+            + within_chunk;
+        bytes[offset] ^= 1;
+    }
+
+    fn mutate_selected_lineage(bytes: &mut [u8]) {
+        let physical = (0..coop_save::SECTORS_PER_SLOT)
+            .find(|physical| {
+                let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+                usize::from(read_u16(bytes, start + TEST_SECTOR_ID_OFFSET)) == 0
+            })
+            .expect("selected fixture slot contains logical sector zero");
+        let sector_start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+        bytes[sector_start] ^= 1;
+        let checksum = coop_save::sector_checksum(
+            &bytes[sector_start..sector_start + coop_save::LOGICAL_SECTOR_DATA_SIZES[0]],
+        );
+        write_u16(bytes, sector_start + TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+    }
+
+    fn snapshot_request_for_sav(
+        lease: coop_cloud::LeaseContract,
+        actor: AuthenticatedActor,
+        client: ClientInstanceId,
+        sav_bytes: &[u8],
+    ) -> (SnapshotPrepareRequest, SnapshotFile, SnapshotFile) {
+        let sav = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, sav_bytes).expect("sav");
+        let pending =
+            SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
+        let request = SnapshotPrepareRequest::new(
+            id(SnapshotId::new),
+            SnapshotPrepareFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav.clone(), pending.clone()],
+            pending.sha256,
+        )
+        .expect("prepare request");
+        (request, sav, pending)
+    }
+
     fn deterministic_app() -> (Phase2App, Arc<FixedClock>) {
         let clock = Arc::new(FixedClock::new(1_700_000_000_000));
         let entropy = Arc::new(FixedEntropy::new((0_u8..=255).collect()));
@@ -1051,24 +1210,20 @@ mod tests {
         SnapshotFile,
         SnapshotFile,
     ) {
-        let sav =
-            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"sav-bytes").expect("sav");
-        let pending =
-            SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
-        let request = SnapshotPrepareRequest::new(
-            id(SnapshotId::new),
-            SnapshotPrepareFence::new(
-                lease.session_id,
-                actor.character_id,
-                lease.current_revision,
-                lease.session_epoch,
-                client,
-                id(IdempotencyKey::new),
-            ),
-            vec![sav.clone(), pending.clone()],
-            pending.sha256,
+        let generation = u32::try_from(
+            lease
+                .current_revision
+                .next()
+                .expect("fixture revision fits")
+                .value(),
         )
-        .expect("prepare request");
+        .expect("fixture generation fits");
+        let (request, sav, pending) = snapshot_request_for_sav(
+            lease,
+            actor,
+            client,
+            &valid_character_sav_generation(false, generation),
+        );
         (app.prepare(actor, request).expect("prepared"), sav, pending)
     }
 
@@ -1083,13 +1238,34 @@ mod tests {
             app.upload(
                 ticket,
                 if target.artifact == ArtifactIdentity::CharacterSav {
-                    b"sav-bytes".to_vec()
+                    valid_character_sav_generation(
+                        false,
+                        u32::try_from(prepared.next_revision.value())
+                            .expect("fixture generation fits"),
+                    )
                 } else {
                     b"{}".to_vec()
                 },
             )
             .expect("upload");
         }
+    }
+
+    fn upload_ticket(
+        prepared: &coop_cloud::SnapshotPrepareResponse,
+        artifact: ArtifactIdentity,
+    ) -> String {
+        prepared
+            .upload_targets
+            .iter()
+            .find(|target| target.artifact == artifact)
+            .expect("declared artifact has an upload target")
+            .url
+            .as_str()
+            .split("?ticket=")
+            .nth(1)
+            .expect("target contains capability query")
+            .to_owned()
     }
 
     async fn login_http(app: &Phase2App, request: LoginRequest) -> axum::response::Response {
@@ -1179,7 +1355,8 @@ mod tests {
             .expect("lease");
         assert_eq!(acquire.current_revision, Revision::initial());
         let sav =
-            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"sav-bytes").expect("sav");
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &valid_character_sav(false))
+                .expect("sav");
         let pending =
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
         let snapshot_id = id(SnapshotId::new);
@@ -1206,7 +1383,7 @@ mod tests {
                 .nth(1)
                 .expect("ticket");
             let bytes = if target.artifact == ArtifactIdentity::CharacterSav {
-                b"sav-bytes".to_vec()
+                valid_character_sav(false)
             } else {
                 b"{}".to_vec()
             };
@@ -1243,7 +1420,7 @@ mod tests {
         assert_eq!(
             saves::resume_artifact(&app.store, actor, fence, "character.sav", None)
                 .expect("sav artifact"),
-            b"sav-bytes"
+            valid_character_sav(false)
         );
     }
 
@@ -1657,17 +1834,22 @@ mod tests {
             .expect("ticket")
             .to_owned();
         assert_eq!(
-            saves::upload_with_credential(&app.store, &sav_ticket, "wrong", b"sav-bytes".to_vec()),
+            saves::upload_with_credential(
+                &app.store,
+                &sav_ticket,
+                "wrong",
+                valid_character_sav(false),
+            ),
             Err(Phase2Error::Authentication)
         );
         assert_eq!(
             app.upload(&sav_ticket, b"tampered".to_vec()),
             Err(Phase2Error::InvalidRequest)
         );
-        app.upload(&sav_ticket, b"sav-bytes".to_vec())
+        app.upload(&sav_ticket, valid_character_sav(false))
             .expect("correct upload");
         assert_eq!(
-            app.upload(&sav_ticket, b"sav-bytes".to_vec()),
+            app.upload(&sav_ticket, valid_character_sav(false)),
             Err(Phase2Error::Conflict)
         );
         let pending_target = prepared
@@ -1690,6 +1872,349 @@ mod tests {
     }
 
     #[test]
+    fn character_sav_accepts_both_exact_lengths_and_preserves_rtc_bytes() {
+        for with_rtc in [false, true] {
+            let (app, _) = deterministic_app();
+            let (actor, lease, client) = account_and_lease(&app);
+            let bytes = valid_character_sav(with_rtc);
+            let expected_len = if with_rtc {
+                coop_save::FLASH_IMAGE_SIZE + coop_save::RTC_TRAILER_SIZE
+            } else {
+                coop_save::FLASH_IMAGE_SIZE
+            };
+            assert_eq!(bytes.len(), expected_len);
+            let (request, sav, pending) = snapshot_request_for_sav(lease, actor, client, &bytes);
+            let prepared = app.prepare(actor, request).expect("exact size prepares");
+            app.upload(
+                &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+                bytes.clone(),
+            )
+            .expect("valid CSP1 uploads");
+            app.upload(
+                &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+                b"{}".to_vec(),
+            )
+            .expect("pending commits upload");
+            let finalize = SnapshotFinalizeRequest::new(
+                prepared.snapshot_id,
+                SnapshotFinalizeFence::new(
+                    lease.session_id,
+                    actor.character_id,
+                    lease.current_revision,
+                    lease.session_epoch,
+                    client,
+                    prepared.idempotency_key,
+                ),
+                vec![sav, pending.clone()],
+                pending.sha256,
+                None,
+            )
+            .expect("finalize request");
+            let record = app.finalize(actor, finalize).expect("valid CSP1 finalizes");
+            let active_fence = LeaseFence::new(
+                lease.session_id,
+                actor.character_id,
+                record.revision,
+                lease.session_epoch,
+                client,
+            );
+            assert_eq!(
+                saves::resume_artifact(&app.store, actor, active_fence, "character.sav", None,)
+                    .expect("resume artifact"),
+                bytes
+            );
+        }
+    }
+
+    #[test]
+    fn character_sav_rejects_noncanonical_lengths_at_prepare() {
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        for bytes in [
+            vec![0_u8; coop_save::FLASH_IMAGE_SIZE - 1],
+            vec![0_u8; coop_save::FLASH_IMAGE_SIZE + 1],
+            vec![0_u8; coop_save::FLASH_IMAGE_SIZE + coop_save::RTC_TRAILER_SIZE + 1],
+        ] {
+            let (request, _, _) = snapshot_request_for_sav(lease, actor, client, &bytes);
+            assert_eq!(
+                app.prepare(actor, request),
+                Err(Phase2Error::InvalidRequest)
+            );
+        }
+        let state = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.characters[&actor.character_id].revision,
+                    state.characters[&actor.character_id].active_snapshot,
+                    state.prepared.len(),
+                )
+            })
+            .expect("state");
+        assert_eq!(state, (Revision::initial(), None, 0));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn malformed_character_sav_uploads_never_advance_the_head() {
+        let mut corrupt_slots = valid_character_sav(false);
+        for slot in 0..coop_save::SAVE_SLOT_COUNT {
+            let offset = (slot * coop_save::SECTORS_PER_SLOT) * coop_save::SECTOR_SIZE
+                + TEST_SECTOR_SIGNATURE_OFFSET;
+            corrupt_slots[offset] ^= 1;
+        }
+        let mut corrupt_checksums = valid_character_sav(false);
+        for slot in 0..coop_save::SAVE_SLOT_COUNT {
+            let offset = (slot * coop_save::SECTORS_PER_SLOT) * coop_save::SECTOR_SIZE;
+            corrupt_checksums[offset] ^= 1;
+        }
+        let mut corrupt_crc = valid_character_sav(false);
+        mutate_selected_coop_byte(&mut corrupt_crc, 668);
+        let mut corrupt_schema = valid_character_sav(false);
+        mutate_selected_coop_byte(&mut corrupt_schema, 4);
+        let mut corrupt_registry_version = valid_character_sav(false);
+        mutate_selected_coop_byte(&mut corrupt_registry_version, 8);
+        let mut corrupt_registry_digest = valid_character_sav(false);
+        mutate_selected_coop_byte(&mut corrupt_registry_digest, 12);
+        let migration_ambiguous =
+            character_sav_with_status(false, coop_save::COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS);
+
+        for (case, bytes) in [
+            ("slot", corrupt_slots),
+            ("checksum", corrupt_checksums),
+            ("crc", corrupt_crc),
+            ("schema", corrupt_schema),
+            ("registry-version", corrupt_registry_version),
+            ("registry-digest", corrupt_registry_digest),
+            ("migration-ambiguous", migration_ambiguous),
+            ("erased", coop_save::erased_revision_zero_image()),
+        ] {
+            let (app, _) = deterministic_app();
+            let (actor, lease, client) = account_and_lease(&app);
+            let (request, sav, pending) = snapshot_request_for_sav(lease, actor, client, &bytes);
+            let prepared = app.prepare(actor, request).expect("exact size prepares");
+            let sav_ticket = upload_ticket(&prepared, ArtifactIdentity::CharacterSav);
+            let pending_ticket = upload_ticket(&prepared, ArtifactIdentity::PendingCommits);
+            app.upload(&pending_ticket, b"{}".to_vec())
+                .expect("pending commits upload");
+            assert_eq!(
+                app.upload(&sav_ticket, bytes.clone()),
+                Err(Phase2Error::InvalidRequest),
+                "{case} fixture must be rejected"
+            );
+            assert_eq!(
+                app.upload(&sav_ticket, bytes.clone()),
+                Err(Phase2Error::InvalidRequest),
+                "{case} rejection must not consume the ticket"
+            );
+            ObjectStore::put(
+                app.store.objects.as_ref(),
+                Store::object_key(
+                    actor.character_id,
+                    prepared.snapshot_id,
+                    ArtifactIdentity::CharacterSav,
+                ),
+                bytes,
+            )
+            .expect("simulate a legacy or bypassed invalid object");
+            let finalize = SnapshotFinalizeRequest::new(
+                prepared.snapshot_id,
+                SnapshotFinalizeFence::new(
+                    lease.session_id,
+                    actor.character_id,
+                    lease.current_revision,
+                    lease.session_epoch,
+                    client,
+                    prepared.idempotency_key,
+                ),
+                vec![sav, pending.clone()],
+                pending.sha256,
+                None,
+            )
+            .expect("finalize request");
+            assert_eq!(
+                app.finalize(actor, finalize),
+                Err(Phase2Error::InvalidRequest),
+                "{case} must fail defense-in-depth validation before head advance"
+            );
+            app.store
+                .inspect_state(|state| {
+                    let character = &state.characters[&actor.character_id];
+                    assert_eq!(character.revision, Revision::initial(), "{case}");
+                    assert_eq!(character.active_snapshot, None, "{case}");
+                    assert!(state.prepared.contains_key(&prepared.snapshot_id), "{case}");
+                    let ticket = state
+                        .tickets
+                        .values()
+                        .find(|ticket| {
+                            ticket.snapshot_id == prepared.snapshot_id
+                                && ticket.artifact == ArtifactIdentity::CharacterSav
+                        })
+                        .expect("SAV ticket remains pending");
+                    assert!(!ticket.used, "{case}");
+                })
+                .expect("state");
+        }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn finalize_binds_lineage_and_advances_generation_from_the_active_head() {
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (prepared, sav, pending) = prepared_snapshot(&app, actor, lease, client);
+        upload_prepared(&app, &prepared);
+        let first = app
+            .finalize(
+                actor,
+                SnapshotFinalizeRequest::new(
+                    prepared.snapshot_id,
+                    SnapshotFinalizeFence::new(
+                        lease.session_id,
+                        actor.character_id,
+                        lease.current_revision,
+                        lease.session_epoch,
+                        client,
+                        id(IdempotencyKey::new),
+                    ),
+                    vec![sav, pending.clone()],
+                    pending.sha256,
+                    None,
+                )
+                .expect("first finalize request"),
+            )
+            .expect("first finalize");
+        assert_eq!(first.revision, Revision::new(1));
+
+        let lease = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].contract)
+            .expect("active lease");
+        let generation_two = valid_character_sav_generation(false, 2);
+        let (request, sav, pending) =
+            snapshot_request_for_sav(lease, actor, client, &generation_two);
+        let prepared = app.prepare(actor, request).expect("second prepare");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+            generation_two,
+        )
+        .expect("second SAV upload");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+            b"{}".to_vec(),
+        )
+        .expect("second pending upload");
+        let second_request = SnapshotFinalizeRequest::new(
+            prepared.snapshot_id,
+            SnapshotFinalizeFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav, pending.clone()],
+            pending.sha256,
+            None,
+        )
+        .expect("second finalize request");
+        let second = app
+            .finalize(actor, second_request)
+            .expect("second finalize");
+        assert_eq!(second.revision, Revision::new(2));
+
+        let lease = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].contract)
+            .expect("active lease");
+        let wrong_generation = valid_character_sav_generation(false, 4);
+        let (request, sav, pending) =
+            snapshot_request_for_sav(lease, actor, client, &wrong_generation);
+        let prepared = app
+            .prepare(actor, request)
+            .expect("wrong-generation prepare");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+            wrong_generation,
+        )
+        .expect("wrong-generation SAV upload");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+            b"{}".to_vec(),
+        )
+        .expect("wrong-generation pending upload");
+        let wrong_generation_request = SnapshotFinalizeRequest::new(
+            prepared.snapshot_id,
+            SnapshotFinalizeFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav, pending.clone()],
+            pending.sha256,
+            None,
+        )
+        .expect("wrong-generation finalize request");
+        assert_eq!(
+            app.finalize(actor, wrong_generation_request),
+            Err(Phase2Error::Conflict)
+        );
+
+        let lease = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].contract)
+            .expect("active lease");
+        let mut wrong_lineage = valid_character_sav_generation(false, 3);
+        mutate_selected_lineage(&mut wrong_lineage);
+        let (request, sav, pending) =
+            snapshot_request_for_sav(lease, actor, client, &wrong_lineage);
+        let prepared = app.prepare(actor, request).expect("wrong-lineage prepare");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+            wrong_lineage,
+        )
+        .expect("wrong-lineage SAV upload");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+            b"{}".to_vec(),
+        )
+        .expect("wrong-lineage pending upload");
+        let wrong_lineage_request = SnapshotFinalizeRequest::new(
+            prepared.snapshot_id,
+            SnapshotFinalizeFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav, pending],
+            SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}")
+                .expect("pending")
+                .sha256,
+            None,
+        )
+        .expect("wrong-lineage finalize request");
+        assert_eq!(
+            app.finalize(actor, wrong_lineage_request),
+            Err(Phase2Error::Conflict)
+        );
+        app.store
+            .inspect_state(|state| {
+                assert_eq!(
+                    state.characters[&actor.character_id].revision,
+                    Revision::new(2)
+                );
+            })
+            .expect("head remains at revision two");
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn finalize_and_restore_bind_full_idempotency_and_copy_objects() {
         let (app, _) = deterministic_app();
@@ -1705,7 +2230,7 @@ mod tests {
             app.upload(
                 ticket,
                 if target.artifact == ArtifactIdentity::CharacterSav {
-                    b"sav-bytes".to_vec()
+                    valid_character_sav(false)
                 } else {
                     b"{}".to_vec()
                 },
@@ -1740,8 +2265,9 @@ mod tests {
             })
             .expect("state");
         let mut changed = finalize;
-        changed.files[0] = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"different")
-            .expect("changed file");
+        changed.files[0] =
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &valid_character_sav(true))
+                .expect("changed file");
         assert_eq!(app.finalize(actor, changed), Err(Phase2Error::Conflict));
         let after_finalize_conflict = app
             .store
@@ -1804,7 +2330,7 @@ mod tests {
         assert_eq!(
             saves::resume_artifact(&app.store, actor, restored_fence, "character.sav", None,)
                 .expect("restored artifact"),
-            b"sav-bytes"
+            valid_character_sav(false)
         );
     }
 
@@ -1824,7 +2350,7 @@ mod tests {
             app.upload(
                 ticket,
                 if target.artifact == ArtifactIdentity::CharacterSav {
-                    b"sav-bytes".to_vec()
+                    valid_character_sav(false)
                 } else {
                     b"{}".to_vec()
                 },
@@ -2100,7 +2626,8 @@ mod tests {
         let (app, clock) = deterministic_app();
         let (actor, lease, client) = account_and_lease(&app);
         let sav =
-            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"sav-bytes").expect("sav");
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &valid_character_sav(false))
+                .expect("sav");
         let pending =
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
         let snapshot_id = id(SnapshotId::new);
@@ -2149,7 +2676,7 @@ mod tests {
             app.upload(
                 ticket,
                 if target.artifact == ArtifactIdentity::CharacterSav {
-                    b"sav-bytes".to_vec()
+                    valid_character_sav(false)
                 } else {
                     b"{}".to_vec()
                 },
@@ -2183,8 +2710,11 @@ mod tests {
                 id(IdempotencyKey::new),
             ),
             vec![
-                SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"sav-bytes")
-                    .expect("sav"),
+                SnapshotFile::from_bytes(
+                    ArtifactIdentity::CharacterSav,
+                    &valid_character_sav(false),
+                )
+                .expect("sav"),
                 SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending"),
             ],
             pending.sha256,
@@ -2208,7 +2738,7 @@ mod tests {
             app.upload(
                 ticket,
                 if target.artifact == ArtifactIdentity::CharacterSav {
-                    b"sav-bytes".to_vec()
+                    valid_character_sav(false)
                 } else {
                     b"{}".to_vec()
                 },
@@ -2447,7 +2977,8 @@ mod tests {
         let (app, _) = deterministic_app();
         let (actor, lease, client) = account_and_lease(&app);
         let sav =
-            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"sav-bytes").expect("sav");
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &valid_character_sav(false))
+                .expect("sav");
         let pending =
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
         let snapshot_id = id(SnapshotId::new);
@@ -2467,8 +2998,9 @@ mod tests {
         )
         .expect("prepare");
         let mut changed = first.clone();
-        changed.files[0] = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"other-sav")
-            .expect("changed sav");
+        changed.files[0] =
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &valid_character_sav(true))
+                .expect("changed sav");
         let left_app = app.clone();
         let right_app = app.clone();
         let (left, right) = std::thread::scope(|scope| {
@@ -2722,7 +3254,8 @@ mod tests {
             )
             .expect("new lease after release");
         let sav =
-            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, b"sav-bytes").expect("sav");
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &valid_character_sav(false))
+                .expect("sav");
         let pending =
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
         let key = id(IdempotencyKey::new);
@@ -2764,7 +3297,7 @@ mod tests {
             .expect("ticket");
         fail_put.store(true, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(
-            app.upload(sav_ticket, b"sav-bytes".to_vec()),
+            app.upload(sav_ticket, valid_character_sav(false)),
             Err(Phase2Error::Internal)
         );
         let fingerprint = storage::Store::token_fingerprint(sav_ticket);
@@ -2774,7 +3307,7 @@ mod tests {
                 .expect("state")
         );
         fail_put.store(false, std::sync::atomic::Ordering::SeqCst);
-        app.upload(sav_ticket, b"sav-bytes".to_vec())
+        app.upload(sav_ticket, valid_character_sav(false))
             .expect("retry upload");
         for target in &prepared.upload_targets {
             if target.artifact == ArtifactIdentity::CharacterSav {
@@ -2965,6 +3498,8 @@ mod tests {
                         request: restore.clone(),
                         snapshot_id: stale_snapshot,
                         expires_at: 0,
+                        storage_bytes: 3,
+                        created_objects: stale_keys.to_vec(),
                     },
                 );
                 Ok::<_, Phase2Error>(())
@@ -3025,13 +3560,13 @@ mod tests {
             prepared.snapshot_id,
             ArtifactIdentity::CharacterSav,
         );
-        app.upload(ticket, b"sav-bytes".to_vec())
+        app.upload(ticket, valid_character_sav(false))
             .expect("first upload");
         let _: Result<(), Phase2Error> = app.store.write_transaction(|state| {
             state.tickets.get_mut(&fingerprint).expect("ticket").used = false;
             Ok(())
         });
-        app.upload(ticket, b"sav-bytes".to_vec())
+        app.upload(ticket, valid_character_sav(false))
             .expect("exact object retry");
         let _: Result<(), Phase2Error> = app.store.write_transaction(|state| {
             state.tickets.get_mut(&fingerprint).expect("ticket").used = false;
@@ -3039,7 +3574,7 @@ mod tests {
         });
         ObjectStore::put(objects.as_ref(), key, b"tampered".to_vec()).expect("tamper object");
         assert_eq!(
-            app.upload(ticket, b"sav-bytes".to_vec()),
+            app.upload(ticket, valid_character_sav(false)),
             Err(Phase2Error::Conflict)
         );
         assert!(
@@ -3047,6 +3582,65 @@ mod tests {
                 .inspect_state(|state| state.tickets[&fingerprint].used)
                 .expect("ticket state")
         );
+    }
+
+    #[test]
+    fn a_cleanup_claim_fences_finalize_before_object_deletion() {
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (prepared, sav, pending) = prepared_snapshot(&app, actor, lease, client);
+        upload_prepared(&app, &prepared);
+        let sav_key = storage::Store::object_key(
+            actor.character_id,
+            prepared.snapshot_id,
+            ArtifactIdentity::CharacterSav,
+        );
+        app.store
+            .write_transaction(|state| {
+                state
+                    .upload_objects
+                    .get_mut(&sav_key)
+                    .expect("owned upload")
+                    .cleanup_claimed = true;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("claim upload object");
+        let finalize = SnapshotFinalizeRequest::new(
+            prepared.snapshot_id,
+            SnapshotFinalizeFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav, pending.clone()],
+            pending.sha256,
+            None,
+        )
+        .expect("finalize request");
+        assert_eq!(
+            app.finalize(actor, finalize.clone()),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.snapshots.len())
+                .expect("state"),
+            0
+        );
+        app.store
+            .write_transaction(|state| {
+                state
+                    .upload_objects
+                    .get_mut(&sav_key)
+                    .expect("claimed upload")
+                    .cleanup_claimed = false;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("release claim");
+        app.finalize(actor, finalize).expect("unclaimed finalize");
     }
 
     #[test]
@@ -3088,6 +3682,293 @@ mod tests {
             .expect("config")
             .with_upload_base_url(base);
             assert!(matches!(Phase2App::new(config), Err(Phase2Error::Internal)));
+        }
+    }
+
+    #[test]
+    fn expired_upload_retires_prepared_declaration_and_deletes_its_objects() {
+        let (app, clock) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (prepared, _, _) = prepared_snapshot(&app, actor, lease, client);
+        let sav_ticket = upload_ticket(&prepared, ArtifactIdentity::CharacterSav);
+        let pending_ticket = upload_ticket(&prepared, ArtifactIdentity::PendingCommits);
+        app.upload(&sav_ticket, valid_character_sav(false))
+            .expect("initial SAV upload");
+        app.upload(&pending_ticket, b"{}".to_vec())
+            .expect("initial pending upload");
+        let sav_key = storage::Store::object_key(
+            actor.character_id,
+            prepared.snapshot_id,
+            ArtifactIdentity::CharacterSav,
+        );
+        assert!(app.store.objects.contains(&sav_key).expect("object exists"));
+
+        clock.advance(storage::UPLOAD_TTL_MS + 1);
+        assert_eq!(
+            app.upload(&sav_ticket, valid_character_sav(false)),
+            Err(Phase2Error::Expired)
+        );
+        assert!(
+            !app.store
+                .objects
+                .contains(&sav_key)
+                .expect("object removed")
+        );
+        app.store
+            .inspect_state(|state| {
+                assert!(!state.prepared.contains_key(&prepared.snapshot_id));
+                assert!(state.retired_snapshots.contains(&prepared.snapshot_id));
+                assert!(state.upload_objects.is_empty());
+            })
+            .expect("expired declaration retired");
+    }
+
+    #[test]
+    fn restore_rewinds_generation_and_next_finalize_advances_from_restored_source() {
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (prepared, sav, pending) = prepared_snapshot(&app, actor, lease, client);
+        upload_prepared(&app, &prepared);
+        let first = app
+            .finalize(
+                actor,
+                SnapshotFinalizeRequest::new(
+                    prepared.snapshot_id,
+                    SnapshotFinalizeFence::new(
+                        lease.session_id,
+                        actor.character_id,
+                        lease.current_revision,
+                        lease.session_epoch,
+                        client,
+                        id(IdempotencyKey::new),
+                    ),
+                    vec![sav, pending.clone()],
+                    pending.sha256,
+                    None,
+                )
+                .expect("first finalize request"),
+            )
+            .expect("first finalize");
+        let restore = SnapshotRestoreRequest::new(
+            first.snapshot_id,
+            first.session_id,
+            actor.character_id,
+            first.revision,
+            first.session_epoch,
+            client,
+            id(IdempotencyKey::new),
+        );
+        let restored = app.restore(actor, &restore).expect("restore");
+        assert_eq!(restored.snapshot.revision, Revision::new(2));
+        let restored_fence = LeaseFence::new(
+            restored.snapshot.session_id,
+            actor.character_id,
+            restored.snapshot.revision,
+            restored.snapshot.session_epoch,
+            client,
+        );
+        assert_eq!(
+            saves::resume_artifact(&app.store, actor, restored_fence, "character.sav", None)
+                .expect("restored SAV"),
+            valid_character_sav(false)
+        );
+
+        let lease = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].contract)
+            .expect("active lease");
+        let generation_two = valid_character_sav_generation(false, 2);
+        let (request, sav, pending) =
+            snapshot_request_for_sav(lease, actor, client, &generation_two);
+        let prepared = app.prepare(actor, request).expect("post-restore prepare");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+            generation_two,
+        )
+        .expect("post-restore SAV upload");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+            b"{}".to_vec(),
+        )
+        .expect("post-restore pending upload");
+        let finalized = app
+            .finalize(
+                actor,
+                SnapshotFinalizeRequest::new(
+                    prepared.snapshot_id,
+                    SnapshotFinalizeFence::new(
+                        lease.session_id,
+                        actor.character_id,
+                        lease.current_revision,
+                        lease.session_epoch,
+                        client,
+                        id(IdempotencyKey::new),
+                    ),
+                    vec![sav, pending.clone()],
+                    pending.sha256,
+                    None,
+                )
+                .expect("post-restore finalize request"),
+            )
+            .expect("post-restore finalize");
+        assert_eq!(finalized.revision, Revision::new(3));
+    }
+
+    #[test]
+    fn prepared_declarations_are_included_in_character_byte_quota() {
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (prepared, _, _) = prepared_snapshot(&app, actor, lease, client);
+        app.store
+            .write_transaction(|state| {
+                let active = state
+                    .prepared
+                    .get_mut(&prepared.snapshot_id)
+                    .expect("prepared snapshot");
+                active.request.files[0].size_bytes = storage::MAX_SNAPSHOT_STORAGE_BYTES;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("inflate active declaration");
+        let (request, _, _) = snapshot_request_for_sav(
+            lease,
+            actor,
+            client,
+            &valid_character_sav_generation(false, 1),
+        );
+        assert_eq!(app.prepare(actor, request), Err(Phase2Error::Busy));
+        app.store
+            .inspect_state(|state| {
+                assert_eq!(state.prepared.len(), 1);
+                assert_eq!(
+                    state.characters[&actor.character_id].revision,
+                    Revision::initial()
+                );
+            })
+            .expect("quota rejection is atomic");
+    }
+
+    #[test]
+    fn active_restore_reservation_bytes_are_included_in_character_quota() {
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let restore = SnapshotRestoreRequest::new(
+            id(SnapshotId::new),
+            lease.session_id,
+            actor.character_id,
+            lease.current_revision,
+            lease.session_epoch,
+            client,
+            id(IdempotencyKey::new),
+        );
+        app.store
+            .write_transaction(|state| {
+                state.restore_staging.insert(
+                    actor.character_id,
+                    storage::RestoreStage {
+                        request: restore,
+                        snapshot_id: id(SnapshotId::new),
+                        expires_at: lease.expires_at.value(),
+                        storage_bytes: storage::MAX_SNAPSHOT_STORAGE_BYTES,
+                        created_objects: Vec::new(),
+                    },
+                );
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("restore reservation");
+        let (request, _, _) = snapshot_request_for_sav(
+            lease,
+            actor,
+            client,
+            &valid_character_sav_generation(false, 1),
+        );
+        assert_eq!(app.prepare(actor, request), Err(Phase2Error::Busy));
+        app.store
+            .inspect_state(|state| assert!(state.prepared.is_empty()))
+            .expect("quota rejection is atomic");
+    }
+
+    #[test]
+    fn retired_snapshot_tombstones_are_bounded() {
+        let (app, clock) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (prepared, _, _) = prepared_snapshot(&app, actor, lease, client);
+        app.store
+            .write_transaction(|state| {
+                for _ in 0..storage::MAX_RETIRED_SNAPSHOTS {
+                    state.retired_snapshots.insert(id(SnapshotId::new));
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("fill bounded tombstone cache");
+        clock.advance(storage::UPLOAD_TTL_MS + 1);
+        let ticket = upload_ticket(&prepared, ArtifactIdentity::CharacterSav);
+        assert_eq!(
+            app.upload(&ticket, valid_character_sav(false)),
+            Err(Phase2Error::Expired)
+        );
+        app.store
+            .inspect_state(|state| {
+                assert_eq!(
+                    state.retired_snapshots.len(),
+                    storage::MAX_RETIRED_SNAPSHOTS
+                );
+            })
+            .expect("bounded tombstone cache");
+    }
+
+    #[test]
+    fn resume_package_verifies_mandatory_artifacts_before_signing() {
+        for (artifact, corrupt) in [
+            (ArtifactIdentity::CharacterSav, false),
+            (ArtifactIdentity::PendingCommits, true),
+        ] {
+            let (app, _) = deterministic_app();
+            let (actor, lease, client) = account_and_lease(&app);
+            let (prepared, sav, pending) = prepared_snapshot(&app, actor, lease, client);
+            upload_prepared(&app, &prepared);
+            let record = app
+                .finalize(
+                    actor,
+                    SnapshotFinalizeRequest::new(
+                        prepared.snapshot_id,
+                        SnapshotFinalizeFence::new(
+                            lease.session_id,
+                            actor.character_id,
+                            lease.current_revision,
+                            lease.session_epoch,
+                            client,
+                            id(IdempotencyKey::new),
+                        ),
+                        vec![sav, pending.clone()],
+                        pending.sha256,
+                        None,
+                    )
+                    .expect("finalize request"),
+                )
+                .expect("finalize");
+            let key = storage::Store::object_key(actor.character_id, record.snapshot_id, artifact);
+            if corrupt {
+                ObjectStore::put(app.store.objects.as_ref(), key, b"corrupt".to_vec())
+                    .expect("corrupt mandatory object");
+            } else {
+                assert!(
+                    app.store
+                        .objects
+                        .delete_if_present(&key)
+                        .expect("remove mandatory object")
+                );
+            }
+            let fence = LeaseFence::new(
+                record.session_id,
+                actor.character_id,
+                record.revision,
+                record.session_epoch,
+                client,
+            );
+            assert_eq!(
+                saves::resume_package(&app.store, actor, fence, None),
+                Err(Phase2Error::Internal)
+            );
         }
     }
 

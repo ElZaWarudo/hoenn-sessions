@@ -228,6 +228,7 @@ pub enum ControlEvent {
         session_epoch: u32,
         ready_sequence: u32,
         save_sequence: u32,
+        save_generation: u32,
     },
     #[serde(rename = "checkpoint_expired")]
     CheckpointExpired {
@@ -514,6 +515,21 @@ mod tests {
             command_id().0
         ))
         .is_err());
+    }
+
+    #[test]
+    fn save_update_events_preserve_the_full_generation_domain() {
+        for save_generation in [0, u32::MAX] {
+            let event = ControlEvent::SaveDataUpdated {
+                session_epoch: 7,
+                ready_sequence: 9,
+                save_sequence: 10,
+                save_generation,
+            };
+            let json = serde_json::to_string(&event).unwrap();
+            assert!(json.contains(&format!(r#""save_generation":{save_generation}"#)));
+            assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+        }
     }
 
     #[tokio::test]

@@ -1,6 +1,7 @@
 #include "global.h"
 #include "coop/net_bridge.h"
 #include "coop/progress.h"
+#include "coop/save.h"
 
 ALIGNED(4) EWRAM_DATA struct CoopNetBridge gCoopNetBridge = {0};
 
@@ -15,6 +16,7 @@ struct CoopNetRuntime
     u32 observed_sidecar_heartbeat_frame;
     u32 checkpoint_started_frame;
     u32 save_update_epoch;
+    u32 save_update_generation;
     u16 save_update_queue_next_index;
     enum CoopCheckpointState checkpoint_state;
     bool8 cloud_epoch_accepted;
@@ -253,8 +255,20 @@ static bool8 IsCloudSessionActive(void)
 {
     return sCoopNetRuntime.cloud_epoch_accepted
         && sCoopNetRuntime.session_epoch != 0
+        && CoopSave_IsOnlineEnabled()
         && (gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY) != 0
         && (gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE) == 0;
+}
+
+static void TryAnnounceRomReady(void)
+{
+    if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_INITIALIZED) == 0
+     || (gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_ROM_READY_SENT) != 0
+     || !CoopSave_IsOnlineEnabled())
+        return;
+
+    if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0))
+        gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_ROM_READY_SENT;
 }
 
 static void CancelCheckpointAuthorization(void)
@@ -300,6 +314,7 @@ static void SetCheckpointStateForAcceptedEpoch(void)
     {
         sCoopNetRuntime.recovery_required = FALSE;
         sCoopNetRuntime.save_update_epoch = 0;
+        sCoopNetRuntime.save_update_generation = 0;
         sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_IDLE;
     }
 }
@@ -335,6 +350,7 @@ static void ReconcileQueuedSaveDataUpdated(void)
     sCoopNetRuntime.save_data_update_pending = FALSE;
     sCoopNetRuntime.flash_save_started = FALSE;
     sCoopNetRuntime.save_update_epoch = 0;
+    sCoopNetRuntime.save_update_generation = 0;
     if (!sCoopNetRuntime.save_data_update_pending
      && sCoopNetRuntime.checkpoint_state == COOP_CHECKPOINT_STATE_SAVING)
         sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_IDLE;
@@ -358,6 +374,8 @@ static void PreserveQueuedSaveDataUpdatedBeforeQueueReset(void)
 
 static void TrySendPendingSaveDataUpdated(void)
 {
+    u8 payload[sizeof(u32)];
+
     if (!sCoopNetRuntime.save_data_update_pending
      || sCoopNetRuntime.save_data_update_queued)
         return;
@@ -378,9 +396,13 @@ static void TrySendPendingSaveDataUpdated(void)
         return;
     }
 
+    payload[0] = sCoopNetRuntime.save_update_generation;
+    payload[1] = sCoopNetRuntime.save_update_generation >> 8;
+    payload[2] = sCoopNetRuntime.save_update_generation >> 16;
+    payload[3] = sCoopNetRuntime.save_update_generation >> 24;
     if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED,
-                                            NULL,
-                                            0))
+                                            payload,
+                                            sizeof(payload)))
     {
         sCoopNetRuntime.save_data_update_queued = TRUE;
         sCoopNetRuntime.save_update_queue_next_index =
@@ -442,6 +464,10 @@ enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void)
 
 bool8 CoopNetBridge_IsCloudMode(void)
 {
+    /* Once the sidecar accepts the cloud epoch, the session owns save
+     * authorization.  Keep this boundary sticky even if a later save
+     * validation fails: otherwise a corrupt record could silently fall back
+     * to local writes after cloud negotiation. */
     return sCoopNetRuntime.cloud_epoch_accepted;
 }
 
@@ -518,12 +544,14 @@ void CoopNetBridge_NotifySaveResult(bool8 save_succeeded)
         sCoopNetRuntime.flash_save_started = FALSE;
         sCoopNetRuntime.save_data_update_pending = FALSE;
         sCoopNetRuntime.save_update_epoch = 0;
+        sCoopNetRuntime.save_update_generation = 0;
         sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_IDLE;
         return;
     }
 
     sCoopNetRuntime.save_data_update_pending = TRUE;
     sCoopNetRuntime.save_update_epoch = sCoopNetRuntime.session_epoch;
+    sCoopNetRuntime.save_update_generation = CoopSave_GetGeneration();
     TrySendPendingSaveDataUpdated();
 }
 
@@ -601,6 +629,8 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         }
 
         if (message->session_epoch == 0)
+            return FALSE;
+        if (!CoopSave_IsOnlineEnabled())
             return FALSE;
 
         if (message->session_epoch == sCoopNetRuntime.session_epoch)
@@ -724,7 +754,8 @@ void CoopNetBridge_Init(void)
 {
     memset(&gCoopNetBridge, 0, sizeof(gCoopNetBridge));
     memset(&sCoopNetRuntime, 0, sizeof(sCoopNetRuntime));
-    CoopProgress_Init(&gCoopProgress);
+    if (!CoopSave_LoadRuntimeProgress())
+        CoopProgress_Init(&gCoopProgress);
     CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
     CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
     gCoopNetBridge.magic = COOP_NET_BRIDGE_MAGIC;
@@ -735,8 +766,7 @@ void CoopNetBridge_Init(void)
     sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_OFFLINE;
     gCoopNetBridge.status_flags = COOP_BRIDGE_STATUS_INITIALIZED;
 
-    if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0))
-        gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_ROM_READY_SENT;
+    TryAnnounceRomReady();
 }
 
 void CoopNetBridge_Poll(void)
@@ -749,6 +779,9 @@ void CoopNetBridge_Poll(void)
         return;
 
     sCoopNetRuntime.frame_counter++;
+    /* AgbMain initializes the bridge before flash is loaded. Do not invite a
+     * cloud session until the save layer has classified and validated V1. */
+    TryAnnounceRomReady();
     /* The sidecar owns read_index. Reconcile a critical event before any
      * heartbeat-driven reset so an already-consumed update is not retried,
      * while an accepted-but-undrained one can be preserved for rearm. */

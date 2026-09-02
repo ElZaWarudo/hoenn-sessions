@@ -18,6 +18,7 @@
 #include "agb_flash.h"
 #include "event_data.h"
 #include "constants/event_objects.h"
+#include "coop/save.h"
 
 static void ApplyNewEncryptionKeyToAllEncryptedData(u32 encryptionKey);
 
@@ -245,6 +246,7 @@ void CopyPartyAndObjectsFromSave(void)
 {
     LoadPlayerParty();
     LoadObjectEvents();
+    (void)CoopSave_Load();
 }
 
 void LoadPlayerBag(void)

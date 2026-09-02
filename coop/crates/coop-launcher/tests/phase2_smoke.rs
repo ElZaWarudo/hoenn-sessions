@@ -23,6 +23,11 @@ use coop_launcher::{
     KeychainError, RefreshTokenStore, SessionConfig, SessionError, SessionLifecycle,
     auth::AuthFuture, session::CloudFuture,
 };
+use coop_save::{
+    COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SCHEMA_VERSION, COOP_SAVE_V1_SIZE,
+    SAVE_BLOCK3_CAPACITY, SAVE_BLOCK3_CHUNK_OFFSET, SAVE_BLOCK3_CHUNK_SIZE, SECTOR_SIZE,
+    SECTORS_PER_SLOT, sector_checksum,
+};
 use coop_sidecar::control::ControlEvent;
 use coop_sidecar::{
     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, BridgeFrame, Direction, GAME_PROTOCOL_VERSION,
@@ -38,6 +43,77 @@ use tokio::{
 use uuid::Uuid;
 
 type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffff;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xedb8_8320 & 0u32.wrapping_sub(crc & 1));
+        }
+    }
+    !crc
+}
+
+fn valid_character_save(generation: u32) -> Vec<u8> {
+    let mut payload = [0_u8; COOP_SAVE_V1_SIZE];
+    write_u32(&mut payload, 0, COOP_SAVE_V1_MAGIC);
+    write_u16(&mut payload, 4, COOP_SAVE_V1_SCHEMA_VERSION);
+    write_u16(
+        &mut payload,
+        6,
+        u16::try_from(COOP_SAVE_V1_SIZE).expect("frozen save ABI fits u16"),
+    );
+    write_u32(&mut payload, 8, 1);
+    payload[12..28].copy_from_slice(&[
+        0x43, 0x91, 0x88, 0x33, 0xde, 0xc6, 0x46, 0xd6, 0xa5, 0x83, 0xd1, 0x24, 0x68, 0x6c, 0x85,
+        0x40,
+    ]);
+    write_u32(&mut payload, 28, generation);
+    // The four records are ordered by the frozen protocol ABI.
+    for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
+        let offset = 36 + index * 8;
+        payload[offset] = region;
+    }
+    let payload_crc = crc32(&payload[..668]);
+    write_u32(&mut payload, 668, payload_crc);
+
+    let mut save_block3 = [0xff_u8; SAVE_BLOCK3_CAPACITY];
+    save_block3[COOP_SAVE_OFFSET..COOP_SAVE_OFFSET + COOP_SAVE_V1_SIZE].copy_from_slice(&payload);
+    let mut bytes = vec![0xff_u8; 128 * 1024];
+    for (slot, counter) in [(0_usize, 0_u32), (1, 1)] {
+        let base = slot * SECTORS_PER_SLOT * SECTOR_SIZE;
+        for logical in 0..SECTORS_PER_SLOT {
+            let offset = base + logical * SECTOR_SIZE;
+            let sector = &mut bytes[offset..offset + SECTOR_SIZE];
+            sector.fill(0);
+            let chunk = logical * SAVE_BLOCK3_CHUNK_SIZE;
+            sector[SAVE_BLOCK3_CHUNK_OFFSET..SAVE_BLOCK3_CHUNK_OFFSET + SAVE_BLOCK3_CHUNK_SIZE]
+                .copy_from_slice(&save_block3[chunk..chunk + SAVE_BLOCK3_CHUNK_SIZE]);
+            write_u16(
+                sector,
+                4084,
+                u16::try_from(logical).expect("fixture logical ID fits u16"),
+            );
+            write_u16(
+                sector,
+                4086,
+                sector_checksum(&sector[..coop_save::LOGICAL_SECTOR_DATA_SIZES[logical]]),
+            );
+            write_u32(sector, 4088, 0x0801_2025);
+            write_u32(sector, 4092, counter);
+        }
+    }
+    bytes
+}
 
 const SESSION_EPOCH: u32 = 7;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
@@ -291,7 +367,7 @@ fn fixed_ids() -> (
 
 fn compatibility() -> BuildCompatibility {
     let manifest = serde_json::from_value(serde_json::json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "game_build": {
             "id": "pokeemerald-coop",
             "numeric_id": 65536,
@@ -306,9 +382,20 @@ fn compatibility() -> BuildCompatibility {
             "game_protocol_version": 1,
             "byte_order": "little",
             "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
-            "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 10, "last_sidecar_heartbeat": 12, "game_to_network": 16, "network_to_game": 4632},
+            "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},
             "queue": {"capacity": 32, "size": 4612, "read_index_offset": 0, "write_index_offset": 2, "entries_offset": 4},
             "message": {"size": 144, "payload_size": 128, "offsets": {"type": 0, "length": 2, "sequence": 4, "session_epoch": 8, "payload": 12, "checksum": 140}}
+        },
+        "save": {
+            "block3_address": 33_554_432,
+            "coop_offset": 4,
+            "generation_offset": 28,
+            "generation_address": 33_554_464,
+            "crc_offset": 668,
+            "schema_version": 1,
+            "struct_size": 672,
+            "registry_version": 1,
+            "registry_digest": "43918833dec646d6a583d124686c8540"
         }
     }))
     .expect("bridge manifest");
@@ -382,6 +469,11 @@ async fn fixture() -> TestResult<(TempDir, SessionLifecycle, Arc<FakeCloud>)> {
     };
     let session =
         SessionLifecycle::acquire_with_keychain(cloud.as_ref(), auth, config, keychain).await?;
+    assert!(!session.workspace.path().join("character.sav").exists());
+    assert_eq!(
+        std::fs::read(session.workspace.path().join("pending_commits.json"))?,
+        b"[]"
+    );
     Ok((root, session, cloud))
 }
 
@@ -553,10 +645,10 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
                                 assert!(frame.payload().is_empty());
                                 // This direct write is the deterministic mGBA/SAV seam;
                                 // the lifecycle reads the same private fixed path below.
-                                std::fs::write(&sav_path, b"synthetic-character-state")?;
+                                std::fs::write(&sav_path, valid_character_save(1))?;
                                 send_rom_frame(
                                     &mut bridge,
-                                    &BridgeFrame::new(MessageType::SaveDataUpdated, 3, SESSION_EPOCH, &[])?,
+                                    &BridgeFrame::new(MessageType::SaveDataUpdated, 3, SESSION_EPOCH, &1_u32.to_le_bytes())?,
                                     checkpoint_deadline,
                                 ).await?;
                             }
@@ -570,7 +662,7 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
     };
     assert_eq!(revision, Revision::new(1));
     assert_eq!(lifecycle.revision, revision);
-    assert_eq!(std::fs::read(&sav_path)?, b"synthetic-character-state");
+    assert_eq!(std::fs::read(&sav_path)?, valid_character_save(1));
     let calls = cloud.calls.lock().expect("cloud lock").clone();
     assert_eq!(calls[0], "login");
     assert!(calls.iter().any(|call| call == "acquire"));
@@ -587,7 +679,7 @@ async fn phase2_launcher_sidecar_checkpoint_smoke() -> TestResult<()> {
         &[
             (
                 coop_cloud::ArtifactIdentity::CharacterSav,
-                b"synthetic-character-state".to_vec(),
+                valid_character_save(1),
             ),
             (coop_cloud::ArtifactIdentity::PendingCommits, b"[]".to_vec(),),
         ]

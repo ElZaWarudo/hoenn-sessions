@@ -14,14 +14,13 @@ use std::{
 };
 
 use coop_cloud::{
-    AccessToken, AcquireLeaseRequest, ArtifactIdentity, CharacterCloudState, CharacterId,
-    ClientInstanceId, HeartbeatLeaseRequest, IdempotencyKey, InvitationCode, LeaseContract,
-    LoginRequest, Password, ReconnectLeaseRequest, RefreshRequest, RefreshResponse,
-    RegisterRequest, Revision, SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence,
-    SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareFence, SnapshotPrepareRequest,
-    TrustedManifestKey,
+    AccessToken, AcquireLeaseRequest, ArtifactIdentity, CharacterId, ClientInstanceId,
+    HeartbeatLeaseRequest, IdempotencyKey, InvitationCode, LeaseContract, LoginRequest, Password,
+    ReconnectLeaseRequest, RefreshRequest, RefreshResponse, RegisterRequest, Revision,
+    SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
+    SnapshotId, SnapshotPrepareFence, SnapshotPrepareRequest, TrustedManifestKey,
 };
-use coop_protocol::{FlyPointId, RegionId, RegionalProgress, TrainerInstanceId, WorldZone};
+use coop_protocol::RegionId;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -581,38 +580,78 @@ fn auth_headers(token: &AccessToken) -> Vec<(&'static str, String)> {
     vec![("authorization", format!("Bearer {}", token.expose_secret()))]
 }
 
-fn regional_fixture(character_id: CharacterId) -> Vec<u8> {
-    let mut progress = Vec::new();
-    for (region, badges, story) in [
-        (RegionId::Hoenn, u16::MAX, 11),
-        (RegionId::Kanto, 0, 22),
-        (RegionId::Johto, 0b101, 33),
-        (RegionId::Sevii, 0b1, 44),
-    ] {
-        let trainer = TrainerInstanceId::new(region, &format!("TRAINER_{}", region.token()))
-            .expect("fixture trainer identity");
-        let fly = FlyPointId::new(region, &format!("FLY_{}", region.token()))
-            .expect("fixture fly identity");
-        progress.push(
-            RegionalProgress::new(region, badges, story, vec![trainer], vec![fly])
-                .expect("fixture regional progress"),
+fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn valid_character_sav() -> Vec<u8> {
+    const SECTOR_ID_OFFSET: usize = 4_084;
+    const SECTOR_CHECKSUM_OFFSET: usize = 4_086;
+    const SECTOR_SIGNATURE_OFFSET: usize = 4_088;
+    const SECTOR_COUNTER_OFFSET: usize = 4_092;
+    const SECTOR_SIGNATURE: u32 = 0x0801_2025;
+
+    let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
+    write_u32(&mut payload, 0, coop_save::COOP_SAVE_V1_MAGIC);
+    write_u16(&mut payload, 4, coop_save::COOP_SAVE_V1_SCHEMA_VERSION);
+    write_u16(
+        &mut payload,
+        6,
+        u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("CSP1 size fits u16"),
+    );
+    write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
+    payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
+    write_u32(&mut payload, 28, 1);
+    for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
+        let offset = 36 + index * 8;
+        payload[offset] = region;
+        // Registry v1 intentionally assigns no Sevii badges.
+        write_u16(
+            &mut payload,
+            offset + 2,
+            if index == 3 { 0 } else { 1 << index },
+        );
+        write_u32(
+            &mut payload,
+            offset + 4,
+            100 + u32::try_from(index).expect("regional fixture index fits u32"),
         );
     }
-    let state = CharacterCloudState::new(
-        character_id,
-        WorldZone::new(RegionId::Kanto, "PALLET_TOWN", 1).expect("fixture world zone"),
-        progress,
-    )
-    .expect("fixture state");
-    assert_eq!(state.active_region_badge_tier().expect("active tier"), 0);
-    assert_eq!(
-        state
-            .progress_for(RegionId::Hoenn)
-            .expect("Hoenn")
-            .badge_count(),
-        8
-    );
-    serde_json::to_vec(&state).expect("fixture serializes")
+    let crc = crc32fast::hash(&payload[..668]);
+    write_u32(&mut payload, 668, crc);
+
+    let mut save_block3 = [0xff; coop_save::SAVE_BLOCK3_CAPACITY];
+    save_block3
+        [coop_save::COOP_SAVE_OFFSET..coop_save::COOP_SAVE_OFFSET + coop_save::COOP_SAVE_V1_SIZE]
+        .copy_from_slice(&payload);
+    let mut bytes = vec![0xff; coop_save::FLASH_IMAGE_SIZE];
+    for (slot, counter, rotation) in [(0_usize, 20_u32, 4_usize), (1, 21, 11)] {
+        for physical in 0..coop_save::SECTORS_PER_SLOT {
+            let logical = (physical + rotation) % coop_save::SECTORS_PER_SLOT;
+            let start = (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+            let sector = &mut bytes[start..start + coop_save::SECTOR_SIZE];
+            let source = logical * coop_save::SAVE_BLOCK3_CHUNK_SIZE;
+            sector[coop_save::SAVE_BLOCK3_CHUNK_OFFSET
+                ..coop_save::SAVE_BLOCK3_CHUNK_OFFSET + coop_save::SAVE_BLOCK3_CHUNK_SIZE]
+                .copy_from_slice(&save_block3[source..source + coop_save::SAVE_BLOCK3_CHUNK_SIZE]);
+            write_u16(
+                sector,
+                SECTOR_ID_OFFSET,
+                u16::try_from(logical).expect("logical sector fits u16"),
+            );
+            let checksum = coop_save::sector_checksum(
+                &sector[..coop_save::LOGICAL_SECTOR_DATA_SIZES[logical]],
+            );
+            write_u16(sector, SECTOR_CHECKSUM_OFFSET, checksum);
+            write_u32(sector, SECTOR_SIGNATURE_OFFSET, SECTOR_SIGNATURE);
+            write_u32(sector, SECTOR_COUNTER_OFFSET, counter);
+        }
+    }
+    bytes
 }
 
 fn trusted_key() -> TrustedManifestKey {
@@ -742,7 +781,7 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
     .await?;
     expect_status(&response, 401);
 
-    let sav = regional_fixture(registered.character_id);
+    let sav = valid_character_sav();
     let pending = b"[]".to_vec();
     let sav_file = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &sav)?;
     let pending_file = SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, &pending)?;
@@ -853,17 +892,26 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
         expect_status(&response, 200);
         assert_eq!(response.body, expected);
     }
-    let parsed: CharacterCloudState = serde_json::from_slice(&sav)?;
-    assert_eq!(serde_json::to_vec(&parsed)?, sav);
-    assert_eq!(parsed.regional_progress.len(), 4);
-    assert_eq!(parsed.active_region(), RegionId::Kanto);
-    assert_eq!(parsed.active_region_badge_tier()?, 0);
+    let parsed = coop_save::parse(
+        &sav,
+        coop_save::RegistryContract::new(
+            coop_protocol::IDENTITY_REGISTRY_VERSION,
+            coop_protocol::IDENTITY_REGISTRY_DIGEST,
+        ),
+    )?;
+    assert_eq!(parsed.raw_bytes(), sav);
+    assert_eq!(parsed.coop().regional_progress.len(), 4);
     assert_eq!(
         parsed
-            .progress_for(RegionId::Hoenn)
-            .expect("Hoenn")
-            .badge_count(),
-        8
+            .coop()
+            .regional_progress
+            .map(|progress| (progress.region, progress.badge_mask)),
+        [
+            (RegionId::Hoenn, 1),
+            (RegionId::Kanto, 2),
+            (RegionId::Johto, 4),
+            (RegionId::Sevii, 0),
+        ]
     );
 
     let old_fence = lease.fence();

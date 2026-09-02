@@ -32,6 +32,7 @@
 #include "field_weather.h"
 #include "battle_tower.h"
 #include "gym_leader_rematch.h"
+#include "coop/identity.h"
 #include "battle_frontier.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -1008,16 +1009,6 @@ static void TryUpdateGymLeaderRematchFromTrainer(void)
         UpdateGymLeaderRematch();
 }
 
-static u16 GetTrainerAFlag(void)
-{
-    return TRAINER_FLAGS_START + TRAINER_BATTLE_PARAM.opponentA;
-}
-
-static u16 GetTrainerBFlag(void)
-{
-    return TRAINER_FLAGS_START + TRAINER_BATTLE_PARAM.opponentB;
-}
-
 static bool32 IsPlayerDefeated(u32 battleOutcome)
 {
     switch (battleOutcome)
@@ -1226,7 +1217,7 @@ void SetUpTwoTrainersBattle(void)
 bool32 GetTrainerFlagFromScriptPointer(const u8 *data)
 {
     TrainerBattleParameter *temp = (TrainerBattleParameter*)(data + OPCODE_OFFSET);
-    return FlagGet(TRAINER_FLAGS_START + temp->params.opponentA);
+    return HasTrainerBeenFought(temp->params.opponentA);
 }
 
 bool32 GetRematchFromScriptPointer(const u8 *data)
@@ -1267,34 +1258,65 @@ bool8 GetTrainerFlag(void)
     else if (InTrainerHill())
         return GetHillTrainerFlag(gSelectedObjectEvent);
     else
-        return FlagGet(GetTrainerAFlag());
+        return HasTrainerBeenFought(TRAINER_BATTLE_PARAM.opponentA);
 }
 
 static void SetBattledTrainersFlags(void)
 {
     if (TRAINER_BATTLE_PARAM.opponentB != 0)
-        FlagSet(GetTrainerBFlag());
-    FlagSet(GetTrainerAFlag());
+        SetTrainerFlag(TRAINER_BATTLE_PARAM.opponentB);
+    SetTrainerFlag(TRAINER_BATTLE_PARAM.opponentA);
 }
 
 static void UNUSED SetBattledTrainerFlag(void)
 {
-    FlagSet(GetTrainerAFlag());
+    SetTrainerFlag(TRAINER_BATTLE_PARAM.opponentA);
 }
 
 bool8 HasTrainerBeenFought(u16 trainerId)
 {
-    return FlagGet(TRAINER_FLAGS_START + trainerId);
+    bool8 defeated = FALSE;
+
+    switch (CoopIdentity_GetTrainerDefeated(trainerId, &defeated))
+    {
+    case COOP_IDENTITY_ACCESS_HANDLED:
+        return defeated;
+    case COOP_IDENTITY_ACCESS_LEGACY:
+        return FlagGet(TRAINER_FLAGS_START + trainerId);
+    case COOP_IDENTITY_ACCESS_REJECTED:
+    default:
+        return FALSE;
+    }
 }
 
 void SetTrainerFlag(u16 trainerId)
 {
-    FlagSet(TRAINER_FLAGS_START + trainerId);
+    if (CoopIdentity_SetTrainerDefeated(trainerId, TRUE) == COOP_IDENTITY_ACCESS_LEGACY)
+        FlagSet(TRAINER_FLAGS_START + trainerId);
 }
 
 void ClearTrainerFlag(u16 trainerId)
 {
-    FlagClear(TRAINER_FLAGS_START + trainerId);
+    if (CoopIdentity_SetTrainerDefeated(trainerId, FALSE) == COOP_IDENTITY_ACCESS_LEGACY)
+        FlagClear(TRAINER_FLAGS_START + trainerId);
+}
+
+void ToggleTrainerFlag(u16 trainerId)
+{
+    bool8 defeated = FALSE;
+
+    switch (CoopIdentity_GetTrainerDefeated(trainerId, &defeated))
+    {
+    case COOP_IDENTITY_ACCESS_HANDLED:
+        (void)CoopIdentity_SetTrainerDefeated(trainerId, !defeated);
+        break;
+    case COOP_IDENTITY_ACCESS_LEGACY:
+        FlagToggle(TRAINER_FLAGS_START + trainerId);
+        break;
+    case COOP_IDENTITY_ACCESS_REJECTED:
+    default:
+        break;
+    }
 }
 
 void BattleSetup_StartTrainerBattle(void)

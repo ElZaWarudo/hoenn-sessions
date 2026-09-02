@@ -10,6 +10,7 @@ axum.workspace = true
 base64.workspace = true
 coop-cloud = { path = "../coop-cloud" }
 coop-protocol = { path = "../coop-protocol" }
+coop-save = { path = "../coop-save" }
 getrandom.workspace = true
 hmac.workspace = true
 http-body-util.workspace = true
@@ -24,6 +25,7 @@ uuid.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+crc32fast.workspace = true
 http-body-util.workspace = true
 tower.workspace = true
 

@@ -1142,9 +1142,13 @@ impl LocalSidecar {
                 };
             }
             MessageType::SaveDataUpdated => {
-                if frame.session_epoch() != self.session_epoch || !frame.payload().is_empty() {
+                if frame.session_epoch() != self.session_epoch {
                     return Err(SidecarError::ProtocolViolation("invalid save-data update"));
                 }
+                let save_generation =
+                    u32::from_le_bytes(frame.payload().try_into().map_err(|_| {
+                        SidecarError::ProtocolViolation("invalid save-data update")
+                    })?);
                 let CheckpointState::AwaitSaveData { key, .. } = session.checkpoint_state else {
                     return Err(SidecarError::ProtocolViolation(
                         "save-data update without grant",
@@ -1161,6 +1165,7 @@ impl LocalSidecar {
                         session_epoch: key.session_epoch,
                         ready_sequence: key.ready_sequence,
                         save_sequence: frame.sequence(),
+                        save_generation,
                     })
                     .await?;
                 self.sequence_state.commit_rom_frame(&frame);
@@ -1590,6 +1595,16 @@ mod tests {
     use super::*;
 
     const TEST_SESSION_EPOCH: u32 = 41;
+
+    fn save_update(sequence: u32, generation: u32) -> BridgeFrame {
+        BridgeFrame::new(
+            MessageType::SaveDataUpdated,
+            sequence,
+            TEST_SESSION_EPOCH,
+            &generation.to_le_bytes(),
+        )
+        .unwrap()
+    }
 
     #[derive(Serialize)]
     struct TestHandshake<'a> {
@@ -2080,13 +2095,17 @@ mod tests {
         ));
         let mut granted = [0; BRIDGE_FRAME_SIZE];
         second_bridge.read_exact(&mut granted).await.unwrap();
-        let save =
-            BridgeFrame::new(MessageType::SaveDataUpdated, 2, TEST_SESSION_EPOCH, &[]).unwrap();
+        let save = save_update(2, 17);
         second_bridge.write_all(&save.encode()).await.unwrap();
-        assert!(matches!(
+        assert_eq!(
             read_event(&mut second_control).await,
-            ControlEvent::SaveDataUpdated { .. }
-        ));
+            ControlEvent::SaveDataUpdated {
+                session_epoch: TEST_SESSION_EPOCH,
+                ready_sequence: 1,
+                save_sequence: 2,
+                save_generation: 17,
+            }
+        );
 
         drop(second_control);
         drop(second_bridge);
@@ -2430,20 +2449,196 @@ mod tests {
                 .is_err()
         );
 
-        let save =
-            BridgeFrame::new(MessageType::SaveDataUpdated, 2, TEST_SESSION_EPOCH, &[]).unwrap();
+        let save = save_update(2, 0x7856_3412);
         bridge.write_all(&save.encode()).await.unwrap();
-        assert!(matches!(
+        assert_eq!(
             read_event(&mut control).await,
             ControlEvent::SaveDataUpdated {
+                session_epoch: TEST_SESSION_EPOCH,
                 ready_sequence: 1,
                 save_sequence: 2,
-                ..
+                save_generation: 0x7856_3412,
             }
-        ));
+        );
         drop(control);
         drop(bridge);
         server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn save_generation_boundaries_are_lossless_and_one_grant_is_one_shot() {
+        for save_generation in [0, u32::MAX] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let key = CheckpointKey::new(TEST_SESSION_EPOCH, 1).unwrap();
+            sidecar.sequence_state.commit_checkpoint_ready(key);
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::AwaitSaveData {
+                    key,
+                    deadline: Instant::now() + SAVE_DATA_TIMEOUT,
+                },
+                expired_checkpoint: None,
+                acknowledged_rom_ready: true,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame = save_update(2, save_generation);
+
+            sidecar
+                .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+                .await
+                .unwrap();
+            assert_eq!(
+                read_event(&mut control_peer).await,
+                ControlEvent::SaveDataUpdated {
+                    session_epoch: TEST_SESSION_EPOCH,
+                    ready_sequence: 1,
+                    save_sequence: 2,
+                    save_generation,
+                }
+            );
+            assert_eq!(session.checkpoint_state, CheckpointState::Idle);
+            assert_eq!(sidecar.sequence_state.last_session_rom, 2);
+
+            assert!(matches!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await,
+                Err(SidecarError::ProtocolViolation(
+                    "save-data update without grant"
+                ))
+            ));
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn save_update_rejects_every_non_u32_payload_without_advancing_state() {
+        for payload in [
+            Vec::new(),
+            vec![1],
+            vec![1, 2],
+            vec![1, 2, 3],
+            vec![1, 2, 3, 4, 5],
+            vec![0; crate::BRIDGE_PAYLOAD_SIZE],
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let key = CheckpointKey::new(TEST_SESSION_EPOCH, 1).unwrap();
+            sidecar.sequence_state.commit_checkpoint_ready(key);
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::AwaitSaveData {
+                    key,
+                    deadline: Instant::now() + SAVE_DATA_TIMEOUT,
+                },
+                expired_checkpoint: None,
+                acknowledged_rom_ready: true,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame = BridgeFrame::new(
+                MessageType::SaveDataUpdated,
+                2,
+                TEST_SESSION_EPOCH,
+                &payload,
+            )
+            .unwrap();
+
+            assert!(matches!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await,
+                Err(SidecarError::ProtocolViolation("invalid save-data update"))
+            ));
+            assert!(matches!(
+                session.checkpoint_state,
+                CheckpointState::AwaitSaveData {
+                    key: retained_key,
+                    ..
+                } if retained_key == key
+            ));
+            assert_eq!(sidecar.sequence_state.last_session_rom, 1);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_postgrant_save_frame_terminates_without_a_control_event() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+
+        let ready =
+            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&ready.encode()).await.unwrap();
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CheckpointReady { .. }
+        ));
+        send_command(
+            &mut control,
+            &grant(
+                "00000000-0000-4000-8000-000000000099",
+                TEST_SESSION_EPOCH,
+                1,
+            ),
+        )
+        .await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                ..
+            }
+        ));
+        let mut granted = [0; BRIDGE_FRAME_SIZE];
+        bridge.read_exact(&mut granted).await.unwrap();
+
+        let mut malformed = save_update(2, 33).encode();
+        malformed[BRIDGE_FRAME_SIZE - 1] ^= 1;
+        bridge.write_all(&malformed).await.unwrap();
+
+        let mut unexpected = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), control.read(&mut unexpected))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        assert!(matches!(
+            server_task.await.unwrap(),
+            Err(SidecarError::Frame(
+                FrameCodecError::ChecksumMismatch { .. }
+            ))
+        ));
     }
 
     #[tokio::test]
@@ -2525,19 +2720,20 @@ mod tests {
         let mut granted = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut granted).await.unwrap();
 
-        let save =
-            BridgeFrame::new(MessageType::SaveDataUpdated, 3, TEST_SESSION_EPOCH, &[]).unwrap();
+        let save = save_update(3, 0x0403_0201);
         let save_bytes = save.encode();
         bridge.write_all(&save_bytes[..23]).await.unwrap();
         tokio::task::yield_now().await;
         bridge.write_all(&save_bytes[23..]).await.unwrap();
-        assert!(matches!(
+        assert_eq!(
             read_event(&mut control).await,
             ControlEvent::SaveDataUpdated {
+                session_epoch: TEST_SESSION_EPOCH,
+                ready_sequence: 1,
                 save_sequence: 3,
-                ..
+                save_generation: 0x0403_0201,
             }
-        ));
+        );
         drop(control);
         drop(bridge);
         server_task.abort();

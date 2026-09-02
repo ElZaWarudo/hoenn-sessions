@@ -14,6 +14,8 @@ use coop_cloud::{
     BridgeAbiVersion, CompatibilityTarget, GameBuildId, MgbaVersion, ProtocolVersion, Revision,
     Sha256Digest,
 };
+use coop_protocol::{IDENTITY_REGISTRY_DIGEST, IDENTITY_REGISTRY_VERSION};
+use coop_save::RegistryContract;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -25,7 +27,7 @@ pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 pub const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_MGBA_OUTPUT_BYTES: usize = 64 * 1024;
 pub const MGBA_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-pub const BRIDGE_MANIFEST_SCHEMA: u16 = 1;
+pub const BRIDGE_MANIFEST_SCHEMA: u16 = 2;
 pub const BRIDGE_ABI: u16 = 1;
 pub const GAME_PROTOCOL: u16 = 1;
 pub const BRIDGE_MESSAGE_BYTES: u64 = 144;
@@ -71,6 +73,7 @@ pub struct BridgeManifest {
     pub schema_version: u16,
     pub game_build: GameBuildManifest,
     pub net_bridge: NetBridgeManifest,
+    pub save: SaveManifest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -95,6 +98,56 @@ pub struct NetBridgeManifest {
     pub offsets: BridgeOffsets,
     pub queue: QueueManifest,
     pub message: MessageManifest,
+}
+
+/// The linked-ROM `SaveBlock3` contract. Keep these fields separate from the
+/// bridge fields: a ROM can expose a valid network bridge while its persisted
+/// co-op payload is absent or incompatible.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SaveManifest {
+    pub block3_address: u64,
+    pub coop_offset: u16,
+    pub generation_offset: u16,
+    pub generation_address: u64,
+    pub crc_offset: u16,
+    pub schema_version: u16,
+    pub struct_size: u16,
+    pub registry_version: u32,
+    pub registry_digest: String,
+}
+
+impl SaveManifest {
+    /// Returns the protocol identity registry contract after validating its
+    /// canonical version and truncated SHA-256 digest.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CompatibilityError::Manifest`] when the version or digest is
+    /// not the pinned protocol registry contract.
+    pub fn registry_contract(&self) -> Result<RegistryContract, CompatibilityError> {
+        let mut digest = [0_u8; 16];
+        let bytes = self.registry_digest.as_bytes();
+        if bytes.len() != 32 {
+            return Err(CompatibilityError::Manifest);
+        }
+        for (index, chunk) in bytes.chunks_exact(2).enumerate() {
+            digest[index] = (hex_nibble(chunk[0])? << 4) | hex_nibble(chunk[1])?;
+        }
+        if self.registry_version != IDENTITY_REGISTRY_VERSION || digest != IDENTITY_REGISTRY_DIGEST
+        {
+            return Err(CompatibilityError::Manifest);
+        }
+        Ok(RegistryContract::new(self.registry_version, digest))
+    }
+}
+
+fn hex_nibble(value: u8) -> Result<u8, CompatibilityError> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        _ => Err(CompatibilityError::Manifest),
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -244,10 +297,41 @@ fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError
         || bridge.message.offsets.session_epoch != 8
         || bridge.message.offsets.payload != 12
         || bridge.message.offsets.checksum != 140
+        || bridge.offsets.magic != 0
+        || bridge.offsets.abi_version != 4
+        || bridge.offsets.game_protocol_version != 6
+        || bridge.offsets.game_build_id != 8
+        || bridge.offsets.status_flags != 12
+        || bridge.offsets.last_sidecar_heartbeat != 16
+        || bridge.offsets.game_to_network != 20
+        || bridge.offsets.network_to_game != 4632
     {
         return Err(CompatibilityError::Manifest);
     }
     if Sha256Digest::parse(&game.rom_sha256).is_err() {
+        return Err(CompatibilityError::Manifest);
+    }
+    let save = &manifest.save;
+    if save.block3_address < 0x0200_0000
+        || !save.block3_address.is_multiple_of(4)
+        || save
+            .block3_address
+            .checked_add(u64::from(save.struct_size) + u64::from(save.coop_offset))
+            .is_none_or(|end| end > 0x0204_0000)
+        || save.coop_offset
+            != u16::try_from(coop_save::COOP_SAVE_OFFSET).expect("frozen save ABI fits u16")
+        || save.generation_offset != 28
+        || save
+            .block3_address
+            .checked_add(u64::from(save.coop_offset))
+            .and_then(|address| address.checked_add(u64::from(save.generation_offset)))
+            != Some(save.generation_address)
+        || save.crc_offset != 668
+        || save.schema_version != coop_save::COOP_SAVE_V1_SCHEMA_VERSION
+        || save.struct_size
+            != u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("frozen save ABI fits u16")
+        || save.registry_contract().is_err()
+    {
         return Err(CompatibilityError::Manifest);
     }
     Ok(())

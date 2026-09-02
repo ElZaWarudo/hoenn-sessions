@@ -66,6 +66,8 @@ enum CoopRegion CoopRegion_FromSectionId(u32 section_id);
  */
 bool8 CoopRegion_Normalize(enum CoopRegion *out, enum Region engine_region, u32 section_id);
 bool8 CoopRegion_TryFromSectionId(enum CoopRegion *out, u32 section_id);
+/* Derive the authoritative concrete region from the loaded map header. */
+bool8 CoopRegion_TryGetActive(enum CoopRegion *out);
 bool8 CoopRegion_IsValid(enum CoopRegion region);
 
 /* Export the active map identity and player coordinates at the ABI boundary. */

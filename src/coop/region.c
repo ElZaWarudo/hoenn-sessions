@@ -115,6 +115,16 @@ bool8 CoopRegion_TryFromSectionId(enum CoopRegion *out, u32 section_id)
     return TRUE;
 }
 
+bool8 CoopRegion_TryGetActive(enum CoopRegion *out)
+{
+    if (out == NULL)
+        return FALSE;
+
+    return CoopRegion_Normalize(out,
+                                EngineRegion_FromMapHeaderValue(gMapHeader.engineRegion),
+                                gMapHeader.regionMapSectionId);
+}
+
 bool8 CoopRegion_IsValid(enum CoopRegion region)
 {
     return region >= COOP_REGION_HOENN && region < COOP_REGION_COUNT;
@@ -136,8 +146,7 @@ bool8 CoopWorldLocation_Export(struct WorldLocation *out)
      || !gObjectEvents[gPlayerAvatar.objectEventId].isPlayer)
         return FALSE;
 
-    if (!CoopRegion_Normalize(&region, EngineRegion_FromMapHeaderValue(gMapHeader.engineRegion),
-                              gMapHeader.regionMapSectionId))
+    if (!CoopRegion_TryGetActive(&region))
         return FALSE;
 
     /* SaveBlock's map components are signed engine fields; reject sentinels

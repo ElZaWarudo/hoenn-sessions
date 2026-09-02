@@ -251,6 +251,8 @@ struct NPCFollower
 #include "constants/items.h"
 #define ITEM_FLAGS_COUNT ((ITEMS_COUNT / 8) + ((ITEMS_COUNT % 8) ? 1 : 0))
 
+#include "coop/save.h"
+
 struct SaveBlock3
 {
 #if OW_USE_FAKE_RTC
@@ -269,7 +271,11 @@ struct SaveBlock3
 #if APRICORN_TREE_COUNT > 0
     u8 apricornTrees[NUM_APRICORN_TREE_BYTES];
 #endif
-}; /* max size 1624 bytes */
+    struct CoopSaveV1 coop;
+}; /* The co-op extension must remain inside the first six SaveBlock3 chunks. */
+
+_Static_assert(offsetof(struct SaveBlock3, coop) == COOP_SAVE_BLOCK3_OFFSET, "CoopSave SaveBlock3 offset");
+_Static_assert(sizeof(struct SaveBlock3) == COOP_SAVE_BLOCK3_OFFSET + COOP_SAVE_V1_SIZE, "SaveBlock3 co-op ABI size");
 
 extern struct SaveBlock3 *gSaveBlock3Ptr;
 

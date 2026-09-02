@@ -15,7 +15,9 @@ use coop_launcher::{
     compat::BuildCompatibility,
     epoch::EpochStore,
     keychain::{OsKeychain, RefreshTokenStore},
-    process::{ProcessError, staged_rom_marker_contents, staged_rom_marker_path},
+    process::{
+        ProcessError, cleanup_owned_staged_rom, staged_rom_marker_contents, staged_rom_marker_path,
+    },
     session::{SessionConfig, SessionLifecycle},
 };
 use thiserror::Error;
@@ -279,17 +281,29 @@ fn stage_verified_rom(source: &Path, private_root: &Path) -> Result<(PathBuf, Pa
         return Err(CliError::Value);
     }
     fs::create_dir_all(private_root).map_err(|_| CliError::Value)?;
-    let staged = private_root.join(format!("rom-{}.gba", uuid::Uuid::new_v4().simple()));
+    // Give every staged ROM its own unpredictable directory under the current
+    // user's launcher temp root. This isolates ordinary concurrent sessions;
+    // atomic containment against another process running as the same user is
+    // a separate Windows production-hardening requirement.
+    let staging = tempfile::Builder::new()
+        .prefix("coop-rom-")
+        .tempdir_in(private_root)
+        .map_err(|_| CliError::Value)?;
+    let staging = staging.keep();
+    let staged = staging.join(format!("rom-{}.gba", uuid::Uuid::new_v4().simple()));
     let marker = staged_rom_marker_path(&staged);
-    let marker_temporary =
-        private_root.join(format!(".rom-owner-{}.tmp", uuid::Uuid::new_v4().simple()));
     let result = (|| {
         let mut input = open_read_nofollow(source).map_err(|_| CliError::Value)?;
-        let mut output = fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&staged)
-            .map_err(|_| CliError::Value)?;
+        let mut output_options = fs::OpenOptions::new();
+        output_options.create_new(true).write(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            output_options
+                .share_mode(0x0000_0001)
+                .custom_flags(0x0020_0000);
+        }
+        let mut output = output_options.open(&staged).map_err(|_| CliError::Value)?;
         let mut total = 0_u64;
         let mut buffer = vec![0_u8; 64 * 1024];
         loop {
@@ -310,20 +324,20 @@ fn stage_verified_rom(source: &Path, private_root: &Path) -> Result<(PathBuf, Pa
         let mut marker_output = fs::OpenOptions::new()
             .create_new(true)
             .write(true)
-            .open(&marker_temporary)
+            .open(&marker)
             .map_err(|_| CliError::Value)?;
         marker_output
             .write_all(&marker_contents)
             .map_err(|_| CliError::Value)?;
         marker_output.sync_all().map_err(|_| CliError::Value)?;
-        drop(marker_output);
-        fs::rename(&marker_temporary, &marker).map_err(|_| CliError::Value)?;
         Ok((staged.clone(), marker.clone()))
     })();
     if result.is_err() {
-        let _ = fs::remove_file(&marker_temporary);
-        let _ = fs::remove_file(&marker);
-        let _ = fs::remove_file(&staged);
+        // Only remove artifacts while the marker still proves the exact
+        // staged ROM identity. If publication or identity validation failed,
+        // retain the paths as recovery evidence rather than deleting a
+        // replacement that may now occupy either name.
+        let _ = cleanup_owned_staged_rom(&staged, &marker);
     }
     result
 }
@@ -362,12 +376,11 @@ async fn run() -> Result<(), CliError> {
     let private_root = private_temp_root()?;
     let (verified_rom, verified_rom_marker) = stage_verified_rom(&options.rom, &private_root)?;
     // Capture executable identities before any asynchronous authentication or
-    // lease work.  The process supervisor revalidates these bindings at the
-    // exact spawn boundary, denying replacement of a trusted file or ancestor.
+    // lease work. The process supervisor revalidates these bindings at the
+    // exact spawn boundary while retaining the bound file/ancestor handles.
     let Ok(mgba_spec) = CommandSpec::mgba_owned_staged(&mgba, &verified_rom, &verified_rom_marker)
     else {
-        let _ = fs::remove_file(&verified_rom_marker);
-        let _ = fs::remove_file(&verified_rom);
+        let _ = cleanup_owned_staged_rom(&verified_rom, &verified_rom_marker);
         return Err(CliError::Runtime);
     };
     let sidecar_template =
@@ -399,9 +412,10 @@ async fn run() -> Result<(), CliError> {
         .await
         .map_err(|_| CliError::Runtime)?;
     eprintln!(
-        "Session materialized at {}. Stock mGBA 0.10.5 has no certified startup-script flag; load {} through Tools > Scripting and load {} manually if needed.",
+        "Session materialized at {}. Stock mGBA 0.10.5 has no certified startup-script flag; load {} through Tools > Scripting, then load {} manually if present. New captures must be written to {}.",
         session.workspace.path().display(),
         session.workspace.path().join("main.lua").display(),
+        session.workspace.path().join("resume.input.ss1").display(),
         session.workspace.path().join("resume.ss1").display()
     );
     let expected_epoch = session.lease.session_epoch.value();
@@ -420,6 +434,10 @@ async fn run() -> Result<(), CliError> {
         Err(error) => {
             if should_release_after_start_failure(&error) {
                 let _ = session.release(&api).await;
+            } else {
+                // Cleanup uncertainty must retain the fenced lease, but it
+                // must not retain a refresh token or live credential family.
+                let _ = session.close_credentials(&api).await;
             }
             return Err(CliError::Runtime);
         }
@@ -438,6 +456,7 @@ async fn run() -> Result<(), CliError> {
         // Preserve an authorized SAV locally and leave the lease fenced rather
         // than releasing it while a live child could still emit traffic.
         let _ = session.preserve_recovery_after_child_failure();
+        let _ = session.close_credentials(&api).await;
         return Err(CliError::Runtime);
     }
     let release_result = session.release(&api).await;

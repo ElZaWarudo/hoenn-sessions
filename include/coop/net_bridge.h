@@ -179,9 +179,10 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void);
 bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
 /* Called by the normal save path after TrySavingData has completed. A failed
- * save never emits a wire message; a successful save queues one critical,
- * empty SAVE_DATA_UPDATED message and retries it from the poll loop if the
- * outbound ring is full. */
+ * save never emits a wire message; a successful save queues one critical
+ * SAVE_DATA_UPDATED with the sealed generation as an exact four-byte
+ * little-endian payload, and retries it from the poll loop if the outbound
+ * ring is full. */
 void CoopNetBridge_NotifySaveResult(bool8 save_succeeded);
 bool8 CoopNetBridge_EnqueueGameToNetwork(u16 type, const void *payload, u16 payload_size);
 bool8 CoopNetBridge_DequeueGameToNetwork(struct CoopBridgeMessage *message);

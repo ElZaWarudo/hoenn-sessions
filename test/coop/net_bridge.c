@@ -2,6 +2,10 @@
 
 #include "global.h"
 #include "coop/net_bridge.h"
+#include "coop/save.h"
+#include "gba/flash_internal.h"
+#include "load_save.h"
+#include "save.h"
 #include "test/test.h"
 
 _Static_assert(sizeof(struct CoopBridgeMessage) == 144, "tested message ABI size");
@@ -46,6 +50,12 @@ static void PopInitialRomReady(void)
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
 }
 
+static void InitTestBridge(void)
+{
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+}
+
 static void HostWriteInboundUnchecked(const struct CoopBridgeMessage *message)
 {
     struct CoopBridgeQueue *queue = &gCoopNetBridge.network_to_game;
@@ -53,6 +63,16 @@ static void HostWriteInboundUnchecked(const struct CoopBridgeMessage *message)
 
     queue->entries[index] = *message;
     queue->write_index++;
+}
+
+static u32 sSaveSectorProgramCalls;
+
+static u16 CountSaveSectorProgramCalls(u16 sector, u8 *data)
+{
+    (void)sector;
+    (void)data;
+    sSaveSectorProgramCalls++;
+    return 1;
 }
 
 TEST("Cloud Coop wire ABI matches the documented compact layout")
@@ -238,7 +258,7 @@ TEST("Cloud Coop bridge queue rejects malformed producer indexes")
 
 TEST("Cloud Coop bridge poll discards an impossible inbound queue depth")
 {
-    CoopNetBridge_Init();
+    InitTestBridge();
     gCoopNetBridge.network_to_game.read_index = 25;
     gCoopNetBridge.network_to_game.write_index = 25 + COOP_NET_BRIDGE_QUEUE_CAPACITY + 1;
 
@@ -254,7 +274,7 @@ TEST("Cloud Coop session epoch change clears both queues and reissues ROM ready"
 {
     struct CoopBridgeMessage message;
 
-    CoopNetBridge_Init();
+    InitTestBridge();
     EXPECT(CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_CHECKPOINT_READY,
                                                NULL,
                                                0));
@@ -288,7 +308,7 @@ TEST("Cloud Coop same epoch reconnect rejects stale replay and preserves sequenc
     u16 outboundWriteIndex;
     u16 inboundIndex;
 
-    CoopNetBridge_Init();
+    InitTestBridge();
     PopInitialRomReady();
 
     EXPECT(CoopBridgeMessage_Seal(&message,
@@ -381,7 +401,7 @@ TEST("Cloud Coop rejects unsupported inbound types before later valid session tr
 {
     struct CoopBridgeMessage message;
 
-    CoopNetBridge_Init();
+    InitTestBridge();
     PopInitialRomReady();
 
     SealTestMessage(&message, COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE, 100, 21);
@@ -415,7 +435,7 @@ TEST("Cloud Coop raw unsupported inbound traffic cannot suppress a valid new epo
 {
     struct CoopBridgeMessage message;
 
-    CoopNetBridge_Init();
+    InitTestBridge();
     PopInitialRomReady();
 
     /* Model mGBA Lua publishing directly into EWRAM, bypassing the C helper. */
@@ -448,7 +468,7 @@ static void EstablishTestCloudSession(void)
 {
     struct CoopBridgeMessage message;
 
-    CoopNetBridge_Init();
+    InitTestBridge();
     PopInitialRomReady();
     EXPECT(CoopBridgeMessage_Seal(&message,
                                   COOP_BRIDGE_MESSAGE_SESSION_READY,
@@ -495,7 +515,7 @@ TEST("Cloud Coop checkpoint request is online-only and requires drained queues")
 {
     struct CoopBridgeMessage message;
 
-    CoopNetBridge_Init();
+    InitTestBridge();
     EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_OFFLINE);
 
     EstablishTestCloudSession();
@@ -587,7 +607,7 @@ TEST("Cloud Coop epoch and heartbeat changes cancel a pending checkpoint")
     EXPECT(CoopNetBridge_RequestCheckpoint() == COOP_CHECKPOINT_REQUEST_REJECTED);
 }
 
-TEST("Cloud Coop successful save emits one empty update and failure emits none")
+TEST("Cloud Coop successful save emits one generation update and failure emits none")
 {
     struct CoopBridgeMessage message;
 
@@ -606,7 +626,11 @@ TEST("Cloud Coop successful save emits one empty update and failure emits none")
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_SAVING);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED);
-    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(message.length, sizeof(u32));
+    EXPECT_EQ(message.payload[0], 0);
+    EXPECT_EQ(message.payload[1], 0);
+    EXPECT_EQ(message.payload[2], 0);
+    EXPECT_EQ(message.payload[3], 0);
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     CoopNetBridge_NotifySaveResult(TRUE);
@@ -648,7 +672,7 @@ TEST("Cloud Coop retries a full critical save update without consuming sequence"
             break;
     }
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED);
-    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(message.length, sizeof(u32));
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
 }
 
@@ -690,7 +714,7 @@ TEST("Cloud Coop retains a pending update across same-epoch heartbeat recovery")
         {
             updates++;
             EXPECT_EQ(message.session_epoch, 17);
-            EXPECT_EQ(message.length, 0);
+            EXPECT_EQ(message.length, sizeof(u32));
         }
     }
     EXPECT_EQ(updates, 1);
@@ -735,7 +759,7 @@ TEST("Cloud Coop preserves an enqueued undrained update across same-epoch heartb
         {
             updates++;
             EXPECT_EQ(message.session_epoch, 17);
-            EXPECT_EQ(message.length, 0);
+            EXPECT_EQ(message.length, sizeof(u32));
         }
     }
     EXPECT_EQ(updates, 1);
@@ -914,6 +938,35 @@ TEST("Cloud Coop production save callback fails closed before TrySavingData on a
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
     CoopStartMenu_TestSetSaveDryRun(FALSE);
     (void)message;
+}
+
+TEST("Cloud Coop SaveFailedScreen retries cannot bypass a revoked checkpoint")
+{
+    u16 (*programFlashSector)(u16, u8 *) = ProgramFlashSector;
+    bool32 flashMemoryPresent = gFlashMemoryPresent;
+
+    EstablishTestCloudSession();
+    StartTestCheckpoint();
+    DeliverTestGrant(2, 17, 0);
+    EXPECT(CoopNetBridge_ConsumeCheckpointGrant());
+
+    /* Simulate a record becoming invalid after negotiation and after the
+     * grant was consumed. The cloud epoch remains sticky, but authorization
+     * is revoked and the normal callback reports the failed save. */
+    gSaveBlock3Ptr->coop.trainer_bits[COOP_SAVE_TRAINER_BITS_SIZE - 1] = 0x80;
+    EXPECT(!CoopSave_Seal(&gSaveBlock3Ptr->coop));
+    EXPECT(CoopNetBridge_IsCloudMode());
+    CoopNetBridge_NotifySaveResult(FALSE);
+
+    sSaveSectorProgramCalls = 0;
+    ProgramFlashSector = CountSaveSectorProgramCalls;
+    gFlashMemoryPresent = TRUE;
+    HandleSavingData(SAVE_NORMAL);
+    EXPECT_EQ(sSaveSectorProgramCalls, 0);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+
+    ProgramFlashSector = programFlashSector;
+    gFlashMemoryPresent = flashMemoryPresent;
 }
 
 TEST("Cloud Coop forced save callback bypasses checkpoint negotiation")

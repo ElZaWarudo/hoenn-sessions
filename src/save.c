@@ -12,6 +12,8 @@
 #include "trainer_hill.h"
 #include "link.h"
 #include "constants/game_stat.h"
+#include "coop/net_bridge.h"
+#include "coop/save.h"
 
 static u16 CalculateChecksum(void *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
@@ -79,7 +81,12 @@ struct
 // These will produce an error if a save struct is larger than the space
 // alloted for it in the flash.
 STATIC_ASSERT(sizeof(struct SaveBlock3) <= SAVE_BLOCK_3_CHUNK_SIZE * NUM_SECTORS_PER_SLOT, SaveBlock3FreeSpace);
+STATIC_ASSERT(sizeof(struct SaveBlock3) <= SAVE_BLOCK_3_CHUNK_SIZE * (SECTOR_ID_SAVEBLOCK1_END + 1), SaveBlock3LinkSaveFreeSpace);
 STATIC_ASSERT(sizeof(struct SaveBlock2) <= SECTOR_DATA_SIZE, SaveBlock2FreeSpace);
+STATIC_ASSERT(offsetof(struct SaveBlock2, playerName) == 0, SaveBlock2PlayerNameOffset);
+STATIC_ASSERT(offsetof(struct SaveBlock2, playerGender) == 16, SaveBlock2PlayerGenderOffset);
+STATIC_ASSERT(offsetof(struct SaveBlock2, playerRegion) == 17, SaveBlock2PlayerRegionOffset);
+STATIC_ASSERT(offsetof(struct SaveBlock2, playerTrainerId) == 19, SaveBlock2TrainerIdOffset);
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
 
@@ -96,6 +103,55 @@ COMMON_DATA struct SaveSectorLocation gRamSaveSectorLocations[NUM_SECTORS_PER_SL
 COMMON_DATA u16 gSaveAttemptStatus = 0;
 
 EWRAM_DATA struct SaveSector gSaveDataBuffer = {0}; // Buffer used for reading/writing sectors
+
+/* Partial link saves only write SaveBlock2/SaveBlock1 sectors. They must not
+ * advance or announce the SaveBlock3 generation because the complete
+ * region-qualified record is not persisted by that operation. */
+static bool8 sSaveOperationBlocked;
+static EWRAM_DATA struct CoopSaveV1 sCoopSaveBeforeWrite;
+static bool8 sCoopSaveSnapshotValid;
+
+static bool8 IsValidSaveSectorId(u16 sectorId)
+{
+    return sectorId < NUM_SECTORS_PER_SLOT;
+}
+
+static void RestorePreparedCoopSave(bool8 saveSucceeded)
+{
+    if (sCoopSaveSnapshotValid && !saveSucceeded && gSaveBlock3Ptr != NULL)
+        gSaveBlock3Ptr->coop = sCoopSaveBeforeWrite;
+    sCoopSaveSnapshotValid = FALSE;
+}
+
+static bool8 IsCloudSaveAuthorized(void)
+{
+    return !CoopNetBridge_IsCloudMode()
+        || CoopNetBridge_IsCheckpointAuthorizedForSave();
+}
+
+static bool8 SaveTypeWritesCanonicalCoopSave(u8 saveType)
+{
+    return saveType != SAVE_LINK && saveType != SAVE_EREADER;
+}
+
+static bool8 PrepareCanonicalSave(void)
+{
+    sCoopSaveSnapshotValid = FALSE;
+    if (gSaveBlock3Ptr != NULL)
+    {
+        sCoopSaveBeforeWrite = gSaveBlock3Ptr->coop;
+        sCoopSaveSnapshotValid = TRUE;
+    }
+
+    if (CoopSave_PrepareForWrite())
+        return TRUE;
+
+    /* Legacy/incompatible records are still allowed to use the original
+     * offline save path. A negotiated cloud session must never write a save
+     * whose generation and registry body were not prepared atomically. */
+    RestorePreparedCoopSave(FALSE);
+    return !CoopNetBridge_IsCloudMode();
+}
 
 void ClearSaveData(void)
 {
@@ -181,6 +237,12 @@ static u8 HandleWriteSector(u16 sectorId, const struct SaveSectorLocation *locat
     u16 sector;
     u8 *data;
     u16 size;
+
+    if (!IsValidSaveSectorId(sectorId) || locations == NULL)
+    {
+        gDamagedSaveSectors = 1;
+        return SAVE_STATUS_ERROR;
+    }
 
     // Adjust sector id for current save slot
     sector = sectorId + gLastWrittenSector;
@@ -317,6 +379,12 @@ static u8 HandleReplaceSector(u16 sectorId, const struct SaveSectorLocation *loc
     u8 *data;
     u16 size;
     u8 status;
+
+    if (!IsValidSaveSectorId(sectorId) || locations == NULL)
+    {
+        gDamagedSaveSectors = 1;
+        return SAVE_STATUS_ERROR;
+    }
 
     // Adjust sector id for current save slot
     sector = sectorId + gLastWrittenSector;
@@ -494,12 +562,22 @@ static u8 CopySaveSlotData(u16 sectorId, struct SaveSectorLocation *locations)
     u16 checksum;
     u16 slotOffset = NUM_SECTORS_PER_SLOT * (gSaveCounter % NUM_SAVE_SLOTS);
     u16 id;
+    u8 status = SAVE_STATUS_OK;
+
+    if (locations == NULL)
+        return SAVE_STATUS_ERROR;
 
     for (i = 0; i < NUM_SECTORS_PER_SLOT; i++)
     {
         ReadFlashSector(i + slotOffset, gReadWriteSector);
 
         id = gReadWriteSector->id;
+        if (!IsValidSaveSectorId(id))
+        {
+            if (gReadWriteSector->signature == SECTOR_SIGNATURE)
+                status = SAVE_STATUS_ERROR;
+            continue;
+        }
         if (id == 0)
             gLastWrittenSector = i;
 
@@ -515,7 +593,7 @@ static u8 CopySaveSlotData(u16 sectorId, struct SaveSectorLocation *locations)
         }
     }
 
-    return SAVE_STATUS_OK;
+    return status;
 }
 
 static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
@@ -529,6 +607,9 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
     u8 saveSlot1Status;
     u8 saveSlot2Status;
 
+    if (locations == NULL)
+        return SAVE_STATUS_CORRUPT;
+
     // Check save slot 1
     for (i = 0; i < NUM_SECTORS_PER_SLOT; i++)
     {
@@ -536,6 +617,8 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
+            if (!IsValidSaveSectorId(gReadWriteSector->id))
+                continue;
             checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
@@ -568,6 +651,8 @@ static u8 GetSaveValidStatus(const struct SaveSectorLocation *locations)
         if (gReadWriteSector->signature == SECTOR_SIGNATURE)
         {
             signatureValid = TRUE;
+            if (!IsValidSaveSectorId(gReadWriteSector->id))
+                continue;
             checksum = CalculateChecksum(gReadWriteSector->data, locations[gReadWriteSector->id].size);
             if (gReadWriteSector->checksum == checksum)
             {
@@ -716,6 +801,20 @@ u8 HandleSavingData(u8 saveType)
     u8 i;
     u32 *backupVar = gTrainerHillVBlankCounter;
 
+    sSaveOperationBlocked = FALSE;
+    /* This function is also called directly by SaveFailedScreen after the
+     * original TrySavingData callback has already reported failure. Recheck
+     * the cloud fence here so that that recovery path cannot write after its
+     * checkpoint authorization has been cleared. Partial link saves are
+     * likewise unavailable in cloud mode because they do not persist the
+     * canonical SaveBlock3 generation. */
+    if ((CoopNetBridge_IsCloudMode()
+      && (!IsCloudSaveAuthorized() || !SaveTypeWritesCanonicalCoopSave(saveType))))
+    {
+        sSaveOperationBlocked = TRUE;
+        RestorePreparedCoopSave(FALSE);
+        return 0;
+    }
     gTrainerHillVBlankCounter = NULL;
     UpdateSaveAddresses();
     switch (saveType)
@@ -732,6 +831,12 @@ u8 HandleSavingData(u8 saveType)
 
         // Write the full save slot first
         CopyPartyAndObjectsToSave();
+        if (!PrepareCanonicalSave())
+        {
+            sSaveOperationBlocked = TRUE;
+            gDamagedSaveSectors = 1;
+            break;
+        }
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
 
         // Save the Hall of Fame
@@ -745,6 +850,12 @@ u8 HandleSavingData(u8 saveType)
     case SAVE_NORMAL:
     default:
         CopyPartyAndObjectsToSave();
+        if (!PrepareCanonicalSave())
+        {
+            sSaveOperationBlocked = TRUE;
+            gDamagedSaveSectors = 1;
+            break;
+        }
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         break;
     case SAVE_LINK:
@@ -764,50 +875,83 @@ u8 HandleSavingData(u8 saveType)
 
         // Overwrite save slot
         CopyPartyAndObjectsToSave();
+        if (!PrepareCanonicalSave())
+        {
+            sSaveOperationBlocked = TRUE;
+            gDamagedSaveSectors = 1;
+            break;
+        }
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         break;
     }
+    RestorePreparedCoopSave(!gDamagedSaveSectors && !sSaveOperationBlocked);
     gTrainerHillVBlankCounter = backupVar;
     return 0;
 }
 
 u8 TrySavingData(u8 saveType)
 {
-    if (gFlashMemoryPresent != TRUE)
+    if (gFlashMemoryPresent != TRUE || !IsCloudSaveAuthorized())
     {
         gSaveAttemptStatus = SAVE_STATUS_ERROR;
+        CoopNetBridge_NotifySaveResult(FALSE);
         return SAVE_STATUS_ERROR;
     }
 
     HandleSavingData(saveType);
-    if (!gDamagedSaveSectors)
+    if (!gDamagedSaveSectors && !sSaveOperationBlocked)
     {
         gSaveAttemptStatus = SAVE_STATUS_OK;
+        CoopNetBridge_NotifySaveResult(TRUE);
         return SAVE_STATUS_OK;
     }
     else
     {
         DoSaveFailedScreen(saveType);
         gSaveAttemptStatus = SAVE_STATUS_ERROR;
+        CoopNetBridge_NotifySaveResult(FALSE);
         return SAVE_STATUS_ERROR;
     }
 }
 
 bool8 LinkFullSave_Init(void)
 {
+    sSaveOperationBlocked = FALSE;
+    RestorePreparedCoopSave(FALSE);
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
+    if (!IsCloudSaveAuthorized())
+    {
+        sSaveOperationBlocked = TRUE;
+        CoopNetBridge_NotifySaveResult(FALSE);
+        return TRUE;
+    }
     UpdateSaveAddresses();
     CopyPartyAndObjectsToSave();
+    if (!PrepareCanonicalSave())
+    {
+        sSaveOperationBlocked = TRUE;
+        CoopNetBridge_NotifySaveResult(FALSE);
+        return TRUE;
+    }
     RestoreSaveBackupVarsAndIncrement(gRamSaveSectorLocations);
     return FALSE;
 }
 
 bool8 LinkFullSave_WriteSector(void)
 {
-    u8 status = HandleWriteIncrementalSector(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
+    u8 status;
+
+    if (sSaveOperationBlocked)
+        return TRUE;
+    status = HandleWriteIncrementalSector(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
+    {
         DoSaveFailedScreen(SAVE_NORMAL);
+        sSaveOperationBlocked = TRUE;
+        RestorePreparedCoopSave(FALSE);
+        CoopNetBridge_NotifySaveResult(FALSE);
+    }
 
     // In this case "error" either means that an actual error was encountered
     // or that the given max sector has been reached (meaning it has finished successfully).
@@ -820,24 +964,54 @@ bool8 LinkFullSave_WriteSector(void)
 
 bool8 LinkFullSave_ReplaceLastSector(void)
 {
+    if (sSaveOperationBlocked)
+        return FALSE;
     HandleReplaceSectorAndVerify(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
+    {
         DoSaveFailedScreen(SAVE_NORMAL);
+        sSaveOperationBlocked = TRUE;
+        RestorePreparedCoopSave(FALSE);
+        CoopNetBridge_NotifySaveResult(FALSE);
+    }
     return FALSE;
 }
 
 bool8 LinkFullSave_SetLastSectorSignature(void)
 {
+    if (sSaveOperationBlocked)
+        return FALSE;
     CopySectorSignatureByte(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
+    {
         DoSaveFailedScreen(SAVE_NORMAL);
+        sSaveOperationBlocked = TRUE;
+        RestorePreparedCoopSave(FALSE);
+        CoopNetBridge_NotifySaveResult(FALSE);
+    }
+    else
+    {
+        RestorePreparedCoopSave(TRUE);
+        CoopNetBridge_NotifySaveResult(TRUE);
+    }
     return FALSE;
 }
 
 bool8 WriteSaveBlock2(void)
 {
+    sSaveOperationBlocked = FALSE;
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
+    /* This incremental path deliberately excludes SaveBlock3. It therefore
+     * cannot advance or report the canonical regional generation and is
+     * unavailable after cloud negotiation; the caller must use a full save
+     * checkpoint instead. */
+    if (CoopNetBridge_IsCloudMode())
+    {
+        sSaveOperationBlocked = TRUE;
+        CoopNetBridge_NotifySaveResult(FALSE);
+        return TRUE;
+    }
 
     UpdateSaveAddresses();
     CopyPartyAndObjectsToSave();
@@ -846,6 +1020,11 @@ bool8 WriteSaveBlock2(void)
     // Because RestoreSaveBackupVars is called immediately prior, gIncrementalSectorId will always be 0 below,
     // so this function only saves the first sector (SECTOR_ID_SAVEBLOCK2)
     HandleReplaceSectorAndVerify(gIncrementalSectorId + 1, gRamSaveSectorLocations);
+    if (gDamagedSaveSectors)
+    {
+        sSaveOperationBlocked = TRUE;
+        CoopNetBridge_NotifySaveResult(FALSE);
+    }
     return FALSE;
 }
 
@@ -856,6 +1035,12 @@ bool8 WriteSaveBlock1Sector(void)
 {
     bool32 finished = FALSE;
     u16 sectorId = ++gIncrementalSectorId; // Because WriteSaveBlock2 will have been called prior, this will be SECTOR_ID_SAVEBLOCK1_START
+
+    if (sSaveOperationBlocked || CoopNetBridge_IsCloudMode())
+    {
+        sSaveOperationBlocked = TRUE;
+        return TRUE;
+    }
     if (sectorId <= SECTOR_ID_SAVEBLOCK1_END)
     {
         // Write a single sector of SaveBlock1
@@ -872,7 +1057,16 @@ bool8 WriteSaveBlock1Sector(void)
     }
 
     if (gDamagedSaveSectors)
+    {
         DoSaveFailedScreen(SAVE_LINK);
+        sSaveOperationBlocked = TRUE;
+        CoopNetBridge_NotifySaveResult(FALSE);
+    }
+    else if (finished)
+    {
+        /* This path is a partial link save and does not persist all of
+         * SaveBlock3, so it intentionally emits no SAVE_DATA_UPDATED. */
+    }
 
     return finished;
 }

@@ -2152,7 +2152,7 @@ static void DebugAction_Trainers_SetRematch(u8 taskId)
 
     if (rematchId == -1)
     {
-        FlagToggle(TRAINER_FLAGS_START + sDebugMenuListData->data[0]);
+        ToggleTrainerFlag(sDebugMenuListData->data[0]);
         return;
     }
 
@@ -2163,7 +2163,7 @@ static void DebugAction_Trainers_SetRematch(u8 taskId)
 
         if (!HasTrainerBeenFought(gRematchTable[rematchId].trainerIds[i]))
         {
-            FlagToggle(TRAINER_FLAGS_START + gRematchTable[rematchId].trainerIds[i]);
+            ToggleTrainerFlag(gRematchTable[rematchId].trainerIds[i]);
             return;
         }
     }
@@ -2173,7 +2173,7 @@ static void DebugAction_Trainers_SetRematch(u8 taskId)
         if (gRematchTable[rematchId].trainerIds[i] == 0)
             break;
 
-        FlagToggle(TRAINER_FLAGS_START + gRematchTable[rematchId].trainerIds[i]);
+        ToggleTrainerFlag(gRematchTable[rematchId].trainerIds[i]);
     }
 }
 

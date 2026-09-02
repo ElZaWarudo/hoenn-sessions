@@ -254,6 +254,12 @@ fn workspace_writes_only_fixed_names_and_pending_bootstrap_is_exact() {
     let lua = std::fs::read_to_string(workspace.path().join("session.lua")).unwrap();
     assert!(lua.contains("127.0.0.1"));
     assert!(!lua.contains("control"));
+    assert!(lua.contains("character_save = "));
+    assert!(lua.contains("resume_input = "));
+    assert!(lua.contains("resume_output = "));
+    assert!(lua.contains("character.sav"));
+    assert!(lua.contains("resume.input.ss1"));
+    assert!(lua.contains("resume.ss1"));
 }
 
 #[test]

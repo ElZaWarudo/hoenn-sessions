@@ -1,15 +1,14 @@
 //! Argument-vector-only process supervision and sidecar control connection.
 
 use std::{
+    fmt::Write as _,
     fs,
-    io::{self, Read},
+    io::{self, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     process::Stdio,
     time::{Duration, Instant},
 };
 
-#[cfg(windows)]
-use std::io::{Seek, SeekFrom};
 #[cfg(windows)]
 use std::sync::Arc;
 
@@ -54,6 +53,13 @@ pub enum ProcessError {
     Protocol(#[source] serde_json::Error),
     #[error("child process termination failed")]
     Termination(#[source] io::Error),
+    #[error("owned mGBA artifact cleanup failed ({artifact})")]
+    Cleanup {
+        artifact: CleanupArtifact,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("startup failed ({startup}) and child cleanup was not confirmed ({cleanup})")]
     StartupCleanup {
         startup: Box<ProcessError>,
@@ -66,6 +72,30 @@ pub enum ProcessError {
     },
     #[error("a supervised child exited unsuccessfully")]
     ChildExited,
+}
+
+/// A cleanup target retained in a [`ProcessError`] so recovery code can
+/// identify the first artifact that could not be removed.  Paths are kept in
+/// the typed error for diagnostics; the CLI maps process errors to its
+/// generic runtime error and never prints them to the operator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CleanupArtifact {
+    /// The save file mGBA may create through its implicit SRAM path.
+    ImplicitSave,
+    /// The private staged ROM copied by the launcher.
+    Rom,
+    /// The ownership marker pairing the ROM to this launch.
+    Marker,
+}
+
+impl std::fmt::Display for CleanupArtifact {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ImplicitSave => "implicit save",
+            Self::Rom => "staged ROM",
+            Self::Marker => "ownership marker",
+        })
+    }
 }
 
 impl ProcessError {
@@ -89,10 +119,14 @@ pub struct CommandSpec {
     rom_identity: Option<ExecutableIdentity>,
     rom_cleanup: Option<PathBuf>,
     rom_marker_cleanup: Option<PathBuf>,
+    rom_implicit_save_path: Option<PathBuf>,
+    rom_marker_identity: Option<ExecutableIdentity>,
     #[cfg(windows)]
     executable_guards: Option<ExecutableGuards>,
     #[cfg(windows)]
     rom_guards: Option<ExecutableGuards>,
+    #[cfg(windows)]
+    rom_marker_guards: Option<ExecutableGuards>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,10 +163,14 @@ impl CommandSpec {
             rom_identity: None,
             rom_cleanup: None,
             rom_marker_cleanup: None,
+            rom_implicit_save_path: None,
+            rom_marker_identity: None,
             #[cfg(windows)]
             executable_guards,
             #[cfg(windows)]
             rom_guards: None,
+            #[cfg(windows)]
+            rom_marker_guards: None,
         })
     }
 
@@ -199,8 +237,9 @@ impl CommandSpec {
     /// `rom-*.gba` is never removed as a side effect of supervision.
     ///
     /// The marker is checked before any child starts and is retained until the
-    /// emulator has been reaped. The launcher writes the marker atomically
-    /// next to its staged ROM and includes the canonical ROM path in it.
+    /// emulator has been reaped. The launcher publishes it with create-new
+    /// semantics next to its staged ROM and includes the canonical ROM path in
+    /// it.
     ///
     /// # Errors
     ///
@@ -219,10 +258,185 @@ impl CommandSpec {
         {
             return Err(ProcessError::InvalidArgument);
         }
-        let mut spec = Self::mgba(executable, &rom_path)?;
+        let mut spec = Self::new(
+            executable,
+            vec![
+                rom_path
+                    .to_str()
+                    .ok_or(ProcessError::InvalidArgument)?
+                    .into(),
+            ],
+        )?;
+        let (rom_identity, rom_guards) = owned_file_binding(&rom_path)?;
+        let Some(rom_identity) = rom_identity else {
+            return Err(ProcessError::InvalidArgument);
+        };
+        let (marker_identity, marker_guards) = owned_file_binding(&marker_path)?;
+        let Some(marker_identity) = marker_identity else {
+            return Err(ProcessError::InvalidArgument);
+        };
+        #[cfg(windows)]
+        if let Some(marker_guards) = marker_guards.as_ref()
+            && !owned_rom_marker_matches_held_identity(&rom_identity, &marker_guards.file)
+                .unwrap_or(false)
+        {
+            // The initial path check and the two held bindings must agree at
+            // the same instant. If either file changed during construction,
+            // release the guards and retain both artifacts for recovery.
+            return Err(ProcessError::InvalidArgument);
+        }
+        let implicit_save_path = rom_path.with_extension("sav");
+        // A pre-existing sibling is never ours.  Only NotFound means absence;
+        // ACL, I/O, and other metadata failures fail closed before mGBA starts.
+        ensure_absent(&implicit_save_path)?;
+        let save_dir = rom_path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .ok_or(ProcessError::InvalidArgument)?;
+        let save_dir = save_dir.to_str().ok_or(ProcessError::InvalidArgument)?;
+        // mGBA 0.10.5 accepts repeated `-C OPTION=VALUE` overrides.  Pin the
+        // implicit SRAM directory to the private staged-ROM directory and
+        // disable config-driven save-state autoload/autosave; canonical SAV
+        // capture remains driven by the authenticated bridge safe-point.
+        spec.args = vec![
+            "-C".into(),
+            format!("savegamePath={save_dir}"),
+            "-C".into(),
+            "autoload=0".into(),
+            "-C".into(),
+            "autosave=0".into(),
+            rom_path
+                .to_str()
+                .ok_or(ProcessError::InvalidArgument)?
+                .into(),
+        ];
         spec.rom_cleanup = Some(rom_path);
+        spec.rom_identity = Some(rom_identity);
         spec.rom_marker_cleanup = Some(marker_path);
+        spec.rom_implicit_save_path = Some(implicit_save_path);
+        spec.rom_marker_identity = Some(marker_identity);
+        #[cfg(windows)]
+        {
+            spec.rom_guards = rom_guards;
+            spec.rom_marker_guards = marker_guards;
+        }
+        #[cfg(not(windows))]
+        let _ = (marker_guards, rom_guards);
         Ok(spec)
+    }
+
+    fn has_supported_argv(&self) -> bool {
+        if self.args.len() == 1 {
+            return self.rom_implicit_save_path.is_none()
+                && !self.args[0].is_empty()
+                && !self.args[0].contains('\0')
+                && Path::new(&self.args[0]).is_absolute();
+        }
+        if self.args.len() != 7 {
+            return false;
+        }
+        let Some(rom_cleanup) = self.rom_cleanup.as_deref() else {
+            return false;
+        };
+        let Some(marker_cleanup) = self.rom_marker_cleanup.as_deref() else {
+            return false;
+        };
+        let Some(implicit_save_path) = self.rom_implicit_save_path.as_deref() else {
+            return false;
+        };
+        let Some(rom_identity) = self.rom_identity.as_ref() else {
+            return false;
+        };
+        let Some(marker_identity) = self.rom_marker_identity.as_ref() else {
+            return false;
+        };
+        let Some(save_dir) = self.args[1].strip_prefix("savegamePath=") else {
+            return false;
+        };
+        let Some(expected_save_dir) = rom_cleanup.parent() else {
+            return false;
+        };
+        let Ok(current_rom_identity) = path_identity(rom_cleanup) else {
+            return false;
+        };
+        let Ok(current_marker_identity) = path_identity(marker_cleanup) else {
+            return false;
+        };
+        marker_cleanup == staged_rom_marker_path(rom_cleanup)
+            && implicit_save_path == rom_cleanup.with_extension("sav")
+            && current_rom_identity == *rom_identity
+            && current_marker_identity == *marker_identity
+            && Path::new(save_dir) == expected_save_dir
+            && Path::new(&self.args[6]) == rom_cleanup
+            && owned_rom_marker_matches_identity(rom_identity, marker_cleanup)
+            && self.args[0] == "-C"
+            && self.args[2] == "-C"
+            && self.args[3] == "autoload=0"
+            && self.args[4] == "-C"
+            && self.args[5] == "autosave=0"
+            && !self.args[6].is_empty()
+            && !self.args[6].contains('\0')
+            && Path::new(&self.args[6]).is_absolute()
+            && !save_dir.contains('\0')
+    }
+
+    /// Explicitly removes launcher-owned artifacts. The ownership marker is
+    /// last so an error leaves enough evidence for a later recovery attempt.
+    fn cleanup_owned_rom(&mut self) -> Result<(), ProcessError> {
+        if let Some(path) = self.rom_implicit_save_path.clone() {
+            #[cfg(windows)]
+            remove_owned_implicit_save(
+                &path,
+                self.rom_cleanup.as_deref(),
+                self.rom_guards.as_ref(),
+            )?;
+            #[cfg(not(windows))]
+            remove_owned_file(&path, CleanupArtifact::ImplicitSave)?;
+            self.rom_implicit_save_path = None;
+        }
+        if let Some(path) = self.rom_cleanup.clone() {
+            #[cfg(windows)]
+            remove_owned_guarded_file(
+                &path,
+                CleanupArtifact::Rom,
+                self.rom_identity.as_ref(),
+                &mut self.rom_guards,
+            )?;
+            #[cfg(not(windows))]
+            remove_owned_file(&path, CleanupArtifact::Rom)?;
+            self.rom_cleanup = None;
+        }
+        if let Some(path) = self.rom_marker_cleanup.clone() {
+            #[cfg(windows)]
+            {
+                if let (Some(identity), Some(marker_guards)) =
+                    (self.rom_identity.as_ref(), self.rom_marker_guards.as_ref())
+                    && !owned_rom_marker_matches_held_identity(identity, &marker_guards.file)
+                        .unwrap_or(false)
+                {
+                    return Err(ProcessError::Cleanup {
+                        artifact: CleanupArtifact::Marker,
+                        path,
+                        source: io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "ownership marker content changed",
+                        ),
+                    });
+                }
+                remove_owned_guarded_file(
+                    &path,
+                    CleanupArtifact::Marker,
+                    self.rom_marker_identity.as_ref(),
+                    &mut self.rom_marker_guards,
+                )?;
+            }
+            #[cfg(not(windows))]
+            remove_owned_file(&path, CleanupArtifact::Marker)?;
+            self.rom_marker_cleanup = None;
+            self.rom_identity = None;
+            self.rom_marker_identity = None;
+        }
+        Ok(())
     }
 }
 
@@ -244,21 +458,34 @@ pub fn staged_rom_marker_path(rom: impl AsRef<Path>) -> PathBuf {
 }
 
 /// Returns the exact marker bytes that pair with a canonical staged ROM.
-/// Callers should write this file atomically beside the ROM before constructing
-/// [`mgba_owned_staged`].
+/// Callers should publish this file with create-new semantics beside the ROM
+/// before constructing [`mgba_owned_staged`].
 ///
 /// # Errors
 ///
 /// Returns an error when the ROM path cannot be canonicalized.
 pub fn staged_rom_marker_contents(rom: impl AsRef<Path>) -> Result<Vec<u8>, ProcessError> {
-    let canonical = fs::canonicalize(rom.as_ref()).map_err(|_| ProcessError::InvalidArgument)?;
-    let mut marker = STAGED_ROM_MARKER_PREFIX.to_vec();
-    marker.extend_from_slice(canonical.to_string_lossy().as_bytes());
-    marker.push(b'\n');
+    let identity = path_identity(rom.as_ref()).map_err(|_| ProcessError::InvalidArgument)?;
+    let marker = staged_rom_marker_contents_from_identity(&identity);
     if marker.len() as u64 > MAX_STAGED_ROM_MARKER_BYTES {
         return Err(ProcessError::InvalidArgument);
     }
     Ok(marker)
+}
+
+fn staged_rom_marker_contents_from_identity(identity: &ExecutableIdentity) -> Vec<u8> {
+    let mut digest = String::with_capacity(identity.digest.len() * 2);
+    for byte in identity.digest {
+        let _ = write!(&mut digest, "{byte:02x}");
+    }
+    format!(
+        "{}path={}\nlength={}\nsha256={}\n",
+        std::str::from_utf8(STAGED_ROM_MARKER_PREFIX).expect("static marker prefix is UTF-8"),
+        identity.canonical.to_string_lossy(),
+        identity.length,
+        digest,
+    )
+    .into_bytes()
 }
 
 fn owned_rom_marker_matches(rom: &Path, marker: &Path) -> bool {
@@ -270,7 +497,7 @@ fn owned_rom_marker_matches(rom: &Path, marker: &Path) -> bool {
     {
         return false;
     }
-    let Ok(file) = fs::File::open(marker) else {
+    let Ok(file) = open_read_nofollow(marker) else {
         return false;
     };
     let Ok(metadata) = file.metadata() else {
@@ -291,22 +518,171 @@ fn owned_rom_marker_matches(rom: &Path, marker: &Path) -> bool {
     {
         return false;
     }
-    let Ok(expected) = staged_rom_marker_contents(rom) else {
+    let Ok(identity) = path_identity(rom) else {
         return false;
     };
+    let expected = staged_rom_marker_contents_from_identity(&identity);
+    if expected.len() as u64 > MAX_STAGED_ROM_MARKER_BYTES {
+        return false;
+    }
     contents == expected
+}
+
+fn owned_rom_marker_matches_identity(identity: &ExecutableIdentity, marker: &Path) -> bool {
+    if matches!(
+        fs::symlink_metadata(marker),
+        Ok(metadata) if metadata.file_type().is_symlink()
+    ) {
+        return false;
+    }
+    let Ok(file) = open_read_nofollow(marker) else {
+        return false;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() > MAX_STAGED_ROM_MARKER_BYTES {
+        return false;
+    }
+    let Ok(capacity) = usize::try_from(metadata.len()) else {
+        return false;
+    };
+    let mut contents = Vec::with_capacity(capacity);
+    if file
+        .take(MAX_STAGED_ROM_MARKER_BYTES.saturating_add(1))
+        .read_to_end(&mut contents)
+        .is_err()
+    {
+        return false;
+    }
+    let expected = staged_rom_marker_contents_from_identity(identity);
+    contents == expected
+}
+
+#[cfg(windows)]
+fn owned_rom_marker_matches_held_identity(
+    identity: &ExecutableIdentity,
+    marker_file: &fs::File,
+) -> io::Result<bool> {
+    let metadata = marker_file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_STAGED_ROM_MARKER_BYTES {
+        return Ok(false);
+    }
+    let mut file = marker_file.try_clone()?;
+    file.seek(SeekFrom::Start(0))?;
+    let mut contents = Vec::new();
+    file.take(MAX_STAGED_ROM_MARKER_BYTES.saturating_add(1))
+        .read_to_end(&mut contents)?;
+    Ok(contents == staged_rom_marker_contents_from_identity(identity))
+}
+
+fn open_read_nofollow(path: &Path) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options
+            // Identity reads may run while a launcher-owned guard is open
+            // with DELETE access. Replacement protection comes from the
+            // caller's held identity guard and revalidation, not this reader.
+            .share_mode(0x0000_0007)
+            .custom_flags(0x0020_0000);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0x0002_0000);
+    }
+    options.open(path)
+}
+
+fn path_identity(path: &Path) -> io::Result<ExecutableIdentity> {
+    let path_metadata = fs::symlink_metadata(path)?;
+    if path_metadata.file_type().is_symlink() || !path_metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "owned path is not a regular file",
+        ));
+    }
+    let file = open_read_nofollow(path)?;
+    let metadata = file.metadata()?;
+    Ok(ExecutableIdentity {
+        canonical: fs::canonicalize(path)?,
+        length: metadata.len(),
+        modified: metadata.modified().ok(),
+        digest: hash_file_handle(&file)?,
+    })
+}
+
+/// Removes a staged ROM and its ownership marker only when the marker still
+/// proves the exact ROM identity. This is used when startup fails before a
+/// [`CommandSpec`] can take ownership; ambiguity intentionally leaves both
+/// paths in place for recovery instead of deleting a replaced file.
+///
+/// # Errors
+///
+/// Returns a typed cleanup error when identity or marker validation fails.
+pub fn cleanup_owned_staged_rom(
+    rom: impl AsRef<Path>,
+    marker: impl AsRef<Path>,
+) -> Result<(), ProcessError> {
+    let rom = rom.as_ref().to_path_buf();
+    let marker = marker.as_ref().to_path_buf();
+    if !rom.is_absolute() || !marker.is_absolute() || marker != staged_rom_marker_path(&rom) {
+        return Err(ProcessError::InvalidArgument);
+    }
+    let rom_identity = path_identity(&rom).map_err(|source| ProcessError::Cleanup {
+        artifact: CleanupArtifact::Rom,
+        path: rom.clone(),
+        source,
+    })?;
+    if !owned_rom_marker_matches_identity(&rom_identity, &marker) {
+        return Err(ProcessError::Cleanup {
+            artifact: CleanupArtifact::Marker,
+            path: marker.clone(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "ownership marker does not prove the staged ROM identity",
+            ),
+        });
+    }
+    let (bound_rom_identity, rom_guards) = owned_file_binding(&rom)?;
+    let Some(bound_rom_identity) = bound_rom_identity else {
+        return Err(ProcessError::InvalidArgument);
+    };
+    let (marker_identity, marker_guards) = owned_file_binding(&marker)?;
+    let Some(marker_identity) = marker_identity else {
+        return Err(ProcessError::InvalidArgument);
+    };
+    let mut spec = CommandSpec {
+        executable: PathBuf::new(),
+        args: Vec::new(),
+        identity: None,
+        rom_identity: Some(bound_rom_identity),
+        rom_cleanup: Some(rom),
+        rom_marker_cleanup: Some(marker),
+        rom_implicit_save_path: None,
+        rom_marker_identity: Some(marker_identity),
+        #[cfg(windows)]
+        executable_guards: None,
+        #[cfg(windows)]
+        rom_guards,
+        #[cfg(windows)]
+        rom_marker_guards: marker_guards,
+    };
+    #[cfg(not(windows))]
+    {
+        let _ = (rom_guards, marker_guards);
+    }
+    spec.cleanup_owned_rom()
 }
 
 impl Drop for CommandSpec {
     fn drop(&mut self) {
-        #[cfg(windows)]
-        let _ = self.rom_guards.take();
-        if let Some(path) = self.rom_marker_cleanup.take() {
-            let _ = fs::remove_file(path);
-        }
-        if let Some(path) = self.rom_cleanup.take() {
-            let _ = fs::remove_file(path);
-        }
+        // Keep the marker until every owned payload is gone.  If any best
+        // effort operation fails, the marker remains as recovery evidence.
+        let _ = self.cleanup_owned_rom();
     }
 }
 
@@ -326,6 +702,14 @@ impl std::fmt::Debug for CommandSpec {
             "rom_marker_cleanup",
             &self.rom_marker_cleanup.as_ref().map(|_| "[HELD]"),
         );
+        debug.field(
+            "rom_implicit_save_path",
+            &self.rom_implicit_save_path.as_ref().map(|_| "[HELD]"),
+        );
+        debug.field(
+            "rom_marker_identity",
+            &self.rom_marker_identity.as_ref().map(|_| "[BOUND]"),
+        );
         #[cfg(windows)]
         debug.field(
             "executable_guards",
@@ -333,6 +717,11 @@ impl std::fmt::Debug for CommandSpec {
         );
         #[cfg(windows)]
         debug.field("rom_guards", &self.rom_guards.as_ref().map(|_| "[HELD]"));
+        #[cfg(windows)]
+        debug.field(
+            "rom_marker_guards",
+            &self.rom_marker_guards.as_ref().map(|_| "[HELD]"),
+        );
         debug.finish()
     }
 }
@@ -599,8 +988,13 @@ pub struct SupervisedChildren {
     pub control: ControlChannel,
     rom_cleanup: Option<PathBuf>,
     rom_marker_cleanup: Option<PathBuf>,
+    rom_implicit_save_path: Option<PathBuf>,
+    rom_identity: Option<ExecutableIdentity>,
+    rom_marker_identity: Option<ExecutableIdentity>,
     #[cfg(windows)]
     rom_guards: Option<ExecutableGuards>,
+    #[cfg(windows)]
+    rom_marker_guards: Option<ExecutableGuards>,
 }
 
 /// Owns a sidecar child while asynchronous startup is in progress.  A
@@ -669,8 +1063,13 @@ impl SupervisedChildren {
             control,
             rom_cleanup: None,
             rom_marker_cleanup: None,
+            rom_implicit_save_path: None,
+            rom_identity: None,
+            rom_marker_identity: None,
             #[cfg(windows)]
             rom_guards: None,
+            #[cfg(windows)]
+            rom_marker_guards: None,
         }
     }
 
@@ -723,25 +1122,79 @@ impl SupervisedChildren {
         expected_epoch: u32,
         bridge: Option<(&SessionWorkspace, &Path)>,
     ) -> Result<Self, ProcessError> {
+        let mut mgba = mgba;
         if expected_epoch == 0
             || sidecar.args != ["--session-epoch", &expected_epoch.to_string()]
-            || mgba.args.len() != 1
-            || mgba.args[0].is_empty()
-            || mgba.args[0].contains('\0')
-            || !Path::new(&mgba.args[0]).is_absolute()
             || !sidecar.executable.is_absolute()
             || !mgba.executable.is_absolute()
             || sidecar.identity.is_none()
             || mgba.identity.is_none()
             || mgba.rom_identity.is_none()
+            || !mgba.has_supported_argv()
         {
-            return Err(ProcessError::InvalidArgument);
+            return Err(startup_cleanup(ProcessError::InvalidArgument, &mut mgba));
         }
-        validate_executable_identity(&sidecar)?;
+        if let Err(error) = validate_executable_identity(&sidecar) {
+            return Err(startup_cleanup(error, &mut mgba));
+        }
         // Validate both executable bindings before any child is spawned. A
         // later mGBA identity failure must never strand a live sidecar while
         // descriptor/control startup is in progress.
-        validate_executable_identity(&mgba)?;
+        if let Err(error) = validate_executable_identity(&mgba) {
+            return Err(startup_cleanup(error, &mut mgba));
+        }
+        let (mut startup_child, control) =
+            Self::start_sidecar(&sidecar, expected_epoch, &mut mgba, bridge).await?;
+        let mut mgba_command = Command::new(&mgba.executable);
+        isolate_environment(&mut mgba_command);
+        mgba_command
+            .args(&mgba.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mgba_child = match mgba_command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return Err(startup_failure_with_cleanup(
+                    ProcessError::Spawn(error),
+                    startup_child.child_mut(),
+                    &mut mgba,
+                )
+                .await);
+            }
+        };
+        let rom_cleanup = mgba.rom_cleanup.take();
+        let rom_marker_cleanup = mgba.rom_marker_cleanup.take();
+        let rom_implicit_save_path = mgba.rom_implicit_save_path.take();
+        let rom_identity = mgba.rom_identity.take();
+        let rom_marker_identity = mgba.rom_marker_identity.take();
+        #[cfg(windows)]
+        let rom_guards = mgba.rom_guards.take();
+        #[cfg(windows)]
+        let rom_marker_guards = mgba.rom_marker_guards.take();
+        Ok(Self {
+            sidecar: startup_child.into_child(),
+            mgba: mgba_child,
+            control,
+            rom_cleanup,
+            rom_marker_cleanup,
+            rom_implicit_save_path,
+            rom_identity,
+            rom_marker_identity,
+            #[cfg(windows)]
+            rom_guards,
+            #[cfg(windows)]
+            rom_marker_guards,
+        })
+    }
+
+    async fn start_sidecar(
+        sidecar: &CommandSpec,
+        expected_epoch: u32,
+        mgba: &mut CommandSpec,
+        bridge: Option<(&SessionWorkspace, &Path)>,
+    ) -> Result<(StartupChildGuard, ControlChannel), ProcessError> {
         let mut sidecar_command = Command::new(&sidecar.executable);
         isolate_environment(&mut sidecar_command);
         sidecar_command
@@ -750,10 +1203,18 @@ impl SupervisedChildren {
             .stderr(Stdio::null())
             .stdout(Stdio::piped())
             .kill_on_drop(true);
-        let child = sidecar_command.spawn().map_err(ProcessError::Spawn)?;
+        let child = match sidecar_command.spawn() {
+            Ok(child) => child,
+            Err(error) => return Err(startup_cleanup(ProcessError::Spawn(error), mgba)),
+        };
         let mut startup_child = StartupChildGuard::new(child);
         let Some(stdout) = startup_child.child_mut().stdout.take() else {
-            return Err(startup_failure(ProcessError::Descriptor, startup_child.child_mut()).await);
+            return Err(startup_failure_with_cleanup(
+                ProcessError::Descriptor,
+                startup_child.child_mut(),
+                mgba,
+            )
+            .await);
         };
         let mut stdout = tokio::io::BufReader::new(stdout);
         let line = timeout(
@@ -766,62 +1227,39 @@ impl SupervisedChildren {
         let line = match line {
             Ok(line) => line,
             Err(error) => {
-                return Err(startup_failure(error, startup_child.child_mut()).await);
+                return Err(
+                    startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await,
+                );
             }
         };
         let descriptor: SessionDescriptor = if let Ok(value) = serde_json::from_slice(&line) {
             value
         } else {
-            return Err(startup_failure(ProcessError::Descriptor, startup_child.child_mut()).await);
+            return Err(startup_failure_with_cleanup(
+                ProcessError::Descriptor,
+                startup_child.child_mut(),
+                mgba,
+            )
+            .await);
         };
         if let Err(error) = validate_descriptor(&descriptor, expected_epoch) {
-            return Err(startup_failure(error, startup_child.child_mut()).await);
+            return Err(startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await);
         }
         let control = match ControlChannel::connect(&descriptor).await {
             Ok(control) => control,
             Err(error) => {
-                return Err(startup_failure(error, startup_child.child_mut()).await);
+                return Err(
+                    startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await,
+                );
             }
         };
         if let Some((workspace, bridge_source)) = bridge
             && let Err(error) =
                 materialize_bridge_session(workspace, bridge_source, &descriptor, expected_epoch)
         {
-            return Err(startup_failure(error, startup_child.child_mut()).await);
+            return Err(startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await);
         }
-        let mut mgba = mgba;
-        let mut mgba_command = Command::new(&mgba.executable);
-        isolate_environment(&mut mgba_command);
-        mgba_command
-            .args(&mgba.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        let mgba_child = match mgba_command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                return Err(
-                    startup_failure(ProcessError::Spawn(error), startup_child.child_mut()).await,
-                );
-            }
-        };
-        // Keep cleanup ownership and Windows deny-delete handles in the
-        // supervisor until mGBA has been reaped.  On spawn failure these stay
-        // in `mgba`, so CommandSpec::drop removes only explicitly owned ROMs.
-        let rom_cleanup = mgba.rom_cleanup.take();
-        let rom_marker_cleanup = mgba.rom_marker_cleanup.take();
-        #[cfg(windows)]
-        let rom_guards = mgba.rom_guards.take();
-        Ok(Self {
-            sidecar: startup_child.into_child(),
-            mgba: mgba_child,
-            control,
-            rom_cleanup,
-            rom_marker_cleanup,
-            #[cfg(windows)]
-            rom_guards,
-        })
+        Ok((startup_child, control))
     }
 
     /// Stops and reaps both children with a bounded wait.
@@ -843,7 +1281,8 @@ impl SupervisedChildren {
     pub async fn stop_in_place(&mut self) -> Result<(), ProcessError> {
         let mgba_result = stop_child(&mut self.mgba).await;
         let sidecar_result = stop_child(&mut self.sidecar).await;
-        mgba_result.and(sidecar_result)
+        mgba_result.and(sidecar_result)?;
+        self.cleanup_owned_rom()
     }
 
     /// Waits for either child and terminates/reaps its peer before returning.
@@ -868,7 +1307,20 @@ impl SupervisedChildren {
             }
         });
         let peer = stop_child(peer).await;
-        first.and(peer)
+        match (first, peer) {
+            (Ok(()), Ok(())) => self.cleanup_owned_rom(),
+            // Both children are reaped even when the first one exits with a
+            // failure status. Cleanup must still be explicit in that case;
+            // preserve both failures if the filesystem also refuses removal.
+            (Err(event), Ok(())) => match self.cleanup_owned_rom() {
+                Ok(()) => Err(event),
+                Err(cleanup) => Err(ProcessError::EventCleanup {
+                    event: Box::new(event),
+                    cleanup: Box::new(cleanup),
+                }),
+            },
+            (Ok(()) | Err(_), Err(cleanup)) => Err(cleanup),
+        }
     }
 
     /// Waits for one control event or for either child to exit.  The method
@@ -889,8 +1341,7 @@ impl SupervisedChildren {
                     Err(error) => Err(ProcessError::Termination(error)),
                     Ok(status) => match stop_child(&mut self.mgba).await {
                         Err(error) => Err(error),
-                        Ok(()) if status.success() => Ok(SupervisorEvent::ChildExited),
-                        Ok(()) => Err(ProcessError::ChildExited),
+                        Ok(()) => self.child_exit_after_reap(status.success()),
                     },
                 }
             }
@@ -899,15 +1350,38 @@ impl SupervisedChildren {
                     Err(error) => Err(ProcessError::Termination(error)),
                     Ok(status) => match stop_child(&mut self.sidecar).await {
                         Err(error) => Err(error),
-                        Ok(()) if status.success() => Ok(SupervisorEvent::ChildExited),
-                        Ok(()) => Err(ProcessError::ChildExited),
+                        Ok(()) => self.child_exit_after_reap(status.success()),
                     },
                 }
             }
         };
         match result {
             Ok(event) => Ok(event),
+            // Child-exit branches have already reaped both children and have
+            // performed the explicit artifact cleanup. Do not run the
+            // fail-closed stop path a second time: that would obscure the
+            // original cleanup failure (or wrap it in a duplicate error).
+            Err(error @ (ProcessError::Cleanup { .. } | ProcessError::EventCleanup { .. })) => {
+                Err(error)
+            }
             Err(error) => Err(self.fail_closed(error).await),
+        }
+    }
+
+    fn child_exit_after_reap(&mut self, success: bool) -> Result<SupervisorEvent, ProcessError> {
+        let event = if success {
+            Ok(SupervisorEvent::ChildExited)
+        } else {
+            Err(ProcessError::ChildExited)
+        };
+        match (event, self.cleanup_owned_rom()) {
+            (Ok(event), Ok(())) => Ok(event),
+            (Err(event), Ok(())) => Err(event),
+            (Ok(_), Err(cleanup)) => Err(cleanup),
+            (Err(event), Err(cleanup)) => Err(ProcessError::EventCleanup {
+                event: Box::new(event),
+                cleanup: Box::new(cleanup),
+            }),
         }
     }
 
@@ -920,11 +1394,89 @@ impl SupervisedChildren {
             },
         }
     }
+
+    /// Removes all launcher-owned mGBA artifacts after both children have
+    /// been confirmed reaped. The marker is deliberately last: when a
+    /// filesystem operation fails, its path and any remaining files stay
+    /// available for explicit recovery.
+    fn cleanup_owned_rom(&mut self) -> Result<(), ProcessError> {
+        if let Some(path) = self.rom_implicit_save_path.clone() {
+            #[cfg(windows)]
+            remove_owned_implicit_save(
+                &path,
+                self.rom_cleanup.as_deref(),
+                self.rom_guards.as_ref(),
+            )?;
+            #[cfg(not(windows))]
+            remove_owned_file(&path, CleanupArtifact::ImplicitSave)?;
+            self.rom_implicit_save_path = None;
+        }
+        let rom_identity = self.rom_identity.clone();
+        let rom_path = self.rom_cleanup.clone();
+        if let Some(path) = rom_path.as_deref() {
+            #[cfg(windows)]
+            remove_owned_guarded_file(
+                path,
+                CleanupArtifact::Rom,
+                rom_identity.as_ref(),
+                &mut self.rom_guards,
+            )?;
+            #[cfg(not(windows))]
+            remove_owned_file(path, CleanupArtifact::Rom)?;
+            self.rom_cleanup = None;
+        }
+        if let Some(path) = self.rom_marker_cleanup.clone() {
+            #[cfg(windows)]
+            {
+                if let (Some(identity), Some(marker_guards)) =
+                    (rom_identity.as_ref(), self.rom_marker_guards.as_ref())
+                    && !owned_rom_marker_matches_held_identity(identity, &marker_guards.file)
+                        .unwrap_or(false)
+                {
+                    return Err(ProcessError::Cleanup {
+                        artifact: CleanupArtifact::Marker,
+                        path,
+                        source: io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "ownership marker content changed",
+                        ),
+                    });
+                }
+                remove_owned_guarded_file(
+                    &path,
+                    CleanupArtifact::Marker,
+                    self.rom_marker_identity.as_ref(),
+                    &mut self.rom_marker_guards,
+                )?;
+            }
+            #[cfg(not(windows))]
+            remove_owned_file(&path, CleanupArtifact::Marker)?;
+            self.rom_marker_cleanup = None;
+            self.rom_identity = None;
+            self.rom_marker_identity = None;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(windows)]
 fn executable_binding(
     path: &Path,
+) -> Result<(Option<ExecutableIdentity>, Option<ExecutableGuards>), ProcessError> {
+    binding_with_access(path, false)
+}
+
+#[cfg(windows)]
+fn owned_file_binding(
+    path: &Path,
+) -> Result<(Option<ExecutableIdentity>, Option<ExecutableGuards>), ProcessError> {
+    binding_with_access(path, true)
+}
+
+#[cfg(windows)]
+fn binding_with_access(
+    path: &Path,
+    delete_access: bool,
 ) -> Result<(Option<ExecutableIdentity>, Option<ExecutableGuards>), ProcessError> {
     if matches!(
         fs::symlink_metadata(path),
@@ -940,7 +1492,7 @@ fn executable_binding(
     let parent = path.parent().ok_or(ProcessError::InvalidArgument)?;
     let ancestor_guards =
         open_directory_ancestor_guards(parent).map_err(|_| ProcessError::InvalidArgument)?;
-    let Some(file) = open_executable_file(path)? else {
+    let Some(file) = open_executable_file(path, delete_access)? else {
         return Ok((None, None));
     };
     let file_guard = Arc::new(file);
@@ -992,14 +1544,29 @@ fn executable_binding(
     }
 }
 
+#[cfg(not(windows))]
+fn owned_file_binding(
+    path: &Path,
+) -> Result<(Option<ExecutableIdentity>, Option<()>), ProcessError> {
+    executable_binding(path)
+}
+
 #[cfg(windows)]
-fn open_executable_file(path: &Path) -> Result<Option<fs::File>, ProcessError> {
+fn open_executable_file(
+    path: &Path,
+    delete_access: bool,
+) -> Result<Option<fs::File>, ProcessError> {
     use std::os::windows::fs::OpenOptionsExt;
     let mut options = fs::OpenOptions::new();
-    options
-        .read(true)
-        .share_mode(0x0000_0001)
-        .custom_flags(0x0020_0000);
+    options.read(true).share_mode(if delete_access {
+        0x0000_0007
+    } else {
+        0x0000_0001
+    });
+    if delete_access {
+        options.access_mode(0x8000_0000 | 0x0001_0000);
+    }
+    options.custom_flags(0x0020_0000);
     match options.open(path) {
         Ok(file) => Ok(Some(file)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -1013,7 +1580,11 @@ fn open_directory_guard(path: &Path) -> io::Result<fs::File> {
     let mut options = fs::OpenOptions::new();
     options
         .read(true)
-        .share_mode(0x0000_0003)
+        // Owner directories must share delete so the guarded file can be
+        // removed through a DELETE_ON_CLOSE handle while this boundary stays
+        // open. Final identity revalidation controls replacement of the
+        // payload; this directory handle only pins the ancestor boundary.
+        .share_mode(0x0000_0007)
         .custom_flags(0x0220_0000);
     options.open(path)
 }
@@ -1035,7 +1606,6 @@ fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<Arc<fs::File>>>
     Ok(guards)
 }
 
-#[cfg(windows)]
 fn hash_file_handle(handle: &fs::File) -> io::Result<[u8; 32]> {
     use sha2::{Digest, Sha256};
     let mut file = handle.try_clone()?;
@@ -1116,6 +1686,243 @@ fn reject_symlink_ancestors(path: &Path) -> Result<(), ProcessError> {
     Ok(())
 }
 
+fn ensure_absent(path: &Path) -> Result<(), ProcessError> {
+    match fs::symlink_metadata(path) {
+        Err(error) => {
+            if error.kind() == io::ErrorKind::NotFound {
+                Ok(())
+            } else {
+                Err(ProcessError::InvalidArgument)
+            }
+        }
+        Ok(_) => Err(ProcessError::InvalidArgument),
+    }
+}
+
+fn remove_owned_file(path: &Path, artifact: CleanupArtifact) -> Result<(), ProcessError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(ProcessError::Cleanup {
+                artifact,
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    // Never follow a link while cleaning a path whose ownership was granted
+    // by a marker. Refusing a replaced or unexpected entry retains the marker
+    // for recovery instead of deleting a caller-owned target.
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(ProcessError::Cleanup {
+            artifact,
+            path: path.to_path_buf(),
+            source: io::Error::new(io::ErrorKind::PermissionDenied, "owned path is not a file"),
+        });
+    }
+    fs::remove_file(path).map_err(|source| ProcessError::Cleanup {
+        artifact,
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+#[cfg(windows)]
+fn remove_owned_guarded_file(
+    path: &Path,
+    artifact: CleanupArtifact,
+    expected: Option<&ExecutableIdentity>,
+    guards: &mut Option<ExecutableGuards>,
+) -> Result<(), ProcessError> {
+    let Some(expected) = expected else {
+        // This is only reachable for test-only supervisors assembled without
+        // the production identity handles. A real owned spec always binds a
+        // identity/deletion guard before exposing cleanup ownership.
+        return remove_owned_file(path, artifact);
+    };
+    let Some(guards_ref) = guards.as_ref() else {
+        return Err(ProcessError::Cleanup {
+            artifact,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "owned identity handle is unavailable",
+            ),
+        });
+    };
+    let actual = file_identity(path, &guards_ref.file).map_err(|source| ProcessError::Cleanup {
+        artifact,
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if &actual != expected {
+        return Err(ProcessError::Cleanup {
+            artifact,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "owned path identity changed",
+            ),
+        });
+    }
+    // Reopen the pathname without delete-on-close and compare it to the
+    // identity that was bound at startup. This catches a replacement that
+    // occurred while the process was running before any deletion handle is
+    // created; only an exact current object may proceed.
+    let current_identity = match path_identity(path) {
+        Ok(identity) => identity,
+        Err(source) => {
+            return Err(ProcessError::Cleanup {
+                artifact,
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    if &current_identity != expected {
+        return Err(ProcessError::Cleanup {
+            artifact,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "owned path was replaced before delete",
+            ),
+        });
+    }
+    // Open a second no-follow handle with DELETE_ON_CLOSE after the final
+    // identity check. The fresh per-launch directory isolates ordinary
+    // sessions and narrows the remaining name-resolution interval. Safe Rust
+    // cannot make that interval atomic against a hostile same-user process;
+    // production containment tracks that limitation explicitly.
+    let delete_file = match open_delete_on_close(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let _ = guards.take();
+            return Ok(());
+        }
+        Err(source) => {
+            return Err(ProcessError::Cleanup {
+                artifact,
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    // Once opened, DELETE_ON_CLOSE removes the exact object referenced by the
+    // handle; no path unlink is attempted after the guard is released.
+    let _ = guards.take();
+    drop(delete_file);
+    Ok(())
+}
+
+#[cfg(windows)]
+fn remove_owned_implicit_save(
+    path: &Path,
+    rom_path: Option<&Path>,
+    rom_guards: Option<&ExecutableGuards>,
+) -> Result<(), ProcessError> {
+    let Some(rom_path) = rom_path else {
+        return Err(ProcessError::Cleanup {
+            artifact: CleanupArtifact::ImplicitSave,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "implicit save ownership is unproven",
+            ),
+        });
+    };
+    let Some(rom_parent) = rom_path.parent() else {
+        return Err(ProcessError::Cleanup {
+            artifact: CleanupArtifact::ImplicitSave,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "implicit save parent is invalid",
+            ),
+        });
+    };
+    if path != rom_path.with_extension("sav") || path.parent() != Some(rom_parent) {
+        return Err(ProcessError::Cleanup {
+            artifact: CleanupArtifact::ImplicitSave,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "implicit save path is not paired with the staged ROM",
+            ),
+        });
+    }
+    let Some(_rom_guards) = rom_guards else {
+        #[cfg(test)]
+        return remove_owned_file(path, CleanupArtifact::ImplicitSave);
+        #[cfg(not(test))]
+        return Err(ProcessError::Cleanup {
+            artifact: CleanupArtifact::ImplicitSave,
+            path: path.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "private staged-ROM directory is not guarded",
+            ),
+        });
+    };
+    // Establish a no-follow identity before requesting DELETE_ON_CLOSE. The
+    // fresh per-launch directory narrows accidental interference, while the
+    // same-user atomic-replacement limitation remains a documented production
+    // blocker.
+    let _expected = match path_identity(path) {
+        Ok(identity) => identity,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(source) => {
+            return Err(ProcessError::Cleanup {
+                artifact: CleanupArtifact::ImplicitSave,
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let file = open_delete_on_close(path).map_err(|source| ProcessError::Cleanup {
+        artifact: CleanupArtifact::ImplicitSave,
+        path: path.to_path_buf(),
+        source,
+    })?;
+    // Do not canonicalize after opening: Windows hides a delete-pending name.
+    // The pre-open no-follow identity and per-launch directory bind normal
+    // cleanup to the launcher-created save within the documented threat model.
+    // The no-follow DELETE_ON_CLOSE handle is bound to the exact file object;
+    // closing it is the explicit cleanup point.
+    drop(file);
+    Ok(())
+}
+
+#[cfg(windows)]
+fn open_delete_on_close(path: &Path) -> io::Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut options = fs::OpenOptions::new();
+    options
+        .read(true)
+        .access_mode(0x8000_0000 | 0x0001_0000)
+        .share_mode(0x0000_0007)
+        .custom_flags(0x0420_0000);
+    options.open(path)
+}
+
+#[cfg(windows)]
+fn file_identity(path: &Path, file: &fs::File) -> io::Result<ExecutableIdentity> {
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "owned path is not a regular file",
+        ));
+    }
+    Ok(ExecutableIdentity {
+        canonical: fs::canonicalize(path)?,
+        length: metadata.len(),
+        modified: metadata.modified().ok(),
+        digest: hash_file_handle(file)?,
+    })
+}
+
 impl Drop for SupervisedChildren {
     fn drop(&mut self) {
         // Drop cannot await.  It still owns cancellation supervision: request
@@ -1123,20 +1930,7 @@ impl Drop for SupervisedChildren {
         // deadline so a cancelled launcher future cannot orphan processes.
         terminate_and_reap_sync(&mut self.mgba);
         terminate_and_reap_sync(&mut self.sidecar);
-        self.remove_owned_rom();
-    }
-}
-
-impl SupervisedChildren {
-    fn remove_owned_rom(&mut self) {
-        #[cfg(windows)]
-        drop(self.rom_guards.take());
-        if let Some(path) = self.rom_cleanup.take() {
-            let _ = fs::remove_file(path);
-        }
-        if let Some(path) = self.rom_marker_cleanup.take() {
-            let _ = fs::remove_file(path);
-        }
+        let _ = self.cleanup_owned_rom();
     }
 }
 
@@ -1175,7 +1969,39 @@ async fn startup_failure(startup: ProcessError, child: &mut Child) -> ProcessErr
     }
 }
 
+fn startup_cleanup(startup: ProcessError, mgba: &mut CommandSpec) -> ProcessError {
+    match mgba.cleanup_owned_rom() {
+        Ok(()) => startup,
+        Err(cleanup) => ProcessError::StartupCleanup {
+            startup: Box::new(startup),
+            cleanup: Box::new(cleanup),
+        },
+    }
+}
+
+async fn startup_failure_with_cleanup(
+    startup: ProcessError,
+    child: &mut Child,
+    mgba: &mut CommandSpec,
+) -> ProcessError {
+    let startup = startup_failure(startup, child).await;
+    if !startup.cleanup_confirmed() {
+        // Cleanup ownership remains with the marker when the sidecar could
+        // not be confirmed reaped. Drop still performs its bounded
+        // cancellation fallback, but must not turn an unconfirmed child into
+        // a silently successful artifact deletion here.
+        return startup;
+    }
+    startup_cleanup(startup, mgba)
+}
+
 async fn stop_child(child: &mut Child) -> Result<(), ProcessError> {
+    // The sidecar control protocol currently exposes checkpoint grant/abort,
+    // but no authenticated shutdown request, and tokio::process::Child does
+    // not provide a portable graceful-control primitive for mGBA.  Keep
+    // cancellation deterministic with the bounded kill-and-reap operation
+    // below; adding a graceful phase requires a protocol change rather than
+    // an implicit signal or stdin convention.
     match child.try_wait().map_err(ProcessError::Termination)? {
         Some(_) => return Ok(()),
         None => {
@@ -1239,8 +2065,8 @@ const _: Option<ProtocolVersion> = None;
 #[cfg(test)]
 mod tests {
     use super::{
-        CommandSpec, ControlChannel, PROCESS_IO_TIMEOUT, ProcessError, SupervisedChildren,
-        SupervisorEvent, terminate_and_reap_sync,
+        CleanupArtifact, CommandSpec, ControlChannel, PROCESS_IO_TIMEOUT, ProcessError,
+        SupervisedChildren, SupervisorEvent, ensure_absent, terminate_and_reap_sync,
     };
     #[cfg(windows)]
     use super::{
@@ -1277,6 +2103,17 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("long-running test child")
+    }
+
+    async fn unused_control_channel() -> ControlChannel {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        // No control operation is performed by cleanup tests. Keeping the
+        // listener alive until the returned stream is dropped is sufficient
+        // to make the local connection deterministic without a protocol peer.
+        drop(listener);
+        ControlChannel::from_stream_for_test(stream)
     }
 
     #[tokio::test]
@@ -1476,6 +2313,237 @@ mod tests {
         }
     }
 
+    #[test]
+    fn implicit_save_absence_accepts_only_not_found() {
+        let directory = tempfile::tempdir().unwrap();
+        let absent = directory.path().join("implicit.sav");
+        assert!(ensure_absent(&absent).is_ok());
+        std::fs::write(&absent, b"caller-owned").unwrap();
+        assert!(matches!(
+            ensure_absent(&absent),
+            Err(ProcessError::InvalidArgument)
+        ));
+        std::fs::remove_file(&absent).unwrap();
+        std::fs::create_dir(&absent).unwrap();
+        assert!(matches!(
+            ensure_absent(&absent),
+            Err(ProcessError::InvalidArgument)
+        ));
+    }
+
+    #[tokio::test]
+    async fn explicit_cleanup_removes_save_rom_then_marker_after_reap() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("staged.gba");
+        let save = directory.path().join("staged.sav");
+        let marker = directory.path().join(".staged.gba.owner");
+        std::fs::write(&rom, b"rom").unwrap();
+        std::fs::write(&save, b"save").unwrap();
+        std::fs::write(&marker, b"marker").unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_child(),
+            long_running_child(),
+            unused_control_channel().await,
+        );
+        children.rom_implicit_save_path = Some(save.clone());
+        children.rom_cleanup = Some(rom.clone());
+        children.rom_marker_cleanup = Some(marker.clone());
+
+        children.stop().await.unwrap();
+        assert!(!save.exists());
+        assert!(!rom.exists());
+        assert!(!marker.exists());
+    }
+
+    #[tokio::test]
+    async fn cleanup_failure_is_typed_and_retains_marker_evidence() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("staged.gba");
+        let save = directory.path().join("staged.sav");
+        let marker = directory.path().join(".staged.gba.owner");
+        std::fs::write(&rom, b"rom").unwrap();
+        std::fs::create_dir(&save).unwrap();
+        std::fs::write(&marker, b"marker").unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_child(),
+            long_running_child(),
+            unused_control_channel().await,
+        );
+        children.rom_implicit_save_path = Some(save.clone());
+        children.rom_cleanup = Some(rom.clone());
+        children.rom_marker_cleanup = Some(marker.clone());
+
+        let error = children.stop().await.unwrap_err();
+        assert!(matches!(
+            error,
+            ProcessError::Cleanup {
+                artifact: CleanupArtifact::ImplicitSave,
+                ..
+            }
+        ));
+        // Drop's cancellation fallback must stop at the first failed target;
+        // the marker and staged payload remain available for recovery.
+        assert!(save.exists());
+        assert!(rom.exists());
+        assert!(marker.exists());
+    }
+
+    #[tokio::test]
+    async fn marker_cleanup_failure_is_reported_after_payload_cleanup() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("staged.gba");
+        let save = directory.path().join("staged.sav");
+        let marker = directory.path().join(".staged.gba.owner");
+        std::fs::write(&rom, b"rom").unwrap();
+        std::fs::write(&save, b"save").unwrap();
+        std::fs::create_dir(&marker).unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_child(),
+            long_running_child(),
+            unused_control_channel().await,
+        );
+        children.rom_implicit_save_path = Some(save.clone());
+        children.rom_cleanup = Some(rom.clone());
+        children.rom_marker_cleanup = Some(marker.clone());
+
+        let error = children.stop().await.unwrap_err();
+        assert!(matches!(
+            error,
+            ProcessError::Cleanup {
+                artifact: CleanupArtifact::Marker,
+                ..
+            }
+        ));
+        assert!(!save.exists());
+        assert!(!rom.exists());
+        assert!(marker.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn owned_mgba_argv_pins_implicit_save_path_and_disables_state_autoload() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = directory.path().join("rom.gba");
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        let marker = staged_rom_marker_path(&rom);
+        fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+        let spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        assert_eq!(
+            spec.args,
+            vec![
+                "-C".to_owned(),
+                format!("savegamePath={}", directory.path().to_string_lossy()),
+                "-C".to_owned(),
+                "autoload=0".to_owned(),
+                "-C".to_owned(),
+                "autosave=0".to_owned(),
+                rom.to_string_lossy().into_owned(),
+            ]
+        );
+        assert_eq!(
+            spec.rom_implicit_save_path.as_deref(),
+            Some(rom.with_extension("sav").as_path())
+        );
+        drop(spec);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn owned_argv_rejects_mutation_of_any_bound_field() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = directory.path().join("rom.gba");
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        let marker = staged_rom_marker_path(&rom);
+        fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+
+        let mut spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        let expected_rom = spec.rom_cleanup.clone();
+        let expected_marker = spec.rom_marker_cleanup.clone();
+        let expected_save = spec.rom_implicit_save_path.clone();
+        let expected_rom_identity = spec.rom_identity.clone();
+        let expected_marker_identity = spec.rom_marker_identity.clone();
+
+        spec.rom_cleanup = Some(directory.path().join("other.gba"));
+        assert!(!spec.has_supported_argv());
+        spec.rom_cleanup = expected_rom;
+        spec.rom_marker_cleanup = Some(directory.path().join("other.owner"));
+        assert!(!spec.has_supported_argv());
+        spec.rom_marker_cleanup = expected_marker;
+        spec.rom_implicit_save_path = Some(directory.path().join("other.sav"));
+        assert!(!spec.has_supported_argv());
+        spec.rom_implicit_save_path = expected_save;
+        let mut wrong_rom_identity = expected_rom_identity.clone().unwrap();
+        wrong_rom_identity.digest[0] ^= 0xff;
+        spec.rom_identity = Some(wrong_rom_identity);
+        assert!(!spec.has_supported_argv());
+        spec.rom_identity = expected_rom_identity;
+        let mut wrong_marker_identity = expected_marker_identity.clone().unwrap();
+        wrong_marker_identity.digest[0] ^= 0xff;
+        spec.rom_marker_identity = Some(wrong_marker_identity);
+        assert!(!spec.has_supported_argv());
+        spec.rom_marker_identity = expected_marker_identity;
+
+        spec.args[1] = format!(
+            "savegamePath={}",
+            directory.path().join("other").to_string_lossy()
+        );
+        assert!(!spec.has_supported_argv());
+        spec.args[1] = format!("savegamePath={}", directory.path().to_string_lossy());
+        spec.args[6] = directory
+            .path()
+            .join("other.gba")
+            .to_string_lossy()
+            .into_owned();
+        assert!(!spec.has_supported_argv());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cleanup_rejects_a_replaced_rom_and_retains_the_marker() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = directory.path().join("rom.gba");
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        let marker = staged_rom_marker_path(&rom);
+        fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+        let spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        fs::remove_file(&rom).unwrap();
+        fs::write(&rom, b"foreign replacement").unwrap();
+
+        drop(spec);
+        assert!(rom.exists());
+        assert!(marker.exists());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn startup_rejection_explicitly_cleans_staged_rom_and_marker() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = directory.path().join("rom.gba");
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        let marker = staged_rom_marker_path(&rom);
+        fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+        let mgba = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        let missing_sidecar = directory.path().join("sidecar.exe");
+        let sidecar = CommandSpec::sidecar(&missing_sidecar, 1).unwrap();
+
+        let result = SupervisedChildren::start(sidecar, mgba, 1).await;
+        assert!(
+            matches!(result, Err(ProcessError::InvalidArgument)),
+            "{result:?}"
+        );
+        assert!(!rom.exists());
+        assert!(!marker.exists());
+        assert!(!rom.with_extension("sav").exists());
+    }
+
     #[cfg(windows)]
     #[tokio::test]
     async fn invalid_mgba_identity_is_rejected_before_sidecar_spawn() {
@@ -1517,6 +2585,13 @@ mod tests {
 
     #[tokio::test]
     async fn peer_exit_is_reported_and_the_other_child_is_reaped() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("staged.gba");
+        let save = directory.path().join("staged.sav");
+        let marker = directory.path().join(".staged.gba.owner");
+        std::fs::write(&rom, b"rom").unwrap();
+        std::fs::write(&save, b"save").unwrap();
+        std::fs::write(&marker, b"marker").unwrap();
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
@@ -1544,10 +2619,71 @@ mod tests {
             .spawn()
             .unwrap();
         let mut children = SupervisedChildren::for_test(sidecar, long_running_child(), control);
+        children.rom_implicit_save_path = Some(save.clone());
+        children.rom_cleanup = Some(rom.clone());
+        children.rom_marker_cleanup = Some(marker.clone());
         assert!(matches!(
             children.next_event().await.unwrap(),
             SupervisorEvent::ChildExited
         ));
+        assert!(!save.exists());
+        assert!(!rom.exists());
+        assert!(!marker.exists());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn child_exit_cleanup_failure_is_returned_and_retains_recovery_evidence() {
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("staged.gba");
+        let save = directory.path().join("staged.sav");
+        let marker = directory.path().join(".staged.gba.owner");
+        std::fs::write(&rom, b"rom").unwrap();
+        std::fs::create_dir(&save).unwrap();
+        std::fs::write(&marker, b"marker").unwrap();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let control = ControlChannel::from_stream_for_test(stream);
+        #[cfg(windows)]
+        let mut exited = {
+            let mut command = Command::new("cmd.exe");
+            command.args(["/C", "exit", "0"]);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut exited = {
+            let mut command = Command::new("sh");
+            command.args(["-c", "exit 0"]);
+            command
+        };
+        let sidecar = exited
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut children = SupervisedChildren::for_test(sidecar, long_running_child(), control);
+        children.rom_implicit_save_path = Some(save.clone());
+        children.rom_cleanup = Some(rom.clone());
+        children.rom_marker_cleanup = Some(marker.clone());
+
+        assert!(matches!(
+            children.next_event().await,
+            Err(ProcessError::Cleanup {
+                artifact: CleanupArtifact::ImplicitSave,
+                ..
+            })
+        ));
+        assert!(children.sidecar.try_wait().unwrap().is_some());
+        assert!(children.mgba.try_wait().unwrap().is_some());
+        assert!(save.exists());
+        assert!(rom.exists());
+        assert!(marker.exists());
         server.abort();
     }
 }

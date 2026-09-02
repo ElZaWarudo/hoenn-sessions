@@ -89,3 +89,33 @@ TEST("Cloud Coop normalization rejects contradictory engine and map regions")
     EXPECT_EQ(region, COOP_REGION_SEVII);
     EXPECT(!CoopRegion_Normalize(NULL, REGION_HOENN, MAPSEC_LITTLEROOT_TOWN));
 }
+
+TEST("Cloud Coop active region derives Kanto and Sevii from the current map")
+{
+    enum CoopRegion region = COOP_REGION_UNSPECIFIED;
+
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_HOENN;
+    gMapHeader.regionMapSectionId = MAPSEC_LITTLEROOT_TOWN;
+    EXPECT(CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_HOENN);
+
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_KANTO;
+    gMapHeader.regionMapSectionId = MAPSEC_PALLET_TOWN;
+    EXPECT(CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_KANTO);
+
+    gMapHeader.regionMapSectionId = MAPSEC_ONE_ISLAND;
+    EXPECT(CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_SEVII);
+
+    gMapHeader.engineRegion = REGION_JOHTO;
+    gMapHeader.regionMapSectionId = MAPSEC_NONE;
+    EXPECT(!CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_SEVII);
+
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_HOENN;
+    gMapHeader.regionMapSectionId = MAPSEC_PALLET_TOWN;
+    EXPECT(!CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_SEVII);
+    EXPECT(!CoopRegion_TryGetActive(NULL));
+}

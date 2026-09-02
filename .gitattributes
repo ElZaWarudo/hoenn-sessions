@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Shell entrypoints run directly under WSL/Linux and must retain a Unix
+# interpreter line even when the repository is checked out from Windows.
+*.sh text eol=lf
+/charmap.txt text eol=lf
