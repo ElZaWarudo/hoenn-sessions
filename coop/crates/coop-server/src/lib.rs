@@ -7,7 +7,9 @@
 pub mod phase2;
 
 pub use phase2::{
-    AuthenticatedActor, Phase2App, Phase2Config, Phase2Error, ProductionConfig, serve_phase2_local,
+    AuthenticatedActor, Phase2App, Phase2Config, Phase2Error, PresenceConnection, PresenceDrain,
+    PresenceOutboundV1, PresenceService, PresenceServiceError, PresenceSubmitOutcome,
+    PresenceTickReport, ProductionConfig, ValidatedInteraction, serve_phase2_local,
 };
 
 use std::{

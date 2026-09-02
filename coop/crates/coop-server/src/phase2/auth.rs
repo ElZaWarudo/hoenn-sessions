@@ -71,6 +71,7 @@ pub(crate) fn register(
     let character_state = Store::initial_state(character_id)?;
     let user = UserRecord {
         user_id,
+        username: request.username.clone(),
         password_phc,
         character_id,
         disabled: false,

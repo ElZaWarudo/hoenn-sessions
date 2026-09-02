@@ -79,10 +79,18 @@ where
 use thiserror::Error;
 
 pub mod auth;
+pub mod presence;
 pub mod saves;
 pub mod sessions;
 pub mod storage;
 
+pub use presence::{
+    PRESENCE_HANDLE_CANDIDATES, PRESENCE_MAP, PRESENCE_MAP_GROUP, PRESENCE_MAP_NUMBER,
+    PRESENCE_MAX_GLOBAL_CONNECTIONS, PRESENCE_MAX_PARTITION_CONNECTIONS, PRESENCE_MAX_REMOTES,
+    PRESENCE_OUTBOUND_QUEUE_CAPACITY, PRESENCE_SHARD_ID, PRESENCE_STALE_MS, PRESENCE_TICK_MS,
+    PresenceConnection, PresenceDrain, PresenceOutboundV1, PresenceService, PresenceServiceError,
+    PresenceSubmitOutcome, PresenceTickReport, ValidatedInteraction,
+};
 pub use storage::{
     ArgonPasswordEngine, Clock, Entropy, FirebaseObjectStore, InMemoryObjectStore,
     InMemoryRepository, ObjectStore, OsEntropy, PasswordEngine, Phase2Config, PostgresRepository,
@@ -180,6 +188,7 @@ struct ErrorCode {
 #[derive(Clone)]
 pub struct Phase2App {
     pub(crate) store: Store,
+    presence: presence::PresenceService,
 }
 
 impl fmt::Debug for Phase2App {
@@ -196,9 +205,16 @@ impl Phase2App {
     /// Returns an error when a production adapter mode is requested before it
     /// has an implementation.
     pub fn new(config: Phase2Config) -> Result<Self, Phase2Error> {
-        Ok(Self {
-            store: Store::new(config)?,
-        })
+        let store = Store::new(config)?;
+        let presence = presence::PresenceService::new(store.clone())?;
+        Ok(Self { store, presence })
+    }
+
+    /// Returns the ephemeral presence service shared by all clones of this
+    /// application. Presence is intentionally not restored from a repository.
+    #[must_use]
+    pub fn presence(&self) -> presence::PresenceService {
+        self.presence.clone()
     }
 
     /// A deterministic test service.  Production callers must use `new` with
@@ -351,7 +367,17 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: AcquireLeaseRequest,
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
-        sessions::acquire(&self.store, actor, &request)
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        let result = sessions::acquire(&self.store, actor, &request);
+        if let Ok(contract) = &result {
+            self.presence
+                .reconcile_lease_success(actor.character_id, contract);
+        }
+        result
     }
     /// Extends an active lease after validating its complete fence.
     ///
@@ -363,7 +389,17 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: HeartbeatLeaseRequest,
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
-        sessions::heartbeat(&self.store, actor, &request)
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        let result = sessions::heartbeat(&self.store, actor, &request);
+        if let Ok(contract) = &result {
+            self.presence
+                .reconcile_lease_success(actor.character_id, contract);
+        }
+        result
     }
     /// Reconnects during grace while rotating the server-owned epoch.
     ///
@@ -375,7 +411,17 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: ReconnectLeaseRequest,
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
-        sessions::reconnect(&self.store, actor, &request)
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        let result = sessions::reconnect(&self.store, actor, &request);
+        if let Ok(contract) = &result {
+            self.presence
+                .reconcile_lease_success(actor.character_id, contract);
+        }
+        result
     }
     /// Releases a fenced lease idempotently.
     ///
@@ -387,7 +433,16 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: ReleaseLeaseRequest,
     ) -> Result<coop_cloud::LogoutResponse, Phase2Error> {
-        sessions::release(&self.store, actor, &request)
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        let result = sessions::release(&self.store, actor, &request);
+        if result.is_ok() {
+            self.presence.reconcile_lease_release(actor.character_id);
+        }
+        result
     }
     /// Prepares fixed artifact uploads for the next revision.
     ///

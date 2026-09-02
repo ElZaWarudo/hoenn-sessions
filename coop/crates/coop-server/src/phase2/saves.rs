@@ -2,10 +2,10 @@
 
 use coop_cloud::{
     ArtifactIdentity, BridgeAbiVersion, CreatedAt, GameBuildId, ManifestBuildInfo, MgbaVersion,
-    ProtocolVersion, ResumePackageManifest, Revision, Sha256Digest, SignedManifestEnvelope,
-    SnapshotFence, SnapshotFile, SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest,
-    SnapshotListResponse, SnapshotPrepareRequest, SnapshotPrepareResponse, SnapshotRecord,
-    SnapshotRestoreRequest, SnapshotRestoreResponse, UploadMethod, UploadTarget,
+    ProtocolVersion, ResumePackageManifest, Revision, RuntimeBuildIdentity, Sha256Digest,
+    SignedManifestEnvelope, SnapshotFence, SnapshotFile, SnapshotFinalizeRequest, SnapshotId,
+    SnapshotListRequest, SnapshotListResponse, SnapshotPrepareRequest, SnapshotPrepareResponse,
+    SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse, UploadMethod, UploadTarget,
 };
 use serde::Deserialize;
 use std::collections::HashSet;
@@ -149,6 +149,22 @@ fn remove_prepared(state: &mut super::storage::State, snapshot_id: SnapshotId) {
     state
         .tickets
         .retain(|_, ticket| ticket.snapshot_id != snapshot_id);
+}
+
+/// Returns the one server-pinned build identity used by both resume packages
+/// and runtime presence admission.  Keeping this parser in one place prevents
+/// the two trust boundaries from drifting apart.
+pub(crate) fn current_runtime_build_identity() -> Result<RuntimeBuildIdentity, Phase2Error> {
+    let manifest = bridge_manifest()?;
+    Ok(RuntimeBuildIdentity::new(
+        GameBuildId::new(manifest.game_build.id).map_err(|_| Phase2Error::Internal)?,
+        Sha256Digest::parse(&manifest.game_build.rom_sha256).map_err(|_| Phase2Error::Internal)?,
+        MgbaVersion::new("0.10.5").map_err(|_| Phase2Error::Internal)?,
+        BridgeAbiVersion::new(manifest.net_bridge.abi_version)
+            .map_err(|_| Phase2Error::Internal)?,
+        ProtocolVersion::new(manifest.net_bridge.game_protocol_version)
+            .map_err(|_| Phase2Error::Internal)?,
+    ))
 }
 
 fn retire_prepared(state: &mut super::storage::State, snapshot_id: SnapshotId) {
@@ -1868,7 +1884,7 @@ pub(crate) fn resume_package(
         .ok_or(Phase2Error::NotFound)?
         .clone())
     })?;
-    let manifest = bridge_manifest()?;
+    let build_identity = current_runtime_build_identity()?;
     let sav = selected
         .files
         .iter()
@@ -1908,15 +1924,11 @@ pub(crate) fn resume_package(
         validate_resume_state(&bytes).map_err(|_| Phase2Error::Internal)?;
     }
     let build = ManifestBuildInfo {
-        game_build_id: GameBuildId::new(manifest.game_build.id)
-            .map_err(|_| Phase2Error::Internal)?,
-        rom_sha256: Sha256Digest::parse(&manifest.game_build.rom_sha256)
-            .map_err(|_| Phase2Error::Internal)?,
-        mgba_version: MgbaVersion::new("0.10.5").map_err(|_| Phase2Error::Internal)?,
-        bridge_abi: BridgeAbiVersion::new(manifest.net_bridge.abi_version)
-            .map_err(|_| Phase2Error::Internal)?,
-        protocol_version: ProtocolVersion::new(manifest.net_bridge.game_protocol_version)
-            .map_err(|_| Phase2Error::Internal)?,
+        game_build_id: build_identity.game_build_id,
+        rom_sha256: build_identity.rom_sha256,
+        mgba_version: build_identity.mgba_version,
+        bridge_abi: build_identity.bridge_abi,
+        protocol_version: build_identity.protocol_version,
         pending_commits_sha256: selected.pending_commits_sha256,
         snapshot_id: selected.snapshot_id,
         session_epoch: selected.session_epoch,

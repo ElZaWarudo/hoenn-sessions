@@ -633,6 +633,7 @@ fn valid_key_id(value: &str) -> bool {
 #[derive(Clone)]
 pub(crate) struct UserRecord {
     pub user_id: UserId,
+    pub username: coop_cloud::Username,
     pub password_phc: String,
     pub character_id: CharacterId,
     pub disabled: bool,
@@ -756,6 +757,10 @@ pub(crate) struct Store {
     pub config: Arc<Phase2Config>,
     pub(crate) clock_floor: Arc<AtomicU64>,
     pub(crate) objects: Arc<dyn ObjectStore>,
+    /// Serializes transitions that need a repository snapshot and an
+    /// ephemeral runtime reconciliation. Presence owns no repository lock,
+    /// so the order is always gate -> repository -> presence.
+    pub(crate) runtime_transition_gate: Arc<std::sync::Mutex<()>>,
     account_inflight: Arc<std::sync::Mutex<HashSet<String>>>,
 }
 impl Store {
@@ -793,6 +798,7 @@ impl Store {
             config: Arc::new(config),
             clock_floor: Arc::new(AtomicU64::new(0)),
             objects: object_store,
+            runtime_transition_gate: Arc::new(std::sync::Mutex::new(())),
             account_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
         })
     }
