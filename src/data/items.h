@@ -15834,9 +15834,9 @@ const struct ItemInfo gItemsInfo[] =
 		.name = ITEM_NAME("Flight Call"),
 		.price = 0,
 		.description = COMPOUND_STRING(
-			"Use this item to call\n"
-			"a flight service for\n"
-			"travel."),
+			"Use this item to\n"
+			"call a flight\n"
+			"service for travel."),
 		.importance = 1,
 		.pocket = POCKET_KEY_ITEMS,
 		.type = ITEM_USE_FIELD,
