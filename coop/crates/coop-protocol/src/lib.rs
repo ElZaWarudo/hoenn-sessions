@@ -11,6 +11,8 @@ use thiserror::Error;
 
 pub mod catalog;
 pub mod identity_catalog;
+pub mod presence;
+pub use presence::*;
 
 pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
 pub use identity_catalog::{
@@ -411,6 +413,7 @@ impl<'de> Deserialize<'de> for WorldLocation {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct WireLocation {
             region: RegionId,
             map_group: u16,
@@ -1586,6 +1589,12 @@ mod tests {
         assert!(
             serde_json::from_str::<WorldLocation>(
                 r#"{"region":"KANTO","map_group":2,"map_number":7,"x":0,"y":0}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<WorldLocation>(
+                r#"{"region":"KANTO","map_group":37,"map_number":0,"x":0,"y":0,"extra":true}"#
             )
             .is_err()
         );

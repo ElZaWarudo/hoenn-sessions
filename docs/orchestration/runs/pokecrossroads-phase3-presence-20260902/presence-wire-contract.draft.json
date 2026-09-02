@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase3-presence-20260902-wire-v1",
+  "unit_id": "presence-wire-contracts",
+  "objective": "Implement strict region-qualified Phase 3 presence value types and manual little-endian payload codecs, without activating protocol 2 in the ROM/Lua bridge yet.",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "coop/crates/coop-protocol/src/lib.rs",
+    "include/coop/net_bridge.h",
+    "coop/crates/coop-sidecar/src/codec.rs"
+  ],
+  "owned_files": [
+    "coop/crates/coop-protocol/src/presence.rs",
+    "coop/crates/coop-protocol/src/lib.rs"
+  ],
+  "closed_decisions": [
+    "Keep the 144-byte bridge frame, 128-byte payload, existing message IDs, and bridge ABI 1. This unit defines protocol-2 payload contracts but does not change any global protocol/build constant or C/Lua/Rust sidecar codec.",
+    "PresencePoseV1 is exactly 24 bytes: WorldLocation bytes 0..10, elevation 10, direction 11, client_tick u32 at 12, nonzero warp_sequence u32 at 16, movement_mode 20, animation_id 21, avatar_id 22, player_state 23. WorldLocation remains region-qualified and rejects Unspecified or uncatalogued region/map pairs.",
+    "LocalPresenceStateV1 is exactly 28 bytes: pose at 0..24 and nonzero source_sequence u32 at 24. RemotePlayerSpawnV1 is 72 bytes: nonzero u64 handle at 0, nonzero server sequence at 8, local state at 12, canonical lowercase ASCII username zero-padded to 32 bytes at 40. Update is 40 bytes, despawn 16 bytes with three zero reserved bytes, and interaction 20 bytes using handle, observed server/warp sequence, and signed observed coordinates.",
+    "Use manual little-endian encode/decode with exact lengths and no transmute/unsafe/host-layout assumptions. Reject nonzero reserved bytes, invalid username padding, unknown enum values, zero handles/sequences/warp values, unspecified regions, and invalid regional map identities before returning a value.",
+    "Allow direction ordinals south=1,north=2,west=3,east=4; movement idle=0,walk=1,run=2; animation idle=0,locomotion=1; avatar Brendan=1,May=2; player state hidden=0,overworld=1; despawn reasons hidden=1,stale=2,disconnected=3,lease-invalid=4,replaced=5,partition-left=6. Unknown values fail closed.",
+    "PresenceHandle is opaque, nonzero, and serializes in human-readable formats as exactly 16 lowercase hexadecimal digits, never a JSON integer. Sequence comparison follows RFC 1982: delta is nonzero and strictly below 0x80000000; the ambiguous half range is not newer. Increment helpers skip zero.",
+    "Canonical usernames reuse the existing account contract: 3..=32 lowercase ASCII bytes, alphanumeric first/last, and only lowercase letters, digits, underscore, dot, or hyphen inside. After the first zero byte, every remaining username byte must be zero.",
+    "Expose documented constants for every size/offset and include golden vectors whose bytes can be reused verbatim by later C and Lua units. Add serde strictness tests where public types serialize; deny unknown fields for structured human-readable forms."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "PWC-001",
+      "description": "All six presence payload/value contracts encode and decode exact documented little-endian sizes and offsets, with deterministic golden vectors and no unsafe or layout casts."
+    },
+    {
+      "id": "PWC-002",
+      "description": "Every region, map, reserved byte, username, enum, handle, sequence, warp, and exact-length invariant fails closed without partially accepted values."
+    },
+    {
+      "id": "PWC-003",
+      "description": "RFC 1982 tests cover normal order, duplicates, stale values, wrap, zero, and the ambiguous half range; increment helpers skip zero."
+    },
+    {
+      "id": "PWC-004",
+      "description": "Presence handles round-trip as fixed lowercase hexadecimal strings in JSON and reject numeric, uppercase, short, long, malformed, and zero representations."
+    },
+    {
+      "id": "PWC-005",
+      "description": "Protocol tests, strict clippy, formatting, locked metadata, and diff checks pass with changes confined to owned_files."
+    }
+  ],
+  "forbidden_changes": [
+    "Do not edit Cargo manifests/lock, cloud/server/sidecar/launcher, C/ROM, Lua/bridge, generators/manifests, documentation outside this contract, or orchestration artifacts.",
+    "Do not activate or bump the global game protocol/build, change existing bridge frame/message IDs, weaken WorldLocation catalog validation, add dependencies, unsafe Rust, allow attributes, unbounded strings/vectors, or compatibility fallbacks for the legacy 16-byte player state.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert another worker's edits."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-protocol/src/lib.rs",
+      "rtk rg -n Presence coop/crates/coop-protocol/src"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-protocol --all-features --locked",
+        "rtk cargo clippy -p coop-protocol --all-targets --all-features --locked -- -D warnings"
+      ],
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 2,
+    "fix_rounds": 2,
+    "review_rounds": 0,
+    "max_elapsed_ms": 1800000,
+    "extra_verification": "forbidden"
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "An exact layout or existing public API conflict requires changing a closed decision or crossing owned_files."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1"
+}
