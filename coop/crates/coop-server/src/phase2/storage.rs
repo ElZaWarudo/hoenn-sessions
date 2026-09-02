@@ -7,9 +7,9 @@ use argon2::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use coop_cloud::{
     CharacterCloudState, CharacterId, ClientInstanceId, CommitId, IdempotencyKey, LeaseContract,
-    RefreshFamilyId, Revision, SessionId, SigningPrivateKey, SnapshotFile, SnapshotFinalizeRequest,
-    SnapshotId, SnapshotPrepareRequest, SnapshotRecord, SnapshotRestoreRequest,
-    UnixTimestampMillis, UploadTarget, UserId,
+    RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId, SigningPrivateKey, SnapshotFile,
+    SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
+    SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
 };
 use coop_protocol::{RegionId, RegionalProgress, WorldZone};
 use getrandom::fill as random_fill;
@@ -55,6 +55,9 @@ pub const MAX_FAMILY_RECORDS_PER_CHARACTER: usize = 128;
 pub const MAX_ACCESS_RECORDS_GLOBAL: usize = 16_384;
 pub const MAX_REFRESH_RECORDS_GLOBAL: usize = 16_384;
 pub const MAX_FAMILY_RECORDS_GLOBAL: usize = 4_096;
+/// Maximum number of unexpired realtime capabilities retained by one local
+/// server process.
+pub const MAX_REALTIME_TICKETS_GLOBAL: usize = 1_024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StorageMode {
@@ -717,6 +720,17 @@ pub(crate) struct TicketRecord {
     pub used: bool,
 }
 
+/// A one-use realtime capability.  The raw ticket is never retained: only
+/// the domain-separated fingerprint is used as the repository key.
+#[derive(Clone)]
+pub(crate) struct RealtimeTicketRecord {
+    pub user_id: UserId,
+    pub character_id: CharacterId,
+    pub session: StableRuntimeSession,
+    pub runtime: RuntimeLeaseFence,
+    pub expires_at: u64,
+}
+
 #[derive(Clone)]
 pub(crate) struct AcquireRecord {
     pub character_id: CharacterId,
@@ -747,6 +761,10 @@ pub struct State {
     pub(crate) restore_staging: HashMap<CharacterId, RestoreStage>,
     pub(crate) retired_snapshots: HashSet<SnapshotId>,
     pub(crate) tickets: HashMap<[u8; 32], TicketRecord>,
+    pub(crate) realtime_tickets: HashMap<[u8; 32], RealtimeTicketRecord>,
+    /// Reverse lookup used to replace a prior capability for one runtime
+    /// session atomically.  Values are fingerprints, never raw secrets.
+    pub(crate) realtime_by_runtime: HashMap<(UserId, StableRuntimeSession), [u8; 32]>,
     /// Repository-side ownership records close the check-then-delete race
     /// between failed uploads and concurrent finalization.
     pub(crate) upload_objects: HashMap<String, UploadObjectRecord>,

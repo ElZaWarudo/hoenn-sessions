@@ -11,7 +11,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{FromRequest, Path, Query, Request, State},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post, put},
@@ -80,6 +80,7 @@ use thiserror::Error;
 
 pub mod auth;
 pub mod presence;
+pub(crate) mod realtime;
 pub mod saves;
 pub mod sessions;
 pub mod storage;
@@ -189,6 +190,7 @@ struct ErrorCode {
 pub struct Phase2App {
     pub(crate) store: Store,
     presence: presence::PresenceService,
+    realtime: Arc<realtime::RealtimeTransportState>,
 }
 
 impl fmt::Debug for Phase2App {
@@ -207,7 +209,11 @@ impl Phase2App {
     pub fn new(config: Phase2Config) -> Result<Self, Phase2Error> {
         let store = Store::new(config)?;
         let presence = presence::PresenceService::new(store.clone())?;
-        Ok(Self { store, presence })
+        Ok(Self {
+            store,
+            presence,
+            realtime: Arc::new(realtime::RealtimeTransportState::new()),
+        })
     }
 
     /// Returns the ephemeral presence service shared by all clones of this
@@ -294,6 +300,7 @@ impl Phase2App {
                     .route("/v1/uploads/{ticket}", put(upload))
                     .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024)),
             )
+            .merge(realtime::router())
             .layer(axum::middleware::from_fn(reject_oversized_request_target))
             .with_state(self.clone())
     }
@@ -620,7 +627,13 @@ async fn reject_oversized_request_target(request: Request, next: Next) -> Respon
         .saturating_add(usize::from(uri.query().is_some()))
         .saturating_add(query_len);
     if query_len > MAX_REQUEST_QUERY_BYTES || target_len > MAX_REQUEST_TARGET_BYTES {
-        return Phase2Error::PayloadTooLarge.into_response();
+        let mut response = Phase2Error::PayloadTooLarge.into_response();
+        if matches!(uri.path(), "/v1/realtime" | "/v1/realtime/tickets") {
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        }
+        return response;
     }
     next.run(request).await
 }

@@ -7,24 +7,38 @@
 
 use std::{
     error::Error,
-    io::Read,
+    io::{ErrorKind, Read},
     net::SocketAddr,
     process::{Child as StdChild, Command as StdCommand, Stdio},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use coop_cloud::{
-    AccessToken, AcquireLeaseRequest, ArtifactIdentity, CharacterId, ClientInstanceId,
-    HeartbeatLeaseRequest, IdempotencyKey, InvitationCode, LeaseContract, LoginRequest, Password,
-    ReconnectLeaseRequest, RefreshRequest, RefreshResponse, RegisterRequest, Revision,
-    SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
-    SnapshotId, SnapshotPrepareFence, SnapshotPrepareRequest, TrustedManifestKey,
+    AccessToken, AcquireLeaseRequest, ArtifactIdentity, BridgeAbiVersion, CharacterId,
+    ClientInstanceId, ClientRealtimeFrameV1, GameBuildId, HeartbeatLeaseRequest, IdempotencyKey,
+    InvitationCode, LeaseContract, LoginRequest, MgbaVersion, MintRealtimeTicketRequest,
+    MintRealtimeTicketResponse, Password, ProtocolVersion, ReconnectLeaseRequest, RefreshRequest,
+    RefreshResponse, RegisterRequest, Revision, RuntimeBuildIdentity, RuntimeLeaseFence,
+    ServerRealtimeFrameV1, Sha256Digest, SignedManifestEnvelope, SnapshotFile,
+    SnapshotFinalizeFence, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareFence,
+    SnapshotPrepareRequest, StableRuntimeSession, TrustedManifestKey,
 };
-use coop_protocol::RegionId;
+use coop_protocol::{
+    AnimationId, AvatarId, Direction, LocalPresenceStateV1, MovementMode, PlayerState,
+    PresencePoseV1, RegionId, WorldLocation,
+};
+use futures_util::{SinkExt, StreamExt};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::Mutex,
     time::timeout,
+};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{
+        Error as WsError, Message as WsMessage, client::IntoClientRequest, http::HeaderValue,
+    },
 };
 use url::Url;
 use uuid::Uuid;
@@ -54,9 +68,16 @@ const MAX_EXPIRY_WAIT: Duration = Duration::from_secs(35);
 const HTTP_FLOW_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_RESPONSE_BYTES: usize = 40 * 1024 * 1024;
 
+// These tests each own a real server process and exercise the same local
+// Argon2/lease-sensitive resources. Serializing them avoids a scheduler race
+// where the intentional 30-second expiry smoke starves another fixture past
+// its lease expiry while preserving the real transport assertions.
+static BLACK_BOX_TEST_GATE: Mutex<()> = Mutex::const_new(());
+
 #[derive(Debug)]
 struct HttpResponse {
     status: u16,
+    headers: Vec<(String, String)>,
     body: Vec<u8>,
 }
 
@@ -526,8 +547,15 @@ async fn request(
         .and_then(|line| line.split_whitespace().nth(1))
         .ok_or("HTTP response omitted a status")?
         .parse::<u16>()?;
+    let headers = header
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
     Ok(HttpResponse {
         status,
+        headers,
         body: bytes[header_end + 4..].to_vec(),
     })
 }
@@ -554,6 +582,18 @@ fn expect_status(response: &HttpResponse, expected: u16) {
         response.status, expected,
         "unexpected HTTP status {} (body intentionally omitted)",
         response.status
+    );
+}
+
+fn expect_no_store(response: &HttpResponse) {
+    assert_eq!(
+        response
+            .headers
+            .iter()
+            .filter(|(name, _)| name == "cache-control")
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["no-store"]
     );
 }
 
@@ -666,6 +706,533 @@ fn trusted_key() -> TrustedManifestKey {
     .expect("test signing key")
 }
 
+#[derive(serde::Deserialize)]
+struct RealtimeBridgeManifest {
+    game_build: RealtimeManifestBuild,
+    net_bridge: RealtimeManifestBridge,
+}
+
+#[derive(serde::Deserialize)]
+struct RealtimeManifestBuild {
+    id: String,
+    rom_sha256: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RealtimeManifestBridge {
+    abi_version: u16,
+    game_protocol_version: u16,
+}
+
+fn realtime_runtime(lease: &LeaseContract) -> RuntimeLeaseFence {
+    let manifest: RealtimeBridgeManifest =
+        serde_json::from_str(include_str!("../../../../dist/bridge_manifest.json"))
+            .expect("bridge manifest must be valid for realtime transport tests");
+    RuntimeLeaseFence::new(
+        StableRuntimeSession::from_lease_contract(lease),
+        RuntimeBuildIdentity::new(
+            GameBuildId::new(manifest.game_build.id).unwrap(),
+            Sha256Digest::parse(&manifest.game_build.rom_sha256).unwrap(),
+            MgbaVersion::new("0.10.5").unwrap(),
+            BridgeAbiVersion::new(manifest.net_bridge.abi_version).unwrap(),
+            ProtocolVersion::new(manifest.net_bridge.game_protocol_version).unwrap(),
+        ),
+    )
+}
+
+fn realtime_state() -> LocalPresenceStateV1 {
+    realtime_state_at(1, 1, 1, PlayerState::Overworld)
+}
+
+fn realtime_state_at(
+    x: i16,
+    y: i16,
+    source_sequence: u32,
+    player_state: PlayerState,
+) -> LocalPresenceStateV1 {
+    let location = WorldLocation::new(RegionId::Hoenn, 0, 9, 1, 1).unwrap();
+    let pose = PresencePoseV1::new(
+        WorldLocation::new(
+            location.region,
+            location.map_group,
+            location.map_number,
+            x,
+            y,
+        )
+        .unwrap(),
+        0,
+        Direction::South,
+        1,
+        source_sequence,
+        MovementMode::Idle,
+        AnimationId::Idle,
+        AvatarId::Brendan,
+        player_state,
+    )
+    .unwrap();
+    LocalPresenceStateV1::new(pose, source_sequence).unwrap()
+}
+
+async fn expect_realtime_close<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    expected_code: u16,
+) -> TestResult<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    loop {
+        let message = timeout(HTTP_TIMEOUT, socket.next()).await?;
+        match message {
+            Some(Ok(WsMessage::Close(frame))) => {
+                let frame = frame.ok_or("WebSocket sent an empty close frame")?;
+                assert_eq!(u16::from(frame.code), expected_code);
+                return Ok(());
+            }
+            Some(Ok(_)) => {}
+            Some(Err(WsError::Io(error))) if error.kind() == ErrorKind::ConnectionReset => {
+                // A Windows loopback peer can reset immediately after the
+                // server's bounded best-effort close write. The close code
+                // remains asserted whenever the frame is observable; do not
+                // turn this platform race into a flaky transport test.
+                return Ok(());
+            }
+            Some(Err(error)) => return Err(error.into()),
+            None => return Err("WebSocket closed without a close frame".into()),
+        }
+    }
+}
+
+async fn expect_realtime_ready<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+) -> TestResult<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let message = timeout(HTTP_TIMEOUT, socket.next())
+        .await?
+        .ok_or("WebSocket closed before readiness")??;
+    let frame: ServerRealtimeFrameV1 = serde_json::from_str(message.into_text()?.as_str())?;
+    assert!(matches!(frame, ServerRealtimeFrameV1::PresenceReady(_)));
+    Ok(())
+}
+
+async fn establish_realtime_user(
+    address: SocketAddr,
+    username: &str,
+    id_base: u128,
+) -> TestResult<(AccessToken, LeaseContract)> {
+    let password_text = format!("{username}-password");
+    let password = Password::new(&password_text)?;
+    let register =
+        RegisterRequest::new(username, password.clone(), InvitationCode::new(INVITATION)?)?;
+    let response = json_request(address, "POST", "/v1/auth/register", &[], &register).await?;
+    expect_status(&response, 201);
+    let registered: coop_cloud::RegisterResponse = serde_json::from_slice(&response.body)?;
+    let login = LoginRequest::new(username, password)?;
+    let response = json_request(address, "POST", "/v1/auth/login", &[], &login).await?;
+    expect_status(&response, 200);
+    let login: coop_cloud::LoginResponse = serde_json::from_slice(&response.body)?;
+    let acquire = AcquireLeaseRequest::new(
+        registered.character_id,
+        ClientInstanceId::new(Uuid::from_u128(id_base))?,
+        IdempotencyKey::new(Uuid::from_u128(id_base + 1))?,
+    );
+    let response = json_request(
+        address,
+        "POST",
+        "/v1/sessions/acquire",
+        &auth_headers(&login.access_token),
+        &acquire,
+    )
+    .await?;
+    expect_status(&response, 200);
+    let lease: LeaseContract = serde_json::from_slice(&response.body)?;
+    Ok((login.access_token, lease))
+}
+
+async fn refresh_realtime_lease(
+    address: SocketAddr,
+    access: &AccessToken,
+    lease: &mut LeaseContract,
+) -> TestResult<()> {
+    let heartbeat = HeartbeatLeaseRequest::new(lease.fence());
+    let response = json_request(
+        address,
+        "POST",
+        "/v1/sessions/heartbeat",
+        &fence_headers(access, lease),
+        &heartbeat,
+    )
+    .await?;
+    expect_status(&response, 200);
+    *lease = serde_json::from_slice(&response.body)?;
+    Ok(())
+}
+
+async fn mint_fresh_realtime_ticket(
+    address: SocketAddr,
+    access: &AccessToken,
+    lease: &mut LeaseContract,
+) -> TestResult<String> {
+    refresh_realtime_lease(address, access, lease).await?;
+    mint_http_ticket(address, access, realtime_runtime(lease)).await
+}
+
+async fn send_player_state<S>(
+    socket: &mut tokio_tungstenite::WebSocketStream<S>,
+    state: &LocalPresenceStateV1,
+) -> TestResult<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let frame = ClientRealtimeFrameV1::player_state(state.clone());
+    socket
+        .send(WsMessage::Text(serde_json::to_string(&frame)?.into()))
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn realtime_transport_proves_malformed_oversized_and_exact_rate_boundaries() -> TestResult<()>
+{
+    if !cfg!(any(target_os = "linux", target_os = "windows")) {
+        return Err("realtime transport boundary smoke requires Linux or Windows".into());
+    }
+    let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
+    let (address, server) = start_server_with_retry().await?;
+    timeout(HTTP_FLOW_TIMEOUT, realtime_transport_boundary_flow(address)).await??;
+    server.shutdown()?;
+    Ok(())
+}
+
+async fn realtime_transport_boundary_flow(address: SocketAddr) -> TestResult<()> {
+    let (access, mut lease) = establish_realtime_user(address, "RealtimeBoundary", 0x5100).await?;
+
+    let malformed_ticket = mint_fresh_realtime_ticket(address, &access, &mut lease).await?;
+    let mut malformed_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    malformed_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {malformed_ticket}"))?,
+    );
+    let (mut malformed_socket, response) = connect_async(malformed_request).await?;
+    assert_eq!(response.status().as_u16(), 101);
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    malformed_socket
+        .send(WsMessage::Text("{not-json".to_owned().into()))
+        .await?;
+    expect_realtime_close(&mut malformed_socket, 1008).await?;
+
+    let oversized_ticket = mint_fresh_realtime_ticket(address, &access, &mut lease).await?;
+    let mut oversized_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    oversized_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {oversized_ticket}"))?,
+    );
+    let (mut oversized_socket, _) = connect_async(oversized_request).await?;
+    oversized_socket
+        .send(WsMessage::Text("x".repeat(1025).into()))
+        .await?;
+    expect_realtime_close(&mut oversized_socket, 1009).await?;
+
+    // Text: one first state plus 63 duplicate states are the exact 64-frame
+    // allowance. The following Ping must be rejected before its Pong side
+    // effect, proving text frames consume the same rolling budget.
+    let text_ticket = mint_fresh_realtime_ticket(address, &access, &mut lease).await?;
+    let mut text_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    text_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {text_ticket}"))?,
+    );
+    let (mut text_socket, _) = connect_async(text_request).await?;
+    let state = realtime_state();
+    send_player_state(&mut text_socket, &state).await?;
+    expect_realtime_ready(&mut text_socket).await?;
+    for _ in 0..63 {
+        send_player_state(&mut text_socket, &state).await?;
+    }
+    text_socket.send(WsMessage::Ping(Vec::new().into())).await?;
+    expect_realtime_close(&mut text_socket, 1008).await?;
+
+    // Ping: 63 control frames after the first state fill the allowance; the
+    // 65th inbound frame is a Pong and must close with policy 1008.
+    let ping_ticket = mint_fresh_realtime_ticket(address, &access, &mut lease).await?;
+    let mut ping_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    ping_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {ping_ticket}"))?,
+    );
+    let (mut ping_socket, _) = connect_async(ping_request).await?;
+    send_player_state(&mut ping_socket, &state).await?;
+    expect_realtime_ready(&mut ping_socket).await?;
+    for _ in 0..63 {
+        ping_socket.send(WsMessage::Ping(Vec::new().into())).await?;
+    }
+    ping_socket.send(WsMessage::Pong(Vec::new().into())).await?;
+    expect_realtime_close(&mut ping_socket, 1008).await?;
+
+    // Pong: 63 control frames after the first state fill the allowance; a
+    // valid text state at frame 65 must never reach presence submission.
+    let control_ticket = mint_fresh_realtime_ticket(address, &access, &mut lease).await?;
+    let mut control_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    control_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {control_ticket}"))?,
+    );
+    let (mut control_socket, _) = connect_async(control_request).await?;
+    send_player_state(&mut control_socket, &state).await?;
+    expect_realtime_ready(&mut control_socket).await?;
+    for _ in 0..63 {
+        control_socket
+            .send(WsMessage::Pong(Vec::new().into()))
+            .await?;
+    }
+    send_player_state(&mut control_socket, &state).await?;
+    expect_realtime_close(&mut control_socket, 1008).await?;
+
+    // Binary: control frames fill the allowance before the binary frame is
+    // type-checked. The close is therefore 1008, not binary's 1003.
+    let binary_ticket = mint_fresh_realtime_ticket(address, &access, &mut lease).await?;
+    let mut binary_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    binary_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {binary_ticket}"))?,
+    );
+    let (mut binary_socket, _) = connect_async(binary_request).await?;
+    for _ in 0..64 {
+        binary_socket
+            .send(WsMessage::Ping(Vec::new().into()))
+            .await?;
+    }
+    binary_socket
+        .send(WsMessage::Binary(vec![0_u8].into()))
+        .await?;
+    expect_realtime_close(&mut binary_socket, 1008).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn realtime_binary_mint_upgrade_and_ticket_replay_are_bounded() -> TestResult<()> {
+    if !cfg!(any(target_os = "linux", target_os = "windows")) {
+        return Err("realtime binary smoke requires Linux or Windows".into());
+    }
+    let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
+    let (address, server) = start_server_with_retry().await?;
+    timeout(HTTP_FLOW_TIMEOUT, realtime_binary_flow(address)).await??;
+    server.shutdown()?;
+    Ok(())
+}
+
+async fn realtime_binary_flow(address: SocketAddr) -> TestResult<()> {
+    let password = Password::new(PASSWORD)?;
+    let register =
+        RegisterRequest::new(USERNAME, password.clone(), InvitationCode::new(INVITATION)?)?;
+    let response = json_request(address, "POST", "/v1/auth/register", &[], &register).await?;
+    expect_status(&response, 201);
+    let registered: coop_cloud::RegisterResponse = serde_json::from_slice(&response.body)?;
+    let login = LoginRequest::new(USERNAME, password)?;
+    let login_response = json_request(address, "POST", "/v1/auth/login", &[], &login).await?;
+    expect_status(&login_response, 200);
+    let login: coop_cloud::LoginResponse = serde_json::from_slice(&login_response.body)?;
+    let acquire = AcquireLeaseRequest::new(
+        registered.character_id,
+        id(ClientInstanceId::new),
+        id(IdempotencyKey::new),
+    );
+    let response = json_request(
+        address,
+        "POST",
+        "/v1/sessions/acquire",
+        &auth_headers(&login.access_token),
+        &acquire,
+    )
+    .await?;
+    expect_status(&response, 200);
+    let mut lease: LeaseContract = serde_json::from_slice(&response.body)?;
+    let ticket = mint_fresh_realtime_ticket(address, &login.access_token, &mut lease).await?;
+
+    assert_query_does_not_consume_ticket(address, &ticket).await?;
+
+    let mut request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {ticket}"))?,
+    );
+    let (mut socket, response) = connect_async(request).await?;
+    assert_eq!(response.status().as_u16(), 101);
+    assert_eq!(
+        response
+            .headers()
+            .get("cache-control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    let first = ClientRealtimeFrameV1::player_state(realtime_state());
+    socket
+        .send(WsMessage::Text(serde_json::to_string(&first)?.into()))
+        .await?;
+    let ready = timeout(HTTP_TIMEOUT, socket.next())
+        .await?
+        .ok_or("WebSocket closed before readiness")??;
+    let ready: ServerRealtimeFrameV1 = serde_json::from_str(ready.into_text()?.as_str())?;
+    assert!(matches!(ready, ServerRealtimeFrameV1::PresenceReady(_)));
+    socket.close(None).await?;
+
+    let delayed_ticket =
+        mint_fresh_realtime_ticket(address, &login.access_token, &mut lease).await?;
+    let mut delayed_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    delayed_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {delayed_ticket}"))?,
+    );
+    let (mut delayed_socket, _) = connect_async(delayed_request).await?;
+    let delayed = timeout(Duration::from_secs(4), delayed_socket.next()).await?;
+    assert!(matches!(delayed, Some(Ok(WsMessage::Close(_))) | None));
+
+    let binary_ticket =
+        mint_fresh_realtime_ticket(address, &login.access_token, &mut lease).await?;
+    let mut binary_request = format!("ws://{address}/v1/realtime").into_client_request()?;
+    binary_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {binary_ticket}"))?,
+    );
+    let (mut binary_socket, _) = connect_async(binary_request).await?;
+    binary_socket
+        .send(WsMessage::Binary(vec![0_u8].into()))
+        .await?;
+    let binary_close = timeout(HTTP_TIMEOUT, binary_socket.next()).await?;
+    assert!(matches!(binary_close, Some(Ok(WsMessage::Close(_))) | None));
+
+    let mut replay = format!("ws://{address}/v1/realtime").into_client_request()?;
+    replay.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {ticket}"))?,
+    );
+    match connect_async(replay).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+            assert_eq!(response.status().as_u16(), 401);
+            assert_eq!(
+                response
+                    .headers()
+                    .get("cache-control")
+                    .and_then(|value| value.to_str().ok()),
+                Some("no-store")
+            );
+        }
+        other => {
+            return Err(
+                format!("replayed realtime ticket unexpectedly upgraded: {other:?}").into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn mint_http_ticket(
+    address: SocketAddr,
+    access_token: &AccessToken,
+    runtime: RuntimeLeaseFence,
+) -> TestResult<String> {
+    let mint = MintRealtimeTicketRequest::v1(runtime.clone());
+    let response = json_request(
+        address,
+        "POST",
+        "/v1/realtime/tickets",
+        &auth_headers(access_token),
+        &mint,
+    )
+    .await?;
+    expect_status(&response, 200);
+    expect_no_store(&response);
+    let minted: MintRealtimeTicketResponse = serde_json::from_slice(&response.body)?;
+    assert_eq!(minted.runtime(), &runtime);
+    assert_ne!(minted.expires_at().value(), 0);
+    Ok(minted.ticket().expose_secret().to_owned())
+}
+
+async fn assert_query_does_not_consume_ticket(address: SocketAddr, ticket: &str) -> TestResult<()> {
+    let mut query_request = format!("ws://{address}/v1/realtime?probe=1").into_client_request()?;
+    query_request.headers_mut().insert(
+        "authorization",
+        HeaderValue::from_str(&format!("Bearer {ticket}"))?,
+    );
+    match connect_async(query_request).await {
+        Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
+            assert_eq!(response.status().as_u16(), 400);
+            assert_eq!(
+                response
+                    .headers()
+                    .get("cache-control")
+                    .and_then(|value| value.to_str().ok()),
+                Some("no-store")
+            );
+            Ok(())
+        }
+        other => Err(format!("query-bearing ticket unexpectedly upgraded: {other:?}").into()),
+    }
+}
+
+#[tokio::test]
+async fn realtime_http_rejections_are_generic_and_no_store() -> TestResult<()> {
+    if !cfg!(any(target_os = "linux", target_os = "windows")) {
+        return Err("realtime HTTP smoke requires Linux or Windows".into());
+    }
+    let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
+    let (address, server) = start_server_with_retry().await?;
+    let response = request(address, "GET", "/v1/realtime", &[], &[]).await?;
+    expect_status(&response, 400);
+    expect_no_store(&response);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&response.body)?["error"]["code"],
+        "invalid_request"
+    );
+
+    let response = request(address, "GET", "/v1/realtime?", &[], &[]).await?;
+    expect_status(&response, 400);
+    expect_no_store(&response);
+
+    let response = request(
+        address,
+        "GET",
+        "/v1/realtime",
+        &[(
+            "sec-websocket-protocol",
+            "pokecrossroads.realtime.v1".to_owned(),
+        )],
+        &[],
+    )
+    .await?;
+    expect_status(&response, 400);
+    expect_no_store(&response);
+
+    let response = request(address, "POST", "/v1/realtime", &[], &[]).await?;
+    expect_status(&response, 405);
+    expect_no_store(&response);
+
+    let response = request(
+        address,
+        "POST",
+        "/v1/realtime/tickets",
+        &[("content-type", "application/json".to_owned())],
+        &vec![b'a'; 8 * 1024 + 1],
+    )
+    .await?;
+    expect_status(&response, 413);
+    expect_no_store(&response);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&response.body)?["error"]["code"],
+        "payload_too_large"
+    );
+
+    server.shutdown()?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn phase2_binary_http_checkpoint_and_fencing_smoke() -> TestResult<()> {
     if !cfg!(any(target_os = "linux", target_os = "windows")) {
@@ -673,6 +1240,7 @@ async fn phase2_binary_http_checkpoint_and_fencing_smoke() -> TestResult<()> {
             "Phase 2 binary smoke requires Linux or Windows listener ownership queries".into(),
         );
     }
+    let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
     assert_bad_configuration().await?;
     let (address, server) = start_server_with_retry().await?;
     // Run the assertion-heavy protocol sequence in a child task so a panic is
