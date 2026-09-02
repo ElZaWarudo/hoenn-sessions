@@ -1,5 +1,5 @@
 schema_version: 2
-updated_at: "2026-09-02T01:51:40Z"
+updated_at: "2026-09-02T13:33:41Z"
 mode: autonomous-team-flow
 documentation_gate:
   status: in_review
@@ -37,6 +37,7 @@ initiative:
   artifact_contract: ce-unified-plan/v1
   artifact_readiness: requirements-only
   implementation_authority: explicit-local-bypass
+  next_player_visible_milestone: authenticated-littleroot-presence
   shared_revision: "0085f127045523cffe30a6ea9cf6c82c18281746"
   shared_decisions:
     - PokéCrossroads Beta-1.4 is the pinned engine basis.
@@ -191,6 +192,48 @@ units:
     blocked_by: [BLK-FIREBASE]
     affects_dependents: []
     owns: [production-database, production-object-storage]
+  phase4-group-travel:
+    title: Authenticated symmetric groups and atomic regional travel
+    status: certified-local-checkpoint
+    implementation_state: integrated-local-checkpoint
+    certification_status: correctness-and-security-certified-for-frozen-patch
+    depends_on: [phase2-cloud-foundation, phase2-server-auth-save]
+    blocked_by: []
+    residual_exclusions: [live-sidecar-warp-delivery, remote-avatar-rendering, realtime-invite-ui, reconnect-leave-lifecycle, production-postgresql-firebase-adapters, gameplay-progress-ingestion]
+    affects_dependents: [authenticated-littleroot-presence, multi-region-client-travel]
+    owns:
+      - coop/crates/coop-cloud/src/group.rs
+      - coop/crates/coop-cloud/src/ids.rs
+      - coop/crates/coop-cloud/src/lib.rs
+      - coop/crates/coop-server/src/phase2/group_travel.rs
+      - coop/crates/coop-server/src/phase2/auth.rs
+      - coop/crates/coop-server/src/phase2/storage.rs
+      - coop/crates/coop-server/src/phase2.rs
+      - coop/crates/coop-server/migrations/0002_phase2_group_travel.sql
+      - coop/crates/coop-server/tests/phase2_group_travel.rs
+      - coop/crates/coop-server/tests/phase2_migration_contract.rs
+    execution:
+      route: swarm
+      lane: deep
+      contract: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-server-contract-v2.json
+      contract_hash: sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f
+      correction_contract: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-review-fixer-contract.json
+      correction_contract_hash: sha256:52bfb5e9e98f048a5c6239cb416f3d26c98e4c9cacf521c6e643588f956937f6
+      final_patch: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2.patch
+      final_patch_hash: sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a
+      final_diff_digest: sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc
+      worker_terminal: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-review-fixer-terminal.json
+      correctness_certification: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-correctness-certification.json
+      security_certification: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-security-certification.json
+      integration_validation: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-main-integration-validation.json
+  authenticated-littleroot-presence:
+    title: End-to-end authenticated Littleroot presence
+    status: next-player-visible-milestone
+    implementation_state: server-realtime-ready-client-path-not-integrated
+    depends_on: [regional-protocol, rom-netbridge, phase2-integration]
+    blocked_by: []
+    affects_dependents: [multi-region-client-travel]
+    owns: [sidecar-websocket-client, rom-remote-object-events, presence-interpolation, avatar-interaction]
 wave_history:
   - id: phase1-vertical-slice-20260901
     selected_units: [regional-protocol, rom-netbridge, server-slice, sidecar-slice]
@@ -255,3 +298,26 @@ wave_history:
       state: terminal-local-checkpoint
     release_ready: false
     residual_blockers: [BLK-MGBA-CONFORMANCE, BLK-FIREBASE, BLK-GAMEPLAY-LEDGER, BLK-PROVENANCE, BLK-MGBA-JOB, BLK-FIRST-SNAPSHOT-CLONING]
+  - id: phase4-group-travel-20260902
+    selected_units: [phase4-group-travel]
+    source_revision: "d643099cc60ce3a8d41bca4e73f3ec797286f722"
+    integration_base_revision: "e1dc9747"
+    result: certified-local-checkpoint
+    final_patch_hash: sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a
+    final_diff_digest: sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc
+    aggregate_verification:
+      owner: seneschal-root
+      artifact: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-main-integration-validation.json
+      result: passed
+    certifications:
+      correctness: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-correctness-certification.json
+      security: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-security-certification.json
+      result: approved
+    gates:
+      scope: local-checkpoint-complete
+      verification: passed
+      review: certified
+      security: certified
+      state: certified-local-checkpoint
+    release_ready: false
+    residual_exclusions: [live-sidecar-warp-delivery, remote-avatar-rendering, realtime-invite-ui, reconnect-leave-lifecycle, production-postgresql-firebase-adapters, gameplay-progress-ingestion]

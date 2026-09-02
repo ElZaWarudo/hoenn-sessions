@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "worker_id": "/root/group_travel_review_fixer",
+  "unit_id": "phase2-group-travel-review-fixer",
+  "contract_hash": "sha256:52bfb5e9e98f048a5c6239cb416f3d26c98e4c9cacf521c6e643588f956937f6",
+  "status": "done",
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "final_patch_hash": "sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a",
+  "final_diff_digest": "sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc",
+  "acceptance_evidence": [
+    "Group DTOs are bounded and reject unknown fields, including nested world-zone fields.",
+    "Caller, companion, invitation, tenant, active-lease, reverse-index, replay, and capacity invariants fail closed.",
+    "Snapshot restore and grouped travel share the runtime transition gate, preventing one-member world divergence.",
+    "Successful travel atomically changes both character zones and world revisions while preserving the group and snapshot revisions.",
+    "Reserved badge bits cannot satisfy regional travel entitlement.",
+    "Group responses, errors, and oversized request targets receive exact no-store handling.",
+    "The additive migration guards canonical two-member group membership and active-group deletion."
+  ],
+  "verification": [
+    {
+      "command": "cargo test -p coop-cloud group --all-features --locked",
+      "result": "passed"
+    },
+    {
+      "command": "cargo test -p coop-server group_travel --all-features --locked",
+      "result": "passed"
+    },
+    {
+      "command": "cargo test -p coop-server --test phase2_group_travel --all-features --locked",
+      "result": "passed"
+    },
+    {
+      "command": "cargo test -p coop-server --test phase2_migration_contract --all-features --locked",
+      "result": "passed"
+    },
+    {
+      "command": "cargo test -p coop-server restore --all-features --locked",
+      "result": "passed"
+    },
+    {
+      "command": "cargo clippy -p coop-cloud -p coop-server --all-targets --all-features --locked -- -D warnings",
+      "result": "passed"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "result": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    }
+  ],
+  "unowned_failures": []
+}

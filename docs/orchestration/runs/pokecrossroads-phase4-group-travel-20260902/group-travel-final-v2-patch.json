@@ -1,0 +1,69 @@
+{
+  "base_revision": "d643099cc60ce3a8d41bca4e73f3ec797286f722",
+  "baseline_digest": "sha256:47f796481dec47ca9db08a61f619edeb461084ccfd39163f44d5c81f6ecca789",
+  "baseline_tree": "252d0a15373df7bc8178a0b22b63e0ef6827087b",
+  "changed_files": [
+    {
+      "digest": "sha256:e25d8983351dcbce49ba7aeb56be51e68ae3f51f6287597b5e256c1a0e30519e",
+      "path": "coop/crates/coop-cloud/src/group.rs"
+    },
+    {
+      "digest": "sha256:dc179b4e7ec97ecd6cb678cefd0d91f9d227695cd478abdf87b71244f51a6f21",
+      "path": "coop/crates/coop-cloud/src/ids.rs"
+    },
+    {
+      "digest": "sha256:4448422cdcfcfdd2b1eaf1034414c721ba7c48a94fcb1b0b35123a633f16dbee",
+      "path": "coop/crates/coop-cloud/src/lib.rs"
+    },
+    {
+      "digest": "sha256:d1c21937348967a9afd068e31ba7304ce3e82bba3f8dfe85c477b3c02e9fbf01",
+      "path": "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql"
+    },
+    {
+      "digest": "sha256:7a324d1b689f25bf16d98b728814c895c6ecdc7a16db62d71943311e340e9970",
+      "path": "coop/crates/coop-server/src/phase2.rs"
+    },
+    {
+      "digest": "sha256:dab5ea55f6baa811117e33b951174c3074d7f532e552c36e2d648af67683d927",
+      "path": "coop/crates/coop-server/src/phase2/auth.rs"
+    },
+    {
+      "digest": "sha256:1d32413632f22cb33356af13e0d8200580b4778651c8190f3c381734af16e34c",
+      "path": "coop/crates/coop-server/src/phase2/group_travel.rs"
+    },
+    {
+      "digest": "sha256:253274c46411057a34c6219949c081adff94b0cd2fc7b61d745ca79b648226a3",
+      "path": "coop/crates/coop-server/src/phase2/storage.rs"
+    },
+    {
+      "digest": "sha256:b10140da91151026b7867f5a1f568e94369ffc2f6a54adcb1dddd3cf1fb3720a",
+      "path": "coop/crates/coop-server/tests/phase2_group_travel.rs"
+    },
+    {
+      "digest": "sha256:c3616dd46979c35607488754a224de33b9a8c967cf3122b318d558027c11fab2",
+      "path": "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+    }
+  ],
+  "contract_hash": "sha256:52bfb5e9e98f048a5c6239cb416f3d26c98e4c9cacf521c6e643588f956937f6",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc",
+  "manifest_hash": "sha256:35adce12d738be98b1cd429bf1774cad98aeb2860b459f839c514566a8689529",
+  "owned_paths": [
+    "coop/crates/coop-cloud/src/group.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/group_travel.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/tests/phase2_group_travel.rs",
+    "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+  ],
+  "patch_sha256": "sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a",
+  "role": "integration-candidate",
+  "schema_version": 1,
+  "unit_id": "phase2-group-travel",
+  "worker_id": "/root/group_travel_review_fixer",
+  "workspace_id": "pokecrossroads-phase4-group-travel-20260902-final-v2"
+}

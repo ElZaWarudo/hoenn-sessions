@@ -1,0 +1,2648 @@
+diff --git a/coop/crates/coop-cloud/src/ids.rs b/coop/crates/coop-cloud/src/ids.rs
+index 63f1de9d6af9aaa1e0c146b06fc8933bc6411c70..3f530e97b1539878b0cc2f368f2c6ebd9b1ed232 100644
+--- a/coop/crates/coop-cloud/src/ids.rs
++++ b/coop/crates/coop-cloud/src/ids.rs
+@@ -257,6 +257,14 @@ uuid_id!(
+     /// A request idempotency key.
+     IdempotencyKey
+ );
++uuid_id!(
++    /// A server-issued symmetric group identifier.
++    GroupId
++);
++uuid_id!(
++    /// A server-issued group invitation identifier.
++    GroupInvitationId
++);
+ 
+ /// A monotonically increasing snapshot or character revision.
+ #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+diff --git a/coop/crates/coop-cloud/src/lib.rs b/coop/crates/coop-cloud/src/lib.rs
+index 0f96751cd91a99437d2fc221aaccb6f58cada040..40a593bf2ed924765785915d679d7b5b77efeb35 100644
+--- a/coop/crates/coop-cloud/src/lib.rs
++++ b/coop/crates/coop-cloud/src/lib.rs
+@@ -7,6 +7,7 @@
+ #![forbid(unsafe_code)]
+ 
+ pub mod auth;
++pub mod group;
+ pub mod ids;
+ pub mod presence;
+ pub mod realtime;
+@@ -20,10 +21,17 @@ pub use auth::{
+     LogoutResponse, RefreshRequest, RefreshResponse, RefreshTokenRequest, RefreshTokenResponse,
+     RegisterRequest, RegisterResponse, RegistrationRequest, RegistrationResponse, Username,
+ };
++pub use group::{
++    AcceptGroupInvitationRequest, AcceptGroupInvitationResponse, CreateGroupInvitationRequest,
++    CreateGroupInvitationResponse, GROUP_INVITATION_TTL_MS, GROUP_REQUEST_BODY_MAX_BYTES,
++    GROUP_ROUTE_ID_MAX_BYTES, Group, GroupError, GroupInvitationView, GroupMemberView,
++    GroupTravelRequest, GroupTravelResponse, GroupView, MAX_WORLD_REVISION, RouteId,
++};
+ pub use ids::{
+-    BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, IdError,
+-    IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId, Revision, SessionEpoch,
+-    SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp, UnixTimestampMillis, UserId,
++    BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,
++    GroupInvitationId, IdError, IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId,
++    Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp,
++    UnixTimestampMillis, UserId,
+ };
+ pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
+ pub use realtime::{
+diff --git a/coop/crates/coop-server/src/phase2.rs b/coop/crates/coop-server/src/phase2.rs
+index 262065effe8b68a86c981bac87059ff723e965c6..1365f6db44556e4cbe28bd6879d26b4dc2e71641 100644
+--- a/coop/crates/coop-server/src/phase2.rs
++++ b/coop/crates/coop-server/src/phase2.rs
+@@ -79,6 +79,7 @@ where
+ use thiserror::Error;
+ 
+ pub mod auth;
++pub(crate) mod group_travel;
+ pub mod presence;
+ pub(crate) mod realtime;
+ pub mod saves;
+@@ -250,7 +251,7 @@ impl Phase2App {
+         Self::new(config).expect("test config is local")
+     }
+ 
+-    pub(crate) fn router(&self) -> Router {
++    pub fn router(&self) -> Router {
+         Router::new()
+             .merge(
+                 Router::new()
+@@ -300,6 +301,20 @@ impl Phase2App {
+                     .route("/v1/uploads/{ticket}", put(upload))
+                     .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024)),
+             )
++            .merge(
++                Router::new()
++                    .route("/v1/groups/invitations", post(create_group_invitation))
++                    .route(
++                        "/v1/groups/invitations/{invitation_id}/accept",
++                        post(accept_group_invitation),
++                    )
++                    .route("/v1/groups/{group_id}", get(inspect_group))
++                    .route("/v1/groups/{group_id}/travel", post(travel_group))
++                    .layer(axum::extract::DefaultBodyLimit::max(
++                        coop_cloud::GROUP_REQUEST_BODY_MAX_BYTES,
++                    ))
++                    .layer(axum::middleware::from_fn(group_no_store)),
++            )
+             .merge(realtime::router())
+             .layer(axum::middleware::from_fn(reject_oversized_request_target))
+             .with_state(self.clone())
+@@ -517,6 +532,80 @@ impl Phase2App {
+     pub fn add_invitation(&self, code: &str) -> Result<(), Phase2Error> {
+         auth::add_invitation(&self.store, code)
+     }
++
++    /// Creates one pending invitation under the caller's active lease.
++    ///
++    /// # Errors
++    ///
++    /// Returns an authentication, policy, conflict, capacity, or storage error.
++    pub fn create_group_invitation(
++        &self,
++        actor: AuthenticatedActor,
++        request: coop_cloud::CreateGroupInvitationRequest,
++    ) -> Result<coop_cloud::CreateGroupInvitationResponse, Phase2Error> {
++        let _gate = self
++            .store
++            .runtime_transition_gate
++            .lock()
++            .map_err(|_| Phase2Error::Internal)?;
++        group_travel::create_invitation(&self.store, actor, &request)
++    }
++
++    /// Consumes an invitation and creates a symmetric group atomically.
++    ///
++    /// # Errors
++    ///
++    /// Returns an authentication, policy, conflict, capacity, or storage error.
++    pub fn accept_group_invitation(
++        &self,
++        actor: AuthenticatedActor,
++        invitation_id: coop_cloud::GroupInvitationId,
++        request: coop_cloud::AcceptGroupInvitationRequest,
++    ) -> Result<coop_cloud::AcceptGroupInvitationResponse, Phase2Error> {
++        let _gate = self
++            .store
++            .runtime_transition_gate
++            .lock()
++            .map_err(|_| Phase2Error::Internal)?;
++        group_travel::accept_invitation(&self.store, actor, invitation_id, &request)
++    }
++
++    /// Returns an active group owned by the caller and fenced to its lease.
++    ///
++    /// # Errors
++    ///
++    /// Returns a hidden-not-found, fence, or storage error.
++    pub fn inspect_group(
++        &self,
++        actor: AuthenticatedActor,
++        group_id: coop_cloud::GroupId,
++        fence: coop_cloud::LeaseFence,
++    ) -> Result<coop_cloud::GroupView, Phase2Error> {
++        group_travel::inspect_group(&self.store, actor, group_id, fence)
++    }
++
++    /// Moves both members through one server-owned route atomically.
++    ///
++    /// # Errors
++    ///
++    /// Returns an authentication, policy, conflict, capacity, or storage error.
++    #[allow(
++        clippy::needless_pass_by_value,
++        reason = "public operation consumes the request at the service boundary"
++    )]
++    pub fn travel_group(
++        &self,
++        actor: AuthenticatedActor,
++        group_id: coop_cloud::GroupId,
++        request: coop_cloud::GroupTravelRequest,
++    ) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
++        let _gate = self
++            .store
++            .runtime_transition_gate
++            .lock()
++            .map_err(|_| Phase2Error::Internal)?;
++        group_travel::travel(&self.store, actor, group_id, &request)
++    }
+ }
+ 
+ fn phase2_app_from_values(
+@@ -818,6 +907,68 @@ async fn upload(
+     saves::upload_with_credential(&app.store, &path, query_ticket, body.to_vec())?;
+     Ok(StatusCode::NO_CONTENT)
+ }
++
++#[derive(Deserialize)]
++struct GroupPath {
++    group_id: coop_cloud::GroupId,
++}
++
++#[derive(Deserialize)]
++struct GroupInvitationPath {
++    invitation_id: coop_cloud::GroupInvitationId,
++}
++
++async fn group_no_store(request: Request, next: Next) -> Response {
++    let mut response = next.run(request).await;
++    response
++        .headers_mut()
++        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
++    response
++}
++
++async fn create_group_invitation(
++    State(app): State<Phase2App>,
++    headers: axum::http::HeaderMap,
++    Phase2Json(request): Phase2Json<coop_cloud::CreateGroupInvitationRequest>,
++) -> Result<(StatusCode, Json<coop_cloud::CreateGroupInvitationResponse>), Phase2Error> {
++    let response = app.create_group_invitation(actor(&headers, &app)?, request)?;
++    Ok((StatusCode::CREATED, Json(response)))
++}
++
++async fn accept_group_invitation(
++    State(app): State<Phase2App>,
++    headers: axum::http::HeaderMap,
++    Path(path): Path<GroupInvitationPath>,
++    Phase2Json(request): Phase2Json<coop_cloud::AcceptGroupInvitationRequest>,
++) -> Result<Json<coop_cloud::AcceptGroupInvitationResponse>, Phase2Error> {
++    let response =
++        app.accept_group_invitation(actor(&headers, &app)?, path.invitation_id, request)?;
++    Ok(Json(response))
++}
++
++async fn inspect_group(
++    State(app): State<Phase2App>,
++    headers: axum::http::HeaderMap,
++    Path(path): Path<GroupPath>,
++) -> Result<Json<coop_cloud::GroupView>, Phase2Error> {
++    let actor = actor(&headers, &app)?;
++    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
++    Ok(Json(app.inspect_group(actor, path.group_id, fence)?))
++}
++
++async fn travel_group(
++    State(app): State<Phase2App>,
++    headers: axum::http::HeaderMap,
++    Path(path): Path<GroupPath>,
++    Phase2Json(request): Phase2Json<coop_cloud::GroupTravelRequest>,
++) -> Result<Json<coop_cloud::GroupTravelResponse>, Phase2Error> {
++    Ok(Json(app.travel_group(
++        actor(&headers, &app)?,
++        path.group_id,
++        request,
++    )?))
++}
++
+ async fn resume_package(
+     State(app): State<Phase2App>,
+     headers: axum::http::HeaderMap,
+diff --git a/coop/crates/coop-server/src/phase2/auth.rs b/coop/crates/coop-server/src/phase2/auth.rs
+index 03b6f709970818e4f371c8af8890da68d278a521..cd8ce2b29baa77286ba8da684ce7e2978a810e9f 100644
+--- a/coop/crates/coop-server/src/phase2/auth.rs
++++ b/coop/crates/coop-server/src/phase2/auth.rs
+@@ -97,6 +97,7 @@ pub(crate) fn register(
+                 owner: user_id,
+                 state: character_state,
+                 revision: Revision::initial(),
++                world_revision: 0,
+                 active_snapshot: None,
+                 last_session_epoch: 0,
+             },
+diff --git a/coop/crates/coop-server/src/phase2/storage.rs b/coop/crates/coop-server/src/phase2/storage.rs
+index 494d0049411209b418ee808125640f92f935041f..ddaec476da9bdcced229ef8ae9fdc78b0cfb8a79 100644
+--- a/coop/crates/coop-server/src/phase2/storage.rs
++++ b/coop/crates/coop-server/src/phase2/storage.rs
+@@ -6,10 +6,11 @@ use argon2::{
+ };
+ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+ use coop_cloud::{
+-    CharacterCloudState, CharacterId, ClientInstanceId, CommitId, IdempotencyKey, LeaseContract,
+-    RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId, SigningPrivateKey, SnapshotFile,
+-    SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
+-    SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
++    CharacterCloudState, CharacterId, ClientInstanceId, CommitId, Group, GroupId,
++    GroupInvitationId, IdempotencyKey, LeaseContract, RefreshFamilyId, Revision, RuntimeLeaseFence,
++    SessionId, SigningPrivateKey, SnapshotFile, SnapshotFinalizeRequest, SnapshotId,
++    SnapshotPrepareRequest, SnapshotRecord, SnapshotRestoreRequest, StableRuntimeSession,
++    UnixTimestampMillis, UploadTarget, UserId,
+ };
+ use coop_protocol::{RegionId, RegionalProgress, WorldZone};
+ use getrandom::fill as random_fill;
+@@ -58,6 +59,10 @@ pub const MAX_FAMILY_RECORDS_GLOBAL: usize = 4_096;
+ /// Maximum number of unexpired realtime capabilities retained by one local
+ /// server process.
+ pub const MAX_REALTIME_TICKETS_GLOBAL: usize = 1_024;
++pub const GROUP_INVITATION_TTL_MS: u64 = coop_cloud::GROUP_INVITATION_TTL_MS;
++pub const MAX_GROUP_INVITATIONS: usize = 1_024;
++pub const MAX_GROUP_IDEMPOTENCY: usize = 4_096;
++pub const GROUP_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
+ 
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub enum StorageMode {
+@@ -646,9 +651,51 @@ pub(crate) struct CharacterRecord {
+     pub owner: UserId,
+     pub state: CharacterCloudState,
+     pub revision: Revision,
++    /// Runtime world revision, independent from snapshot/save revision.
++    pub world_revision: u64,
+     pub active_snapshot: Option<SnapshotId>,
+     pub last_session_epoch: u32,
+ }
++
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub(crate) enum GroupStatus {
++    Active,
++    #[allow(
++        dead_code,
++        reason = "terminal group lifecycle is reserved for the later leave unit"
++    )]
++    Closed,
++}
++
++#[derive(Clone)]
++pub(crate) struct GroupRecord {
++    pub group: Group,
++    pub zone: WorldZone,
++    pub status: GroupStatus,
++}
++
++#[derive(Clone)]
++pub(crate) struct GroupInvitationRecord {
++    pub invitation_id: GroupInvitationId,
++    pub inviter: CharacterId,
++    pub invitee: CharacterId,
++    pub expires_at: u64,
++    pub consumed: bool,
++}
++
++#[derive(Clone)]
++pub(crate) enum GroupIdempotencyResponse {
++    Invitation(coop_cloud::CreateGroupInvitationResponse),
++    Accept(coop_cloud::AcceptGroupInvitationResponse),
++    Travel(coop_cloud::GroupTravelResponse),
++}
++
++#[derive(Clone)]
++pub(crate) struct GroupIdempotencyRecord {
++    pub fingerprint: [u8; 32],
++    pub response: GroupIdempotencyResponse,
++    pub expires_at: u64,
++}
+ #[derive(Clone)]
+ pub(crate) struct AccessRecord {
+     pub user_id: UserId,
+@@ -768,6 +815,11 @@ pub struct State {
+     /// Repository-side ownership records close the check-then-delete race
+     /// between failed uploads and concurrent finalization.
+     pub(crate) upload_objects: HashMap<String, UploadObjectRecord>,
++    pub(crate) groups: HashMap<GroupId, GroupRecord>,
++    pub(crate) active_group_by_member: HashMap<CharacterId, GroupId>,
++    pub(crate) group_invitations: HashMap<GroupInvitationId, GroupInvitationRecord>,
++    pub(crate) group_idempotency:
++        HashMap<(CharacterId, String, IdempotencyKey), GroupIdempotencyRecord>,
+ }
+ #[derive(Clone)]
+ pub(crate) struct Store {
+diff --git a/coop/crates/coop-server/tests/phase2_migration_contract.rs b/coop/crates/coop-server/tests/phase2_migration_contract.rs
+index fcc55e2843c986b88f5176ff19371ebbc24b35f1..442bcf77abd51421278c5fc9bfed172c297db047 100644
+--- a/coop/crates/coop-server/tests/phase2_migration_contract.rs
++++ b/coop/crates/coop-server/tests/phase2_migration_contract.rs
+@@ -21,3 +21,32 @@ fn migration_contract_character_and_resume_artifact_sizes() {
+         "legacy character.sav bounded range must not remain"
+     );
+ }
++
++#[test]
++fn migration_contract_group_travel_is_additive_and_integrity_bound() {
++    let migration = include_str!("../migrations/0002_phase2_group_travel.sql");
++    let normalized: String = migration
++        .chars()
++        .filter(|c| !c.is_ascii_whitespace())
++        .collect::<String>()
++        .to_ascii_lowercase();
++    assert!(normalized.contains("altertablephase2_characters"));
++    assert!(normalized.contains("world_revisionbigintnotnulldefault0"));
++    assert!(normalized.contains("createtablephase2_groups"));
++    assert!(normalized.contains("createtablephase2_group_members"));
++    assert!(normalized.contains("phase2_one_active_group_per_character"));
++    assert!(normalized.contains("createtablephase2_group_invitations"));
++    assert!(normalized.contains("member_a<member_b"));
++    assert!(normalized.contains("phase2_validate_group_members"));
++    assert!(normalized.contains("group_status='closed'"));
++    assert!(normalized.contains("member_count<>0"));
++    assert!(normalized.contains("group_status<>'active'ormember_count<>2"));
++    assert!(normalized.contains("groupmemberrowsdonotmatchcanonicalgroupactors"));
++    assert!(normalized.contains("groupmemberslotsdonotmatchcanonicalactororder"));
++    assert!(normalized.contains("groupactorsareimmutable"));
++    assert!(normalized.contains("phase2_group_integrity"));
++    assert!(normalized.contains("phase2_guard_group_status"));
++    assert!(normalized.contains("phase2_guard_group_invitation"));
++    assert!(normalized.contains("phase2_idempotency") || !normalized.contains("idempotency"));
++    assert!(!normalized.contains("drop table"));
++}
+diff --git a/coop/crates/coop-cloud/src/group.rs b/coop/crates/coop-cloud/src/group.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..6535227fc8359126d7ccf3637df531a6ef0065ff
+--- /dev/null
++++ b/coop/crates/coop-cloud/src/group.rs
+@@ -0,0 +1,554 @@
++//! Authenticated, symmetric two-member group travel contracts.
++
++use crate::{
++    ApiVersion, CharacterId, ClientInstanceId, IdError, IdempotencyKey, LeaseFence, Revision,
++    SessionEpoch, SessionId, UnixTimestampMillis, ids::deserialize_bounded_string,
++};
++use coop_protocol::{RegionId, WorldZone};
++use serde::{Deserialize, Deserializer, Serialize};
++use thiserror::Error;
++
++/// Maximum JSON body accepted by group and invitation endpoints.
++pub const GROUP_REQUEST_BODY_MAX_BYTES: usize = 8 * 1024;
++/// Invitation lifetime, measured from the server's clock.
++pub const GROUP_INVITATION_TTL_MS: u64 = 30_000;
++/// Maximum route identifier size on the wire.
++pub const GROUP_ROUTE_ID_MAX_BYTES: usize = 128;
++pub const MAX_WORLD_REVISION: u64 = i64::MAX as u64;
++
++#[derive(Clone, Debug, Error, Eq, PartialEq)]
++pub enum GroupError {
++    #[error("invalid API version")]
++    InvalidApiVersion,
++    #[error("identifier is invalid: {0}")]
++    Identifier(#[from] IdError),
++    #[error("group must contain two distinct members")]
++    InvalidMembers,
++    #[error("group members are not canonical")]
++    NonCanonicalMembers,
++    #[error("route ID is not canonical")]
++    InvalidRouteId,
++    #[error("world zone is invalid: {0}")]
++    InvalidZone(String),
++    #[error("world revision is invalid")]
++    InvalidWorldRevision,
++}
++
++/// A symmetric UUID-identified group.  The members are always sorted.
++#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
++pub struct Group {
++    members: [CharacterId; 2],
++}
++
++impl Group {
++    /// Creates a canonical group without a leader, host, or owner.
++    ///
++    /// # Errors
++    ///
++    /// Returns an error when both characters are equal.
++    pub fn new(first: CharacterId, second: CharacterId) -> Result<Self, GroupError> {
++        if first == second {
++            return Err(GroupError::InvalidMembers);
++        }
++        Ok(Self {
++            members: if first < second {
++                [first, second]
++            } else {
++                [second, first]
++            },
++        })
++    }
++
++    #[must_use]
++    pub const fn members(self) -> [CharacterId; 2] {
++        self.members
++    }
++
++    #[must_use]
++    pub fn contains(self, character_id: CharacterId) -> bool {
++        self.members[0] == character_id || self.members[1] == character_id
++    }
++
++    /// # Errors
++    ///
++    /// Returns an error when the members are equal or not sorted.
++    pub fn validate(&self) -> Result<(), GroupError> {
++        if self.members[0] == self.members[1] {
++            return Err(GroupError::InvalidMembers);
++        }
++        if self.members[0] > self.members[1] {
++            return Err(GroupError::NonCanonicalMembers);
++        }
++        Ok(())
++    }
++}
++
++impl<'de> Deserialize<'de> for Group {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: Deserializer<'de>,
++    {
++        #[derive(Deserialize)]
++        #[serde(deny_unknown_fields)]
++        struct WireGroup {
++            members: [CharacterId; 2],
++        }
++        let wire = WireGroup::deserialize(deserializer)?;
++        if wire.members[0] >= wire.members[1] {
++            return Err(serde::de::Error::custom(GroupError::NonCanonicalMembers));
++        }
++        Group::new(wire.members[0], wire.members[1]).map_err(serde::de::Error::custom)
++    }
++}
++
++/// A server-owned route identity.  It is deliberately opaque to clients.
++#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
++pub struct RouteId(String);
++
++impl RouteId {
++    /// # Errors
++    ///
++    /// Returns an error when the route identity is not a bounded canonical
++    /// region-qualified uppercase value.
++    pub fn new(value: impl Into<String>) -> Result<Self, GroupError> {
++        let value = value.into();
++        let mut qualified = value.split(':');
++        let region = qualified.next().unwrap_or_default();
++        let local_key = qualified.next().unwrap_or_default();
++        if value.is_empty()
++            || value.len() > GROUP_ROUTE_ID_MAX_BYTES
++            || qualified.next().is_some()
++            || RegionId::parse_token(region)
++                .ok()
++                .is_none_or(|region| region == RegionId::Unspecified)
++            || local_key.is_empty()
++            || !local_key
++                .bytes()
++                .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
++        {
++            return Err(GroupError::InvalidRouteId);
++        }
++        Ok(Self(value))
++    }
++
++    /// # Errors
++    ///
++    /// Returns an error when the route identity is not canonical.
++    pub fn parse(value: &str) -> Result<Self, GroupError> {
++        Self::new(value)
++    }
++
++    #[must_use]
++    pub fn as_str(&self) -> &str {
++        &self.0
++    }
++}
++
++impl Serialize for RouteId {
++    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
++    where
++        S: serde::Serializer,
++    {
++        serializer.serialize_str(&self.0)
++    }
++}
++
++impl<'de> Deserialize<'de> for RouteId {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: Deserializer<'de>,
++    {
++        let value = deserialize_bounded_string(deserializer, GROUP_ROUTE_ID_MAX_BYTES, "route ID")?;
++        Self::new(value).map_err(serde::de::Error::custom)
++    }
++}
++
++/// Create an invitation for exactly one target character.
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
++pub struct CreateGroupInvitationRequest {
++    pub api_version: ApiVersion,
++    pub invitee_character_id: CharacterId,
++    pub session_id: SessionId,
++    pub character_id: CharacterId,
++    pub current_revision: Revision,
++    pub session_epoch: SessionEpoch,
++    pub client_instance_id: ClientInstanceId,
++    pub idempotency_key: IdempotencyKey,
++}
++
++impl CreateGroupInvitationRequest {
++    #[must_use]
++    pub const fn new(
++        fence: LeaseFence,
++        invitee_character_id: CharacterId,
++        idempotency_key: IdempotencyKey,
++    ) -> Self {
++        Self {
++            api_version: ApiVersion::V1,
++            invitee_character_id,
++            session_id: fence.session_id,
++            character_id: fence.character_id,
++            current_revision: fence.current_revision,
++            session_epoch: fence.session_epoch,
++            client_instance_id: fence.client_instance_id,
++            idempotency_key,
++        }
++    }
++
++    #[must_use]
++    pub const fn fence(&self) -> LeaseFence {
++        LeaseFence::new(
++            self.session_id,
++            self.character_id,
++            self.current_revision,
++            self.session_epoch,
++            self.client_instance_id,
++        )
++    }
++
++    #[must_use]
++    pub const fn idempotency_key(&self) -> IdempotencyKey {
++        self.idempotency_key
++    }
++
++    /// # Errors
++    ///
++    /// Returns an error when the API version or member identity is invalid.
++    pub fn validate(&self) -> Result<(), GroupError> {
++        if self.api_version.value() != 1 {
++            return Err(GroupError::InvalidApiVersion);
++        }
++        if self.character_id == self.invitee_character_id {
++            return Err(GroupError::InvalidMembers);
++        }
++        Ok(())
++    }
++}
++
++impl<'de> Deserialize<'de> for CreateGroupInvitationRequest {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: Deserializer<'de>,
++    {
++        #[derive(Deserialize)]
++        #[serde(deny_unknown_fields)]
++        struct Wire {
++            api_version: ApiVersion,
++            invitee_character_id: CharacterId,
++            session_id: SessionId,
++            character_id: CharacterId,
++            current_revision: Revision,
++            session_epoch: SessionEpoch,
++            client_instance_id: ClientInstanceId,
++            idempotency_key: IdempotencyKey,
++        }
++        let wire = Wire::deserialize(deserializer)?;
++        let request = Self {
++            api_version: wire.api_version,
++            invitee_character_id: wire.invitee_character_id,
++            session_id: wire.session_id,
++            character_id: wire.character_id,
++            current_revision: wire.current_revision,
++            session_epoch: wire.session_epoch,
++            client_instance_id: wire.client_instance_id,
++            idempotency_key: wire.idempotency_key,
++        };
++        request.validate().map_err(serde::de::Error::custom)?;
++        Ok(request)
++    }
++}
++
++/// Accept an invitation.  The invited character is obtained from the bearer.
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
++pub struct AcceptGroupInvitationRequest {
++    pub api_version: ApiVersion,
++    pub session_id: SessionId,
++    pub character_id: CharacterId,
++    pub current_revision: Revision,
++    pub session_epoch: SessionEpoch,
++    pub client_instance_id: ClientInstanceId,
++    pub idempotency_key: IdempotencyKey,
++}
++
++impl AcceptGroupInvitationRequest {
++    #[must_use]
++    pub const fn new(fence: LeaseFence, idempotency_key: IdempotencyKey) -> Self {
++        Self {
++            api_version: ApiVersion::V1,
++            session_id: fence.session_id,
++            character_id: fence.character_id,
++            current_revision: fence.current_revision,
++            session_epoch: fence.session_epoch,
++            client_instance_id: fence.client_instance_id,
++            idempotency_key,
++        }
++    }
++    #[must_use]
++    pub const fn fence(&self) -> LeaseFence {
++        LeaseFence::new(
++            self.session_id,
++            self.character_id,
++            self.current_revision,
++            self.session_epoch,
++            self.client_instance_id,
++        )
++    }
++    #[must_use]
++    pub const fn idempotency_key(&self) -> IdempotencyKey {
++        self.idempotency_key
++    }
++    /// # Errors
++    ///
++    /// Returns an error when the API version is unsupported.
++    pub fn validate(&self) -> Result<(), GroupError> {
++        if self.api_version.value() != 1 {
++            return Err(GroupError::InvalidApiVersion);
++        }
++        Ok(())
++    }
++}
++
++impl<'de> Deserialize<'de> for AcceptGroupInvitationRequest {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: Deserializer<'de>,
++    {
++        #[derive(Deserialize)]
++        #[serde(deny_unknown_fields)]
++        struct Wire {
++            api_version: ApiVersion,
++            session_id: SessionId,
++            character_id: CharacterId,
++            current_revision: Revision,
++            session_epoch: SessionEpoch,
++            client_instance_id: ClientInstanceId,
++            idempotency_key: IdempotencyKey,
++        }
++        let wire = Wire::deserialize(deserializer)?;
++        let request = Self {
++            api_version: wire.api_version,
++            session_id: wire.session_id,
++            character_id: wire.character_id,
++            current_revision: wire.current_revision,
++            session_epoch: wire.session_epoch,
++            client_instance_id: wire.client_instance_id,
++            idempotency_key: wire.idempotency_key,
++        };
++        request.validate().map_err(serde::de::Error::custom)?;
++        Ok(request)
++    }
++}
++
++/// Request for a server-catalogued atomic group transfer.
++#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
++pub struct GroupTravelRequest {
++    pub api_version: ApiVersion,
++    pub route_id: RouteId,
++    pub session_id: SessionId,
++    pub character_id: CharacterId,
++    pub current_revision: Revision,
++    pub session_epoch: SessionEpoch,
++    pub client_instance_id: ClientInstanceId,
++    pub idempotency_key: IdempotencyKey,
++}
++
++impl GroupTravelRequest {
++    /// # Errors
++    ///
++    /// Returns an error when the route identity is not canonical.
++    pub fn new(
++        fence: LeaseFence,
++        route_id: impl Into<String>,
++        idempotency_key: IdempotencyKey,
++    ) -> Result<Self, GroupError> {
++        Ok(Self {
++            api_version: ApiVersion::V1,
++            route_id: RouteId::new(route_id)?,
++            session_id: fence.session_id,
++            character_id: fence.character_id,
++            current_revision: fence.current_revision,
++            session_epoch: fence.session_epoch,
++            client_instance_id: fence.client_instance_id,
++            idempotency_key,
++        })
++    }
++    #[must_use]
++    pub const fn fence(&self) -> LeaseFence {
++        LeaseFence::new(
++            self.session_id,
++            self.character_id,
++            self.current_revision,
++            self.session_epoch,
++            self.client_instance_id,
++        )
++    }
++    #[must_use]
++    pub const fn idempotency_key(&self) -> IdempotencyKey {
++        self.idempotency_key
++    }
++    #[must_use]
++    pub fn route_id(&self) -> &str {
++        self.route_id.as_str()
++    }
++    /// # Errors
++    ///
++    /// Returns an error when the API version is unsupported.
++    pub fn validate(&self) -> Result<(), GroupError> {
++        if self.api_version.value() != 1 {
++            return Err(GroupError::InvalidApiVersion);
++        }
++        Ok(())
++    }
++}
++
++impl<'de> Deserialize<'de> for GroupTravelRequest {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: Deserializer<'de>,
++    {
++        #[derive(Deserialize)]
++        #[serde(deny_unknown_fields)]
++        struct Wire {
++            api_version: ApiVersion,
++            route_id: RouteId,
++            session_id: SessionId,
++            character_id: CharacterId,
++            current_revision: Revision,
++            session_epoch: SessionEpoch,
++            client_instance_id: ClientInstanceId,
++            idempotency_key: IdempotencyKey,
++        }
++        let wire = Wire::deserialize(deserializer)?;
++        let request = Self {
++            api_version: wire.api_version,
++            route_id: wire.route_id,
++            session_id: wire.session_id,
++            character_id: wire.character_id,
++            current_revision: wire.current_revision,
++            session_epoch: wire.session_epoch,
++            client_instance_id: wire.client_instance_id,
++            idempotency_key: wire.idempotency_key,
++        };
++        request.validate().map_err(serde::de::Error::custom)?;
++        Ok(request)
++    }
++}
++
++/// A server-owned invitation and its exact immutable actors.
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct GroupInvitationView {
++    pub api_version: ApiVersion,
++    pub invitation_id: crate::GroupInvitationId,
++    pub inviter_character_id: CharacterId,
++    pub invitee_character_id: CharacterId,
++    pub expires_at: UnixTimestampMillis,
++}
++
++/// Public group state returned by inspect, accept, and travel.
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct GroupMemberView {
++    pub character_id: CharacterId,
++    pub world_revision: u64,
++}
++
++#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
++pub struct GroupView {
++    pub api_version: ApiVersion,
++    pub group_id: crate::GroupId,
++    pub members: [GroupMemberView; 2],
++    pub world_zone: WorldZone,
++}
++
++impl GroupView {
++    /// # Errors
++    ///
++    /// Returns an error when group, zone, or world revision invariants fail.
++    pub fn new(
++        group_id: crate::GroupId,
++        group: Group,
++        zone: WorldZone,
++        revisions: [u64; 2],
++    ) -> Result<Self, GroupError> {
++        group.validate().map_err(|_| GroupError::InvalidMembers)?;
++        zone.validate()
++            .map_err(|error| GroupError::InvalidZone(error.to_string()))?;
++        if revisions
++            .iter()
++            .any(|revision| *revision > MAX_WORLD_REVISION)
++        {
++            return Err(GroupError::InvalidWorldRevision);
++        }
++        let ids = group.members();
++        Ok(Self {
++            api_version: ApiVersion::V1,
++            group_id,
++            members: [
++                GroupMemberView {
++                    character_id: ids[0],
++                    world_revision: revisions[0],
++                },
++                GroupMemberView {
++                    character_id: ids[1],
++                    world_revision: revisions[1],
++                },
++            ],
++            world_zone: zone,
++        })
++    }
++}
++
++impl<'de> Deserialize<'de> for GroupView {
++    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
++    where
++        D: Deserializer<'de>,
++    {
++        #[derive(Deserialize)]
++        #[serde(deny_unknown_fields)]
++        struct Wire {
++            api_version: ApiVersion,
++            group_id: crate::GroupId,
++            members: [GroupMemberView; 2],
++            world_zone: WorldZone,
++        }
++        let wire = Wire::deserialize(deserializer)?;
++        if wire.api_version.value() != 1
++            || wire.members[0].character_id >= wire.members[1].character_id
++        {
++            return Err(serde::de::Error::custom(GroupError::NonCanonicalMembers));
++        }
++        if wire
++            .members
++            .iter()
++            .any(|member| member.world_revision > MAX_WORLD_REVISION)
++        {
++            return Err(serde::de::Error::custom(GroupError::InvalidWorldRevision));
++        }
++        Ok(Self {
++            api_version: wire.api_version,
++            group_id: wire.group_id,
++            members: wire.members,
++            world_zone: wire.world_zone,
++        })
++    }
++}
++
++/// Response returned by invitation creation.
++pub type CreateGroupInvitationResponse = GroupInvitationView;
++/// Response returned by invitation acceptance.
++#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct AcceptGroupInvitationResponse {
++    pub api_version: ApiVersion,
++    pub group: GroupView,
++    pub replayed: bool,
++}
++/// Response returned by atomic travel.
++#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct GroupTravelResponse {
++    pub api_version: ApiVersion,
++    pub group: GroupView,
++    pub replayed: bool,
++}
+diff --git a/coop/crates/coop-server/migrations/0002_phase2_group_travel.sql b/coop/crates/coop-server/migrations/0002_phase2_group_travel.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..86bcf59feb676e1e66d32a1eef3dc699a29d72de
+--- /dev/null
++++ b/coop/crates/coop-server/migrations/0002_phase2_group_travel.sql
+@@ -0,0 +1,205 @@
++-- Additive Phase 4 group-travel schema.  Migration 0001 remains unchanged.
++
++ALTER TABLE phase2_characters
++    ADD COLUMN IF NOT EXISTS world_revision bigint NOT NULL DEFAULT 0
++    CHECK (world_revision BETWEEN 0 AND 9223372036854775807);
++
++CREATE TABLE phase2_groups (
++    group_id uuid PRIMARY KEY,
++    member_a uuid NOT NULL REFERENCES phase2_characters(character_id),
++    member_b uuid NOT NULL REFERENCES phase2_characters(character_id),
++    region text NOT NULL CHECK (region IN ('HOENN', 'KANTO', 'JOHTO', 'SEVII')),
++    map text NOT NULL CHECK (
++        length(map) BETWEEN 1 AND 128
++        AND map = upper(map)
++        AND map !~ '[^A-Z0-9_]'
++    ),
++    channel integer NOT NULL CHECK (channel BETWEEN 0 AND 65535),
++    status text NOT NULL DEFAULT 'ACTIVE'
++        CHECK (status IN ('ACTIVE', 'CLOSED')),
++    created_at timestamptz NOT NULL DEFAULT now(),
++    closed_at timestamptz,
++    CHECK (member_a <> member_b),
++    CHECK (member_a < member_b),
++    CHECK ((status = 'ACTIVE' AND closed_at IS NULL)
++        OR (status = 'CLOSED' AND closed_at IS NOT NULL))
++);
++
++CREATE TABLE phase2_group_members (
++    group_id uuid NOT NULL REFERENCES phase2_groups(group_id) ON DELETE CASCADE,
++    character_id uuid NOT NULL REFERENCES phase2_characters(character_id),
++    member_slot smallint NOT NULL CHECK (member_slot IN (0, 1)),
++    active boolean NOT NULL DEFAULT true,
++    joined_at timestamptz NOT NULL DEFAULT now(),
++    left_at timestamptz,
++    PRIMARY KEY (group_id, character_id),
++    UNIQUE (group_id, member_slot),
++    CHECK ((active AND left_at IS NULL) OR (NOT active AND left_at IS NOT NULL))
++);
++
++CREATE UNIQUE INDEX phase2_one_active_group_per_character
++    ON phase2_group_members(character_id) WHERE active;
++
++CREATE TABLE phase2_group_invitations (
++    invitation_id uuid PRIMARY KEY,
++    inviter_character_id uuid NOT NULL REFERENCES phase2_characters(character_id),
++    invitee_character_id uuid NOT NULL REFERENCES phase2_characters(character_id),
++    status text NOT NULL DEFAULT 'PENDING'
++        CHECK (status IN ('PENDING', 'ACCEPTED', 'EXPIRED', 'CANCELLED')),
++    created_at timestamptz NOT NULL,
++    expires_at timestamptz NOT NULL,
++    accepted_at timestamptz,
++    CHECK (inviter_character_id <> invitee_character_id),
++    CHECK (expires_at > created_at),
++    CHECK ((status = 'ACCEPTED' AND accepted_at IS NOT NULL)
++        OR (status <> 'ACCEPTED' AND accepted_at IS NULL))
++);
++
++CREATE INDEX phase2_group_invitation_invitee_idx
++    ON phase2_group_invitations(invitee_character_id, status, expires_at);
++
++-- A group is always exactly two active, canonically ordered members.  The
++-- trigger is deferred so one transaction can install both rows atomically.
++CREATE FUNCTION phase2_validate_group_members() RETURNS trigger
++LANGUAGE plpgsql AS $$
++DECLARE
++    member_count integer;
++    first_member uuid;
++    second_member uuid;
++    group_key uuid;
++    group_status text;
++BEGIN
++    group_key := CASE WHEN TG_OP = 'DELETE' THEN OLD.group_id ELSE NEW.group_id END;
++    IF TG_OP = 'DELETE' AND NOT EXISTS (
++        SELECT 1 FROM phase2_groups WHERE group_id = group_key
++    ) THEN
++        RETURN OLD;
++    END IF;
++    SELECT status
++      INTO group_status
++      FROM phase2_groups
++     WHERE group_id = group_key;
++    IF group_status IS NULL THEN
++        RAISE EXCEPTION 'group row is required before member rows';
++    END IF;
++    SELECT count(*)
++      INTO member_count
++      FROM phase2_group_members
++     WHERE group_id = group_key AND active;
++    IF group_status = 'CLOSED' THEN
++        IF member_count <> 0 THEN
++            RAISE EXCEPTION 'closed group must not contain active members';
++        END IF;
++        IF TG_OP = 'DELETE' THEN
++            RETURN OLD;
++        END IF;
++        RETURN NEW;
++    END IF;
++    IF group_status <> 'ACTIVE' OR member_count <> 2 THEN
++        RAISE EXCEPTION 'active group must contain exactly two distinct members';
++    END IF;
++    SELECT character_id
++      INTO first_member
++      FROM phase2_group_members
++     WHERE group_id = group_key AND active
++     ORDER BY character_id
++     LIMIT 1;
++    SELECT character_id
++      INTO second_member
++      FROM phase2_group_members
++     WHERE group_id = group_key AND active
++     ORDER BY character_id
++     OFFSET 1 LIMIT 1;
++    IF first_member = second_member THEN
++        RAISE EXCEPTION 'active group must contain exactly two distinct members';
++    END IF;
++    IF NOT EXISTS (
++        SELECT 1 FROM phase2_groups g
++         WHERE g.group_id = group_key
++           AND g.member_a = first_member
++           AND g.member_b = second_member
++    ) THEN
++        RAISE EXCEPTION 'group member rows do not match canonical group actors';
++    END IF;
++    IF NOT EXISTS (
++        SELECT 1 FROM phase2_group_members
++         WHERE group_id = group_key AND active
++           AND character_id = first_member AND member_slot = 0
++    ) OR NOT EXISTS (
++        SELECT 1 FROM phase2_group_members
++         WHERE group_id = group_key AND active
++           AND character_id = second_member AND member_slot = 1
++    ) THEN
++        RAISE EXCEPTION 'group member slots do not match canonical actor order';
++    END IF;
++    RETURN NEW;
++END;
++$$;
++
++CREATE CONSTRAINT TRIGGER phase2_group_members_integrity
++AFTER INSERT OR UPDATE OR DELETE ON phase2_group_members
++DEFERRABLE INITIALLY DEFERRED
++FOR EACH ROW EXECUTE FUNCTION phase2_validate_group_members();
++
++CREATE CONSTRAINT TRIGGER phase2_group_integrity
++AFTER INSERT OR UPDATE ON phase2_groups
++DEFERRABLE INITIALLY DEFERRED
++FOR EACH ROW EXECUTE FUNCTION phase2_validate_group_members();
++
++CREATE FUNCTION phase2_guard_group_status() RETURNS trigger
++LANGUAGE plpgsql AS $$
++BEGIN
++    IF NEW.member_a IS DISTINCT FROM OLD.member_a
++       OR NEW.member_b IS DISTINCT FROM OLD.member_b THEN
++        RAISE EXCEPTION 'group actors are immutable';
++    END IF;
++    IF OLD.status = 'CLOSED' AND NEW.status <> 'CLOSED' THEN
++        RAISE EXCEPTION 'closed group status cannot be reopened';
++    END IF;
++    IF OLD.status = 'ACTIVE' AND NEW.status = 'CLOSED'
++       AND NEW.closed_at IS NULL THEN
++        RAISE EXCEPTION 'closed group requires closed_at';
++    END IF;
++    IF OLD.status = 'CLOSED' AND (
++        NEW.member_a IS DISTINCT FROM OLD.member_a
++        OR NEW.member_b IS DISTINCT FROM OLD.member_b
++        OR NEW.region IS DISTINCT FROM OLD.region
++        OR NEW.map IS DISTINCT FROM OLD.map
++        OR NEW.channel IS DISTINCT FROM OLD.channel
++    ) THEN
++        RAISE EXCEPTION 'closed group identity and zone are immutable';
++    END IF;
++    RETURN NEW;
++END;
++$$;
++
++CREATE TRIGGER phase2_group_status_guard
++BEFORE UPDATE ON phase2_groups
++FOR EACH ROW EXECUTE FUNCTION phase2_guard_group_status();
++
++CREATE FUNCTION phase2_guard_group_invitation() RETURNS trigger
++LANGUAGE plpgsql AS $$
++BEGIN
++    IF OLD.inviter_character_id IS DISTINCT FROM NEW.inviter_character_id
++       OR OLD.invitee_character_id IS DISTINCT FROM NEW.invitee_character_id
++       OR OLD.created_at IS DISTINCT FROM NEW.created_at
++       OR OLD.expires_at IS DISTINCT FROM NEW.expires_at THEN
++        RAISE EXCEPTION 'group invitation actors and deadline are immutable';
++    END IF;
++    IF OLD.status <> 'PENDING' AND NEW.status <> OLD.status THEN
++        RAISE EXCEPTION 'terminal invitation status cannot transition';
++    END IF;
++    IF OLD.status = 'PENDING' AND NEW.status = 'ACCEPTED'
++       AND NEW.accepted_at IS NULL THEN
++        RAISE EXCEPTION 'accepted invitation requires accepted_at';
++    END IF;
++    RETURN NEW;
++END;
++$$;
++
++CREATE TRIGGER phase2_group_invitation_guard
++BEFORE UPDATE ON phase2_group_invitations
++FOR EACH ROW EXECUTE FUNCTION phase2_guard_group_invitation();
++
++CREATE INDEX phase2_group_member_group_idx
++    ON phase2_group_members(group_id, active);
+diff --git a/coop/crates/coop-server/src/phase2/group_travel.rs b/coop/crates/coop-server/src/phase2/group_travel.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6191faae0d15d5ffe2d163ba3521d04f7262e26
+--- /dev/null
++++ b/coop/crates/coop-server/src/phase2/group_travel.rs
+@@ -0,0 +1,1118 @@
++//! Authenticated, atomic UUID group invitations and regional travel.
++
++use coop_cloud::{
++    AcceptGroupInvitationRequest, AcceptGroupInvitationResponse, CharacterId,
++    CreateGroupInvitationRequest, CreateGroupInvitationResponse, Group, GroupId, GroupInvitationId,
++    GroupInvitationView, GroupTravelRequest, GroupTravelResponse, GroupView, LeaseFence,
++    MAX_WORLD_REVISION,
++};
++use coop_protocol::{RegionId, TravelRoute, WorldZone};
++use sha2::{Digest, Sha256};
++
++use super::storage::{
++    GROUP_IDEMPOTENCY_TTL_MS, GROUP_INVITATION_TTL_MS, GroupIdempotencyRecord,
++    GroupIdempotencyResponse, GroupInvitationRecord, GroupRecord, GroupStatus,
++    MAX_GROUP_IDEMPOTENCY, MAX_GROUP_INVITATIONS, Store,
++};
++use super::{AuthenticatedActor, Phase2Error};
++
++const OP_CREATE: &str = "group_invitation_create_v1";
++const OP_ACCEPT: &str = "group_invitation_accept_v1";
++const OP_TRAVEL: &str = "group_travel_v1";
++const MAX_ID_CANDIDATES: usize = 8;
++
++#[derive(Clone)]
++struct RouteDefinition {
++    id: &'static str,
++    source: WorldZone,
++    destination: WorldZone,
++    route: TravelRoute,
++}
++
++fn route(
++    id: &'static str,
++    source: WorldZone,
++    destination: WorldZone,
++    badges: u8,
++    story: u32,
++) -> RouteDefinition {
++    let from = source.region;
++    let to = destination.region;
++    RouteDefinition {
++        id,
++        source,
++        destination,
++        route: TravelRoute::new(from, to, badges, story)
++            .expect("group travel route constants are valid"),
++    }
++}
++
++fn route_catalog() -> [RouteDefinition; 4] {
++    let slateport =
++        || WorldZone::new(RegionId::Hoenn, "SLATEPORT_CITY_HARBOR", 1).expect("map catalog");
++    let one_island =
++        || WorldZone::new(RegionId::Sevii, "ONE_ISLAND_HARBOR", 1).expect("map catalog");
++    let vermilion = || WorldZone::new(RegionId::Kanto, "VERMILION_CITY", 1).expect("map catalog");
++    [
++        route(
++            "HOENN:SLATEPORT_SEVII_FERRY",
++            slateport(),
++            one_island(),
++            8,
++            0,
++        ),
++        route(
++            "SEVII:ONE_ISLAND_HOENN_FERRY",
++            one_island(),
++            slateport(),
++            0,
++            0,
++        ),
++        route(
++            "SEVII:ONE_ISLAND_KANTO_FERRY",
++            one_island(),
++            vermilion(),
++            0,
++            0,
++        ),
++        route(
++            "KANTO:VERMILION_SEVII_FERRY",
++            vermilion(),
++            one_island(),
++            0,
++            0,
++        ),
++    ]
++}
++
++fn route_definition(id: &str) -> Result<RouteDefinition, Phase2Error> {
++    route_catalog()
++        .into_iter()
++        .find(|route| route.id == id)
++        .ok_or(Phase2Error::Forbidden)
++}
++
++fn request_fingerprint<T: serde::Serialize>(
++    domain: &[u8],
++    request: &T,
++) -> Result<[u8; 32], Phase2Error> {
++    let encoded = serde_json::to_vec(request).map_err(|_| Phase2Error::Internal)?;
++    let mut hasher = Sha256::new();
++    hasher.update(domain);
++    hasher.update([0]);
++    hasher.update(encoded);
++    Ok(hasher.finalize().into())
++}
++
++fn path_fingerprint<T: serde::Serialize>(
++    domain: &[u8],
++    path: &[u8],
++    request: &T,
++) -> Result<[u8; 32], Phase2Error> {
++    let encoded = serde_json::to_vec(request).map_err(|_| Phase2Error::Internal)?;
++    let mut hasher = Sha256::new();
++    hasher.update(domain);
++    hasher.update([0]);
++    hasher.update(path);
++    hasher.update([0]);
++    hasher.update(encoded);
++    Ok(hasher.finalize().into())
++}
++
++fn owns(
++    state: &super::storage::State,
++    actor: AuthenticatedActor,
++    character_id: CharacterId,
++) -> bool {
++    state
++        .characters
++        .get(&character_id)
++        .is_some_and(|character| {
++            character.owner == actor.user_id && actor.character_id == character_id
++        })
++}
++
++fn lease_matches(
++    state: &super::storage::State,
++    character_id: CharacterId,
++    fence: LeaseFence,
++    now: u64,
++) -> Result<(), Phase2Error> {
++    let lease = state
++        .leases
++        .get(&character_id)
++        .ok_or(Phase2Error::Authentication)?;
++    if lease.released || lease.contract.expires_at.value() <= now {
++        return Err(Phase2Error::Authentication);
++    }
++    if lease.contract.fence() != fence {
++        return Err(Phase2Error::Authentication);
++    }
++    Ok(())
++}
++
++fn active_member_lease(
++    state: &super::storage::State,
++    character_id: CharacterId,
++    now: u64,
++) -> Result<(), Phase2Error> {
++    let lease = state
++        .leases
++        .get(&character_id)
++        .ok_or(Phase2Error::Expired)?;
++    if lease.released || lease.contract.expires_at.value() <= now {
++        return Err(Phase2Error::Expired);
++    }
++    Ok(())
++}
++
++fn prune_group_state(state: &mut super::storage::State, now: u64) {
++    state
++        .group_invitations
++        .retain(|_, invitation| !invitation.consumed && invitation.expires_at > now);
++    state
++        .group_idempotency
++        .retain(|_, record| record.expires_at > now);
++}
++
++fn live_invitation_count(state: &super::storage::State, now: u64) -> usize {
++    state
++        .group_invitations
++        .values()
++        .filter(|invitation| !invitation.consumed && invitation.expires_at > now)
++        .count()
++}
++
++fn live_idempotency_count(state: &super::storage::State, now: u64) -> usize {
++    state
++        .group_idempotency
++        .values()
++        .filter(|record| record.expires_at > now)
++        .count()
++}
++
++fn idempotency_lookup(
++    state: &super::storage::State,
++    actor: CharacterId,
++    operation: &str,
++    key: coop_cloud::IdempotencyKey,
++    fingerprint: [u8; 32],
++    now: u64,
++) -> Result<Option<GroupIdempotencyResponse>, Phase2Error> {
++    let Some(record) = state
++        .group_idempotency
++        .get(&(actor, operation.to_owned(), key))
++    else {
++        return Ok(None);
++    };
++    if record.expires_at <= now {
++        return Ok(None);
++    }
++    if record.fingerprint != fingerprint {
++        return Err(Phase2Error::Conflict);
++    }
++    Ok(Some(record.response.clone()))
++}
++
++fn build_invitation_view(
++    record: &GroupInvitationRecord,
++) -> Result<GroupInvitationView, Phase2Error> {
++    Ok(GroupInvitationView {
++        api_version: coop_cloud::ApiVersion::V1,
++        invitation_id: record.invitation_id,
++        inviter_character_id: record.inviter,
++        invitee_character_id: record.invitee,
++        expires_at: Store::unix_timestamp(record.expires_at)?,
++    })
++}
++
++fn invitation_candidates(store: &Store) -> Result<Vec<GroupInvitationId>, Phase2Error> {
++    (0..MAX_ID_CANDIDATES)
++        .map(|_| GroupInvitationId::new(store.random_uuid()?).map_err(|_| Phase2Error::Internal))
++        .collect()
++}
++
++fn group_candidates(store: &Store) -> Result<Vec<GroupId>, Phase2Error> {
++    (0..MAX_ID_CANDIDATES)
++        .map(|_| GroupId::new(store.random_uuid()?).map_err(|_| Phase2Error::Internal))
++        .collect()
++}
++
++fn group_view(state: &super::storage::State, group_id: GroupId) -> Result<GroupView, Phase2Error> {
++    let record = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
++    if record.status != GroupStatus::Active {
++        return Err(Phase2Error::NotFound);
++    }
++    let members = record.group.members();
++    let revisions = [
++        state
++            .characters
++            .get(&members[0])
++            .ok_or(Phase2Error::Internal)?
++            .world_revision,
++        state
++            .characters
++            .get(&members[1])
++            .ok_or(Phase2Error::Internal)?
++            .world_revision,
++    ];
++    GroupView::new(group_id, record.group, record.zone.clone(), revisions)
++        .map_err(|_| Phase2Error::Internal)
++}
++
++pub(crate) fn create_invitation(
++    store: &Store,
++    actor: AuthenticatedActor,
++    request: &CreateGroupInvitationRequest,
++) -> Result<CreateGroupInvitationResponse, Phase2Error> {
++    request
++        .validate()
++        .map_err(|_| Phase2Error::InvalidRequest)?;
++    if request.character_id != actor.character_id {
++        return Err(Phase2Error::NotFound);
++    }
++    let fingerprint = request_fingerprint(OP_CREATE.as_bytes(), request)?;
++    let now = store.now();
++    let expires_at = now
++        .checked_add(GROUP_INVITATION_TTL_MS)
++        .ok_or(Phase2Error::Internal)?;
++    let receipt_expires = now
++        .checked_add(GROUP_IDEMPOTENCY_TTL_MS)
++        .ok_or(Phase2Error::Internal)?;
++    store.write_transaction(|state| {
++        if !owns(state, actor, actor.character_id) {
++            return Err(Phase2Error::NotFound);
++        }
++        lease_matches(state, actor.character_id, request.fence(), now)?;
++        if let Some(replay) = idempotency_lookup(
++            state,
++            actor.character_id,
++            OP_CREATE,
++            request.idempotency_key(),
++            fingerprint,
++            now,
++        )? {
++            return match replay {
++                GroupIdempotencyResponse::Invitation(response) => Ok(response),
++                _ => Err(Phase2Error::Conflict),
++            };
++        }
++        if live_idempotency_count(state, now) >= MAX_GROUP_IDEMPOTENCY
++            || live_invitation_count(state, now) >= MAX_GROUP_INVITATIONS
++        {
++            return Err(Phase2Error::Busy);
++        }
++        let target = state
++            .characters
++            .get(&request.invitee_character_id)
++            .ok_or(Phase2Error::Forbidden)?;
++        if state
++            .users_by_id
++            .get(&target.owner)
++            .is_none_or(|user| user.disabled)
++        {
++            return Err(Phase2Error::Forbidden);
++        }
++        active_member_lease(state, request.invitee_character_id, now)?;
++        let inviter = state
++            .characters
++            .get(&actor.character_id)
++            .ok_or(Phase2Error::NotFound)?;
++        if target.state.world_zone != inviter.state.world_zone {
++            return Err(Phase2Error::Forbidden);
++        }
++        if state
++            .active_group_by_member
++            .contains_key(&actor.character_id)
++            || state
++                .active_group_by_member
++                .contains_key(&request.invitee_character_id)
++        {
++            return Err(Phase2Error::Conflict);
++        }
++        let invitation_candidates = invitation_candidates(store)?;
++        let invitation_id = invitation_candidates
++            .iter()
++            .copied()
++            .find(|candidate| {
++                state
++                    .group_invitations
++                    .get(candidate)
++                    .is_none_or(|record| record.consumed || record.expires_at <= now)
++            })
++            .ok_or(Phase2Error::Conflict)?;
++        let invitation = GroupInvitationRecord {
++            invitation_id,
++            inviter: actor.character_id,
++            invitee: request.invitee_character_id,
++            expires_at,
++            consumed: false,
++        };
++        let view = build_invitation_view(&invitation)?;
++        prune_group_state(state, now);
++        state.group_invitations.insert(invitation_id, invitation);
++        state.group_idempotency.insert(
++            (
++                actor.character_id,
++                OP_CREATE.to_owned(),
++                request.idempotency_key(),
++            ),
++            GroupIdempotencyRecord {
++                fingerprint,
++                response: GroupIdempotencyResponse::Invitation(view),
++                expires_at: receipt_expires,
++            },
++        );
++        Ok(view)
++    })
++}
++
++#[allow(
++    clippy::too_many_lines,
++    reason = "the acceptance transaction keeps all validation before its mutation suffix"
++)]
++pub(crate) fn accept_invitation(
++    store: &Store,
++    actor: AuthenticatedActor,
++    invitation_id: GroupInvitationId,
++    request: &AcceptGroupInvitationRequest,
++) -> Result<AcceptGroupInvitationResponse, Phase2Error> {
++    request
++        .validate()
++        .map_err(|_| Phase2Error::InvalidRequest)?;
++    if request.character_id != actor.character_id {
++        return Err(Phase2Error::NotFound);
++    }
++    let fingerprint = path_fingerprint(
++        OP_ACCEPT.as_bytes(),
++        invitation_id.as_uuid().as_bytes(),
++        request,
++    )?;
++    let now = store.now();
++    let receipt_expires = now
++        .checked_add(GROUP_IDEMPOTENCY_TTL_MS)
++        .ok_or(Phase2Error::Internal)?;
++    store.write_transaction(|state| {
++        if !owns(state, actor, actor.character_id) {
++            return Err(Phase2Error::NotFound);
++        }
++        lease_matches(state, actor.character_id, request.fence(), now)?;
++        if let Some(replay) = idempotency_lookup(
++            state,
++            actor.character_id,
++            OP_ACCEPT,
++            request.idempotency_key(),
++            fingerprint,
++            now,
++        )? {
++            return match replay {
++                GroupIdempotencyResponse::Accept(response) => Ok(response),
++                _ => Err(Phase2Error::Conflict),
++            };
++        }
++        if live_idempotency_count(state, now) >= MAX_GROUP_IDEMPOTENCY {
++            return Err(Phase2Error::Busy);
++        }
++        let invitation = state
++            .group_invitations
++            .get(&invitation_id)
++            .ok_or(Phase2Error::NotFound)?;
++        if invitation.consumed || invitation.expires_at <= now {
++            return Err(Phase2Error::Expired);
++        }
++        if invitation.invitee != actor.character_id {
++            return Err(Phase2Error::NotFound);
++        }
++        let initiator = invitation.inviter;
++        let recipient = invitation.invitee;
++        if initiator == recipient {
++            return Err(Phase2Error::Internal);
++        }
++        active_member_lease(state, initiator, now)?;
++        active_member_lease(state, recipient, now)?;
++        let initiator_record = state
++            .characters
++            .get(&initiator)
++            .ok_or(Phase2Error::Internal)?;
++        let recipient_record = state
++            .characters
++            .get(&recipient)
++            .ok_or(Phase2Error::Internal)?;
++        if initiator_record.state.world_zone != recipient_record.state.world_zone {
++            return Err(Phase2Error::Forbidden);
++        }
++        if state.active_group_by_member.contains_key(&initiator)
++            || state.active_group_by_member.contains_key(&recipient)
++        {
++            return Err(Phase2Error::Conflict);
++        }
++        let group_candidates = group_candidates(store)?;
++        let group_id = group_candidates
++            .iter()
++            .copied()
++            .find(|candidate| !state.groups.contains_key(candidate))
++            .ok_or(Phase2Error::Conflict)?;
++        let group = Group::new(initiator, recipient).map_err(|_| Phase2Error::Internal)?;
++        let zone = initiator_record.state.world_zone.clone();
++        let group_members = group.members();
++        let world_revisions = [
++            if group_members[0] == initiator {
++                initiator_record.world_revision
++            } else {
++                recipient_record.world_revision
++            },
++            if group_members[1] == initiator {
++                initiator_record.world_revision
++            } else {
++                recipient_record.world_revision
++            },
++        ];
++        let view = GroupView::new(group_id, group, zone.clone(), world_revisions)
++            .map_err(|_| Phase2Error::Internal)?;
++        let response = AcceptGroupInvitationResponse {
++            api_version: coop_cloud::ApiVersion::V1,
++            group: view,
++            replayed: false,
++        };
++        if !state.group_invitations.contains_key(&invitation_id) {
++            return Err(Phase2Error::Internal);
++        }
++        prune_group_state(state, now);
++        state
++            .group_invitations
++            .get_mut(&invitation_id)
++            .expect("validated invitation exists")
++            .consumed = true;
++        state.groups.insert(
++            group_id,
++            GroupRecord {
++                group,
++                zone,
++                status: GroupStatus::Active,
++            },
++        );
++        state.active_group_by_member.insert(initiator, group_id);
++        state.active_group_by_member.insert(recipient, group_id);
++        state.group_idempotency.insert(
++            (
++                actor.character_id,
++                OP_ACCEPT.to_owned(),
++                request.idempotency_key(),
++            ),
++            GroupIdempotencyRecord {
++                fingerprint,
++                response: GroupIdempotencyResponse::Accept(response.clone()),
++                expires_at: receipt_expires,
++            },
++        );
++        Ok(response)
++    })
++}
++
++pub(crate) fn inspect_group(
++    store: &Store,
++    actor: AuthenticatedActor,
++    group_id: GroupId,
++    fence: LeaseFence,
++) -> Result<GroupView, Phase2Error> {
++    let now = store.now();
++    store.read_transaction(|state| {
++        let record = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
++        if record.status != GroupStatus::Active || !record.group.contains(actor.character_id) {
++            return Err(Phase2Error::NotFound);
++        }
++        if !owns(state, actor, actor.character_id) {
++            return Err(Phase2Error::NotFound);
++        }
++        lease_matches(state, actor.character_id, fence, now)?;
++        group_view(state, group_id)
++    })
++}
++
++#[allow(
++    clippy::too_many_lines,
++    reason = "the travel transaction keeps all validation before its mutation suffix"
++)]
++pub(crate) fn travel(
++    store: &Store,
++    actor: AuthenticatedActor,
++    group_id: GroupId,
++    request: &GroupTravelRequest,
++) -> Result<GroupTravelResponse, Phase2Error> {
++    request
++        .validate()
++        .map_err(|_| Phase2Error::InvalidRequest)?;
++    if request.character_id != actor.character_id {
++        return Err(Phase2Error::NotFound);
++    }
++    let fingerprint =
++        path_fingerprint(OP_TRAVEL.as_bytes(), group_id.as_uuid().as_bytes(), request)?;
++    let now = store.now();
++    let receipt_expires = now
++        .checked_add(GROUP_IDEMPOTENCY_TTL_MS)
++        .ok_or(Phase2Error::Internal)?;
++    store.write_transaction(|state| {
++        if !owns(state, actor, actor.character_id) {
++            return Err(Phase2Error::NotFound);
++        }
++        lease_matches(state, actor.character_id, request.fence(), now)?;
++        if let Some(replay) = idempotency_lookup(
++            state,
++            actor.character_id,
++            OP_TRAVEL,
++            request.idempotency_key(),
++            fingerprint,
++            now,
++        )? {
++            return match replay {
++                GroupIdempotencyResponse::Travel(response) => Ok(response),
++                _ => Err(Phase2Error::Conflict),
++            };
++        }
++        let definition = route_definition(request.route_id())?;
++        let destination = definition.destination.clone();
++        let record = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
++        if record.status != GroupStatus::Active || !record.group.contains(actor.character_id) {
++            return Err(Phase2Error::NotFound);
++        }
++        let members = record.group.members();
++        if state.active_group_by_member.get(&members[0]) != Some(&group_id)
++            || state.active_group_by_member.get(&members[1]) != Some(&group_id)
++        {
++            return Err(Phase2Error::Internal);
++        }
++        if record.zone != definition.source {
++            return Err(Phase2Error::Forbidden);
++        }
++        let first = state
++            .characters
++            .get(&members[0])
++            .ok_or(Phase2Error::Internal)?;
++        let second = state
++            .characters
++            .get(&members[1])
++            .ok_or(Phase2Error::Internal)?;
++        if first.state.world_zone != definition.source
++            || second.state.world_zone != definition.source
++        {
++            return Err(Phase2Error::Forbidden);
++        }
++        active_member_lease(state, members[0], now)?;
++        active_member_lease(state, members[1], now)?;
++        let participants = [first, second];
++        let mut revisions = [0_u64; 2];
++        for (index, character) in participants.into_iter().enumerate() {
++            let progress = character
++                .state
++                .progress_for(definition.route.from())
++                .ok_or(Phase2Error::Forbidden)?;
++            if progress.badge_count() < definition.route.minimum_badges()
++                || progress.story_checkpoint < definition.route.minimum_story_checkpoint()
++                || character
++                    .state
++                    .progress_for(definition.route.to())
++                    .is_none()
++            {
++                return Err(Phase2Error::Forbidden);
++            }
++            if character.world_revision >= MAX_WORLD_REVISION {
++                return Err(Phase2Error::Internal);
++            }
++            revisions[index] = character
++                .world_revision
++                .checked_add(1)
++                .ok_or(Phase2Error::Internal)?;
++        }
++        let group_view = GroupView::new(group_id, record.group, destination.clone(), revisions)
++            .map_err(|_| Phase2Error::Internal)?;
++        let response = GroupTravelResponse {
++            api_version: coop_cloud::ApiVersion::V1,
++            group: group_view,
++            replayed: false,
++        };
++        if live_idempotency_count(state, now) >= MAX_GROUP_IDEMPOTENCY {
++            return Err(Phase2Error::Busy);
++        }
++        // Every fallible operation is above this point.  This suffix is the
++        // single atomic mutation of characters, group, and receipt.
++        if !state.groups.contains_key(&group_id)
++            || !state.characters.contains_key(&members[0])
++            || !state.characters.contains_key(&members[1])
++        {
++            return Err(Phase2Error::Internal);
++        }
++        prune_group_state(state, now);
++        for (index, character_id) in members.into_iter().enumerate() {
++            let character = state
++                .characters
++                .get_mut(&character_id)
++                .expect("validated group member exists");
++            character.state.world_zone = destination.clone();
++            character.world_revision = revisions[index];
++        }
++        state
++            .groups
++            .get_mut(&group_id)
++            .expect("validated group exists")
++            .zone = destination;
++        state.group_idempotency.insert(
++            (
++                actor.character_id,
++                OP_TRAVEL.to_owned(),
++                request.idempotency_key(),
++            ),
++            GroupIdempotencyRecord {
++                fingerprint,
++                response: GroupIdempotencyResponse::Travel(response.clone()),
++                expires_at: receipt_expires,
++            },
++        );
++        Ok(response)
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use coop_cloud::CharacterCloudState;
++    use coop_cloud::{
++        AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, IdempotencyKey,
++        InvitationCode, Password, RegisterRequest,
++    };
++    use coop_protocol::{RegionalProgress, WorldZone};
++    use std::sync::{
++        Arc,
++        atomic::{AtomicBool, Ordering},
++    };
++    use uuid::Uuid;
++
++    #[derive(Clone)]
++    struct ToggleRepository {
++        inner: super::super::super::phase2::InMemoryRepository,
++        fail_writes: Arc<AtomicBool>,
++    }
++
++    impl super::super::super::phase2::Repository for ToggleRepository {
++        fn read_transaction(
++            &self,
++            operation: &mut dyn FnMut(
++                &super::super::super::phase2::storage::State,
++            ) -> Result<
++                (),
++                super::super::super::phase2::storage::StorageError,
++            >,
++        ) -> Result<(), super::super::super::phase2::storage::StorageError> {
++            self.inner.read_transaction(operation)
++        }
++
++        fn write_transaction(
++            &self,
++            operation: &mut dyn FnMut(
++                &mut super::super::super::phase2::storage::State,
++            ) -> Result<
++                (),
++                super::super::super::phase2::storage::StorageError,
++            >,
++        ) -> Result<(), super::super::super::phase2::storage::StorageError> {
++            if self.fail_writes.load(Ordering::Acquire) {
++                return Err(super::super::super::phase2::storage::StorageError::Transaction);
++            }
++            self.inner.write_transaction(operation)
++        }
++    }
++
++    fn app_with_toggle_repository() -> (super::super::Phase2App, Arc<AtomicBool>) {
++        let fail_writes = Arc::new(AtomicBool::new(false));
++        let repository = ToggleRepository {
++            inner: super::super::super::phase2::InMemoryRepository::new(),
++            fail_writes: fail_writes.clone(),
++        };
++        let config = super::super::Phase2Config::local(
++            vec![0x55; 32],
++            coop_cloud::SigningPrivateKey::from_bytes([7; 32]),
++            "local-test-key",
++        )
++        .expect("test config")
++        .with_test_adapters(
++            Arc::new(super::super::FixedClock::new(1_700_000_000_000)),
++            Arc::new(super::super::FixedEntropy::new((0_u8..=255).collect())),
++        )
++        .with_password_engine(Arc::new(
++            super::super::ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
++        ))
++        .with_adapters(
++            Arc::new(repository),
++            Arc::new(super::super::InMemoryObjectStore::new()),
++        );
++        (
++            super::super::Phase2App::new(config).expect("test config is local"),
++            fail_writes,
++        )
++    }
++
++    fn account(
++        app: &super::super::Phase2App,
++        name: &str,
++        invitation: &str,
++    ) -> (AuthenticatedActor, coop_cloud::LeaseContract) {
++        app.add_invitation(invitation).expect("invite");
++        let registration = app
++            .register(
++                RegisterRequest::new(
++                    name,
++                    Password::new("correct horse battery staple").expect("password"),
++                    InvitationCode::new(invitation).expect("invitation"),
++                )
++                .expect("register"),
++            )
++            .expect("registered");
++        let actor = AuthenticatedActor {
++            user_id: registration.user_id,
++            character_id: registration.character_id,
++        };
++        let client = ClientInstanceId::new(Uuid::new_v4()).expect("client");
++        let lease = app
++            .acquire(
++                actor,
++                AcquireLeaseRequest::new(
++                    registration.character_id,
++                    client,
++                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++                ),
++            )
++            .expect("lease");
++        (actor, lease)
++    }
++
++    fn two_member_group(
++        app: &super::super::Phase2App,
++    ) -> (
++        AuthenticatedActor,
++        coop_cloud::LeaseContract,
++        AuthenticatedActor,
++        coop_cloud::LeaseContract,
++        coop_cloud::GroupId,
++    ) {
++        let (first_actor, first_lease) = account(app, "first", "first-invite");
++        let (second_actor, second_lease) = account(app, "second", "second-invite");
++        let invitation = create_invitation(
++            &app.store,
++            first_actor,
++            &CreateGroupInvitationRequest::new(
++                first_lease.fence(),
++                second_actor.character_id,
++                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++            ),
++        )
++        .expect("group invitation");
++        let accepted = accept_invitation(
++            &app.store,
++            second_actor,
++            invitation.invitation_id,
++            &AcceptGroupInvitationRequest::new(
++                second_lease.fence(),
++                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++            ),
++        )
++        .expect("accepted");
++        (
++            first_actor,
++            first_lease,
++            second_actor,
++            second_lease,
++            accepted.group.group_id,
++        )
++    }
++
++    fn set_progress(
++        app: &super::super::Phase2App,
++        actor: AuthenticatedActor,
++        badges: u16,
++        include_destination: bool,
++    ) {
++        let source = WorldZone::new(RegionId::Hoenn, "SLATEPORT_CITY_HARBOR", 1).expect("source");
++        let mut records =
++            vec![RegionalProgress::new(RegionId::Hoenn, badges, 0, vec![], vec![]).expect("hoenn")];
++        if include_destination {
++            records
++                .push(RegionalProgress::new(RegionId::Sevii, 0, 0, vec![], vec![]).expect("sevii"));
++            records.push(
++                RegionalProgress::new(RegionId::Kanto, 0xff, 99, vec![], vec![]).expect("kanto"),
++            );
++        }
++        app.store
++            .write_transaction(|state| {
++                let character = state
++                    .characters
++                    .get_mut(&actor.character_id)
++                    .ok_or(super::super::storage::StorageError::Transaction)?;
++                character.state =
++                    CharacterCloudState::new(actor.character_id, source.clone(), records.clone())
++                        .map_err(|_| super::super::storage::StorageError::Transaction)?;
++                if let Some(group_id) = state
++                    .active_group_by_member
++                    .get(&actor.character_id)
++                    .copied()
++                {
++                    state.groups.get_mut(&group_id).expect("active group").zone = source;
++                }
++                Ok::<(), Phase2Error>(())
++            })
++            .expect("state");
++    }
++
++    #[test]
++    fn catalog_has_only_pinned_maps_and_no_johto_route() {
++        let routes = route_catalog();
++        assert_eq!(routes.len(), 4);
++        assert!(
++            routes
++                .iter()
++                .all(|route| route.source.map_entry().is_ok()
++                    && route.destination.map_entry().is_ok())
++        );
++        assert!(route_definition("JOHTO:TO_KANTO").is_err());
++    }
++
++    #[test]
++    fn create_prunes_expired_state_before_admission() {
++        let app = super::super::Phase2App::test();
++        let (first_actor, first_lease) = account(&app, "first", "first-invite");
++        let (second_actor, _second_lease) = account(&app, "second", "second-invite");
++        let now = app.store.now();
++        app.store
++            .write_transaction(|state| {
++                for index in 0..16_u128 {
++                    let invitation_id = GroupInvitationId::new(Uuid::from_u128(u128::MAX - index))
++                        .map_err(|_| Phase2Error::Internal)?;
++                    state.group_invitations.insert(
++                        invitation_id,
++                        GroupInvitationRecord {
++                            invitation_id,
++                            inviter: first_actor.character_id,
++                            invitee: second_actor.character_id,
++                            expires_at: now - 1,
++                            consumed: false,
++                        },
++                    );
++                    let key = coop_cloud::IdempotencyKey::new(Uuid::from_u128(index + 1))
++                        .map_err(|_| Phase2Error::Internal)?;
++                    state.group_idempotency.insert(
++                        (first_actor.character_id, "expired".to_owned(), key),
++                        GroupIdempotencyRecord {
++                            fingerprint: [0; 32],
++                            response: GroupIdempotencyResponse::Invitation(GroupInvitationView {
++                                api_version: coop_cloud::ApiVersion::V1,
++                                invitation_id,
++                                inviter_character_id: first_actor.character_id,
++                                invitee_character_id: second_actor.character_id,
++                                expires_at: coop_cloud::UnixTimestampMillis::new(now - 1),
++                            }),
++                            expires_at: now - 1,
++                        },
++                    );
++                }
++                Ok::<(), Phase2Error>(())
++            })
++            .expect("expired state");
++        let request = CreateGroupInvitationRequest::new(
++            first_lease.fence(),
++            second_actor.character_id,
++            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++        );
++        create_invitation(&app.store, first_actor, &request).expect("create after prune");
++        let lengths = app
++            .store
++            .inspect_state(|state| (state.group_invitations.len(), state.group_idempotency.len()))
++            .expect("state");
++        assert_eq!(lengths, (1, 1));
++    }
++
++    #[test]
++    fn concurrent_acceptance_has_one_committed_group() {
++        let app = super::super::Phase2App::test();
++        let (first_actor, first_lease) = account(&app, "first", "first-invite");
++        let (second_actor, second_lease) = account(&app, "second", "second-invite");
++        let invitation = create_invitation(
++            &app.store,
++            first_actor,
++            &CreateGroupInvitationRequest::new(
++                first_lease.fence(),
++                second_actor.character_id,
++                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++            ),
++        )
++        .expect("group invitation");
++        let request_one = AcceptGroupInvitationRequest::new(
++            second_lease.fence(),
++            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++        );
++        let request_two = AcceptGroupInvitationRequest::new(
++            second_lease.fence(),
++            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++        );
++        let app_one = app.clone();
++        let app_two = app.clone();
++        let (result_one, result_two) = std::thread::scope(|scope| {
++            let first = scope.spawn(move || {
++                app_one.accept_group_invitation(second_actor, invitation.invitation_id, request_one)
++            });
++            let second = scope.spawn(move || {
++                app_two.accept_group_invitation(second_actor, invitation.invitation_id, request_two)
++            });
++            (
++                first.join().expect("first acceptance"),
++                second.join().expect("second acceptance"),
++            )
++        });
++        assert_eq!(
++            i32::from(result_one.is_ok()) + i32::from(result_two.is_ok()),
++            1
++        );
++        assert_eq!(
++            app.store
++                .inspect_state(|state| (state.groups.len(), state.active_group_by_member.len()))
++                .expect("state"),
++            (1, 2)
++        );
++    }
++
++    #[test]
++    fn injected_repository_failure_preserves_group_state() {
++        let (app, fail_writes) = app_with_toggle_repository();
++        let (first_actor, first_lease, second_actor, _second_lease, group_id) =
++            two_member_group(&app);
++        set_progress(&app, first_actor, 0xff, true);
++        set_progress(&app, second_actor, 0xff, true);
++        let before = app
++            .store
++            .inspect_state(|state| {
++                (
++                    state.characters[&first_actor.character_id]
++                        .state
++                        .world_zone
++                        .clone(),
++                    state.characters[&second_actor.character_id]
++                        .state
++                        .world_zone
++                        .clone(),
++                    state.characters[&first_actor.character_id].world_revision,
++                    state.characters[&second_actor.character_id].world_revision,
++                    state.groups[&group_id].zone.clone(),
++                    state.active_group_by_member.clone(),
++                    state.group_invitations.len(),
++                    state.group_idempotency.len(),
++                )
++            })
++            .expect("state");
++        fail_writes.store(true, Ordering::Release);
++        let request = GroupTravelRequest::new(
++            first_lease.fence(),
++            "HOENN:SLATEPORT_SEVII_FERRY",
++            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++        )
++        .expect("travel");
++        assert_eq!(
++            app.travel_group(first_actor, group_id, request),
++            Err(Phase2Error::Internal)
++        );
++        let after = app
++            .store
++            .inspect_state(|state| {
++                (
++                    state.characters[&first_actor.character_id]
++                        .state
++                        .world_zone
++                        .clone(),
++                    state.characters[&second_actor.character_id]
++                        .state
++                        .world_zone
++                        .clone(),
++                    state.characters[&first_actor.character_id].world_revision,
++                    state.characters[&second_actor.character_id].world_revision,
++                    state.groups[&group_id].zone.clone(),
++                    state.active_group_by_member.clone(),
++                    state.group_invitations.len(),
++                    state.group_idempotency.len(),
++                )
++            })
++            .expect("state");
++        assert_eq!(after, before);
++    }
++
++    #[test]
++    fn travel_requires_source_progress_and_destination_entitlement() {
++        let app = super::super::Phase2App::test();
++        let (first_actor, first_lease, second_actor, _second_lease, group_id) =
++            two_member_group(&app);
++        set_progress(&app, first_actor, 0xff, false);
++        set_progress(&app, second_actor, 0xff, false);
++        let denied = travel(
++            &app.store,
++            first_actor,
++            group_id,
++            &GroupTravelRequest::new(
++                first_lease.fence(),
++                "HOENN:SLATEPORT_SEVII_FERRY",
++                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++            )
++            .expect("travel"),
++        );
++        assert_eq!(denied, Err(Phase2Error::Forbidden));
++        set_progress(&app, first_actor, 0, true);
++        set_progress(&app, second_actor, 0, true);
++        let denied_unrelated = travel(
++            &app.store,
++            first_actor,
++            group_id,
++            &GroupTravelRequest::new(
++                first_lease.fence(),
++                "HOENN:SLATEPORT_SEVII_FERRY",
++                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++            )
++            .expect("travel"),
++        );
++        assert_eq!(denied_unrelated, Err(Phase2Error::Forbidden));
++        set_progress(&app, first_actor, 0xff, true);
++        set_progress(&app, second_actor, 0xff, true);
++        let request = GroupTravelRequest::new(
++            first_lease.fence(),
++            "HOENN:SLATEPORT_SEVII_FERRY",
++            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++        )
++        .expect("travel");
++        let moved = travel(&app.store, first_actor, group_id, &request).expect("travel success");
++        assert_eq!(moved.group.members[0].world_revision, 1);
++        assert_eq!(moved.group.members[1].world_revision, 1);
++        let replay = travel(&app.store, first_actor, group_id, &request).expect("replay");
++        assert_eq!(replay, moved);
++        let changed = GroupTravelRequest::new(
++            first_lease.fence(),
++            "SEVII:ONE_ISLAND_HOENN_FERRY",
++            request.idempotency_key(),
++        )
++        .expect("changed");
++        assert_eq!(
++            travel(&app.store, first_actor, group_id, &changed),
++            Err(Phase2Error::Conflict)
++        );
++        let state = app
++            .store
++            .inspect_state(|state| {
++                let first = &state.characters[&first_actor.character_id];
++                let second = &state.characters[&second_actor.character_id];
++                (
++                    first.revision,
++                    second.revision,
++                    first.world_revision,
++                    second.world_revision,
++                    first.state.world_zone.clone(),
++                )
++            })
++            .expect("state");
++        assert_eq!(state.0, coop_cloud::Revision::initial());
++        assert_eq!(state.1, coop_cloud::Revision::initial());
++        assert_eq!((state.2, state.3), (1, 1));
++        assert_eq!(state.4.region, RegionId::Sevii);
++    }
++}
+diff --git a/coop/crates/coop-server/tests/phase2_group_travel.rs b/coop/crates/coop-server/tests/phase2_group_travel.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..5b2d11a665e2f7b982130773431670c91f5c17f2
+--- /dev/null
++++ b/coop/crates/coop-server/tests/phase2_group_travel.rs
+@@ -0,0 +1,359 @@
++use axum::{
++    Router,
++    body::Body,
++    http::{Method, Request, StatusCode},
++};
++use coop_cloud::{
++    AcceptGroupInvitationRequest, AcquireLeaseRequest, ClientInstanceId,
++    CreateGroupInvitationRequest, Group, GroupTravelRequest, GroupView, IdempotencyKey,
++    InvitationCode, LeaseContract, LoginRequest, LoginResponse, Password, RegisterRequest,
++    RegisterResponse, SigningPrivateKey,
++};
++use coop_server::{Phase2App, Phase2Config};
++use http_body_util::BodyExt;
++use serde_json::{Value, json};
++use tower::ServiceExt;
++use uuid::Uuid;
++
++async fn request(
++    router: &Router,
++    method: Method,
++    uri: &str,
++    bearer: Option<&str>,
++    body: Value,
++) -> axum::response::Response {
++    let mut builder = Request::builder()
++        .method(method)
++        .uri(uri)
++        .header("content-type", "application/json");
++    if let Some(token) = bearer {
++        builder = builder.header("authorization", format!("Bearer {token}"));
++    }
++    router
++        .clone()
++        .oneshot(builder.body(Body::from(body.to_string())).expect("request"))
++        .await
++        .expect("response")
++}
++
++async fn json_body(response: axum::response::Response) -> Value {
++    serde_json::from_slice(
++        &response
++            .into_body()
++            .collect()
++            .await
++            .expect("body")
++            .to_bytes(),
++    )
++    .expect("json")
++}
++
++fn app() -> Phase2App {
++    let config = Phase2Config::local(
++        vec![0x55; 32],
++        SigningPrivateKey::from_bytes([7; 32]),
++        "group-test-key",
++    )
++    .expect("config");
++    Phase2App::new(config).expect("app")
++}
++
++async fn account(
++    router: &Router,
++    app: &Phase2App,
++    username: &str,
++    invitation: &str,
++) -> (
++    RegisterResponse,
++    LoginResponse,
++    LeaseContract,
++    ClientInstanceId,
++) {
++    app.add_invitation(invitation)
++        .expect("bootstrap invitation");
++    let register = RegisterRequest::new(
++        username,
++        Password::new("correct horse battery staple").expect("password"),
++        InvitationCode::new(invitation).expect("invitation"),
++    )
++    .expect("register request");
++    let response = request(
++        router,
++        Method::POST,
++        "/v1/auth/register",
++        None,
++        serde_json::to_value(register).expect("register json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::CREATED);
++    let registered: RegisterResponse =
++        serde_json::from_value(json_body(response).await).expect("registered");
++    let login = LoginRequest::new(
++        username,
++        Password::new("correct horse battery staple").expect("password"),
++    )
++    .expect("login request");
++    let response = request(
++        router,
++        Method::POST,
++        "/v1/auth/login",
++        None,
++        serde_json::to_value(login).expect("login json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::OK);
++    let logged_in: LoginResponse =
++        serde_json::from_value(json_body(response).await).expect("login");
++    let client = ClientInstanceId::new(Uuid::new_v4()).expect("client");
++    let acquire = AcquireLeaseRequest::new(
++        registered.character_id,
++        client,
++        IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++    );
++    let response = request(
++        router,
++        Method::POST,
++        "/v1/sessions/acquire",
++        Some(logged_in.access_token.expose_secret()),
++        serde_json::to_value(acquire).expect("acquire json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::OK);
++    let lease: LeaseContract = serde_json::from_value(json_body(response).await).expect("lease");
++    (registered, logged_in, lease, client)
++}
++
++fn headers(lease: &LeaseContract, client: ClientInstanceId) -> Vec<(&'static str, String)> {
++    vec![
++        ("x-coop-session-id", lease.session_id.to_string()),
++        (
++            "x-coop-session-epoch",
++            lease.session_epoch.value().to_string(),
++        ),
++        ("x-coop-client-instance-id", client.to_string()),
++    ]
++}
++
++#[test]
++fn group_dto_is_strict_and_members_are_canonical() {
++    let first = coop_cloud::CharacterId::new(Uuid::from_u128(1)).expect("id");
++    let second = coop_cloud::CharacterId::new(Uuid::from_u128(2)).expect("id");
++    assert!(Group::new(first, first).is_err());
++    assert!(serde_json::from_value::<Group>(json!({"members":[second,first]})).is_err());
++    assert!(
++        serde_json::from_value::<GroupTravelRequest>(json!({
++            "api_version":1,"route_id":"HOENN_TO_SEVII","session_id":Uuid::new_v4(),
++            "character_id":first,"current_revision":0,"session_epoch":1,
++            "client_instance_id":Uuid::new_v4(),"idempotency_key":Uuid::new_v4()
++        }))
++        .is_err()
++    );
++    let group_id = coop_cloud::GroupId::new(Uuid::new_v4()).expect("group");
++    let group = Group::new(second, first).expect("group");
++    let zone = coop_protocol::WorldZone::new(coop_protocol::RegionId::Hoenn, "LITTLEROOT_TOWN", 1)
++        .expect("zone");
++    let view = GroupView::new(group_id, group, zone, [4, 3]).expect("view");
++    assert_eq!(view.members[0].character_id, first);
++    assert_eq!(view.members[0].world_revision, 4);
++    assert_eq!(view.members[1].character_id, second);
++    assert_eq!(view.members[1].world_revision, 3);
++    assert_eq!(
++        serde_json::from_value::<GroupView>(serde_json::to_value(&view).expect("wire"))
++            .expect("round trip"),
++        view
++    );
++}
++
++#[allow(
++    clippy::too_many_lines,
++    reason = "the real transport test keeps bounded request and lifecycle assertions together"
++)]
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn real_http_invite_accept_inspect_and_bounded_rejections() {
++    let app = app();
++    let router = app.router();
++    let (_first, first_login, first_lease, first_client) =
++        account(&router, &app, "group_one", "group-invite-one").await;
++    let (second, second_login, second_lease, second_client) =
++        account(&router, &app, "group_two", "group-invite-two").await;
++    let (third, third_login, third_lease, third_client) =
++        account(&router, &app, "group_three", "group-invite-three").await;
++
++    let first_fence = first_lease.fence();
++    let create_key = IdempotencyKey::new(Uuid::new_v4()).expect("key");
++    let create = CreateGroupInvitationRequest::new(first_fence, second.character_id, create_key);
++    let mut create_wire = serde_json::to_value(create).expect("create json");
++    create_wire["unknown"] = json!(true);
++    let response = request(
++        &router,
++        Method::POST,
++        "/v1/groups/invitations",
++        Some(first_login.access_token.expose_secret()),
++        create_wire,
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
++    assert_eq!(
++        response
++            .headers()
++            .get("cache-control")
++            .and_then(|v| v.to_str().ok()),
++        Some("no-store")
++    );
++
++    let oversized = json!({"padding":"x".repeat(9_000)});
++    let response = request(
++        &router,
++        Method::POST,
++        "/v1/groups/invitations",
++        Some(first_login.access_token.expose_secret()),
++        oversized,
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
++
++    let response = request(
++        &router,
++        Method::POST,
++        "/v1/groups/invitations",
++        Some(first_login.access_token.expose_secret()),
++        serde_json::to_value(create).expect("create json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::CREATED);
++    let invitation = json_body(response).await;
++    let invitation_id = invitation["invitation_id"].as_str().expect("invitation ID");
++
++    let mut changed_create = create;
++    changed_create.invitee_character_id = third.character_id;
++    let response = request(
++        &router,
++        Method::POST,
++        "/v1/groups/invitations",
++        Some(first_login.access_token.expose_secret()),
++        serde_json::to_value(changed_create).expect("changed create json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::CONFLICT);
++
++    let accept = AcceptGroupInvitationRequest::new(
++        second_lease.fence(),
++        IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++    );
++    let uri = format!("/v1/groups/invitations/{invitation_id}/accept");
++    let response = request(
++        &router,
++        Method::POST,
++        &uri,
++        Some(second_login.access_token.expose_secret()),
++        serde_json::to_value(accept).expect("accept json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::OK);
++    let accepted = json_body(response).await;
++    let response = request(
++        &router,
++        Method::POST,
++        &uri,
++        Some(second_login.access_token.expose_secret()),
++        serde_json::to_value(accept).expect("accept replay json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::OK);
++    assert_eq!(json_body(response).await, accepted);
++    let group_id = accepted["group"]["group_id"].as_str().expect("group ID");
++    assert_eq!(
++        accepted["group"]["members"]
++            .as_array()
++            .expect("members")
++            .len(),
++        2
++    );
++
++    let inspect_uri = format!("/v1/groups/{group_id}");
++    let mut foreign_builder = Request::builder().method(Method::GET).uri(&inspect_uri);
++    foreign_builder = foreign_builder.header(
++        "authorization",
++        format!("Bearer {}", third_login.access_token.expose_secret()),
++    );
++    for (name, value) in headers(&third_lease, third_client) {
++        foreign_builder = foreign_builder.header(name, value);
++    }
++    let response = router
++        .clone()
++        .oneshot(
++            foreign_builder
++                .body(Body::empty())
++                .expect("foreign request"),
++        )
++        .await
++        .expect("foreign response");
++    assert_eq!(response.status(), StatusCode::NOT_FOUND);
++
++    let mut wrong_fence_builder = Request::builder().method(Method::GET).uri(&inspect_uri);
++    wrong_fence_builder = wrong_fence_builder.header(
++        "authorization",
++        format!("Bearer {}", first_login.access_token.expose_secret()),
++    );
++    for (name, value) in headers(&second_lease, second_client) {
++        wrong_fence_builder = wrong_fence_builder.header(name, value);
++    }
++    let response = router
++        .clone()
++        .oneshot(
++            wrong_fence_builder
++                .body(Body::empty())
++                .expect("wrong fence request"),
++        )
++        .await
++        .expect("wrong fence response");
++    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
++
++    let mut request_builder = Request::builder().method(Method::GET).uri(&inspect_uri);
++    request_builder = request_builder.header(
++        "authorization",
++        format!("Bearer {}", first_login.access_token.expose_secret()),
++    );
++    for (name, value) in headers(&first_lease, first_client) {
++        request_builder = request_builder.header(name, value);
++    }
++    let response = router
++        .clone()
++        .oneshot(
++            request_builder
++                .body(Body::empty())
++                .expect("inspect request"),
++        )
++        .await
++        .expect("inspect response");
++    assert_eq!(response.status(), StatusCode::OK);
++    assert_eq!(
++        response
++            .headers()
++            .get("cache-control")
++            .and_then(|v| v.to_str().ok()),
++        Some("no-store")
++    );
++    let inspected = json_body(response).await;
++    assert_eq!(inspected["group_id"], group_id);
++    assert_eq!(inspected["world_zone"]["region"], "HOENN");
++
++    let travel = GroupTravelRequest::new(
++        first_lease.fence(),
++        "HOENN:SLATEPORT_SEVII_FERRY",
++        IdempotencyKey::new(Uuid::new_v4()).expect("key"),
++    )
++    .expect("travel");
++    let travel_uri = format!("/v1/groups/{group_id}/travel");
++    let response = request(
++        &router,
++        Method::POST,
++        &travel_uri,
++        Some(first_login.access_token.expose_secret()),
++        serde_json::to_value(travel).expect("travel json"),
++    )
++    .await;
++    assert_eq!(response.status(), StatusCode::FORBIDDEN);
++
++    let _ = second_client;
++}

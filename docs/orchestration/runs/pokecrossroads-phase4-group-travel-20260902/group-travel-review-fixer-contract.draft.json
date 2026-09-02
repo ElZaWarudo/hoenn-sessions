@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase4-group-travel-20260902-review-fixer",
+  "unit_id": "phase2-group-travel-review-fixer",
+  "objective": "Correct every frozen-patch correctness, security, and root-integration finding for the Phase 4 UUID group invitation and atomic regional travel slice without expanding its product scope.",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "owned_files": [
+    "coop/crates/coop-cloud/src/group.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/group_travel.rs",
+    "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql",
+    "coop/crates/coop-server/tests/phase2_group_travel.rs",
+    "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-server-contract-v2.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-correctness-review.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-security-review.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-root-review.json",
+    "coop/crates/coop-cloud/src/group.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/group_travel.rs",
+    "coop/crates/coop-server/src/phase2/saves.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql",
+    "coop/crates/coop-server/tests/phase2_group_travel.rs",
+    "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "GRF-001",
+      "description": "Every group operation revalidates the authenticated caller against users_by_id and characters: the user exists and is not disabled, user.character_id equals actor.character_id, character.owner equals actor.user_id, and CharacterCloudState.character_id equals the character map key. Disabled or inconsistent callers fail as authentication errors even if an old token and lease remain valid."
+    },
+    {
+      "id": "GRF-002",
+      "description": "Invitation targets and both members used by acceptance or travel resolve through internally consistent, non-disabled owning users and characters. A companion or target lease/account failure is collapsed to a policy denial or conflict and is never reported as failure of the caller's authentication. Focused tests cover disabled caller, disabled target or companion, inconsistent identity records, and inactive companion leases."
+    },
+    {
+      "id": "GRF-003",
+      "description": "Invitation acceptance verifies that the authenticated character is the invitee before checking consumed or expired state. Foreign callers receive the same hidden NotFound result for live, expired, consumed, and missing invitation identifiers. Exact authorized idempotent retries continue to replay the original response."
+    },
+    {
+      "id": "GRF-004",
+      "description": "Group inspection verifies that both canonical members' active_group_by_member entries point to the requested active group before returning any view. Missing, mismatched, or one-sided reverse indexes fail closed as an internal invariant error, while foreign group identifiers remain hidden."
+    },
+    {
+      "id": "GRF-005",
+      "description": "Both snapshot restore routes execute through Phase2App methods that hold runtime_transition_gate across the restore boundary. Before any restore work, an active_group_by_member entry for the character yields Conflict without modifying snapshots, revisions, leases, zones, groups, indexes, idempotency records, or objects. Ungrouped restore and restore-at behavior remains compatible."
+    },
+    {
+      "id": "GRF-006",
+      "description": "The outer oversized request-target middleware recognizes only the /v1/groups and /v1/groups/ path family and adds Cache-Control: no-store to its early error response. A focused test proves an oversized group query or target receives 413, the stable error envelope, and exactly no-store without weakening unrelated path matching."
+    },
+    {
+      "id": "GRF-007",
+      "description": "Migration 0002 prevents direct deletion of an ACTIVE group before cascading membership rows. CLOSED groups may be deleted only after their zero-active-member invariant is satisfied. Migration contract tests assert the deletion guard, the existing deferred exact-two rule, canonical slots, and terminal lifecycle semantics."
+    },
+    {
+      "id": "GRF-008",
+      "description": "AcceptGroupInvitationResponse and GroupTravelResponse omit the misleading replayed boolean. Exact idempotent replays remain byte-for-byte semantically equal to the original typed response rather than falsely reporting replayed=false. DTO strictness and wire-shape tests are updated."
+    },
+    {
+      "id": "GRF-009",
+      "description": "A server travel test proves a Hoenn badge_mask containing only reserved high bits cannot satisfy the eight-badge route. Existing unrelated-region, missing-destination, exact-replay, concurrency, injected-repository rollback, and mutation-last tests remain green."
+    },
+    {
+      "id": "GRF-010",
+      "description": "All six owned files remain within the frozen Phase 4 scope, no unrelated behavior is changed, and focused tests, full coop-cloud/coop-server tests, strict Clippy, formatting, and diff checks pass."
+    }
+  ],
+  "closed_decisions": [
+    "The correction baseline is the frozen uncommitted candidate rooted at d643099cc60ce3a8d41bca4e73f3ec797286f722 and patch sha256:6e709f9509d8cac92260e6a3e6e3d5838dd5e9a9a93ae2bcefc42fe65bd2482d. Do not reset, recreate, or partially revert that candidate.",
+    "An authenticated caller whose account or character identity has become invalid returns Authentication. A foreign invitation or group identifier remains NotFound. Invalid or inactive target and companion state returns Forbidden or Conflict, not Authentication, so caller credential semantics remain unambiguous.",
+    "Snapshot restore while grouped is conservatively rejected with Conflict. This correction does not dissolve groups, move companions, reinterpret snapshots, or add a group-aware restore transaction.",
+    "The runtime_transition_gate may span the synchronous restore service boundary so membership admission/travel cannot interleave with the active-group precheck. Do not hold a repository lock across object-store work and do not introduce async lock holding.",
+    "The database deletion rule is a BEFORE DELETE guard on phase2_groups: ACTIVE is rejected, CLOSED is allowed subject to existing membership integrity. Do not remove the foreign key or weaken exact-two active membership.",
+    "The replayed response field is removed rather than toggled because idempotency requires exact response replay; the server must not manufacture a different replay response.",
+    "Do not add a progress administration API merely to make the HTTP travel success fixture public. Canonical progress ingestion remains a later gameplay-ledger/snapshot-CAS milestone.",
+    "Do not commit, stage, merge, rebase, fetch, pull, push, contact remotes, or alter worktrees. Return a worker-terminal-v1 result with exact validation evidence."
+  ],
+  "forbidden_changes": [
+    "Do not edit coop-protocol, saves.rs, storage.rs, auth.rs, sessions.rs, presence.rs, realtime.rs, launcher, sidecar, Lua/C/ROM, deployment, generated artifacts, general documentation, or orchestration state. Read-only inspection of dependencies is allowed.",
+    "Do not add leave/dissolution, leaders, hosts, group notifications, ROM warps, a progress mutation API, battle behavior, Johto routes, client-supplied destinations or thresholds, or any remote operation.",
+    "Do not weaken caller lease fencing, group membership symmetry, regional entitlement, idempotency fingerprints, capacity bounds, mutation-last ordering, no-store behavior, or the snapshot restore trust boundary.",
+    "Do not revert or overwrite work belonging to other agents. You are not alone in the codebase; restrict edits to owned files and accommodate the frozen candidate."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-cloud/src/group.rs coop/crates/coop-server/src/phase2.rs coop/crates/coop-server/src/phase2/group_travel.rs coop/crates/coop-server/migrations/0002_phase2_group_travel.sql coop/crates/coop-server/tests/phase2_group_travel.rs coop/crates/coop-server/tests/phase2_migration_contract.rs",
+      "rtk rg -n group coop/crates/coop-server"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud group --all-features --locked",
+        "rtk cargo test -p coop-server group_travel --all-features --locked",
+        "rtk cargo test -p coop-server --test phase2_group_travel --all-features --locked",
+        "rtk cargo test -p coop-server --test phase2_migration_contract --all-features --locked",
+        "rtk cargo test -p coop-server restore --all-features --locked",
+        "rtk cargo clippy -p coop-cloud -p coop-server --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-cloud -p coop-server --all-features --locked --no-fail-fast"
+      ],
+      "max_retries_per_command": 3
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 3,
+    "fix_rounds": 3,
+    "review_rounds": 0,
+    "max_elapsed_ms": 2400000,
+    "extra_verification": "forbidden"
+  },
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and exact focused verification outcomes are recorded.",
+      "A required correction cannot be implemented safely inside the owned files.",
+      "A deterministic toolchain or repository failure prevents further progress within the bounded budget."
+    ]
+  },
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ]
+}

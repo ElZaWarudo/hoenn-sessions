@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "review_kind": "independent-security-certification",
+  "verdict": "approve",
+  "parent_contract_hash": "sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f",
+  "fixer_contract_hash": "sha256:52bfb5e9e98f048a5c6239cb416f3d26c98e4c9cacf521c6e643588f956937f6",
+  "patch_hash": "sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a",
+  "diff_digest": "sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc",
+  "manifest_files_verified": 10,
+  "findings": [],
+  "evidence": [
+    "Authenticated caller and companion identity, lease, tenant, replay, and foreign-resource boundaries were reviewed and accepted.",
+    "Runtime-gated restore, mutation-last travel, capacity and overflow bounds, migration lifecycle guards, reserved badge rejection, strict nested DTOs, and no-store behavior were reviewed and accepted.",
+    "Focused tests, strict Clippy, formatting, and diff checks passed on the frozen candidate."
+  ]
+}

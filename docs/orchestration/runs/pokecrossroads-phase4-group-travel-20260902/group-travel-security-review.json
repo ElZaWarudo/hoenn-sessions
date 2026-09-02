@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "review_kind": "independent-security",
+  "verdict": "reject_pending_fixes",
+  "reviewed_base": "d643099cc60ce3a8d41bca4e73f3ec797286f722",
+  "contract_hash": "sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f",
+  "patch_hash": "sha256:6e709f9509d8cac92260e6a3e6e3d5838dd5e9a9a93ae2bcefc42fe65bd2482d",
+  "manifest_files_verified": 10,
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-server/src/phase2/group_travel.rs",
+      "symbol": "owns and group operations",
+      "description": "Disabled users retaining a valid token and lease can create, accept, inspect, or travel a group, including moving the companion character."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-server/src/phase2.rs",
+      "symbol": "restore and restore_at",
+      "description": "Snapshot restore can race or follow group travel and mutate one member's authoritative zone without synchronizing the group, leaving durable inconsistent state."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-server/src/phase2/group_travel.rs",
+      "symbol": "accept_invitation",
+      "description": "Invitation expiry is checked before invitee ownership, allowing a foreign authenticated caller to distinguish known expired or consumed invitation identifiers from missing identifiers."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-server/src/phase2.rs",
+      "symbol": "reject_oversized_request_target",
+      "description": "Oversized group request targets bypass the group no-store middleware and may produce cacheable errors."
+    }
+  ]
+}

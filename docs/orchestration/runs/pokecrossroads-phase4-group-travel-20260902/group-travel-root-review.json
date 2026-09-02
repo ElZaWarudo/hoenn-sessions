@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "review_kind": "root-integration",
+  "verdict": "reject_pending_fixes",
+  "reviewed_base": "d643099cc60ce3a8d41bca4e73f3ec797286f722",
+  "contract_hash": "sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f",
+  "patch_hash": "sha256:6e709f9509d8cac92260e6a3e6e3d5838dd5e9a9a93ae2bcefc42fe65bd2482d",
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-server/src/phase2/group_travel.rs",
+      "symbol": "member identity and lease validation",
+      "description": "Every active member must resolve through a non-disabled owning user and a CharacterCloudState whose character_id matches the map key; companion lease failures must not be reported as caller authentication failures."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-cloud/src/group.rs",
+      "symbol": "AcceptGroupInvitationResponse and GroupTravelResponse",
+      "description": "The replayed field is always false, including on exact idempotent replay; remove the misleading field while this API is still unintegrated."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-server/src/phase2/group_travel.rs",
+      "symbol": "regional travel tests",
+      "description": "Add a server-boundary test proving that reserved high badge bits cannot satisfy the eight-badge Hoenn route."
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 # Local co-op vertical slice
 
-This directory contains the host-side Phase 1 slice: the region-safe shared
-protocol, a loopback-only in-memory server, and the local ROM sidecar. It is a
-development boundary, not the authenticated public service described by the
-full product specification.
+This directory contains the host-side local implementation checkpoints: the
+region-safe shared protocol, authenticated in-memory service, supervised
+launcher core, and local ROM sidecar. It is a development boundary, not the
+production public service described by the full product specification.
 
 ## Validate
 
@@ -79,6 +79,30 @@ environment must fail closed. The local adapter is process-memory only and
 does not claim Firebase, PostgreSQL, production token issuance, object storage,
 or deployment readiness.
 
+## Authenticated group travel checkpoint
+
+The authenticated server supports strict symmetric groups of exactly two
+characters through invitation creation, invitation acceptance, group
+inspection, and travel endpoints under `/v1/groups`. Travel uses a fixed route
+catalog covering the designated Hoenn–Sevii–Kanto ferry connections. Both
+members must hold active leases, satisfy source-region route thresholds, and
+hold the destination-region entitlement; success atomically moves both
+character zones and the group, while any denial preserves the group and both
+source zones.
+
+Validate the focused HTTP and migration contracts with:
+
+```text
+cargo test -p coop-server --test phase2_group_travel --all-features --locked
+cargo test -p coop-server --test phase2_migration_contract --all-features --locked
+```
+
+Successful travel fixtures seed canonical regional progress internally because
+the gameplay progress-ingestion boundary is not implemented yet. This is a
+certified backend checkpoint, not a complete player-facing journey: there is no
+live sidecar warp delivery, remote avatar rendering, realtime invitation UI,
+reconnect/leave lifecycle, or production PostgreSQL/Firebase adapter.
+
 This hardened Phase 2 launcher process-supervision slice is supported on
 Windows; it fails closed before probing or spawning child processes on other
 operating systems. The local integration runner supports Windows and Linux
@@ -139,9 +163,11 @@ savestates, and BIOS files must remain uncommitted.
 
 ## Deliberately deferred
 
-PostgreSQL/Firebase persistence, authoritative two-client battle-hash
-validation, deterministic lockstep, presence and remote sprites, and the Tauri
-launcher belong to later milestones. The Phase 2 local smoke is an executable
-contract test, not production cloud readiness.
+PostgreSQL/Firebase persistence, live sidecar presence/warp delivery, remote
+sprites and interpolation, realtime group UI and lifecycle, authoritative
+two-client battle-hash validation, deterministic lockstep, and the Tauri
+launcher belong to later milestones. End-to-end authenticated Littleroot
+presence is the next player-visible milestone. The Phase 2 local smoke is an
+executable contract test, not production cloud readiness.
 The current server's final-state hash is bounded transport evidence only; it is
 not presented as an anti-cheat or deterministic-consensus proof.

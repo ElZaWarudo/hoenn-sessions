@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "review_kind": "independent-security-recertification",
+  "verdict": "reject_pending_fixes",
+  "contract_hash": "sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f",
+  "fixer_contract_hash": "sha256:52bfb5e9e98f048a5c6239cb416f3d26c98e4c9cacf521c6e643588f956937f6",
+  "patch_hash": "sha256:1891e7b08523cabf1d49eb7b19829ce76b93782a10682a1fd3c5a7815594bf28",
+  "diff_digest": "sha256:0846c14e5afe3ddff160f494fe3c1a199f9598734ad635317820563442baa384",
+  "manifest_files_verified": 10,
+  "findings": [
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-cloud/src/group.rs",
+      "symbol": "GroupView::deserialize",
+      "description": "Unknown nested world_zone fields are silently accepted at the cloud boundary; use a strict local wire projection before constructing WorldZone."
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "review_kind": "independent-correctness",
+  "verdict": "reject_pending_fixes",
+  "reviewed_base": "d643099cc60ce3a8d41bca4e73f3ec797286f722",
+  "contract_hash": "sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f",
+  "patch_hash": "sha256:6e709f9509d8cac92260e6a3e6e3d5838dd5e9a9a93ae2bcefc42fe65bd2482d",
+  "manifest_files_verified": 10,
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-server/src/phase2.rs",
+      "symbol": "reject_oversized_request_target",
+      "description": "Oversized group request targets return before group_no_store and omit Cache-Control: no-store."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-server/src/phase2/group_travel.rs",
+      "symbol": "inspect_group",
+      "description": "Inspection does not verify both active_group_by_member reverse indexes and therefore does not fail closed on inconsistent state."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql",
+      "symbol": "phase2 group deletion lifecycle",
+      "description": "Direct deletion of an ACTIVE group cascades member deletion and bypasses the required ACTIVE-to-CLOSED lifecycle."
+    }
+  ]
+}

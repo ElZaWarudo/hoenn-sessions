@@ -1,0 +1,22 @@
+{
+  "workspace_id": "pokecrossroads-phase4-group-travel-20260902-server-v2",
+  "worker_id": "/root/server_transport_fixer_final",
+  "unit_id": "phase2-group-travel",
+  "role": "implementation",
+  "base_revision": "d643099cc60ce3a8d41bca4e73f3ec797286f722",
+  "baseline_tree": "252d0a15373df7bc8178a0b22b63e0ef6827087b",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "coop/crates/coop-cloud/src/group.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-server/src/phase2/group_travel.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql",
+    "coop/crates/coop-server/tests/phase2_group_travel.rs",
+    "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+  ],
+  "contract_hash": "sha256:2e15aabe6bedf9e7faf02944da2837ebfc63c13187555598b632a5f782105e6f"
+}
