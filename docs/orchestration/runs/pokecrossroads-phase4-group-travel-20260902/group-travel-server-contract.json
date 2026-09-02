@@ -1,0 +1,157 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "coop-cloud defines strict deny-unknown-fields V1 DTOs and invariant-bearing UUID GroupId and GroupInvitationId values for create-invitation, accept, inspect, and travel operations. Every group serializes exactly two distinct canonically sorted CharacterId members and has no leader_id, host_id, or owner_id; the only caller-supplied travel identity is a bounded canonical source-region-qualified route_id.",
+      "id": "GRT-001"
+    },
+    {
+      "description": "POST /v1/groups/invitations authenticates the bearer and the caller's complete LeaseFence, rejects self-invites, disabled or missing targets, inactive/released/expired leases, mismatched authoritative WorldZone values, and either character's active-group membership, then creates one server-issued pending invitation with a 30000 ms server deadline. Creation is bounded, mutation-last, and idempotent: an exact key and request fingerprint replays the exact response, while changed input conflicts.",
+      "id": "GRT-002"
+    },
+    {
+      "description": "POST /v1/groups/invitations/{invitation_id}/accept authenticates only the invited character and its exact lease fence, checks idempotent replay before current expiry/state checks, requires both members still have active leases and the same authoritative zone with no active membership, and atomically consumes the invitation, creates exactly one symmetric canonical two-member group, and installs both membership indexes. Concurrent or duplicate acceptance has one winner and never creates overlapping groups.",
+      "id": "GRT-003"
+    },
+    {
+      "description": "GET /v1/groups/{group_id} requires bearer ownership, an exact active lease fence from the standard session headers, and current membership. Foreign, missing, and closed group identifiers do not leak group contents; successful responses are no-store and return canonical members, authoritative zone, and per-member world revisions.",
+      "id": "GRT-004"
+    },
+    {
+      "description": "POST /v1/groups/{group_id}/travel authenticates a current member and exact active lease, resolves the region-qualified route_id exclusively through a server-owned catalog, and validates group source zone, both authoritative character zones, both active leases, route source/destination, and every member's source-region badge/story requirements plus destination-region progress record. Progress from unrelated regions never authorizes travel, and the client cannot supply destination, thresholds, progress, members, channel, or revisions.",
+      "id": "GRT-005"
+    },
+    {
+      "description": "A successful travel transaction updates both CharacterCloudState.world_zone values, both monotonic world_revision values, the group zone, and a typed idempotency receipt as one mutation-last repository transition under runtime_transition_gate. It does not advance snapshot Revision or LeaseContract.current_revision. Exact retries replay after the group has moved; changed fingerprints conflict; validation, overflow, entropy, injected repository, and concurrent failures leave every character, group, index, invitation, and receipt unchanged.",
+      "id": "GRT-006"
+    },
+    {
+      "description": "The server catalog includes only routes whose endpoint maps exist in the pinned Pok\u00e9Crossroads map catalog, covering the currently representable Hoenn-to-Sevii and Sevii-to-Kanto chain in both directions. A destination RegionalProgress record is the explicit region-unlocked entitlement. Johto remains a valid RegionId but has no concrete server route until a Johto map is present; denied travel keeps the active group intact.",
+      "id": "GRT-007"
+    },
+    {
+      "description": "Migration 0002 adds bounded world revisions plus durable symmetric group, membership, invitation, and idempotency integrity without rewriting migration 0001. Constraints and deferred integrity checks reject self-invites, overlapping active membership, invalid status transitions, noncanonical route/zone data, and groups without exactly two distinct active members.",
+      "id": "GRT-008"
+    },
+    {
+      "description": "Deterministic contract, service, HTTP, migration, race, idempotency, regional-entitlement, rollback, lease, and error-collapse tests pass together with locked metadata, focused/full coop-server tests, workspace tests, strict Clippy, formatting, Phase 2 smoke, and diff checks. A successful authoritative zone change is compatible with the existing PresenceService behavior that evicts stale-zone sockets on the next bounded tick; this unit does not invent a ROM warp or claim avatar/menu UI completion.",
+      "id": "GRT-009"
+    }
+  ],
+  "closed_decisions": [
+    "This unit is the authenticated Phase 4 backend foundation plus the user's regional-travel boundary. It implements invite, accept, inspect, and atomic travel APIs; leave/grace-period dissolution, realtime invitation notification, ROM warp application, and pause-menu/avatar UI remain later units and must not be claimed here.",
+    "Use new UUID GroupId and GroupInvitationId cloud identities. Do not reuse coop_protocol::Group or ParticipantProgress because those legacy primitives carry u64 character identifiers. The server may reuse the validated regional TravelRoute entitlement semantics internally only after binding UUID records to authoritative CharacterCloudState values.",
+    "Public request/response contracts belong in a new coop-cloud group module. Requests use API version 1, IdempotencyKey, and the acting LeaseFence. Create additionally carries only invitee_character_id; accept carries no caller or member identity; travel additionally carries only route_id. Path identities must exactly correlate with the authenticated operation.",
+    "Group membership is symmetric. Persist canonically sorted [CharacterId; 2] and expose no leader, host, owner, primary member, or unilateral travel authority. Either member may request travel, but travel always moves both or neither after validating both.",
+    "Invite creation and acceptance require both characters to remain in the exact same authoritative WorldZone. The initial HTTP/menu-compatible endpoint does not claim physical proximity or avatar interaction proof; the existing validated realtime interaction remains side-effect-free until a later event-delivery contract can notify both clients safely.",
+    "Acquire runtime_transition_gate before repository state for accept and travel so these transitions linearize with lease acquire, heartbeat, reconnect, release, presence, and realtime admission. Never hold repository or synchronous locks across await. Generate bounded entropy candidates and all fallible response objects before mutating shared state.",
+    "The in-memory Repository callback does not roll back writes when a callback returns Err. Every operation must therefore complete validation, collision selection, revision arithmetic, response construction, and receipt construction before a non-fallible mutation suffix. Tests must use an injected failing repository boundary to prove no partial externally committed state.",
+    "Invitation TTL is exactly 30000 ms. Prune terminal/expired invitation and idempotency indexes with explicit caps before admission; reject at bounded capacity rather than permitting unbounded maps. Expiry is server-owned and exact at now greater than or equal to expires_at.",
+    "Idempotency is actor-, operation-, and key-scoped with a domain-separated SHA-256 request fingerprint and typed stored response. Replay lookup occurs after authentication/ownership but before invitation expiry, group movement, or other current-state validation so retrying a committed operation returns the original response. The same key with a different fingerprint returns conflict.",
+    "The server route catalog, not the request, owns source WorldZone, destination WorldZone, source-region badge mask/count or story threshold, and destination channel. Route ids are source-region-qualified uppercase ASCII identities. Include bidirectional SLATEPORT_CITY_HARBOR to ONE_ISLAND_HARBOR and ONE_ISLAND_HARBOR to VERMILION_CITY routes because those maps exist in the pinned catalog; do not manufacture a Johto map.",
+    "For every member, a RegionalProgress record for the route's source region supplies only that region's badge/story checks, and a separate RegionalProgress record for the destination region is the explicit unlock entitlement. Reserved badge bits do not count. Missing destination progress denies the entire transfer without dissolving the group.",
+    "Add world_revision as a distinct monotonic u64 domain initialized to zero. Group travel increments each member exactly once and returns both results. It must not modify CharacterRecord.revision, snapshots, active_snapshot, LeaseContract.current_revision, session epoch, save lineage, or progress; conflating travel with snapshot CAS would invalidate active runtime fences.",
+    "Group and invitation HTTP routes have an 8192-byte body cap, reject unknown fields and noncanonical UUID/path/route spellings, and apply Cache-Control: no-store to success and error responses. Preserve Phase2Error's generic categories: malformed 400, invalid bearer/fence 401, hidden foreign identifiers 404, authenticated nonmember or unmet entitlement 403, state/idempotency conflict 409, capacity 503, and invariant/storage poison 500.",
+    "After a committed travel, do not mutate PresenceService while holding runtime_transition_gate. Existing 100 ms authoritative validation will observe the zone change and evict each old-zone connection; clients must reconnect in the destination when its presence map is supported. No group-travel WebSocket frame or ROM warp side effect is introduced in this unit.",
+    "Migration 0002 is additive. Add phase2_characters.world_revision with a nonnegative signed-bigint bound, groups with canonical zone and status, exactly two membership rows with one active group per character, pending/terminal invitations with immutable actors and deadlines, and database-side checks/triggers for symmetry and lifecycle integrity. Reuse phase2_idempotency for durable operation receipts rather than creating plaintext capability storage.",
+    "The implementation baseline is local commit 1c933942 on feat/pokecrossroads-cloud-coop. Preserve the accepted realtime transport and runtime hardening. No remote, deployment, GitHub, PostgreSQL instance, Firebase, ROM, Lua, launcher, or sidecar mutation is authorized."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-cloud coop/crates/coop-server",
+      "rtk rg -n group_travel coop/crates"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud group --all-features --locked",
+        "rtk cargo test -p coop-server group_travel --all-features --locked",
+        "rtk cargo test -p coop-server --test phase2_group_travel --all-features --locked",
+        "rtk cargo test -p coop-server --test phase2_migration_contract --all-features --locked",
+        "rtk cargo clippy -p coop-cloud -p coop-server --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 3,
+      "natural": [
+        "rtk cargo test --workspace --all-features --locked --no-fail-fast",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk python tools/smoke_phase2.py",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:e63aded3e0f0de83a33d11bf841c46dd27376bcc8f66db1340ff0381cbd93a7a",
+  "contract_id": "pokecrossroads-phase4-group-travel-20260902-server-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 4,
+    "implementation_rounds": 4,
+    "max_elapsed_ms": 3000000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit coop-protocol, presence.rs, realtime.rs, auth.rs, sessions.rs, saves.rs, launcher, sidecar, Lua/C/ROM, deployment, generated artifacts, general documentation, or orchestration state outside this contract.",
+    "Do not reuse the legacy u64 Group as the authenticated Phase 2 group identity; add leader/host/owner semantics; trust client-supplied zones, progress, destination, thresholds, member lists, revisions, or second-member fences; count badges outside the route source region; or unlock a destination from unrelated progress.",
+    "Do not mutate any group/character/index/receipt before all fallible validation and construction has succeeded; increment snapshot revisions during travel; silently dissolve the group on denied travel; leak foreign group/invitation existence; add unbounded collections/tasks; or hold synchronous locks across await.",
+    "Do not stage, commit, merge, rebase, fetch, pull, push, contact remotes, create/remove worktrees, or revert another worker's edits. Other workers share the repository; accommodate their work and modify only the owned files."
+  ],
+  "lane": "deep",
+  "objective": "Implement strict authenticated UUID group invitations and server-authoritative, atomic, region-entitled group travel across the Hoenn-Sevii-Kanto world in the Phase 2 backend.",
+  "owned_files": [
+    "coop/crates/coop-cloud/src/group.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-server/src/phase2/group_travel.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/migrations/0002_phase2_group_travel.sql",
+    "coop/crates/coop-server/tests/phase2_group_travel.rs",
+    "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-server-contract-v3.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-realtime-20260902/realtime-server-transport-contract.json",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-protocol/src/lib.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/sessions.rs",
+    "coop/crates/coop-server/src/phase2/presence.rs",
+    "coop/crates/coop-server/migrations/0001_phase2_auth_save.sql",
+    "coop/crates/coop-server/tests/phase2_http.rs",
+    "coop/crates/coop-server/tests/phase2_migration_contract.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and exact verification outcomes are recorded.",
+      "The current public cloud or repository transaction boundary lacks a required safe seam that cannot be added inside owned files.",
+      "The pinned map catalog cannot represent one of the required Hoenn-Sevii-Kanto endpoint maps.",
+      "A concrete dependency, toolchain, isolated-worktree, or bounded-budget failure prevents further progress within owned files."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-group-travel"
+}
