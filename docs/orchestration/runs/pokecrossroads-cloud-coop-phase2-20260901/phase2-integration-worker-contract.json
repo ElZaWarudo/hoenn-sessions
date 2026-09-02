@@ -1,0 +1,130 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The diff is confined to the five owned paths and uses existing locked dependencies without manifest or lockfile changes.",
+      "id": "IT-001"
+    },
+    {
+      "description": "A real coop-server binary smoke proves explicit phase2-local startup on a literal loopback ephemeral port with required bootstrap invite/signing configuration, and fails closed for missing or invalid configuration.",
+      "id": "IT-002"
+    },
+    {
+      "description": "Real Axum HTTP routes prove invite registration, case-insensitive login, fenced lease acquisition, generic unauthorized/foreign resume behavior, two-file snapshot prepare/upload/finalize, signed active package verification, reconnect with a strictly higher server epoch, stale fence rejection, release, and revision-preserving reacquire.",
+      "id": "IT-003"
+    },
+    {
+      "description": "The uploaded/resumed synthetic character state contains Hoenn, Kanto, Johto, and Sevii progress with region-qualified trainer and fly identifiers, round-trips exactly, and demonstrates that Kanto cooperative tier ignores Hoenn badge count.",
+      "id": "IT-004"
+    },
+    {
+      "description": "The launcher smoke uses its final injectable lifecycle and an in-process real LocalSidecar to perform control-first authentication, bridge handshake, ROM_READY, CHECKPOINT_READY, grant, CHECKPOINT_GRANTED, synthetic SAV update, SAVE_DATA_UPDATED, upload/finalize, and fenced release without shadow protocol DTOs.",
+      "id": "IT-005"
+    },
+    {
+      "description": "A shell-free standard-library Python runner executes both exact integration targets with bounded timeouts and emits one deterministic machine-readable JSON result.",
+      "id": "IT-006"
+    },
+    {
+      "description": "Operator documentation contains exact local commands, required environment/configuration, secret handling, manual mGBA 0.10.5 Tools-to-Scripting loading, failure recovery, and the limits of the synthetic SAV fixture without overstating production Firebase/PostgreSQL readiness.",
+      "id": "IT-007"
+    },
+    {
+      "description": "Focused smoke targets, the Python runner, workspace tests/clippy, formatting, and diff checks all pass.",
+      "id": "IT-008"
+    }
+  ],
+  "closed_decisions": [
+    "Use the real server binary and real Axum routes for server proof; use deterministic test clocks/entropy/Argon2 cost only inside test construction.",
+    "Use the real LocalSidecar and bridge/control codecs for launcher proof, but fake external cloud, keychain, filesystem, mGBA child, and ROM timing at injected boundaries.",
+    "The synthetic SAV is an opaque serialized CharacterCloudState test fixture, not a claim about the production Pok\u00e9mon save-block layout.",
+    "Server owns every session epoch; the launcher persists and presents it but never increments or invents it.",
+    "Stock mGBA 0.10.5 requires manual Lua loading through Tools to Scripting; do not invent an unsupported script-autoload flag.",
+    "Do not require Docker, Firebase, PostgreSQL, external network access, or credentials for this local deterministic slice."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/README.md bridge/README.md",
+      "rtk rg",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server --test phase2_http --all-features --locked",
+        "rtk cargo test -p coop-launcher --test phase2_smoke --all-features --locked",
+        "rtk python tools/smoke_phase2.py"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:028abb3f4de0a9b5db36c87bcca3c7caf89b138a35c890c72b51cc1587efd0a0",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-integration-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 3,
+    "max_elapsed_ms": 2400000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit production Rust/C/Lua code, Cargo manifests, Cargo.lock, migrations, orchestration records, or any file outside ownership.",
+    "Do not add dependencies, duplicate protocol encoders/CRC/signature logic in Python, weaken authentication/fencing/signature checks, or expose secrets in output.",
+    "Do not use shell=True, unbounded waits, remote services, wildcard binds, network publication, Git staging/commits, push, deployment, or release operations.",
+    "Do not claim stock mGBA Lua autoload, real-ROM SAV layout interoperability, or production persistence readiness when only deterministic local adapters are exercised."
+  ],
+  "lane": "deep",
+  "objective": "Prove one runnable local Phase 2 cloud-coop checkpoint lifecycle across the real server HTTP surface, launcher orchestration, sidecar control channel, and regional cloud state, with bounded repeatable tooling and operator documentation.",
+  "owned_files": [
+    "coop/crates/coop-server/tests/phase2_http.rs",
+    "coop/crates/coop-launcher/tests/phase2_smoke.rs",
+    "tools/smoke_phase2.py",
+    "coop/README.md",
+    "bridge/README.md"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/main.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "coop/README.md",
+    "bridge/README.md"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A public server, launcher, or sidecar API required by the smoke is unavailable and would require an unowned production edit.",
+      "A concrete platform/tooling blocker prevents the bounded local smoke from running within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-integration-smoke"
+}

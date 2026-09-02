@@ -1,0 +1,123 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The diff is confined to the four owned ROM/header/test paths and preserves the existing bridge ABI, layout, message values, and build identity.",
+      "id": "RC-001"
+    },
+    {
+      "description": "Checkpoint requests require a healthy negotiated nonzero session, drained queues, and idle state; success emits one empty ready and enters a bounded wait while invalid/full states fail without advancing sequence.",
+      "id": "RC-002"
+    },
+    {
+      "description": "Only an empty strictly fresh grant for the active epoch in WaitingForGrant authorizes one save; wrong epoch, stale/duplicate/nonempty/wrong-state messages cannot save or advance checkpoint state.",
+      "id": "RC-003"
+    },
+    {
+      "description": "The normal start-menu flow preserves pre-cloud offline saving, but after cloud negotiation waits for grant, invokes TrySavingData exactly once on grant, times out/disconnects without flash write, and returns through existing UI callbacks deterministically.",
+      "id": "RC-004"
+    },
+    {
+      "description": "A successful save emits exactly one empty SAVE_DATA_UPDATED; failure emits none; a full outbound queue retains and retries the critical event without repeating the save or advancing sequence prematurely.",
+      "id": "RC-005"
+    },
+    {
+      "description": "Epoch rotation, heartbeat loss, and session reset cancel pending authorization; periodic player-state output is suppressed while checkpoint work is active so queues can drain.",
+      "id": "RC-006"
+    },
+    {
+      "description": "Focused ARM tests prove request gating, timeout, grant validation, success/failure, cancellation, and full-queue retry, and the modern ROM build completes with no new warnings.",
+      "id": "RC-007"
+    },
+    {
+      "description": "The focused Cloud Coop suite, modern build, and diff checks pass in the provisioned WSL ARM toolchain without unowned changes or remote activity.",
+      "id": "RC-008"
+    }
+  ],
+  "closed_decisions": [
+    "Keep bridge ABI and protocol version 1 and the existing empty CHECKPOINT_READY, CHECKPOINT_GRANTED, and SAVE_DATA_UPDATED message types. No new message, payload schema, or queue layout is allowed.",
+    "Add a small runtime checkpoint FSM with Idle, WaitingForGrant, Granted/SavePending, and pending-update behavior. A request is accepted only for a negotiated healthy nonzero session with drained queues and no active checkpoint; it enqueues exactly one empty CHECKPOINT_READY and records a bounded deterministic frame deadline.",
+    "Accept CHECKPOINT_GRANTED only when its payload is empty, epoch equals the active epoch, sidecar sequence is strictly fresh, and state is WaitingForGrant. Stale/wrong/nonempty grants cannot authorize a save or advance checkpoint state.",
+    "The normal start-menu save flow is the first production hook. Before any cloud epoch has ever negotiated in this boot, preserve the existing offline save behavior. Once cloud mode has negotiated, the save confirmation requests a checkpoint and waits boundedly; only a valid grant calls the existing TrySavingData exactly once. Timeout/disconnection returns to the menu with the existing failure/cancellation treatment and performs no flash write.",
+    "On SAVE_STATUS_OK enqueue exactly one empty SAVE_DATA_UPDATED and return to idle only after the critical event is accepted. On save failure emit no update. If the outbound queue is temporarily full, retain pending update state and retry without advancing the transmit sequence or duplicating the save.",
+    "Epoch change, stale sidecar heartbeat, or queue/session reset clears pending checkpoint authorization. Once a cloud epoch was accepted, disconnection fails closed for canonical save rather than silently diverging offline.",
+    "Suppress periodic PLAYER_STATE generation while waiting for grant or completing the granted save so the safe-point queues remain drained. The checkpoint wait is nonblocking to the engine and uses a compile-time frame bound suitable for deterministic tests.",
+    "Expose only narrow checkpoint request/status/report helpers required by start_menu and tests; do not expose arbitrary message construction or server concepts."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- include/coop/net_bridge.h src/coop/net_bridge.c src/start_menu.c test/coop/net_bridge.c",
+      "rtk rg",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/phase2-rom-checkpoint -- make check \"TESTS=Cloud Coop\""
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/phase2-rom-checkpoint -- make modern",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:7b0f728caaf9904e5cf340cce4e9364ff4d3153ca32573c40c053c34324af71b",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-rom-checkpoint-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit sidecar Rust, Lua, protocol constants, root Cargo files, cloud/server/launcher code, build manifests, other ROM modules/tests, documentation, or orchestration artifacts.",
+    "Do not change bridge layout, magic, ABI/protocol versions, message numbers, or checkpoint payloads; do not overload ABORT_BATTLE.",
+    "Do not save before a valid current-epoch grant after cloud negotiation, silently fall back to offline canonical save after cloud disconnect, duplicate TrySavingData, emit SAVE_DATA_UPDATED on failure, drop a critical pending update, or block the main loop indefinitely.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, distribute ROM output, add warnings suppressions, or use unrelated global refactors."
+  ],
+  "lane": "deep",
+  "objective": "Implement and verify a bounded ROM checkpoint state machine that gates the normal start-menu save on cloud authorization and emits one durable-save completion event without changing the bridge ABI.",
+  "owned_files": [
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c",
+    "src/start_menu.c",
+    "test/coop/net_bridge.c"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c",
+    "src/start_menu.c",
+    "src/save.c",
+    "test/coop/net_bridge.c",
+    "bridge/protocol.lua",
+    "coop/crates/coop-sidecar/src/codec.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "The production save callback cannot be made nonblocking and fail-closed without editing an unowned engine/UI file or changing the checkpoint wire contract.",
+      "A concrete ROM toolchain, UI state, protocol, or build blocker prevents further progress within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-rom-checkpoint"
+}

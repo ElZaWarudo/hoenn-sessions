@@ -1,0 +1,155 @@
+{
+  "aggregate_commands": [
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings",
+    "rtk cargo test --workspace --all-features",
+    "rtk python tools/smoke_phase2.py --local",
+    "rtk git diff --check"
+  ],
+  "aggregate_owner": "seneschal-root",
+  "foundation_gate": {
+    "required_evidence": "focused-contract-and-triggered-review-gates",
+    "required_status": "release-ready",
+    "unit_id": "phase2-cloud-foundation"
+  },
+  "parent_unit_id": "phase2-auth-cloud-save-launcher",
+  "schema_version": 1,
+  "shared_api_paths": [
+    "coop/crates/coop-cloud/Cargo.toml",
+    "coop/crates/coop-cloud/src/auth.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/snapshot.rs"
+  ],
+  "topology_hash": "sha256:6d2d93d6c666d9e6288bf510de65cabb4ee442f5847295ed2dec7fa9d023df90",
+  "units": [
+    {
+      "depends_on": [],
+      "focused_commands": [
+        "rtk cargo test -p coop-cloud --all-features",
+        "rtk cargo clippy -p coop-cloud --all-targets --all-features -- -D warnings"
+      ],
+      "generated_paths": [
+        "Cargo.lock"
+      ],
+      "id": "phase2-cloud-foundation",
+      "owned_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "coop/crates/coop-cloud/Cargo.toml",
+        "coop/crates/coop-cloud/src/auth.rs",
+        "coop/crates/coop-cloud/src/ids.rs",
+        "coop/crates/coop-cloud/src/lib.rs",
+        "coop/crates/coop-cloud/src/resume.rs",
+        "coop/crates/coop-cloud/src/security.rs",
+        "coop/crates/coop-cloud/src/session.rs",
+        "coop/crates/coop-cloud/src/snapshot.rs"
+      ],
+      "stage": "foundation",
+      "title": "Phase 2 cloud contract and security foundation"
+    },
+    {
+      "depends_on": [
+        "phase2-cloud-foundation"
+      ],
+      "focused_commands": [
+        "rtk cargo test -p coop-server --all-features",
+        "rtk cargo clippy -p coop-server --all-targets --all-features -- -D warnings"
+      ],
+      "generated_paths": [],
+      "id": "phase2-server-auth-save",
+      "owned_paths": [
+        "coop/crates/coop-server/Cargo.toml",
+        "coop/crates/coop-server/migrations/0001_phase2_auth_save.sql",
+        "coop/crates/coop-server/src/lib.rs",
+        "coop/crates/coop-server/src/main.rs",
+        "coop/crates/coop-server/src/phase2.rs",
+        "coop/crates/coop-server/src/phase2/auth.rs",
+        "coop/crates/coop-server/src/phase2/saves.rs",
+        "coop/crates/coop-server/src/phase2/sessions.rs",
+        "coop/crates/coop-server/src/phase2/storage.rs"
+      ],
+      "stage": "dependent",
+      "title": "Authenticated character leases and revisioned save service"
+    },
+    {
+      "depends_on": [
+        "phase2-cloud-foundation"
+      ],
+      "focused_commands": [
+        "rtk cargo test -p coop-launcher --all-features",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features -- -D warnings"
+      ],
+      "generated_paths": [],
+      "id": "phase2-launcher-core",
+      "owned_paths": [
+        "coop/crates/coop-launcher/Cargo.toml",
+        "coop/crates/coop-launcher/src/auth.rs",
+        "coop/crates/coop-launcher/src/compat.rs",
+        "coop/crates/coop-launcher/src/epoch.rs",
+        "coop/crates/coop-launcher/src/keychain.rs",
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/main.rs",
+        "coop/crates/coop-launcher/src/process.rs",
+        "coop/crates/coop-launcher/src/session.rs",
+        "coop/crates/coop-launcher/tests/session_lifecycle.rs"
+      ],
+      "stage": "dependent",
+      "title": "Secure launcher core and supervised local session CLI"
+    },
+    {
+      "depends_on": [
+        "phase2-launcher-core",
+        "phase2-server-auth-save"
+      ],
+      "focused_commands": [
+        "rtk cargo test -p coop-server --test phase2_http",
+        "rtk cargo test -p coop-launcher --test phase2_smoke",
+        "rtk python tools/smoke_phase2.py --local"
+      ],
+      "generated_paths": [],
+      "id": "phase2-integration",
+      "owned_paths": [
+        "bridge/README.md",
+        "coop/README.md",
+        "coop/crates/coop-launcher/tests/phase2_smoke.rs",
+        "coop/crates/coop-server/tests/phase2_http.rs",
+        "tools/smoke_phase2.py"
+      ],
+      "stage": "integration",
+      "title": "Phase 2 local vertical-slice integration"
+    }
+  ],
+  "waves": [
+    {
+      "requires_release_ready": [],
+      "stage": "foundation",
+      "unit_ids": [
+        "phase2-cloud-foundation"
+      ]
+    },
+    {
+      "requires_release_ready": [
+        "phase2-cloud-foundation"
+      ],
+      "stage": "dependent",
+      "unit_ids": [
+        "phase2-launcher-core",
+        "phase2-server-auth-save"
+      ]
+    },
+    {
+      "requires_release_ready": [
+        "phase2-launcher-core",
+        "phase2-server-auth-save"
+      ],
+      "stage": "integration",
+      "unit_ids": [
+        "phase2-integration"
+      ]
+    }
+  ]
+}

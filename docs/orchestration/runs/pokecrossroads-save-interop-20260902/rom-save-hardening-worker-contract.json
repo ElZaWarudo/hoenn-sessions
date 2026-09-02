@@ -1,0 +1,113 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "CoopSave validation rejects every set trainer, gym, Fly-point, or event ordinal that is absent from the generated identity registry, while accepting assigned boundary ordinals.",
+      "id": "RSH-001"
+    },
+    {
+      "description": "Corrupt, incompatible, erased, and otherwise offline-only load classifications deterministically clear runtime regional progress and preserve incompatible bytes where required.",
+      "id": "RSH-002"
+    },
+    {
+      "description": "Generation increment including u32 wrap is deterministic and covered by focused tests.",
+      "id": "RSH-003"
+    },
+    {
+      "description": "Every successful canonical persistent save path after cloud negotiation is checkpoint-authorized and emits exactly one generation-correlated SAVE_DATA_UPDATED; failure and cancellation emit none.",
+      "id": "RSH-004"
+    },
+    {
+      "description": "Focused Cloud Coop and SaveBlock3 ARM tests, identity generator check, modern ROM build, and diff checks pass.",
+      "id": "RSH-005"
+    }
+  ],
+  "closed_decisions": [
+    "CoopSaveV1 remains a frozen 672-byte CSP1 schema at SaveBlock3 offset 4 with registry version 1 and digest 43918833dec646d6a583d124686c8540.",
+    "Trainer, gym, Fly-point, and event bitsets are append-only ordinal sets; a set unassigned ordinal is incompatible and must fail closed.",
+    "Zeroed or erased legacy extensions remain sealed with MIGRATION_AMBIGUOUS and offline-only; arbitrary partially populated bytes are not silently migrated.",
+    "A failed, corrupt, or incompatible load must expose no prior regional progress from another attempted slot.",
+    "Every successful persistent save that advances save_generation after cloud negotiation must produce one correlated SAVE_DATA_UPDATED notification carrying the little-endian u32 generation; no failed save emits it.",
+    "Offline Pok\u00e9Crossroads saves remain available before cloud negotiation, and checkpoint authorization must not recurse or duplicate writes."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- include/coop/save.h src/coop/save.c src/load_save.c src/save.c src/new_game.c include/coop/net_bridge.h src/coop/net_bridge.c test/coop/save.c test/coop/net_bridge.c test/save.c",
+      "rtk rg"
+    ],
+    "verification": {
+      "focused": [
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/hoenn-sessions -- make check \"TESTS=Cloud Coop\"",
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/hoenn-sessions -- make check TESTS=SaveBlock3"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk python tools/coop/generate_regional_identities.py --check",
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/hoenn-sessions -- make modern",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:a412986ba2156f58320a7cc799376a1e67b78c4eebe35cde54e7ca7b18683925",
+  "contract_id": "pokecrossroads-save-interop-20260902-rom-save-hardening-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 1
+  },
+  "forbidden_changes": [
+    "Do not edit Rust crates, generated registry artifacts, launcher, server, sidecar, Lua, documentation outside this worker contract, or orchestration state.",
+    "Do not change the frozen SaveBlock3/CoopSaveV1 layout, registry version/digest, bridge ABI, protocol version, or message numbers.",
+    "Do not invent identity assignments, accept unassigned bits, silently migrate ambiguous bytes online, or permit stale progress after a failed load.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, or distribute ROM output.",
+    "Do not revert or overwrite edits made by other active workers; adapt to the shared worktree."
+  ],
+  "lane": "deep",
+  "objective": "Harden Pok\u00e9Crossroads regional save persistence so only assigned identities survive validation, failed loads cannot leak stale progress, and every canonical save generation is correlated with the bridge checkpoint protocol.",
+  "owned_files": [
+    "include/coop/save.h",
+    "src/coop/save.c",
+    "src/load_save.c",
+    "src/save.c",
+    "src/new_game.c",
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c",
+    "test/coop/save.c",
+    "test/coop/net_bridge.c",
+    "test/save.c"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/rom-checkpoint-worker-contract.json",
+    "include/coop/generated_regional_identities.h",
+    "src/coop/generated_regional_identities.c",
+    "coop/crates/coop-save/src/lib.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and each required verification command has a recorded outcome.",
+      "A safe notification contract cannot be implemented without changing an unowned engine caller or the frozen wire ABI.",
+      "A concrete build, toolchain, or shared-worktree conflict prevents further progress within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "save-interop-rom-hardening"
+}

@@ -1,0 +1,147 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The workspace resolves on Rust 1.93.1, Cargo.lock is updated only by this unit, and coop-cloud is additive without changing existing crate behavior.",
+      "id": "CF-001"
+    },
+    {
+      "description": "All ID, revision, epoch, digest, timestamp, build/version, and secret types enforce their invariants; malformed or unknown JSON fails closed and secret Debug/Display output is redacted.",
+      "id": "CF-002"
+    },
+    {
+      "description": "Character cloud state round-trips a concrete WorldZone and deterministic per-region progress, rejects missing or duplicate regional records, and cannot derive any tier from badges outside the active region.",
+      "id": "CF-003"
+    },
+    {
+      "description": "Invite registration, login, refresh, logout, acquire, heartbeat, reconnect, and release DTOs are versioned, type-safe, and contain the documented lease fencing fields.",
+      "id": "CF-004"
+    },
+    {
+      "description": "Snapshot prepare/finalize/list/restore contracts express expected-parent CAS, idempotency, monotonic revisions, session fencing, file hashes, and pending/last-applied commits.",
+      "id": "CF-005"
+    },
+    {
+      "description": "ResumePackageManifest covers and hashes every package artifact, enforces mandatory SAV versus optional savestate invariants, and compatibility tests prove exact-match savestate selection plus ROM, mGBA, ABI, protocol, revision, corrupt-savestate, and corrupt-SAV outcomes.",
+      "id": "CF-006"
+    },
+    {
+      "description": "Password, invitation-code, access-token, refresh-token, loopback-secret, and signing-key wrappers reject malformed or oversized values, zeroize owned secret material, and never expose plaintext through Debug or Display.",
+      "id": "CF-007"
+    },
+    {
+      "description": "Ed25519 signs deterministic JCS manifest bytes; the trusted public key verifies the original manifest and rejects tampered fields, signatures, and unrelated keys.",
+      "id": "CF-008"
+    },
+    {
+      "description": "Focused tests, formatting, clippy with warnings denied, the whole workspace test suite, and diff checks pass without changing existing public protocol behavior.",
+      "id": "CF-009"
+    }
+  ],
+  "closed_decisions": [
+    "Create a separate coop-cloud crate and depend on coop-protocol for RegionId, WorldZone, ParticipantProgress, and RegionalProgress; do not expand or change the already-reviewed ROM/realtime protocol crate in this unit.",
+    "Every public JSON request, response, manifest, and nested record uses serde deny_unknown_fields where supported, explicit package or API version fields, fixed-width integers, and fail-closed validation constructors; unknown versions, zero session epochs, malformed UUIDs, invalid revisions, and incomplete hashes are errors.",
+    "Use distinct UUID newtypes for UserId, CharacterId, SessionId, SnapshotId, ClientInstanceId, RefreshFamilyId, and CommitId so IDs cannot be cross-wired. Use a strict lowercase 64-hex Sha256Digest newtype and a nonzero u32 SessionEpoch compatible with the ROM bridge.",
+    "Represent a character's cloud state in session and restore contracts with one WorldZone plus deterministic regional progress records from coop-protocol. Region-qualified trainer, badge, fly-point, and event identities remain canonical REGION:LOCAL_KEY values; global badge totals are forbidden. Keep the signed resume manifest focused on package and file metadata instead of duplicating engine state.",
+    "Auth DTOs cover invite-gated registration, login, refresh, and logout. Passwords, invite codes, access tokens, refresh tokens, loopback secrets, and signing private keys use zeroizing or equivalent secret wrappers whose Debug and Display never expose plaintext.",
+    "Keep Argon2id password hashing, opaque token generation/fingerprinting, refresh-family rotation, and revocation state machines in the server dependent. This shared crate defines bounded redacted password, invitation-code, access-token, and refresh-token wire wrappers but never performs credential verification.",
+    "Lease contracts contain session_id, character_id, current revision, nonzero session_epoch, expires_at, heartbeat_interval_ms, and client_instance_id. Acquire, heartbeat, reconnect, and release requests carry enough fencing data to reject stale clients, while expiry remains server-owned.",
+    "ResumePackageManifest version 1 contains the README compatibility fields plus snapshot_id, session_epoch, pending_commits_sha256, signing algorithm version, and signing key id. character.sav is mandatory and canonical; resume.ss1 and its digest are both optional and must agree with savestate_compatible.",
+    "Snapshot contracts implement prepare, finalize, list, restore, expected-parent revision compare-and-swap, session fencing, file digests, last-applied commit, and an idempotency key. Revision zero is valid only for an initial character; finalized revisions advance monotonically by exactly one.",
+    "Canonical manifest signing uses RFC 8785 JSON Canonicalization Scheme bytes and Ed25519. The server signs with a private key; the launcher verifies with a separately trusted pinned public key. Embedding an untrusted verification key in the package as its only trust root is forbidden.",
+    "Compatibility evaluation verifies the canonical SAV digest first and returns a hard error on SAV corruption. It selects a savestate only when its digest and every game_build_id, exact ROM SHA-256, exact mGBA version, bridge ABI, protocol version, and snapshot revision condition match; otherwise it returns an explicit SAV fallback decision.",
+    "Pin Rust-1.93.1-compatible workspace dependency families for SHA-256, Ed25519, RFC 8785 canonical JSON, and zeroization, keep unsafe Rust forbidden, and make Cargo.lock part of this unit's exclusive generated output. Do not add Argon2, HTTP-client, database, or OS-integration dependencies here; those remain downstream concerns.",
+    "Keep the public surface minimal, split by auth, IDs, resume, security, session, and snapshot modules, and re-export the stable contract types from lib.rs. Prefer validated constructors over public unchecked fields for invariant-bearing newtypes."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg --files coop/crates/coop-protocol",
+      "rtk rg --files coop/crates/coop-server",
+      "rtk rg --files coop/crates/coop-sidecar"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud --all-features",
+        "rtk cargo clippy -p coop-cloud --all-targets --all-features -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk cargo clippy --workspace --all-targets --all-features -- -D warnings",
+        "rtk cargo test --workspace --all-features",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:66ffd76329ada93e14beee63b0d37a8d3eee48db06dff1b4a91170d338ed6286",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-cloud-foundation-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1200000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit coop-protocol, coop-server, coop-sidecar, bridge, ROM C/assembly/build files, launcher files, migrations, documentation outside the owned manifest, or orchestration artifacts.",
+    "Do not implement HTTP handlers, repositories, object storage, session state, refresh-token rotation, process supervision, OS keychain access, Tauri UI, realtime presence, group logic, or battle logic in this unit.",
+    "Do not use global badge totals, bare trainer/badge/fly/event identifiers, region inference, or a Kanto alias for Sevii.",
+    "Do not serialize secrets through Debug or Display, persist plaintext credentials or tokens, use reversible password encryption, use deterministic salts/tokens, or use symmetric manifest signing with a launcher-embedded secret.",
+    "Do not weaken validation with serde defaults for required compatibility fields, accept uppercase or short SHA-256 strings, accept session epoch zero, silently load a mismatched savestate, or treat a corrupt SAV as usable.",
+    "Do not add allow attributes to suppress diagnostics, introduce unsafe Rust, stage, commit, branch, fetch, push, contact remotes, or mutate files outside owned_files."
+  ],
+  "lane": "deep",
+  "objective": "Implement and verify the additive coop-cloud crate that defines the secure, region-safe Phase 2 auth, character lease, signed resume-package, snapshot, and compatibility contracts shared by the server and launcher.",
+  "owned_files": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "coop/crates/coop-cloud/Cargo.toml",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-cloud/src/auth.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/snapshot.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-protocol/Cargo.toml",
+    "coop/crates/coop-protocol/src/lib.rs",
+    "coop/crates/coop-server/Cargo.toml",
+    "coop/crates/coop-server/src/lib.rs",
+    "coop/crates/coop-sidecar/Cargo.toml",
+    "coop/crates/coop-sidecar/src/main.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "dist/bridge_manifest.json",
+    "bridge/main.lua"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A concrete blocker prevents further progress within the owned files and execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-cloud-foundation"
+}

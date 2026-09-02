@@ -1,31 +1,171 @@
 schema_version: 1
-updated_at: "2026-09-01T00:00:00Z"
+updated_at: "2026-09-02T01:51:40Z"
 blockers:
   - id: BLK-ARM-TOOLCHAIN
+    jira_issue_key: null
     unit_id: rom-netbridge
+    title: Provision the ARM ROM toolchain
+    wave: phase1-vertical-slice-20260901
+    type: dependency
     risk: high
-    status: open
-    description: Native Windows and WSL currently lack arm-none-eabi GCC, binutils, and newlib.
-    impact_if_ignored: ROM compilation and mGBA test claims cannot be certified.
-    next_action: Provision the documented WSL ARM packages or a compatible devkitARM toolchain, then run make modern and focused make check.
+    description: The initial environment lacked arm-none-eabi GCC, binutils, and newlib.
+    decision_required: Provision a compatible local ARM toolchain.
+    impact_if_ignored: ROM compilation and focused NetBridge tests could not be certified.
+    affected_units: [rom-netbridge]
+    blocks_dependents: false
+    suggested_owner: tech lead
+    detected_at: "2026-09-01T00:00:00Z"
+    status: resolved
+    evidence: make modern and the focused ARM NetBridge suite passed locally.
+    next_action: Preserve the validated local toolchain recipe in development tooling.
+    resolution:
+      decided_at: "2026-09-01T00:30:00Z"
+      decided_by: seneschal-root
+      decision: Use the provisioned WSL-compatible ARM toolchain; production ROM and focused tests now pass.
   - id: BLK-MGBA-PIN
+    jira_issue_key: null
     unit_id: sidecar-slice
+    title: Pin the supported mGBA release
+    wave: phase1-vertical-slice-20260901
+    type: dependency
     risk: elevated
-    status: open
-    description: The specification requires a pinned mGBA build, but no exact supported binary/version has been selected.
-    impact_if_ignored: Emulator automation and savestate compatibility remain unproven.
-    next_action: Select an mGBA version with the required Lua socket and memory APIs and record its checksum.
+    description: No exact supported mGBA release was initially selected.
+    decision_required: Select a build with the Lua socket, memory, and savestate APIs required by the bridge.
+    impact_if_ignored: Emulator automation and savestate compatibility would be ambiguous.
+    affected_units: [sidecar-slice, phase2-launcher-core]
+    blocks_dependents: false
+    suggested_owner: tech lead
+    detected_at: "2026-09-01T00:00:00Z"
+    status: resolved
+    evidence: mGBA 0.10.5 was selected as the exact development compatibility target.
+    next_action: Track the remaining interactive runtime proof under BLK-MGBA-CONFORMANCE and binary provenance under BLK-MGBA-JOB.
+    resolution:
+      decided_at: "2026-09-01T01:00:00Z"
+      decided_by: seneschal-root
+      decision: Pin mGBA 0.10.5 for the MVP compatibility contract.
   - id: BLK-PROVENANCE
+    jira_issue_key: null
     unit_id: distribution
+    title: Establish PokéCrossroads redistribution rights
+    wave: distribution
+    type: legal
     risk: high
+    description: The pinned PokéCrossroads snapshot has no top-level license declaration and upstream ancestry is shallow.
+    decision_required: Obtain maintainer permission or a clear license before publication or redistribution.
+    impact_if_ignored: Publishing derived source, assets, patches, or binaries could exceed granted rights.
+    affected_units: [distribution]
+    blocks_dependents: false
+    suggested_owner: legal
+    detected_at: "2026-09-01T00:00:00Z"
     status: open
-    description: PokéCrossroads has no top-level license declaration in the pinned snapshot; upstream ancestry is shallow and redistribution permissions are unclear.
-    impact_if_ignored: Publishing or redistributing derived code/assets may exceed granted rights.
-    next_action: Obtain maintainer permission or a clear license before any remote publication. Local private implementation may continue.
+    evidence: No top-level license file exists at e05c82865d38a6638173fd30b2c830d1250aa50d.
+    next_action: Resolve provenance before any remote publication; private local implementation may continue.
+    resolution:
+      decided_at: null
+      decided_by: null
+      decision: null
   - id: BLK-FIREBASE
+    jira_issue_key: null
     unit_id: cloud-storage
+    title: Implement and certify production storage adapters and orphan garbage collection
+    wave: phase2-auth-cloud-save-launcher-20260901
+    type: infrastructure
     risk: elevated
+    description: The checkpoint has SQL schema, storage interfaces, bounded local adapters, and synchronous cleanup, but no credential-backed PostgreSQL/Firebase adapter or production background garbage collector. No running Docker daemon, Firebase project/emulator configuration, or credentials were supplied.
+    decision_required: Implement the production adapters and retryable authenticated object-GC lifecycle, then supply a non-production PostgreSQL/Firebase environment for integration validation.
+    impact_if_ignored: Local transactional behavior is testable, but cloud durability, restart recovery, and eventual cleanup of expired/orphaned objects cannot be claimed.
+    affected_units: [cloud-storage]
+    blocks_dependents: false
+    suggested_owner: user
+    detected_at: "2026-09-01T00:00:00Z"
     status: open
-    description: No Firebase project, emulator configuration, or credentials were supplied.
-    impact_if_ignored: Cloud object persistence cannot be integration-tested; only storage contracts and local fakes can be validated.
-    next_action: Supply non-production Firebase emulator or project settings outside Git.
+    evidence: Docker CLI is present but its daemon is unavailable; Firebase settings are absent; the current server uses deterministic local adapters and does not run a production background collector.
+    next_action: Keep production adapter selection and GC outside the accepted local checkpoint until implementation and credential-backed integration tests exist.
+    resolution:
+      decided_at: null
+      decided_by: null
+      decision: null
+  - id: BLK-MGBA-JOB
+    jira_issue_key: null
+    unit_id: phase2-launcher-production
+    title: Complete Windows mGBA containment, binary trust, and graceful shutdown
+    wave: production-hardening
+    type: security
+    risk: elevated
+    description: Stable safe Rust does not expose the Windows attributed-process API needed to place the mGBA version probe in a Job Object before its first instruction, and the selected mGBA binary is version-checked but not yet bound to a published vendor digest. The launcher has a tested bounded forced kill-and-reap fallback, but the current authenticated control protocol has no graceful-shutdown request and acknowledgement to attempt before that fallback. Fresh per-launch directories, DELETE_ON_CLOSE where supported, and final identity checks reject observed staged-file replacement and protect ordinary concurrent sessions, but safe standard-library name-based cleanup is not atomic against a hostile same-user replacement during the pre-open interval.
+    decision_required: Audit and pin a safe atomic Job Object spawn dependency or isolate an audited Windows FFI boundary, publish the accepted mGBA binary digest in the compatibility manifest, define an authenticated bounded graceful-shutdown exchange that falls back to the existing forced kill-and-reap path, and use an audited handle-based cleanup primitive where same-user hostile replacement is in scope.
+    impact_if_ignored: The launcher fails closed when cleanup cannot be confirmed and its bounded forced fallback is locally proven, but a supplied executable could create a detached descendant before PID-based cleanup, the launcher cannot request an orderly emulator flush before force, and a hostile same-user process retains a narrow name-resolution race against staged-file cleanup; production process-tree containment and graceful shutdown cannot be claimed.
+    affected_units: [phase2-launcher-core, distribution]
+    blocks_dependents: false
+    suggested_owner: security lead
+    detected_at: "2026-09-01T22:13:50Z"
+    status: open
+    evidence: Independent launcher review identified atomic Job Object attachment, authenticated shutdown, and atomic same-user-resistant name-to-handle cleanup as unavailable through the current safe standard-library boundary; local tests pass for bounded forced kill/reap, typed fail-closed cleanup, observed replacement rejection, ordinary concurrent-session isolation, and marker retention.
+    next_action: Evaluate audited atomic Windows spawn and handle-based cleanup boundaries, pin the vendor binary digest, and add an authenticated graceful-shutdown acknowledgement with a strict deadline before public distribution.
+    resolution:
+      decided_at: null
+      decided_by: null
+      decision: null
+  - id: BLK-MGBA-CONFORMANCE
+    jira_issue_key: null
+    unit_id: phase2-mgba-conformance
+    title: Run the real stock-mGBA ROM/Lua save checkpoint flow
+    wave: phase2-runtime-conformance
+    type: validation
+    risk: high
+    description: The local smoke drives the exact bridge frames and byte-accurate character.sav at a deterministic seam, but it does not launch stock mGBA 0.10.5, load bridge/main.lua, or exercise live emulator callbacks and ROM timing.
+    decision_required: Provide a legal matching ROM build and an interactive mGBA 0.10.5 environment, then run the manual Lua load, save checkpoint, savestate fallback, reconnect, and shutdown conformance scenarios.
+    impact_if_ignored: Container, protocol, and lifecycle interoperability are locally proven, but real emulator integration and timing compatibility remain uncertified.
+    affected_units: [phase2-integration, distribution]
+    blocks_dependents: false
+    suggested_owner: integration lead
+    detected_at: "2026-09-02T00:36:41Z"
+    status: open
+    evidence: The integration test constructs the canonical SAV and ROM-facing frames directly; no fresh Lua interpreter or interactive mGBA run was available for the 2026-09-02 checkpoint.
+    next_action: Execute and record the stock-mGBA conformance matrix without committing ROM, BIOS, SAV, savestate, or generated private session material.
+    resolution:
+      decided_at: null
+      decided_by: null
+      decision: null
+  - id: BLK-GAMEPLAY-LEDGER
+    jira_issue_key: null
+    unit_id: gameplay-commit-ledger
+    title: Authorize individual gameplay progression transitions
+    wave: phase7-progress-and-rematches
+    type: product-integrity
+    risk: high
+    description: CSP1 and snapshot validation prove structure, registry membership, lineage, and generation continuity, but an assigned trainer, gym, Fly-point, event, badge, or story change is not yet tied to a server-authorized gameplay commit.
+    decision_required: Implement the server gameplay commit ledger and ROM application/acknowledgement flow for progression additions, idempotency, and recovery.
+    impact_if_ignored: A structurally valid snapshot can carry progression that the save service cannot independently prove was earned, so the current snapshot path is not an anti-cheat authority.
+    affected_units: [phase2-server-auth-save, distribution]
+    blocks_dependents: false
+    suggested_owner: gameplay systems lead
+    detected_at: "2026-09-02T00:36:41Z"
+    status: open
+    evidence: The save-hardening contract explicitly limits authorization to container, registry, lineage, and generation continuity; the original product README assigns gameplay commits to a later phase.
+    next_action: Define the canonical progression delta and commit provenance before claiming authoritative trainer, badge, gym, Fly, event, or story advancement.
+    resolution:
+      decided_at: null
+      decided_by: null
+      decision: null
+  - id: BLK-FIRST-SNAPSHOT-CLONING
+    jira_issue_key: null
+    unit_id: character-enrollment
+    title: Prevent cloned lineage from becoming the first accepted snapshot
+    wave: production-hardening
+    type: security
+    risk: elevated
+    description: The server binds later revisions to the SaveBlock2 player name, gender, campaign region, and trainer ID from revision 1, but it has no earlier trusted lineage with which to reject a clone at the first upload.
+    decision_required: Choose and implement a trusted character-enrollment or first-snapshot provenance mechanism that does not treat client-controlled save bytes as identity proof.
+    impact_if_ignored: Cross-lineage replacement is detected after enrollment, but a copied eligible save can establish the initial lineage for a new or unbound cloud character.
+    affected_units: [phase2-server-auth-save, distribution]
+    blocks_dependents: false
+    suggested_owner: security and product leads
+    detected_at: "2026-09-02T00:36:41Z"
+    status: open
+    evidence: The byte-accurate parser documents CharacterLineage as non-cryptographic, and the snapshot service intentionally binds it only after the first accepted snapshot.
+    next_action: Specify enrollment authority, recovery, legitimate device migration, and duplicate-lineage policy before production rollout.
+    resolution:
+      decided_at: null
+      decided_by: null
+      decision: null

@@ -1,0 +1,15 @@
+{
+  "event": "discovery_complete",
+  "edit_path_found": true,
+  "planned_files": [
+    "coop/crates/coop-server/Cargo.toml",
+    "coop/crates/coop-server/migrations/0001_phase2_auth_save.sql",
+    "coop/crates/coop-server/src/lib.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/saves.rs",
+    "coop/crates/coop-server/src/phase2/sessions.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs"
+  ],
+  "evidence_digest": "edit coop/crates/coop-server/Cargo.toml | pattern=existing dependency table; why=consume the sealed security dependency baseline without changing Cargo.lock.\nedit coop/crates/coop-server/migrations/0001_phase2_auth_save.sql | pattern=new migration; why=define durable auth, lease, snapshot, and idempotency constraints.\nedit coop/crates/coop-server/src/lib.rs | symbol=app; callers=src/main.rs; why=export a separate additive phase2_app without changing Phase 1 routes.\nedit coop/crates/coop-server/src/phase2.rs | pattern=new module; why=compose authenticated Phase 2 routes and explicit local adapters.\nedit coop/crates/coop-server/src/phase2/auth.rs | pattern=new module; why=implement invitation, Argon2id, opaque token rotation, and revocation state.\nedit coop/crates/coop-server/src/phase2/sessions.rs | pattern=new module; why=implement atomic server-issued lease fencing and reconnect rotation.\nedit coop/crates/coop-server/src/phase2/saves.rs | pattern=new module; why=implement fixed-artifact prepare, upload, finalize, restore, and signed resume packages.\nedit coop/crates/coop-server/src/phase2/storage.rs | pattern=new module; why=define semantic repository/object-store boundaries and deterministic local adapters.\ndependency Cargo.toml | pattern=sealed workspace dependencies at aeec855f; inspected only and no worker edit allowed.\ndependency Cargo.lock | pattern=sealed resolver output at aeec855f; inspected only and all verification runs --locked.\ncontingency coop/crates/coop-server/src/main.rs | symbol=main; why=an explicit binary mode is deferred because the additive phase2_app plus tests provide the first runnable service boundary without changing the Phase 1 executable."
+}

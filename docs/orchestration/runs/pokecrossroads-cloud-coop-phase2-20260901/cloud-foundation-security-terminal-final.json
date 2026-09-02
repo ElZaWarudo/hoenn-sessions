@@ -1,0 +1,18 @@
+{
+  "contract_hash": "sha256:66ffd76329ada93e14beee63b0d37a8d3eee48db06dff1b4a91170d338ed6286",
+  "diff_digest": "sha256:3977346e28b056b00dbc7763cb653940ca2c42f17124891856f4a6f7307a134a",
+  "review_plan_hash": "sha256:1a6eade329c60d359a6503a9e70de903ddafd049983155354272da80e5223272",
+  "reviewer_id": "/root/cloud_foundation_v4_security",
+  "surface_id": "cloud-security-final",
+  "risk_boundaries_checked": [
+    "replay-idempotency-and-authority-confusion",
+    "serialization-deserialization-invariant-symmetry",
+    "signed-provenance-and-lineage-integrity",
+    "untrusted-input-size-and-allocation-bounds",
+    "upload-capability-confidentiality-validation-and-zeroization"
+  ],
+  "findings": [],
+  "finding_feedback": [],
+  "suppressed_speculative_count": 0,
+  "stop_reason": "coverage-complete"
+}

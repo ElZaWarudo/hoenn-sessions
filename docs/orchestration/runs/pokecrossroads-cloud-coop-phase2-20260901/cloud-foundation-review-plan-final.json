@@ -1,0 +1,74 @@
+{
+  "assignments": [
+    {
+      "cross_cutting": false,
+      "id": "cloud-integration-final",
+      "owned_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "coop/crates/coop-cloud/Cargo.toml",
+        "coop/crates/coop-cloud/src/auth.rs",
+        "coop/crates/coop-cloud/src/ids.rs",
+        "coop/crates/coop-cloud/src/lib.rs",
+        "coop/crates/coop-cloud/src/resume.rs",
+        "coop/crates/coop-cloud/src/security.rs",
+        "coop/crates/coop-cloud/src/session.rs",
+        "coop/crates/coop-cloud/src/snapshot.rs"
+      ],
+      "priority": 0,
+      "reviewer_role": "reviewer",
+      "risk_boundaries": [
+        "complete-prepare-response-request-correlation",
+        "credential-bearing-upload-capability-url",
+        "fail-closed-outbound-serialization",
+        "mandatory-snapshot-and-epoch-manifest-provenance",
+        "server-owned-current-revision-acquire-shape",
+        "strict-percent-encoding-validation"
+      ]
+    },
+    {
+      "cross_cutting": true,
+      "id": "cloud-security-final",
+      "owned_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "coop/crates/coop-cloud/Cargo.toml",
+        "coop/crates/coop-cloud/src/auth.rs",
+        "coop/crates/coop-cloud/src/ids.rs",
+        "coop/crates/coop-cloud/src/lib.rs",
+        "coop/crates/coop-cloud/src/resume.rs",
+        "coop/crates/coop-cloud/src/security.rs",
+        "coop/crates/coop-cloud/src/session.rs",
+        "coop/crates/coop-cloud/src/snapshot.rs"
+      ],
+      "priority": 0,
+      "reviewer_role": "security-sentinel",
+      "risk_boundaries": [
+        "replay-idempotency-and-authority-confusion",
+        "serialization-deserialization-invariant-symmetry",
+        "signed-provenance-and-lineage-integrity",
+        "untrusted-input-size-and-allocation-bounds",
+        "upload-capability-confidentiality-validation-and-zeroization"
+      ]
+    }
+  ],
+  "changed_paths": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "coop/crates/coop-cloud/Cargo.toml",
+    "coop/crates/coop-cloud/src/auth.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/snapshot.rs"
+  ],
+  "contract_hash": "sha256:66ffd76329ada93e14beee63b0d37a8d3eee48db06dff1b4a91170d338ed6286",
+  "coverage_complete": true,
+  "diff_digest": "sha256:3977346e28b056b00dbc7763cb653940ca2c42f17124891856f4a6f7307a134a",
+  "queued": [],
+  "review_plan_hash": "sha256:1a6eade329c60d359a6503a9e70de903ddafd049983155354272da80e5223272",
+  "schema_version": 1,
+  "validation_wave_required": true
+}

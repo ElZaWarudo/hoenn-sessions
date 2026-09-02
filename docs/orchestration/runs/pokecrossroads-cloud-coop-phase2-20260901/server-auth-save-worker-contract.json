@@ -1,0 +1,189 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The recertified coop-cloud dependency baseline builds with --locked on Rust 1.93.1; Phase 2 is additive, phase2_app is separate from the unchanged unauthenticated Phase 1 app, and phase2-local is explicit and loopback-only.",
+      "id": "SAS-001"
+    },
+    {
+      "description": "Invite registration consumes one server-peppered HMAC-SHA-256 invitation fingerprint atomically, canonical username collisions are case-insensitive, passwords persist only as Argon2id PHC strings with random salts, one main character is created, and valid-shape registration/login failures are generic with the unknown-user dummy verification path covered.",
+      "id": "SAS-002"
+    },
+    {
+      "description": "Access and refresh values are 256-bit opaque CSPRNG tokens returned only once and stored only by fingerprint; access expiry is enforced, refresh rotation is atomic, consumed-token reuse revokes the entire family plus linked access tokens, and logout is idempotent without token-existence disclosure.",
+      "id": "SAS-003"
+    },
+    {
+      "description": "AuthenticatedActor is derived only from a valid Bearer token, every session/save/resume operation enforces actor-to-character ownership before revealing state, and foreign versus nonexistent character access has indistinguishable stable failures.",
+      "id": "SAS-004"
+    },
+    {
+      "description": "Lease acquisition atomically binds the server's current finalized revision and server-generates a durable monotonically increasing nonzero epoch plus random session ID; duplicate acquire/release requests are idempotent, a second client is excluded through reconnect grace, valid heartbeat extends only the matching lease, reconnect retains session_id while atomically rotating to a strictly greater server-issued epoch, and every stale or expired fence is rejected without mutation.",
+      "id": "SAS-005"
+    },
+    {
+      "description": "Snapshot prepare requires owner, active lease, expected parent, fixed artifact declaration, and scoped idempotency; it returns exactly one redacted, bounded, expiring PUT UploadTarget per declared mandatory/optional artifact, whose complete UploadCapabilityUrl carries a nonempty query credential and whose local one-use ticket is bound to method, actor, character, snapshot, artifact, digest, size, and expiry.",
+      "id": "SAS-006"
+    },
+    {
+      "description": "Local uploads enforce per-artifact body, size, hash, target, single-use, and expiry checks. Finalize independently verifies all prepared objects and authorized commit metadata, advances snapshot, character, and lease revision atomically by exactly one, is replay-idempotent, and gives concurrent or stale parent finalizers at most one winner without partial revision changes.",
+      "id": "SAS-007"
+    },
+    {
+      "description": "Snapshot list is bounded and owner/lease-fenced; restore creates a new monotonic revision rather than rewinding history and is CAS/idempotency protected; unauthorized, incomplete, stale, or cross-character restores leave canonical state unchanged.",
+      "id": "SAS-008"
+    },
+    {
+      "description": "Resume metadata and fixed artifact GET routes use the exact agreed paths and lease headers, default to the active finalized owner snapshot, permit read-only retrieval of a specified finalized owner revision for corrupt-SAV recovery, and produce a SignedManifestEnvelope with mandatory snapshot and originating-epoch provenance whose exact authoritative fields and JCS Ed25519 signature verify with an independently pinned public key and fail after any metadata tamper.",
+      "id": "SAS-009"
+    },
+    {
+      "description": "A newly registered owner can acquire its server-owned revision-zero character but receives generic resume-package not-found until the first checkpoint; finalize advances 0 to 1. Every later resume manifest binds character.sav and pending_commits.json metadata, binds resume.ss1 only when present, uses the released bridge manifest rather than client input for canonical build compatibility, preserves regional single-character lineage, and never fabricates a SAV or accepts a client-provided object key/path.",
+      "id": "SAS-010"
+    },
+    {
+      "description": "In-memory repository/object adapters prove auth, refresh, lease, snapshot, restore, and resume semantics deterministically under injected clock/entropy, while ordinary local mode uses OS entropy; repository atomic methods prevent read-then-write races and no synchronous lock spans blocking/async work.",
+      "id": "SAS-011"
+    },
+    {
+      "description": "The PostgreSQL migration encodes users, hashed invitations/tokens, characters, refresh families/generations, leases, snapshots/artifacts, and idempotency constraints; PostgreSQL/Firebase configuration and interfaces are explicit, and requesting unavailable or incomplete production adapters fails startup without an in-memory fallback or remote call.",
+      "id": "SAS-012"
+    },
+    {
+      "description": "HTTP tests prove 8 KiB auth/lease JSON, 64 KiB snapshot JSON, artifact-specific upload, and 40 MiB resume-stream limits are enforced before unbounded allocation; malformed authorization/fence headers, secrets, URLs/tickets, hashes, and internal errors never leak sensitive values in responses, logs, Debug, or Display.",
+      "id": "SAS-013"
+    },
+    {
+      "description": "Focused tests include invite reuse and username collision, generic login, token expiry/rotation/reuse/logout, owner isolation, revision-zero acquire/resume-not-found/first-finalize bootstrap, lease acquire conflict/heartbeat/reconnect epoch rotation/prior-epoch rejection/grace/idempotency, upload tamper/expiry/partial failure, finalize race/CAS/replay, read-only historical package retrieval followed by monotonic restore, exact signed resume output, body limits, and explicit production-adapter failure; formatting, clippy with warnings denied, workspace tests, and diff checks pass with --locked where applicable.",
+      "id": "SAS-014"
+    }
+  ],
+  "closed_decisions": [
+    "The immutable dependency baseline must contain the recertified Phase 2 coop-cloud foundation and all exact dependency plus Cargo.lock resolution needed by this unit. The worker never edits root Cargo.toml or Cargo.lock and runs Cargo with --locked; a missing dependency is a prerequisite blocker, not authority to widen ownership.",
+    "Keep the existing Phase 1 unauthenticated loopback app and its public behavior intact. Add phase2 as an isolated module and expose a separate phase2_app assembled from explicit configuration and adapters; do not merge the old unauthenticated group, travel, or battle routes into the authenticated Phase 2 router.",
+    "Use only the recertified coop-cloud request, response, ID, secret, lease, snapshot, ArtifactIdentity, UploadTarget, ResumePackageManifest, and SignedManifestEnvelope contracts at HTTP boundaries. Do not duplicate or shadow their JSON wire types in coop-server. If the certified foundation cannot express an exact required boundary, stop and request a foundation revision.",
+    "Registration is private and invite-gated. Canonical Username is the identity, usernames are case-insensitive according to coop-cloud, invitation codes persist only as HMAC-SHA-256 fingerprints under a server-only pepper, each accepted invitation is consumed atomically once, each user receives exactly one main character, and the initial display name is the canonical username until a later profile flow exists. Registration creates revision-zero metadata but never fabricates commercial ROM bytes or a fake canonical SAV.",
+    "Hash passwords with Argon2id v=19, a unique cryptographically random salt, and an injected policy whose production default is at least 19456 KiB memory, 2 iterations, and one lane. Store a PHC string only, run hashing and verification outside the async executor with bounded concurrency, use an injected lower-cost policy only in tests, and execute a dummy Argon2 verification for an unknown username. Valid-shape wrong username, wrong password, disabled account, invalid invite, consumed invite, and username conflict use stable generic authentication or registration failures without account enumeration.",
+    "Generate access and refresh tokens as independent 32-byte CSPRNG values encoded without padding as opaque URL-safe text. Return plaintext only once through redacted coop-cloud wrappers, store only SHA-256 token fingerprints, make access tokens short-lived at 15 minutes by default, and make refresh families expire after 30 days by default. LoginResponse and RefreshResponse carry the exact server-owned nonzero access_expires_at and refresh_expires_at timestamps. Do not use JWTs or put actor claims in client-readable tokens.",
+    "Refresh rotation is one atomic repository operation. Consuming the current refresh token marks it consumed and issues a new random refresh token in the same family; presenting any consumed token revokes the entire family and every linked access token. Concurrent use therefore has at most one successful rotation. Logout is idempotent, revokes the presented family when known, and does not disclose whether a token existed.",
+    "Every session, save, resume-manifest, and resume-artifact operation requires a valid unexpired Bearer access token and resolves an AuthenticatedActor server-side. The path or body CharacterId must belong to that actor before repository or object metadata is returned. Foreign and nonexistent character resources use the same stable not-found response. Authorization must not trust user_id, owner_id, character claims, object keys, or roles supplied by a client.",
+    "AcquireLeaseRequest never chooses a session ID, revision, or epoch. With no unexpired lease or reconnect grace, the server atomically binds the character's current finalized revision, generates a new SessionId, increments the durable nonzero u32 session epoch, and returns all three in LeaseContract. This lets a fresh or cross-device client acquire without trusting a local or CLI revision and then fetch exactly the returned head. An exact acquire idempotency replay returns the same contract; reusing its key with a different character or client fingerprint conflicts. A different client cannot acquire the character until reconnect grace ends.",
+    "The default lease heartbeat interval is 10 seconds, active expiry is 30 seconds after the last accepted heartbeat, and reconnect grace is a further 90 seconds. Heartbeat is accepted only while active. ReconnectLeaseRequest carries the complete existing session, character, revision, epoch, client-instance fence, and an operation-scoped idempotency key. During grace, the first accepted request retains session_id but atomically rotates to a strictly greater durable server-issued session_epoch, invalidates the prior epoch, extends expiry, and returns the new LeaseContract; an exact retry after a lost response returns that same contract, reuse of the key with a changed fingerprint conflicts, and the prior epoch with any other key is stale. It never accepts a client-selected epoch. After grace, the old fence is invalid and a later acquire creates a still-higher epoch. Epoch exhaustion fails closed. Release is fenced and idempotent, and stale session, epoch, revision, client, or owner fields never mutate lease state.",
+    "Lease and snapshot transitions are semantic atomic repository methods rather than caller-composed read-then-write CRUD. Snapshot prepare requires the active owner lease, full fence, a canonical expected parent equal to both character and lease revision, a unique SnapshotId, a scoped idempotency key, and a certified declaration of the fixed files. If the recertified SnapshotPrepareRequest still cannot declare the mandatory two artifacts and optional savestate with digest and size, report the foundation seam and stop before implementing a guess.",
+    "The only snapshot/package artifact identities are character.sav, pending_commits.json, and optional resume.ss1. character.sav and pending_commits.json are mandatory; resume.ss1 is optional. Clients never supply storage paths or object keys. The server derives keys from character and snapshot UUIDs, enforces at most 1 MiB for character.sav, 1 MiB for pending_commits.json, 32 MiB for resume.ss1, and rejects zero-byte character.sav or resume.ss1.",
+    "Prepare issues exactly one short-lived UploadTarget per declared artifact. Every target carries UploadMethod::Put and a complete presigned or ticket-bearing URL; there is no separate signature field and the launcher must not invent an Authorization header for the upload. The local in-memory adapter uses a cryptographically random, single-use, five-minute URL ticket bound to actor, character, snapshot, artifact identity, expected digest, expected size, and HTTP PUT; it returns only literal-loopback http URLs. A production Firebase URL signer is an explicit adapter boundary and must never borrow the local ticket algorithm or silently redirect to memory.",
+    "An upload is accepted only before target expiry and only when its exact byte count and server-computed SHA-256 match the prepared declaration. Partial, duplicate, wrong-artifact, oversized, expired, or hash-mismatched uploads never finalize or advance a character revision. Orphaned prepared objects are harmless and remain a later cleanup concern.",
+    "Finalize requires the same authenticated actor, active complete lease fence, SnapshotId, operation-scoped idempotency key, prepared file declaration, pending-commits digest, parent revision, and exactly parent+1 revision. It verifies every object through ObjectStore metadata/content, validates any last_applied_commit against an authorized server commit record, and atomically marks the snapshot final, advances character current_revision and active_snapshot_id, and advances the active lease revision. The returned and persisted SnapshotRecord retains mandatory parent_revision and validates parent.next()==revision without wrap. Exact finalize retries return the original record; a changed fingerprint conflicts; concurrent finalizers for one parent have exactly one winner.",
+    "Snapshot listing is owner- and active-lease-fenced and remains bounded to 1..=100 shared records. Restore never rewinds current_revision: it copies a selected finalized snapshot's immutable object references into a new finalized revision at current+1 under expected-revision CAS, updates the active snapshot and lease revision atomically, and is idempotent. Restoring another character's snapshot, an incomplete snapshot, or a stale parent is rejected without mutation.",
+    "GET /v1/characters/{character_id}/resume-package returns the exact coop-cloud SignedManifestEnvelope and GET /v1/characters/{character_id}/resume-package/artifacts/{artifact_identity} streams the corresponding raw fixed artifact. With no query they select the active finalized snapshot; an optional nonzero ?revision={revision} selects that owner's finalized historical snapshot read-only. Both routes require Bearer plus X-Coop-Session-Id, X-Coop-Session-Epoch, and X-Coop-Client-Instance-Id headers matching an active lease; unknown snapshots, absent artifacts, and an owned revision-zero character with no active snapshot share the same generic not-found response. Acquire remains valid when the server-owned current revision is 0, and the first successful prepare/finalize advances 0 to 1 without a fabricated SAV. Recovery lists at most 20 decreasing prior revisions, verifies each package before mutation, and only then calls POST /v1/characters/{character_id}/restore/{revision}; restore creates current+1 and never rewinds.",
+    "Build ResumePackageManifest only from server configuration and finalized repository/object metadata. Load the supported textual game_build_id and ROM digest from the same released dist/bridge_manifest.json contract consumed by the launcher; never trust a client override as the build authority. The manifest contains package_version 1, character, mandatory parent_revision and revision with parent.next()==revision, that bounded textual build identity, exact ROM SHA-256, mGBA 0.10.5, bridge ABI 1, protocol 1, save digest, optional savestate digest plus compatibility flag, server RFC3339 UTC created_at, optional last commit, mandatory snapshot ID, mandatory originating lease epoch, and pending-commits digest. Sign JCS bytes with the server-only Ed25519 key into SignedManifestEnvelope; the response does not supply a verification key as its own trust root.",
+    "Use small capability-oriented Repository, ObjectStore, Clock, EntropySource, PasswordEngine, and ManifestSigner boundaries. InMemoryRepository and InMemoryObjectStore are deterministic only when tests explicitly inject fake time/entropy; ordinary local mode uses OS entropy and a real monotonic/wall clock. Never hold a synchronous lock across Argon2 work or an async object-store operation.",
+    "The SQL migration is the PostgreSQL schema contract for CITEXT users, hashed single-use invitations, characters with durable last_session_epoch and revision, hashed access tokens, refresh families plus retained token generations, exclusive leases with reconnect deadlines, prepared/finalized snapshots, fixed artifact metadata, and operation-scoped idempotency. Include primary, foreign, unique, status, nonzero epoch, monotonic revision, and one-active-lease constraints needed to back the repository semantics.",
+    "Declare validated PostgreSQL and Firebase configuration/interfaces, but do not claim functional remote adapters in this milestone. Runtime storage mode is explicit: phase2-local selects only in-memory adapters and is loopback-only; postgres-firebase selection must fail startup with a clear unavailable, missing-feature, or missing-configuration error until both adapters are genuinely implemented. Never fall back to memory after a production mode was requested.",
+    "Apply per-route body limits before JSON or byte allocation: 8 KiB for auth and lease JSON, 64 KiB for snapshot metadata JSON, the artifact-specific byte caps for local PUT uploads, and at most 40 MiB for any streamed local resume response. Authorization headers and lease-fence headers are length-bounded and malformed inputs use stable typed errors. Secrets, bearer values, upload URLs/tickets, password hashes, signing keys, and object-store credentials are never logged or rendered through Debug/Display.",
+    "The binary may add an explicit --phase2-local mode for the runnable in-memory service, but it must require externally supplied local configuration for invite bootstrap and manifest signing and remain restricted to loopback. A production mode may validate configuration only; it performs no database, Firebase, deployment, credential, or remote network operation in this unit.",
+    "All server timestamps, expirations, revisions, epochs, object identities, and authorization decisions are server-owned. Preserve the region-safe single-character/save lineage across Hoenn, Kanto, Johto, and Sevii; do not introduce global badge totals, region inference, per-region accounts, or per-region character leases."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --format-version 1 --no-deps --locked"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-server",
+      "rtk rg --files coop/crates/coop-cloud",
+      "rtk rg --files coop/crates/coop-server",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server --all-features --locked",
+        "rtk cargo clippy -p coop-server --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:dfdf4d24f486ba959f1f044ebe986978c1a3bc589a2696ea1c84aae1bf69e71e",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-server-auth-save-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit root Cargo.toml, Cargo.lock, coop-cloud, coop-protocol, coop-sidecar, coop-launcher, bridge, ROM/build files, integration tests, documentation outside the owned migration, or orchestration artifacts. Do not stage, commit, apply patches, switch branches, manage worktrees, fetch, pull, push, contact Git remotes, open pull requests, publish, release, deploy, or mutate any remote service.",
+    "Do not widen the certified shared wire contract, duplicate coop-cloud DTOs, add client-chosen session IDs or epochs, trust client ownership claims, use a global badge total, alias Sevii to Kanto, create per-region users/characters/leases, or alter the Phase 1 protocol and domain behavior.",
+    "Do not store or log plaintext passwords, invitation codes, access tokens, refresh tokens, upload tickets, signing private keys, Firebase credentials, or database credentials. Do not implement reversible password encryption, fast password hashes, deterministic production salts/tokens, JWT bearer claims, symmetric resume-manifest trust, or a verification key supplied only by the package being verified.",
+    "Do not accept arbitrary artifact paths, client object keys, unbounded JSON/raw bodies, missing mandatory artifacts, unknown artifact identities, mismatched hashes or sizes, stale lease fences, stale parent revisions, nonmonotonic restore/finalize revisions, or client timestamps as authority.",
+    "Do not expose the unauthenticated Phase 1 routes through the Phase 2 router, bind in-memory Phase 2 mode beyond loopback, silently downgrade requested PostgreSQL/Firebase mode to memory, embed production credentials or default secrets, or make external PostgreSQL/Firebase/network calls during tests or implementation.",
+    "Do not implement Tauri UI, launcher process supervision, OS keychain access, realtime WebSocket presence, remote avatars, groups, trainer reservations, deterministic battles, level projection, battle commits, production infrastructure, backup jobs, password-change/admin endpoints, or cleanup/retention workers in this unit.",
+    "Do not add allow attributes to suppress diagnostics, introduce unsafe Rust, weaken generic auth failures for debugging, skip dummy unknown-user password verification, return raw internal/storage errors to clients, or continue after an owned test reveals an auth, ownership, lease, token-reuse, revision, hash, or signing failure."
+  ],
+  "lane": "deep",
+  "objective": "Implement and verify the additive Phase 2 Rust server slice for invite-gated username authentication, opaque rotating sessions, exclusive server-issued character leases, revisioned fixed-artifact snapshots, and exact detached-signature resume manifests, using deterministic in-memory adapters locally and explicit fail-closed PostgreSQL/Firebase boundaries for later production integration.",
+  "owned_files": [
+    "coop/crates/coop-server/Cargo.toml",
+    "coop/crates/coop-server/migrations/0001_phase2_auth_save.sql",
+    "coop/crates/coop-server/src/lib.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/saves.rs",
+    "coop/crates/coop-server/src/phase2/sessions.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/staged-decomposition.json",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/server-auth-save-discovery-checkpoint.json",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-worker-contract.json",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-baseline.json",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-review-terminal-final.json",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-security-terminal-final.json",
+    "coop/crates/coop-cloud/Cargo.toml",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-cloud/src/auth.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/snapshot.rs",
+    "coop/crates/coop-protocol/src/lib.rs",
+    "coop/crates/coop-server/Cargo.toml",
+    "coop/crates/coop-server/src/lib.rs",
+    "coop/crates/coop-server/src/main.rs",
+    "dist/bridge_manifest.json"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "The recertified shared foundation or sealed dependency baseline lacks a required exact DTO/dependency and implementing around it would duplicate a public contract or edit an unowned file.",
+      "A concrete security, ownership, concurrency, persistence, or tooling blocker prevents further progress within the owned files and execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-server-auth-save"
+}

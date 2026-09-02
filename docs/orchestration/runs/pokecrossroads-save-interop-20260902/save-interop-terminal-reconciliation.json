@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "run_id": "pokecrossroads-save-interop-20260902",
+  "status": "terminal_reconciled_with_protocol_gaps",
+  "recorded_at": "2026-09-02T01:51:40Z",
+  "source_revision": "fdb781cdccb751a035c6776e3d1fb139ad1ffd8e",
+  "candidate_revision": "0085f127045523cffe30a6ea9cf6c82c18281746",
+  "working_tree_state": "implementation_committed_documentation_pending_local_commit",
+  "candidate_diff_digest": "sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4",
+  "candidate_fingerprint": {
+    "algorithm": "sha256",
+    "parent_revision": "fdb781cdccb751a035c6776e3d1fb139ad1ffd8e",
+    "candidate_revision": "0085f127045523cffe30a6ea9cf6c82c18281746",
+    "candidate_subject": "feat(coop): persist and synchronize regional cloud saves",
+    "command": "git diff --binary --full-index fdb781cdccb751a035c6776e3d1fb139ad1ffd8e 0085f127045523cffe30a6ea9cf6c82c18281746 -- <scope_paths>; hash the exact stdout bytes with SHA-256",
+    "scope": "the 42 paths changed by the implementation-only candidate commit; documentation and KRT artifacts are excluded",
+    "scope_paths": [
+      ".gitattributes",
+      "Cargo.lock",
+      "coop/crates/coop-launcher/Cargo.toml",
+      "coop/crates/coop-launcher/src/compat.rs",
+      "coop/crates/coop-launcher/src/main.rs",
+      "coop/crates/coop-launcher/src/process.rs",
+      "coop/crates/coop-launcher/src/session.rs",
+      "coop/crates/coop-launcher/tests/phase2_smoke.rs",
+      "coop/crates/coop-launcher/tests/session_lifecycle.rs",
+      "coop/crates/coop-save/Cargo.toml",
+      "coop/crates/coop-save/src/lib.rs",
+      "coop/crates/coop-save/src/tests.rs",
+      "coop/crates/coop-server/Cargo.toml",
+      "coop/crates/coop-server/migrations/0001_phase2_auth_save.sql",
+      "coop/crates/coop-server/src/phase2.rs",
+      "coop/crates/coop-server/src/phase2/saves.rs",
+      "coop/crates/coop-server/src/phase2/storage.rs",
+      "coop/crates/coop-server/tests/phase2_http.rs",
+      "coop/crates/coop-server/tests/phase2_migration_contract.rs",
+      "coop/crates/coop-sidecar/src/control.rs",
+      "coop/crates/coop-sidecar/src/server.rs",
+      "dist/bridge_manifest.json",
+      "include/battle_setup.h",
+      "include/coop/identity.h",
+      "include/coop/net_bridge.h",
+      "include/coop/region.h",
+      "include/coop/save.h",
+      "include/global.h",
+      "src/battle_setup.c",
+      "src/coop/identity.c",
+      "src/coop/net_bridge.c",
+      "src/coop/region.c",
+      "src/coop/save.c",
+      "src/debug.c",
+      "src/load_save.c",
+      "src/new_game.c",
+      "src/save.c",
+      "test/coop/identity.c",
+      "test/coop/net_bridge.c",
+      "test/coop/region.c",
+      "test/coop/save.c",
+      "test/save.c"
+    ],
+    "diff_bytes": 403763
+  },
+  "documentation_evidence_policy": {
+    "path": ".gitattributes",
+    "post_candidate_change": "/docs/orchestration/**/*.patch -whitespace",
+    "purpose": "Preserve immutable digest-bound review patch bytes while retaining ordinary source and documentation whitespace checks.",
+    "candidate_digest_impact": "none; the candidate digest binds the committed .gitattributes bytes at 0085f127045523cffe30a6ea9cf6c82c18281746, while this policy change belongs to the later documentation/KRT commit"
+  },
+  "root_acceptance": {
+    "status": "accepted_local_implementation_checkpoint",
+    "aggregate_verification": "passed_with_runtime_exclusions",
+    "krt_certification": "review_gated",
+    "release_ready": false,
+    "reason": "Root accepted the byte-accurate local save-interop implementation after the replacement aggregate passed. KRT certification and release readiness remain withheld because required worker terminals and diff-bound certificates are absent, interactive stock-mGBA/Lua conformance was not run, and the recorded production, gameplay-integrity, provenance, and process-lifecycle blockers remain open."
+  },
+  "artifact_audit": {
+    "phase2_baseline_run": {
+      "path": "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901",
+      "worker_contracts": 7,
+      "local_final_patch_artifacts_observed": 7,
+      "retained_final_patch_artifacts": [
+        "cloud-foundation-final.patch"
+      ],
+      "omitted_stale_local_artifacts": [
+        "execution-workspaces.json",
+        "launcher-core-discovery-checkpoint.json",
+        "launcher-core-final.patch",
+        "phase2-integration-final.patch",
+        "regional-map-catalog-final.patch",
+        "rom-checkpoint-final.patch",
+        "server-auth-save-final.patch",
+        "sidecar-control-final.patch"
+      ],
+      "persisted_worker_terminals": 0,
+      "persisted_independent_certificates": [
+        "cloud-foundation-review-terminal-final.json",
+        "cloud-foundation-security-terminal-final.json"
+      ],
+      "krt_status": "review_gated"
+    },
+    "save_interop_run": {
+      "path": "docs/orchestration/runs/pokecrossroads-save-interop-20260902",
+      "worker_contracts": 2,
+      "local_discovery_checkpoints_observed": 2,
+      "retained_discovery_checkpoints": 0,
+      "omitted_stale_local_artifacts": [
+        "rom-save-hardening-discovery-checkpoint.json",
+        "server-save-hardening-discovery-checkpoint.json"
+      ],
+      "persisted_worker_terminals": 0,
+      "persisted_independent_certificates": 0,
+      "root_reconciliations": 1,
+      "krt_status": "review_gated"
+    }
+  },
+  "units": [
+    {
+      "unit_id": "save-interop-rom-hardening",
+      "contract": "docs/orchestration/runs/pokecrossroads-save-interop-20260902/rom-save-hardening-worker-contract.json",
+      "contract_hash": "sha256:a412986ba2156f58320a7cc799376a1e67b78c4eebe35cde54e7ca7b18683925",
+      "reported_worker_status": "done",
+      "root_evaluation": "accepted_local_implementation_checkpoint",
+      "persisted_worker_terminal": null,
+      "krt_certification": "review_gated"
+    },
+    {
+      "unit_id": "save-interop-server-hardening",
+      "contract": "docs/orchestration/runs/pokecrossroads-save-interop-20260902/server-save-hardening-worker-contract.json",
+      "contract_hash": "sha256:1bb82429065e3e8c726f657c3aeca4cfe42e2e3379c099ebdff5880c9216d353",
+      "reported_worker_status": "done_with_baseline_gaps",
+      "root_evaluation": "accepted_local_implementation_checkpoint",
+      "persisted_worker_terminal": null,
+      "krt_certification": "review_gated"
+    }
+  ],
+  "accepted_contract": {
+    "character_save": {
+      "artifact": "character.sav",
+      "accepted_lengths": [
+        131072,
+        131088
+      ],
+      "container": "Pokecrossroads Flash1M with two rotating 15-sector slots and an optional 16-byte mGBA RTC trailer",
+      "selection": "ROM-equivalent wrap-aware newest-slot selection; invalid selected state fails closed rather than silently rolling back",
+      "bootstrap": "The parser accepts only exact erased flash at revision zero, but the launcher does not fabricate character.sav; first boot starts without the file until the ROM creates the canonical save.",
+      "extension": {
+        "magic": "CSP1",
+        "schema_version": 1,
+        "save_block3_offset": 4,
+        "struct_size": 672,
+        "crc_covered_bytes": [
+          0,
+          667
+        ],
+        "save_generation_offset": 28
+      }
+    },
+    "bridge_manifest": {
+      "schema_version": 2,
+      "save_schema_version": 1,
+      "path": "dist/bridge_manifest.json",
+      "generated_from_final_linked_elf_and_rom": true,
+      "rom_sha256": "90c8e3337c7932b8f4ca1978813dd788341ec6bd40847be3a8560b0cfb2d6b34",
+      "independent_rom_sha256_match": true
+    },
+    "regional_identity_registry": {
+      "schema_version": 1,
+      "registry_version": 1,
+      "digest": "43918833dec646d6a583d124686c8540",
+      "assigned_entries": 912,
+      "assignments": {
+        "trainers": 856,
+        "gyms": 24,
+        "badges": 24,
+        "fly_points": 4,
+        "events": 4
+      },
+      "capacities": {
+        "trainers": 2048,
+        "gyms": 64,
+        "fly_points": 128,
+        "events": 2048
+      },
+      "coverage_boundary": "All 854 Hoenn trainer IDs are assigned; Kanto and Johto trainer, Fly-point, and event coverage outside the recorded exemplars remains fail-closed when unassigned."
+    },
+    "progress_semantics": [
+      "Logical RegionalProgress values are region-qualified for Hoenn, Kanto, Johto, and Sevii.",
+      "CSP1 stores four ordered badge/story records plus separate trainer, gym, Fly-point, and event ordinal bitsets.",
+      "Every persisted ordinal and every regional badge bit must be assigned by the pinned registry; unused capacity is invalid progress.",
+      "Migration-ambiguous saves remain available offline but are rejected at online upload, finalize, and restore boundaries.",
+      "The first snapshot binds later revisions to the selected SaveBlock2 lineage and generation 1; normal revisions require exact wrapping generation advancement, while a verified historical restore may reset the head generation."
+    ],
+    "service_boundary": "The local server enforces lease and parent-revision fences, byte quotas including active staging, immutable object ownership, and retryable orphan cleanup. Production adapters and background garbage collection are not part of this acceptance.",
+    "launcher_boundary": "Revision-zero launch leaves character.sav absent for the ROM to create. Exact argv binding, shell-free spawning, observed staged-file replacement rejection, ordinary concurrent-session isolation, marker retention, and bounded forced kill/reap are locally tested. Fresh per-launch directories, DELETE_ON_CLOSE where supported, and final identity checks do not make safe standard-library name-based cleanup atomic against a hostile same-user replacement during the pre-open interval. Atomic Windows Job Object attachment, a vendor-binary digest, an authenticated bounded graceful-shutdown exchange, and audited handle-based cleanup remain outside this acceptance."
+  },
+  "protocol_supersession": {
+    "decision": "SAVE_DATA_UPDATED now carries exactly one little-endian u32 save_generation while CHECKPOINT_READY and CHECKPOINT_GRANTED remain empty; bridge ABI and protocol version stay at 1.",
+    "superseded_artifacts": [
+      "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/rom-checkpoint-worker-contract.json:20,37,41",
+      "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/sidecar-control-worker-contract.json:37,41"
+    ],
+    "authoritative_artifact": "docs/orchestration/runs/pokecrossroads-save-interop-20260902/rom-save-hardening-worker-contract.json:16,29",
+    "consumer_evidence": [
+      "src/coop/net_bridge.c::TrySendPendingSaveDataUpdated serializes the live generation into four little-endian bytes.",
+      "coop/crates/coop-sidecar/src/server.rs decodes exactly four bytes and forwards save_generation on the typed control event.",
+      "coop/crates/coop-launcher/src/session.rs correlates epoch, ready sequence, save sequence, payload generation, and parsed character.sav generation before upload.",
+      "coop/crates/coop-launcher/tests/phase2_smoke.rs drives the generation-one frame and byte-accurate character.sav through the real local lifecycle."
+    ]
+  },
+  "verification": {
+    "result": "passed_with_runtime_exclusions",
+    "evidence_generation": "final_replacement_run",
+    "commands": [
+      {
+        "command": "cargo test --workspace --all-features --locked",
+        "result": "passed",
+        "detail": "251 passed, 0 failed"
+      },
+      {
+        "command": "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "result": "passed"
+      },
+      {
+        "command": "cargo fmt --all -- --check",
+        "result": "passed"
+      },
+      {
+        "command": "python -m unittest discover -s tools/tests -p \"test_*.py\"",
+        "result": "passed",
+        "detail": "24 passed"
+      },
+      {
+        "command": "python tools/coop/generate_regional_identities.py --check",
+        "result": "passed",
+        "detail": "registry v1, digest 43918833dec646d6a583d124686c8540, 912 entries"
+      },
+      {
+        "command": "python tools/smoke_phase2.py --local",
+        "result": "passed",
+        "detail": "coop-server-http and coop-launcher-sidecar passed"
+      },
+      {
+        "command": "WSL Ubuntu-24.04: make check TESTS='Cloud Coop'",
+        "result": "passed",
+        "detail": "55 passed, 0 failed"
+      },
+      {
+        "command": "WSL Ubuntu-24.04: make check TESTS='SaveBlock3'",
+        "result": "passed",
+        "detail": "1 passed, 0 failed"
+      },
+      {
+        "command": "WSL Ubuntu-24.04: make modern",
+        "result": "passed",
+        "detail": "linked the final ROM successfully (EWRAM 90.67%, IWRAM 87.43%, ROM 85.20%)"
+      },
+      {
+        "command": "independent SHA-256 comparison: pokeemerald.gba vs dist/bridge_manifest.json",
+        "result": "passed",
+        "detail": "the separately generated schema-2 manifest and final linked ROM both report 90c8e3337c7932b8f4ca1978813dd788341ec6bd40847be3a8560b0cfb2d6b34"
+      },
+      {
+        "command": "git diff --check",
+        "result": "passed"
+      },
+      {
+        "command": "git diff --binary --full-index fdb781cdccb751a035c6776e3d1fb139ad1ffd8e 0085f127045523cffe30a6ea9cf6c82c18281746 -- <42 implementation scope paths>; SHA-256 over exact stdout bytes",
+        "result": "passed",
+        "detail": "sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4 over 403763 bytes; scoped output matched the complete implementation commit diff"
+      }
+    ],
+    "not_run": [
+      {
+        "scope": "Lua interpreter bridge tests",
+        "reason": "No Lua runtime was available for a fresh run."
+      },
+      {
+        "scope": "Interactive stock mGBA 0.10.5 ROM/Lua conformance",
+        "reason": "The local smoke uses a deterministic ROM/mGBA seam and does not launch the emulator."
+      }
+    ]
+  },
+  "protocol_gaps": [
+    "Neither save-interop worker report was persisted as a validated worker-terminal-v1 artifact.",
+    "No diff-bound ROM reviewer, server reviewer, or server security certificate was persisted in the save-interop run directory.",
+    "The v1 worker contracts did not allow the terminal validator command in their read-only command prefixes, so strict completion would require superseding contracts rather than retroactive receipts.",
+    "The earlier Phase 2 baseline likewise has no persisted worker terminals or original run-local aggregate reconciliation and remains review-gated; this later root reconciliation does not synthesize either artifact."
+  ],
+  "residual_blocker_ids": [
+    "BLK-MGBA-CONFORMANCE",
+    "BLK-FIREBASE",
+    "BLK-GAMEPLAY-LEDGER",
+    "BLK-PROVENANCE",
+    "BLK-MGBA-JOB",
+    "BLK-FIRST-SNAPSHOT-CLONING"
+  ],
+  "roadmap_nonclaims": [
+    "No production PostgreSQL/Firebase deployment or background object garbage collection is certified.",
+    "Snapshot validation is not a server-authorized gameplay commit ledger for individual progression additions.",
+    "The passing bounded forced kill/reap fallback is not an authenticated graceful emulator shutdown, atomic Windows process-tree containment, or vendor-binary attestation.",
+    "No live two-mGBA presence, grouping, deterministic battle, level projection, remote-sprite, Tauri UI, deployment, or full-MVP completion is claimed.",
+    "No publication or redistribution is authorized."
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "invocation_id": "cloud-foundation-implementer",
+  "workspace_plan_hash": "sha256:da4832a9be9b7195261f065bd81101328ccb7ca260ee1a0e1085c813ecf79469",
+  "contract_hash": "sha256:66ffd76329ada93e14beee63b0d37a8d3eee48db06dff1b4a91170d338ed6286",
+  "source_revision": "23553f5adff729614bc367427d03041d5224e1a9",
+  "baseline_tree": "673e1fdb2c9bc5ee4a47de4ea1b8de563182ed98",
+  "branch": "seneschal/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-implementer",
+  "workspace": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-implementer",
+  "sealed_clean": true
+}

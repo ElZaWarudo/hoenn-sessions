@@ -5,3 +5,7 @@
 # interpreter line even when the repository is checked out from Windows.
 *.sh text eol=lf
 /charmap.txt text eol=lf
+
+# Review patches are immutable, digest-bound evidence; preserve their bytes
+# without treating whitespace inside the captured diff as current source.
+/docs/orchestration/**/*.patch -whitespace

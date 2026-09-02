@@ -1,0 +1,111 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Upload, finalize defense-in-depth, and restore reject structurally valid but offline-ineligible, registry-invalid, or badge-invalid character saves without advancing canonical head state.",
+      "id": "SSH-001"
+    },
+    {
+      "description": "Revision 1 requires generation 1; later normal finalizes require exact wrapping increment and exact bound lineage; replay remains idempotent.",
+      "id": "SSH-002"
+    },
+    {
+      "description": "A verified historical restore may reset generation to its source, preserves the same bound lineage, and the next normal finalize advances from that restored generation.",
+      "id": "SSH-003"
+    },
+    {
+      "description": "Durable plus active prepared declared bytes never exceed the per-character quota, including concurrent preparation and maximum-size resume declarations.",
+      "id": "SSH-004"
+    },
+    {
+      "description": "Post-put ticket expiry/conflict and expired prepared cleanup leave no untracked object created by that attempt, while exact retries and finalized objects remain intact.",
+      "id": "SSH-005"
+    },
+    {
+      "description": "Server library, HTTP smoke, strict clippy, package formatting, and owned-path diff checks pass with adversarial regression tests.",
+      "id": "SSH-006"
+    }
+  ],
+  "closed_decisions": [
+    "Every nonzero snapshot must parse as an online-eligible CSP1 save under the compiled registry contract; migration-ambiguous saves, unassigned identity bits, and unassigned regional badges are rejected at upload, finalize, and restore boundaries.",
+    "The first committed snapshot must carry save_generation 1 and binds the server-side lineage to the selected SaveBlock2 player identity. This detects cross-character replacement after first commit but is not claimed to prevent a malicious clone at the first upload.",
+    "A normal finalize after revision 1 must preserve the bound character lineage and advance save_generation by exactly one with u32 wrapping semantics. Server-authorized restore may move generation back to a verified historical source and makes that source the new head for the next increment.",
+    "This phase validates container, registry, lineage, and generation continuity. Full authorization of every story/trainer/gym/event progression addition remains owned by the later gameplay commit ledger and must not be falsely claimed here.",
+    "Per-character storage quota includes durable snapshot declarations and all active prepared declarations. Object writes created by a losing or expired upload attempt are conditionally deleted without deleting pre-existing immutable objects.",
+    "Expired prepared objects are collected only from server-derived keys after authentication/fencing and are never confused with finalized snapshot objects. Local in-memory cleanup is synchronous; production background garbage collection remains a separate adapter requirement."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-server/src/phase2/saves.rs coop/crates/coop-server/src/phase2/storage.rs coop/crates/coop-server/src/phase2.rs coop/crates/coop-server/tests/phase2_http.rs",
+      "rtk rg"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server --lib --all-features --locked",
+        "rtk cargo test -p coop-server --test phase2_http --all-features --locked"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo clippy -p coop-server --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt -p coop-server -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:1bb82429065e3e8c726f657c3aeca4cfe42e2e3379c099ebdff5880c9216d353",
+  "contract_id": "pokecrossroads-save-interop-20260902-server-save-hardening-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 1
+  },
+  "forbidden_changes": [
+    "Do not edit coop-save, cloud/protocol/launcher/sidecar/ROM/Lua code, Cargo manifests or lockfiles, documentation outside this worker contract, or orchestration state.",
+    "Do not weaken authentication, lease fences, parent-revision checks, immutable object checks, exact artifact sizes, digest checks, idempotency, or restore provenance.",
+    "Do not claim client CRC as authorization for progression additions or invent a gameplay commit ledger in the snapshot service.",
+    "Do not delete an object that predated the current conditional put, belongs to a finalized snapshot, or has a different server-derived character/snapshot/artifact key.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, or overwrite edits from other active workers."
+  ],
+  "lane": "deep",
+  "objective": "Harden the local Phase 2 snapshot service around validated online saves, per-character revision lineage and generation continuity, bounded prepared-upload storage, and race-safe orphan cleanup.",
+  "owned_files": [
+    "coop/crates/coop-server/src/phase2/saves.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/server-auth-save-worker-contract.json",
+    "coop/crates/coop-save/src/lib.rs",
+    "coop/crates/coop-cloud/src/snapshot.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and required verification has recorded outcomes.",
+      "A safe lineage/generation transition requires a frozen save or wire ABI change outside owned files.",
+      "A concrete build, adapter, or shared-worktree conflict prevents further progress within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "save-interop-server-hardening"
+}

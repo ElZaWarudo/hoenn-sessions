@@ -1,0 +1,182 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The sealed post-foundation dependency baseline resolves with cargo metadata --locked on Rust 1.93.1; the new crate uses only its seeded manifest and lock, and its diff remains within the ten exact coop-launcher paths.",
+      "id": "LC-001"
+    },
+    {
+      "description": "Username login and keychain-backed refresh enforce HTTPS or literal-loopback HTTP, keep access tokens memory-only, store rotating refresh tokens only through the OS-keychain abstraction, fail closed without a vault, and redact or zeroize every credential boundary.",
+      "id": "LC-002"
+    },
+    {
+      "description": "Per-character/session epoch persistence is versioned, cross-process exclusive, atomic, nonzero, crash/corruption fail-closed, and strictly monotonic without wrap; reconnect retains SessionId and rotates epoch; exhaustion fails closed; and every new sidecar receives exactly a strictly newer server-issued LeaseContract epoch rather than a client-invented value.",
+      "id": "LC-003"
+    },
+    {
+      "description": "A bounded strict bridge manifest with the canonical textual game_build.id, full streamed ROM SHA-256, all ABI/protocol/build constants, and exact mGBA 0.10.5 are validated with no CLI identity override before acquire/reconnect or either child process can start; mismatches leave no lease or process behind.",
+      "id": "LC-004"
+    },
+    {
+      "description": "Acquire never guesses a local revision and binds the server-returned current head; bootstrap and fixed-route resume retrieval use only coop-cloud DTOs and Bearer plus the active lease fence; every revision greater than 0 verifies the detached Ed25519 signature with an independently pinned key, requires snapshot and originating-epoch provenance, fetches both mandatory typed artifacts and only a declared optional savestate, binds character/revision/build metadata to the lease and local target, hashes every streamed artifact, and never trusts package paths or keys.",
+      "id": "LC-005"
+    },
+    {
+      "description": "Missing, corrupt, or incompatible optional savestate data falls back explicitly to the verified same-revision SAV, while corrupt active SAV data triggers a read-only list of at most 20 strictly decreasing independently verified historical packages, one idempotent restore of the first valid snapshot to current+1, and a fresh verification of that new active package before any process launch.",
+      "id": "LC-006"
+    },
+    {
+      "description": "Session materialization uses a unique owner-private directory, atomic fixed-name writes, copied checked-in Lua bridge inputs, a private generated session.lua, bounded artifact sizes, no server-controlled joins or symlink writes, and no repository-tree secret or save output.",
+      "id": "LC-007"
+    },
+    {
+      "description": "Sidecar and stock mGBA 0.10.5 are started without a shell from explicit supported argument vectors in the required order; the sidecar descriptor exposes distinct bounded bridge and control endpoints, both are timed, literal-loopback-only, version-checked, independently authenticated and redacted, and the control secret never reaches Lua; the CLI exposes manual bridge/state paths without inventing --script; and supervision deterministically terminates and reaps both children on exit, cancellation, timeout, or peer failure.",
+      "id": "LC-008"
+    },
+    {
+      "description": "The running lifecycle schedules fenced heartbeats, grants an authenticated CHECKPOINT_READY only while lease authorization is current, captures a stable SAV only after correlated SAVE_DATA_UPDATED, requires complete prepare-response/request correlation before upload, preserves snapshot idempotency across retries, uploads only fixed verified artifacts to redacted capability URLs, finalizes with expected-parent CAS, requires a revision-zero first checkpoint to finalize exactly 0 to 1, otherwise accepts exactly parent+1, and advances the in-memory revision only after server confirmation.",
+      "id": "LC-009"
+    },
+    {
+      "description": "Clean and failed shutdown paths stop online work and children before releasing the lease, clear tokens and loopback material, remove successful temp sessions and revision-zero sessions that fail before checkpoint authorization, and preserve only a secret-free owner-private recovery directory when an authorized checkpoint produced an unfinalized SAV.",
+      "id": "LC-010"
+    },
+    {
+      "description": "Unit and session_lifecycle tests use fake API, keychain, clock, filesystem fixtures, control-channel fixtures, and fake child processes plus loopback-only HTTP fixtures to cover invalid endpoints, redaction, epoch races/corruption/exhaustion, ROM mismatch ordering, signature/hash/provenance tampering, fallback/rollback bounds, revision-zero plus not-found bootstrap, rejection of not-found above zero, exact [] pending commits, ready/grant/save-updated correlation, capability URL and prepare-response mismatch, first-checkpoint 0-to-1, pre-checkpoint cleanup, argv injection, child crashes, heartbeat failure, finalize conflicts, and recovery compensation without real credentials, cloud services, mGBA, or sidecar binaries.",
+      "id": "LC-011"
+    },
+    {
+      "description": "Focused tests, formatting, clippy with warnings denied, locked workspace tests, locked workspace clippy, and diff checks pass without modifying the certified shared protocol, cloud foundation, server, sidecar, ROM, bridge, or lockfile.",
+      "id": "LC-012"
+    },
+    {
+      "description": "Only an owned active revision-zero lease paired with the generic missing resume-package response enters first-run mode; it launches without downloaded SAV or savestate, writes canonical pending_commits.json bytes [], rejects every other missing/package mismatch, and either finalizes the first safe checkpoint from 0 to 1 or performs the defined secret-free cleanup/recovery path.",
+      "id": "LC-013"
+    }
+  ],
+  "closed_decisions": [
+    "Dispatch is blocked until phase2-cloud-foundation is release-ready and root has applied a serial dependency-foundation patch that seeds coop-launcher/Cargo.toml and Cargo.lock with every agreed Rust-1.93.1-compatible launcher dependency. The implementation runs with --locked, must not edit the root Cargo.toml or Cargo.lock, and must stop instead of adding or changing a dependency that would update the lockfile.",
+    "Build the reusable launcher as typed library services plus a small non-Tauri CLI. Keep cloud I/O, credential storage, clocks, filesystem locations, and child processes behind narrow injectable interfaces so deterministic tests use only fake dependencies and loopback-local servers; production tests must not require a real account, OS credential vault, public cloud, mGBA GUI, or installed sidecar.",
+    "Accept username/password authentication only through the coop-cloud Username and Password contracts. The CLI must never accept passwords, access tokens, refresh tokens, loopback secrets, or manifest signing private keys in argv, environment variables, config files, logs, errors, Debug, or Display output. Password input is transient and zeroized after the login request is built.",
+    "A configured API base is valid only when it is HTTPS, or plain HTTP to the exact literal loopback authority 127.0.0.1 or [::1] for the local adapter. Reject userinfo, fragments, noncanonical ports, ambiguous authorities, encoded hosts, non-loopback HTTP, downgrade or cross-origin redirects, and response bodies over their declared bounds. Revalidate every coop-cloud signed upload target under its own stricter URL contract.",
+    "Keep the access token in a zeroizing in-memory auth session only and honor the server-owned access_expires_at and refresh_expires_at values from LoginResponse and RefreshResponse. Refresh proactively before access expiry during a running session while retaining reactive 401-to-refresh as a bounded fallback. Deliver a newly rotated refresh token immediately to an OS-keychain abstraction keyed by a stable launcher service plus canonical username; a keychain write/read/delete failure is fatal and there is no plaintext file, registry, environment, process-argument, or memory-only production fallback. Tests use an explicit fake keychain that cannot be selected by the production CLI.",
+    "The server-issued LeaseContract.session_epoch is the authoritative bridge and server fence, intentionally superseding the Phase 1 wording that the launcher invents or increments it. Atomically persist a versioned CharacterId, SessionId, and greatest accepted nonzero u32 epoch record under an exclusive cross-process lock; reject corrupt state and any epoch less than or equal to the persisted value for a new sidecar process; do not wrap and fail closed if the server reports exhaustion; and pass the exact accepted lease epoch to coop-sidecar. Every new local sidecar requires acquire or reconnect to return a strictly greater epoch before spawn. A reconnect retains session_id, preserves one ReconnectLeaseRequest idempotency key across transport retries, accepts an exact replay response with the already-rotated epoch, and treats changed-key or changed-fingerprint behavior according to the certified stale/conflict contract. The worker records the server-owned epoch model as a reported architecture-documentation follow-up because documentation is outside owned_files.",
+    "Before login can create or reconnect a character lease, parse dist/bridge_manifest.json with a bounded deny-unknown-fields schema, require its canonical bounded game_build.id with no CLI override, validate every v1 bridge constant, stream SHA-256 across the complete selected ROM, and require exact equality with game_build.rom_sha256. Also execute the selected mGBA binary with an argument vector and bounded timeout to require exact supported version 0.10.5. A hash, manifest, version, or path failure occurs before acquire/reconnect, sidecar creation, or mGBA creation.",
+    "Use coop-cloud request and response types without shadow wire structs. The launcher API boundary covers username login or keychain-backed refresh, acquire, heartbeat, reconnect, release, signed resume-package retrieval, prior-revision restore, snapshot prepare, fixed-artifact upload, and snapshot finalize. Acquire supplies character, client instance, and an idempotency key but no locally guessed revision; it treats the returned LeaseContract.current_revision as the only active head and fetches exactly that package. For uploads, require UploadMethod::Put and a validated UploadCapabilityUrl, then PUT the declared bytes to that complete target URL with no invented cloud Authorization header; ordinary API Bearer authorization remains confined to the API transport adapter and no token is passed to upload URLs, Lua, ROM, sidecar argv, or mGBA argv.",
+    "For the Phase 2 local adapter, GET /v1/characters/{character_id}/resume-package returns only the certified coop-cloud SignedManifestEnvelope, and GET /v1/characters/{character_id}/resume-package/artifacts/{artifact_identity} returns raw bytes. Derive both paths exclusively from canonical CharacterId and fixed ArtifactIdentity values. Every request carries Bearer authorization plus X-Coop-Session-Id, X-Coop-Session-Epoch, and X-Coop-Client-Instance-Id from the active lease; the path character must equal the lease and manifest character. For every signed package response fetch character.sav and pending_commits.json, fetch resume.ss1 only when the verified manifest declares it present and compatible, stream each bounded response into its hash verifier, reject redirects or undeclared content, and treat the server's generic 404 for an unknown or absent artifact without probing other names. Remote signed download targets are deferred.",
+    "The only package-free bootstrap is an owned active LeaseContract whose current revision is exactly 0 followed by the resume-package route's generic not-found response. That pair starts a fresh private mGBA session without character.sav or resume.ss1 and writes pending_commits.json as the exact two UTF-8 bytes [] before process launch. Do not fabricate a canonical SAV, request history, or accept any other response as bootstrap. A missing package at revision greater than 0, a package at revision 0, or a not-found response without a matching owned active revision-zero lease is fatal and must release the lease before any process starts.",
+    "Verify each resume package with an independently configured TrustedManifestKey before trusting manifest metadata. Never accept a key from the package or network as its own trust root. Require the signed manifest character and revision to match the acquired lease/bootstrap, require parent_revision.next()==revision without wrap, require its textual build, exact ROM digest, mGBA version, bridge ABI, and protocol to match the validated local target, and treat the package epoch as snapshot provenance while the new LeaseContract epoch fences the running process.",
+    "Materialize package artifacts from their fixed typed identities only; never extract or join a server-supplied path. Verify bounded character.sav and pending_commits.json bytes against the signed manifest before writing them. Missing, corrupt, flagged-incompatible, or metadata-incompatible resume.ss1 produces an explicit same-revision SAV fallback. A corrupt active character.sav never launches: list at most 20 finalized snapshots, examine strictly decreasing revisions through the same envelope and artifact GET routes with one canonical ?revision={nonzero_revision} query, and verify every historical signature and hash independently. After selecting a valid historical snapshot, POST the typed idempotent restore request exactly once so the server creates current+1 without rewinding; then refetch and reverify the new active envelope and artifacts before launch. Reject repeated/nondecreasing history, mutation during discovery, or direct launch from historical bytes.",
+    "Create every session in a new non-symlink, owner-private temporary directory. Write fixed filenames atomically, copy only the checked-in bridge Lua files and validated generated address module, create session.lua only after validating the sidecar descriptor, and never write secrets into the repository tree. Files containing the save, savestate, pending commits, or loopback secret are owner-only where the platform supports permissions.",
+    "Spawn coop-sidecar and mGBA exclusively with executable plus argument vectors through a supervised process abstraction; never invoke a shell, concatenate a command string, inherit secret environment variables, or pass unvalidated free-form extra arguments. Start sidecar with exactly --session-epoch and the accepted lease epoch, read one bounded descriptor line within a timeout, require distinct literal-loopback bridge and control endpoints plus ABI/protocol/frame-size/control-version agreement, redact both independent secrets, authenticate the launcher to the single-client control endpoint, and only then start the configured mGBA executable with the validated session ROM path as an argument. Write only the bridge endpoint and bridge secret to private session.lua; the control secret remains launcher-memory-only.",
+    "Stock mGBA 0.10.5 has no certified command-line Lua autoload flag. Do not invent or pass --script. The CLI must expose the generated private bridge/main.lua path and selected optional resume.ss1 path as nonsecret operator instructions for the honest manual Tools > Scripting and state-load flow, while retaining a typed launch-adapter seam for a future separately certified custom mGBA build or 0.11+ startup-script capability. This limitation is a real-runtime blocker, not a unit-test failure; fake-process tests still certify argv construction and supervision.",
+    "Supervise both children as one session. Reap every child, propagate cancellation, stop mGBA when sidecar dies, stop the sidecar when mGBA exits, use bounded graceful-stop timeouts before forced termination, and never leave a lease heartbeat task or child process detached. Tests assert exact argv boundaries, startup ordering, timeout behavior, and compensation for each injected child failure.",
+    "Drive heartbeat from the server-owned lease interval with complete session/character/client/epoch fencing. A checkpoint begins only from an authenticated control-channel CHECKPOINT_READY event for the active epoch. While the lease and heartbeat authorization remain current, send CHECKPOINT_GRANTED through the sidecar, wait for the correlated SAVE_DATA_UPDATED event, then boundedly acquire a stable character.sav and hash the fixed artifacts. Preserve one snapshot idempotency key across retries, prepare exactly those artifacts against the current parent revision, require SnapshotPrepareResponse.matches_request before using any target, upload only to validated PUT capability targets, finalize exactly parent+1, and advance local revision only after the typed SnapshotRecord echoes the same parent_revision and child revision. A pre-grant abort clears only local pending control state and sends no invented ROM message; any post-grant failure terminates the session and preserves the secret-free recovery SAV. For a revision-zero bootstrap, the first safe checkpoint requires the newly produced nonempty character.sav plus the exact local [] pending-commits representation, uses expected parent 0, and accepts only finalized revision 1; optional resume.ss1 remains subject to the normal safe-point rule and may be omitted by this canonical-SAV slice. Logout and clean exit stop new work, attempt an authorized final checkpoint when safe, terminate and reap both children, release the exact lease, revoke/delete refresh state as requested, clear access and loopback secrets, and remove the temporary session.",
+    "Failure cleanup is compensating and order-aware: never release a lease while a live child can still emit fenced traffic; never claim or load a revision before finalize succeeds; never upload a savestate without a safe checkpoint signal; and never silently delete the only unfinalized SAV after a failed authorized checkpoint. If revision-zero startup or a child fails before any safe checkpoint is authorized, terminate and reap children, release the lease, clear loopback/token material, and remove the entire ephemeral session including any untrusted emulator-created save. If an authorized first or later checkpoint produced a SAV but could not finalize, perform the same secret cleanup and retain only an owner-private recovery directory with a nonsecret diagnostic marker for explicit operator recovery.",
+    "Keep region-qualified world/progress values opaque through the launcher and preserve the single-character, all-regions save lineage. Do not calculate badge totals or regional battle tiers in this crate. Do not add Tauri, GUI, updater, realtime presence, groups, battle orchestration, ROM patching, server repositories, database code, object-store credentials, or deployment behavior."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg --files coop/crates/coop-cloud",
+      "rtk rg --files coop/crates/coop-sidecar",
+      "rtk rg --files bridge"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:ab9518db542d8156d701300277ff105cdc0c879e2ba8f7c8ab6a066139ddc016",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-launcher-core-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1200000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit root Cargo.toml, Cargo.lock, coop-cloud, coop-protocol, coop-server, coop-sidecar, bridge sources, dist artifacts, ROM C/assembly/build files, migrations, integration-test files owned by phase2-integration, documentation, or orchestration state outside the one owned crate path set.",
+    "Do not change a public coop-cloud contract, duplicate its wire DTOs, add a dependency, weaken --locked validation, or consume the concurrently implemented server dependent as a compile-time dependency. Return a scope-extension blocker if the certified foundation contract is insufficient.",
+    "Do not use HTTP for any non-loopback host, follow redirects across origin or to a weaker scheme, disable TLS verification, accept package-provided trust roots, accept unknown bridge/build/protocol versions, skip whole-ROM hashing, or acquire a lease before local compatibility validation passes.",
+    "Do not persist plaintext passwords or tokens, add a plaintext keychain fallback, include secrets in process arguments/environment/logs/errors/Debug/Display, retain refresh tokens in ordinary heap strings longer than necessary, or expose the sidecar descriptor beyond the private session writer.",
+    "Do not use a shell, command-string interpolation, unbounded stdout/stderr/body/file reads, archive extraction, server-controlled paths, shared predictable temp directories, symlink-following writes, orphaned child processes, detached heartbeat tasks, or unbounded retry loops.",
+    "Do not launch on a corrupt SAV, fabricate a SAV for revision zero, treat no package as valid above revision zero, silently load a corrupt or incompatible savestate, accept repeated/nondecreasing restore revisions, advance revision before finalize acknowledgement, accept any first finalized revision other than 1, overwrite a newer snapshot, invent a lease/session epoch, reset a corrupt epoch store, release a lease while supervised children remain live, or claim automatic Lua/savestate loading on stock mGBA 0.10.5.",
+    "Do not implement Tauri UI, a real cloud or credential-vault test dependency, mGBA GUI automation, ROM distribution, offline canonical play, presence, grouping, battle lockstep, deployment, or remote Git/GitHub changes in this unit.",
+    "Do not add allow attributes to suppress diagnostics, introduce unsafe Rust, stage, commit, branch, fetch, pull, push, contact Git remotes, create or remove worktrees, or mutate files outside owned_files."
+  ],
+  "lane": "deep",
+  "objective": "Implement and verify the post-foundation coop-launcher Rust core and CLI that securely authenticates a username, validates the exact local build, acquires and supervises one fenced character session, restores a signed cloud package or bootstraps the narrowly defined revision-zero first run, checkpoints it, and shuts down without persisting plaintext credentials or tokens.",
+  "owned_files": [
+    "coop/crates/coop-launcher/Cargo.toml",
+    "coop/crates/coop-launcher/src/auth.rs",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/epoch.rs",
+    "coop/crates/coop-launcher/src/keychain.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/tests/session_lifecycle.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-cloud/Cargo.toml",
+    "coop/crates/coop-cloud/src/lib.rs",
+    "coop/crates/coop-cloud/src/auth.rs",
+    "coop/crates/coop-cloud/src/ids.rs",
+    "coop/crates/coop-cloud/src/resume.rs",
+    "coop/crates/coop-cloud/src/security.rs",
+    "coop/crates/coop-cloud/src/session.rs",
+    "coop/crates/coop-cloud/src/snapshot.rs",
+    "coop/crates/coop-sidecar/Cargo.toml",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/main.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "bridge/README.md",
+    "bridge/main.lua",
+    "bridge/memory.lua",
+    "bridge/protocol.lua",
+    "bridge/session.lua.example",
+    "dist/bridge_manifest.json",
+    "tools/generate_bridge_manifest.py"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "The certified foundation or serial dependency seed lacks a required type or dependency and proceeding would change an unowned path.",
+      "A concrete security, platform, or process-supervision blocker prevents further progress within the owned files and execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-launcher-core"
+}

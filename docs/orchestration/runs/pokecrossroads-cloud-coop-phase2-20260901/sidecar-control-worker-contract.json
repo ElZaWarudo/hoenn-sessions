@@ -1,0 +1,134 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The diff is confined to the six owned sidecar paths and resolves with the existing locked workspace dependencies.",
+      "id": "SC-001"
+    },
+    {
+      "description": "One bounded versioned descriptor is emitted only after distinct literal-loopback bridge/control listeners bind; secrets are independent, redacted, cross-use rejected, and the control secret is never part of the bridge/Lua configuration surface.",
+      "id": "SC-002"
+    },
+    {
+      "description": "Strict bounded control authentication rejects wrong secret/version/epoch, unknown fields, oversized/partial lines, non-loopback peers, and malformed command identifiers without leaking credentials.",
+      "id": "SC-003"
+    },
+    {
+      "description": "The typed state machine relays one valid ready event, applies one idempotent grant as exactly one monotonic CHECKPOINT_GRANTED bridge frame, associates one valid SAVE_DATA_UPDATED event, and returns to idle without permitting arbitrary frames.",
+      "id": "SC-004"
+    },
+    {
+      "description": "Pre-grant abort and decision expiry emit no ROM frame; duplicate commands replay results, changed-body key reuse conflicts, stale/wrong-state input is rejected, and post-grant loss/timeout fails closed.",
+      "id": "SC-005"
+    },
+    {
+      "description": "Bounded backpressure and a single writer preserve checkpoint events and sidecar frame order across sequence wrap/reconnect; replay state is not committed before critical control handoff.",
+      "id": "SC-006"
+    },
+    {
+      "description": "Focused sidecar tests cover descriptor/secrets, strict parsing, ready-grant-save relay, abort/expiry, idempotency/conflict, backpressure, sequencing, and clean task/listener termination while all pre-existing tests remain green.",
+      "id": "SC-007"
+    },
+    {
+      "description": "Formatting, focused/workspace tests, clippy with warnings denied, locked metadata, and diff checks pass without lockfile or unowned changes.",
+      "id": "SC-008"
+    }
+  ],
+  "closed_decisions": [
+    "Keep bridge ABI and protocol version 1 and use the existing empty CHECKPOINT_READY, CHECKPOINT_GRANTED, and SAVE_DATA_UPDATED messages; no generic arbitrary-frame control command or new ROM message is allowed.",
+    "Bind distinct bridge and control TCP listeners to literal 127.0.0.1 before printing exactly one bounded strict descriptor. Each endpoint has an independent random 32-lowercase-hex secret; cross-use fails, formatting redacts secrets, and only bridge host, port, and secret may reach Lua.",
+    "The descriptor is version 1 and structurally separates bridge metadata from control metadata. Control uses strict bounded JSONL, protocol version 1, a 512-byte maximum line including termination, deny-unknown-fields DTOs, and a handshake binding secret, exact session epoch, and control version.",
+    "Expose only typed CheckpointGrant and CheckpointAbort commands keyed by UUID command_id plus the ROM-owned checkpoint key (session_epoch, CHECKPOINT_READY sequence). Emit typed CheckpointReady, SaveDataUpdated, CheckpointExpired, and CommandResult events with fixed status/reason enums rather than free-form strings.",
+    "Checkpoint state is Idle -> AwaitDecision -> AwaitSaveData. An exact pre-grant abort clears local pending state and sends no ROM frame. A grant writes exactly one empty CHECKPOINT_GRANTED and is applied only after the full frame is written. A valid empty SAVE_DATA_UPDATED for the active epoch relays the associated ready key and returns to Idle. Decision expiry returns to Idle; control loss or post-grant timeout terminates fail closed.",
+    "One task exclusively owns bridge writes and sidecar sequence allocation; one ordered writer owns control events/results. Critical events use bounded backpressure and are never coalesced or silently dropped. Do not cancel partial fixed-size bridge I/O and reuse the stream.",
+    "Exact duplicate command IDs replay the prior result without another ROM frame; one ID with a different fingerprint conflicts. Wrong state, stale key, expired key, wrong epoch, nonempty checkpoint payload, partial I/O, and queue saturation have deterministic fail-closed outcomes.",
+    "Split ROM sequence freshness inspection from replay cursor commit for checkpoint events so the checkpoint becomes stale only after its critical control handoff succeeds. Preserve existing reconnect and non-checkpoint behavior.",
+    "Use only existing locked dependencies; do not add a root dependency or change Cargo.lock."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --format-version 1 --no-deps --locked"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-sidecar",
+      "rtk rg --files coop/crates/coop-sidecar",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:fa57726114e8bd3da24a95801cab9be204768dacd26d7fe092a2f69e5308beed",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-sidecar-control-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit root Cargo.toml, Cargo.lock, coop-cloud, coop-protocol, coop-server, coop-launcher, ROM C/header/test files, Lua, bridge manifests/docs, integration tests, or orchestration artifacts.",
+    "Do not expose an arbitrary frame sender, place the control secret in session.lua, bind wildcard/non-loopback addresses, accept unbounded lines, log secrets, reuse one secret across endpoints, drop critical checkpoint events, or acknowledge a grant before its bridge write completes.",
+    "Do not change bridge message numbers, ABI layout, protocol version, or checkpoint payload shape in this unit.",
+    "Do not add dependencies, allow attributes, unsafe Rust, staging, commits, branches, fetch/pull/push, remote calls, deployment, or publication."
+  ],
+  "lane": "deep",
+  "objective": "Implement and verify a distinct authenticated loopback control endpoint that relays the existing ROM checkpoint handshake between the Lua bridge and launcher without exposing arbitrary frame authority or losing critical events.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/Cargo.toml",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "coop/crates/coop-sidecar/src/lib.rs",
+    "coop/crates/coop-sidecar/src/main.rs",
+    "coop/crates/coop-sidecar/src/codec.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-sidecar/Cargo.toml",
+    "coop/crates/coop-sidecar/src/codec.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "coop/crates/coop-sidecar/src/lib.rs",
+    "coop/crates/coop-sidecar/src/main.rs",
+    "bridge/protocol.lua",
+    "bridge/main.lua",
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A required behavior cannot be implemented without a bridge ABI/protocol change, dependency/lockfile edit, or unowned ROM/Lua/launcher change.",
+      "A concrete security, concurrency, cancellation-safety, or tooling blocker prevents further progress within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-sidecar-control"
+}

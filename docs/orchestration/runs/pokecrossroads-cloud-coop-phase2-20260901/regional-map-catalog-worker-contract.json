@@ -1,0 +1,131 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The diff is confined to the nine owned paths, keeps Cargo.lock and all manifests unchanged, and preserves sizeof(MapHeader), sizeof(WorldLocation), the bridge ABI, and protocol version 1.",
+      "id": "RC-001"
+    },
+    {
+      "description": "mapjson emits each map's explicit engine region, defaulting only an absent value to Hoenn, into the existing MapHeader byte at offset 0x19 without changing structure size.",
+      "id": "RC-002"
+    },
+    {
+      "description": "ROM location export derives Hoenn, Kanto, or Sevii from the generated engine region plus section, classifies FRLG special-area maps as Kanto, rejects unknown or contradictory inputs, and preserves all existing numeric location fields.",
+      "id": "RC-003"
+    },
+    {
+      "description": "A deterministic standard-library generator reads repository map sources and emits a checked-in Rust catalog covering every map exactly once with unique region-qualified canonical keys and unique numeric map coordinates.",
+      "id": "RC-004"
+    },
+    {
+      "description": "coop-protocol exposes exact forward and reverse catalog resolution plus WorldZone validation/translation while retaining its version-1 string map field; cross-region and nonexistent pairs fail typed validation.",
+      "id": "RC-005"
+    },
+    {
+      "description": "Tests cover all region boundaries, Sevii, Kanto special areas, contradictions, complete generated-catalog coverage, uniqueness, forward/reverse resolution, and generator drift.",
+      "id": "RC-006"
+    },
+    {
+      "description": "The focused ROM tests, modern ROM build, generator check, protocol tests/clippy, formatting, and diff checks pass.",
+      "id": "RC-007"
+    }
+  ],
+  "closed_decisions": [
+    "Treat the map JSON region field as the engine-region authority: missing means Hoenn, explicit Kanto remains Kanto, and Sevii is derived from the existing GetKantoSubregion section authority.",
+    "Rename and reuse MapHeader's existing offset-0x19 filler byte; do not add a field or alter structure size.",
+    "Keep WorldLocation's fixed-width numeric layout and bridge ABI unchanged.",
+    "Keep WorldZone version 1 serialized as region plus canonical string map plus channel. Add catalog-backed resolution/validation instead of changing its wire shape.",
+    "Use map IDs without the MAP_ prefix as canonical WorldZone map keys and require exact uppercase ASCII spelling.",
+    "Generate and check in the Rust table using only Python's standard library; generator output must be deterministic and support --check without writing.",
+    "Do not attempt trainer, badge, fly-point, story-event, or SaveBlock persistence registries in this unit."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- include/global.fieldmap.h tools/mapjson/mapjson.cpp include/coop/region.h src/coop/region.c test/coop/region.c coop/crates/coop-protocol/src/lib.rs",
+      "rtk rg",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk python tools/coop/generate_regional_catalog.py --check",
+        "rtk cargo test -p coop-protocol --all-features --locked",
+        "rtk cargo clippy -p coop-protocol --all-targets --all-features --locked -- -D warnings",
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/phase2-regional-map-catalog -- make check \"TESTS=Cloud Coop\""
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/phase2-regional-map-catalog -- make modern",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:5056994f87683f143a752e5b32d70d8eacd9b6dff06f5d90cfbebf080c1f7e23",
+  "contract_id": "pokecrossroads-cloud-coop-phase2-20260901-regional-map-catalog-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 3,
+    "max_elapsed_ms": 2400000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit files outside the owned list, add dependencies, alter Cargo.toml or Cargo.lock, stage, commit, fetch, pull, push, deploy, or publish.",
+    "Do not change protocol numbers, bridge message layouts, WorldLocation layout, WorldZone JSON fields, or MapHeader size.",
+    "Do not infer Sevii from trainer ranges or create incomplete trainer/badge/fly/story catalogs.",
+    "Do not hand-maintain the generated Rust table or silently accept catalog drift, duplicate coordinates, duplicate qualified keys, or unrecognized map regions."
+  ],
+  "lane": "deep",
+  "objective": "Make ROM map identity region-authoritative and expose one generated, drift-checked host catalog without changing the version-1 bridge ABI or WorldZone JSON contract.",
+  "owned_files": [
+    "include/global.fieldmap.h",
+    "tools/mapjson/mapjson.cpp",
+    "include/coop/region.h",
+    "src/coop/region.c",
+    "test/coop/region.c",
+    "tools/coop/generate_regional_catalog.py",
+    "coop/crates/coop-protocol/src/catalog.rs",
+    "coop/crates/coop-protocol/src/generated_map_catalog.rs",
+    "coop/crates/coop-protocol/src/lib.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "data/maps/map_groups.json",
+    "src/data/region_map/region_map_sections.json",
+    "src/regions.c",
+    "include/constants/region_map_sections.h",
+    "include/constants/regions.h",
+    "include/global.fieldmap.h",
+    "tools/mapjson/mapjson.cpp",
+    "include/coop/region.h",
+    "src/coop/region.c",
+    "test/coop/region.c",
+    "coop/crates/coop-protocol/src/lib.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A required behavior needs a bridge ABI, protocol-version, MapHeader-size, WorldZone-wire, dependency, lockfile, or unowned-file change.",
+      "A concrete generator, map-source, compiler, or tooling blocker prevents further progress within the owned files and budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase2-regional-map-catalog"
+}
