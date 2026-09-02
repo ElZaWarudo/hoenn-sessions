@@ -1,0 +1,117 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The C presence API defines the exact V1 wire lengths and offsets shared with coop-protocol (location 10, pose 24, local state 28, spawn 72, update 40, despawn 16, interaction 20), and performs every read/write field-by-field in little endian without casting, packing, or memcpy between wire bytes and the differently laid-out ROM WorldLocation.",
+      "id": "RPC-001"
+    },
+    {
+      "description": "Strict decoders for local state, remote spawn, update, and despawn accept only the exact payload length and all Rust-side invariants: region-qualified location, zero reserved bytes, assigned direction/movement/animation/avatar/player-state/despawn ordinals, nonzero handle and sequences, and canonical zero-padded 3..32 byte username; every rejection leaves the caller output byte-for-byte unchanged.",
+      "id": "RPC-002"
+    },
+    {
+      "description": "The interaction encoder emits the exact 20-byte Rust golden-compatible payload only for an active visible remote in the current nonzero session epoch and exact regional map/warp partition, with matching elevation, one-tile checked adjacency, and the local player's current facing direction; failures leave the output buffer unchanged.",
+      "id": "RPC-003"
+    },
+    {
+      "description": "A bounded one-remote reducer never evicts an active different handle, never creates a remote from UPDATE, uses RFC 1982 nonzero server sequence ordering with the exact half-range rejected, ignores stale/equal messages without mutation, applies matching newer spawn/update/despawn deterministically, and clears identity/state explicitly on session or regional map/warp partition change.",
+      "id": "RPC-004"
+    },
+    {
+      "description": "Focused tests prove the Rust golden local-state and spawn bytes, every fixed size/offset, signed coordinate and u64/u32 endianness, malformed lengths/enums/reserved/zero fields/usernames, output canaries, region/map/warp/session/handle mismatches, no implicit spawn/no eviction, serial wrap/equality/half-range, lifecycle transitions, reset behavior, and all four facing directions including coordinate overflow boundaries.",
+      "id": "RPC-005"
+    },
+    {
+      "description": "Cloud Coop focused tests, the complete ROM check suite, modern ROM build, identity-generator check, and diff checks pass with changes confined to the three owned new files and no generated ROM artifact retained or distributed.",
+      "id": "RPC-006"
+    }
+  ],
+  "closed_decisions": [
+    "This unit is a dormant compile-tested presence core only. Add exactly three new source files and do not wire it into net_bridge, Lua, ObjectEvent rendering, input, menus, saves, or any runtime callback.",
+    "The upstream basis is eonlynx/pokecrossroads. The product identity model is region-first even though the initial live slice is Littleroot in Hoenn; no regionless map, trainer, gym, Fly point, event, or remote-player partition is permitted.",
+    "The existing packed ROM WorldLocation layout is region at byte 0, reserved at 1, map_group at 2, map_number at 4, x at 6, y at 8. The Rust V1 presence wire is region at 0, map_group at 1, map_number at 3, x at 5, y at 7, reserved at 9. These are deliberately different and must be translated field by field.",
+    "Mirror the existing coop-protocol presence contract exactly: direction SOUTH=1 NORTH=2 WEST=3 EAST=4; movement IDLE=0 WALK=1 RUN=2; animation IDLE=0 LOCOMOTION=1; avatar BRENDAN=1 MAY=2; player state HIDDEN=0 OVERWORLD=1; despawn HIDDEN=1 STALE=2 DISCONNECTED=3 LEASE_INVALID=4 REPLACED=5 PARTITION_LEFT=6.",
+    "Expose fixed-width decoded C value structs and explicit decode/encode functions. Do not expose packed wire structs, pointer casts, unaligned scalar reads, host-endian copies, heap allocation, strings without an explicit bound, or APIs that rely on sizeof an in-memory value struct matching the wire.",
+    "Canonical username rules match Rust: 3..32 lowercase ASCII bytes using letters, digits, underscore, dot, or hyphen; first and last characters are alphanumeric. In the 32-byte spawn field, the first zero terminates a shorter name and every following byte must be zero; a full 32-byte canonical name has no terminator. Store a decoded name with an additional local terminator byte and an explicit length.",
+    "Handles are opaque nonzero u64 values and source/server/warp sequences are nonzero u32 values. RFC 1982 considers candidate newer only when candidate and reference are nonzero and unequal and candidate-reference modulo 2^32 is less than 0x80000000; the exact half-range is not newer.",
+    "The reducer owns at most one remote. Its partition key is the nonzero local session_epoch plus region, map_group, map_number, local warp_sequence, and remote handle. A spawn for a different handle while occupied is a capacity rejection, never an eviction. UPDATE requires the already-active exact key and a newer server sequence. DESPAWN requires the same session epoch/handle and a newer server sequence. A caller-driven context synchronization/reset clears the slot before a new partition can be accepted.",
+    "Hidden local states remain valid wire values, but an active renderable remote requires OVERWORLD. A matching newer update to HIDDEN clears/deactivates the slot without manufacturing a despawn reason. Interaction is possible only for an active OVERWORLD remote.",
+    "Interaction x/y are the exact currently observed target coordinates, and observed_server_sequence/observed_warp_sequence come from the active remote state. Require same exact regional map, same nonzero warp sequence, equal elevation, and target exactly one tile in the local facing direction. Use checked signed-16 coordinate arithmetic so edge overflow rejects.",
+    "Use the Rust golden local bytes [1,1,0,3,0,252,255,9,0,0,7,4,68,51,34,17,136,119,102,85,2,1,2,1,204,187,170,153]. The spawn golden prepends handle 0x0123456789abcdef and server sequence 3, then that local state, then ASCII ash-kanto followed by zero padding to 32 bytes.",
+    "Keep COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION and bridge ABI at 1. The later activation unit must atomically move the legacy 16-byte PLAYER_STATE payload to 28 bytes and bump the global game protocol across ROM, Lua, sidecar, launcher, cloud build/manifest contracts, and generated artifacts.",
+    "Use the repository's TEST macros and deterministic pure tests. Production code must be freestanding-compatible with the ROM toolchain, use no libc-only conveniences unavailable to the GBA build, and add no global mutable state."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n CoopPresence coop/crates/coop-protocol/src/presence.rs"
+    ],
+    "verification": {
+      "focused": [
+        "rtk wsl -d Ubuntu-24.04 --cd <worker-worktree> -- make check TESTS=\"Cloud Coop presence\""
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk wsl -d Ubuntu-24.04 --cd <worker-worktree> -- make check",
+        "rtk wsl -d Ubuntu-24.04 --cd <worker-worktree> -- make modern",
+        "rtk python tools/coop/generate_regional_identities.py --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_id": "pokecrossroads-phase3-rom-presence-20260902-core-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1500000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit any existing source file, Rust crate, Cargo manifest/lock, Makefile, generated identity artifact, launcher, server, sidecar, Lua bridge, map/object engine, save code, documentation outside this worker contract, or orchestration state.",
+    "Do not change the bridge ABI, global game protocol version, message numbers, live PLAYER_STATE payload, ROM callback wiring, save schema, regional registry, or game build identity.",
+    "Do not allocate heap memory, add unsafe casts or unaligned reads, memcpy wire data into structs, evict a different active handle, accept regionless or zero identity/sequence values, infer a spawn from an update, or mutate outputs/state after a rejected/stale message.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, retain/distribute built ROM output, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Implement a dormant, strict, region-qualified C presence codec and one-remote reducer that exactly matches the accepted Rust V1 wire contract without prematurely changing the live bridge ABI.",
+  "owned_files": [
+    "include/coop/presence.h",
+    "src/coop/presence.c",
+    "test/coop/presence.c"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-wire-contract.json",
+    "coop/crates/coop-protocol/src/presence.rs",
+    "include/coop/region.h",
+    "include/coop/net_bridge.h",
+    "test/coop/region.c",
+    "test/coop/net_bridge.c"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "The Rust wire contract cannot be mirrored without modifying an existing file or changing a closed decision.",
+      "A concrete toolchain or isolated-worktree failure prevents further progress within the owned files and execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "rom-presence-core"
+}
