@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-runtime-hardening-20260902-sidecar-shutdown-v1",
+  "unit_id": "sidecar-authenticated-shutdown",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Implement control protocol v2 and an authenticated, epoch-bound sidecar quiescence/shutdown lifecycle that is replay-safe, works before the Lua bridge connects, and preserves all existing checkpoint semantics.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "bridge/main.lua"
+  ],
+  "closed_decisions": [
+    "Bump only the sidecar control protocol from 1 to 2. Keep the bridge ABI, ROM protocol, and Lua wire protocol at version 1.",
+    "Add a strict shutdown_request command containing only a canonical command UUID and the exact nonzero session epoch. Reuse the existing correlated command_result event; do not add arbitrary text or an unbounded payload.",
+    "Applied means only that the authenticated epoch matched, checkpoint state was Idle, the command was durably entered in the bounded replay ledger, and the sidecar atomically entered Quiescing before the ACK write. It must not claim that mGBA flushed, persisted, or exited.",
+    "The identical command ID and body replays the original result. Reusing the ID with another command type or body is Conflict/CommandBodyConflict. A wrong epoch is Rejected/WrongEpoch. Any non-Idle checkpoint state, a second distinct shutdown command while quiescing, or ledger saturation is rejected without an effect.",
+    "Once quiescing, no new checkpoint grant, abort, or gameplay-side effect may be applied. Keep the authenticated control connection available for exact replay until bridge EOF or deliberate authenticated control EOF produces SessionExit::Shutdown and a successful sidecar process exit.",
+    "Handle shutdown while waiting for the initial bridge connection by selecting authenticated control input against bridge acceptance. Preserve the existing reconnect behavior for EOF while not quiescing and preserve all post-grant fatality rules.",
+    "Use the existing 512-byte JSONL bound, timeouts, UUID normalization, fixed-capacity command ledger, error taxonomy, and secret-redaction rules. Do not weaken authentication or add a second control client."
+  ],
+  "forbidden_changes": [
+    "Do not edit launcher, cloud, protocol, server, save, bridge/Lua, ROM, manifest, documentation, Cargo manifests, Cargo.lock, orchestration state, or any path outside owned_files.",
+    "Do not add a ROM or Lua shutdown message, change checkpoint deadlines, weaken replay ambiguity handling, accept a shutdown in a non-Idle checkpoint state, or make an ACK assert emulator exit.",
+    "Do not add dependencies, unsafe Rust, diagnostic allow attributes, shell execution, unbounded reads/writes/retries, or secret-bearing logs/errors.",
+    "Do not stage, commit, branch, fetch, pull, push, contact Git remotes, create/remove worktrees, or revert edits made by another worker."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "SS-001",
+      "description": "Control protocol v2 round-trips a typed shutdown_request with canonical UUID and exact epoch, rejects malformed/oversized/unknown input, and leaves bridge ABI/game protocol unchanged."
+    },
+    {
+      "id": "SS-002",
+      "description": "An authenticated idle shutdown is recorded before ACK and atomically enters Quiescing; exact replay returns Replayed, changed-body reuse conflicts, wrong epoch rejects, every non-Idle checkpoint state rejects, and no command effect occurs after quiescence."
+    },
+    {
+      "id": "SS-003",
+      "description": "A shutdown request is serviced before Lua connects, while a quiescing session stays replay-capable and exits successfully only on the defined bridge/control EOF proof; ordinary running EOF and checkpoint reconnect/fatal rules remain unchanged."
+    },
+    {
+      "id": "SS-004",
+      "description": "Focused sidecar tests cover serialization, authentication, replay/conflict, all state rejections, failed ACK ambiguity, pre-bridge shutdown, quiescing EOF, and preservation of ordinary reconnect behavior."
+    },
+    {
+      "id": "SS-005",
+      "description": "Formatting, sidecar tests, sidecar clippy with warnings denied, and diff checks pass with changes confined to the two owned source files."
+    }
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n shutdown coop/crates/coop-launcher/src",
+      "rtk rg -n CheckpointState coop/crates/coop-sidecar/src"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings"
+      ],
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 2,
+    "fix_rounds": 2,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 1200000
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A required change crosses owned_files or requires a public-contract decision inconsistent with closed_decisions.",
+      "A concrete protocol or lifecycle blocker prevents safe progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "runtime-audited",
+    "changed_files_source": "root-diff"
+  }
+}

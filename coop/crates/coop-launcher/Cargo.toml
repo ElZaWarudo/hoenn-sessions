@@ -28,6 +28,7 @@ zeroize.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store.workspace = true
+windows-spawn.workspace = true
 
 [dev-dependencies]
 http-body-util.workspace = true

@@ -1,0 +1,29 @@
+{
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "baseline_digest": "sha256:e1a2857a5c48d41c3387dd1eb0e18112b14f69112eb9caa33406110fa324c464",
+  "baseline_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515",
+  "changed_files": [
+    {
+      "digest": "sha256:085f133efa3e9df251d9165124bcf932ce3b1299c8ad867c763b7cab1ff0cb95",
+      "path": "coop/crates/coop-sidecar/src/control.rs"
+    },
+    {
+      "digest": "sha256:465dd158074797970e7e446b6116189de024c80493c0f8b0384d3a69af2b1689",
+      "path": "coop/crates/coop-sidecar/src/server.rs"
+    }
+  ],
+  "contract_hash": "sha256:6ceab75b5ae2acc924ca2e9d9429571001e1e5a26a8e22476fe83e109b39ecdb",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:57b1bd928963108231dd9d285f6e031d33f322ed66ab0dd83c75b5aa95cf8512",
+  "manifest_hash": "sha256:0714c038cd1cff23e312782fd9a013c5409241d01f2554f80f08e77be52af3f4",
+  "owned_paths": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "patch_sha256": "sha256:c9166db6a9ca8319afd4c09a94df3ce9bafba26abd8d7b105632da9f22ee617a",
+  "role": "implementer",
+  "schema_version": 1,
+  "unit_id": "sidecar-authenticated-shutdown",
+  "worker_id": "/root/sidecar_shutdown_impl",
+  "workspace_id": "pokecrossroads-runtime-hardening-20260902-sidecar-shutdown-implementer"
+}

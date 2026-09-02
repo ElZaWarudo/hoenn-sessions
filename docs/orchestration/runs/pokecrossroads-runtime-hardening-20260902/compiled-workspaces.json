@@ -1,0 +1,163 @@
+{
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "consolidation_invocation": "runtime-integrator",
+  "execution_waves": [
+    [
+      "mgba-containment-implementer",
+      "sidecar-shutdown-implementer"
+    ],
+    [
+      "runtime-reviewer",
+      "runtime-security-reviewer"
+    ],
+    [
+      "runtime-integrator"
+    ]
+  ],
+  "lifecycle": [
+    "create",
+    "seed-index",
+    "seal-baseline",
+    "dispatch",
+    "observe",
+    "export-patch",
+    "reconcile",
+    "cleanup"
+  ],
+  "patch_application_order": [
+    "mgba-containment-implementer",
+    "sidecar-shutdown-implementer",
+    "runtime-integrator"
+  ],
+  "run_id": "pokecrossroads-runtime-hardening-20260902",
+  "schema_version": 1,
+  "workspace_plan_hash": "sha256:3b37baa51e4bffb5046216fcb6ccc912e8364ece79e6871d1e69584f18b6a68f",
+  "workspaces": [
+    {
+      "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-runtime-hardening-20260902/sidecar-shutdown-implementer",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": false,
+      "invocation_id": "sidecar-shutdown-implementer",
+      "mode": "mutable",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/sidecar-shutdown-implementer",
+      "role": "implementer",
+      "unit_id": "sidecar-authenticated-shutdown",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-sidecar-shutdown-implementer"
+    },
+    {
+      "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-runtime-hardening-20260902/mgba-containment-implementer",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": false,
+      "invocation_id": "mgba-containment-implementer",
+      "mode": "mutable",
+      "owned_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "coop/crates/coop-launcher/Cargo.toml",
+        "coop/crates/coop-launcher/src/compat.rs",
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/process.rs",
+        "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+        "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+        "dist/bridge_manifest.json",
+        "tools/generate_bridge_manifest.py",
+        "tools/tests/test_generate_bridge_manifest.py"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/mgba-containment-implementer",
+      "role": "implementer",
+      "unit_id": "mgba-identity-and-job-containment",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-mgba-containment-implementer"
+    },
+    {
+      "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "mgba-containment-implementer",
+        "sidecar-shutdown-implementer"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "runtime-reviewer",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/runtime-reviewer",
+      "role": "reviewer",
+      "unit_id": "runtime-hardening-review",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-runtime-reviewer"
+    },
+    {
+      "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "mgba-containment-implementer",
+        "sidecar-shutdown-implementer"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "runtime-security-reviewer",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/runtime-security-reviewer",
+      "role": "security-reviewer",
+      "unit_id": "runtime-hardening-security",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-runtime-security-reviewer"
+    },
+    {
+      "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-runtime-hardening-20260902/runtime-integrator",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "mgba-containment-implementer",
+        "runtime-reviewer",
+        "runtime-security-reviewer",
+        "sidecar-shutdown-implementer"
+      ],
+      "detached": false,
+      "invocation_id": "runtime-integrator",
+      "mode": "mutable-consolidation",
+      "owned_paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "coop/crates/coop-launcher",
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs",
+        "dist/bridge_manifest.json",
+        "tools/generate_bridge_manifest.py",
+        "tools/tests/test_generate_bridge_manifest.py"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/runtime-integrator",
+      "role": "integrator",
+      "unit_id": "runtime-hardening-integration",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-runtime-integrator"
+    }
+  ],
+  "worktree_parent": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions"
+}

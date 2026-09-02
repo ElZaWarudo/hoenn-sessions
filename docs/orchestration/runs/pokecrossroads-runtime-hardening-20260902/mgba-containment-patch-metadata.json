@@ -1,0 +1,23 @@
+{
+  "workspace_id": "pokecrossroads-runtime-hardening-20260902-mgba-containment-implementer",
+  "worker_id": "/root/mgba_containment_impl",
+  "unit_id": "mgba-identity-and-job-containment",
+  "role": "implementer",
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "baseline_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "coop/crates/coop-launcher/Cargo.toml",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+    "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+    "dist/bridge_manifest.json",
+    "tools/generate_bridge_manifest.py",
+    "tools/tests/test_generate_bridge_manifest.py"
+  ],
+  "contract_hash": "sha256:c994f5fff3b3852541c84c36c951d39f967d0fdd6e4e189a4bac48715cc43d38"
+}

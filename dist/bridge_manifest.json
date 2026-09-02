@@ -1,8 +1,16 @@
 {
+  "emulator": {
+    "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
+    "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247",
+    "name": "mGBA",
+    "platform": "windows-x64",
+    "variant": "Qt",
+    "version": "0.10.5"
+  },
   "game_build": {
     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
     "numeric_id": 65536,
-    "rom_sha256": "90c8e3337c7932b8f4ca1978813dd788341ec6bd40847be3a8560b0cfb2d6b34"
+    "rom_sha256": "c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165"
   },
   "net_bridge": {
     "abi_version": 1,
@@ -61,5 +69,5 @@
     "schema_version": 1,
     "struct_size": 672
   },
-  "schema_version": 2
+  "schema_version": 3
 }

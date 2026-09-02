@@ -1,5 +1,5 @@
 schema_version: 1
-updated_at: "2026-09-02T01:51:40Z"
+updated_at: "2026-09-02T10:35:13Z"
 blockers:
   - id: BLK-ARM-TOOLCHAIN
     jira_issue_key: null
@@ -38,7 +38,7 @@ blockers:
     detected_at: "2026-09-01T00:00:00Z"
     status: resolved
     evidence: mGBA 0.10.5 was selected as the exact development compatibility target.
-    next_action: Track the remaining interactive runtime proof under BLK-MGBA-CONFORMANCE and binary provenance under BLK-MGBA-JOB.
+    next_action: Track interactive runtime proof under BLK-MGBA-CONFORMANCE and the residual cleanup/Job-completion limits under BLK-MGBA-JOB.
     resolution:
       decided_at: "2026-09-01T01:00:00Z"
       decided_by: seneschal-root
@@ -88,20 +88,20 @@ blockers:
   - id: BLK-MGBA-JOB
     jira_issue_key: null
     unit_id: phase2-launcher-production
-    title: Complete Windows mGBA containment, binary trust, and graceful shutdown
+    title: Close residual Windows cleanup and Job-completion gaps
     wave: production-hardening
     type: security
     risk: elevated
-    description: Stable safe Rust does not expose the Windows attributed-process API needed to place the mGBA version probe in a Job Object before its first instruction, and the selected mGBA binary is version-checked but not yet bound to a published vendor digest. The launcher has a tested bounded forced kill-and-reap fallback, but the current authenticated control protocol has no graceful-shutdown request and acknowledgement to attempt before that fallback. Fresh per-launch directories, DELETE_ON_CLOSE where supported, and final identity checks reject observed staged-file replacement and protect ordinary concurrent sessions, but safe standard-library name-based cleanup is not atomic against a hostile same-user replacement during the pre-open interval.
-    decision_required: Audit and pin a safe atomic Job Object spawn dependency or isolate an audited Windows FFI boundary, publish the accepted mGBA binary digest in the compatibility manifest, define an authenticated bounded graceful-shutdown exchange that falls back to the existing forced kill-and-reap path, and use an audited handle-based cleanup primitive where same-user hostile replacement is in scope.
-    impact_if_ignored: The launcher fails closed when cleanup cannot be confirmed and its bounded forced fallback is locally proven, but a supplied executable could create a detached descendant before PID-based cleanup, the launcher cannot request an orderly emulator flush before force, and a hostile same-user process retains a narrow name-resolution race against staged-file cleanup; production process-tree containment and graceful shutdown cannot be claimed.
+    description: The launcher now pins and validates the official mGBA executable, attaches both the version probe and gameplay process to a kill-on-close Job Object during creation, and performs an epoch-bound, correlated, bounded sidecar shutdown transaction before Job termination and root reaping. Fresh per-launch directories, DELETE_ON_CLOSE where supported, and final identity checks reject observed staged-file replacement and protect ordinary concurrent sessions. The final pathname-to-DELETE_ON_CLOSE open remains non-atomic against hostile same-user replacement, successful TerminateJobObject initiation plus root reaping does not prove that the Job is empty, and synchronous native calls can exceed the nominal cleanup deadline.
+    decision_required: Implement or adopt an audited handle-relative cleanup boundary and a Job completion or active-process-count primitive, or explicitly exclude hostile same-user replacement and strict descendant-emptiness proof from the supported threat model.
+    impact_if_ignored: Ordinary sessions remain fail-closed and process-tree containment is locally exercised, but an adversarial local peer can race staged-name cleanup, and the launcher cannot make a strict claim that no Job descendant remains or that uncancellable native cleanup always finishes inside the nominal wall-clock deadline.
     affected_units: [phase2-launcher-core, distribution]
     blocks_dependents: false
     suggested_owner: security lead
     detected_at: "2026-09-01T22:13:50Z"
     status: open
-    evidence: Independent launcher review identified atomic Job Object attachment, authenticated shutdown, and atomic same-user-resistant name-to-handle cleanup as unavailable through the current safe standard-library boundary; local tests pass for bounded forced kill/reap, typed fail-closed cleanup, observed replacement rejection, ordinary concurrent-session isolation, and marker retention.
-    next_action: Evaluate audited atomic Windows spawn and handle-based cleanup boundaries, pin the vendor binary digest, and add an authenticated graceful-shutdown acknowledgement with a strict deadline before public distribution.
+    evidence: The exactly pinned windows-spawn 0.1.0 boundary performs creation-time Job attachment. Independent tests cover probe and gameplay descendants, cancellation, bounded authenticated shutdown acknowledgements and replay within one sidecar process, forced fallback, typed cleanup evidence, staged-file replacement rejection, concurrent-session isolation, and recovery-marker retention. The dependency does not expose a Job-empty oracle or make synchronous Windows calls cancellable.
+    next_action: Audit and implement handle-relative staged-file cleanup plus a Job completion/count primitive, then certify the residual hostile-local-peer and deadline cases before public distribution.
     resolution:
       decided_at: null
       decided_by: null
@@ -113,7 +113,7 @@ blockers:
     wave: phase2-runtime-conformance
     type: validation
     risk: high
-    description: The local smoke drives the exact bridge frames and byte-accurate character.sav at a deterministic seam, but it does not launch stock mGBA 0.10.5, load bridge/main.lua, or exercise live emulator callbacks and ROM timing.
+    description: The local smoke drives exact bridge frames and a byte-accurate character.sav at a deterministic seam. An opt-in test now validates and launches the pinned official mGBA 0.10.5 executable with the exact built ROM under production Job supervision, but it does not load bridge/main.lua or exercise live Lua callbacks, checkpointing, reconnect, savestate fallback, or ROM timing.
     decision_required: Provide a legal matching ROM build and an interactive mGBA 0.10.5 environment, then run the manual Lua load, save checkpoint, savestate fallback, reconnect, and shutdown conformance scenarios.
     impact_if_ignored: Container, protocol, and lifecycle interoperability are locally proven, but real emulator integration and timing compatibility remain uncertified.
     affected_units: [phase2-integration, distribution]
@@ -121,7 +121,7 @@ blockers:
     suggested_owner: integration lead
     detected_at: "2026-09-02T00:36:41Z"
     status: open
-    evidence: The integration test constructs the canonical SAV and ROM-facing frames directly; no fresh Lua interpreter or interactive mGBA run was available for the 2026-09-02 checkpoint.
+    evidence: The 2026-09-02 opt-in real-artifact test passed exact executable/version/ROM validation, production Job launch, 128 KiB implicit SRAM creation, and contained cleanup. It did not load bridge/main.lua, and no Lua interpreter or interactive callback run was available.
     next_action: Execute and record the stock-mGBA conformance matrix without committing ROM, BIOS, SAV, savestate, or generated private session material.
     resolution:
       decided_at: null

@@ -632,6 +632,8 @@ fn lua_string(value: &str) -> String {
     quoted
 }
 
+// Executable identity is validated before session construction and is
+// intentionally omitted from this address-only Lua projection.
 fn render_generated_addresses(manifest: &crate::compat::BridgeManifest) -> String {
     let bridge = &manifest.net_bridge;
     let offsets = &bridge.offsets;
@@ -1732,11 +1734,25 @@ impl SessionLifecycle {
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut shutdown = Box::pin(shutdown);
         let mut shutdown_requested = false;
+        let mut shutdown_completed = false;
         let result = loop {
             let step = tokio::select! {
                 () = &mut shutdown => {
                     shutdown_requested = true;
-                    break self.drain_shutdown_checkpoint(api, children).await;
+                    let drain = self.drain_shutdown_checkpoint(api, children).await;
+                    let disposition = children
+                        .shutdown(self.lease.session_epoch.value(), drain.is_ok())
+                        .await;
+                    shutdown_completed = true;
+                    break match (drain, disposition.recovery_required()) {
+                        (Err(error), _) => Err(error),
+                        (Ok(()), true) => Err(SessionError::Control(
+                            ProcessError::Termination(io::Error::other(
+                                "shutdown evidence requires recovery",
+                            )),
+                        )),
+                        (Ok(()), false) => Ok(()),
+                    };
                 },
                 _ = heartbeat.tick() => self.heartbeat(api).await,
                 event = children.next_event() => match event.map_err(SessionError::Control) {
@@ -1754,7 +1770,8 @@ impl SessionLifecycle {
                 break Err(error);
             }
         };
-        if (shutdown_requested || result.is_err())
+        if !shutdown_completed
+            && (shutdown_requested || result.is_err())
             && let Err(error) = children.stop_in_place().await
             && result.is_ok()
         {
@@ -2891,7 +2908,15 @@ mod lifecycle_tests {
 
     fn compatibility() -> BuildCompatibility {
         let manifest = serde_json::from_value(json!({
-            "schema_version": 2,
+            "schema_version": 3,
+            "emulator": {
+                "name": "mGBA",
+                "version": "0.10.5",
+                "platform": "windows-x64",
+                "variant": "Qt",
+                "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
+                "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+            },
             "game_build": {
                 "id": "pokeemerald-coop",
                 "numeric_id": 65536,
@@ -3130,6 +3155,9 @@ mod lifecycle_tests {
                 }
                 coop_sidecar::control::ControlCommand::CheckpointAbort(_) => {
                     panic!("checkpoint must grant before save capture")
+                }
+                coop_sidecar::control::ControlCommand::ShutdownRequest(_) => {
+                    panic!("checkpoint fixture must not receive shutdown")
                 }
             };
             let result = ControlEvent::CommandResult {
@@ -3423,9 +3451,11 @@ mod lifecycle_tests {
         let generated =
             std::fs::read_to_string(session.workspace.path().join("generated_addresses.lua"))
                 .unwrap();
-        assert!(generated.contains("schema_version = 2"));
+        assert!(generated.contains("schema_version = 3"));
         assert!(generated.contains("save = {"));
         assert!(generated.contains("block3_address = 33554432"));
+        assert!(!generated.contains("archive_sha256"));
+        assert!(!generated.contains("executable_sha256"));
 
         std::fs::remove_file(
             session

@@ -1,19 +1,20 @@
 //! Authenticated, bounded JSONL control protocol for checkpoint decisions.
 //!
 //! The control channel is intentionally separate from the ROM bridge channel.  It
-//! accepts only the two checkpoint commands defined here and never exposes a
+//! accepts only the typed commands defined here and never exposes a
 //! caller-controlled bridge frame API.
 
 use std::{
     fmt, io,
     net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
     time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{
         TcpListener, TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
@@ -148,16 +149,18 @@ impl<'de> Deserialize<'de> for CommandId {
 
 /// Commands accepted from the launcher.  There is deliberately no generic
 /// frame or byte payload variant.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlCommand {
     #[serde(rename = "checkpoint_grant")]
     CheckpointGrant(CheckpointGrant),
     #[serde(rename = "checkpoint_abort")]
     CheckpointAbort(CheckpointAbort),
+    #[serde(rename = "shutdown_request")]
+    ShutdownRequest(ShutdownRequest),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointGrant {
     pub command_id: CommandId,
@@ -175,12 +178,22 @@ impl CheckpointGrant {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointAbort {
     pub command_id: CommandId,
     pub session_epoch: u32,
     pub ready_sequence: u32,
+}
+
+/// Requests an authenticated, epoch-bound sidecar shutdown.  The sidecar
+/// records the command before acknowledging it and does not claim that the
+/// emulator has already exited.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShutdownRequest {
+    pub command_id: CommandId,
+    pub session_epoch: u32,
 }
 
 impl CheckpointAbort {
@@ -286,8 +299,9 @@ pub enum ControlError {
 }
 
 /// A control-only loopback listener.  It has no bridge-frame methods.
+#[derive(Clone)]
 pub(crate) struct ControlListener {
-    listener: TcpListener,
+    listener: Arc<TcpListener>,
     address: SocketAddr,
     secret: ControlSecret,
     session_epoch: u32,
@@ -300,7 +314,7 @@ impl ControlListener {
             .map_err(ControlError::Listener)?;
         let address = listener.local_addr().map_err(ControlError::Listener)?;
         Ok(Self {
-            listener,
+            listener: Arc::new(listener),
             address,
             secret: ControlSecret::generate(),
             session_epoch,
@@ -316,12 +330,21 @@ impl ControlListener {
         &self.secret
     }
 
-    pub(crate) async fn accept(&mut self) -> Result<ControlConnection, ControlError> {
-        let (stream, peer) = self
-            .listener
-            .accept()
-            .await
-            .map_err(ControlError::Listener)?;
+    #[cfg(test)]
+    pub(crate) async fn accept(&self) -> Result<ControlConnection, ControlError> {
+        let (stream, peer) = self.accept_stream().await?;
+        self.authenticate_stream(stream, peer).await
+    }
+
+    pub(crate) async fn accept_stream(&self) -> Result<(TcpStream, SocketAddr), ControlError> {
+        self.listener.accept().await.map_err(ControlError::Listener)
+    }
+
+    pub(crate) async fn authenticate_stream(
+        &self,
+        stream: TcpStream,
+        peer: SocketAddr,
+    ) -> Result<ControlConnection, ControlError> {
         ControlConnection::authenticate(stream, peer, &self.secret, self.session_epoch).await
     }
 }
@@ -391,35 +414,20 @@ impl ControlReader {
     /// # Errors
     ///
     /// Returns a protocol error when the line is incomplete, oversized, or
-    /// does not deserialize to one of the two typed commands.
+    /// does not deserialize to one of the typed commands.
     pub(crate) async fn receive_command(&mut self) -> Result<ControlCommand, ControlError> {
-        // Do not put an idle control connection on an inactivity deadline. A
-        // deadline starts only after the first byte, making a genuinely
-        // fragmented command fail closed without mistaking an idle launcher
-        // for a lost peer.
-        let mut line = Vec::with_capacity(128);
-        let mut first = [0_u8; 1];
-        let count = self
-            .stream
-            .read(&mut first)
-            .await
-            .map_err(ControlError::Connection)?;
-        if count == 0 {
-            return Err(ControlError::LineClosed);
-        }
-        if first[0] == b'\n' {
-            return Err(ControlError::MalformedCommand(
-                serde_json::from_slice::<ControlCommand>(&[]).unwrap_err(),
-            ));
-        }
-        line.push(first[0]);
-        let line = timeout(
-            CONTROL_TIMEOUT,
-            read_bounded_line_with_prefix(&mut self.stream, line),
-        )
-        .await
-        .map_err(|_| ControlError::ReadTimeout)??;
-        serde_json::from_slice(&line).map_err(ControlError::MalformedCommand)
+        receive_bounded_command(&mut self.stream).await
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn receive_command_observed<F>(
+        &mut self,
+        prefix_observer: F,
+    ) -> Result<ControlCommand, ControlError>
+    where
+        F: FnOnce() + Send,
+    {
+        receive_bounded_command_observed(&mut self.stream, prefix_observer).await
     }
 }
 
@@ -436,18 +444,64 @@ impl ControlWriter {
     /// Returns a protocol error when serialization, bounded I/O, or the
     /// authenticated connection fails.
     pub(crate) async fn send_event(&mut self, event: &ControlEvent) -> Result<(), ControlError> {
-        let mut line = serde_json::to_vec(event).map_err(|error| {
-            ControlError::Connection(io::Error::new(io::ErrorKind::InvalidData, error))
-        })?;
-        line.push(b'\n');
-        if line.len() > MAX_CONTROL_LINE_BYTES {
-            return Err(ControlError::LineTooLarge);
-        }
-        timeout(CONTROL_TIMEOUT, self.stream.write_all(&line))
-            .await
-            .map_err(|_| ControlError::WriteTimeout)?
-            .map_err(ControlError::WriteConnection)
+        write_bounded_event(&mut self.stream, event).await
     }
+}
+
+async fn receive_bounded_command(
+    stream: &mut (impl AsyncRead + Unpin),
+) -> Result<ControlCommand, ControlError> {
+    receive_bounded_command_observed(stream, || {}).await
+}
+
+async fn receive_bounded_command_observed<F>(
+    stream: &mut (impl AsyncRead + Unpin),
+    prefix_observer: F,
+) -> Result<ControlCommand, ControlError>
+where
+    F: FnOnce() + Send,
+{
+    // Do not put an idle control connection on an inactivity deadline. A
+    // deadline starts only after the first byte, making a genuinely
+    // fragmented command fail closed without mistaking an idle launcher
+    // for a lost peer.
+    let mut line = Vec::with_capacity(128);
+    let mut first = [0_u8; 1];
+    let count = stream
+        .read(&mut first)
+        .await
+        .map_err(ControlError::Connection)?;
+    if count == 0 {
+        return Err(ControlError::LineClosed);
+    }
+    if first[0] == b'\n' {
+        return Err(ControlError::MalformedCommand(
+            serde_json::from_slice::<ControlCommand>(&[]).unwrap_err(),
+        ));
+    }
+    line.push(first[0]);
+    prefix_observer();
+    let line = timeout(CONTROL_TIMEOUT, read_bounded_line_with_prefix(stream, line))
+        .await
+        .map_err(|_| ControlError::ReadTimeout)??;
+    serde_json::from_slice(&line).map_err(ControlError::MalformedCommand)
+}
+
+async fn write_bounded_event(
+    stream: &mut (impl AsyncWrite + Unpin),
+    event: &ControlEvent,
+) -> Result<(), ControlError> {
+    let mut line = serde_json::to_vec(event).map_err(|error| {
+        ControlError::Connection(io::Error::new(io::ErrorKind::InvalidData, error))
+    })?;
+    line.push(b'\n');
+    if line.len() > MAX_CONTROL_LINE_BYTES {
+        return Err(ControlError::LineTooLarge);
+    }
+    timeout(CONTROL_TIMEOUT, stream.write_all(&line))
+        .await
+        .map_err(|_| ControlError::WriteTimeout)?
+        .map_err(ControlError::WriteConnection)
 }
 
 pub(crate) async fn read_bounded_line(
@@ -515,6 +569,24 @@ mod tests {
             command_id().0
         ))
         .is_err());
+
+        let shutdown = ControlCommand::ShutdownRequest(ShutdownRequest {
+            command_id: command_id(),
+            session_epoch: 7,
+        });
+        let json = serde_json::to_string(&shutdown).unwrap();
+        assert_eq!(
+            json,
+            r#"{"type":"shutdown_request","command_id":"00000000-0000-4000-8000-000000000001","session_epoch":7}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            shutdown
+        );
+        assert!(serde_json::from_str::<ControlCommand>(
+            r#"{"type":"shutdown_request","command_id":"00000000-0000-4000-8000-000000000001","session_epoch":7,"extra":true}"#
+        )
+        .is_err());
     }
 
     #[test]
@@ -534,14 +606,15 @@ mod tests {
 
     #[tokio::test]
     async fn control_listener_rejects_cross_use_and_wrong_epoch() {
-        let mut listener = ControlListener::bind(7).await.unwrap();
+        let listener = ControlListener::bind(7).await.unwrap();
         let address = listener.address();
         let expected = listener.secret().expose().to_owned();
         let wrong = ControlSecret::generate().expose().to_owned();
         let task = tokio::spawn(async move { listener.accept().await });
         let mut stream = TcpStream::connect(address).await.unwrap();
-        let line =
-            format!("{{\"secret\":\"{wrong}\",\"control_version\":1,\"session_epoch\":7}}\n");
+        let line = format!(
+            "{{\"secret\":\"{wrong}\",\"control_version\":{CONTROL_PROTOCOL_VERSION},\"session_epoch\":7}}\n"
+        );
         stream.write_all(line.as_bytes()).await.unwrap();
         assert!(matches!(
             task.await.unwrap(),
@@ -552,7 +625,7 @@ mod tests {
 
     #[tokio::test]
     async fn bounded_control_handshake_rejects_version_oversize_and_partial_lines() {
-        let mut listener = ControlListener::bind(7).await.unwrap();
+        let listener = ControlListener::bind(7).await.unwrap();
         let address = listener.address();
         let secret = listener.secret().expose().to_owned();
         let task = tokio::spawn(async move { listener.accept().await });
@@ -565,7 +638,7 @@ mod tests {
             Err(ControlError::IncompatibleVersion(2))
         ));
 
-        let mut listener = ControlListener::bind(7).await.unwrap();
+        let listener = ControlListener::bind(7).await.unwrap();
         let address = listener.address();
         let task = tokio::spawn(async move { listener.accept().await });
         let mut stream = TcpStream::connect(address).await.unwrap();
@@ -578,7 +651,7 @@ mod tests {
             Err(ControlError::LineTooLarge)
         ));
 
-        let mut listener = ControlListener::bind(7).await.unwrap();
+        let listener = ControlListener::bind(7).await.unwrap();
         let address = listener.address();
         let task = tokio::spawn(async move { listener.accept().await });
         let mut stream = TcpStream::connect(address).await.unwrap();

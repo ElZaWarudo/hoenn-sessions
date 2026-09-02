@@ -6,6 +6,11 @@ source_sha256: 47cd8dfc2653d6e52708e0a12f758c1da2fa2d9cf7b62e4fbb7540fd897be553
 engine_tag: Beta-1.4
 engine_commit: e05c82865d38a6638173fd30b2c830d1250aa50d
 mgba_version: 0.10.5
+bridge_manifest_schema: 3
+mgba_platform: windows-x64
+mgba_variant: Qt
+mgba_archive_sha256: b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a
+mgba_executable_sha256: 5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247
 ---
 
 # PokéCrossroads Cloud Co-op initiative contract
@@ -18,7 +23,21 @@ Build a private two-player online cooperative mode for PokéCrossroads, mGBA, a 
 
 The engine is pinned to tag `Beta-1.4` and commit `e05c82865d38a6638173fd30b2c830d1250aa50d`. Its embedded Expansion version identifies itself as unreleased `1.16.0`. Existing Emerald saves are not a compatibility target because PokéCrossroads documents an expanded save layout. The build output name is taken from the Makefile (`pokeemerald.gba`) until upstream resolves its README drift.
 
-mGBA is pinned to stable `0.10.5`, whose documented Lua API provides frame callbacks, bus memory access, and loopback TCP sockets. Bridge ABI v1 follows the README's exact 144-byte message and 9,244-byte bridge layout, uses CRC-32/IEEE over bytes 0 through 139, and publishes queue indices last. Numeric `game_build_id` `0x00010000` denotes the first co-op development schema; outer bridge-manifest schema 2 additionally pins the complete ROM SHA-256 and the linked `SaveBlock3`/`CSP1` ABI. The persisted `CSP1` schema itself remains version 1.
+mGBA is pinned to the official stable `0.10.5` Windows x64 Qt artifact, whose
+archive SHA-256 is
+`b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a` and whose
+executable SHA-256 is
+`5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247`. Its
+documented Lua API provides frame callbacks, bus memory access, and loopback
+TCP sockets. The launcher owns executable identity validation before
+probe/gameplay; Lua receives only a generated outer-schema-3 address projection
+and does not receive or validate host executable digests. Bridge ABI v1 follows
+the README's exact 144-byte message and 9,244-byte bridge layout, uses
+CRC-32/IEEE over bytes 0 through 139, and publishes queue indices last. Numeric
+`game_build_id` `0x00010000` denotes the first co-op development schema; outer
+bridge-manifest schema 3 additionally pins the complete ROM SHA-256 and the
+linked `SaveBlock3`/`CSP1` ABI. The persisted `CSP1` save schema, bridge ABI, and
+game protocol remain version 1.
 
 The Phase 1 HTTP adapter is deliberately unauthenticated and therefore refuses non-loopback binds. It is an executable domain harness, not the future public service boundary. The server issues every monotonic nonzero `u32` session epoch; the launcher persists and presents that fence, and the sidecar refuses to invent one. Server route and trainer catalog entries own exact logical zones. A bounded final-state hash proves only that the transport field is present in this slice; two-client deterministic hash consensus remains part of the later lockstep milestone.
 

@@ -1,0 +1,74 @@
+{
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "baseline_digest": "sha256:e1a2857a5c48d41c3387dd1eb0e18112b14f69112eb9caa33406110fa324c464",
+  "baseline_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515",
+  "changed_files": [
+    {
+      "digest": "sha256:a2482d303852a37acc3d00ca813f3aae765900a9bdca95145b726f6ed2405508",
+      "path": "Cargo.lock"
+    },
+    {
+      "digest": "sha256:59f41b2c6af4d8572fbe82b4f90e8fee794c799e2b277fe4bd7da1f16edf82e3",
+      "path": "Cargo.toml"
+    },
+    {
+      "digest": "sha256:77d41a522751a596cd32abcd651d582609046aaf2455d476426ae1823617f46e",
+      "path": "coop/crates/coop-launcher/Cargo.toml"
+    },
+    {
+      "digest": "sha256:02ad8022301f57a76e61525269f7eec9713c0205d4fb73452a962ec34195ec40",
+      "path": "coop/crates/coop-launcher/src/compat.rs"
+    },
+    {
+      "digest": "sha256:0e93f31c6707098b0e2d354bfa326986ff90f8784e3f8d7bcae76da244efedb1",
+      "path": "coop/crates/coop-launcher/src/lib.rs"
+    },
+    {
+      "digest": "sha256:508aaa9f754807d24f6abe58a001a4ca56e99462db1b97f2274579c3ea98edf4",
+      "path": "coop/crates/coop-launcher/src/process.rs"
+    },
+    {
+      "digest": "sha256:bb631d90b06b6f887d291761e5d5edecf856f2312f75d07b337760fddde5574e",
+      "path": "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs"
+    },
+    {
+      "digest": "sha256:cc136e571bb96e5d30798899a82f442af7a9e6faf5ca1b68b2a06d86925bcb93",
+      "path": "coop/crates/coop-launcher/tests/windows_mgba_containment.rs"
+    },
+    {
+      "digest": "sha256:b512306c67655fd10b9462891f2023bf2d0b9230aedd1b998879243ae1ad9f62",
+      "path": "dist/bridge_manifest.json"
+    },
+    {
+      "digest": "sha256:ae6dd2ba9c81eb8426d2138fc43d9221554c2035e1d544a01bd0881cf1036a2a",
+      "path": "tools/generate_bridge_manifest.py"
+    },
+    {
+      "digest": "sha256:ddf72d9900393898f1df1f2f93e4a20d6cb7ab3a4f04548daef8a8b55fa5a808",
+      "path": "tools/tests/test_generate_bridge_manifest.py"
+    }
+  ],
+  "contract_hash": "sha256:c994f5fff3b3852541c84c36c951d39f967d0fdd6e4e189a4bac48715cc43d38",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:c0a3d208f2395ea7d86d5d1b2cf3b50e575d62847aa78514067b3ef1a988fdf3",
+  "manifest_hash": "sha256:38747282d7f60010bc444e3f55b8974ae27e3e5a4b7e8342c08a36d39977499a",
+  "owned_paths": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "coop/crates/coop-launcher/Cargo.toml",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+    "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+    "dist/bridge_manifest.json",
+    "tools/generate_bridge_manifest.py",
+    "tools/tests/test_generate_bridge_manifest.py"
+  ],
+  "patch_sha256": "sha256:f2a8faa4361fdbfa72ea0f00bd9b632c22e3af6be9543857efc310bea90b9efc",
+  "role": "implementer",
+  "schema_version": 1,
+  "unit_id": "mgba-identity-and-job-containment",
+  "worker_id": "/root/mgba_containment_impl",
+  "workspace_id": "pokecrossroads-runtime-hardening-20260902-mgba-containment-implementer"
+}

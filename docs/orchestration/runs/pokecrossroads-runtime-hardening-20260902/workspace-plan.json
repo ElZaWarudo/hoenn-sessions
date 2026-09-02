@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "run_id": "pokecrossroads-runtime-hardening-20260902",
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "worktree_parent": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions",
+  "invocations": [
+    {
+      "id": "sidecar-shutdown-implementer",
+      "unit_id": "sidecar-authenticated-shutdown",
+      "role": "implementer",
+      "depends_on": [],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs"
+      ]
+    },
+    {
+      "id": "mgba-containment-implementer",
+      "unit_id": "mgba-identity-and-job-containment",
+      "role": "implementer",
+      "depends_on": [],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "coop/crates/coop-launcher/Cargo.toml",
+        "coop/crates/coop-launcher/src/compat.rs",
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/process.rs",
+        "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+        "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+        "dist/bridge_manifest.json",
+        "tools/generate_bridge_manifest.py",
+        "tools/tests/test_generate_bridge_manifest.py"
+      ]
+    },
+    {
+      "id": "runtime-reviewer",
+      "unit_id": "runtime-hardening-review",
+      "role": "reviewer",
+      "depends_on": [],
+      "candidate_invocations": [
+        "sidecar-shutdown-implementer",
+        "mgba-containment-implementer"
+      ],
+      "owned_paths": []
+    },
+    {
+      "id": "runtime-security-reviewer",
+      "unit_id": "runtime-hardening-security",
+      "role": "security-reviewer",
+      "depends_on": [],
+      "candidate_invocations": [
+        "sidecar-shutdown-implementer",
+        "mgba-containment-implementer"
+      ],
+      "owned_paths": []
+    },
+    {
+      "id": "runtime-integrator",
+      "unit_id": "runtime-hardening-integration",
+      "role": "integrator",
+      "depends_on": [
+        "sidecar-shutdown-implementer",
+        "mgba-containment-implementer",
+        "runtime-reviewer",
+        "runtime-security-reviewer"
+      ],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "coop/crates/coop-launcher",
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs",
+        "dist/bridge_manifest.json",
+        "tools/generate_bridge_manifest.py",
+        "tools/tests/test_generate_bridge_manifest.py"
+      ]
+    }
+  ]
+}

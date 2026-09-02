@@ -1,0 +1,1951 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index ce597ca002afd931635742150cbffe228eb8ac46..613f028ad3b81b426d0ba18df23e4efd33d5738f 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -207,6 +207,7 @@ dependencies = [
+  "url",
+  "uuid",
+  "windows-native-keyring-store",
++ "windows-spawn",
+  "zeroize",
+ ]
+ 
+@@ -1720,6 +1721,15 @@ dependencies = [
+  "zeroize",
+ ]
+ 
++[[package]]
++name = "windows-spawn"
++version = "0.1.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "2de3bd5b666ddb82bdd91c438afbe6a413fc21725d10e3e0b8d1d1c4afdd91c6"
++dependencies = [
++ "windows-sys 0.61.2",
++]
++
+ [[package]]
+ name = "windows-sys"
+ version = "0.52.0"
+diff --git a/Cargo.toml b/Cargo.toml
+index 1ec673c466f8ec49d68fd439a4528bd0cab2e985..f0fa60b9c6898f39700d676d230080e95fbd27d0 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -30,6 +30,7 @@ tower = { version = "0.5.3", features = ["util"] }
+ url = "2.5.8"
+ uuid = { version = "1.26.0", features = ["serde", "v4"] }
+ windows-native-keyring-store = { version = "1.1.0", default-features = false }
++windows-spawn = "=0.1.0"
+ zeroize = { version = "1.8.2", features = ["derive"] }
+ 
+ [workspace.lints.rust]
+diff --git a/coop/crates/coop-launcher/Cargo.toml b/coop/crates/coop-launcher/Cargo.toml
+index 974b671ac14b74eb6cdc9891dc8cf7664d8595dd..eac75092d4614c70e375344d2c7e91d933fd48e9 100644
+--- a/coop/crates/coop-launcher/Cargo.toml
++++ b/coop/crates/coop-launcher/Cargo.toml
+@@ -28,6 +28,7 @@ zeroize.workspace = true
+ 
+ [target.'cfg(windows)'.dependencies]
+ windows-native-keyring-store.workspace = true
++windows-spawn.workspace = true
+ 
+ [dev-dependencies]
+ http-body-util.workspace = true
+diff --git a/coop/crates/coop-launcher/src/compat.rs b/coop/crates/coop-launcher/src/compat.rs
+index 9c64f244731c1ecbfbaa34b655b3f58a968d24b7..f4c87c66cdd930ccf31fa0dad006f0484ae9f015 100644
+--- a/coop/crates/coop-launcher/src/compat.rs
++++ b/coop/crates/coop-launcher/src/compat.rs
+@@ -4,10 +4,15 @@ use std::{
+     fs::{self, File},
+     io::{self, Read},
+     path::{Path, PathBuf},
++    time::Duration,
++};
++
++#[cfg(not(windows))]
++use std::{
+     process::{Command, Stdio},
+     sync::mpsc::{self, Receiver, RecvTimeoutError},
+     thread,
+-    time::{Duration, Instant},
++    time::Instant,
+ };
+ 
+ use coop_cloud::{
+@@ -20,14 +25,21 @@ use serde::Deserialize;
+ use thiserror::Error;
+ 
+ pub const EXPECTED_MGBA_VERSION: &str = "0.10.5";
++pub const EXPECTED_MGBA_PLATFORM: &str = "windows-x64";
++pub const EXPECTED_MGBA_VARIANT: &str = "Qt";
++pub const EXPECTED_MGBA_EXECUTABLE_SHA256: &str =
++    "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247";
++pub const EXPECTED_MGBA_ARCHIVE_SHA256: &str =
++    "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a";
+ pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+ /// Keep this in sync with the CLI's source-ROM admission limit.  The public
+ /// compatibility API is also callable without the CLI, so it must enforce
+ /// the same bound before hashing an untrusted path.
+ pub const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
++pub const MAX_MGBA_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
+ pub const MAX_MGBA_OUTPUT_BYTES: usize = 64 * 1024;
+ pub const MGBA_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+-pub const BRIDGE_MANIFEST_SCHEMA: u16 = 2;
++pub const BRIDGE_MANIFEST_SCHEMA: u16 = 3;
+ pub const BRIDGE_ABI: u16 = 1;
+ pub const GAME_PROTOCOL: u16 = 1;
+ pub const BRIDGE_MESSAGE_BYTES: u64 = 144;
+@@ -35,6 +47,25 @@ pub const BRIDGE_PAYLOAD_BYTES: u64 = 128;
+ pub const BRIDGE_QUEUE_CAPACITY: u64 = 32;
+ pub const BRIDGE_SIZE: u64 = 9244;
+ 
++pub(crate) fn expected_mgba_executable_digest() -> [u8; 32] {
++    let encoded = EXPECTED_MGBA_EXECUTABLE_SHA256.as_bytes();
++    let mut digest = [0_u8; 32];
++    let mut index = 0;
++    while index < digest.len() {
++        digest[index] = (hex_value(encoded[index * 2]) << 4) | hex_value(encoded[index * 2 + 1]);
++        index += 1;
++    }
++    digest
++}
++
++const fn hex_value(value: u8) -> u8 {
++    match value {
++        b'0'..=b'9' => value - b'0',
++        b'a'..=b'f' => value - b'a' + 10,
++        _ => 0,
++    }
++}
++
+ #[derive(Debug, Error)]
+ pub enum CompatibilityError {
+     #[error("bridge manifest cannot be read")]
+@@ -47,6 +78,8 @@ pub enum CompatibilityError {
+     RomHash,
+     #[error("mGBA executable cannot be started")]
+     Mgba(#[source] io::Error),
++    #[error("official mGBA executable identity does not match the pinned artifact")]
++    MgbaIdentity,
+     #[error("mGBA output is too large")]
+     MgbaOutput,
+     #[error("mGBA probe descendant cleanup could not be confirmed")]
+@@ -74,6 +107,19 @@ pub struct BridgeManifest {
+     pub game_build: GameBuildManifest,
+     pub net_bridge: NetBridgeManifest,
+     pub save: SaveManifest,
++    #[serde(default)]
++    pub emulator: Option<EmulatorManifest>,
++}
++
++#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct EmulatorManifest {
++    pub name: String,
++    pub version: String,
++    pub platform: String,
++    pub variant: String,
++    pub archive_sha256: String,
++    pub executable_sha256: String,
+ }
+ 
+ #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+@@ -235,13 +281,35 @@ impl BuildCompatibility {
+         let manifest: BridgeManifest =
+             serde_json::from_slice(&manifest_bytes).map_err(|_| CompatibilityError::Manifest)?;
+         validate_manifest(&manifest)?;
++        #[cfg(windows)]
++        crate::process::with_mgba_executable_guard(mgba_path, |path, digest| {
++            if digest != crate::compat::expected_mgba_executable_digest() {
++                return Err(CompatibilityError::MgbaIdentity);
++            }
++            probe_mgba(path)
++        })
++        .map_err(|error| match error {
++            crate::process::ProcessError::MgbaIdentity => CompatibilityError::MgbaIdentity,
++            crate::process::ProcessError::Spawn(source) => CompatibilityError::Mgba(source),
++            _ => CompatibilityError::Mgba(io::Error::other("mGBA executable binding failed")),
++        })??;
++        #[cfg(not(windows))]
++        {
++            let mgba_sha256 = hash_file_bounded(mgba_path, MAX_MGBA_EXECUTABLE_BYTES)
++                .map_err(CompatibilityError::Mgba)?;
++            let expected_mgba_sha256 = Sha256Digest::parse(EXPECTED_MGBA_EXECUTABLE_SHA256)
++                .map_err(|_| CompatibilityError::Manifest)?;
++            if mgba_sha256 != expected_mgba_sha256 {
++                return Err(CompatibilityError::MgbaIdentity);
++            }
++            probe_mgba(mgba_path)?;
++        }
+         let rom_sha256 = hash_file(rom_path).map_err(CompatibilityError::Rom)?;
+         let expected_hash = Sha256Digest::parse(&manifest.game_build.rom_sha256)
+             .map_err(|_| CompatibilityError::Manifest)?;
+         if rom_sha256 != expected_hash {
+             return Err(CompatibilityError::RomHash);
+         }
+-        probe_mgba(mgba_path)?;
+         let game_build_id = GameBuildId::new(manifest.game_build.id.clone())
+             .map_err(|_| CompatibilityError::Manifest)?;
+         let target = CompatibilityTarget::new(
+@@ -262,6 +330,20 @@ impl BuildCompatibility {
+ }
+ 
+ fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError> {
++    let Some(emulator) = manifest.emulator.as_ref() else {
++        return Err(CompatibilityError::Manifest);
++    };
++    if emulator.name != "mGBA"
++        || emulator.version != EXPECTED_MGBA_VERSION
++        || emulator.platform != EXPECTED_MGBA_PLATFORM
++        || emulator.variant != EXPECTED_MGBA_VARIANT
++        || Sha256Digest::parse(&emulator.archive_sha256).is_err()
++        || Sha256Digest::parse(&emulator.executable_sha256).is_err()
++        || emulator.archive_sha256 != EXPECTED_MGBA_ARCHIVE_SHA256
++        || emulator.executable_sha256 != EXPECTED_MGBA_EXECUTABLE_SHA256
++    {
++        return Err(CompatibilityError::Manifest);
++    }
+     let game = &manifest.game_build;
+     let bridge = &manifest.net_bridge;
+     GameBuildId::new(game.id.clone()).map_err(|_| CompatibilityError::Manifest)?;
+@@ -338,8 +420,12 @@ fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError
+ }
+ 
+ fn hash_file(path: &Path) -> io::Result<Sha256Digest> {
++    hash_file_bounded(path, MAX_ROM_BYTES)
++}
++
++fn hash_file_bounded(path: &Path, max_bytes: u64) -> io::Result<Sha256Digest> {
+     use sha2::{Digest, Sha256};
+-    let mut file = open_bounded_regular_file(path, MAX_ROM_BYTES)?;
++    let mut file = open_bounded_regular_file(path, max_bytes)?;
+     let mut digest = Sha256::new();
+     let mut buffer = vec![0_u8; 64 * 1024];
+     let mut total = 0_u64;
+@@ -351,7 +437,7 @@ fn hash_file(path: &Path) -> io::Result<Sha256Digest> {
+         total = total
+             .checked_add(read as u64)
+             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "ROM is too large"))?;
+-        if total > MAX_ROM_BYTES {
++        if total > max_bytes {
+             return Err(io::Error::new(
+                 io::ErrorKind::InvalidData,
+                 "ROM is too large",
+@@ -456,6 +542,40 @@ fn reject_symlink_components(path: &Path) -> io::Result<()> {
+     Ok(())
+ }
+ 
++#[cfg(windows)]
++fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
++    let output =
++        crate::windows_mgba_supervisor::probe(path, &["--version".to_owned()], MGBA_PROBE_TIMEOUT)
++            .map_err(|failure| match failure {
++                crate::windows_mgba_supervisor::ProbeFailure::Spawn(error)
++                | crate::windows_mgba_supervisor::ProbeFailure::Output(error)
++                | crate::windows_mgba_supervisor::ProbeFailure::Cleanup(error) => {
++                    CompatibilityError::Mgba(error)
++                }
++                crate::windows_mgba_supervisor::ProbeFailure::OutputTooLarge => {
++                    CompatibilityError::MgbaOutput
++                }
++                crate::windows_mgba_supervisor::ProbeFailure::Timeout => {
++                    CompatibilityError::MgbaTimeout
++                }
++            })?;
++    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
++    text.push_str(&String::from_utf8_lossy(&output.stderr));
++    if !output.status.success()
++        || !text.lines().any(|line| {
++            let line = line.trim();
++            line.contains("mGBA")
++                && line
++                    .split_whitespace()
++                    .any(|token| token == EXPECTED_MGBA_VERSION)
++        })
++    {
++        return Err(CompatibilityError::MgbaVersion);
++    }
++    Ok(())
++}
++
++#[cfg(not(windows))]
+ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
+     let deadline = Instant::now() + MGBA_PROBE_TIMEOUT;
+     let mut command = Command::new(path);
+@@ -563,14 +683,17 @@ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
+     Ok(())
+ }
+ 
++#[cfg(not(windows))]
+ type ProbeCapture = (Vec<u8>, bool);
+ 
++#[cfg(not(windows))]
+ struct ProbeOutput {
+     stderr: bool,
+     bytes: Vec<u8>,
+     oversized: bool,
+ }
+ 
++#[cfg(not(windows))]
+ fn spawn_bounded_reader<R: Read + Send + 'static>(
+     mut reader: R,
+     stderr: bool,
+@@ -599,6 +722,7 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
+     });
+ }
+ 
++#[cfg(not(windows))]
+ fn receive_probe_outputs(
+     receiver: &Receiver<ProbeOutput>,
+     deadline: Instant,
+@@ -639,6 +763,7 @@ fn receive_probe_outputs(
+     ))
+ }
+ 
++#[cfg(not(windows))]
+ fn store_probe_output(
+     result: ProbeOutput,
+     stdout: &mut Option<ProbeCapture>,
+@@ -654,60 +779,17 @@ fn store_probe_output(
+     Ok(())
+ }
+ 
++#[cfg(not(windows))]
+ fn terminate_probe_child(child: &mut std::process::Child, deadline: Instant) -> bool {
+     // If the root has already exited, its PID is no longer a safe process-tree
+     // handle. A descendant may still own either pipe, and without a Job Object
+     // there is no safe std-only way to prove those descendants are gone.
+     let root_exited = matches!(child.try_wait(), Ok(Some(_)));
+-    #[cfg(windows)]
+-    let mut cleanup_confirmed = !root_exited;
+-    #[cfg(not(windows))]
+-    let mut cleanup_confirmed = {
+-        // The production launcher is Windows-only.  The portable standard
+-        // library can reap the direct child, but cannot prove that inherited
+-        // pipe descendants were terminated, so fail closed on this boundary.
+-        let _ = root_exited;
+-        false
+-    };
+-    #[cfg(windows)]
+-    {
+-        // `Child::kill` only terminates the direct process on Windows.  Use
+-        // the OS-provided process-tree terminator with a bounded wait only
+-        // while the root is still live (timeout/output failure). Calling it
+-        // after `try_wait` observed exit could target a recycled PID.
+-        if !root_exited {
+-            let pid = child.id();
+-            if pid != 0
+-                && let Some((taskkill, _taskkill_guard, _system32_guards)) = trusted_taskkill()
+-            {
+-                let mut command = Command::new(taskkill);
+-                command
+-                    .env_clear()
+-                    .arg("/PID")
+-                    .arg(pid.to_string())
+-                    .arg("/T")
+-                    .arg("/F")
+-                    .stdin(Stdio::null())
+-                    .stdout(Stdio::null())
+-                    .stderr(Stdio::null());
+-                if let Ok(mut killer) = command.spawn() {
+-                    cleanup_confirmed = wait_for_probe_child(&mut killer, deadline)
+-                        .is_some_and(|status| status.success());
+-                    if !cleanup_confirmed {
+-                        // Do not use Child::wait here: a compromised or
+-                        // wedged helper must never extend probe cleanup past
+-                        // the single absolute deadline.
+-                        let _ = killer.kill();
+-                        let _ = wait_for_probe_child(&mut killer, deadline);
+-                    }
+-                } else {
+-                    cleanup_confirmed = false;
+-                }
+-            } else {
+-                cleanup_confirmed = false;
+-            }
+-        }
+-    }
++    // The portable standard library can reap the direct child, but cannot
++    // prove that inherited pipe descendants were terminated. The production
++    // Windows boundary uses a Job Object in `windows_mgba_supervisor`.
++    let mut cleanup_confirmed = false;
++    let _ = root_exited;
+     if child.kill().is_err() && !matches!(child.try_wait(), Ok(Some(_))) {
+         cleanup_confirmed = false;
+     }
+@@ -718,6 +800,7 @@ fn terminate_probe_child(child: &mut std::process::Child, deadline: Instant) ->
+     cleanup_confirmed
+ }
+ 
++#[cfg(not(windows))]
+ fn wait_for_probe_child(
+     child: &mut std::process::Child,
+     deadline: Instant,
+@@ -739,50 +822,7 @@ fn wait_for_probe_child(
+     }
+ }
+ 
+-#[cfg(windows)]
+-fn trusted_taskkill() -> Option<(std::path::PathBuf, std::fs::File, Vec<std::fs::File>)> {
+-    use std::os::windows::fs::OpenOptionsExt;
+-    // System32 is the only accepted process-tree terminator location.  A
+-    // missing or redirected installation fails closed to direct-child kill.
+-    let taskkill = std::path::PathBuf::from(r"C:\Windows\System32\taskkill.exe");
+-    let parent = taskkill.parent()?;
+-    let mut system32_guards = Vec::new();
+-    let mut ancestor = Some(parent);
+-    while let Some(path) = ancestor {
+-        let mut parent_options = std::fs::OpenOptions::new();
+-        parent_options
+-            .read(true)
+-            .share_mode(0x0000_0003)
+-            .custom_flags(0x0220_0000);
+-        system32_guards.push(parent_options.open(path).ok()?);
+-        ancestor = path.parent().filter(|next| *next != path);
+-    }
+-    let canonical = std::fs::canonicalize(&taskkill).ok()?;
+-    if !is_fixed_taskkill_path(&canonical) {
+-        return None;
+-    }
+-    let mut file_options = std::fs::OpenOptions::new();
+-    file_options
+-        .read(true)
+-        .share_mode(0x0000_0001)
+-        .custom_flags(0x0020_0000);
+-    let file = file_options.open(&taskkill).ok()?;
+-    Some((taskkill, file, system32_guards))
+-}
+-
+-#[cfg(windows)]
+-fn normalize_windows_path(path: &Path) -> Option<String> {
+-    let path = path.to_str()?;
+-    let path = path.strip_prefix("\\\\?\\").unwrap_or(path);
+-    Some(path.replace('/', "\\").to_ascii_lowercase())
+-}
+-
+-#[cfg(windows)]
+-fn is_fixed_taskkill_path(path: &Path) -> bool {
+-    normalize_windows_path(path)
+-        .is_some_and(|path| path.trim_end_matches('\\') == r"c:\windows\system32\taskkill.exe")
+-}
+-
++#[cfg(not(windows))]
+ fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
+     if output.len().saturating_add(chunk.len()) > MAX_MGBA_OUTPUT_BYTES {
+         return true;
+@@ -793,17 +833,22 @@ fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
+ 
+ #[cfg(test)]
+ mod tests {
++    use std::fs;
++
++    #[cfg(not(windows))]
+     use std::{
+-        fs,
+         sync::mpsc,
+         time::{Duration, Instant},
+     };
+ 
++    use super::{CompatibilityError, MAX_MANIFEST_BYTES, open_bounded_regular_file};
++
++    #[cfg(not(windows))]
+     use super::{
+-        CompatibilityError, MAX_MANIFEST_BYTES, MAX_MGBA_OUTPUT_BYTES, ProbeOutput,
+-        append_bounded_probe_bytes, open_bounded_regular_file, receive_probe_outputs,
++        MAX_MGBA_OUTPUT_BYTES, ProbeOutput, append_bounded_probe_bytes, receive_probe_outputs,
+     };
+ 
++    #[cfg(not(windows))]
+     #[test]
+     fn probe_output_is_bounded_without_storing_untrusted_bytes() {
+         let input = vec![b'x'; MAX_MGBA_OUTPUT_BYTES];
+@@ -813,6 +858,7 @@ mod tests {
+         assert_eq!(output.len(), MAX_MGBA_OUTPUT_BYTES);
+     }
+ 
++    #[cfg(not(windows))]
+     #[test]
+     fn probe_output_collection_uses_one_absolute_deadline() {
+         let (_sender, receiver) = mpsc::channel();
+@@ -824,6 +870,7 @@ mod tests {
+         assert!(started.elapsed() < Duration::from_millis(80));
+     }
+ 
++    #[cfg(not(windows))]
+     #[test]
+     fn oversized_probe_output_aborts_collection_immediately() {
+         let (sender, receiver) = mpsc::channel();
+@@ -844,6 +891,7 @@ mod tests {
+         ));
+     }
+ 
++    #[cfg(not(windows))]
+     #[test]
+     fn early_probe_output_is_preserved_for_final_collection() {
+         let (sender, receiver) = mpsc::channel();
+@@ -891,28 +939,59 @@ mod tests {
+         assert!(open_bounded_regular_file(&link, MAX_MANIFEST_BYTES).is_err());
+     }
+ 
+-    #[cfg(windows)]
+     #[test]
+-    fn exited_probe_root_does_not_claim_descendant_cleanup() {
+-        let mut child = std::process::Command::new("cmd.exe")
+-            .args(["/C", "exit", "0"])
+-            .spawn()
+-            .unwrap();
+-        assert!(
+-            super::wait_for_probe_child(&mut child, Instant::now() + Duration::from_secs(1))
+-                .is_some()
+-        );
+-        assert!(!super::terminate_probe_child(
+-            &mut child,
+-            Instant::now() + Duration::from_secs(1)
+-        ));
++    fn checked_manifest_requires_the_pinned_emulator_contract() {
++        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
++            .join("..")
++            .join("..")
++            .join("..")
++            .join("dist")
++            .join("bridge_manifest.json");
++        let value: serde_json::Value = serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
++        for mutation in ["missing", "wrong-version", "unknown-field", "wrong-digest"] {
++            let mut mutated = value.clone();
++            match mutation {
++                "missing" => {
++                    mutated.as_object_mut().unwrap().remove("emulator");
++                }
++                "wrong-version" => {
++                    mutated["emulator"]["version"] = serde_json::Value::from("0.10.4");
++                }
++                "unknown-field" => {
++                    mutated["emulator"]["unexpected"] = serde_json::Value::from(true);
++                }
++                "wrong-digest" => {
++                    mutated["emulator"]["executable_sha256"] =
++                        serde_json::Value::from("00".repeat(32));
++                }
++                _ => unreachable!(),
++            }
++            let directory = tempfile::tempdir().unwrap();
++            let manifest = directory.path().join("manifest.json");
++            fs::write(&manifest, serde_json::to_vec(&mutated).unwrap()).unwrap();
++            assert!(matches!(
++                super::BuildCompatibility::validate(&manifest, "missing.gba", "missing.exe"),
++                Err(CompatibilityError::Manifest)
++            ));
++        }
+     }
+ 
+-    #[cfg(windows)]
+     #[test]
+-    fn trusted_taskkill_accepts_normalized_fixed_system_path() {
+-        let extended = std::path::Path::new(r"\\?\C:\Windows\System32\taskkill.exe");
+-        assert!(super::is_fixed_taskkill_path(extended));
+-        assert!(super::trusted_taskkill().is_some());
++    fn wrong_executable_digest_is_rejected_before_probe() {
++        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
++            .join("..")
++            .join("..")
++            .join("..")
++            .join("dist")
++            .join("bridge_manifest.json");
++        let directory = tempfile::tempdir().unwrap();
++        let manifest = directory.path().join("manifest.json");
++        fs::copy(source, &manifest).unwrap();
++        let executable = directory.path().join("mGBA.exe");
++        fs::write(&executable, b"not the official mGBA executable").unwrap();
++        assert!(matches!(
++            super::BuildCompatibility::validate(&manifest, "missing.gba", &executable),
++            Err(CompatibilityError::MgbaIdentity)
++        ));
+     }
+ }
+diff --git a/coop/crates/coop-launcher/src/lib.rs b/coop/crates/coop-launcher/src/lib.rs
+index e9077c58d231db21062c818d0d36a78bd6714079..a6661e0b4022628e490f16ede1617444cd35345b 100644
+--- a/coop/crates/coop-launcher/src/lib.rs
++++ b/coop/crates/coop-launcher/src/lib.rs
+@@ -8,6 +8,8 @@ pub mod epoch;
+ pub mod keychain;
+ pub mod process;
+ pub mod session;
++#[cfg(windows)]
++pub mod windows_mgba_supervisor;
+ 
+ pub use auth::{AuthApi, AuthError, AuthSession};
+ pub use compat::{BuildCompatibility, CompatibilityError};
+diff --git a/coop/crates/coop-launcher/src/process.rs b/coop/crates/coop-launcher/src/process.rs
+index 7258507a28e062b2caf42ec1336a1cddd6ac3c03..446ebdfbfe4abd0ea1cab59158289c378ed2b840 100644
+--- a/coop/crates/coop-launcher/src/process.rs
++++ b/coop/crates/coop-launcher/src/process.rs
+@@ -28,6 +28,8 @@ use tokio::{
+ use uuid::Uuid;
+ 
+ use crate::session::SessionWorkspace;
++#[cfg(windows)]
++use crate::windows_mgba_supervisor::MgbaSupervisor;
+ 
+ pub const PROCESS_IO_TIMEOUT: Duration = Duration::from_secs(5);
+ const DROP_REAP_POLL: Duration = Duration::from_millis(10);
+@@ -43,6 +45,8 @@ pub enum ProcessError {
+     UnsupportedPlatform,
+     #[error("child process failed to start")]
+     Spawn(#[source] io::Error),
++    #[error("official mGBA executable identity is invalid")]
++    MgbaIdentity,
+     #[error("sidecar descriptor is invalid")]
+     Descriptor,
+     #[error("sidecar descriptor read timed out")]
+@@ -115,6 +119,7 @@ impl ProcessError {
+ pub struct CommandSpec {
+     pub executable: PathBuf,
+     pub args: Vec<String>,
++    mgba: bool,
+     identity: Option<ExecutableIdentity>,
+     rom_identity: Option<ExecutableIdentity>,
+     rom_cleanup: Option<PathBuf>,
+@@ -159,6 +164,7 @@ impl CommandSpec {
+         Ok(Self {
+             executable,
+             args,
++            mgba: false,
+             identity,
+             rom_identity: None,
+             rom_cleanup: None,
+@@ -220,6 +226,7 @@ impl CommandSpec {
+         let rom_path = rom.as_ref().to_path_buf();
+         let rom = rom_path.to_str().ok_or(ProcessError::InvalidArgument)?;
+         let mut spec = Self::new(executable, vec![rom.to_owned()])?;
++        spec.mgba = true;
+         let (rom_identity, rom_guards) = executable_binding(&rom_path)?;
+         #[cfg(not(windows))]
+         let _ = rom_guards;
+@@ -267,6 +274,7 @@ impl CommandSpec {
+                     .into(),
+             ],
+         )?;
++        spec.mgba = true;
+         let (rom_identity, rom_guards) = owned_file_binding(&rom_path)?;
+         let Some(rom_identity) = rom_identity else {
+             return Err(ProcessError::InvalidArgument);
+@@ -658,6 +666,7 @@ pub fn cleanup_owned_staged_rom(
+     let mut spec = CommandSpec {
+         executable: PathBuf::new(),
+         args: Vec::new(),
++        mgba: false,
+         identity: None,
+         rom_identity: Some(bound_rom_identity),
+         rom_cleanup: Some(rom),
+@@ -692,6 +701,7 @@ impl std::fmt::Debug for CommandSpec {
+         debug
+             .field("executable", &self.executable)
+             .field("args", &self.args)
++            .field("mgba", &self.mgba)
+             .field("identity", &self.identity.as_ref().map(|_| "[BOUND]"))
+             .field(
+                 "rom_identity",
+@@ -982,9 +992,63 @@ async fn read_line(
+     }
+ }
+ 
++enum MgbaChild {
++    #[cfg(windows)]
++    Contained(MgbaSupervisor),
++    #[cfg(any(not(windows), test))]
++    Tokio(Box<Child>),
++}
++
++impl MgbaChild {
++    async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
++        match self {
++            #[cfg(windows)]
++            Self::Contained(supervisor) => supervisor.wait().await,
++            #[cfg(any(not(windows), test))]
++            Self::Tokio(child) => child.wait().await,
++        }
++    }
++
++    async fn stop(&mut self) -> Result<(), ProcessError> {
++        match self {
++            #[cfg(windows)]
++            Self::Contained(supervisor) => timeout(PROCESS_IO_TIMEOUT, supervisor.stop())
++                .await
++                .map_err(|_| {
++                    ProcessError::Termination(io::Error::new(
++                        io::ErrorKind::TimedOut,
++                        "mGBA supervisor stop timed out",
++                    ))
++                })?
++                .map_err(ProcessError::Termination),
++            #[cfg(any(not(windows), test))]
++            Self::Tokio(child) => stop_child(child).await,
++        }
++    }
++
++    #[cfg(test)]
++    fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
++        match self {
++            #[cfg(windows)]
++            Self::Contained(supervisor) => supervisor.try_wait(),
++            #[cfg(any(not(windows), test))]
++            Self::Tokio(child) => child.try_wait(),
++        }
++    }
++
++    fn stop_sync(&mut self) {
++        match self {
++            #[cfg(windows)]
++            Self::Contained(supervisor) => supervisor.shutdown_sync(),
++            #[cfg(any(not(windows), test))]
++            Self::Tokio(child) => terminate_and_reap_sync(child),
++        }
++    }
++}
++
+ pub struct SupervisedChildren {
+     sidecar: Child,
+-    mgba: Child,
++    mgba: MgbaChild,
+     pub control: ControlChannel,
+     rom_cleanup: Option<PathBuf>,
+     rom_marker_cleanup: Option<PathBuf>,
+@@ -1054,12 +1118,32 @@ impl std::fmt::Debug for SupervisedChildren {
+     }
+ }
+ 
++#[cfg(windows)]
++fn spawn_mgba(spec: &CommandSpec) -> io::Result<MgbaChild> {
++    MgbaSupervisor::spawn(&spec.executable, &spec.args).map(MgbaChild::Contained)
++}
++
++#[cfg(not(windows))]
++fn spawn_mgba(spec: &CommandSpec) -> io::Result<MgbaChild> {
++    let mut command = Command::new(&spec.executable);
++    isolate_environment(&mut command);
++    command
++        .args(&spec.args)
++        .stdin(Stdio::null())
++        .stdout(Stdio::null())
++        .stderr(Stdio::null())
++        .kill_on_drop(true);
++    command
++        .spawn()
++        .map(|child| MgbaChild::Tokio(Box::new(child)))
++}
++
+ impl SupervisedChildren {
+     #[cfg(test)]
+     pub(crate) fn for_test(sidecar: Child, mgba: Child, control: ControlChannel) -> Self {
+         Self {
+             sidecar,
+-            mgba,
++            mgba: MgbaChild::Tokio(Box::new(mgba)),
+             control,
+             rom_cleanup: None,
+             rom_marker_cleanup: None,
+@@ -1145,15 +1229,15 @@ impl SupervisedChildren {
+         }
+         let (mut startup_child, control) =
+             Self::start_sidecar(&sidecar, expected_epoch, &mut mgba, bridge).await?;
+-        let mut mgba_command = Command::new(&mgba.executable);
+-        isolate_environment(&mut mgba_command);
+-        mgba_command
+-            .args(&mgba.args)
+-            .stdin(Stdio::null())
+-            .stdout(Stdio::null())
+-            .stderr(Stdio::null())
+-            .kill_on_drop(true);
+-        let mgba_child = match mgba_command.spawn() {
++        // Revalidate immediately before contained CreateProcessW. The
++        // existing executable guard held by `mgba` closes the substitution
++        // interval between compatibility probing and gameplay startup.
++        if let Err(error) = validate_executable_identity(&mgba) {
++            return Err(
++                startup_failure_with_cleanup(error, startup_child.child_mut(), &mut mgba).await,
++            );
++        }
++        let mgba_child = match spawn_mgba(&mgba) {
+             Ok(child) => child,
+             Err(error) => {
+                 return Err(startup_failure_with_cleanup(
+@@ -1279,7 +1363,7 @@ impl SupervisedChildren {
+     ///
+     /// Returns an error when either child cannot be terminated or reaped.
+     pub async fn stop_in_place(&mut self) -> Result<(), ProcessError> {
+-        let mgba_result = stop_child(&mut self.mgba).await;
++        let mgba_result = self.mgba.stop().await;
+         let sidecar_result = stop_child(&mut self.sidecar).await;
+         mgba_result.and(sidecar_result)?;
+         self.cleanup_owned_rom()
+@@ -1296,17 +1380,21 @@ impl SupervisedChildren {
+     /// Returns an error when the first child or its peer cannot be reaped.
+     pub async fn wait(mut self) -> Result<(), ProcessError> {
+         let (first, peer) = tokio::select! {
+-            result = self.sidecar.wait() => (result, &mut self.mgba),
+-            result = self.mgba.wait() => (result, &mut self.sidecar),
+-        };
+-        let first = first.map_err(ProcessError::Termination).and_then(|status| {
+-            if status.success() {
+-                Ok(())
+-            } else {
+-                Err(ProcessError::ChildExited)
++            result = self.sidecar.wait() => {
++                let first = result.map_err(ProcessError::Termination).and_then(|status| {
++                    if status.success() { Ok(()) } else { Err(ProcessError::ChildExited) }
++                });
++                let peer = self.mgba.stop().await;
++                (first, peer)
+             }
+-        });
+-        let peer = stop_child(peer).await;
++            result = self.mgba.wait() => {
++                let first = result.map_err(ProcessError::Termination).and_then(|status| {
++                    if status.success() { Ok(()) } else { Err(ProcessError::ChildExited) }
++                });
++                let peer = stop_child(&mut self.sidecar).await;
++                (first, peer)
++            }
++        };
+         match (first, peer) {
+             (Ok(()), Ok(())) => self.cleanup_owned_rom(),
+             // Both children are reaped even when the first one exits with a
+@@ -1339,7 +1427,7 @@ impl SupervisedChildren {
+             result = self.sidecar.wait() => {
+                 match result {
+                     Err(error) => Err(ProcessError::Termination(error)),
+-                    Ok(status) => match stop_child(&mut self.mgba).await {
++                    Ok(status) => match self.mgba.stop().await {
+                         Err(error) => Err(error),
+                         Ok(()) => self.child_exit_after_reap(status.success()),
+                     },
+@@ -1490,8 +1578,8 @@ fn binding_with_access(
+     }
+     reject_symlink_ancestors(path)?;
+     let parent = path.parent().ok_or(ProcessError::InvalidArgument)?;
+-    let ancestor_guards =
+-        open_directory_ancestor_guards(parent).map_err(|_| ProcessError::InvalidArgument)?;
++    let ancestor_guards = open_directory_ancestor_guards(parent, delete_access)
++        .map_err(|_| ProcessError::InvalidArgument)?;
+     let Some(file) = open_executable_file(path, delete_access)? else {
+         return Ok((None, None));
+     };
+@@ -1503,7 +1591,8 @@ fn binding_with_access(
+         return Err(ProcessError::InvalidArgument);
+     }
+     let canonical = fs::canonicalize(path).map_err(|_| ProcessError::InvalidArgument)?;
+-    let digest = hash_file_handle(&file_guard).map_err(|_| ProcessError::InvalidArgument)?;
++    let digest = hash_file_handle_bounded(&file_guard, crate::compat::MAX_MGBA_EXECUTABLE_BYTES)
++        .map_err(|_| ProcessError::InvalidArgument)?;
+     Ok((
+         Some(ExecutableIdentity {
+             canonical,
+@@ -1518,6 +1607,25 @@ fn binding_with_access(
+     ))
+ }
+ 
++#[cfg(windows)]
++pub(crate) fn with_mgba_executable_guard<T>(
++    path: &Path,
++    operation: impl FnOnce(&Path, [u8; 32]) -> T,
++) -> Result<T, ProcessError> {
++    let (identity, guards) = executable_binding(path)?;
++    let Some(identity) = identity else {
++        return Err(ProcessError::MgbaIdentity);
++    };
++    let Some(_guards) = guards else {
++        return Err(ProcessError::MgbaIdentity);
++    };
++    let digest = crate::compat::expected_mgba_executable_digest();
++    if identity.digest != digest {
++        return Err(ProcessError::MgbaIdentity);
++    }
++    Ok(operation(identity.canonical.as_path(), identity.digest))
++}
++
+ #[cfg(not(windows))]
+ fn executable_binding(
+     path: &Path,
+@@ -1575,26 +1683,33 @@ fn open_executable_file(
+ }
+ 
+ #[cfg(windows)]
+-fn open_directory_guard(path: &Path) -> io::Result<fs::File> {
++fn open_directory_guard(path: &Path, delete_access: bool) -> io::Result<fs::File> {
+     use std::os::windows::fs::OpenOptionsExt;
+     let mut options = fs::OpenOptions::new();
+     options
+         .read(true)
+-        // Owner directories must share delete so the guarded file can be
+-        // removed through a DELETE_ON_CLOSE handle while this boundary stays
+-        // open. Final identity revalidation controls replacement of the
+-        // payload; this directory handle only pins the ancestor boundary.
+-        .share_mode(0x0000_0007)
++        // Owned staged artifacts must share delete so DELETE_ON_CLOSE cleanup
++        // can proceed. Executable bindings deny directory delete/rename while
++        // the guarded path remains live, closing the ancestor substitution
++        // interval before CreateProcessW.
++        .share_mode(if delete_access {
++            0x0000_0007
++        } else {
++            0x0000_0003
++        })
+         .custom_flags(0x0220_0000);
+     options.open(path)
+ }
+ 
+ #[cfg(windows)]
+-fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<Arc<fs::File>>> {
++fn open_directory_ancestor_guards(
++    path: &Path,
++    delete_access: bool,
++) -> io::Result<Vec<Arc<fs::File>>> {
+     let mut guards = Vec::new();
+     let mut current = path;
+     loop {
+-        guards.push(Arc::new(open_directory_guard(current)?));
++        guards.push(Arc::new(open_directory_guard(current, delete_access)?));
+         let Some(parent) = current.parent() else {
+             break;
+         };
+@@ -1607,16 +1722,34 @@ fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<Arc<fs::File>>>
+ }
+ 
+ fn hash_file_handle(handle: &fs::File) -> io::Result<[u8; 32]> {
++    hash_file_handle_bounded(handle, u64::MAX)
++}
++
++fn hash_file_handle_bounded(handle: &fs::File, max_bytes: u64) -> io::Result<[u8; 32]> {
+     use sha2::{Digest, Sha256};
++    if handle.metadata()?.len() > max_bytes {
++        return Err(io::Error::new(
++            io::ErrorKind::InvalidData,
++            "file exceeds hashing limit",
++        ));
++    }
+     let mut file = handle.try_clone()?;
+     file.seek(SeekFrom::Start(0))?;
+     let mut digest = Sha256::new();
+     let mut buffer = vec![0_u8; 64 * 1024];
++    let mut total = 0_u64;
+     loop {
+         let count = file.read(&mut buffer)?;
+         if count == 0 {
+             break;
+         }
++        total = total.saturating_add(count as u64);
++        if total > max_bytes {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "file exceeds hashing limit",
++            ));
++        }
+         digest.update(&buffer[..count]);
+     }
+     Ok(digest.finalize().into())
+@@ -1624,17 +1757,35 @@ fn hash_file_handle(handle: &fs::File) -> io::Result<[u8; 32]> {
+ 
+ fn validate_executable_identity(spec: &CommandSpec) -> Result<(), ProcessError> {
+     #[cfg(windows)]
+-    if let Some(guards) = &spec.executable_guards {
++    let guarded_identity = if spec.mgba {
++        let guards = spec
++            .executable_guards
++            .as_ref()
++            .ok_or(ProcessError::MgbaIdentity)?;
+         // Reading metadata through both held handles keeps the guards live
+         // through this immediate validation-to-spawn boundary and documents
+         // that they are security-critical, not incidental storage.
+-        let _ = guards.file.metadata();
++        let actual = file_identity(&spec.executable, &guards.file)
++            .map_err(|_| ProcessError::MgbaIdentity)?;
++        if actual.digest != crate::compat::expected_mgba_executable_digest() {
++            return Err(ProcessError::MgbaIdentity);
++        }
+         for ancestor in &guards.ancestors {
+             let _ = ancestor.metadata();
+         }
+-    }
++        Some(actual)
++    } else {
++        None
++    };
+     if let Some(expected) = &spec.identity {
+-        let (actual, _) = executable_binding(&spec.executable)?;
++        #[cfg(windows)]
++        let actual = if let Some(actual) = guarded_identity {
++            Some(actual)
++        } else {
++            executable_binding(&spec.executable)?.0
++        };
++        #[cfg(not(windows))]
++        let actual = executable_binding(&spec.executable)?.0;
+         let Some(actual) = actual else {
+             return Err(ProcessError::InvalidArgument);
+         };
+@@ -1919,7 +2070,7 @@ fn file_identity(path: &Path, file: &fs::File) -> io::Result<ExecutableIdentity>
+         canonical: fs::canonicalize(path)?,
+         length: metadata.len(),
+         modified: metadata.modified().ok(),
+-        digest: hash_file_handle(file)?,
++        digest: hash_file_handle_bounded(file, crate::compat::MAX_MGBA_EXECUTABLE_BYTES)?,
+     })
+ }
+ 
+@@ -1928,7 +2079,7 @@ impl Drop for SupervisedChildren {
+         // Drop cannot await.  It still owns cancellation supervision: request
+         // termination and synchronously reap both children within a bounded
+         // deadline so a cancelled launcher future cannot orphan processes.
+-        terminate_and_reap_sync(&mut self.mgba);
++        self.mgba.stop_sync();
+         terminate_and_reap_sync(&mut self.sidecar);
+         let _ = self.cleanup_owned_rom();
+     }
+@@ -2131,7 +2282,7 @@ mod tests {
+         let directory = tempdir().unwrap();
+         let executable = directory.path().join("tool.exe");
+         fs::write(&executable, b"trusted").unwrap();
+-        let spec = CommandSpec::mgba(&executable, "rom.gba").unwrap();
++        let spec = CommandSpec::sidecar(&executable, 1).unwrap();
+         let replacement = directory.path().join("replacement.exe");
+         fs::write(&replacement, b"attacker").unwrap();
+         assert!(fs::remove_file(&executable).is_err());
+@@ -2557,7 +2708,7 @@ mod tests {
+         let sidecar = CommandSpec::sidecar(&mgba_path, 1).unwrap();
+         assert!(matches!(
+             SupervisedChildren::start(sidecar, mgba, 1).await,
+-            Err(ProcessError::InvalidArgument)
++            Err(ProcessError::MgbaIdentity)
+         ));
+     }
+ 
+diff --git a/dist/bridge_manifest.json b/dist/bridge_manifest.json
+index f99783121290fdeae565c3e96f71ad2eca529bfe..213e913aef97f3e6d9c0c9c90966e01e062c9a74 100644
+--- a/dist/bridge_manifest.json
++++ b/dist/bridge_manifest.json
+@@ -1,4 +1,12 @@
+ {
++  "emulator": {
++    "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
++    "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247",
++    "name": "mGBA",
++    "platform": "windows-x64",
++    "variant": "Qt",
++    "version": "0.10.5"
++  },
+   "game_build": {
+     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
+     "numeric_id": 65536,
+@@ -61,5 +69,5 @@
+     "schema_version": 1,
+     "struct_size": 672
+   },
+-  "schema_version": 2
++  "schema_version": 3
+ }
+diff --git a/tools/generate_bridge_manifest.py b/tools/generate_bridge_manifest.py
+index f6879d3017cf6c8846f8adcacdc8c7d4efe8cae6..230071c9a2f03251292fac2c48e02a8f41c272ff 100644
+--- a/tools/generate_bridge_manifest.py
++++ b/tools/generate_bridge_manifest.py
+@@ -26,7 +26,17 @@ BRIDGE_SYMBOL = "gCoopNetBridge"
+ SAVE_BLOCK3_SYMBOL = "gSaveblock3"
+ SAVE_DESCRIPTOR_SYMBOL = "gCoopSaveSchemaDescriptor"
+ ABI_SYMBOLS = frozenset((BRIDGE_SYMBOL, SAVE_BLOCK3_SYMBOL, SAVE_DESCRIPTOR_SYMBOL))
+-MANIFEST_SCHEMA_VERSION = 2
++MANIFEST_SCHEMA_VERSION = 3
++EMULATOR_NAME = "mGBA"
++EMULATOR_VERSION = "0.10.5"
++EMULATOR_PLATFORM = "windows-x64"
++EMULATOR_VARIANT = "Qt"
++EMULATOR_ARCHIVE_SHA256 = (
++    "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a"
++)
++EMULATOR_EXECUTABLE_SHA256 = (
++    "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
++)
+ BRIDGE_MAGIC = 0x504B434F
+ BRIDGE_ABI_VERSION = 1
+ GAME_PROTOCOL_VERSION = 1
+@@ -112,6 +122,25 @@ class SaveSchemaDescriptor:
+     regional_progress_offset: int
+ 
+ 
++def validate_emulator_contract(value: object) -> dict[str, str]:
++    """Return the exact official Windows Qt mGBA artifact contract."""
++    expected = {
++        "name": EMULATOR_NAME,
++        "version": EMULATOR_VERSION,
++        "platform": EMULATOR_PLATFORM,
++        "variant": EMULATOR_VARIANT,
++        "archive_sha256": EMULATOR_ARCHIVE_SHA256,
++        "executable_sha256": EMULATOR_EXECUTABLE_SHA256,
++    }
++    if not isinstance(value, dict) or set(value) != set(expected):
++        raise ManifestError("manifest emulator contract has unexpected fields")
++    for field, wanted in expected.items():
++        actual = value[field]
++        if not isinstance(actual, str) or actual != wanted:
++            raise ManifestError(f"manifest emulator {field} is not pinned")
++    return expected.copy()
++
++
+ def parse_nm_symbols(output: str) -> dict[str, Symbol]:
+     """Parse GNU nm's POSIX `name type value size` output."""
+     symbols: dict[str, Symbol] = {}
+@@ -445,6 +474,16 @@ def build_manifest(
+ 
+     return {
+         "schema_version": MANIFEST_SCHEMA_VERSION,
++        "emulator": validate_emulator_contract(
++            {
++                "name": EMULATOR_NAME,
++                "version": EMULATOR_VERSION,
++                "platform": EMULATOR_PLATFORM,
++                "variant": EMULATOR_VARIANT,
++                "archive_sha256": EMULATOR_ARCHIVE_SHA256,
++                "executable_sha256": EMULATOR_EXECUTABLE_SHA256,
++            }
++        ),
+         "game_build": {
+             "id": validate_game_build_id(GAME_BUILD_TEXT_ID),
+             "numeric_id": GAME_BUILD_ID,
+diff --git a/tools/tests/test_generate_bridge_manifest.py b/tools/tests/test_generate_bridge_manifest.py
+index 0ae8f9018baaf1f185f779adb33f61d9fe076ac1..257cd05212c476921212d04e4b30ac82220e46b5 100644
+--- a/tools/tests/test_generate_bridge_manifest.py
++++ b/tools/tests/test_generate_bridge_manifest.py
+@@ -283,7 +283,18 @@ class BridgeManifestTests(unittest.TestCase):
+         manifest = generator.build_manifest(bridge, block3, descriptor, registry, digest)
+         lua = generator.render_lua(manifest)
+ 
+-        self.assertEqual(manifest["schema_version"], 2)
++        self.assertEqual(manifest["schema_version"], 3)
++        self.assertEqual(
++            manifest["emulator"],
++            {
++                "name": "mGBA",
++                "version": "0.10.5",
++                "platform": "windows-x64",
++                "variant": "Qt",
++                "archive_sha256": generator.EMULATOR_ARCHIVE_SHA256,
++                "executable_sha256": generator.EMULATOR_EXECUTABLE_SHA256,
++            },
++        )
+         self.assertEqual(
+             manifest["game_build"]["id"],
+             "pokecrossroads-beta-1.4-e05c8286-coop-v1",
+@@ -306,6 +317,7 @@ class BridgeManifestTests(unittest.TestCase):
+             },
+         )
+         self.assertIn("address = 0x020376BC", lua)
++        self.assertIn("schema_version = 3", lua)
+         self.assertIn("checksum = 140", lua)
+         self.assertIn("save = {", lua)
+         self.assertIn("block3_address = 0x02000100", lua)
+@@ -386,7 +398,7 @@ class BridgeManifestTests(unittest.TestCase):
+     def test_accepts_maximum_length_textual_build_id(self) -> None:
+         self.assertEqual(generator.validate_game_build_id("A" * 128), "A" * 128)
+ 
+-    def test_checked_in_manifest_requires_a_fresh_linked_rom_for_schema_two(self) -> None:
++    def test_checked_in_manifest_requires_a_fresh_linked_rom_for_schema_three(self) -> None:
+         manifest_path = REPO_ROOT / "dist" / "bridge_manifest.json"
+         checked_in_text = manifest_path.read_text(encoding="utf-8")
+         checked_in = json.loads(checked_in_text)
+@@ -422,14 +434,18 @@ class BridgeManifestTests(unittest.TestCase):
+                 checked_in_text,
+                 json.dumps(expected, indent=2, sort_keys=True) + "\n",
+             )
+-            self.assertEqual(
+-                (REPO_ROOT / "bridge" / "generated_addresses.lua").read_text(
+-                    encoding="utf-8"
+-                ),
+-                generator.render_lua(expected),
+-            )
++            generated_lua = REPO_ROOT / "bridge" / "generated_addresses.lua"
++            # The checked-in bridge source intentionally has no materialized
++            # generated-address file; session startup renders it from the
++            # validated manifest. When a build materializes that artifact,
++            # retain the exact generator-vs-artifact regression assertion.
++            if generated_lua.exists():
++                self.assertEqual(
++                    generated_lua.read_text(encoding="utf-8"),
++                    generator.render_lua(expected),
++                )
+ 
+-    def test_example_lua_documents_schema_two_save_contract(self) -> None:
++    def test_example_lua_documents_schema_three_save_contract(self) -> None:
+         example = (REPO_ROOT / "bridge" / "generated_addresses.lua.example").read_text(
+             encoding="utf-8"
+         )
+diff --git a/coop/crates/coop-launcher/src/windows_mgba_supervisor.rs b/coop/crates/coop-launcher/src/windows_mgba_supervisor.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..34b20804b275e000da0406ff8a21b037cd95bfd9
+--- /dev/null
++++ b/coop/crates/coop-launcher/src/windows_mgba_supervisor.rs
+@@ -0,0 +1,623 @@
++//! Windows-only mGBA process containment.
++//!
++//! `windows-spawn` owns the `CreateProcessW` transaction and attaches the
++//! caller-provided Job through `PROC_THREAD_ATTRIBUTE_JOB_LIST`.  This module
++//! keeps that crate's blocking `Child` and `Job` values on one dedicated
++//! thread.  Tokio sees only a bounded command channel and one-shot replies;
++//! dropping the boundary synchronously asks that thread to terminate the Job
++//! and joins it before ownership is released.
++
++use std::{
++    io::{self, Read},
++    path::Path,
++    process::ExitStatus,
++    sync::{
++        Arc, Mutex,
++        atomic::{AtomicBool, Ordering},
++        mpsc as std_mpsc,
++    },
++    thread,
++    time::{Duration, Instant},
++};
++
++use tokio::sync::{mpsc, oneshot};
++use windows_spawn::{
++    Child, ChildStderr, ChildStdout, Command, DropPolicy, Job, SpawnOptions, Stdio,
++};
++
++const COMMAND_CAPACITY: usize = 8;
++const POLL_INTERVAL: Duration = Duration::from_millis(10);
++const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
++const TERMINATION_TIMEOUT: Duration = Duration::from_secs(5);
++const PROBE_OUTPUT_BYTES: usize = 64 * 1024;
++
++#[derive(Debug)]
++pub struct MgbaSupervisor {
++    commands: mpsc::Sender<SupervisorCommand>,
++    state: Arc<Mutex<Option<ExitStatus>>>,
++    shutdown: Arc<AtomicBool>,
++    join: Option<thread::JoinHandle<()>>,
++}
++
++enum SupervisorCommand {
++    Wait {
++        reply: oneshot::Sender<io::Result<ExitStatus>>,
++    },
++    Stop {
++        reply: oneshot::Sender<io::Result<()>>,
++    },
++    Shutdown,
++}
++
++#[derive(Debug)]
++pub struct ProbeOutput {
++    pub status: ExitStatus,
++    pub stdout: Vec<u8>,
++    pub stderr: Vec<u8>,
++}
++
++#[derive(Debug)]
++pub enum ProbeFailure {
++    Spawn(io::Error),
++    Output(io::Error),
++    OutputTooLarge,
++    Timeout,
++    Cleanup(io::Error),
++}
++
++impl MgbaSupervisor {
++    /// Creates one contained, long-lived mGBA process.
++    ///
++    /// The process is not returned until its Job has been created, configured
++    /// kill-on-close, and attached to the creation transaction.  The caller
++    /// therefore cannot observe an uncontained process handle.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when the supervisor thread or contained process
++    /// cannot be created.
++    pub fn spawn(path: &Path, args: &[String]) -> io::Result<Self> {
++        let path = path.to_owned();
++        let args = args.to_vec();
++        let (commands, mut command_receiver) = mpsc::channel(COMMAND_CAPACITY);
++        let (ready_sender, ready_receiver) = std_mpsc::sync_channel(1);
++        let state = Arc::new(Mutex::new(None));
++        let thread_state = Arc::clone(&state);
++        let shutdown = Arc::new(AtomicBool::new(false));
++        let thread_shutdown = Arc::clone(&shutdown);
++        let join = thread::Builder::new()
++            .name("coop-mgba-supervisor".to_owned())
++            .spawn(move || {
++                supervisor_thread(
++                    &path,
++                    &args,
++                    &mut command_receiver,
++                    &ready_sender,
++                    &thread_state,
++                    &thread_shutdown,
++                );
++            })
++            .map_err(io::Error::other)?;
++
++        match ready_receiver.recv_timeout(STARTUP_TIMEOUT) {
++            Ok(Ok(())) => Ok(Self {
++                commands,
++                state,
++                shutdown,
++                join: Some(join),
++            }),
++            Ok(Err(error)) => {
++                let _ = join.join();
++                Err(error)
++            }
++            Err(error) => {
++                let _ = commands.try_send(SupervisorCommand::Shutdown);
++                let _ = join.join();
++                Err(io::Error::new(io::ErrorKind::TimedOut, error.to_string()))
++            }
++        }
++    }
++
++    /// Waits for the contained root and asks Windows to terminate all Job
++    /// descendants before returning.
++    ///
++    /// `windows-spawn` exposes no descendant-count wait primitive. The root
++    /// handle is reaped with `Child::try_wait`, while `Job::terminate` uses
++    /// Windows' `TerminateJobObject` contract to terminate every process in
++    /// that Job. The retained-descendant marker tests exercise this complete
++    /// tree guarantee after the root has exited.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when the supervisor boundary closes unexpectedly
++    /// or the root process cannot be reaped.
++    pub async fn wait(&self) -> io::Result<ExitStatus> {
++        let (reply, receiver) = oneshot::channel();
++        self.commands
++            .send(SupervisorCommand::Wait { reply })
++            .await
++            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "mGBA supervisor closed"))?;
++        receiver
++            .await
++            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "mGBA supervisor dropped"))?
++    }
++
++    /// Requests bounded Job termination and joins the supervisor thread.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when the supervisor boundary closes unexpectedly
++    /// or Job termination cannot be confirmed.
++    pub async fn stop(&mut self) -> io::Result<()> {
++        let (reply, receiver) = oneshot::channel();
++        self.commands
++            .send(SupervisorCommand::Stop { reply })
++            .await
++            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "mGBA supervisor closed"))?;
++        let result = receiver
++            .await
++            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "mGBA supervisor dropped"))?;
++        self.join_thread();
++        result
++    }
++
++    /// Synchronously terminates the Job and joins the owner thread.  This is
++    /// used only from cancellation/drop paths where awaiting is impossible.
++    pub fn shutdown_sync(&mut self) {
++        self.shutdown.store(true, Ordering::Release);
++        let _ = self.commands.try_send(SupervisorCommand::Shutdown);
++        self.join_thread();
++    }
++
++    /// A nonblocking status snapshot retained for test and event diagnostics.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when the supervisor state lock is poisoned.
++    pub fn try_wait(&self) -> io::Result<Option<ExitStatus>> {
++        self.state
++            .lock()
++            .map(|state| *state)
++            .map_err(|_| io::Error::other("mGBA supervisor state poisoned"))
++    }
++
++    fn join_thread(&mut self) {
++        if let Some(join) = self.join.take() {
++            let _ = join.join();
++        }
++    }
++}
++
++impl Drop for MgbaSupervisor {
++    fn drop(&mut self) {
++        // The command is bounded and the join is mandatory: a supervisor may
++        // not outlive the launcher that owns its process and Job handles.
++        self.shutdown.store(true, Ordering::Release);
++        let _ = self.commands.try_send(SupervisorCommand::Shutdown);
++        self.join_thread();
++    }
++}
++
++fn supervisor_thread(
++    path: &Path,
++    args: &[String],
++    commands: &mut mpsc::Receiver<SupervisorCommand>,
++    ready: &std_mpsc::SyncSender<io::Result<()>>,
++    state: &Arc<Mutex<Option<ExitStatus>>>,
++    shutdown: &Arc<AtomicBool>,
++) {
++    let job = match Job::create().and_then(|job| {
++        job.set_kill_on_close(true)?;
++        Ok(job)
++    }) {
++        Ok(job) => job,
++        Err(error) => {
++            let _ = ready.send(Err(error));
++            return;
++        }
++    };
++    let mut command = Command::new(path);
++    configure_command(&mut command, args, false);
++    let mut child = match command.spawn_with(
++        SpawnOptions::new()
++            .job(&job)
++            .drop_policy(DropPolicy::KillTree),
++    ) {
++        Ok(child) => child,
++        Err(error) => {
++            let _ = ready.send(Err(error));
++            return;
++        }
++    };
++    let _ = ready.send(Ok(()));
++    let mut pending_waits: Vec<oneshot::Sender<io::Result<ExitStatus>>> =
++        Vec::with_capacity(COMMAND_CAPACITY);
++    let mut finished = None;
++
++    loop {
++        if shutdown.load(Ordering::Acquire) {
++            if finished.is_none() {
++                let _ = terminate_job(&mut child, &job);
++            }
++            return;
++        }
++        if finished.is_none() {
++            match child.try_wait() {
++                Ok(Some(status)) => {
++                    let result = terminate_job(&mut child, &job).map(|_| status);
++                    if let Ok(status) = result.as_ref()
++                        && let Ok(mut current) = state.lock()
++                    {
++                        *current = Some(*status);
++                    }
++                    for reply in pending_waits.drain(..) {
++                        let _ = reply.send(result.clone_result());
++                    }
++                    finished = Some(result);
++                }
++                Ok(None) => {}
++                Err(error) => {
++                    let result = Err(error);
++                    for reply in pending_waits.drain(..) {
++                        let _ = reply.send(result.clone_result());
++                    }
++                    finished = Some(result);
++                }
++            }
++        }
++
++        if process_supervisor_commands(
++            commands,
++            &mut finished,
++            &mut child,
++            &job,
++            &mut pending_waits,
++        ) {
++            return;
++        }
++        if commands.is_closed() && finished.is_none() {
++            let _ = terminate_job(&mut child, &job);
++            return;
++        }
++        thread::sleep(POLL_INTERVAL);
++    }
++}
++
++fn process_supervisor_commands(
++    commands: &mut mpsc::Receiver<SupervisorCommand>,
++    finished: &mut Option<io::Result<ExitStatus>>,
++    child: &mut Child,
++    job: &Job,
++    pending_waits: &mut Vec<oneshot::Sender<io::Result<ExitStatus>>>,
++) -> bool {
++    while let Ok(command) = commands.try_recv() {
++        match command {
++            SupervisorCommand::Wait { reply } => {
++                if let Some(result) = finished {
++                    let _ = reply.send(result.clone_result());
++                } else if pending_waits.len() < COMMAND_CAPACITY {
++                    pending_waits.push(reply);
++                } else {
++                    let _ = reply.send(Err(io::Error::new(
++                        io::ErrorKind::WouldBlock,
++                        "mGBA wait queue is full",
++                    )));
++                }
++            }
++            SupervisorCommand::Stop { reply } => {
++                let result = if let Some(result) = finished {
++                    result.clone_result().map(|_| ())
++                } else {
++                    terminate_job(child, job).map(|_| ())
++                };
++                let _ = reply.send(result.clone_result());
++                for reply in pending_waits.drain(..) {
++                    let _ = reply.send(Err(io::Error::new(
++                        io::ErrorKind::Interrupted,
++                        "mGBA stopped before wait completed",
++                    )));
++                }
++                return true;
++            }
++            SupervisorCommand::Shutdown => {
++                if finished.is_none() {
++                    let _ = terminate_job(child, job);
++                }
++                return true;
++            }
++        }
++    }
++    false
++}
++
++fn configure_command(command: &mut Command, args: &[String], capture: bool) {
++    command.env_clear();
++    if let Some(path) = std::env::var_os("PATH") {
++        command.env("PATH", path);
++    }
++    command.args(args);
++    if capture {
++        command
++            .stdin(Stdio::null())
++            .stdout(Stdio::piped())
++            .stderr(Stdio::piped());
++    } else {
++        command
++            .stdin(Stdio::null())
++            .stdout(Stdio::null())
++            .stderr(Stdio::null());
++    }
++}
++
++fn terminate_job(child: &mut Child, job: &Job) -> io::Result<ExitStatus> {
++    // TerminateJobObject applies to every process currently in the Job; the
++    // polling loop only reaps the root because windows-spawn has no safe
++    // descendant wait/count API. KillTree's private Job is also closed by
++    // Child::drop after this bounded root reap.
++    job.terminate(1)?;
++    let deadline = Instant::now() + TERMINATION_TIMEOUT;
++    loop {
++        match child.try_wait() {
++            Ok(Some(status)) => break Ok(status),
++            Ok(None) if Instant::now() >= deadline => {
++                break Err(io::Error::new(
++                    io::ErrorKind::TimedOut,
++                    "mGBA Job termination timed out",
++                ));
++            }
++            Ok(None) => thread::sleep(POLL_INTERVAL),
++            Err(error) => break Err(error),
++        }
++    }
++}
++
++trait CloneResult<T> {
++    fn clone_result(&self) -> io::Result<T>;
++}
++
++impl CloneResult<()> for io::Result<()> {
++    fn clone_result(&self) -> io::Result<()> {
++        match self {
++            Ok(()) => Ok(()),
++            Err(error) => Err(io::Error::new(error.kind(), error.to_string())),
++        }
++    }
++}
++
++impl CloneResult<ExitStatus> for io::Result<ExitStatus> {
++    fn clone_result(&self) -> io::Result<ExitStatus> {
++        match self {
++            Ok(status) => Ok(*status),
++            Err(error) => Err(io::Error::new(error.kind(), error.to_string())),
++        }
++    }
++}
++
++/// Runs the short `--version` command in its own contained supervisor thread.
++/// The same Job boundary as gameplay is used, including for output overflow,
++/// timeout, and a root that leaves a pipe-owning descendant behind.
++///
++/// # Errors
++///
++/// Returns a [`ProbeFailure`] when process creation, bounded output capture,
++/// timeout handling, or contained cleanup fails.
++pub fn probe(path: &Path, args: &[String], timeout: Duration) -> Result<ProbeOutput, ProbeFailure> {
++    let path = path.to_owned();
++    let args = args.to_vec();
++    let (result_sender, result_receiver) = std_mpsc::sync_channel(1);
++    let (abort_sender, abort_receiver) = std_mpsc::sync_channel(1);
++    let join = thread::Builder::new()
++        .name("coop-mgba-probe-supervisor".to_owned())
++        .spawn(move || {
++            probe_thread(&path, &args, timeout, &abort_receiver, &result_sender);
++        })
++        .map_err(ProbeFailure::Spawn)?;
++    if let Ok(result) = result_receiver.recv_timeout(timeout + Duration::from_secs(1)) {
++        let _ = join.join();
++        result
++    } else {
++        let _ = abort_sender.send(());
++        let _ = join.join();
++        Err(ProbeFailure::Timeout)
++    }
++}
++
++struct ReaderResult {
++    stderr: bool,
++    bytes: Vec<u8>,
++    oversized: bool,
++    error: Option<io::Error>,
++}
++
++fn probe_thread(
++    path: &Path,
++    args: &[String],
++    timeout: Duration,
++    abort: &std_mpsc::Receiver<()>,
++    result_sender: &std_mpsc::SyncSender<Result<ProbeOutput, ProbeFailure>>,
++) {
++    let (mut child, job, stdout, stderr) = match spawn_probe_child(path, args) {
++        Ok(value) => value,
++        Err(error) => {
++            let _ = result_sender.send(Err(error));
++            return;
++        }
++    };
++    let (reader_sender, reader_receiver) = std_mpsc::sync_channel(2);
++    let stdout_join = spawn_reader(stdout, false, reader_sender.clone());
++    let stderr_join = spawn_reader(stderr, true, reader_sender);
++    let (status, mut outputs, failure) = poll_probe(&mut child, timeout, abort, &reader_receiver);
++
++    // The root is either still live or has exited.  Terminating the Job in
++    // both cases handles retained pipe handles without any PID-based helper.
++    let termination = terminate_job(&mut child, &job);
++    // Closing the Child's private kill-on-close Job before joining readers is
++    // the final bounded cleanup barrier. TerminateJobObject terminates every
++    // process in the supplied Job; DropPolicy::KillTree supplies an
++    // independent kill-on-close Job if that explicit call reports an error.
++    drop(child);
++    drop(job);
++    let _ = stdout_join.join();
++    let _ = stderr_join.join();
++    while let Ok(output) = reader_receiver.try_recv() {
++        outputs.push(output);
++    }
++    let _ = result_sender.send(finish_probe(status, termination, outputs, failure));
++}
++
++fn spawn_probe_child(
++    path: &Path,
++    args: &[String],
++) -> Result<(Child, Job, ChildStdout, ChildStderr), ProbeFailure> {
++    let job = Job::create()
++        .and_then(|job| {
++            job.set_kill_on_close(true)?;
++            Ok(job)
++        })
++        .map_err(ProbeFailure::Spawn)?;
++    let mut command = Command::new(path);
++    configure_command(&mut command, args, true);
++    let mut child = command
++        .spawn_with(
++            SpawnOptions::new()
++                .job(&job)
++                .drop_policy(DropPolicy::KillTree),
++        )
++        .map_err(ProbeFailure::Spawn)?;
++    let Some(stdout) = child.stdout.take() else {
++        let _ = terminate_job(&mut child, &job);
++        return Err(ProbeFailure::Output(io::Error::other(
++            "mGBA stdout pipe unavailable",
++        )));
++    };
++    let Some(stderr) = child.stderr.take() else {
++        let _ = terminate_job(&mut child, &job);
++        return Err(ProbeFailure::Output(io::Error::other(
++            "mGBA stderr pipe unavailable",
++        )));
++    };
++    Ok((child, job, stdout, stderr))
++}
++
++fn poll_probe(
++    child: &mut Child,
++    timeout: Duration,
++    abort: &std_mpsc::Receiver<()>,
++    reader_receiver: &std_mpsc::Receiver<ReaderResult>,
++) -> (Option<ExitStatus>, Vec<ReaderResult>, Option<ProbeFailure>) {
++    let deadline = Instant::now() + timeout;
++    let mut status = None;
++    let mut outputs = Vec::with_capacity(2);
++    let mut failure = None;
++    loop {
++        if abort.try_recv().is_ok() {
++            failure = Some(ProbeFailure::Timeout);
++            break;
++        }
++        while let Ok(output) = reader_receiver.try_recv() {
++            if output.oversized {
++                failure = Some(ProbeFailure::OutputTooLarge);
++                break;
++            }
++            if let Some(error) = output.error {
++                failure = Some(ProbeFailure::Output(error));
++                break;
++            }
++            outputs.push(output);
++        }
++        if failure.is_some() {
++            break;
++        }
++        match child.try_wait() {
++            Ok(Some(root_status)) => {
++                status = Some(root_status);
++                break;
++            }
++            Ok(None) if Instant::now() >= deadline => {
++                failure = Some(ProbeFailure::Timeout);
++                break;
++            }
++            Ok(None) => thread::sleep(POLL_INTERVAL),
++            Err(error) => {
++                failure = Some(ProbeFailure::Cleanup(error));
++                break;
++            }
++        }
++    }
++    (status, outputs, failure)
++}
++
++fn finish_probe(
++    status: Option<ExitStatus>,
++    termination: io::Result<ExitStatus>,
++    outputs: Vec<ReaderResult>,
++    failure: Option<ProbeFailure>,
++) -> Result<ProbeOutput, ProbeFailure> {
++    if let Some(failure) = failure {
++        return Err(failure);
++    }
++    let Some(status) = status else {
++        return Err(ProbeFailure::Cleanup(io::Error::other(
++            "mGBA probe status unavailable",
++        )));
++    };
++    termination.map_err(ProbeFailure::Cleanup)?;
++    let mut stdout = None;
++    let mut stderr = None;
++    for output in outputs {
++        let destination = if output.stderr {
++            &mut stderr
++        } else {
++            &mut stdout
++        };
++        if destination.replace(output.bytes).is_some() {
++            return Err(ProbeFailure::Output(io::Error::other(
++                "duplicate mGBA output stream",
++            )));
++        }
++    }
++    let stdout = stdout
++        .ok_or_else(|| ProbeFailure::Output(io::Error::other("mGBA stdout output unavailable")))?;
++    let stderr = stderr
++        .ok_or_else(|| ProbeFailure::Output(io::Error::other("mGBA stderr output unavailable")))?;
++    Ok(ProbeOutput {
++        status,
++        stdout,
++        stderr,
++    })
++}
++
++fn spawn_reader<R: Read + Send + 'static>(
++    mut reader: R,
++    stderr: bool,
++    sender: std_mpsc::SyncSender<ReaderResult>,
++) -> thread::JoinHandle<()> {
++    thread::spawn(move || {
++        let mut bytes = Vec::with_capacity(PROBE_OUTPUT_BYTES);
++        let mut buffer = [0_u8; 4096];
++        let mut oversized = false;
++        let mut error = None;
++        loop {
++            match reader.read(&mut buffer) {
++                Ok(0) => break,
++                Ok(count) => {
++                    if bytes.len().saturating_add(count) > PROBE_OUTPUT_BYTES {
++                        oversized = true;
++                        break;
++                    }
++                    bytes.extend_from_slice(&buffer[..count]);
++                }
++                Err(read_error) => {
++                    error = Some(read_error);
++                    break;
++                }
++            }
++        }
++        let _ = sender.send(ReaderResult {
++            stderr,
++            bytes,
++            oversized,
++            error,
++        });
++    })
++}
+diff --git a/coop/crates/coop-launcher/tests/windows_mgba_containment.rs b/coop/crates/coop-launcher/tests/windows_mgba_containment.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2aa41c5cead016f1ecbc89ab153844950b369fa
+--- /dev/null
++++ b/coop/crates/coop-launcher/tests/windows_mgba_containment.rs
+@@ -0,0 +1,139 @@
++#![cfg(windows)]
++
++use std::{fs, path::PathBuf, process::Stdio, thread, time::Duration};
++
++use coop_launcher::windows_mgba_supervisor::{MgbaSupervisor, ProbeOutput, probe};
++use tempfile::TempDir;
++
++fn command_path() -> PathBuf {
++    PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()))
++        .join("System32")
++        .join("cmd.exe")
++}
++
++fn delayed_descendant(directory: &TempDir, hold_root: bool) -> (PathBuf, Vec<String>) {
++    let marker = directory.path().join("descendant-marker");
++    let marker_text = marker.to_str().expect("temporary path is valid");
++    let child_script = directory.path().join("descendant.cmd");
++    fs::write(
++        &child_script,
++        format!("@echo off\r\nping -n 2 127.0.0.1 >nul\r\necho descendant>{marker_text}\r\n"),
++    )
++    .expect("delayed descendant script is writable");
++    let child_script = child_script
++        .to_str()
++        .expect("temporary script path is valid");
++    let script = if hold_root {
++        format!("start /B cmd.exe /D /C {child_script} & ping -n 30 127.0.0.1 >nul")
++    } else {
++        format!("start /B cmd.exe /D /C {child_script}")
++    };
++    (marker, vec!["/D".into(), "/C".into(), script])
++}
++
++#[tokio::test]
++async fn contained_process_waits_and_reaps() {
++    let supervisor = MgbaSupervisor::spawn(&command_path(), &["/C".into(), "exit 0".into()])
++        .expect("contained command starts");
++    let status = supervisor.wait().await.expect("contained command reaps");
++    assert!(status.success());
++    assert!(supervisor.try_wait().expect("status snapshot").is_some());
++}
++
++#[test]
++fn probe_captures_bounded_output_inside_job() {
++    let output = probe(
++        &command_path(),
++        &["/C".into(), "echo mGBA 0.10.5".into()],
++        Duration::from_secs(2),
++    )
++    .expect("contained probe completes");
++    let ProbeOutput { status, stdout, .. } = output;
++    assert!(status.success());
++    assert!(String::from_utf8_lossy(&stdout).contains("mGBA 0.10.5"));
++}
++
++#[test]
++fn probe_timeout_kills_delayed_descendant_before_marker() {
++    let directory = tempfile::tempdir().expect("temporary directory");
++    let (marker, args) = delayed_descendant(&directory, true);
++    let error = probe(&command_path(), &args, Duration::from_millis(150))
++        .expect_err("held root exceeds probe deadline");
++    assert!(matches!(
++        error,
++        coop_launcher::windows_mgba_supervisor::ProbeFailure::Timeout
++    ));
++    thread::sleep(Duration::from_secs(2));
++    assert!(!marker.exists());
++}
++
++#[tokio::test]
++async fn root_exit_kills_delayed_descendant_before_marker() {
++    let directory = tempfile::tempdir().expect("temporary directory");
++    let (marker, args) = delayed_descendant(&directory, false);
++    let supervisor = MgbaSupervisor::spawn(&command_path(), &args).expect("contained root starts");
++    assert!(
++        supervisor
++            .wait()
++            .await
++            .expect("contained root reaps")
++            .success()
++    );
++    tokio::time::sleep(Duration::from_secs(2)).await;
++    assert!(!marker.exists());
++}
++
++#[tokio::test]
++async fn forced_stop_kills_delayed_descendant_before_marker() {
++    let directory = tempfile::tempdir().expect("temporary directory");
++    let (marker, args) = delayed_descendant(&directory, true);
++    let mut supervisor =
++        MgbaSupervisor::spawn(&command_path(), &args).expect("contained root starts");
++    thread::sleep(Duration::from_millis(150));
++    supervisor.stop().await.expect("contained stop reaps");
++    thread::sleep(Duration::from_secs(2));
++    assert!(!marker.exists());
++}
++
++#[test]
++fn drop_kills_delayed_descendant_before_marker() {
++    let directory = tempfile::tempdir().expect("temporary directory");
++    let (marker, args) = delayed_descendant(&directory, true);
++    {
++        let _supervisor =
++            MgbaSupervisor::spawn(&command_path(), &args).expect("contained root starts");
++        thread::sleep(Duration::from_millis(150));
++    }
++    thread::sleep(Duration::from_secs(2));
++    assert!(!marker.exists());
++    let _ = fs::remove_file(marker);
++}
++
++#[tokio::test]
++async fn cancellation_drop_kills_delayed_descendant_before_marker() {
++    let directory = tempfile::tempdir().expect("temporary directory");
++    let (marker, args) = delayed_descendant(&directory, true);
++    let supervisor = MgbaSupervisor::spawn(&command_path(), &args).expect("contained root starts");
++    let task = tokio::spawn(async move { supervisor.wait().await });
++    tokio::task::yield_now().await;
++    task.abort();
++    let _ = task.await;
++    tokio::time::sleep(Duration::from_secs(2)).await;
++    assert!(!marker.exists());
++}
++
++#[test]
++fn delayed_descendant_fixture_writes_marker_without_containment() {
++    let directory = tempfile::tempdir().expect("temporary directory");
++    let (marker, args) = delayed_descendant(&directory, false);
++    let mut root = std::process::Command::new(command_path())
++        .args(args)
++        .stdin(Stdio::null())
++        .stdout(Stdio::null())
++        .stderr(Stdio::null())
++        .spawn()
++        .expect("fixture root starts");
++    root.wait().expect("fixture root reaps");
++    thread::sleep(Duration::from_secs(2));
++    assert!(marker.exists());
++}

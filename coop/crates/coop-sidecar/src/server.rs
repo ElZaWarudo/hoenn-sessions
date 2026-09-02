@@ -1,7 +1,11 @@
 use std::{
-    collections::HashMap,
-    fmt, io,
+    collections::{HashMap, VecDeque},
+    fmt,
+    future::Future,
+    io,
     net::{Ipv4Addr, SocketAddr},
+    pin::Pin,
+    sync::Arc,
     time::Duration,
 };
 
@@ -13,8 +17,8 @@ use tokio::{
         TcpListener, TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
-    sync::mpsc,
-    task::JoinHandle,
+    sync::{mpsc, watch},
+    task::{AbortHandle, Id, JoinHandle, JoinSet},
     time::{Instant, sleep_until, timeout},
 };
 use uuid::Uuid;
@@ -25,7 +29,7 @@ use crate::{
     control::{
         CONTROL_PROTOCOL_VERSION, CheckpointAbort, CheckpointGrant, CheckpointKey, CommandId,
         CommandReason, CommandStatus, ControlCommand, ControlConnection, ControlError,
-        ControlEvent, ControlListener, ControlWriter, MAX_CONTROL_LINE_BYTES,
+        ControlEvent, ControlListener, ControlWriter, MAX_CONTROL_LINE_BYTES, ShutdownRequest,
     },
 };
 
@@ -37,8 +41,13 @@ const BOOTSTRAP_SEQUENCE: u32 = 1;
 const DECISION_TIMEOUT: Duration = Duration::from_secs(3);
 const SAVE_DATA_TIMEOUT: Duration = Duration::from_secs(3);
 const BRIDGE_FRAME_TIMEOUT: Duration = Duration::from_secs(3);
+const SHUTDOWN_GRACE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_DESCRIPTOR_BYTES: usize = 512;
 const MAX_COMMAND_HISTORY: usize = 1024;
+const MAX_DEFERRED_ROUTINE_COMMANDS: usize = 16;
+const MAX_DEFERRED_COMMANDS: usize = MAX_DEFERRED_ROUTINE_COMMANDS + 1;
+const MAX_CONTROL_AUTH_CANDIDATES: usize = 16;
+const MAX_BRIDGE_AUTH_CANDIDATES: usize = 16;
 
 #[derive(Clone)]
 struct SessionSecret(String);
@@ -345,6 +354,10 @@ pub enum SidecarError {
     CheckpointTimeout,
     #[error("checkpoint command replay ledger reached its bounded capacity")]
     CommandLedgerFull,
+    #[error("pre-bridge command queue reached its bounded capacity")]
+    DeferredCommandQueueFull,
+    #[error("authenticated shutdown exceeded its five-second grace period")]
+    ShutdownTimeout,
 }
 
 /// The authenticated, frame-oriented view of a local TCP connection.
@@ -353,6 +366,16 @@ pub(crate) struct AuthenticatedConnection {
 }
 
 impl AuthenticatedConnection {
+    async fn send_handshake_accepted(&mut self) -> Result<(), SidecarError> {
+        timeout(
+            HANDSHAKE_TIMEOUT,
+            self.stream.write_all(HANDSHAKE_ACCEPTED_LINE),
+        )
+        .await
+        .map_err(|_| SidecarError::HandshakeWriteTimeout)?
+        .map_err(SidecarError::Connection)
+    }
+
     pub(crate) fn into_split(self) -> (BridgeReader, BridgeWriter) {
         let (reader, writer) = self.stream.into_split();
         (
@@ -371,6 +394,17 @@ impl BridgeReader {
         &mut self,
         expected_direction: Direction,
     ) -> Result<Option<BridgeFrame>, SidecarError> {
+        self.receive_observed(expected_direction, || {}).await
+    }
+
+    async fn receive_observed<F>(
+        &mut self,
+        expected_direction: Direction,
+        prefix_observer: F,
+    ) -> Result<Option<BridgeFrame>, SidecarError>
+    where
+        F: FnOnce() + Send,
+    {
         // An authenticated bridge is allowed to remain idle while the
         // control plane decides a checkpoint.  Only a frame that has started
         // must make progress within the bounded I/O window; timing out the
@@ -388,6 +422,7 @@ impl BridgeReader {
         if first_byte_count == 0 {
             return Ok(None);
         }
+        prefix_observer();
         let frame = timeout(BRIDGE_FRAME_TIMEOUT, async {
             self.stream
                 .read_exact(&mut bytes[1..])
@@ -550,13 +585,171 @@ impl Drop for ReaderTasks {
     }
 }
 
-fn spawn_control_reader(
-    control: ControlConnection,
-) -> (
-    ControlWriter,
-    mpsc::Receiver<Result<ControlCommand, SidecarError>>,
-    JoinHandle<()>,
-) {
+/// Owns one authenticated control decoder from authentication until it is
+/// transferred into the active bridge session. Keeping the task alive across
+/// listener and handshake races makes partially received JSONL cancellation
+/// safe; dropping the owner always aborts rather than detaches the task.
+struct ControlIo {
+    writer: Option<ControlWriter>,
+    receiver: Option<mpsc::Receiver<Result<ControlCommand, SidecarError>>>,
+    task: Option<JoinHandle<()>>,
+}
+
+impl ControlIo {
+    fn writer(&mut self) -> &mut ControlWriter {
+        self.writer.as_mut().expect("control writer is owned")
+    }
+
+    fn receiver(&mut self) -> &mut mpsc::Receiver<Result<ControlCommand, SidecarError>> {
+        self.receiver.as_mut().expect("control receiver is owned")
+    }
+
+    fn into_parts(
+        mut self,
+    ) -> (
+        ControlWriter,
+        mpsc::Receiver<Result<ControlCommand, SidecarError>>,
+        JoinHandle<()>,
+    ) {
+        (
+            self.writer.take().expect("control writer is owned"),
+            self.receiver.take().expect("control receiver is owned"),
+            self.task.take().expect("control task is owned"),
+        )
+    }
+
+    async fn shutdown(&mut self) {
+        if let Some(task) = self.task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+        self.writer = None;
+        self.receiver = None;
+    }
+}
+
+impl Drop for ControlIo {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+
+/// Owns an authenticated bridge decoder while the launcher control peer is
+/// being acquired or replaced. Retained deadlines and bridge EOF remain
+/// observable without ever cancelling a partially decoded frame.
+struct BridgeIo {
+    writer: Option<BridgeWriter>,
+    receiver: Option<mpsc::Receiver<Result<BridgeFrame, SidecarError>>>,
+    task: Option<JoinHandle<()>>,
+    terminal: watch::Receiver<Option<BridgeTerminal>>,
+    pending_frame: Option<Box<BridgeFrame>>,
+}
+
+struct BridgeIoParts {
+    writer: BridgeWriter,
+    receiver: mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+    task: JoinHandle<()>,
+    terminal: watch::Receiver<Option<BridgeTerminal>>,
+    pending_frame: Option<Box<BridgeFrame>>,
+}
+
+struct ActiveSessionIo {
+    bridge_writer: BridgeWriter,
+    control_writer: ControlWriter,
+    bridge_rx: mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+    bridge_terminal: watch::Receiver<Option<BridgeTerminal>>,
+    control_rx: mpsc::Receiver<Result<ControlCommand, SidecarError>>,
+}
+
+type BridgeReacquisitionParts<'a> = (
+    &'a mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+    &'a mut watch::Receiver<Option<BridgeTerminal>>,
+    &'a mut Option<Box<BridgeFrame>>,
+);
+
+enum ActiveSessionEvent {
+    Deadline,
+    Control(Option<Result<ControlCommand, SidecarError>>),
+    Bridge(Option<Result<BridgeFrame, SidecarError>>),
+}
+
+enum ControlGapEvent {
+    Control(Result<ControlConnection, SidecarError>),
+    Bridge(Option<Result<BridgeFrame, SidecarError>>),
+    BridgeTerminal(Option<BridgeTerminal>),
+    Deadline,
+}
+
+enum ControlReacquisition {
+    Control(ControlConnection),
+    BridgeTerminated(SidecarError),
+}
+
+enum ControlRecovery {
+    Control(ControlIo),
+    Reconnect,
+    Shutdown,
+}
+
+enum SessionProgress {
+    Continue,
+    Complete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BridgeTerminal {
+    CleanEof,
+    IdleDisconnect,
+    Fatal,
+}
+
+impl BridgeTerminal {
+    fn into_error(self) -> SidecarError {
+        match self {
+            Self::CleanEof => SidecarError::ProtocolViolation("bridge disconnected"),
+            Self::IdleDisconnect => SidecarError::BridgeConnection(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "bridge disconnected while idle",
+            )),
+            Self::Fatal => SidecarError::Connection(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "bridge reader terminated",
+            )),
+        }
+    }
+}
+
+impl BridgeIo {
+    fn reacquisition_parts(&mut self) -> BridgeReacquisitionParts<'_> {
+        (
+            self.receiver.as_mut().expect("bridge receiver is owned"),
+            &mut self.terminal,
+            &mut self.pending_frame,
+        )
+    }
+
+    fn into_parts(mut self) -> BridgeIoParts {
+        BridgeIoParts {
+            writer: self.writer.take().expect("bridge writer is owned"),
+            receiver: self.receiver.take().expect("bridge receiver is owned"),
+            task: self.task.take().expect("bridge task is owned"),
+            terminal: self.terminal.clone(),
+            pending_frame: self.pending_frame.take(),
+        }
+    }
+}
+
+impl Drop for BridgeIo {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
+    }
+}
+
+fn spawn_control_reader(control: ControlConnection) -> ControlIo {
     let (mut control_reader, control_writer) = control.into_split();
     let (control_tx, control_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
     let control_task = tokio::spawn(async move {
@@ -574,7 +767,187 @@ fn spawn_control_reader(
             }
         }
     });
-    (control_writer, control_rx, control_task)
+    ControlIo {
+        writer: Some(control_writer),
+        receiver: Some(control_rx),
+        task: Some(control_task),
+    }
+}
+
+#[cfg(test)]
+fn spawn_control_reader_observed<F>(control: ControlConnection, mut prefix_observer: F) -> ControlIo
+where
+    F: FnMut() + Send + 'static,
+{
+    let (mut control_reader, control_writer) = control.into_split();
+    let (control_tx, control_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
+    let control_task = tokio::spawn(async move {
+        loop {
+            match control_reader
+                .receive_command_observed(&mut prefix_observer)
+                .await
+            {
+                Ok(command) => {
+                    if control_tx.send(Ok(command)).await.is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = control_tx.send(Err(SidecarError::Control(error))).await;
+                    break;
+                }
+            }
+        }
+    });
+    ControlIo {
+        writer: Some(control_writer),
+        receiver: Some(control_rx),
+        task: Some(control_task),
+    }
+}
+
+fn spawn_bridge_reader(bridge: AuthenticatedConnection) -> BridgeIo {
+    let (mut bridge_reader, bridge_writer) = bridge.into_split();
+    let (bridge_tx, bridge_rx) = mpsc::channel::<Result<BridgeFrame, SidecarError>>(1);
+    let (terminal_tx, terminal_rx) = watch::channel(None);
+    let bridge_task = tokio::spawn(async move {
+        loop {
+            match bridge_reader.receive(Direction::RomToSidecar).await {
+                Ok(Some(frame)) => {
+                    if bridge_tx.send(Ok(frame)).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {
+                    let _ = terminal_tx.send(Some(BridgeTerminal::CleanEof));
+                    let _ = bridge_tx
+                        .send(Err(SidecarError::ProtocolViolation("bridge disconnected")))
+                        .await;
+                    break;
+                }
+                Err(error) => {
+                    let terminal = if matches!(error, SidecarError::BridgeConnection(_)) {
+                        BridgeTerminal::IdleDisconnect
+                    } else {
+                        BridgeTerminal::Fatal
+                    };
+                    let _ = terminal_tx.send(Some(terminal));
+                    let _ = bridge_tx.send(Err(error)).await;
+                    break;
+                }
+            }
+        }
+    });
+    BridgeIo {
+        writer: Some(bridge_writer),
+        receiver: Some(bridge_rx),
+        task: Some(bridge_task),
+        terminal: terminal_rx,
+        pending_frame: None,
+    }
+}
+
+#[cfg(test)]
+fn spawn_bridge_reader_observed<F>(
+    bridge: AuthenticatedConnection,
+    mut prefix_observer: F,
+) -> BridgeIo
+where
+    F: FnMut() + Send + 'static,
+{
+    let (mut bridge_reader, bridge_writer) = bridge.into_split();
+    let (bridge_tx, bridge_rx) = mpsc::channel::<Result<BridgeFrame, SidecarError>>(1);
+    let (terminal_tx, terminal_rx) = watch::channel(None);
+    let bridge_task = tokio::spawn(async move {
+        loop {
+            match bridge_reader
+                .receive_observed(Direction::RomToSidecar, &mut prefix_observer)
+                .await
+            {
+                Ok(Some(frame)) => {
+                    if bridge_tx.send(Ok(frame)).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {
+                    let _ = terminal_tx.send(Some(BridgeTerminal::CleanEof));
+                    let _ = bridge_tx
+                        .send(Err(SidecarError::ProtocolViolation("bridge disconnected")))
+                        .await;
+                    break;
+                }
+                Err(error) => {
+                    let terminal = if matches!(error, SidecarError::BridgeConnection(_)) {
+                        BridgeTerminal::IdleDisconnect
+                    } else {
+                        BridgeTerminal::Fatal
+                    };
+                    let _ = terminal_tx.send(Some(terminal));
+                    let _ = bridge_tx.send(Err(error)).await;
+                    break;
+                }
+            }
+        }
+    });
+    BridgeIo {
+        writer: Some(bridge_writer),
+        receiver: Some(bridge_rx),
+        task: Some(bridge_task),
+        terminal: terminal_rx,
+        pending_frame: None,
+    }
+}
+
+type BridgeAuthentication =
+    Pin<Box<dyn Future<Output = Result<AuthenticatedConnection, SidecarError>> + Send + 'static>>;
+
+type ControlAuthentication =
+    Pin<Box<dyn Future<Output = Result<ControlConnection, SidecarError>> + Send + 'static>>;
+
+enum LostControlRace {
+    Control(ControlIo),
+    Bridge(BridgeIo),
+    InvalidBridge,
+    Continue,
+}
+
+enum ReplacementArrival {
+    Control(ControlIo),
+    Bridge(BridgeIo),
+    Retry,
+}
+
+enum ControlledAcquisitionStep {
+    Bridge(BridgeIo),
+    BridgeRejected,
+    ControlLost,
+    Continue,
+    Shutdown,
+}
+
+enum PendingBridgeEvent {
+    Control(Result<ControlConnection, SidecarError>),
+    Bridge(Result<AuthenticatedConnection, SidecarError>),
+    Deadline,
+}
+
+enum ListenerRaceEvent {
+    Control(Result<ControlConnection, SidecarError>),
+    Bridge(Result<AuthenticatedConnection, SidecarError>),
+    Deadline,
+}
+
+enum ControlledBridgeEvent {
+    Bridge(Result<AuthenticatedConnection, SidecarError>),
+    Command(Option<Result<ControlCommand, SidecarError>>),
+    Deadline,
+}
+
+#[cfg(test)]
+enum ControlledListenerEvent {
+    Bridge(Result<AuthenticatedConnection, SidecarError>),
+    Command(Option<Result<ControlCommand, SidecarError>>),
+    Deadline,
 }
 
 fn is_sequence_newer(sequence: u32, previous: u32) -> bool {
@@ -597,13 +970,20 @@ fn rotate_expired_tombstone(frame: &BridgeFrame, expired_checkpoint: &mut Option
 /// A loopback-only listener pair. `serve` accepts one authenticated bridge and
 /// one authenticated control peer before entering the checkpoint session loop.
 pub struct LocalSidecar {
-    bridge_listener: TcpListener,
+    bridge_listener: Arc<TcpListener>,
     bridge_address: SocketAddr,
     bridge_secret: SessionSecret,
     control_listener: ControlListener,
     session_epoch: u32,
     sequence_state: SessionSequenceState,
     command_history: HashMap<CommandId, CommandRecord>,
+    applied_shutdown: Option<CommandId>,
+    #[cfg(test)]
+    handshake_prefix_observer: Option<mpsc::Sender<()>>,
+    #[cfg(test)]
+    bridge_prefix_observer: Option<mpsc::Sender<()>>,
+    #[cfg(test)]
+    control_prefix_observer: Option<mpsc::Sender<()>>,
 }
 
 impl LocalSidecar {
@@ -625,13 +1005,20 @@ impl LocalSidecar {
             .map_err(SidecarError::Listener)?;
         let control_listener = ControlListener::bind(session_epoch).await?;
         Ok(Self {
-            bridge_listener,
+            bridge_listener: Arc::new(bridge_listener),
             bridge_address,
             bridge_secret: SessionSecret::generate(),
             control_listener,
             session_epoch,
             sequence_state: SessionSequenceState::default(),
             command_history: HashMap::new(),
+            applied_shutdown: None,
+            #[cfg(test)]
+            handshake_prefix_observer: None,
+            #[cfg(test)]
+            bridge_prefix_observer: None,
+            #[cfg(test)]
+            control_prefix_observer: None,
         })
     }
 
@@ -660,42 +1047,70 @@ impl LocalSidecar {
         }
     }
 
+    #[cfg(test)]
+    fn observe_reader_prefixes(
+        &mut self,
+    ) -> (mpsc::Receiver<()>, mpsc::Receiver<()>, mpsc::Receiver<()>) {
+        let (handshake_tx, handshake_rx) = mpsc::channel(16);
+        let (bridge_tx, bridge_rx) = mpsc::channel(16);
+        let (control_tx, control_rx) = mpsc::channel(16);
+        self.handshake_prefix_observer = Some(handshake_tx);
+        self.bridge_prefix_observer = Some(bridge_tx);
+        self.control_prefix_observer = Some(control_tx);
+        (handshake_rx, bridge_rx, control_rx)
+    }
+
+    fn spawn_control_io(&self, control: ControlConnection) -> ControlIo {
+        #[cfg(test)]
+        if let Some(observer) = self.control_prefix_observer.clone() {
+            return spawn_control_reader_observed(control, move || {
+                let _ = observer.try_send(());
+            });
+        }
+        #[cfg(not(test))]
+        debug_assert!(self.session_epoch != 0);
+        spawn_control_reader(control)
+    }
+
+    fn spawn_bridge_io(&self, bridge: AuthenticatedConnection) -> BridgeIo {
+        #[cfg(test)]
+        if let Some(observer) = self.bridge_prefix_observer.clone() {
+            return spawn_bridge_reader_observed(bridge, move || {
+                let _ = observer.try_send(());
+            });
+        }
+        #[cfg(not(test))]
+        debug_assert!(self.session_epoch != 0);
+        spawn_bridge_reader(bridge)
+    }
+
     /// Accepts exactly one authenticated bridge peer.
     ///
     /// # Errors
     ///
     /// Returns an error when accepting or authenticating the peer fails.
+    #[cfg(test)]
     pub(crate) async fn accept(&mut self) -> Result<AuthenticatedConnection, SidecarError> {
         let (stream, peer) = self
             .bridge_listener
             .accept()
             .await
             .map_err(SidecarError::Listener)?;
-        self.authenticate(stream, peer).await
+        self.authenticate(stream, peer, true).await
     }
 
-    async fn accept_control(&mut self) -> Result<ControlConnection, SidecarError> {
+    #[cfg(test)]
+    async fn accept_control(&self) -> Result<ControlConnection, SidecarError> {
         self.control_listener.accept().await.map_err(Into::into)
     }
 
-    async fn accept_reconnect_control(&mut self) -> Result<ControlConnection, SidecarError> {
-        // This wait is scoped to the authenticated bridge session. Each
-        // candidate handshake has its own bounded control timeout, and the
-        // bridge reader/channel stay fixed and bounded while invalid peers
-        // are discarded.
-        loop {
-            match self.accept_control().await {
-                Ok(connection) => return Ok(connection),
-                Err(SidecarError::Control(ControlError::Listener(error))) => {
-                    return Err(SidecarError::Control(ControlError::Listener(error)));
-                }
-                // Invalid replacement peers are isolated just like invalid
-                // peers during the initial pair acquisition. Keep the
-                // authenticated bridge session available for the next valid
-                // control connection.
-                Err(_) => {}
-            }
-        }
+    fn start_control_authentication(&self) -> ControlAuthentication {
+        let listener = self.control_listener.clone();
+        Box::pin(async move { authenticate_control_candidates(listener).await })
+    }
+
+    fn start_bridge_authentication_pump(&self) -> BridgeAuthentication {
+        self.start_bridge_authentication_from(None)
     }
 
     /// Serves authenticated bridge/control sessions. Invalid clients are
@@ -707,84 +1122,663 @@ impl LocalSidecar {
     ///
     /// Returns an error when a listener itself can no longer accept clients.
     pub async fn serve(mut self) -> Result<(), SidecarError> {
-        let mut reconnect_state = ReconnectState::default();
+        let mut reconnect = ReconnectContext::default();
         loop {
-            let (bridge, control) = self.accept_pair().await?;
+            let pair = self.accept_pair(reconnect).await?;
+            let InitialAccept::Pair(pair) = pair else {
+                return Ok(());
+            };
             match self
-                .serve_authenticated_controlled_client(bridge, control, reconnect_state)
+                .serve_authenticated_controlled_client(pair.bridge, pair.control, pair.reconnect)
                 .await?
             {
-                SessionExit::Reconnect(state) => reconnect_state = state,
+                SessionExit::Reconnect(next) => reconnect = next,
+                SessionExit::Shutdown => return Ok(()),
             }
         }
     }
 
     async fn accept_pair(
         &mut self,
-    ) -> Result<(AuthenticatedConnection, ControlConnection), SidecarError> {
+        mut reconnect: ReconnectContext,
+    ) -> Result<InitialAccept, SidecarError> {
         // Control authentication is deliberately first: the launcher must own
         // the control secret before it starts mGBA and supplies the bridge Lua
         // script. The already-bound bridge listener can queue its peer meanwhile.
+        let mut control_authentication = self.start_control_authentication();
         let control = loop {
-            match self.accept_control().await {
-                Ok(connection) => break connection,
-                Err(SidecarError::Control(ControlError::Listener(error))) => {
-                    return Err(SidecarError::Control(ControlError::Listener(error)));
+            let deadline = reconnect.state.checkpoint_state.deadline();
+            tokio::select! {
+                biased;
+                () = checkpoint_deadline(deadline) => {
+                    advance_reconnect_deadline(
+                        &mut self.sequence_state,
+                        &mut reconnect.state,
+                        Instant::now(),
+                    )?;
                 }
-                Err(_) => {}
+                result = &mut control_authentication => match result {
+                    Ok(connection) => break connection,
+                    Err(error) => return Err(error),
+                }
             }
         };
-        let bridge = loop {
-            match self.accept().await {
-                Ok(connection) => break connection,
-                Err(SidecarError::Listener(error)) => return Err(SidecarError::Listener(error)),
-                Err(_) => {}
-            }
-        };
-        Ok((bridge, control))
+        self.accept_initial_bridge_or_shutdown(self.spawn_control_io(control), reconnect)
+            .await
     }
 
+    async fn handoff_pair_acquisition_expiry(
+        &mut self,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<bool, SidecarError> {
+        let CheckpointState::ExpiryPendingHandoff { key } = reconnect.state.checkpoint_state else {
+            return Ok(true);
+        };
+        let result = control
+            .writer()
+            .send_event(&ControlEvent::CheckpointExpired {
+                session_epoch: key.session_epoch,
+                ready_sequence: key.ready_sequence,
+            })
+            .await
+            .map_err(SidecarError::Control);
+        match result {
+            Ok(()) => {
+                reconnect.state.checkpoint_state = CheckpointState::Idle;
+                Ok(true)
+            }
+            Err(error) if can_reconnect_after(&error) && is_control_reconnect_error(&error) => {
+                control.shutdown().await;
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn handle_pair_acquisition_deadline(
+        &mut self,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<ControlledAcquisitionStep, SidecarError> {
+        advance_reconnect_deadline(
+            &mut self.sequence_state,
+            &mut reconnect.state,
+            Instant::now(),
+        )?;
+        Ok(
+            if self
+                .handoff_pair_acquisition_expiry(control, reconnect)
+                .await?
+            {
+                ControlledAcquisitionStep::Continue
+            } else {
+                ControlledAcquisitionStep::ControlLost
+            },
+        )
+    }
+
+    async fn reacquire_control_with_bridge(
+        &mut self,
+        bridge: &mut BridgeIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<ControlRecovery, SidecarError> {
+        let (bridge_rx, bridge_terminal, pending_bridge_frame) = bridge.reacquisition_parts();
+        self.recover_control_with_bridge(
+            bridge_rx,
+            bridge_terminal,
+            &mut reconnect.state,
+            pending_bridge_frame,
+            &mut reconnect.bridge_lifecycle,
+        )
+        .await
+    }
+
+    async fn race_lost_control_with_bridge_auth(
+        &mut self,
+        authentication: &mut BridgeAuthentication,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<LostControlRace, SidecarError> {
+        let event = {
+            let replacement = self.start_control_authentication();
+            tokio::pin!(replacement);
+            tokio::select! {
+                biased;
+                () = checkpoint_deadline(reconnect.state.checkpoint_state.deadline()) => {
+                    PendingBridgeEvent::Deadline
+                }
+                result = &mut replacement => PendingBridgeEvent::Control(result),
+                result = authentication => PendingBridgeEvent::Bridge(result),
+            }
+        };
+        match event {
+            PendingBridgeEvent::Deadline => {
+                advance_reconnect_deadline(
+                    &mut self.sequence_state,
+                    &mut reconnect.state,
+                    Instant::now(),
+                )?;
+                Ok(LostControlRace::Continue)
+            }
+            PendingBridgeEvent::Control(result) => result
+                .map(|control| self.spawn_control_io(control))
+                .map(LostControlRace::Control),
+            PendingBridgeEvent::Bridge(Err(_)) => Ok(LostControlRace::InvalidBridge),
+            PendingBridgeEvent::Bridge(Ok(mut connection)) => {
+                reconnect.bridge_lifecycle.mark_authenticated();
+                if connection.send_handshake_accepted().await.is_err() {
+                    return Ok(LostControlRace::InvalidBridge);
+                }
+                if !reconnect.state.checkpoint_state.is_quiescing()
+                    && self
+                        .send_initial_session_ready(&mut connection)
+                        .await
+                        .is_err()
+                {
+                    return Ok(LostControlRace::InvalidBridge);
+                }
+                Ok(LostControlRace::Bridge(self.spawn_bridge_io(connection)))
+            }
+        }
+    }
+
+    async fn race_replacement_control_with_bridge_listener(
+        &mut self,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<ReplacementArrival, SidecarError> {
+        let event = {
+            let control_accept = self.start_control_authentication();
+            let bridge_accept = self.start_bridge_authentication_pump();
+            tokio::pin!(control_accept, bridge_accept);
+            tokio::select! {
+                biased;
+                () = checkpoint_deadline(reconnect.state.checkpoint_state.deadline()) => {
+                    ListenerRaceEvent::Deadline
+                }
+                result = &mut control_accept => ListenerRaceEvent::Control(result),
+                result = &mut bridge_accept => ListenerRaceEvent::Bridge(result),
+            }
+        };
+        match event {
+            ListenerRaceEvent::Deadline => {
+                advance_reconnect_deadline(
+                    &mut self.sequence_state,
+                    &mut reconnect.state,
+                    Instant::now(),
+                )?;
+                Ok(ReplacementArrival::Retry)
+            }
+            ListenerRaceEvent::Control(Ok(control)) => {
+                Ok(ReplacementArrival::Control(self.spawn_control_io(control)))
+            }
+            ListenerRaceEvent::Control(Err(error)) | ListenerRaceEvent::Bridge(Err(error)) => {
+                Err(error)
+            }
+            ListenerRaceEvent::Bridge(Ok(connection)) => {
+                let mut connection = connection;
+                reconnect.bridge_lifecycle.mark_authenticated();
+                if connection.send_handshake_accepted().await.is_err() {
+                    return Ok(ReplacementArrival::Retry);
+                }
+                if !reconnect.state.checkpoint_state.is_quiescing()
+                    && self
+                        .send_initial_session_ready(&mut connection)
+                        .await
+                        .is_err()
+                {
+                    return Ok(ReplacementArrival::Retry);
+                }
+                // The bridge has been authenticated by the concurrent pump;
+                // hand it to the normal reader owner before accepting frames.
+                Ok(ReplacementArrival::Bridge(self.spawn_bridge_io(connection)))
+            }
+        }
+    }
+
+    async fn drive_control_with_bridge_auth(
+        &mut self,
+        authentication: &mut BridgeAuthentication,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<ControlledAcquisitionStep, SidecarError> {
+        let event = tokio::select! {
+            biased;
+            () = checkpoint_deadline(reconnect.state.checkpoint_state.deadline()) => {
+                ControlledBridgeEvent::Deadline
+            }
+            command = control.receiver().recv(),
+                if can_receive_deferred_command(&reconnect.deferred_commands)
+                    || reconnect.state.checkpoint_state.is_quiescing() =>
+            {
+                ControlledBridgeEvent::Command(command)
+            }
+            result = authentication => ControlledBridgeEvent::Bridge(result),
+        };
+        match event {
+            ControlledBridgeEvent::Deadline => {
+                self.handle_pair_acquisition_deadline(control, reconnect)
+                    .await
+            }
+            ControlledBridgeEvent::Bridge(Err(_)) => Ok(ControlledAcquisitionStep::BridgeRejected),
+            ControlledBridgeEvent::Bridge(Ok(mut connection)) => {
+                reconnect.bridge_lifecycle.mark_authenticated();
+                if connection.send_handshake_accepted().await.is_err() {
+                    return Ok(ControlledAcquisitionStep::BridgeRejected);
+                }
+                if !reconnect.state.checkpoint_state.is_quiescing()
+                    && self
+                        .send_initial_session_ready(&mut connection)
+                        .await
+                        .is_err()
+                {
+                    return Ok(ControlledAcquisitionStep::BridgeRejected);
+                }
+                Ok(ControlledAcquisitionStep::Bridge(
+                    self.spawn_bridge_io(connection),
+                ))
+            }
+            ControlledBridgeEvent::Command(result) => {
+                if self
+                    .process_pre_bridge_control_result(result, control, reconnect)
+                    .await?
+                {
+                    return Ok(ControlledAcquisitionStep::Shutdown);
+                }
+                Ok(if control.task.is_none() {
+                    ControlledAcquisitionStep::ControlLost
+                } else {
+                    ControlledAcquisitionStep::Continue
+                })
+            }
+        }
+    }
+
+    #[cfg(test)]
+    async fn drive_control_with_bridge_listener(
+        &mut self,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<ControlledAcquisitionStep, SidecarError> {
+        let bridge_authentication = self.start_bridge_authentication_pump();
+        tokio::pin!(bridge_authentication);
+        let event = {
+            tokio::select! {
+                biased;
+                () = checkpoint_deadline(
+                    reconnect.state.checkpoint_state.deadline()
+                ) => ControlledListenerEvent::Deadline,
+                command = control.receiver().recv(),
+                    if can_receive_deferred_command(&reconnect.deferred_commands)
+                        || reconnect.state.checkpoint_state.is_quiescing() =>
+                {
+                    ControlledListenerEvent::Command(command)
+                }
+                result = &mut bridge_authentication => ControlledListenerEvent::Bridge(result),
+            }
+        };
+        match event {
+            ControlledListenerEvent::Deadline => {
+                self.handle_pair_acquisition_deadline(control, reconnect)
+                    .await
+            }
+            ControlledListenerEvent::Bridge(Err(error)) if is_listener_failure(&error) => {
+                Err(error)
+            }
+            ControlledListenerEvent::Bridge(Err(_)) => {
+                Ok(ControlledAcquisitionStep::BridgeRejected)
+            }
+            ControlledListenerEvent::Bridge(Ok(connection)) => {
+                let mut connection = connection;
+                reconnect.bridge_lifecycle.mark_authenticated();
+                if connection.send_handshake_accepted().await.is_err() {
+                    return Ok(ControlledAcquisitionStep::BridgeRejected);
+                }
+                if !reconnect.state.checkpoint_state.is_quiescing()
+                    && self
+                        .send_initial_session_ready(&mut connection)
+                        .await
+                        .is_err()
+                {
+                    return Ok(ControlledAcquisitionStep::BridgeRejected);
+                }
+                Ok(ControlledAcquisitionStep::Bridge(
+                    self.spawn_bridge_io(connection),
+                ))
+            }
+            ControlledListenerEvent::Command(result) => {
+                if self
+                    .process_pre_bridge_control_result(result, control, reconnect)
+                    .await?
+                {
+                    return Ok(ControlledAcquisitionStep::Shutdown);
+                }
+                Ok(if control.task.is_none() {
+                    ControlledAcquisitionStep::ControlLost
+                } else {
+                    ControlledAcquisitionStep::Continue
+                })
+            }
+        }
+    }
+
+    async fn accept_initial_bridge_or_shutdown(
+        &mut self,
+        mut control: ControlIo,
+        mut reconnect: ReconnectContext,
+    ) -> Result<InitialAccept, SidecarError> {
+        // The launcher authenticates before starting Lua, but it may request
+        // shutdown during the window in which no bridge peer exists yet.
+        // Keep the decoder task alive across every listener and handshake
+        // race so a fragmented authenticated JSONL command is never lost.
+        let mut bridge_authentication: Option<BridgeAuthentication> = None;
+        let mut bridge: Option<BridgeIo> = None;
+        let mut has_control = true;
+        loop {
+            if has_control
+                && !self
+                    .handoff_pair_acquisition_expiry(&mut control, &mut reconnect)
+                    .await?
+            {
+                has_control = false;
+                continue;
+            }
+            if has_control && let Some(bridge) = bridge.take() {
+                reconnect.bridge_lifecycle.mark_authenticated();
+                return Ok(InitialAccept::Pair(InitialPair {
+                    bridge,
+                    control,
+                    reconnect,
+                }));
+            }
+
+            if !has_control {
+                if let Some(pending_bridge) = bridge.as_mut() {
+                    match self
+                        .reacquire_control_with_bridge(pending_bridge, &mut reconnect)
+                        .await?
+                    {
+                        ControlRecovery::Control(replacement) => {
+                            control = replacement;
+                            has_control = true;
+                        }
+                        ControlRecovery::Reconnect => bridge = None,
+                        ControlRecovery::Shutdown => return Ok(InitialAccept::Shutdown),
+                    }
+                } else if let Some(authentication) = bridge_authentication.as_mut() {
+                    match self
+                        .race_lost_control_with_bridge_auth(authentication, &mut reconnect)
+                        .await?
+                    {
+                        LostControlRace::Control(replacement) => {
+                            control = replacement;
+                            has_control = true;
+                        }
+                        LostControlRace::Bridge(connection) => {
+                            bridge_authentication = None;
+                            bridge = Some(connection);
+                        }
+                        LostControlRace::InvalidBridge => bridge_authentication = None,
+                        LostControlRace::Continue => {}
+                    }
+                } else {
+                    match self
+                        .race_replacement_control_with_bridge_listener(&mut reconnect)
+                        .await?
+                    {
+                        ReplacementArrival::Control(replacement) => {
+                            control = replacement;
+                            has_control = true;
+                        }
+                        ReplacementArrival::Bridge(bridge_connection) => {
+                            bridge = Some(bridge_connection);
+                        }
+                        ReplacementArrival::Retry => {}
+                    }
+                }
+                continue;
+            }
+
+            let step = if let Some(authentication) = bridge_authentication.as_mut() {
+                self.drive_control_with_bridge_auth(authentication, &mut control, &mut reconnect)
+                    .await?
+            } else {
+                bridge_authentication = Some(self.start_bridge_authentication_pump());
+                self.drive_control_with_bridge_auth(
+                    bridge_authentication
+                        .as_mut()
+                        .expect("bridge authentication pump is owned"),
+                    &mut control,
+                    &mut reconnect,
+                )
+                .await?
+            };
+            match step {
+                ControlledAcquisitionStep::Bridge(connection) => {
+                    bridge_authentication = None;
+                    bridge = Some(connection);
+                }
+                ControlledAcquisitionStep::BridgeRejected => bridge_authentication = None,
+                ControlledAcquisitionStep::ControlLost => has_control = false,
+                ControlledAcquisitionStep::Continue => {}
+                ControlledAcquisitionStep::Shutdown => return Ok(InitialAccept::Shutdown),
+            }
+        }
+    }
+
+    async fn process_pre_bridge_control_result(
+        &mut self,
+        result: Option<Result<ControlCommand, SidecarError>>,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<bool, SidecarError> {
+        match result {
+            Some(Ok(command)) => {
+                let command_id = command_parts(&command).0;
+                let can_replay_without_bridge = self.command_history.contains_key(&command_id);
+                let handled = if reconnect.state.checkpoint_state.is_quiescing() {
+                    let deadline = reconnect
+                        .state
+                        .checkpoint_state
+                        .quiescing_deadline()
+                        .expect("quiescing has a deadline");
+                    let handling = self.handle_control_command_without_bridge(
+                        command,
+                        control.writer(),
+                        &mut reconnect.state.checkpoint_state,
+                    );
+                    tokio::pin!(handling);
+                    tokio::select! {
+                        biased;
+                        () = sleep_until(deadline) => Err(SidecarError::ShutdownTimeout),
+                        result = &mut handling => result,
+                    }
+                } else if !can_replay_without_bridge
+                    && (!matches!(command, ControlCommand::ShutdownRequest(_))
+                        || (!reconnect.deferred_commands.is_empty()
+                            && reconnect.deferred_commands.len() < MAX_DEFERRED_ROUTINE_COMMANDS))
+                {
+                    enqueue_deferred_command(&mut reconnect.deferred_commands, command)
+                        .map(|()| false)
+                } else {
+                    self.handle_control_command_without_bridge(
+                        command,
+                        control.writer(),
+                        &mut reconnect.state.checkpoint_state,
+                    )
+                    .await
+                };
+                let shutdown_acknowledged = match handled {
+                    Ok(shutdown_acknowledged) => shutdown_acknowledged,
+                    Err(error) => {
+                        if can_reconnect_after(&error) && is_control_reconnect_error(&error) {
+                            control.shutdown().await;
+                            return Ok(false);
+                        }
+                        return Err(error);
+                    }
+                };
+                if shutdown_acknowledged && reconnect.bridge_lifecycle.take_bridge_exit_proof() {
+                    return Ok(true);
+                }
+                Ok(false)
+            }
+            Some(Err(error)) => {
+                let clean_pre_bridge_shutdown = reconnect.state.checkpoint_state.is_quiescing()
+                    && reconnect.bridge_lifecycle.control_eof_proves_shutdown()
+                    && matches!(error, SidecarError::Control(ControlError::LineClosed));
+                if clean_pre_bridge_shutdown {
+                    control.shutdown().await;
+                    return Ok(true);
+                }
+                if can_reconnect_after(&error) && is_control_reconnect_error(&error) {
+                    control.shutdown().await;
+                    return Ok(false);
+                }
+                Err(error)
+            }
+            None => {
+                control.shutdown().await;
+                // A vanished decoder task is not transport EOF proof. Only
+                // the explicit LineClosed result above can complete a
+                // pre-authentication shutdown.
+                Ok(false)
+            }
+        }
+    }
+
+    #[cfg(test)]
     async fn authenticate(
         &mut self,
-        mut stream: TcpStream,
+        stream: TcpStream,
         peer: SocketAddr,
+        send_bootstrap: bool,
     ) -> Result<AuthenticatedConnection, SidecarError> {
-        if !peer.ip().is_loopback() {
-            return Err(SidecarError::NonLoopbackPeer(peer));
+        let mut connection =
+            authenticate_bridge_candidate(stream, peer, self.bridge_secret.clone()).await?;
+        connection.send_handshake_accepted().await?;
+        if send_bootstrap {
+            self.send_initial_session_ready(&mut connection).await?;
         }
-        stream.set_nodelay(true).map_err(SidecarError::Connection)?;
-        let line = timeout(HANDSHAKE_TIMEOUT, read_bounded_handshake(&mut stream))
-            .await
-            .map_err(|_| SidecarError::HandshakeTimeout)??;
-        let request: HandshakeRequest =
-            serde_json::from_slice(&line).map_err(SidecarError::MalformedHandshake)?;
+        Ok(connection)
+    }
 
-        if request.bridge_abi != BRIDGE_ABI_VERSION {
-            return Err(SidecarError::IncompatibleBridgeAbi {
-                received: request.bridge_abi,
-            });
-        }
-        if request.protocol_version != GAME_PROTOCOL_VERSION {
-            return Err(SidecarError::IncompatibleProtocolVersion {
-                received: request.protocol_version,
-            });
-        }
-        if !self.bridge_secret.matches(&request.secret) {
-            return Err(SidecarError::AuthenticationFailed);
-        }
+    fn start_bridge_authentication_from(
+        &self,
+        initial: Option<(TcpStream, SocketAddr)>,
+    ) -> BridgeAuthentication {
+        let listener = self.bridge_listener.clone();
+        let secret = self.bridge_secret.clone();
+        #[cfg(test)]
+        let observer = self.handshake_prefix_observer.clone();
+        #[cfg(not(test))]
+        let observer = None;
+        Box::pin(async move {
+            let mut candidates = JoinSet::new();
+            let mut candidate_handles: VecDeque<(Id, AbortHandle)> = VecDeque::new();
+            let mut pending_candidate = None;
+            if let Some((stream, peer)) = initial {
+                track_authentication_candidate(
+                    &mut candidate_handles,
+                    spawn_bridge_authentication_candidate(
+                        &mut candidates,
+                        stream,
+                        peer,
+                        &secret,
+                        observer.as_ref(),
+                    ),
+                );
+            }
+            let mut accept = Box::pin(listener.accept());
+            loop {
+                tokio::select! {
+                    biased;
+                    result = candidates.join_next_with_id(), if !candidates.is_empty() => {
+                        let result = result.ok_or_else(|| {
+                            SidecarError::Connection(io::Error::other(
+                                "bridge authentication pump terminated",
+                            ))
+                        })?;
+                        let (candidate_id, result) = match result {
+                            Ok((candidate_id, result)) => (candidate_id, result),
+                            Err(error) if error.is_cancelled() => {
+                                remove_authentication_candidate(&mut candidate_handles, error.id());
+                                if let Some((stream, peer)) = pending_candidate.take() {
+                                    track_authentication_candidate(
+                                        &mut candidate_handles,
+                                        spawn_bridge_authentication_candidate(
+                                            &mut candidates,
+                                            stream,
+                                            peer,
+                                            &secret,
+                                            observer.as_ref(),
+                                        ),
+                                    );
+                                    accept = Box::pin(listener.accept());
+                                }
+                                continue;
+                            }
+                            Err(_) => {
+                                return Err(SidecarError::Connection(io::Error::other(
+                                    "bridge authentication task failed")));
+                            }
+                        };
+                        remove_authentication_candidate(&mut candidate_handles, candidate_id);
+                        if let Some((stream, peer)) = pending_candidate.take() {
+                            track_authentication_candidate(
+                                &mut candidate_handles,
+                                spawn_bridge_authentication_candidate(
+                                    &mut candidates,
+                                    stream,
+                                    peer,
+                                    &secret,
+                                    observer.as_ref(),
+                                ),
+                            );
+                            accept = Box::pin(listener.accept());
+                        }
+                        match result {
+                            Ok(connection) => return Ok(connection),
+                            Err(error) if is_listener_failure(&error) => return Err(error),
+                            Err(_) => {}
+                        }
+                    }
+                    accepted = &mut accept, if pending_candidate.is_none() => {
+                        let (stream, peer) = accepted.map_err(SidecarError::Listener)?;
+                        if candidates.len() >= MAX_BRIDGE_AUTH_CANDIDATES {
+                            abort_oldest_authentication(&mut candidate_handles);
+                            pending_candidate = Some((stream, peer));
+                        } else {
+                            track_authentication_candidate(
+                                &mut candidate_handles,
+                                spawn_bridge_authentication_candidate(
+                                    &mut candidates,
+                                    stream,
+                                    peer,
+                                    &secret,
+                                    observer.as_ref(),
+                                ),
+                            );
+                        }
+                        if pending_candidate.is_none() {
+                            accept = Box::pin(listener.accept());
+                        }
+                    }
+                }
+            }
+        })
+    }
 
-        timeout(HANDSHAKE_TIMEOUT, stream.write_all(HANDSHAKE_ACCEPTED_LINE))
-            .await
-            .map_err(|_| SidecarError::HandshakeWriteTimeout)?
-            .map_err(SidecarError::Connection)?;
+    async fn send_initial_session_ready(
+        &mut self,
+        connection: &mut AuthenticatedConnection,
+    ) -> Result<(), SidecarError> {
         let sequence = self.sequence_state.take_sidecar_sequence();
         let frame = BridgeFrame::new(MessageType::SessionReady, sequence, self.session_epoch, &[])?;
         let frame_bytes = frame.encode();
-        timeout(HANDSHAKE_TIMEOUT, stream.write_all(&frame_bytes))
+        timeout(HANDSHAKE_TIMEOUT, connection.stream.write_all(&frame_bytes))
             .await
             .map_err(|_| SidecarError::HandshakeWriteTimeout)?
-            .map_err(SidecarError::Connection)?;
-        Ok(AuthenticatedConnection { stream })
+            .map_err(SidecarError::Connection)
     }
 
     async fn send_session_ready_to_stream(
@@ -798,102 +1792,104 @@ impl LocalSidecar {
 
     async fn serve_authenticated_controlled_client(
         &mut self,
-        bridge: AuthenticatedConnection,
-        first_control: ControlConnection,
-        reconnect_state: ReconnectState,
+        bridge: BridgeIo,
+        first_control: ControlIo,
+        reconnect: ReconnectContext,
     ) -> Result<SessionExit, SidecarError> {
-        // Socket reads are owned by dedicated tasks. The bridge decoder and
-        // its bounded channel remain alive across a reconnectable control
-        // loss, so a decoded (or still unread) CHECKPOINT_READY cannot fall
-        // into the gap between control shutdown and the next authentication.
-        let (mut bridge_reader, bridge_writer) = bridge.into_split();
-        let (bridge_tx, bridge_rx) = mpsc::channel::<Result<BridgeFrame, SidecarError>>(1);
-        let bridge_task = tokio::spawn(async move {
-            loop {
-                match bridge_reader.receive(Direction::RomToSidecar).await {
-                    Ok(Some(frame)) => {
-                        if bridge_tx.send(Ok(frame)).await.is_err() {
-                            break;
-                        }
-                    }
-                    Ok(None) => {
-                        let _ = bridge_tx
-                            .send(Err(SidecarError::ProtocolViolation("bridge disconnected")))
-                            .await;
-                        break;
-                    }
-                    Err(error) => {
-                        let _ = bridge_tx.send(Err(error)).await;
-                        break;
-                    }
-                }
-            }
-        });
+        // Dedicated decoder tasks outlive reconnectable control loss, so
+        // in-flight bridge frames remain in one bounded channel.
+        let BridgeIoParts {
+            writer: bridge_writer,
+            receiver: bridge_rx,
+            task: bridge_task,
+            terminal: bridge_terminal,
+            pending_frame: pending_bridge_frame,
+        } = bridge.into_parts();
         let mut reader_tasks = ReaderTasks::new_bridge(bridge_task);
         let mut bridge_writer = bridge_writer;
         let mut bridge_rx = bridge_rx;
-        let mut reconnect_state = reconnect_state;
+        let mut bridge_terminal = bridge_terminal;
+        let mut bridge_lifecycle = reconnect.bridge_lifecycle;
+        bridge_lifecycle.mark_authenticated();
+        let mut reconnect_state = reconnect.state;
+        let mut deferred_commands = reconnect.deferred_commands;
         let mut control = first_control;
         let mut new_bridge_connection = true;
+        let mut pending_bridge_frame = pending_bridge_frame;
 
         loop {
-            let (control_writer, control_rx, control_task) = spawn_control_reader(control);
+            let (control_writer, control_rx, control_task) = control.into_parts();
             reader_tasks.set_control(control_task);
 
-            let (result, next_state, next_bridge_writer, next_bridge_rx) = self
+            let io = ActiveSessionIo {
+                bridge_writer,
+                control_writer,
+                bridge_rx,
+                bridge_terminal,
+                control_rx,
+            };
+            let (result, next_state, next_io) = self
                 .run_checkpoint_session(
-                    bridge_writer,
-                    control_writer,
-                    bridge_rx,
-                    control_rx,
+                    io,
                     reconnect_state,
+                    &mut deferred_commands,
                     new_bridge_connection,
+                    &mut pending_bridge_frame,
                 )
                 .await;
-            bridge_writer = next_bridge_writer;
-            bridge_rx = next_bridge_rx;
+            bridge_writer = next_io.bridge_writer;
+            bridge_rx = next_io.bridge_rx;
+            bridge_terminal = next_io.bridge_terminal;
             reader_tasks.shutdown_control().await;
 
             match result {
                 Ok(()) => {
                     reader_tasks.shutdown().await;
-                    return Ok(SessionExit::Reconnect(next_state));
+                    return Ok(completed_session_exit(
+                        next_state,
+                        deferred_commands,
+                        bridge_lifecycle,
+                    ));
                 }
-                Err(error)
-                    if can_reconnect_after(&error)
-                        && is_control_reconnect_error(&error)
-                        && matches!(
-                            next_state.checkpoint_state,
-                            CheckpointState::Idle
-                                | CheckpointState::ReadyPendingHandoff { .. }
-                                | CheckpointState::AwaitDecision { .. }
-                                | CheckpointState::ExpiryPendingHandoff { .. }
-                        ) =>
-                {
-                    // Keep the bridge reader, writer, and channel alive while
-                    // a replacement control peer authenticates. Any frame
-                    // that arrives during this interval remains bounded by
-                    // the channel capacity and is processed by the next run.
+                Err(error) if can_reconnect_control_loss(&error, next_state.checkpoint_state) => {
+                    // Keep the bridge I/O alive while replacement control
+                    // authenticates; its bounded channel retains in-flight frames.
                     reconnect_state = next_state;
-                    control = self.accept_reconnect_control().await?;
+                    match self
+                        .recover_control_with_bridge(
+                            &mut bridge_rx,
+                            &mut bridge_terminal,
+                            &mut reconnect_state,
+                            &mut pending_bridge_frame,
+                            &mut bridge_lifecycle,
+                        )
+                        .await?
+                    {
+                        ControlRecovery::Control(replacement) => control = replacement,
+                        ControlRecovery::Reconnect => {
+                            reader_tasks.shutdown().await;
+                            return Ok(SessionExit::Reconnect(ReconnectContext {
+                                state: reconnect_state,
+                                deferred_commands,
+                                bridge_lifecycle,
+                            }));
+                        }
+                        ControlRecovery::Shutdown => {
+                            reader_tasks.shutdown().await;
+                            return Ok(SessionExit::Shutdown);
+                        }
+                    }
                     new_bridge_connection = false;
                 }
-                Err(error)
-                    if can_reconnect_after(&error)
-                        && matches!(
-                            next_state.checkpoint_state,
-                            CheckpointState::Idle
-                                | CheckpointState::ReadyPendingHandoff { .. }
-                                | CheckpointState::AwaitDecision { .. }
-                                | CheckpointState::ExpiryPendingHandoff { .. }
-                        ) =>
-                {
-                    // The bridge itself is no longer usable. Return to the
-                    // outer accept loop for a fresh authenticated pair;
-                    // preserving this reader would only spin on its terminal
-                    // channel error.
+                Err(error) if can_reconnect_bridge_loss(&error, next_state.checkpoint_state) => {
+                    // A terminal bridge reader must be replaced, never polled again.
+                    bridge_lifecycle.record_termination(&error);
                     reader_tasks.shutdown().await;
-                    return Ok(SessionExit::Reconnect(next_state));
+                    return Ok(SessionExit::Reconnect(ReconnectContext {
+                        state: next_state,
+                        deferred_commands,
+                        bridge_lifecycle,
+                    }));
                 }
                 Err(error) => {
                     reader_tasks.shutdown().await;
@@ -903,20 +1899,103 @@ impl LocalSidecar {
         }
     }
 
+    async fn await_control_or_bridge(
+        &mut self,
+        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+        bridge_terminal: &mut watch::Receiver<Option<BridgeTerminal>>,
+        reconnect: &mut ReconnectState,
+        pending_bridge_frame: &mut Option<Box<BridgeFrame>>,
+    ) -> Result<ControlReacquisition, SidecarError> {
+        // Keep the replacement authentication future alive when a decision
+        // deadline fires. Expiry staging must not cancel a valid fragmented
+        // control handshake that is already in progress.
+        let replacement = self.start_control_authentication();
+        tokio::pin!(replacement);
+        loop {
+            let event = tokio::select! {
+                biased;
+                () = checkpoint_deadline(reconnect.checkpoint_state.deadline()) => {
+                    ControlGapEvent::Deadline
+                }
+                result = &mut replacement => ControlGapEvent::Control(result),
+                result = bridge_rx.recv(), if pending_bridge_frame.is_none() => {
+                    ControlGapEvent::Bridge(result)
+                }
+                changed = bridge_terminal.changed() => {
+                    ControlGapEvent::BridgeTerminal(
+                        changed.ok().and_then(|()| *bridge_terminal.borrow())
+                    )
+                }
+            };
+            match event {
+                ControlGapEvent::Deadline => {
+                    advance_reconnect_deadline(
+                        &mut self.sequence_state,
+                        reconnect,
+                        Instant::now(),
+                    )?;
+                }
+                ControlGapEvent::Control(result) => {
+                    return result.map(ControlReacquisition::Control);
+                }
+                ControlGapEvent::BridgeTerminal(Some(terminal)) => {
+                    return Ok(ControlReacquisition::BridgeTerminated(
+                        terminal.into_error(),
+                    ));
+                }
+                ControlGapEvent::BridgeTerminal(None) | ControlGapEvent::Bridge(None) => {
+                    return Err(SidecarError::ProtocolViolation("bridge reader terminated"));
+                }
+                ControlGapEvent::Bridge(Some(Ok(_)))
+                    if reconnect.checkpoint_state.is_quiescing() => {}
+                ControlGapEvent::Bridge(Some(Ok(frame))) => {
+                    if pending_bridge_frame.is_none() {
+                        *pending_bridge_frame = Some(Box::new(frame));
+                    }
+                }
+                ControlGapEvent::Bridge(Some(Err(error))) => {
+                    return Ok(ControlReacquisition::BridgeTerminated(error));
+                }
+            }
+        }
+    }
+
+    async fn recover_control_with_bridge(
+        &mut self,
+        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+        bridge_terminal: &mut watch::Receiver<Option<BridgeTerminal>>,
+        reconnect: &mut ReconnectState,
+        pending_bridge_frame: &mut Option<Box<BridgeFrame>>,
+        bridge_lifecycle: &mut BridgeLifecycle,
+    ) -> Result<ControlRecovery, SidecarError> {
+        match self
+            .await_control_or_bridge(bridge_rx, bridge_terminal, reconnect, pending_bridge_frame)
+            .await?
+        {
+            ControlReacquisition::Control(replacement) => {
+                Ok(ControlRecovery::Control(self.spawn_control_io(replacement)))
+            }
+            ControlReacquisition::BridgeTerminated(error) => {
+                bridge_lifecycle.record_termination(&error);
+                if reconnect.checkpoint_state.is_quiescing() && is_bridge_shutdown_eof(&error) {
+                    return Ok(ControlRecovery::Shutdown);
+                }
+                if can_reconnect_bridge_loss(&error, reconnect.checkpoint_state) {
+                    return Ok(ControlRecovery::Reconnect);
+                }
+                Err(error)
+            }
+        }
+    }
+
     async fn run_checkpoint_session(
         &mut self,
-        mut bridge_writer: BridgeWriter,
-        mut control_writer: ControlWriter,
-        mut bridge_rx: mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
-        mut control_rx: mpsc::Receiver<Result<ControlCommand, SidecarError>>,
+        mut io: ActiveSessionIo,
         reconnect_state: ReconnectState,
+        deferred_commands: &mut VecDeque<ControlCommand>,
         new_bridge_connection: bool,
-    ) -> (
-        Result<(), SidecarError>,
-        ReconnectState,
-        BridgeWriter,
-        mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
-    ) {
+        pending_bridge_frame: &mut Option<Box<BridgeFrame>>,
+    ) -> (Result<(), SidecarError>, ReconnectState, ActiveSessionIo) {
         let mut session =
             ActiveSessionState::from_reconnect(reconnect_state, new_bridge_connection);
         if new_bridge_connection {
@@ -927,75 +2006,254 @@ impl LocalSidecar {
             self.sequence_state.rearm_boot_after_bridge_reconnect();
         }
         let result = async {
-        self.expire_checkpoint_if_due(&mut session, &mut control_writer, Instant::now())
-            .await?;
-            self.resume_checkpoint_handoff(&mut session, &mut bridge_writer, &mut control_writer)
+            let ActiveSessionIo {
+                bridge_writer,
+                control_writer,
+                bridge_rx,
+                bridge_terminal: _bridge_terminal,
+                control_rx,
+            } = &mut io;
+            self.prepare_active_session(
+                bridge_rx,
+                bridge_writer,
+                control_writer,
+                deferred_commands,
+                &mut session,
+                pending_bridge_frame,
+            )
             .await?;
             loop {
-                // Resolve a timer/input race before selecting another input source.
-                self.expire_checkpoint_if_due(&mut session, &mut control_writer, Instant::now())
-                    .await?;
-                self.drain_queued_bridge_frames(
-                    &mut bridge_rx,
-                    &mut bridge_writer,
-                    &mut control_writer,
+                self.prepare_active_iteration(
+                    bridge_rx,
+                    bridge_writer,
+                    control_writer,
+                    deferred_commands,
                     &mut session,
                 )
                 .await?;
                 let deadline = session.checkpoint_state.deadline();
-                tokio::select! {
-                    bridge_result = bridge_rx.recv() => {
-                        let Some(result) = bridge_result else {
-                            break Err(SidecarError::ProtocolViolation("bridge reader terminated"));
-                        };
-                        let frame = result?;
-                        self.handle_bridge_frame(frame, &mut bridge_writer, &mut control_writer, &mut session).await?;
+                let event = tokio::select! {
+                    biased;
+                    () = checkpoint_deadline(deadline) => ActiveSessionEvent::Deadline,
+                    result = control_rx.recv(),
+                        if can_receive_deferred_command(deferred_commands) => {
+                        ActiveSessionEvent::Control(result)
                     }
-                    command_result = control_rx.recv() => {
-                        match command_result {
-                            None => {
-                                // A complete bridge frame may already be
-                                // queued when the control reader reports its
-                                // loss. Drain it before classifying the
-                                // session exit so a ready handoff is retained.
-                                self.drain_queued_bridge_frames(
-                                    &mut bridge_rx,
-                                    &mut bridge_writer,
-                                    &mut control_writer,
-                                    &mut session,
-                                ).await?;
-                                break Err(SidecarError::Control(ControlError::Connection(
-                                    io::Error::new(io::ErrorKind::UnexpectedEof, "control reader terminated"),
-                                )));
-                            }
-                            Some(Err(error)) => {
-                                self.drain_queued_bridge_frames(
-                                    &mut bridge_rx,
-                                    &mut bridge_writer,
-                                    &mut control_writer,
-                                    &mut session,
-                                ).await?;
-                                break Err(error);
-                            }
-                            Some(Ok(command)) => {
-                                self.handle_control_command(
-                                    command,
-                                    &mut bridge_writer,
-                                    &mut control_writer,
-                                    Instant::now(),
-                                    &mut session,
-                                ).await?;
-                            }
+                    result = bridge_rx.recv() => ActiveSessionEvent::Bridge(result),
+                };
+                match event {
+                    ActiveSessionEvent::Deadline => {
+                        self.handle_active_session_deadline(
+                            control_writer,
+                            bridge_writer,
+                            deferred_commands,
+                            &mut session,
+                        )
+                        .await?;
+                    }
+                    ActiveSessionEvent::Control(result) => {
+                        self.handle_active_control_event(
+                            result,
+                            bridge_rx,
+                            bridge_writer,
+                            control_writer,
+                            deferred_commands,
+                            &mut session,
+                        )
+                        .await?;
+                    }
+                    ActiveSessionEvent::Bridge(result) => {
+                        if matches!(
+                            self.handle_active_bridge_event(
+                                result,
+                                bridge_writer,
+                                control_writer,
+                                deferred_commands,
+                                &mut session,
+                            )
+                            .await?,
+                            SessionProgress::Complete
+                        ) {
+                            break Ok(());
                         }
-                    }
-                    () = checkpoint_deadline(deadline) => {
-                        self.expire_checkpoint_if_due(&mut session, &mut control_writer, Instant::now()).await?;
                     }
                 }
             }
         }
         .await;
-        (result, session.into_reconnect(), bridge_writer, bridge_rx)
+        (result, session.into_reconnect(), io)
+    }
+
+    async fn prepare_active_session(
+        &mut self,
+        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+        bridge: &mut BridgeWriter,
+        control: &mut ControlWriter,
+        deferred_commands: &mut VecDeque<ControlCommand>,
+        session: &mut ActiveSessionState,
+        pending_bridge_frame: &mut Option<Box<BridgeFrame>>,
+    ) -> Result<(), SidecarError> {
+        self.expire_checkpoint_if_due(session, control, Instant::now())
+            .await?;
+        self.resume_checkpoint_handoff(session, bridge, control)
+            .await?;
+        if session.checkpoint_state.is_quiescing() {
+            pending_bridge_frame.take();
+        } else {
+            if let Some(frame) = pending_bridge_frame.take() {
+                self.handle_bridge_frame(*frame, bridge, control, session)
+                    .await?;
+            }
+            self.drain_queued_bridge_frames(bridge_rx, bridge, control, session)
+                .await?;
+        }
+        self.drain_deferred_commands(deferred_commands, bridge, control, session)
+            .await
+    }
+
+    async fn prepare_active_iteration(
+        &mut self,
+        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+        bridge: &mut BridgeWriter,
+        control: &mut ControlWriter,
+        deferred_commands: &mut VecDeque<ControlCommand>,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        if session.checkpoint_state.is_quiescing() {
+            return Ok(());
+        }
+        self.expire_checkpoint_if_due(session, control, Instant::now())
+            .await?;
+        self.drain_queued_bridge_frames(bridge_rx, bridge, control, session)
+            .await?;
+        self.drain_deferred_commands(deferred_commands, bridge, control, session)
+            .await
+    }
+
+    async fn handle_active_session_deadline(
+        &mut self,
+        control: &mut ControlWriter,
+        bridge: &mut BridgeWriter,
+        deferred_commands: &mut VecDeque<ControlCommand>,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        if session.checkpoint_state.is_quiescing() {
+            return Err(SidecarError::ShutdownTimeout);
+        }
+        self.expire_checkpoint_if_due(session, control, Instant::now())
+            .await?;
+        self.drain_deferred_commands(deferred_commands, bridge, control, session)
+            .await
+    }
+
+    async fn handle_active_control_event(
+        &mut self,
+        result: Option<Result<ControlCommand, SidecarError>>,
+        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+        bridge: &mut BridgeWriter,
+        control: &mut ControlWriter,
+        deferred_commands: &mut VecDeque<ControlCommand>,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        let Some(result) = result else {
+            self.drain_queued_bridge_frames(bridge_rx, bridge, control, session)
+                .await?;
+            return Err(SidecarError::Control(ControlError::Connection(
+                io::Error::new(io::ErrorKind::UnexpectedEof, "control reader terminated"),
+            )));
+        };
+        let command = match result {
+            Ok(command) => command,
+            Err(error) => {
+                if !session.checkpoint_state.is_quiescing() {
+                    self.drain_queued_bridge_frames(bridge_rx, bridge, control, session)
+                        .await?;
+                }
+                return Err(error);
+            }
+        };
+        let (command_id, _, _, _) = command_parts(&command);
+        let can_replay = self.command_history.contains_key(&command_id);
+        if !deferred_commands.is_empty() && !can_replay {
+            let shutdown_at_capacity = deferred_commands.len() == MAX_DEFERRED_ROUTINE_COMMANDS
+                && matches!(command, ControlCommand::ShutdownRequest(_));
+            if !shutdown_at_capacity {
+                enqueue_deferred_command(deferred_commands, command)?;
+                return self
+                    .drain_deferred_commands(deferred_commands, bridge, control, session)
+                    .await;
+            }
+        }
+        if let Some(deadline) = session.checkpoint_state.quiescing_deadline() {
+            let handling =
+                self.handle_control_command(command, bridge, control, Instant::now(), session);
+            tokio::pin!(handling);
+            return tokio::select! {
+                biased;
+                () = sleep_until(deadline) => Err(SidecarError::ShutdownTimeout),
+                result = &mut handling => result,
+            };
+        }
+        self.handle_control_command(command, bridge, control, Instant::now(), session)
+            .await
+    }
+
+    async fn handle_active_bridge_event(
+        &mut self,
+        result: Option<Result<BridgeFrame, SidecarError>>,
+        bridge: &mut BridgeWriter,
+        control: &mut ControlWriter,
+        deferred_commands: &mut VecDeque<ControlCommand>,
+        session: &mut ActiveSessionState,
+    ) -> Result<SessionProgress, SidecarError> {
+        let Some(result) = result else {
+            return Err(SidecarError::ProtocolViolation("bridge reader terminated"));
+        };
+        match result {
+            Ok(_) if session.checkpoint_state.is_quiescing() => Ok(SessionProgress::Continue),
+            Ok(frame) => {
+                self.handle_bridge_frame(frame, bridge, control, session)
+                    .await?;
+                self.drain_deferred_commands(deferred_commands, bridge, control, session)
+                    .await?;
+                Ok(SessionProgress::Continue)
+            }
+            Err(error)
+                if session.checkpoint_state.is_quiescing() && is_bridge_shutdown_eof(&error) =>
+            {
+                Ok(SessionProgress::Complete)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn drain_deferred_commands(
+        &mut self,
+        deferred_commands: &mut VecDeque<ControlCommand>,
+        bridge: &mut BridgeWriter,
+        control: &mut ControlWriter,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        while let Some(command) = deferred_commands.front().cloned() {
+            if deferred_command_waits_for_bridge_state(&command, session, self.session_epoch) {
+                return Ok(());
+            }
+            if let Some(deadline) = session.checkpoint_state.quiescing_deadline() {
+                let handling =
+                    self.handle_control_command(command, bridge, control, Instant::now(), session);
+                tokio::pin!(handling);
+                tokio::select! {
+                    biased;
+                    () = sleep_until(deadline) => return Err(SidecarError::ShutdownTimeout),
+                    result = &mut handling => result?,
+                }
+            } else {
+                self.handle_control_command(command, bridge, control, Instant::now(), session)
+                    .await?;
+            }
+            deferred_commands.pop_front();
+        }
+        Ok(())
     }
 
     async fn drain_queued_bridge_frames(
@@ -1005,18 +2263,19 @@ impl LocalSidecar {
         control: &mut ControlWriter,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
-        loop {
-            let result = match bridge_rx.try_recv() {
-                Ok(result) => result,
-                Err(mpsc::error::TryRecvError::Empty) => return Ok(()),
-                Err(mpsc::error::TryRecvError::Disconnected) => {
-                    return Err(SidecarError::ProtocolViolation("bridge reader terminated"));
-                }
-            };
-            let frame = result?;
-            self.handle_bridge_frame(frame, bridge, control, session)
-                .await?;
-        }
+        // One frame matches the channel capacity and bounds each pre-select
+        // drain pass. A producer cannot keep this helper busy indefinitely
+        // and starve authenticated control or an absolute deadline.
+        let result = match bridge_rx.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::error::TryRecvError::Empty) => return Ok(()),
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                return Err(SidecarError::ProtocolViolation("bridge reader terminated"));
+            }
+        };
+        let frame = result?;
+        self.handle_bridge_frame(frame, bridge, control, session)
+            .await
     }
 
     async fn resume_checkpoint_handoff(
@@ -1060,7 +2319,8 @@ impl LocalSidecar {
             // notifications. Only a failed ReadyPendingHandoff is replayed.
             CheckpointState::AwaitDecision { .. }
             | CheckpointState::Idle
-            | CheckpointState::AwaitSaveData { .. } => {}
+            | CheckpointState::AwaitSaveData { .. }
+            | CheckpointState::Quiescing { .. } => {}
         }
         Ok(())
     }
@@ -1247,6 +2507,7 @@ impl LocalSidecar {
                 session.rearm_after_reboot = true;
                 Ok(true)
             }
+            CheckpointState::Quiescing { .. } => Ok(true),
             CheckpointState::Idle => Ok(false),
         }
     }
@@ -1259,7 +2520,7 @@ impl LocalSidecar {
         now: Instant,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
-        let (command_id, fingerprint, key, is_grant) = command_parts(&command);
+        let (command_id, fingerprint, key, command_kind) = command_parts(&command);
 
         if self
             .replay_existing_command(command_id, fingerprint, control)
@@ -1267,12 +2528,23 @@ impl LocalSidecar {
         {
             return Ok(());
         }
-        // Reserve ledger capacity before any state transition, bridge frame,
-        // or result event. A full ledger must never allow a side effect that
-        // cannot be replayed for the lifetime of this session.
-        if self.command_history.len() >= MAX_COMMAND_HISTORY {
-            return Err(SidecarError::CommandLedgerFull);
+
+        // Shutdown is deliberately handled before checkpoint expiry. A
+        // request observed while any checkpoint state is non-idle is rejected
+        // rather than completing or cancelling that checkpoint as a side
+        // effect. Once quiescing, only exact replay is allowed to succeed.
+        if matches!(command_kind, CommandKind::Shutdown) || session.checkpoint_state.is_quiescing()
+        {
+            return self
+                .handle_shutdown_command(command, control, session)
+                .await;
         }
+
+        // Reserve routine capacity before any state transition, bridge frame,
+        // or result event. The independent lifecycle slot is never consumed
+        // by routine or rejected commands.
+        self.ensure_command_ledger_capacity(false)?;
+
         self.expire_checkpoint_if_due(session, control, now).await?;
 
         let mut status = CommandStatus::Rejected;
@@ -1283,7 +2555,10 @@ impl LocalSidecar {
         };
         if let Some(key) = key {
             if key.session_epoch == self.session_epoch {
-                match (session.checkpoint_state, is_grant) {
+                match (
+                    session.checkpoint_state,
+                    matches!(command_kind, CommandKind::Grant),
+                ) {
                     (CheckpointState::AwaitDecision { key: pending, .. }, true)
                         if pending == key && session.acknowledged_rom_ready =>
                     {
@@ -1336,6 +2611,132 @@ impl LocalSidecar {
             })
             .await?;
         Ok(())
+    }
+
+    async fn handle_shutdown_command(
+        &mut self,
+        command: ControlCommand,
+        control: &mut ControlWriter,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        let (command_id, fingerprint, _key, command_kind) = command_parts(&command);
+        let command_epoch = command_epoch(&command);
+        let applies = matches!(command_kind, CommandKind::Shutdown)
+            && command_epoch == self.session_epoch
+            && matches!(session.checkpoint_state, CheckpointState::Idle);
+        self.ensure_command_ledger_capacity(applies)?;
+
+        let (status, reason) = if applies {
+            (CommandStatus::Applied, None)
+        } else if matches!(command_kind, CommandKind::Shutdown)
+            && command_epoch != self.session_epoch
+        {
+            (CommandStatus::Rejected, Some(CommandReason::WrongEpoch))
+        } else {
+            (CommandStatus::Rejected, Some(CommandReason::WrongState))
+        };
+        self.command_history.insert(
+            command_id,
+            CommandRecord {
+                fingerprint,
+                reason,
+            },
+        );
+        if applies {
+            // The lifecycle record and reservation precede both the state
+            // transition and ACK. An ambiguous write can therefore replay
+            // without applying shutdown twice.
+            self.applied_shutdown = Some(command_id);
+            session.checkpoint_state = CheckpointState::Quiescing {
+                deadline: Instant::now() + SHUTDOWN_GRACE_TIMEOUT,
+            };
+        }
+        control
+            .send_event(&ControlEvent::CommandResult {
+                command_id,
+                status,
+                reason,
+            })
+            .await?;
+        Ok(())
+    }
+
+    async fn handle_control_command_without_bridge(
+        &mut self,
+        command: ControlCommand,
+        control: &mut ControlWriter,
+        checkpoint_state: &mut CheckpointState,
+    ) -> Result<bool, SidecarError> {
+        let (command_id, fingerprint, key, command_kind) = command_parts(&command);
+        let replays_applied_shutdown = self.applied_shutdown == Some(command_id)
+            && matches!(command_kind, CommandKind::Shutdown)
+            && self
+                .command_history
+                .get(&command_id)
+                .is_some_and(|previous| previous.fingerprint == fingerprint);
+        if self
+            .replay_existing_command(command_id, fingerprint, control)
+            .await?
+        {
+            return Ok(replays_applied_shutdown);
+        }
+
+        let command_epoch = command_epoch(&command);
+        let applied = matches!(command_kind, CommandKind::Shutdown)
+            && command_epoch == self.session_epoch
+            && matches!(*checkpoint_state, CheckpointState::Idle);
+        self.ensure_command_ledger_capacity(applied)?;
+        let (status, reason) = if applied {
+            (CommandStatus::Applied, None)
+        } else if command_epoch != self.session_epoch
+            && (key.is_some() || matches!(command_kind, CommandKind::Shutdown))
+        {
+            (CommandStatus::Rejected, Some(CommandReason::WrongEpoch))
+        } else if matches!(command_kind, CommandKind::Shutdown) {
+            (CommandStatus::Rejected, Some(CommandReason::WrongState))
+        } else if key.is_none() {
+            (CommandStatus::Rejected, Some(CommandReason::InvalidPayload))
+        } else {
+            (CommandStatus::Rejected, Some(CommandReason::WrongState))
+        };
+        self.command_history.insert(
+            command_id,
+            CommandRecord {
+                fingerprint,
+                reason,
+            },
+        );
+        if applied {
+            self.applied_shutdown = Some(command_id);
+            *checkpoint_state = CheckpointState::Quiescing {
+                deadline: Instant::now() + SHUTDOWN_GRACE_TIMEOUT,
+            };
+        }
+        control
+            .send_event(&ControlEvent::CommandResult {
+                command_id,
+                status,
+                reason,
+            })
+            .await?;
+        Ok(applied)
+    }
+
+    fn ensure_command_ledger_capacity(
+        &self,
+        use_shutdown_reservation: bool,
+    ) -> Result<(), SidecarError> {
+        let routine_records = self
+            .command_history
+            .len()
+            .saturating_sub(usize::from(self.applied_shutdown.is_some()));
+        if routine_records < MAX_COMMAND_HISTORY
+            || (use_shutdown_reservation && self.applied_shutdown.is_none())
+        {
+            Ok(())
+        } else {
+            Err(SidecarError::CommandLedgerFull)
+        }
     }
 
     async fn replay_existing_command(
@@ -1413,6 +2814,9 @@ enum CheckpointState {
         key: CheckpointKey,
         deadline: Instant,
     },
+    Quiescing {
+        deadline: Instant,
+    },
 }
 
 impl CheckpointState {
@@ -1421,9 +2825,20 @@ impl CheckpointState {
             Self::Idle | Self::ReadyPendingHandoff { .. } | Self::ExpiryPendingHandoff { .. } => {
                 None
             }
-            Self::AwaitDecision { deadline, .. } | Self::AwaitSaveData { deadline, .. } => {
-                Some(deadline)
-            }
+            Self::AwaitDecision { deadline, .. }
+            | Self::AwaitSaveData { deadline, .. }
+            | Self::Quiescing { deadline } => Some(deadline),
+        }
+    }
+
+    const fn is_quiescing(self) -> bool {
+        matches!(self, Self::Quiescing { .. })
+    }
+
+    const fn quiescing_deadline(self) -> Option<Instant> {
+        match self {
+            Self::Quiescing { deadline } => Some(deadline),
+            _ => None,
         }
     }
 }
@@ -1474,8 +2889,219 @@ impl Default for ReconnectState {
     }
 }
 
+#[derive(Default)]
+struct ReconnectContext {
+    state: ReconnectState,
+    deferred_commands: VecDeque<ControlCommand>,
+    bridge_lifecycle: BridgeLifecycle,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum BridgeLifecycle {
+    #[default]
+    NeverAuthenticated,
+    AwaitingCleanEof,
+    CleanEofObserved,
+}
+
+impl BridgeLifecycle {
+    fn mark_authenticated(&mut self) {
+        *self = Self::AwaitingCleanEof;
+    }
+
+    fn record_termination(&mut self, error: &SidecarError) {
+        *self = if is_bridge_shutdown_eof(error) {
+            Self::CleanEofObserved
+        } else {
+            Self::AwaitingCleanEof
+        };
+    }
+
+    const fn control_eof_proves_shutdown(self) -> bool {
+        !matches!(self, Self::AwaitingCleanEof)
+    }
+
+    const fn bridge_exit_proven(self) -> bool {
+        matches!(self, Self::CleanEofObserved)
+    }
+
+    /// Consumes the one clean bridge EOF proof when a pre-bridge shutdown has
+    /// delivered its Applied or Replayed result. A proof cannot be reused by a
+    /// later connection, even though the terminal path normally exits
+    /// immediately after this call.
+    fn take_bridge_exit_proof(&mut self) -> bool {
+        if self.bridge_exit_proven() {
+            *self = Self::NeverAuthenticated;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+struct InitialPair {
+    bridge: BridgeIo,
+    control: ControlIo,
+    reconnect: ReconnectContext,
+}
+
+enum InitialAccept {
+    Pair(InitialPair),
+    Shutdown,
+}
+
 enum SessionExit {
-    Reconnect(ReconnectState),
+    Reconnect(ReconnectContext),
+    Shutdown,
+}
+
+fn completed_session_exit(
+    state: ReconnectState,
+    deferred_commands: VecDeque<ControlCommand>,
+    bridge_lifecycle: BridgeLifecycle,
+) -> SessionExit {
+    if state.checkpoint_state.is_quiescing() {
+        SessionExit::Shutdown
+    } else {
+        SessionExit::Reconnect(ReconnectContext {
+            state,
+            deferred_commands,
+            bridge_lifecycle,
+        })
+    }
+}
+
+async fn authenticate_control_candidates(
+    control_listener: ControlListener,
+) -> Result<ControlConnection, SidecarError> {
+    // Keep a bounded set of independent handshake owners. One incomplete
+    // loopback candidate must not monopolize the listener while a valid
+    // launcher reconnects, and dropping this JoinSet cancels every remaining
+    // candidate when the caller's absolute deadline wins.
+    let mut candidates = JoinSet::new();
+    let mut candidate_handles: VecDeque<(Id, AbortHandle)> = VecDeque::new();
+    let mut pending_candidate = None;
+    let mut accept = Box::pin(control_listener.accept_stream());
+    loop {
+        tokio::select! {
+            biased;
+                    result = candidates.join_next_with_id(), if !candidates.is_empty() => {
+                        let result = result.ok_or_else(|| {
+                            SidecarError::Connection(io::Error::other(
+                                "control authentication pump terminated",
+                            ))
+                        })?;
+                        let (candidate_id, result) = match result {
+                            Ok((candidate_id, result)) => (candidate_id, result),
+                            Err(error) if error.is_cancelled() => {
+                                remove_authentication_candidate(&mut candidate_handles, error.id());
+                                if let Some((stream, peer)) = pending_candidate.take() {
+                                    track_authentication_candidate(
+                                        &mut candidate_handles,
+                                        spawn_control_candidate(
+                                            &mut candidates,
+                                            &control_listener,
+                                            stream,
+                                            peer,
+                                        ),
+                                    );
+                                    accept = Box::pin(control_listener.accept_stream());
+                                }
+                                continue;
+                            }
+                            Err(_) => {
+                                return Err(SidecarError::Connection(io::Error::other(
+                                    "control authentication task failed",
+                                )));
+                            }
+                        };
+                        remove_authentication_candidate(&mut candidate_handles, candidate_id);
+                        if let Some((stream, peer)) = pending_candidate.take() {
+                            track_authentication_candidate(
+                                &mut candidate_handles,
+                                spawn_control_candidate(
+                                    &mut candidates,
+                                    &control_listener,
+                                    stream,
+                                    peer,
+                                ),
+                            );
+                    // The accept future completed while the bounded set was
+                    // full. It must be replaced before the next select poll.
+                    accept = Box::pin(control_listener.accept_stream());
+                }
+                match result {
+                    Ok(connection) => return Ok(connection),
+                    Err(error) if is_listener_failure(&error) => return Err(error),
+                    Err(_) => {}
+                }
+            }
+            accepted = &mut accept, if pending_candidate.is_none() => {
+                let (stream, peer) = accepted?;
+                if candidates.len() >= MAX_CONTROL_AUTH_CANDIDATES {
+                    abort_oldest_authentication(&mut candidate_handles);
+                    pending_candidate = Some((stream, peer));
+                } else {
+                    track_authentication_candidate(
+                        &mut candidate_handles,
+                        spawn_control_candidate(
+                            &mut candidates,
+                            &control_listener,
+                            stream,
+                            peer,
+                        ),
+                    );
+                }
+                if pending_candidate.is_none() {
+                    accept = Box::pin(control_listener.accept_stream());
+                }
+            }
+        }
+    }
+}
+
+fn spawn_control_candidate(
+    candidates: &mut JoinSet<Result<ControlConnection, SidecarError>>,
+    control_listener: &ControlListener,
+    stream: TcpStream,
+    peer: SocketAddr,
+) -> AbortHandle {
+    let listener = control_listener.clone();
+    candidates.spawn(async move {
+        listener
+            .authenticate_stream(stream, peer)
+            .await
+            .map_err(SidecarError::Control)
+    })
+}
+
+fn is_listener_failure(error: &SidecarError) -> bool {
+    matches!(
+        error,
+        SidecarError::Control(ControlError::Listener(_)) | SidecarError::Listener(_)
+    )
+}
+
+fn advance_reconnect_deadline(
+    sequence_state: &mut SessionSequenceState,
+    reconnect: &mut ReconnectState,
+    now: Instant,
+) -> Result<(), SidecarError> {
+    match reconnect.checkpoint_state {
+        CheckpointState::AwaitDecision { key, deadline } if now >= deadline => {
+            reconnect.checkpoint_state = CheckpointState::ExpiryPendingHandoff { key };
+            reconnect.expired_checkpoint = Some(key);
+            sequence_state.commit_checkpoint_ready(key);
+            Ok(())
+        }
+        CheckpointState::AwaitSaveData { deadline, .. } if now >= deadline => {
+            Err(SidecarError::CheckpointTimeout)
+        }
+        CheckpointState::Quiescing { deadline } if now >= deadline => {
+            Err(SidecarError::ShutdownTimeout)
+        }
+        _ => Ok(()),
+    }
 }
 
 fn can_reconnect_after(error: &SidecarError) -> bool {
@@ -1496,6 +3122,37 @@ fn is_control_reconnect_error(error: &SidecarError) -> bool {
     matches!(error, SidecarError::Control(_))
 }
 
+fn can_reconnect_control_loss(error: &SidecarError, state: CheckpointState) -> bool {
+    can_reconnect_after(error)
+        && is_control_reconnect_error(error)
+        && matches!(
+            state,
+            CheckpointState::Idle
+                | CheckpointState::ReadyPendingHandoff { .. }
+                | CheckpointState::AwaitDecision { .. }
+                | CheckpointState::ExpiryPendingHandoff { .. }
+                | CheckpointState::Quiescing { .. }
+        )
+}
+
+fn can_reconnect_bridge_loss(error: &SidecarError, state: CheckpointState) -> bool {
+    can_reconnect_after(error)
+        && matches!(
+            state,
+            CheckpointState::Idle
+                | CheckpointState::ReadyPendingHandoff { .. }
+                | CheckpointState::AwaitDecision { .. }
+                | CheckpointState::ExpiryPendingHandoff { .. }
+        )
+}
+
+fn is_bridge_shutdown_eof(error: &SidecarError) -> bool {
+    matches!(
+        error,
+        SidecarError::ProtocolViolation("bridge disconnected")
+    )
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CommandFingerprint {
     Grant {
@@ -1506,11 +3163,26 @@ enum CommandFingerprint {
         session_epoch: u32,
         ready_sequence: u32,
     },
+    Shutdown {
+        session_epoch: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CommandKind {
+    Grant,
+    Abort,
+    Shutdown,
 }
 
 fn command_parts(
     command: &ControlCommand,
-) -> (CommandId, CommandFingerprint, Option<CheckpointKey>, bool) {
+) -> (
+    CommandId,
+    CommandFingerprint,
+    Option<CheckpointKey>,
+    CommandKind,
+) {
     match command {
         ControlCommand::CheckpointGrant(CheckpointGrant {
             command_id,
@@ -1523,7 +3195,7 @@ fn command_parts(
                 ready_sequence: *ready_sequence,
             },
             CheckpointKey::new(*session_epoch, *ready_sequence),
-            true,
+            CommandKind::Grant,
         ),
         ControlCommand::CheckpointAbort(CheckpointAbort {
             command_id,
@@ -1536,8 +3208,27 @@ fn command_parts(
                 ready_sequence: *ready_sequence,
             },
             CheckpointKey::new(*session_epoch, *ready_sequence),
-            false,
+            CommandKind::Abort,
         ),
+        ControlCommand::ShutdownRequest(ShutdownRequest {
+            command_id,
+            session_epoch,
+        }) => (
+            *command_id,
+            CommandFingerprint::Shutdown {
+                session_epoch: *session_epoch,
+            },
+            None,
+            CommandKind::Shutdown,
+        ),
+    }
+}
+
+fn command_epoch(command: &ControlCommand) -> u32 {
+    match command {
+        ControlCommand::CheckpointGrant(command) => command.session_epoch,
+        ControlCommand::CheckpointAbort(command) => command.session_epoch,
+        ControlCommand::ShutdownRequest(command) => command.session_epoch,
     }
 }
 
@@ -1546,6 +3237,60 @@ fn command_is_expired(
     expired_checkpoint: Option<CheckpointKey>,
 ) -> bool {
     key.is_some_and(|key| Some(key) == expired_checkpoint)
+}
+
+fn deferred_command_waits_for_bridge_state(
+    command: &ControlCommand,
+    session: &ActiveSessionState,
+    session_epoch: u32,
+) -> bool {
+    let (key, is_grant) = match command {
+        ControlCommand::CheckpointGrant(command) => (Some(command.key()), true),
+        ControlCommand::CheckpointAbort(command) => (Some(command.key()), false),
+        ControlCommand::ShutdownRequest(_) => (None, false),
+    };
+    let Some(key) = key else {
+        return false;
+    };
+    if key.session_epoch != session_epoch
+        || CheckpointKey::new(key.session_epoch, key.ready_sequence).is_none()
+        || Some(key) == session.expired_checkpoint
+    {
+        return false;
+    }
+    match session.checkpoint_state {
+        CheckpointState::Idle => !session.acknowledged_rom_ready,
+        CheckpointState::AwaitDecision { key: pending, .. } => {
+            is_grant && key == pending && !session.acknowledged_rom_ready
+        }
+        _ => false,
+    }
+}
+
+fn can_receive_deferred_command(deferred_commands: &VecDeque<ControlCommand>) -> bool {
+    deferred_commands.len() < MAX_DEFERRED_ROUTINE_COMMANDS
+        || (deferred_commands.len() == MAX_DEFERRED_ROUTINE_COMMANDS
+            && !deferred_commands
+                .iter()
+                .any(|command| matches!(command, ControlCommand::ShutdownRequest(_))))
+}
+
+fn enqueue_deferred_command(
+    deferred_commands: &mut VecDeque<ControlCommand>,
+    command: ControlCommand,
+) -> Result<(), SidecarError> {
+    let within_routine_capacity = deferred_commands.len() < MAX_DEFERRED_ROUTINE_COMMANDS;
+    let uses_shutdown_reservation = deferred_commands.len() == MAX_DEFERRED_ROUTINE_COMMANDS
+        && matches!(command, ControlCommand::ShutdownRequest(_))
+        && deferred_commands
+            .iter()
+            .all(|queued| !matches!(queued, ControlCommand::ShutdownRequest(_)));
+    if !within_routine_capacity && !uses_shutdown_reservation {
+        return Err(SidecarError::DeferredCommandQueueFull);
+    }
+    deferred_commands.push_back(command);
+    debug_assert!(deferred_commands.len() <= MAX_DEFERRED_COMMANDS);
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1562,8 +3307,19 @@ async fn checkpoint_deadline(deadline: Option<Instant>) {
 }
 
 async fn read_bounded_handshake(stream: &mut TcpStream) -> Result<Vec<u8>, SidecarError> {
+    read_bounded_handshake_observed(stream, || {}).await
+}
+
+async fn read_bounded_handshake_observed<F>(
+    stream: &mut TcpStream,
+    prefix_observer: F,
+) -> Result<Vec<u8>, SidecarError>
+where
+    F: FnOnce() + Send,
+{
     let mut line = Vec::with_capacity(128);
     let mut byte = [0_u8; 1];
+    let mut prefix_observer = Some(prefix_observer);
     loop {
         let count = stream
             .read(&mut byte)
@@ -1579,7 +3335,122 @@ async fn read_bounded_handshake(stream: &mut TcpStream) -> Result<Vec<u8>, Sidec
             return Ok(line);
         }
         line.push(byte[0]);
+        if let Some(prefix_observer) = prefix_observer.take() {
+            prefix_observer();
+        }
     }
+}
+
+async fn authenticate_bridge_candidate(
+    mut stream: TcpStream,
+    peer: SocketAddr,
+    expected_secret: SessionSecret,
+) -> Result<AuthenticatedConnection, SidecarError> {
+    if !peer.ip().is_loopback() {
+        return Err(SidecarError::NonLoopbackPeer(peer));
+    }
+    stream.set_nodelay(true).map_err(SidecarError::Connection)?;
+    let line = timeout(HANDSHAKE_TIMEOUT, read_bounded_handshake(&mut stream))
+        .await
+        .map_err(|_| SidecarError::HandshakeTimeout)??;
+    complete_bridge_authentication(stream, &expected_secret, &line)
+}
+
+async fn authenticate_bridge_candidate_with_observer(
+    stream: TcpStream,
+    peer: SocketAddr,
+    expected_secret: SessionSecret,
+    observer: Option<mpsc::Sender<()>>,
+) -> Result<AuthenticatedConnection, SidecarError> {
+    #[cfg(test)]
+    if let Some(observer) = observer {
+        return authenticate_bridge_candidate_observed(stream, peer, expected_secret, move || {
+            let _ = observer.try_send(());
+        })
+        .await;
+    }
+    #[cfg(not(test))]
+    let _ = observer;
+    authenticate_bridge_candidate(stream, peer, expected_secret).await
+}
+
+fn spawn_bridge_authentication_candidate(
+    candidates: &mut JoinSet<Result<AuthenticatedConnection, SidecarError>>,
+    stream: TcpStream,
+    peer: SocketAddr,
+    secret: &SessionSecret,
+    observer: Option<&mpsc::Sender<()>>,
+) -> AbortHandle {
+    let expected_secret = secret.clone();
+    let observer = observer.cloned();
+    candidates.spawn(async move {
+        authenticate_bridge_candidate_with_observer(stream, peer, expected_secret, observer).await
+    })
+}
+
+fn track_authentication_candidate(handles: &mut VecDeque<(Id, AbortHandle)>, handle: AbortHandle) {
+    handles.push_back((handle.id(), handle));
+}
+
+fn remove_authentication_candidate(handles: &mut VecDeque<(Id, AbortHandle)>, id: Id) {
+    if let Some(index) = handles
+        .iter()
+        .position(|(candidate_id, _)| *candidate_id == id)
+    {
+        let _ = handles.remove(index);
+    }
+}
+
+fn abort_oldest_authentication(handles: &mut VecDeque<(Id, AbortHandle)>) {
+    if let Some((_, handle)) = handles.pop_front() {
+        handle.abort();
+    }
+}
+
+#[cfg(test)]
+async fn authenticate_bridge_candidate_observed<F>(
+    mut stream: TcpStream,
+    peer: SocketAddr,
+    expected_secret: SessionSecret,
+    prefix_observer: F,
+) -> Result<AuthenticatedConnection, SidecarError>
+where
+    F: FnOnce() + Send,
+{
+    if !peer.ip().is_loopback() {
+        return Err(SidecarError::NonLoopbackPeer(peer));
+    }
+    stream.set_nodelay(true).map_err(SidecarError::Connection)?;
+    let line = timeout(
+        HANDSHAKE_TIMEOUT,
+        read_bounded_handshake_observed(&mut stream, prefix_observer),
+    )
+    .await
+    .map_err(|_| SidecarError::HandshakeTimeout)??;
+    complete_bridge_authentication(stream, &expected_secret, &line)
+}
+
+fn complete_bridge_authentication(
+    stream: TcpStream,
+    expected_secret: &SessionSecret,
+    line: &[u8],
+) -> Result<AuthenticatedConnection, SidecarError> {
+    let handshake: HandshakeRequest =
+        serde_json::from_slice(line).map_err(SidecarError::MalformedHandshake)?;
+    if handshake.bridge_abi != BRIDGE_ABI_VERSION {
+        return Err(SidecarError::IncompatibleBridgeAbi {
+            received: handshake.bridge_abi,
+        });
+    }
+    if handshake.protocol_version != GAME_PROTOCOL_VERSION {
+        return Err(SidecarError::IncompatibleProtocolVersion {
+            received: handshake.protocol_version,
+        });
+    }
+    if !expected_secret.matches(&handshake.secret) {
+        return Err(SidecarError::AuthenticationFailed);
+    }
+    Ok(AuthenticatedConnection { stream })
 }
 
 #[cfg(test)]
@@ -1649,6 +3520,7 @@ mod tests {
         stream: &mut TcpStream,
         descriptor: &SessionDescriptor,
         secret: &str,
+        prefix_observed: &mut mpsc::Receiver<()>,
     ) {
         let mut line = serde_json::to_vec(&TestHandshake {
             secret,
@@ -1659,7 +3531,7 @@ mod tests {
         line.push(b'\n');
         let split = line.len() / 2;
         stream.write_all(&line[..split]).await.unwrap();
-        tokio::task::yield_now().await;
+        await_prefix(prefix_observed, "bridge authentication").await;
         stream.write_all(&line[split..]).await.unwrap();
         let mut accepted = [0; HANDSHAKE_ACCEPTED_LINE.len()];
         stream.read_exact(&mut accepted).await.unwrap();
@@ -1714,12 +3586,45 @@ mod tests {
     }
 
     async fn control_writer_pair() -> (ControlWriter, TcpStream) {
+        let (_, writer, client) = control_reader_writer_pair().await;
+        (writer, client)
+    }
+
+    async fn control_reader_writer_pair()
+    -> (crate::control::ControlReader, ControlWriter, TcpStream) {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
         let client = TcpStream::connect(address).await.unwrap();
         let (server, _) = listener.accept().await.unwrap();
-        let (_, writer) = ControlConnection::from_authenticated_stream(server).into_split();
-        (writer, client)
+        let (reader, writer) = ControlConnection::from_authenticated_stream(server).into_split();
+        (reader, writer, client)
+    }
+
+    async fn preloaded_control_io(command: ControlCommand) -> (ControlIo, TcpStream) {
+        let (writer, client) = control_writer_pair().await;
+        let (sender, receiver) = mpsc::channel(1);
+        sender.send(Ok(command)).await.unwrap();
+        let task = tokio::spawn(std::future::pending::<()>());
+        (
+            ControlIo {
+                writer: Some(writer),
+                receiver: Some(receiver),
+                task: Some(task),
+            },
+            client,
+        )
+    }
+
+    fn full_deferred_routine_queue() -> VecDeque<ControlCommand> {
+        (0..MAX_DEFERRED_ROUTINE_COMMANDS)
+            .map(|index| {
+                abort(
+                    &format!("10000000-0000-4000-8000-{index:012x}"),
+                    TEST_SESSION_EPOCH - 1,
+                    1,
+                )
+            })
+            .collect()
     }
 
     async fn read_event(stream: &mut TcpStream) -> ControlEvent {
@@ -1732,6 +3637,28 @@ mod tests {
             }
             line.push(byte[0]);
             assert!(line.len() < MAX_CONTROL_LINE_BYTES);
+        }
+    }
+
+    async fn assert_command_result(
+        stream: &mut TcpStream,
+        command_id: &str,
+        status: CommandStatus,
+        reason: Option<CommandReason>,
+    ) {
+        let event = timeout(Duration::from_secs(2), read_event(stream))
+            .await
+            .expect("command result must arrive within the test bound");
+        match event {
+            ControlEvent::CommandResult {
+                command_id: actual_command_id,
+                status: actual_status,
+                reason: actual_reason,
+            } => assert_eq!(
+                (actual_command_id, actual_status, actual_reason),
+                (CommandId::parse(command_id).unwrap(), status, reason)
+            ),
+            event => panic!("expected command result, received {event:?}"),
         }
     }
 
@@ -1751,10 +3678,33 @@ mod tests {
         })
     }
 
+    fn shutdown(command_id: &str, epoch: u32) -> ControlCommand {
+        ControlCommand::ShutdownRequest(ShutdownRequest {
+            command_id: CommandId::parse(command_id).unwrap(),
+            session_epoch: epoch,
+        })
+    }
+
     async fn send_command(stream: &mut TcpStream, command: &ControlCommand) {
         let mut bytes = serde_json::to_vec(command).unwrap();
         bytes.push(b'\n');
         stream.write_all(&bytes).await.unwrap();
+    }
+
+    async fn await_prefix(prefixes: &mut mpsc::Receiver<()>, description: &str) {
+        timeout(Duration::from_secs(1), prefixes.recv())
+            .await
+            .unwrap_or_else(|_| panic!("{description} prefix was not consumed"))
+            .unwrap_or_else(|| panic!("{description} prefix observer closed"));
+    }
+
+    async fn assert_no_bridge_data(stream: &mut TcpStream) {
+        let mut unexpected = [0_u8; 1];
+        assert!(
+            timeout(Duration::from_millis(100), stream.read(&mut unexpected))
+                .await
+                .is_err()
+        );
     }
 
     struct DropSignal(Option<oneshot::Sender<()>>);
@@ -1771,15 +3721,17 @@ mod tests {
         for index in 1..=MAX_COMMAND_HISTORY {
             let command_id = format!("00000000-0000-4000-8000-{index:012x}");
             send_command(control, &abort(&command_id, TEST_SESSION_EPOCH, 1)).await;
-        }
-        for _ in 1..=MAX_COMMAND_HISTORY {
-            assert!(matches!(
-                read_event(control).await,
-                ControlEvent::CommandResult {
-                    status: CommandStatus::Rejected,
-                    ..
-                }
-            ));
+            // Interleave the two bounded directions. Several saturation tests
+            // run in parallel, and batching every request before reading any
+            // result can fill both Windows TCP buffers and deadlock the test
+            // fixture without exercising product behavior.
+            assert_command_result(
+                control,
+                &command_id,
+                CommandStatus::Rejected,
+                Some(CommandReason::WrongState),
+            )
+            .await;
         }
     }
 
@@ -1805,6 +3757,174 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn elapsed_quiescing_deadline_is_a_typed_failure() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (_bridge_tx, mut bridge_rx) = mpsc::channel(1);
+        let (_bridge_terminal_tx, mut bridge_terminal) = watch::channel(None);
+        let mut reconnect = ReconnectState {
+            checkpoint_state: CheckpointState::Quiescing {
+                deadline: Instant::now(),
+            },
+            ..ReconnectState::default()
+        };
+        let mut pending_bridge_frame = None;
+        assert!(matches!(
+            sidecar
+                .await_control_or_bridge(
+                    &mut bridge_rx,
+                    &mut bridge_terminal,
+                    &mut reconnect,
+                    &mut pending_bridge_frame,
+                )
+                .await,
+            Err(SidecarError::ShutdownTimeout)
+        ));
+    }
+
+    #[tokio::test]
+    async fn ready_shutdown_precedes_ready_invalid_bridge_authentication() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let command = shutdown("00000000-0000-4000-8000-00000000002f", TEST_SESSION_EPOCH);
+        let (mut control, mut control_peer) = preloaded_control_io(command).await;
+        let mut reconnect = ReconnectContext::default();
+        let mut authentication: BridgeAuthentication =
+            Box::pin(async { Err(SidecarError::AuthenticationFailed) });
+
+        let step = sidecar
+            .drive_control_with_bridge_auth(&mut authentication, &mut control, &mut reconnect)
+            .await
+            .unwrap();
+
+        assert!(matches!(step, ControlledAcquisitionStep::Continue));
+        assert!(reconnect.state.checkpoint_state.is_quiescing());
+        assert_command_result(
+            &mut control_peer,
+            "00000000-0000-4000-8000-00000000002f",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn ready_shutdown_precedes_prebuffered_invalid_bridge_candidate() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let bridge_address = sidecar.session_descriptor().address();
+        let command = shutdown("00000000-0000-4000-8000-000000000030", TEST_SESSION_EPOCH);
+        let (mut control, mut control_peer) = preloaded_control_io(command).await;
+        let mut reconnect = ReconnectContext::default();
+        let mut invalid_bridge = TcpStream::connect(bridge_address).await.unwrap();
+        invalid_bridge.write_all(b"{}\n").await.unwrap();
+
+        let step = sidecar
+            .drive_control_with_bridge_listener(&mut control, &mut reconnect)
+            .await
+            .unwrap();
+
+        assert!(matches!(step, ControlledAcquisitionStep::Continue));
+        assert!(reconnect.state.checkpoint_state.is_quiescing());
+        assert_command_result(
+            &mut control_peer,
+            "00000000-0000-4000-8000-000000000030",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn full_deferred_routine_queue_still_admits_ready_shutdown_during_bridge_auth() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let command_id = "00000000-0000-4000-8000-00000000003a";
+        let (mut control, mut control_peer) =
+            preloaded_control_io(shutdown(command_id, TEST_SESSION_EPOCH)).await;
+        let mut reconnect = ReconnectContext {
+            deferred_commands: full_deferred_routine_queue(),
+            ..ReconnectContext::default()
+        };
+        let mut authentication: BridgeAuthentication =
+            Box::pin(async { Err(SidecarError::AuthenticationFailed) });
+
+        let step = sidecar
+            .drive_control_with_bridge_auth(&mut authentication, &mut control, &mut reconnect)
+            .await
+            .unwrap();
+
+        assert!(matches!(step, ControlledAcquisitionStep::Continue));
+        assert_eq!(
+            reconnect.deferred_commands.len(),
+            MAX_DEFERRED_ROUTINE_COMMANDS
+        );
+        assert!(reconnect.state.checkpoint_state.is_quiescing());
+        assert_command_result(&mut control_peer, command_id, CommandStatus::Applied, None).await;
+
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: reconnect.state.checkpoint_state,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        sidecar
+            .drain_deferred_commands(
+                &mut reconnect.deferred_commands,
+                &mut bridge,
+                control.writer(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        for index in 0..MAX_DEFERRED_ROUTINE_COMMANDS {
+            assert_command_result(
+                &mut control_peer,
+                &format!("10000000-0000-4000-8000-{index:012x}"),
+                CommandStatus::Rejected,
+                Some(CommandReason::WrongState),
+            )
+            .await;
+        }
+        assert_eq!(reconnect.deferred_commands.len(), 0);
+        assert!(session.checkpoint_state.is_quiescing());
+    }
+
+    #[tokio::test]
+    async fn full_deferred_routine_queue_still_admits_ready_shutdown_before_bridge_listener() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let bridge_address = sidecar.session_descriptor().address();
+        let command_id = "00000000-0000-4000-8000-00000000003b";
+        let (mut control, _control_peer) =
+            preloaded_control_io(shutdown(command_id, TEST_SESSION_EPOCH)).await;
+        let mut reconnect = ReconnectContext {
+            deferred_commands: full_deferred_routine_queue(),
+            ..ReconnectContext::default()
+        };
+        let mut invalid_bridge = TcpStream::connect(bridge_address).await.unwrap();
+        invalid_bridge.write_all(b"{}\n").await.unwrap();
+
+        let step = sidecar
+            .drive_control_with_bridge_listener(&mut control, &mut reconnect)
+            .await
+            .unwrap();
+
+        assert!(matches!(step, ControlledAcquisitionStep::Continue));
+        assert_eq!(
+            reconnect.deferred_commands.len(),
+            MAX_DEFERRED_ROUTINE_COMMANDS
+        );
+        assert!(reconnect.state.checkpoint_state.is_quiescing());
     }
 
     #[tokio::test]
@@ -1851,6 +3971,510 @@ mod tests {
                 .unwrap()
                 .contains("control")
         );
+    }
+
+    #[tokio::test]
+    async fn pre_bridge_shutdown_is_replay_safe_and_exits_on_control_eof() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+
+        let command_id = "00000000-0000-4000-8000-000000000020";
+        let command = shutdown(command_id, TEST_SESSION_EPOCH);
+        send_command(&mut control, &command).await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                reason: None,
+                ..
+            }
+        ));
+        send_command(&mut control, &command).await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Replayed,
+                reason: None,
+                ..
+            }
+        ));
+        send_command(
+            &mut control,
+            &shutdown("00000000-0000-4000-8000-000000000021", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Rejected,
+                reason: Some(CommandReason::WrongState),
+                ..
+            }
+        ));
+        send_command(
+            &mut control,
+            &shutdown(
+                "00000000-0000-4000-8000-000000000022",
+                TEST_SESSION_EPOCH - 1,
+            ),
+        )
+        .await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Rejected,
+                reason: Some(CommandReason::WrongEpoch),
+                ..
+            }
+        ));
+
+        drop(control);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn fragmented_pre_bridge_command_survives_invalid_bridge_authentication() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (_handshake_prefixes, _bridge_prefixes, mut control_prefixes) =
+            server.observe_reader_prefixes();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+
+        let command = abort(
+            "00000000-0000-4000-8000-00000000002a",
+            TEST_SESSION_EPOCH - 1,
+            1,
+        );
+        let mut command_line = serde_json::to_vec(&command).unwrap();
+        command_line.push(b'\n');
+        let split = command_line.len() / 2;
+        control.write_all(&command_line[..split]).await.unwrap();
+        await_prefix(&mut control_prefixes, "fragmented control command").await;
+
+        let mut invalid_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        let mut invalid_handshake = serde_json::to_vec(&TestHandshake {
+            secret: "00000000000000000000000000000000",
+            bridge_abi: BRIDGE_ABI_VERSION,
+            protocol_version: GAME_PROTOCOL_VERSION,
+        })
+        .unwrap();
+        invalid_handshake.push(b'\n');
+        invalid_bridge.write_all(&invalid_handshake).await.unwrap();
+        let mut closed = [0_u8; 1];
+        assert_eq!(invalid_bridge.read(&mut closed).await.unwrap(), 0);
+
+        control.write_all(&command_line[split..]).await.unwrap();
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Rejected,
+                reason: Some(CommandReason::WrongEpoch),
+                ..
+            }
+        ));
+
+        drop(control);
+        drop(bridge);
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn slow_bridge_handshake_cannot_delay_authenticated_pre_bridge_shutdown() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut handshake_prefixes, _bridge_prefixes, mut control_prefixes) =
+            server.observe_reader_prefixes();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+
+        let mut slow_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        slow_bridge.write_all(b"{").await.unwrap();
+        await_prefix(&mut handshake_prefixes, "slow bridge authentication").await;
+        let command = shutdown("00000000-0000-4000-8000-00000000002b", TEST_SESSION_EPOCH);
+        let mut command_line = serde_json::to_vec(&command).unwrap();
+        command_line.push(b'\n');
+        let split = command_line.len() / 2;
+        control.write_all(&command_line[..split]).await.unwrap();
+        await_prefix(&mut control_prefixes, "fragmented shutdown command").await;
+        control.write_all(&command_line[split..]).await.unwrap();
+        assert!(matches!(
+            timeout(Duration::from_millis(250), read_event(&mut control))
+                .await
+                .unwrap(),
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                reason: None,
+                ..
+            }
+        ));
+
+        drop(control);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+        drop(slow_bridge);
+    }
+
+    #[tokio::test]
+    async fn quiescing_ignores_bridge_effects_and_exits_on_bridge_eof() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+
+        send_command(
+            &mut control,
+            &shutdown("00000000-0000-4000-8000-000000000023", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                ..
+            }
+        ));
+
+        // A checkpoint frame arriving after quiescence must not create a
+        // launcher event or open a decision window.
+        let ready =
+            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&ready.encode()).await.unwrap();
+        let mut unexpected = [0_u8; 1];
+        assert!(
+            timeout(Duration::from_millis(100), read_event(&mut control))
+                .await
+                .is_err()
+        );
+        send_command(
+            &mut control,
+            &grant(
+                "00000000-0000-4000-8000-000000000024",
+                TEST_SESSION_EPOCH,
+                1,
+            ),
+        )
+        .await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Rejected,
+                reason: Some(CommandReason::WrongState),
+                ..
+            }
+        ));
+        assert!(
+            timeout(
+                Duration::from_millis(100),
+                bridge.read_exact(&mut unexpected)
+            )
+            .await
+            .is_err()
+        );
+
+        drop(bridge);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+        drop(control);
+    }
+
+    #[tokio::test]
+    async fn authenticated_bridge_requires_bridge_eof_after_control_reconnect() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (_handshake_prefixes, mut bridge_prefixes, mut control_prefixes) =
+            server.observe_reader_prefixes();
+        let descriptor = server.session_descriptor();
+        let mut server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+
+        let command = shutdown("00000000-0000-4000-8000-00000000002c", TEST_SESSION_EPOCH);
+        send_command(&mut control, &command).await;
+        await_prefix(&mut control_prefixes, "initial shutdown command").await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                ..
+            }
+        ));
+        drop(control);
+        assert!(
+            timeout(Duration::from_millis(150), &mut server_task)
+                .await
+                .is_err()
+        );
+
+        let mut replacement = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut replay_line = serde_json::to_vec(&command).unwrap();
+        replay_line.push(b'\n');
+        let split = replay_line.len() / 2;
+        replacement.write_all(&replay_line[..split]).await.unwrap();
+        await_prefix(&mut control_prefixes, "fragmented shutdown replay").await;
+        for sequence in 9..41 {
+            let ignored =
+                BridgeFrame::new(MessageType::PlayerState, sequence, TEST_SESSION_EPOCH, &[])
+                    .unwrap();
+            bridge.write_all(&ignored.encode()).await.unwrap();
+        }
+        await_prefix(&mut bridge_prefixes, "competing player-state frame").await;
+        replacement.write_all(&replay_line[split..]).await.unwrap();
+        assert!(matches!(
+            read_event(&mut replacement).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Replayed,
+                reason: None,
+                ..
+            }
+        ));
+        drop(replacement);
+        assert!(
+            timeout(Duration::from_millis(150), &mut server_task)
+                .await
+                .is_err()
+        );
+
+        drop(bridge);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_rejects_every_non_idle_checkpoint_state_without_mutation() {
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 7).unwrap();
+        let states = [
+            CheckpointState::ReadyPendingHandoff { key },
+            CheckpointState::AwaitDecision {
+                key,
+                deadline: Instant::now() + Duration::from_secs(1),
+            },
+            CheckpointState::ExpiryPendingHandoff { key },
+            CheckpointState::AwaitSaveData {
+                key,
+                deadline: Instant::now() + Duration::from_secs(1),
+            },
+            CheckpointState::Quiescing {
+                deadline: Instant::now() + Duration::from_secs(1),
+            },
+        ];
+        for (index, state) in states.into_iter().enumerate() {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let mut session = ActiveSessionState {
+                checkpoint_state: state,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: true,
+                rearm_after_reboot: false,
+            };
+            let command_id = format!("00000000-0000-4000-8000-{index:012x}");
+            let command = shutdown(&command_id, TEST_SESSION_EPOCH);
+            sidecar
+                .handle_control_command(
+                    command.clone(),
+                    &mut bridge,
+                    &mut control,
+                    Instant::now(),
+                    &mut session,
+                )
+                .await
+                .unwrap();
+            assert_eq!(session.checkpoint_state, state);
+            assert_command_result(
+                &mut control_peer,
+                &command_id,
+                CommandStatus::Rejected,
+                Some(CommandReason::WrongState),
+            )
+            .await;
+
+            session.checkpoint_state = CheckpointState::Idle;
+            sidecar
+                .handle_control_command(
+                    command,
+                    &mut bridge,
+                    &mut control,
+                    Instant::now(),
+                    &mut session,
+                )
+                .await
+                .unwrap();
+            assert_eq!(session.checkpoint_state, CheckpointState::Idle);
+            assert_eq!(sidecar.applied_shutdown, None);
+            assert_command_result(
+                &mut control_peer,
+                &command_id,
+                CommandStatus::Replayed,
+                Some(CommandReason::WrongState),
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_is_durable_before_ack_failure_and_replays_after_reconnect() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control_reader, mut control, control_peer) = control_reader_writer_pair().await;
+        let command = shutdown("00000000-0000-4000-8000-000000000025", TEST_SESSION_EPOCH);
+        let command_id = CommandId::parse("00000000-0000-4000-8000-000000000025").unwrap();
+        control_peer.set_zero_linger().unwrap();
+        drop(control_peer);
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let reset = timeout(Duration::from_secs(1), control_reader.receive_command())
+            .await
+            .expect("reset peer must wake the server reader")
+            .expect_err("zero-linger peer must not produce a command");
+        assert!(matches!(
+            reset,
+            ControlError::Connection(_) | ControlError::LineClosed
+        ));
+        let error = sidecar
+            .handle_control_command(
+                command.clone(),
+                &mut bridge,
+                &mut control,
+                Instant::now(),
+                &mut session,
+            )
+            .await
+            .expect_err("the shutdown ACK write to a reset peer must fail");
+        assert!(matches!(
+            error,
+            SidecarError::Control(ControlError::WriteConnection(_))
+        ));
+        assert!(session.checkpoint_state.is_quiescing());
+        let original_deadline = session
+            .checkpoint_state
+            .quiescing_deadline()
+            .expect("shutdown stores an absolute deadline");
+        assert!(sidecar.command_history.contains_key(&command_id));
+        assert_eq!(sidecar.applied_shutdown, Some(command_id));
+
+        let (mut replacement, mut replacement_peer) = control_writer_pair().await;
+        sidecar
+            .handle_control_command(
+                command,
+                &mut bridge,
+                &mut replacement,
+                Instant::now(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            session.checkpoint_state.quiescing_deadline(),
+            Some(original_deadline)
+        );
+        assert!(matches!(
+            read_event(&mut replacement_peer).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Replayed,
+                reason: None,
+                ..
+            }
+        ));
     }
 
     #[tokio::test]
@@ -1934,6 +4558,775 @@ mod tests {
                 "checkpoint ready before rom ready"
             ))
         ));
+    }
+
+    #[tokio::test]
+    async fn pre_bridge_fifo_survives_bridge_replacement_and_applies_once() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+
+        let mut first_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut first_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut first_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut first_bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut first_bridge).await;
+        let ready =
+            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        first_bridge.write_all(&ready.encode()).await.unwrap();
+        assert!(matches!(
+            read_event(&mut first_control).await,
+            ControlEvent::CheckpointReady { .. }
+        ));
+        drop(first_bridge);
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), first_control.read(&mut closed))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        drop(first_control);
+
+        let mut replacement_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let grant_command = grant(
+            "00000000-0000-4000-8000-00000000002d",
+            TEST_SESSION_EPOCH,
+            1,
+        );
+        send_command(&mut replacement_control, &grant_command).await;
+        send_command(
+            &mut replacement_control,
+            &shutdown("00000000-0000-4000-8000-00000000002e", TEST_SESSION_EPOCH),
+        )
+        .await;
+
+        let mut replacement_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut replacement_bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut replacement_bridge).await;
+        assert_command_result(
+            &mut replacement_control,
+            "00000000-0000-4000-8000-00000000002d",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        assert_command_result(
+            &mut replacement_control,
+            "00000000-0000-4000-8000-00000000002e",
+            CommandStatus::Rejected,
+            Some(CommandReason::WrongState),
+        )
+        .await;
+        let mut granted = [0; BRIDGE_FRAME_SIZE];
+        replacement_bridge.read_exact(&mut granted).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&granted, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::CheckpointGranted
+        );
+        assert_no_bridge_data(&mut replacement_bridge).await;
+
+        drop(replacement_control);
+        drop(replacement_bridge);
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn idle_reconnect_fifo_resolves_grant_before_shutdown_after_rom_ready() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+
+        let mut first_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut first_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut first_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut first_bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut first_bridge).await;
+        drop(first_bridge);
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), first_control.read(&mut closed))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        drop(first_control);
+
+        let mut replacement_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        send_command(
+            &mut replacement_control,
+            &grant(
+                "00000000-0000-4000-8000-000000000031",
+                TEST_SESSION_EPOCH,
+                1,
+            ),
+        )
+        .await;
+        send_command(
+            &mut replacement_control,
+            &shutdown("00000000-0000-4000-8000-000000000032", TEST_SESSION_EPOCH),
+        )
+        .await;
+
+        let mut replacement_bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut replacement_bridge, &descriptor, descriptor.secret()).await;
+        assert!(
+            timeout(
+                Duration::from_millis(100),
+                read_event(&mut replacement_control)
+            )
+            .await
+            .is_err()
+        );
+        establish_rom_session(&mut replacement_bridge).await;
+        assert_command_result(
+            &mut replacement_control,
+            "00000000-0000-4000-8000-000000000031",
+            CommandStatus::Rejected,
+            Some(CommandReason::WrongState),
+        )
+        .await;
+        assert_command_result(
+            &mut replacement_control,
+            "00000000-0000-4000-8000-000000000032",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+
+        drop(replacement_bridge);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn bridge_reset_history_prevents_control_eof_from_proving_shutdown() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let mut server_task = tokio::spawn(server.serve());
+
+        let mut first_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut first_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        bridge.set_zero_linger().unwrap();
+        drop(bridge);
+
+        let mut closed = [0_u8; 1];
+        let close = timeout(Duration::from_secs(1), first_control.read(&mut closed))
+            .await
+            .expect("bridge reset must release the old control session");
+        assert_eq!(close.unwrap(), 0);
+        drop(first_control);
+
+        let mut replacement = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        send_command(
+            &mut replacement,
+            &shutdown("00000000-0000-4000-8000-000000000033", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert_command_result(
+            &mut replacement,
+            "00000000-0000-4000-8000-000000000033",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        drop(replacement);
+
+        assert!(
+            timeout(Duration::from_millis(200), &mut server_task)
+                .await
+                .is_err(),
+            "control EOF must not replace missing clean bridge EOF evidence"
+        );
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn clean_bridge_eof_completes_after_applied_shutdown_ack_with_control_open() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+
+        let mut first_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut first_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        drop(bridge);
+
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), first_control.read(&mut closed))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        drop(first_control);
+
+        let command_id = "00000000-0000-4000-8000-00000000003c";
+        let mut replacement = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        send_command(&mut replacement, &shutdown(command_id, TEST_SESSION_EPOCH)).await;
+        assert_command_result(&mut replacement, command_id, CommandStatus::Applied, None).await;
+
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok(),
+            "clean bridge EOF must make a delivered Applied ACK terminal"
+        );
+        drop(replacement);
+    }
+
+    #[tokio::test]
+    async fn clean_bridge_eof_completes_after_replayed_shutdown_ack() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let command_id = "00000000-0000-4000-8000-00000000003d";
+        let command = shutdown(command_id, TEST_SESSION_EPOCH);
+        let (mut first_writer, mut first_peer) = control_writer_pair().await;
+        let mut checkpoint_state = CheckpointState::Idle;
+        assert!(
+            sidecar
+                .handle_control_command_without_bridge(
+                    command.clone(),
+                    &mut first_writer,
+                    &mut checkpoint_state,
+                )
+                .await
+                .unwrap()
+        );
+        assert_command_result(&mut first_peer, command_id, CommandStatus::Applied, None).await;
+
+        let (mut control, mut control_peer) = preloaded_control_io(command).await;
+        let mut reconnect = ReconnectContext {
+            state: ReconnectState {
+                checkpoint_state,
+                ..ReconnectState::default()
+            },
+            bridge_lifecycle: BridgeLifecycle::CleanEofObserved,
+            ..ReconnectContext::default()
+        };
+        let replay_is_terminal = sidecar
+            .process_pre_bridge_control_result(
+                control.receiver().recv().await,
+                &mut control,
+                &mut reconnect,
+            )
+            .await
+            .unwrap();
+
+        assert!(replay_is_terminal);
+        assert_command_result(&mut control_peer, command_id, CommandStatus::Replayed, None).await;
+    }
+
+    #[tokio::test]
+    async fn pre_bridge_replay_after_ack_write_failure_consumes_clean_eof() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let command_id = "00000000-0000-4000-8000-00000000003e";
+        let command = shutdown(command_id, TEST_SESSION_EPOCH);
+        let (mut control_reader, mut first_writer, first_peer) = control_reader_writer_pair().await;
+        first_peer.set_zero_linger().unwrap();
+        drop(first_peer);
+        let reset = timeout(Duration::from_secs(1), control_reader.receive_command())
+            .await
+            .expect("reset peer must wake the server reader")
+            .expect_err("zero-linger peer must not produce a command");
+        assert!(matches!(
+            reset,
+            ControlError::Connection(_) | ControlError::LineClosed
+        ));
+        let mut checkpoint_state = CheckpointState::Idle;
+        let error = sidecar
+            .handle_control_command_without_bridge(
+                command.clone(),
+                &mut first_writer,
+                &mut checkpoint_state,
+            )
+            .await
+            .expect_err("the first shutdown ACK must fail on the reset peer");
+        assert!(matches!(
+            error,
+            SidecarError::Control(ControlError::WriteConnection(_) | ControlError::WriteTimeout)
+        ));
+        drop(first_writer);
+        assert!(checkpoint_state.is_quiescing());
+        assert_eq!(
+            sidecar.applied_shutdown,
+            Some(CommandId::parse(command_id).unwrap())
+        );
+
+        let (mut replacement, mut replacement_peer) = preloaded_control_io(command).await;
+        let mut reconnect = ReconnectContext {
+            state: ReconnectState {
+                checkpoint_state,
+                ..ReconnectState::default()
+            },
+            bridge_lifecycle: BridgeLifecycle::CleanEofObserved,
+            ..ReconnectContext::default()
+        };
+        let replay_is_terminal = sidecar
+            .process_pre_bridge_control_result(
+                replacement.receiver().recv().await,
+                &mut replacement,
+                &mut reconnect,
+            )
+            .await
+            .unwrap();
+
+        assert!(replay_is_terminal);
+        assert_eq!(
+            reconnect.bridge_lifecycle,
+            BridgeLifecycle::NeverAuthenticated
+        );
+        assert_command_result(
+            &mut replacement_peer,
+            command_id,
+            CommandStatus::Replayed,
+            None,
+        )
+        .await;
+        drop(replacement);
+        drop(replacement_peer);
+    }
+
+    #[tokio::test]
+    async fn elapsed_decision_deadline_advances_while_waiting_for_replacement_pair() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+
+        let mut first_control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut first_control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        let ready =
+            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&ready.encode()).await.unwrap();
+        assert!(matches!(
+            read_event(&mut first_control).await,
+            ControlEvent::CheckpointReady {
+                ready_sequence: 1,
+                ..
+            }
+        ));
+        drop(bridge);
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), first_control.read(&mut closed))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        drop(first_control);
+
+        sleep_until(Instant::now() + DECISION_TIMEOUT + Duration::from_millis(50)).await;
+        let mut replacement = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        assert!(matches!(
+            timeout(Duration::from_secs(1), read_event(&mut replacement))
+                .await
+                .expect("elapsed decision deadline must hand off without a bridge"),
+            ControlEvent::CheckpointExpired {
+                ready_sequence: 1,
+                ..
+            }
+        ));
+        send_command(
+            &mut replacement,
+            &shutdown("00000000-0000-4000-8000-000000000034", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert_command_result(
+            &mut replacement,
+            "00000000-0000-4000-8000-000000000034",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        drop(replacement);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn control_only_loss_stages_decision_expiry_while_observing_bridge_eof() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 7).unwrap();
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(50);
+        let mut reconnect = ReconnectState {
+            checkpoint_state: CheckpointState::AwaitDecision { key, deadline },
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (bridge_tx, mut bridge_rx) = mpsc::channel(1);
+        let (_bridge_terminal_tx, mut bridge_terminal) = watch::channel(None);
+        tokio::spawn(async move {
+            sleep_until(deadline + Duration::from_millis(25)).await;
+            bridge_tx
+                .send(Err(SidecarError::ProtocolViolation("bridge disconnected")))
+                .await
+                .unwrap();
+        });
+        let mut pending_bridge_frame = None;
+
+        let result = timeout(
+            Duration::from_secs(1),
+            sidecar.await_control_or_bridge(
+                &mut bridge_rx,
+                &mut bridge_terminal,
+                &mut reconnect,
+                &mut pending_bridge_frame,
+            ),
+        )
+        .await
+        .expect("the existing bridge EOF must remain visible without replacement control")
+        .unwrap();
+
+        assert!(started.elapsed() >= Duration::from_millis(50));
+        assert!(matches!(
+            result,
+            ControlReacquisition::BridgeTerminated(SidecarError::ProtocolViolation(
+                "bridge disconnected"
+            ))
+        ));
+        assert_eq!(
+            reconnect.checkpoint_state,
+            CheckpointState::ExpiryPendingHandoff { key }
+        );
+        assert_eq!(reconnect.expired_checkpoint, Some(key));
+        assert_eq!(pending_bridge_frame, None);
+    }
+
+    #[tokio::test]
+    async fn control_only_loss_observes_bridge_eof_after_prefetched_frame() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 8).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut reconnect = ReconnectState {
+            checkpoint_state: CheckpointState::AwaitDecision { key, deadline },
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let frame = BridgeFrame::new(MessageType::PlayerState, 8, TEST_SESSION_EPOCH, &[]).unwrap();
+        let (bridge_tx, mut bridge_rx) = mpsc::channel(1);
+        bridge_tx.send(Ok(frame.clone())).await.unwrap();
+        let (bridge_terminal_tx, mut bridge_terminal) = watch::channel(None);
+        tokio::spawn(async move {
+            sleep_until(Instant::now() + Duration::from_millis(25)).await;
+            bridge_terminal_tx
+                .send(Some(BridgeTerminal::CleanEof))
+                .unwrap();
+            bridge_tx
+                .send(Err(SidecarError::ProtocolViolation("bridge disconnected")))
+                .await
+                .unwrap();
+        });
+        let mut pending_bridge_frame = None;
+
+        let result = timeout(
+            Duration::from_millis(500),
+            sidecar.await_control_or_bridge(
+                &mut bridge_rx,
+                &mut bridge_terminal,
+                &mut reconnect,
+                &mut pending_bridge_frame,
+            ),
+        )
+        .await
+        .expect("bridge EOF must remain observable after a prefetched frame")
+        .unwrap();
+
+        assert!(matches!(
+            result,
+            ControlReacquisition::BridgeTerminated(SidecarError::ProtocolViolation(
+                "bridge disconnected"
+            ))
+        ));
+        assert_eq!(pending_bridge_frame.as_deref(), Some(&frame));
+        assert_eq!(
+            reconnect.checkpoint_state,
+            CheckpointState::AwaitDecision { key, deadline }
+        );
+        assert_eq!(reconnect.expired_checkpoint, None);
+    }
+
+    #[tokio::test]
+    async fn replacement_bridge_auth_loss_stages_decision_expiry_and_observes_eof() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 7).unwrap();
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(250);
+        let mut reconnect = ReconnectContext {
+            state: ReconnectState {
+                checkpoint_state: CheckpointState::AwaitDecision { key, deadline },
+                expired_checkpoint: None,
+                acknowledged_rom_ready: true,
+                rearm_after_reboot: false,
+            },
+            bridge_lifecycle: BridgeLifecycle::AwaitingCleanEof,
+            ..ReconnectContext::default()
+        };
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let bridge_address = listener.local_addr().unwrap();
+        let mut bridge_peer = TcpStream::connect(bridge_address).await.unwrap();
+        let (bridge_stream, _) = listener.accept().await.unwrap();
+        let mut authentication: BridgeAuthentication = Box::pin(async move {
+            Ok(AuthenticatedConnection {
+                stream: bridge_stream,
+            })
+        });
+        let LostControlRace::Bridge(mut replacement_bridge) = sidecar
+            .race_lost_control_with_bridge_auth(&mut authentication, &mut reconnect)
+            .await
+            .unwrap()
+        else {
+            panic!("replacement bridge authentication must complete after control loss");
+        };
+        let mut accepted = [0; HANDSHAKE_ACCEPTED_LINE.len()];
+        bridge_peer.read_exact(&mut accepted).await.unwrap();
+        assert_eq!(accepted, HANDSHAKE_ACCEPTED_LINE);
+        let mut session_ready = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut session_ready).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&session_ready, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::SessionReady
+        );
+        let bridge_close = tokio::spawn(async move {
+            sleep_until(deadline + Duration::from_millis(25)).await;
+            drop(bridge_peer);
+        });
+
+        // This is the exact pair-acquisition branch reached when replacement
+        // bridge authentication wins only after the prior control reader ends.
+        let result = timeout(
+            Duration::from_secs(2),
+            sidecar.reacquire_control_with_bridge(&mut replacement_bridge, &mut reconnect),
+        )
+        .await
+        .expect("replacement bridge EOF must stay visible without replacement control")
+        .unwrap();
+        bridge_close.await.unwrap();
+
+        assert!(matches!(result, ControlRecovery::Reconnect));
+        assert!(started.elapsed() >= Duration::from_millis(250));
+        assert_eq!(
+            reconnect.state.checkpoint_state,
+            CheckpointState::ExpiryPendingHandoff { key }
+        );
+        assert_eq!(reconnect.state.expired_checkpoint, Some(key));
+        assert_eq!(
+            reconnect.bridge_lifecycle,
+            BridgeLifecycle::CleanEofObserved
+        );
+        assert_eq!(replacement_bridge.pending_frame, None);
+    }
+
+    #[tokio::test]
+    async fn replacement_bridge_auth_loss_preserves_one_prefetched_frame() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = sidecar.session_descriptor();
+        let first = BridgeFrame::new(MessageType::RomReady, 1, 0, &[]).unwrap();
+        let second =
+            BridgeFrame::new(MessageType::PlayerState, 2, TEST_SESSION_EPOCH, &[]).unwrap();
+        let (bridge_writer, _bridge_peer) = bridge_writer_pair().await;
+        let (bridge_tx, bridge_rx) = mpsc::channel(1);
+        bridge_tx.send(Ok(first.clone())).await.unwrap();
+        let (second_queued_tx, second_queued_rx) = oneshot::channel();
+        let queued_second = second.clone();
+        let (terminal_tx, terminal_rx) = watch::channel(None);
+        let bridge_task = tokio::spawn(async move {
+            let _terminal_tx = terminal_tx;
+            bridge_tx.send(Ok(queued_second)).await.unwrap();
+            let _ = second_queued_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        let mut replacement_bridge = BridgeIo {
+            writer: Some(bridge_writer),
+            receiver: Some(bridge_rx),
+            task: Some(bridge_task),
+            terminal: terminal_rx,
+            pending_frame: None,
+        };
+        let mut reconnect = ReconnectContext {
+            bridge_lifecycle: BridgeLifecycle::AwaitingCleanEof,
+            ..ReconnectContext::default()
+        };
+        let control_client = tokio::spawn(async move {
+            sleep_until(Instant::now() + Duration::from_millis(25)).await;
+            let mut stream = TcpStream::connect(descriptor.control_address())
+                .await
+                .unwrap();
+            write_control_handshake(
+                &mut stream,
+                &descriptor,
+                descriptor.control_secret(),
+                TEST_SESSION_EPOCH,
+            )
+            .await;
+            stream
+        });
+
+        let result = timeout(
+            Duration::from_secs(1),
+            sidecar.reacquire_control_with_bridge(&mut replacement_bridge, &mut reconnect),
+        )
+        .await
+        .expect("replacement control must authenticate within the test bound")
+        .unwrap();
+
+        let ControlRecovery::Control(replacement_control) = result else {
+            panic!("replacement control must win after one frame is prefetched");
+        };
+        timeout(Duration::from_secs(1), second_queued_rx)
+            .await
+            .expect("the bounded bridge channel must retain its next frame")
+            .unwrap();
+        assert_eq!(replacement_bridge.pending_frame.as_deref(), Some(&first));
+        assert_eq!(
+            replacement_bridge
+                .receiver
+                .as_mut()
+                .expect("bridge receiver is owned")
+                .try_recv()
+                .unwrap()
+                .unwrap(),
+            second
+        );
+        let control_peer = control_client.await.unwrap();
+        drop(replacement_control);
+        drop(control_peer);
     }
 
     #[tokio::test]
@@ -2315,7 +5708,7 @@ mod tests {
 
     #[tokio::test]
     async fn control_handshake_rejects_cross_use_unknown_and_wrong_epoch() {
-        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
             .unwrap();
         let descriptor = server.session_descriptor();
@@ -2324,7 +5717,7 @@ mod tests {
         let task = tokio::spawn(async move { server.accept_control().await });
         let mut stream = TcpStream::connect(address).await.unwrap();
         let line = format!(
-            "{{\"secret\":\"{wrong_secret}\",\"control_version\":1,\"session_epoch\":41}}\n"
+            "{{\"secret\":\"{wrong_secret}\",\"control_version\":{CONTROL_PROTOCOL_VERSION},\"session_epoch\":41}}\n"
         );
         stream.write_all(line.as_bytes()).await.unwrap();
         assert!(matches!(
@@ -2332,7 +5725,7 @@ mod tests {
             Err(SidecarError::Control(ControlError::AuthenticationFailed))
         ));
 
-        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
             .unwrap();
         let descriptor = server.session_descriptor();
@@ -2341,7 +5734,7 @@ mod tests {
             .await
             .unwrap();
         let line = format!(
-            "{{\"secret\":\"{}\",\"control_version\":1,\"session_epoch\":40,\"extra\":false}}\n",
+            "{{\"secret\":\"{}\",\"control_version\":{CONTROL_PROTOCOL_VERSION},\"session_epoch\":40,\"extra\":false}}\n",
             descriptor.control_secret()
         );
         stream.write_all(line.as_bytes()).await.unwrap();
@@ -2350,7 +5743,7 @@ mod tests {
             Err(SidecarError::Control(ControlError::MalformedHandshake(_)))
         ));
 
-        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
             .unwrap();
         let descriptor = server.session_descriptor();
@@ -2359,7 +5752,7 @@ mod tests {
             .await
             .unwrap();
         let line = format!(
-            "{{\"secret\":\"{}\",\"control_version\":1,\"session_epoch\":40}}\n",
+            "{{\"secret\":\"{}\",\"control_version\":{CONTROL_PROTOCOL_VERSION},\"session_epoch\":40}}\n",
             descriptor.control_secret()
         );
         stream.write_all(line.as_bytes()).await.unwrap();
@@ -2367,6 +5760,155 @@ mod tests {
             task.await.unwrap(),
             Err(SidecarError::Control(ControlError::InvalidSessionEpoch))
         ));
+    }
+
+    async fn assert_control_authentication_pump_survives_slowloris(slow_candidates: usize) {
+        let listener = ControlListener::bind(TEST_SESSION_EPOCH).await.unwrap();
+        let address = listener.address();
+        let secret = listener.secret().expose().to_owned();
+        let pump = tokio::spawn(authenticate_control_candidates(listener));
+        let mut incomplete = Vec::new();
+        for _ in 0..slow_candidates {
+            let mut stream = TcpStream::connect(address).await.unwrap();
+            stream.write_all(b"{").await.unwrap();
+            incomplete.push(stream);
+        }
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+
+        let mut valid = TcpStream::connect(address).await.unwrap();
+        let mut line = serde_json::to_vec(&TestControlHandshake {
+            secret: &secret,
+            control_version: CONTROL_PROTOCOL_VERSION,
+            session_epoch: TEST_SESSION_EPOCH,
+        })
+        .unwrap();
+        line.push(b'\n');
+        valid.write_all(&line).await.unwrap();
+        let _connection = timeout(Duration::from_secs(1), pump)
+            .await
+            .expect("valid control peer must not wait for slow candidates")
+            .unwrap()
+            .unwrap();
+        let mut accepted = [0; crate::control::CONTROL_HANDSHAKE_ACCEPTED_LINE.len()];
+        valid.read_exact(&mut accepted).await.unwrap();
+        assert_eq!(accepted, crate::control::CONTROL_HANDSHAKE_ACCEPTED_LINE);
+        drop(incomplete);
+    }
+
+    #[tokio::test]
+    async fn initial_control_authentication_pump_allows_valid_peer_past_slowloris() {
+        assert_control_authentication_pump_survives_slowloris(MAX_CONTROL_AUTH_CANDIDATES).await;
+    }
+
+    #[tokio::test]
+    async fn reconnect_control_authentication_pump_allows_valid_peer_past_slowloris() {
+        assert_control_authentication_pump_survives_slowloris(MAX_CONTROL_AUTH_CANDIDATES * 2)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn bridge_authentication_pump_allows_valid_peer_past_slowloris() {
+        let sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = sidecar.session_descriptor();
+        let pump = tokio::spawn(sidecar.start_bridge_authentication_pump());
+        let mut incomplete = Vec::new();
+        for _ in 0..(MAX_BRIDGE_AUTH_CANDIDATES * 2) {
+            let mut stream = TcpStream::connect(descriptor.address()).await.unwrap();
+            stream.write_all(b"{").await.unwrap();
+            incomplete.push(stream);
+        }
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+
+        let mut valid = TcpStream::connect(descriptor.address()).await.unwrap();
+        let mut line = serde_json::to_vec(&TestHandshake {
+            secret: descriptor.secret(),
+            bridge_abi: BRIDGE_ABI_VERSION,
+            protocol_version: GAME_PROTOCOL_VERSION,
+        })
+        .unwrap();
+        line.push(b'\n');
+        valid.write_all(&line).await.unwrap();
+        let mut connection = timeout(Duration::from_secs(1), pump)
+            .await
+            .expect("valid bridge peer must not wait for slow candidates")
+            .unwrap()
+            .unwrap();
+        connection.send_handshake_accepted().await.unwrap();
+        let mut accepted = [0; HANDSHAKE_ACCEPTED_LINE.len()];
+        valid.read_exact(&mut accepted).await.unwrap();
+        assert_eq!(accepted, HANDSHAKE_ACCEPTED_LINE);
+        drop(incomplete);
+    }
+
+    #[tokio::test]
+    async fn full_deferred_shutdown_completes_while_slow_bridge_candidates_are_pending() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        for index in 0..MAX_DEFERRED_ROUTINE_COMMANDS {
+            send_command(
+                &mut control,
+                &abort(
+                    &format!("10000000-0000-4000-8000-{index:012x}"),
+                    TEST_SESSION_EPOCH - 1,
+                    1,
+                ),
+            )
+            .await;
+        }
+
+        let mut incomplete = Vec::new();
+        for _ in 0..(MAX_BRIDGE_AUTH_CANDIDATES / 2) {
+            let mut stream = TcpStream::connect(descriptor.address()).await.unwrap();
+            stream.write_all(b"{").await.unwrap();
+            incomplete.push(stream);
+        }
+        for _ in 0..4 {
+            tokio::task::yield_now().await;
+        }
+
+        let shutdown_id = "00000000-0000-4000-8000-00000000003c";
+        send_command(&mut control, &shutdown(shutdown_id, TEST_SESSION_EPOCH)).await;
+
+        assert_command_result(&mut control, shutdown_id, CommandStatus::Applied, None).await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        let mut line = serde_json::to_vec(&TestHandshake {
+            secret: descriptor.secret(),
+            bridge_abi: BRIDGE_ABI_VERSION,
+            protocol_version: GAME_PROTOCOL_VERSION,
+        })
+        .unwrap();
+        line.push(b'\n');
+        bridge.write_all(&line).await.unwrap();
+        let mut accepted = [0; HANDSHAKE_ACCEPTED_LINE.len()];
+        bridge.read_exact(&mut accepted).await.unwrap();
+        assert_eq!(accepted, HANDSHAKE_ACCEPTED_LINE);
+
+        drop(bridge);
+        let result = timeout(Duration::from_secs(2), server_task)
+            .await
+            .expect("quiescing shutdown must complete after bridge EOF")
+            .unwrap();
+        assert!(result.is_ok(), "server returned {result:?}");
+        drop(incomplete);
     }
 
     #[tokio::test]
@@ -2643,9 +6185,11 @@ mod tests {
 
     #[tokio::test]
     async fn fragmented_bridge_and_control_inputs_are_reassembled_and_interleaved() {
-        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
             .unwrap();
+        let (mut handshake_prefixes, mut bridge_prefixes, mut control_prefixes) =
+            server.observe_reader_prefixes();
         let descriptor = server.session_descriptor();
         let server_task = tokio::spawn(server.serve());
         let mut control = TcpStream::connect(descriptor.control_address())
@@ -2659,8 +6203,15 @@ mod tests {
         )
         .await;
         let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
-        write_fragmented_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        write_fragmented_handshake(
+            &mut bridge,
+            &descriptor,
+            descriptor.secret(),
+            &mut handshake_prefixes,
+        )
+        .await;
         establish_rom_session(&mut bridge).await;
+        await_prefix(&mut bridge_prefixes, "ROM_READY frame").await;
 
         let ready =
             BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
@@ -2668,7 +6219,7 @@ mod tests {
         bridge.write_all(&ready_bytes[..17]).await.unwrap();
         // The bridge reader task owns the partial frame while control remains
         // independently readable; neither input can steal the other's bytes.
-        tokio::task::yield_now().await;
+        await_prefix(&mut bridge_prefixes, "fragmented CHECKPOINT_READY frame").await;
         send_command(
             &mut control,
             &abort(
@@ -2678,6 +6229,7 @@ mod tests {
             ),
         )
         .await;
+        await_prefix(&mut control_prefixes, "abort command").await;
         assert!(matches!(
             read_event(&mut control).await,
             ControlEvent::CommandResult {
@@ -2701,7 +6253,7 @@ mod tests {
         command_bytes.push(b'\n');
         let split = command_bytes.len() / 2;
         control.write_all(&command_bytes[..split]).await.unwrap();
-        tokio::task::yield_now().await;
+        await_prefix(&mut control_prefixes, "fragmented grant command").await;
 
         // While the grant command is still fragmented, deliver a complete
         // competing bridge event. The sidecar must service it without
@@ -2709,6 +6261,7 @@ mod tests {
         let player_state =
             BridgeFrame::new(MessageType::PlayerState, 2, TEST_SESSION_EPOCH, &[]).unwrap();
         bridge.write_all(&player_state.encode()).await.unwrap();
+        await_prefix(&mut bridge_prefixes, "competing player-state frame").await;
         control.write_all(&command_bytes[split..]).await.unwrap();
         assert!(matches!(
             read_event(&mut control).await,
@@ -2723,7 +6276,7 @@ mod tests {
         let save = save_update(3, 0x0403_0201);
         let save_bytes = save.encode();
         bridge.write_all(&save_bytes[..23]).await.unwrap();
-        tokio::task::yield_now().await;
+        await_prefix(&mut bridge_prefixes, "fragmented save-data frame").await;
         bridge.write_all(&save_bytes[23..]).await.unwrap();
         assert_eq!(
             read_event(&mut control).await,
@@ -2825,14 +6378,13 @@ mod tests {
         // Reusing the same UUID for a different command body is a conflict,
         // never a second state transition.
         send_command(&mut control, &abort(command_id, TEST_SESSION_EPOCH, 1)).await;
-        assert!(matches!(
-            read_event(&mut control).await,
-            ControlEvent::CommandResult {
-                status: CommandStatus::Conflict,
-                reason: Some(CommandReason::CommandBodyConflict),
-                ..
-            }
-        ));
+        assert_command_result(
+            &mut control,
+            command_id,
+            CommandStatus::Conflict,
+            Some(CommandReason::CommandBodyConflict),
+        )
+        .await;
 
         // A new abort UUID is validly parsed but cannot abort after a grant.
         send_command(
@@ -2844,14 +6396,13 @@ mod tests {
             ),
         )
         .await;
-        assert!(matches!(
-            read_event(&mut control).await,
-            ControlEvent::CommandResult {
-                status: CommandStatus::Rejected,
-                reason: Some(CommandReason::WrongState),
-                ..
-            }
-        ));
+        assert_command_result(
+            &mut control,
+            "00000000-0000-4000-8000-000000000004",
+            CommandStatus::Rejected,
+            Some(CommandReason::WrongState),
+        )
+        .await;
         drop(control);
         drop(bridge);
         server_task.abort();
@@ -3199,6 +6750,141 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn full_routine_ledger_reserves_replayable_shutdown_capacity() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        fill_command_ledger(&mut control).await;
+
+        let command_id = "00000000-0000-4000-8000-000000000ffe";
+        let command = shutdown(command_id, TEST_SESSION_EPOCH);
+        send_command(&mut control, &command).await;
+        assert_command_result(&mut control, command_id, CommandStatus::Applied, None).await;
+        send_command(&mut control, &command).await;
+        assert_command_result(&mut control, command_id, CommandStatus::Replayed, None).await;
+        send_command(&mut control, &abort(command_id, TEST_SESSION_EPOCH, 1)).await;
+        assert_command_result(
+            &mut control,
+            command_id,
+            CommandStatus::Conflict,
+            Some(CommandReason::CommandBodyConflict),
+        )
+        .await;
+
+        drop(bridge);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn full_routine_ledger_reserves_shutdown_before_replacement_bridge() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        fill_command_ledger(&mut control).await;
+        drop(bridge);
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), control.read(&mut closed))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
+        drop(control);
+
+        let mut replacement = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let retained_routine_id = "00000000-0000-4000-8000-000000000001";
+        send_command(
+            &mut replacement,
+            &abort(retained_routine_id, TEST_SESSION_EPOCH, 1),
+        )
+        .await;
+        assert_command_result(
+            &mut replacement,
+            retained_routine_id,
+            CommandStatus::Replayed,
+            Some(CommandReason::WrongState),
+        )
+        .await;
+        send_command(
+            &mut replacement,
+            &grant(retained_routine_id, TEST_SESSION_EPOCH, 1),
+        )
+        .await;
+        assert_command_result(
+            &mut replacement,
+            retained_routine_id,
+            CommandStatus::Conflict,
+            Some(CommandReason::CommandBodyConflict),
+        )
+        .await;
+
+        let command = shutdown("00000000-0000-4000-8000-000000000ffd", TEST_SESSION_EPOCH);
+        send_command(&mut replacement, &command).await;
+        assert_command_result(
+            &mut replacement,
+            "00000000-0000-4000-8000-000000000ffd",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+        drop(replacement);
+    }
+
+    #[tokio::test]
     async fn full_command_ledger_rejects_grant_before_rom_side_effect() {
         let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
@@ -3275,6 +6961,49 @@ mod tests {
     }
 
     #[test]
+    fn deferred_checkpoint_command_waits_until_bridge_state_can_decide_it() {
+        let command = grant(
+            "00000000-0000-4000-8000-00000000002f",
+            TEST_SESSION_EPOCH,
+            7,
+        );
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+        assert!(deferred_command_waits_for_bridge_state(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH
+        ));
+        session.acknowledged_rom_ready = true;
+        assert!(!deferred_command_waits_for_bridge_state(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH
+        ));
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 7).unwrap();
+        session.acknowledged_rom_ready = false;
+        session.checkpoint_state = CheckpointState::AwaitDecision {
+            key,
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        assert!(deferred_command_waits_for_bridge_state(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH
+        ));
+        session.acknowledged_rom_ready = true;
+        assert!(!deferred_command_waits_for_bridge_state(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH
+        ));
+    }
+
+    #[test]
     fn expired_tombstone_rotates_after_newer_serial_even_across_wrap() {
         let key = CheckpointKey::new(TEST_SESSION_EPOCH, u32::MAX).unwrap();
         let mut tombstone = Some(key);
@@ -3305,6 +7034,28 @@ mod tests {
         assert!(!can_reconnect_after(&SidecarError::Connection(
             io::Error::new(io::ErrorKind::ConnectionReset, "partial frame RST"),
         )));
+    }
+
+    #[test]
+    fn bridge_lifecycle_requires_clean_eof_after_authentication() {
+        let mut lifecycle = BridgeLifecycle::default();
+        assert!(lifecycle.control_eof_proves_shutdown());
+        assert!(!lifecycle.bridge_exit_proven());
+        lifecycle.mark_authenticated();
+        assert!(!lifecycle.control_eof_proves_shutdown());
+        assert!(!lifecycle.bridge_exit_proven());
+        lifecycle.record_termination(&SidecarError::BridgeConnection(io::Error::new(
+            io::ErrorKind::ConnectionReset,
+            "test bridge RST",
+        )));
+        assert!(!lifecycle.control_eof_proves_shutdown());
+        assert!(!lifecycle.bridge_exit_proven());
+        lifecycle.record_termination(&SidecarError::ProtocolViolation("bridge disconnected"));
+        assert!(lifecycle.control_eof_proves_shutdown());
+        assert!(lifecycle.bridge_exit_proven());
+        lifecycle.mark_authenticated();
+        assert!(!lifecycle.control_eof_proves_shutdown());
+        assert!(!lifecycle.bridge_exit_proven());
     }
 
     #[test]
@@ -3532,13 +7283,13 @@ mod tests {
             .write_all(&vec![b'x'; MAX_CONTROL_LINE_BYTES + 1])
             .await
             .unwrap();
-        assert!(
+        assert!(matches!(
             timeout(Duration::from_secs(1), server_task)
                 .await
                 .unwrap()
-                .unwrap()
-                .is_err()
-        );
+                .unwrap(),
+            Err(SidecarError::Control(ControlError::LineTooLarge))
+        ));
 
         let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
@@ -3561,12 +7312,12 @@ mod tests {
         // Keep the authenticated connection open: the decoder must report a
         // bounded read timeout rather than confusing an incomplete line with
         // an immediate peer disconnect.
-        assert!(
+        assert!(matches!(
             timeout(Duration::from_secs(4), server_task)
                 .await
                 .unwrap()
-                .unwrap()
-                .is_err()
-        );
+                .unwrap(),
+            Err(SidecarError::Control(ControlError::ReadTimeout))
+        ));
     }
 }

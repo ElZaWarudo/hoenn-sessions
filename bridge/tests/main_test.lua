@@ -23,7 +23,8 @@ local character_save_path = temporary_base .. ".character.sav"
 local resume_input_path = temporary_base .. ".resume.input.ss1"
 local resume_output_path = temporary_base .. ".resume.ss1"
 local use_valid_session = false
-local manifest_schema = 1
+local manifest_schema = 2
+local save_schema = 1
 
 local bridge = {}
 
@@ -176,7 +177,7 @@ dofile = function(path)
         generation_offset = 28,
         generation_address = 0x02001020,
         crc_offset = 668,
-        schema_version = 1,
+        schema_version = save_schema,
         struct_size = 672,
         registry_version = 1,
         registry_digest = "0123456789abcdef0123456789abcdef",
@@ -206,9 +207,15 @@ assert(tostring(rejection_error):match("launcher%-generated loopback session"))
 use_valid_session = true
 local stale_manifest_ok, stale_manifest_error = pcall(original_dofile, "bridge/main.lua")
 assert(not stale_manifest_ok)
-assert(tostring(stale_manifest_error):match("compatible co%-op save schema"))
+assert(tostring(stale_manifest_error):match("address projection schema"))
 
-manifest_schema = 2
+manifest_schema = 3
+save_schema = 2
+local stale_save_ok, stale_save_error = pcall(original_dofile, "bridge/main.lua")
+assert(not stale_save_ok)
+assert(tostring(stale_save_error):match("compatible co%-op save schema"))
+
+save_schema = 1
 local loaded, load_error = pcall(original_dofile, "bridge/main.lua")
 dofile = original_dofile
 io.open = original_io_open

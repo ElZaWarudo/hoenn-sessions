@@ -1,0 +1,61 @@
+{
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "contract_hash": "sha256:6ceab75b5ae2acc924ca2e9d9429571001e1e5a26a8e22476fe83e109b39ecdb",
+  "findings": [
+    {
+      "id": "SSR-001",
+      "priority": "P1",
+      "status": "accepted_for_fix",
+      "summary": "Future-local fragmented control and bridge reads are cancellation-unsafe when raced in tokio::select, allowing a competing branch to discard an authenticated prefix."
+    },
+    {
+      "id": "SSR-002",
+      "priority": "P1",
+      "status": "accepted_for_fix",
+      "summary": "Pair acquisition resets retained checkpoint state to Idle, so shutdown can apply while a reconnecting checkpoint is still pending."
+    },
+    {
+      "id": "SSR-003",
+      "priority": "P1",
+      "status": "accepted_for_fix",
+      "summary": "Pre-bridge grants and aborts are permanently rejected and ledgered instead of being boundedly deferred until the replacement bridge authenticates."
+    },
+    {
+      "id": "SSR-004",
+      "priority": "P1",
+      "status": "accepted_for_fix",
+      "summary": "Quiescing control loss can synchronously wait for replacement authentication and miss an already queued bridge EOF."
+    },
+    {
+      "id": "SSR-005",
+      "priority": "P2",
+      "status": "accepted_for_fix",
+      "summary": "Control FIN and RST have contradictory post-bridge shutdown meaning; after bridge authentication, only bridge EOF may prove emulator exit and one absolute quiescing deadline must bound retries."
+    },
+    {
+      "id": "SSR-006",
+      "priority": "P2",
+      "status": "accepted_for_fix",
+      "summary": "Routine replay-ledger saturation consumes all capacity and prevents the lifecycle shutdown record."
+    },
+    {
+      "id": "SSR-007",
+      "priority": "P2",
+      "status": "accepted_for_fix",
+      "summary": "A slow unauthenticated bridge candidate serially occupies handshake time and delays authenticated shutdown handling."
+    },
+    {
+      "id": "SSR-008",
+      "priority": "P1",
+      "status": "accepted_for_integration",
+      "summary": "The launcher test helper has an exhaustive ControlCommand match that must handle ShutdownRequest after control protocol v2 is integrated."
+    }
+  ],
+  "fixer_contract_hash": "sha256:3cac2a59bd9ebcfa0ea000fd525bfd375ba8cbe4280a43f56bdbe44fd51e4159",
+  "original_patch_sha256": "sha256:c9166db6a9ca8319afd4c09a94df3ce9bafba26abd8d7b105632da9f22ee617a",
+  "reviewers": [
+    "/root/sidecar_correctness_review",
+    "/root/save_manifest_schema"
+  ],
+  "schema_version": 1
+}

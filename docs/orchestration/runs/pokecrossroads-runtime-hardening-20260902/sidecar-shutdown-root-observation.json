@@ -1,0 +1,15 @@
+{
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "baseline_digest": "sha256:e1a2857a5c48d41c3387dd1eb0e18112b14f69112eb9caa33406110fa324c464",
+  "baseline_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515",
+  "changed_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:6ceab75b5ae2acc924ca2e9d9429571001e1e5a26a8e22476fe83e109b39ecdb",
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:57b1bd928963108231dd9d285f6e031d33f322ed66ab0dd83c75b5aa95cf8512",
+  "status": "done",
+  "worker_id": "/root/sidecar_shutdown_impl"
+}

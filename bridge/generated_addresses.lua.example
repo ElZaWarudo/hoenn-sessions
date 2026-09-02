@@ -1,6 +1,7 @@
+-- Address-only projection; the launcher validates the emulator executable.
 -- Run tools/generate_bridge_manifest.py after linking the ROM.
 return {
-  schema_version = 2,
+  schema_version = 3,
   game_build_id = 0x00010000,
   rom_sha256 = string.rep("0", 64),
   magic = 0x504B434F,

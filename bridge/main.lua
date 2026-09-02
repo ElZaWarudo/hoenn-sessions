@@ -17,8 +17,10 @@ local function is_integer(value)
 end
 
 local function validate_save_manifest(value)
-  if manifest.schema_version ~= 2
-    or type(value) ~= "table"
+  if manifest.schema_version ~= 3 then
+    return nil, "generated bridge address projection schema is incompatible"
+  end
+  if type(value) ~= "table"
     or not is_integer(value.block3_address)
     or value.block3_address < EWRAM_START
     or value.block3_address >= EWRAM_END

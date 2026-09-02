@@ -1,0 +1,24 @@
+{
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "baseline_digest": "sha256:e1a2857a5c48d41c3387dd1eb0e18112b14f69112eb9caa33406110fa324c464",
+  "baseline_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515",
+  "changed_files": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "coop/crates/coop-launcher/Cargo.toml",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+    "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+    "dist/bridge_manifest.json",
+    "tools/generate_bridge_manifest.py",
+    "tools/tests/test_generate_bridge_manifest.py"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:c994f5fff3b3852541c84c36c951d39f967d0fdd6e4e189a4bac48715cc43d38",
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:c0a3d208f2395ea7d86d5d1b2cf3b50e575d62847aa78514067b3ef1a988fdf3",
+  "status": "done_with_baseline_gaps",
+  "worker_id": "/root/mgba_containment_impl"
+}

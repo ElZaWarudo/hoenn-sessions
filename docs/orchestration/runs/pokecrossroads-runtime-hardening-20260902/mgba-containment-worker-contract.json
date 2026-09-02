@@ -1,0 +1,128 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Generated manifest schema includes a strict official Windows mGBA 0.10.5 emulator contract with the pinned archive and executable digests; generator and launcher deny unknown, malformed, wrong-version, wrong-platform, and wrong-digest values.",
+      "id": "MC-001"
+    },
+    {
+      "description": "The launcher hashes the guarded executable before either probe or gameplay execution and refuses a mismatch without creating an mGBA process; an executable replacement or identity drift between validation and launch is detected before gameplay code runs.",
+      "id": "MC-002"
+    },
+    {
+      "description": "On Windows, both probe and gameplay mGBA are created inside a kill-on-close Job at CreateProcess time via windows-spawn =0.1.0; cancellation, parent/control loss, startup failure, timeout, normal root exit with surviving descendants, and forced stop terminate and reap the complete process tree under bounded deadlines.",
+      "id": "MC-003"
+    },
+    {
+      "description": "The containment abstraction integrates with existing SupervisedChildren event/stop APIs without changing mGBA argv, sidecar behavior, lease/recovery ordering, or non-Windows deterministic test behavior.",
+      "id": "MC-004"
+    },
+    {
+      "description": "Windows tests use a helper root plus delayed-marker or retained-handle descendant to prove no descendant escapes on probe timeout, cancellation, drop, startup failure, or forced stop, while exact argv/environment and bounded output behavior remain covered.",
+      "id": "MC-005"
+    },
+    {
+      "description": "Generator tests, launcher tests, formatting, launcher clippy with warnings denied, locked metadata, and diff checks pass with changes confined to owned_files.",
+      "id": "MC-006"
+    }
+  ],
+  "closed_decisions": [
+    "The only accepted stock runtime for this slice is the official mGBA 0.10.5 Windows x64 Qt executable. Pin executable SHA-256 5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247 and archive provenance SHA-256 b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a in the generated deny-unknown-fields compatibility manifest. Reject an executable digest mismatch before executing --version or gameplay.",
+    "Bump the generated bridge manifest schema when adding the bounded emulator contract. Keep ROM game build, regional identity registry, save schema, bridge ABI, and game protocol values unchanged.",
+    "Pin windows-spawn exactly at =0.1.0 as a Windows-only workspace dependency. Use its safe public API and creation-time PROC_THREAD_ATTRIBUTE_JOB_LIST Job attachment; do not use post-spawn AssignProcessToJobObject, process-wrap, taskkill as the containment proof, or repository-owned unsafe Rust.",
+    "Use one dedicated in-process blocking supervisor per mGBA process to own windows-spawn Child/Job state and expose a small bounded async command/event boundary to Tokio. Parent cancellation, channel closure, supervisor drop, startup failure, timeout, and forced stop must terminate and reap the entire Job tree. Never detach a supervisor thread.",
+    "Apply the same contained boundary to the --version probe and the long-lived gameplay process. Preserve exact shell-free argv, PATH-only inherited environment, null/piped stdio bounds, stock mGBA 0.10.5 version validation, and the existing public launcher behavior on non-Windows test targets.",
+    "Close the executable path substitution interval: hash a bounded regular executable while holding the existing deny-write/delete Windows executable guard, keep that guard through each contained spawn, and revalidate the pinned digest immediately before gameplay launch. A changed or unbound identity fails before mGBA code executes.",
+    "This unit provides force-stop/job containment only. Do not invent authenticated graceful shutdown semantics or edit sidecar/session control behavior; that is a dependent unit.",
+    "Do not claim that Job containment solves the separately tracked handle-relative staged-save deletion/ACL blocker. It may fix the proven empty coop-rom-* directory ownership leak if it can do so within existing owned process code and tests without weakening recovery retention."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n probe_mgba coop/crates/coop-launcher/src",
+      "rtk rg -n bridge_manifest tools"
+    ],
+    "verification": {
+      "focused": [
+        "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+        "rtk cargo test -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:c994f5fff3b3852541c84c36c951d39f967d0fdd6e4e189a4bac48715cc43d38",
+  "contract_id": "pokecrossroads-runtime-hardening-20260902-mgba-containment-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit sidecar, session lifecycle, main CLI, cloud/server/protocol/save, bridge/Lua, ROM, regional identity data, documentation, or orchestration state outside owned_files.",
+    "Do not accept another mGBA binary/version/platform digest, permit a hash override, execute an unverified binary, fall back to direct std/tokio mGBA spawn on Windows, or use PID-only taskkill as successful descendant cleanup evidence.",
+    "Do not add unsafe Rust, allow attributes, a shell, command strings, secrets in argv/environment/protocol output, unbounded channels/reads/writes/threads/retries, or a supervisor that can outlive launcher ownership.",
+    "Do not alter checkpoint/control semantics, release ordering, ROM args, save formats, region-qualified identities, or manifest values unrelated to the emulator contract.",
+    "Do not stage, commit, branch, fetch, pull, push, contact Git remotes, create/remove worktrees, or revert edits made by another worker."
+  ],
+  "lane": "deep",
+  "objective": "Pin the supported official mGBA 0.10.5 Windows executable identity and ensure both version probing and gameplay launch occur inside a kill-on-close Windows Job from the emulator's first instruction, with bounded async supervision and descendant-reap evidence.",
+  "owned_files": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "coop/crates/coop-launcher/Cargo.toml",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+    "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+    "dist/bridge_manifest.json",
+    "tools/generate_bridge_manifest.py",
+    "tools/tests/test_generate_bridge_manifest.py"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "dist/bridge_manifest.json",
+    "tools/generate_bridge_manifest.py",
+    "tools/tests/test_generate_bridge_manifest.py",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/tests/session_lifecycle.rs",
+    "rust-toolchain.toml"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "windows-spawn or the existing launcher API cannot meet creation-time containment without a change outside owned_files.",
+      "A concrete Windows process, dependency, or executable-identity blocker prevents safe progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "mgba-identity-and-job-containment"
+}

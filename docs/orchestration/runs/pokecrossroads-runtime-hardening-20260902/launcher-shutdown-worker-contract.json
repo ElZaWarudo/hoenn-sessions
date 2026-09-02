@@ -1,0 +1,124 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "The launcher sends one authenticated control-v2 shutdown request after checkpoint drain and accepts only a matching Applied/Replayed result; every rejection, mismatch, parse error, EOF, and timeout takes the bounded forced fallback.",
+      "id": "LS-001"
+    },
+    {
+      "description": "A correlated ACK precedes one exact guarded taskkill.exe /PID request against the retained mGBA process identity, with no /F, /T, /IM, shell, PATH lookup, or secret-bearing argument.",
+      "id": "LS-002"
+    },
+    {
+      "description": "One absolute deadline covers ACK, soft close, natural waits, complete Job-tree termination/proof, and sidecar exit; delayed or unrelated events cannot starve it, and every survivor is force-terminated and reaped.",
+      "id": "LS-003"
+    },
+    {
+      "description": "Shutdown reports a typed graceful/forced disposition, preserves idempotent stop behavior, works before Lua connects, and never allows cleanup or lease release until both root handles and the emulator Job tree have certain terminal outcomes.",
+      "id": "LS-004"
+    },
+    {
+      "description": "Tests cover matching/replayed ACK, wrong ID/epoch, rejected/conflict/malformed/EOF/timeout, helper success/nonzero/hang/race, natural and forced dual-child exit, descendant survival, early Ctrl-C, checkpoint drain ordering, failed reap recovery retention, and exact helper argv.",
+      "id": "LS-005"
+    },
+    {
+      "description": "Launcher and Phase-2 smoke tests, formatting, launcher clippy with warnings denied, local smoke, and diff checks pass with changes confined to owned_files.",
+      "id": "LS-006"
+    }
+  ],
+  "closed_decisions": [
+    "This unit starts only after the accepted sidecar control-v2 and Windows mGBA Job-containment patches are consolidated. Do not reimplement or weaken either foundation.",
+    "Shutdown ordering is: drain only an already-authorized checkpoint under its existing bound; send one authenticated epoch-bound shutdown_request; require a correlated Applied or exact Replayed command_result; then attempt emulator soft close. The ACK proves only sidecar Quiescing, not save flush or process exit.",
+    "A mismatched command ID or epoch, Rejected, Conflict, malformed/oversized line, EOF before ACK, timeout, ledger saturation, or control failure skips the soft-close claim and enters the existing bounded force/retain path.",
+    "On Windows, the smallest allowed soft-close request is the already guarded absolute System32 taskkill.exe invoked without a shell and with exactly /PID plus the decimal PID of the still-owned mGBA process. Never pass /F, /T, /IM, user text, paths, or secrets. Retain the original mGBA process handle across the entire PID-based operation so the PID cannot be recycled to another process.",
+    "taskkill success means only that a best-effort close request was accepted; it is not a WM_CLOSE, flush, or exit proof. A nonzero taskkill status is not fatal when the exact retained process handle independently proves mGBA exited concurrently.",
+    "Use one absolute shutdown deadline across ACK, soft-close helper, natural mGBA wait, Job descendant termination/proof, and natural sidecar exit. Unrelated control events may not extend it. Any survivor or uncertain Job/helper outcome is force-terminated and reaped through the containment supervisor before cleanup can proceed.",
+    "After the exact mGBA root exits naturally, explicitly terminate/close the owned Job to remove any surviving descendants and require the supervisor's complete-tree evidence. The quiescing sidecar should then exit on bridge/control EOF. Reap both owned roots before ROM/session cleanup or lease release.",
+    "Return a typed shutdown disposition that distinguishes graceful completion from forced fallback without exposing secret material. Preserve idempotent repeated stop calls and retain the lease/recovery SAV whenever either reap is uncertain.",
+    "Early Ctrl-C before Lua connects must use the new pre-bridge sidecar shutdown path and remain bounded. Do not require a ROM/Lua shutdown frame or automatic script loading."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n ShutdownRequest coop/crates/coop-sidecar/src",
+      "rtk rg -n graceful_shutdown coop/crates/coop-launcher/src"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher --all-features --locked",
+        "rtk cargo test -p coop-launcher --test phase2_smoke --all-features --locked",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk python tools/smoke_phase2.py --local",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:560d610c9173d2f0fbc73ce02ccc7607c7f92ababc839957997e1379947901eb",
+  "contract_id": "pokecrossroads-runtime-hardening-20260902-launcher-shutdown-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit Cargo manifests/lock, sidecar, cloud/server/protocol/save, bridge/Lua, ROM, manifest generator, regional identity data, documentation, or orchestration state outside owned_files.",
+    "Do not accept an uncorrelated ACK, soft-close before sidecar quiescence, equate helper success with emulator exit, use /F or /T as the graceful attempt, kill only the mGBA root as the force fallback, or release a lease while any root/descendant outcome is uncertain.",
+    "Do not add unsafe Rust, allow attributes, a shell, PATH-resolved system helpers, secrets in argv/environment/logs/errors, unbounded reads/channels/tasks/threads/retries, or per-step deadlines that can exceed the one absolute bound.",
+    "Do not change checkpoint semantics, save/recovery retention, mGBA gameplay argv, regional progress/tier rules, or authenticated session fencing.",
+    "Do not stage, commit, branch, fetch, pull, push, contact Git remotes, create/remove worktrees, or revert edits made by another worker."
+  ],
+  "lane": "deep",
+  "objective": "Integrate sidecar control v2 with the Job-contained mGBA supervisor so shutdown quiesces authenticated checkpoint traffic, attempts one bounded Qt-friendly close of the exact owned emulator, reaps both complete child lifecycles, and falls back deterministically without releasing the cloud lease early.",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+    "coop/crates/coop-launcher/tests/phase2_smoke.rs",
+    "coop/crates/coop-launcher/tests/session_lifecycle.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/tests/phase2_smoke.rs",
+    "coop/crates/coop-launcher/tests/session_lifecycle.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A foundation patch does not expose the required correlated shutdown or complete-tree supervision seam and proceeding would cross owned_files.",
+      "A concrete Windows close, process-reap, or lease-ordering blocker prevents safe progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "launcher-authenticated-graceful-shutdown"
+}

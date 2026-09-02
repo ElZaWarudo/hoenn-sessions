@@ -1,0 +1,103 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Lua accepts address projection schema 3, rejects stale schema 2 with an accurate outer-schema diagnostic, and continues independently rejecting nested save schema values other than 1.",
+      "id": "MSC-001"
+    },
+    {
+      "description": "Launcher session and Phase 2 smoke manifest fixtures use outer schema 3 and the exact complete emulator identity object without changing save/ABI/protocol versions.",
+      "id": "MSC-002"
+    },
+    {
+      "description": "Current operator and requirements documentation describes launcher-owned executable identity validation, address-only Lua projection, exact supported artifact, and unresolved real interactive conformance honestly.",
+      "id": "MSC-003"
+    },
+    {
+      "description": "Lua tests, launcher formatting, diff checks, and all dependency-independent focused checks pass; dependency-blocked Rust outcomes are reported explicitly for root integration.",
+      "id": "MSC-004"
+    }
+  ],
+  "closed_decisions": [
+    "The outer bridge manifest schema becomes 3 because it now binds the exact official mGBA 0.10.5 Windows x64 Qt artifact. Save schema, bridge ABI, game protocol, ROM identity, and regional identity registry versions remain unchanged.",
+    "Lua receives only a generated schema-3-compatible address projection. It must reject stale outer schema 2, continue requiring nested save schema 1, and must not receive or claim to validate host executable digests.",
+    "Launcher and smoke JSON fixtures must contain the complete exact emulator object required by the deny-unknown full manifest parser: name mGBA, version 0.10.5, platform windows-x64, variant Qt, archive SHA-256 b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a, and executable SHA-256 5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247.",
+    "Historical orchestration evidence remains immutable. Reconcile only current requirements, operator documentation, and blocker status without claiming real interactive mGBA conformance before it is demonstrated.",
+    "This unit is a staged dependency of the mGBA containment patch. It may leave full Rust tests pending until root applies both patches to the integration candidate."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n schema_version bridge coop docs"
+    ],
+    "verification": {
+      "focused": [
+        "rtk lua bridge/tests/main_test.lua"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:0df1c89e2a2bbf8698f8645da7ae9fc1b90b018739bba4dd6a60f38637bf5983",
+  "contract_id": "pokecrossroads-runtime-hardening-20260902-manifest-consumers-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 900000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit generator, dist manifest, compatibility parser, containment implementation, sidecar, protocol, cloud/server/save, ROM C code, Cargo manifests, or orchestration artifacts outside owned_files.",
+    "Do not add emulator metadata to the Lua projection, bump nested save schema 1, alter bridge ABI/protocol values, rewrite historical evidence, or claim that executable validation happens in Lua.",
+    "Do not stage, commit, branch, fetch, pull, push, contact Git remotes, create/remove worktrees, or revert edits made by another worker."
+  ],
+  "lane": "standard",
+  "objective": "Migrate every non-generator consumer and operator surface from bridge manifest schema 2 to schema 3, while preserving nested save schema 1 and documenting that Lua receives an address-only projection rather than executable identity metadata.",
+  "owned_files": [
+    "bridge/main.lua",
+    "bridge/tests/main_test.lua",
+    "bridge/generated_addresses.lua.example",
+    "bridge/README.md",
+    "coop/README.md",
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/tests/phase2_smoke.rs",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/blockers.yaml"
+  ],
+  "profile": "luna",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "required_context": [
+    "docs/orchestration/runs/pokecrossroads-runtime-hardening-20260902/mgba-containment-worker-contract.json",
+    "dist/bridge_manifest.json",
+    "bridge/main.lua",
+    "bridge/tests/main_test.lua",
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "terminal-only",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A required consumer change needs an edit outside owned_files or conflicts with another worker's live edit."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "manifest-schema-consumer-migration"
+}

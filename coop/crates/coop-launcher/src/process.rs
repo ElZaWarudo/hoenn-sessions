@@ -16,7 +16,10 @@ use coop_cloud::{BridgeAbiVersion, ProtocolVersion};
 use coop_sidecar::{
     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, GAME_PROTOCOL_VERSION, MAX_DESCRIPTOR_BYTES,
     SessionDescriptor,
-    control::{CONTROL_PROTOCOL_VERSION, ControlCommand, ControlEvent, MAX_CONTROL_LINE_BYTES},
+    control::{
+        CONTROL_PROTOCOL_VERSION, CommandId, CommandStatus, ControlCommand, ControlEvent,
+        MAX_CONTROL_LINE_BYTES, ShutdownRequest,
+    },
 };
 use thiserror::Error;
 use tokio::{
@@ -28,11 +31,20 @@ use tokio::{
 use uuid::Uuid;
 
 use crate::session::SessionWorkspace;
+#[cfg(windows)]
+use crate::windows_mgba_supervisor::MgbaSupervisor;
 
 pub const PROCESS_IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// One wall-clock bound for the complete shutdown transaction.  It covers
+/// control ACK, the optional helper, natural waits, Job termination, and both
+/// root reaps; no phase receives a fresh independent timeout.
+pub const SHUTDOWN_DEADLINE: Duration = Duration::from_secs(10);
+const SHUTDOWN_ACK_BOUND: Duration = Duration::from_millis(500);
 const DROP_REAP_POLL: Duration = Duration::from_millis(10);
 const STAGED_ROM_MARKER_PREFIX: &[u8] = b"pokecrossroads-coop-staged-rom-v1\n";
 const MAX_STAGED_ROM_MARKER_BYTES: u64 = 4096;
+const OWNED_MGBA_ARG_COUNT: usize = 13;
+const OWNED_MGBA_ROM_ARG_INDEX: usize = OWNED_MGBA_ARG_COUNT - 1;
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
@@ -43,6 +55,8 @@ pub enum ProcessError {
     UnsupportedPlatform,
     #[error("child process failed to start")]
     Spawn(#[source] io::Error),
+    #[error("official mGBA executable identity is invalid")]
+    MgbaIdentity,
     #[error("sidecar descriptor is invalid")]
     Descriptor,
     #[error("sidecar descriptor read timed out")]
@@ -72,6 +86,81 @@ pub enum ProcessError {
     },
     #[error("a supervised child exited unsuccessfully")]
     ChildExited,
+}
+
+/// Whether the sidecar accepted the correlated shutdown command before the
+/// launcher attempted the emulator close.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShutdownPath {
+    Graceful,
+    Forced,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RootReapEvidence {
+    Reaped,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JobTerminationEvidence {
+    Initiated,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlShutdownEvidence {
+    Accepted,
+    NotAccepted,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SoftCloseDisposition {
+    Requested,
+    NotAttempted,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecoveryDisposition {
+    Clean,
+    Required,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DescendantCompletionEvidence {
+    NotAvailable,
+}
+
+/// A bounded, non-ambiguous shutdown result.  `descendant_completion_proven`
+/// is permanently false because windows-spawn exposes no Job completion or
+/// active-process-count oracle; root reaping plus `TerminateJobObject`
+/// initiation is the strongest available evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShutdownDisposition {
+    pub path: ShutdownPath,
+    pub sidecar: RootReapEvidence,
+    pub mgba: RootReapEvidence,
+    pub job_termination: JobTerminationEvidence,
+    pub control: ControlShutdownEvidence,
+    pub soft_close: SoftCloseDisposition,
+    pub recovery: RecoveryDisposition,
+    pub descendant_completion: DescendantCompletionEvidence,
+}
+
+impl ShutdownDisposition {
+    #[must_use]
+    pub const fn clean(&self) -> bool {
+        matches!(self.recovery, RecoveryDisposition::Clean)
+            && matches!(self.sidecar, RootReapEvidence::Reaped)
+            && matches!(self.mgba, RootReapEvidence::Reaped)
+            && matches!(self.job_termination, JobTerminationEvidence::Initiated)
+    }
+
+    #[must_use]
+    pub const fn recovery_required(&self) -> bool {
+        matches!(self.recovery, RecoveryDisposition::Required)
+    }
 }
 
 /// A cleanup target retained in a [`ProcessError`] so recovery code can
@@ -115,6 +204,7 @@ impl ProcessError {
 pub struct CommandSpec {
     pub executable: PathBuf,
     pub args: Vec<String>,
+    mgba: bool,
     identity: Option<ExecutableIdentity>,
     rom_identity: Option<ExecutableIdentity>,
     rom_cleanup: Option<PathBuf>,
@@ -159,6 +249,7 @@ impl CommandSpec {
         Ok(Self {
             executable,
             args,
+            mgba: false,
             identity,
             rom_identity: None,
             rom_cleanup: None,
@@ -220,13 +311,22 @@ impl CommandSpec {
         let rom_path = rom.as_ref().to_path_buf();
         let rom = rom_path.to_str().ok_or(ProcessError::InvalidArgument)?;
         let mut spec = Self::new(executable, vec![rom.to_owned()])?;
+        spec.mgba = true;
         let (rom_identity, rom_guards) = executable_binding(&rom_path)?;
+        ensure_no_auxiliary_inputs(&rom_path)?;
         #[cfg(not(windows))]
         let _ = rom_guards;
         spec.rom_identity = rom_identity;
         #[cfg(windows)]
         {
             spec.rom_guards = rom_guards;
+            if let Some(identity) = spec.rom_identity.as_ref() {
+                identity
+                    .canonical
+                    .to_str()
+                    .ok_or(ProcessError::InvalidArgument)?
+                    .clone_into(&mut spec.args[0]);
+            }
         }
         Ok(spec)
     }
@@ -267,6 +367,7 @@ impl CommandSpec {
                     .into(),
             ],
         )?;
+        spec.mgba = true;
         let (rom_identity, rom_guards) = owned_file_binding(&rom_path)?;
         let Some(rom_identity) = rom_identity else {
             return Err(ProcessError::InvalidArgument);
@@ -289,15 +390,24 @@ impl CommandSpec {
         // A pre-existing sibling is never ours.  Only NotFound means absence;
         // ACL, I/O, and other metadata failures fail closed before mGBA starts.
         ensure_absent(&implicit_save_path)?;
-        let save_dir = rom_path
+        ensure_no_auxiliary_inputs(&rom_path)?;
+        let canonical_rom = rom_identity
+            .canonical
+            .to_str()
+            .ok_or(ProcessError::InvalidArgument)?;
+        let save_dir = rom_identity
+            .canonical
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
+            .ok_or(ProcessError::InvalidArgument)?
+            .to_str()
             .ok_or(ProcessError::InvalidArgument)?;
-        let save_dir = save_dir.to_str().ok_or(ProcessError::InvalidArgument)?;
-        // mGBA 0.10.5 accepts repeated `-C OPTION=VALUE` overrides.  Pin the
+        // mGBA 0.10.5 accepts repeated `-C OPTION=VALUE` overrides. Pin the
         // implicit SRAM directory to the private staged-ROM directory and
-        // disable config-driven save-state autoload/autosave; canonical SAV
-        // capture remains driven by the authenticated bridge safe-point.
+        // disable automatic state/cheat loading and saving. The explicit NUL
+        // patch path suppresses mCoreAutoloadPatch's fallback sibling scan;
+        // canonical SAV capture remains driven by the authenticated bridge
+        // safe-point.
         spec.args = vec![
             "-C".into(),
             format!("savegamePath={save_dir}"),
@@ -305,10 +415,13 @@ impl CommandSpec {
             "autoload=0".into(),
             "-C".into(),
             "autosave=0".into(),
-            rom_path
-                .to_str()
-                .ok_or(ProcessError::InvalidArgument)?
-                .into(),
+            "-C".into(),
+            "cheatAutoload=0".into(),
+            "-C".into(),
+            "cheatAutosave=0".into(),
+            "-p".into(),
+            "NUL".into(),
+            canonical_rom.into(),
         ];
         spec.rom_cleanup = Some(rom_path);
         spec.rom_identity = Some(rom_identity);
@@ -325,6 +438,57 @@ impl CommandSpec {
         Ok(spec)
     }
 
+    /// Starts a validated mGBA spec through the same Windows Job boundary as
+    /// the gameplay lifecycle. This narrow entry point is also used by the
+    /// opt-in real-artifact conformance test; normal sessions use
+    /// [`SupervisedChildren::start`] so the authenticated sidecar is paired.
+    ///
+    /// The returned owner retains this spec's executable, ROM, marker, and
+    /// ancestor guards until the contained process is stopped and dropped.
+    /// The receiver is disarmed so callers may drop it immediately without
+    /// releasing the live-process guards or cleanup ownership.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the mGBA executable, held ROM, ownership marker,
+    /// or canonical argument vector no longer satisfies the launch contract.
+    #[cfg(windows)]
+    pub fn spawn_guarded_mgba(&mut self) -> Result<GuardedMgbaChild, ProcessError> {
+        if !self.mgba
+            || self.identity.is_none()
+            || self.rom_identity.is_none()
+            || !self.has_supported_argv()
+        {
+            return Err(ProcessError::InvalidArgument);
+        }
+        validate_executable_identity(self)?;
+        let owner = std::mem::replace(self, Self::disarmed());
+        let supervisor =
+            MgbaSupervisor::spawn(&owner.executable, &owner.args).map_err(ProcessError::Spawn)?;
+        Ok(GuardedMgbaChild {
+            supervisor,
+            _spec: owner,
+        })
+    }
+
+    #[cfg(windows)]
+    fn disarmed() -> Self {
+        Self {
+            executable: PathBuf::new(),
+            args: Vec::new(),
+            mgba: false,
+            identity: None,
+            rom_identity: None,
+            rom_cleanup: None,
+            rom_marker_cleanup: None,
+            rom_implicit_save_path: None,
+            rom_marker_identity: None,
+            executable_guards: None,
+            rom_guards: None,
+            rom_marker_guards: None,
+        }
+    }
+
     fn has_supported_argv(&self) -> bool {
         if self.args.len() == 1 {
             return self.rom_implicit_save_path.is_none()
@@ -332,7 +496,7 @@ impl CommandSpec {
                 && !self.args[0].contains('\0')
                 && Path::new(&self.args[0]).is_absolute();
         }
-        if self.args.len() != 7 {
+        if self.args.len() != OWNED_MGBA_ARG_COUNT {
             return false;
         }
         let Some(rom_cleanup) = self.rom_cleanup.as_deref() else {
@@ -353,7 +517,7 @@ impl CommandSpec {
         let Some(save_dir) = self.args[1].strip_prefix("savegamePath=") else {
             return false;
         };
-        let Some(expected_save_dir) = rom_cleanup.parent() else {
+        let Some(expected_save_dir) = rom_identity.canonical.parent() else {
             return false;
         };
         let Ok(current_rom_identity) = path_identity(rom_cleanup) else {
@@ -367,17 +531,24 @@ impl CommandSpec {
             && current_rom_identity == *rom_identity
             && current_marker_identity == *marker_identity
             && Path::new(save_dir) == expected_save_dir
-            && Path::new(&self.args[6]) == rom_cleanup
+            && Path::new(&self.args[OWNED_MGBA_ROM_ARG_INDEX]) == rom_identity.canonical
             && owned_rom_marker_matches_identity(rom_identity, marker_cleanup)
             && self.args[0] == "-C"
             && self.args[2] == "-C"
             && self.args[3] == "autoload=0"
             && self.args[4] == "-C"
             && self.args[5] == "autosave=0"
-            && !self.args[6].is_empty()
-            && !self.args[6].contains('\0')
-            && Path::new(&self.args[6]).is_absolute()
+            && self.args[6] == "-C"
+            && self.args[7] == "cheatAutoload=0"
+            && self.args[8] == "-C"
+            && self.args[9] == "cheatAutosave=0"
+            && self.args[10] == "-p"
+            && self.args[11] == "NUL"
+            && !self.args[OWNED_MGBA_ROM_ARG_INDEX].is_empty()
+            && !self.args[OWNED_MGBA_ROM_ARG_INDEX].contains('\0')
+            && Path::new(&self.args[OWNED_MGBA_ROM_ARG_INDEX]).is_absolute()
             && !save_dir.contains('\0')
+            && ensure_no_auxiliary_inputs(rom_cleanup).is_ok()
     }
 
     /// Explicitly removes launcher-owned artifacts. The ownership marker is
@@ -658,6 +829,7 @@ pub fn cleanup_owned_staged_rom(
     let mut spec = CommandSpec {
         executable: PathBuf::new(),
         args: Vec::new(),
+        mgba: false,
         identity: None,
         rom_identity: Some(bound_rom_identity),
         rom_cleanup: Some(rom),
@@ -692,6 +864,7 @@ impl std::fmt::Debug for CommandSpec {
         debug
             .field("executable", &self.executable)
             .field("args", &self.args)
+            .field("mgba", &self.mgba)
             .field("identity", &self.identity.as_ref().map(|_| "[BOUND]"))
             .field(
                 "rom_identity",
@@ -982,9 +1155,269 @@ async fn read_line(
     }
 }
 
+/// Owns a contained mGBA process together with the executable, ROM, marker,
+/// and ancestor guards that authenticate its launch and cleanup lifetime.
+/// Fields are ordered so the supervisor is dropped before the retained spec,
+/// ensuring the Job is closed before owned artifacts are cleaned up.
+#[cfg(windows)]
+pub struct GuardedMgbaChild {
+    supervisor: MgbaSupervisor,
+    _spec: CommandSpec,
+}
+
+#[cfg(windows)]
+impl GuardedMgbaChild {
+    /// Waits for the contained root process and requests Job termination.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the supervisor boundary closes or the root
+    /// process cannot be reaped.
+    pub async fn wait(&self) -> io::Result<std::process::ExitStatus> {
+        self.supervisor.wait().await
+    }
+
+    /// Requests contained-process termination and root reaping.
+    ///
+    /// mGBA's native `TerminateJobObject` request is synchronous and
+    /// uncancellable through the safe `windows-spawn` API; any returned
+    /// cleanup error represents termination-initiation or root-reap
+    /// uncertainty, not proof that descendants are empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when Job termination or root reaping fails.
+    pub async fn stop(&mut self) -> io::Result<()> {
+        self.supervisor.stop().await
+    }
+
+    /// Returns a nonblocking root-process status snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when the supervisor status lock is poisoned.
+    pub fn try_wait(&self) -> io::Result<Option<std::process::ExitStatus>> {
+        self.supervisor.try_wait()
+    }
+}
+
+enum MgbaChild {
+    #[cfg(windows)]
+    Contained(MgbaSupervisor),
+    #[cfg(any(not(windows), test))]
+    Tokio(Box<Child>),
+}
+
+impl MgbaChild {
+    async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        match self {
+            #[cfg(windows)]
+            Self::Contained(supervisor) => supervisor.wait().await,
+            #[cfg(any(not(windows), test))]
+            Self::Tokio(child) => child.wait().await,
+        }
+    }
+
+    async fn stop(&mut self) -> Result<(), ProcessError> {
+        match self {
+            #[cfg(windows)]
+            Self::Contained(supervisor) => timeout(PROCESS_IO_TIMEOUT, supervisor.stop())
+                .await
+                .map_err(|_| {
+                    ProcessError::Termination(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "mGBA supervisor stop timed out",
+                    ))
+                })?
+                .map_err(ProcessError::Termination),
+            #[cfg(any(not(windows), test))]
+            Self::Tokio(child) => stop_child(child).await,
+        }
+    }
+
+    async fn shutdown(
+        &mut self,
+        attempt_soft_close: bool,
+        deadline: Instant,
+    ) -> MgbaShutdownReport {
+        #[cfg(windows)]
+        {
+            match self {
+                Self::Contained(supervisor) => {
+                    let evidence = supervisor.shutdown(attempt_soft_close, deadline).await;
+                    MgbaShutdownReport {
+                        soft_close: match evidence.soft_close {
+                            crate::windows_mgba_supervisor::SoftCloseEvidence::Requested => {
+                                SoftCloseDisposition::Requested
+                            }
+                            crate::windows_mgba_supervisor::SoftCloseEvidence::NotAttempted => {
+                                SoftCloseDisposition::NotAttempted
+                            }
+                            crate::windows_mgba_supervisor::SoftCloseEvidence::Failed => {
+                                SoftCloseDisposition::Failed
+                            }
+                        },
+                        root_reap: if matches!(
+                            evidence.root,
+                            crate::windows_mgba_supervisor::RootReapEvidence::Reaped
+                        ) {
+                            RootReapEvidence::Reaped
+                        } else {
+                            RootReapEvidence::Unknown
+                        },
+                        job_termination: if matches!(
+                            evidence.job,
+                            crate::windows_mgba_supervisor::JobTerminationEvidence::Initiated
+                        ) {
+                            JobTerminationEvidence::Initiated
+                        } else {
+                            JobTerminationEvidence::Unknown
+                        },
+                        recovery: if matches!(
+                            evidence.recovery,
+                            crate::windows_mgba_supervisor::RecoveryEvidence::Required
+                        ) {
+                            RecoveryDisposition::Required
+                        } else {
+                            RecoveryDisposition::Clean
+                        },
+                    }
+                }
+                #[cfg(test)]
+                Self::Tokio(child) => {
+                    let root_reaped = reap_tokio_child_until(child, deadline).await;
+                    MgbaShutdownReport {
+                        soft_close: SoftCloseDisposition::NotAttempted,
+                        root_reap: if root_reaped {
+                            RootReapEvidence::Reaped
+                        } else {
+                            RootReapEvidence::Unknown
+                        },
+                        job_termination: if root_reaped {
+                            JobTerminationEvidence::Initiated
+                        } else {
+                            JobTerminationEvidence::Unknown
+                        },
+                        recovery: if root_reaped {
+                            RecoveryDisposition::Clean
+                        } else {
+                            RecoveryDisposition::Required
+                        },
+                    }
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = attempt_soft_close;
+            let MgbaChild::Tokio(child) = self;
+            let root_reaped = reap_tokio_child_until(child, deadline).await;
+            return MgbaShutdownReport {
+                soft_close: SoftCloseDisposition::NotAttempted,
+                root_reap: if root_reaped {
+                    RootReapEvidence::Reaped
+                } else {
+                    RootReapEvidence::Unknown
+                },
+                // The portable test boundary has no Windows Job.  This
+                // report is useful for lifecycle tests but is never used by
+                // the supported Windows CLI.
+                job_termination: if root_reaped {
+                    JobTerminationEvidence::Initiated
+                } else {
+                    JobTerminationEvidence::Unknown
+                },
+                recovery: if root_reaped {
+                    RecoveryDisposition::Clean
+                } else {
+                    RecoveryDisposition::Required
+                },
+            };
+        }
+    }
+
+    #[cfg(test)]
+    fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
+        match self {
+            #[cfg(windows)]
+            Self::Contained(supervisor) => supervisor.try_wait(),
+            #[cfg(any(not(windows), test))]
+            Self::Tokio(child) => child.try_wait(),
+        }
+    }
+
+    fn stop_sync(&mut self) -> MgbaShutdownReport {
+        match self {
+            #[cfg(windows)]
+            Self::Contained(supervisor) => {
+                let evidence = supervisor.shutdown_sync();
+                MgbaShutdownReport {
+                    soft_close: match evidence.soft_close {
+                        crate::windows_mgba_supervisor::SoftCloseEvidence::Requested => {
+                            SoftCloseDisposition::Requested
+                        }
+                        crate::windows_mgba_supervisor::SoftCloseEvidence::NotAttempted => {
+                            SoftCloseDisposition::NotAttempted
+                        }
+                        crate::windows_mgba_supervisor::SoftCloseEvidence::Failed => {
+                            SoftCloseDisposition::Failed
+                        }
+                    },
+                    root_reap: if matches!(
+                        evidence.root,
+                        crate::windows_mgba_supervisor::RootReapEvidence::Reaped
+                    ) {
+                        RootReapEvidence::Reaped
+                    } else {
+                        RootReapEvidence::Unknown
+                    },
+                    job_termination: if matches!(
+                        evidence.job,
+                        crate::windows_mgba_supervisor::JobTerminationEvidence::Initiated
+                    ) {
+                        JobTerminationEvidence::Initiated
+                    } else {
+                        JobTerminationEvidence::Unknown
+                    },
+                    recovery: if matches!(
+                        evidence.recovery,
+                        crate::windows_mgba_supervisor::RecoveryEvidence::Required
+                    ) {
+                        RecoveryDisposition::Required
+                    } else {
+                        RecoveryDisposition::Clean
+                    },
+                }
+            }
+            #[cfg(any(not(windows), test))]
+            Self::Tokio(child) => {
+                let root_reaped = terminate_and_reap_sync(child);
+                MgbaShutdownReport {
+                    soft_close: SoftCloseDisposition::NotAttempted,
+                    root_reap: if root_reaped {
+                        RootReapEvidence::Reaped
+                    } else {
+                        RootReapEvidence::Unknown
+                    },
+                    job_termination: if root_reaped {
+                        JobTerminationEvidence::Initiated
+                    } else {
+                        JobTerminationEvidence::Unknown
+                    },
+                    recovery: if root_reaped {
+                        RecoveryDisposition::Clean
+                    } else {
+                        RecoveryDisposition::Required
+                    },
+                }
+            }
+        }
+    }
+}
+
 pub struct SupervisedChildren {
     sidecar: Child,
-    mgba: Child,
+    mgba: MgbaChild,
     pub control: ControlChannel,
     rom_cleanup: Option<PathBuf>,
     rom_marker_cleanup: Option<PathBuf>,
@@ -995,6 +1428,25 @@ pub struct SupervisedChildren {
     rom_guards: Option<ExecutableGuards>,
     #[cfg(windows)]
     rom_marker_guards: Option<ExecutableGuards>,
+    #[cfg(windows)]
+    _mgba_executable_guards: Option<ExecutableGuards>,
+    shutdown_disposition: Option<ShutdownDisposition>,
+    shutdown_control_attempt: Option<ShutdownControlAttempt>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MgbaShutdownReport {
+    soft_close: SoftCloseDisposition,
+    root_reap: RootReapEvidence,
+    job_termination: JobTerminationEvidence,
+    recovery: RecoveryDisposition,
+}
+
+#[derive(Clone, Debug)]
+struct ShutdownControlAttempt {
+    command_id: CommandId,
+    expected_epoch: u32,
+    sent: bool,
 }
 
 /// Owns a sidecar child while asynchronous startup is in progress.  A
@@ -1054,12 +1506,32 @@ impl std::fmt::Debug for SupervisedChildren {
     }
 }
 
+#[cfg(windows)]
+fn spawn_mgba(spec: &CommandSpec) -> io::Result<MgbaChild> {
+    MgbaSupervisor::spawn(&spec.executable, &spec.args).map(MgbaChild::Contained)
+}
+
+#[cfg(not(windows))]
+fn spawn_mgba(spec: &CommandSpec) -> io::Result<MgbaChild> {
+    let mut command = Command::new(&spec.executable);
+    isolate_environment(&mut command);
+    command
+        .args(&spec.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    command
+        .spawn()
+        .map(|child| MgbaChild::Tokio(Box::new(child)))
+}
+
 impl SupervisedChildren {
     #[cfg(test)]
     pub(crate) fn for_test(sidecar: Child, mgba: Child, control: ControlChannel) -> Self {
         Self {
             sidecar,
-            mgba,
+            mgba: MgbaChild::Tokio(Box::new(mgba)),
             control,
             rom_cleanup: None,
             rom_marker_cleanup: None,
@@ -1070,12 +1542,17 @@ impl SupervisedChildren {
             rom_guards: None,
             #[cfg(windows)]
             rom_marker_guards: None,
+            #[cfg(windows)]
+            _mgba_executable_guards: None,
+            shutdown_disposition: None,
+            shutdown_control_attempt: None,
         }
     }
 
-    /// Starts sidecar, authenticates control, then starts stock mGBA with only
-    /// the validated ROM path. Stock mGBA 0.10.5 is intentionally not given
-    /// an invented --script argument.
+    /// Starts sidecar, authenticates control, then starts stock mGBA with the
+    /// validated canonical ROM path and its fixed no-auxiliary-input argv
+    /// (12 option tokens followed by the ROM). Stock mGBA 0.10.5 is
+    /// intentionally not given an invented --script argument.
     ///
     /// # Errors
     ///
@@ -1145,15 +1622,15 @@ impl SupervisedChildren {
         }
         let (mut startup_child, control) =
             Self::start_sidecar(&sidecar, expected_epoch, &mut mgba, bridge).await?;
-        let mut mgba_command = Command::new(&mgba.executable);
-        isolate_environment(&mut mgba_command);
-        mgba_command
-            .args(&mgba.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        let mgba_child = match mgba_command.spawn() {
+        // Revalidate immediately before contained CreateProcessW. The
+        // existing executable guard held by `mgba` closes the substitution
+        // interval between compatibility probing and gameplay startup.
+        if let Err(error) = validate_executable_identity(&mgba) {
+            return Err(
+                startup_failure_with_cleanup(error, startup_child.child_mut(), &mut mgba).await,
+            );
+        }
+        let mgba_child = match spawn_mgba(&mgba) {
             Ok(child) => child,
             Err(error) => {
                 return Err(startup_failure_with_cleanup(
@@ -1173,6 +1650,8 @@ impl SupervisedChildren {
         let rom_guards = mgba.rom_guards.take();
         #[cfg(windows)]
         let rom_marker_guards = mgba.rom_marker_guards.take();
+        #[cfg(windows)]
+        let mgba_executable_guards = mgba.executable_guards.take();
         Ok(Self {
             sidecar: startup_child.into_child(),
             mgba: mgba_child,
@@ -1186,6 +1665,10 @@ impl SupervisedChildren {
             rom_guards,
             #[cfg(windows)]
             rom_marker_guards,
+            #[cfg(windows)]
+            _mgba_executable_guards: mgba_executable_guards,
+            shutdown_disposition: None,
+            shutdown_control_attempt: None,
         })
     }
 
@@ -1262,7 +1745,10 @@ impl SupervisedChildren {
         Ok((startup_child, control))
     }
 
-    /// Stops and reaps both children with a bounded wait.
+    /// Stops both children and attempts to reap their root processes.
+    ///
+    /// The mGBA Job-termination request is synchronous and uncancellable;
+    /// root exit observation is not proof that the Job has no descendants.
     ///
     /// # Errors
     ///
@@ -1279,10 +1765,153 @@ impl SupervisedChildren {
     ///
     /// Returns an error when either child cannot be terminated or reaped.
     pub async fn stop_in_place(&mut self) -> Result<(), ProcessError> {
-        let mgba_result = stop_child(&mut self.mgba).await;
+        if let Some(disposition) = self.shutdown_disposition {
+            return if disposition.clean() {
+                Ok(())
+            } else {
+                Err(ProcessError::Termination(io::Error::other(
+                    "shutdown evidence requires recovery",
+                )))
+            };
+        }
+        let mgba_result = self.mgba.stop().await;
         let sidecar_result = stop_child(&mut self.sidecar).await;
         mgba_result.and(sidecar_result)?;
         self.cleanup_owned_rom()
+    }
+
+    /// Completes the authenticated launcher shutdown transaction.  The
+    /// control request is sent at most once, only after the caller has drained
+    /// an already-authorized checkpoint.  Every malformed, rejected, stale,
+    /// mismatched, EOF, or timed-out response selects the forced Job path.
+    ///
+    /// This method always returns typed evidence, including uncertainty, so a
+    /// caller can retain recovery material without mistaking a cleanup error
+    /// for proof of descendant exit.  Repeated calls replay the same cached
+    /// disposition without sending another command or repeating cleanup.
+    pub async fn shutdown(
+        &mut self,
+        expected_epoch: u32,
+        checkpoint_drained: bool,
+    ) -> ShutdownDisposition {
+        if let Some(disposition) = self.shutdown_disposition {
+            return disposition;
+        }
+        let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
+        let control_acknowledged = checkpoint_drained
+            && self
+                .request_authenticated_shutdown(expected_epoch, deadline)
+                .await;
+        let std_deadline =
+            Instant::now() + deadline.saturating_duration_since(tokio::time::Instant::now());
+        let (mgba, sidecar_reaped) = tokio::join!(
+            self.mgba.shutdown(control_acknowledged, std_deadline),
+            reap_sidecar_until(&mut self.sidecar, deadline, control_acknowledged),
+        );
+        let disposition = ShutdownDisposition {
+            path: if control_acknowledged {
+                ShutdownPath::Graceful
+            } else {
+                ShutdownPath::Forced
+            },
+            sidecar: if sidecar_reaped {
+                RootReapEvidence::Reaped
+            } else {
+                RootReapEvidence::Unknown
+            },
+            mgba: mgba.root_reap,
+            job_termination: mgba.job_termination,
+            control: if control_acknowledged {
+                ControlShutdownEvidence::Accepted
+            } else {
+                ControlShutdownEvidence::NotAccepted
+            },
+            soft_close: mgba.soft_close,
+            recovery: if sidecar_reaped && matches!(mgba.recovery, RecoveryDisposition::Clean) {
+                RecoveryDisposition::Clean
+            } else {
+                RecoveryDisposition::Required
+            },
+            descendant_completion: DescendantCompletionEvidence::NotAvailable,
+        };
+        self.shutdown_disposition = Some(disposition);
+        // Cleanup is intentionally gated by complete root evidence.  If it
+        // fails, preserve the owned paths for the caller's recovery flow.
+        if disposition.clean() && self.cleanup_owned_rom().is_err() {
+            self.shutdown_disposition = Some(ShutdownDisposition {
+                recovery: RecoveryDisposition::Required,
+                ..disposition
+            });
+        }
+        self.shutdown_disposition.unwrap_or(disposition)
+    }
+
+    #[must_use]
+    pub const fn shutdown_disposition(&self) -> Option<ShutdownDisposition> {
+        self.shutdown_disposition
+    }
+
+    async fn request_authenticated_shutdown(
+        &mut self,
+        expected_epoch: u32,
+        deadline: tokio::time::Instant,
+    ) -> bool {
+        let ack_deadline = (tokio::time::Instant::now() + SHUTDOWN_ACK_BOUND).min(deadline);
+        if expected_epoch == 0 || tokio::time::Instant::now() >= ack_deadline {
+            return false;
+        }
+        let (command_id, sent) = if let Some(attempt) = self.shutdown_control_attempt.as_ref() {
+            if attempt.expected_epoch != expected_epoch {
+                return false;
+            }
+            (attempt.command_id, attempt.sent)
+        } else {
+            let attempt = ShutdownControlAttempt {
+                command_id: new_command_id(),
+                expected_epoch,
+                // Set this before the write. A cancellation in the write
+                // future must never cause a retry to send a second command.
+                sent: true,
+            };
+            let command_id = attempt.command_id;
+            self.shutdown_control_attempt = Some(attempt);
+            (command_id, false)
+        };
+        let command = ControlCommand::ShutdownRequest(ShutdownRequest {
+            command_id,
+            session_epoch: expected_epoch,
+        });
+        if !sent {
+            let written = tokio::time::timeout_at(ack_deadline, self.control.send(&command)).await;
+            if !matches!(written, Ok(Ok(()))) {
+                return false;
+            }
+        }
+        loop {
+            let Ok(Ok(event)) = tokio::time::timeout_at(ack_deadline, self.control.receive()).await
+            else {
+                return false;
+            };
+            match event {
+                ControlEvent::CommandResult {
+                    command_id: received_id,
+                    status,
+                    reason,
+                } => {
+                    // Command results are correlated strictly.  A result for
+                    // any other command is not evidence for this shutdown.
+                    return received_id == command_id
+                        && matches!(status, CommandStatus::Applied | CommandStatus::Replayed)
+                        && reason.is_none();
+                }
+                // Existing FIFO events may be ahead of the ACK. They are not
+                // acknowledgements, but may be drained until the one global
+                // deadline without granting them control over shutdown.
+                ControlEvent::CheckpointReady { .. }
+                | ControlEvent::SaveDataUpdated { .. }
+                | ControlEvent::CheckpointExpired { .. } => {}
+            }
+        }
     }
 
     /// Waits for either child and terminates/reaps its peer before returning.
@@ -1296,17 +1925,21 @@ impl SupervisedChildren {
     /// Returns an error when the first child or its peer cannot be reaped.
     pub async fn wait(mut self) -> Result<(), ProcessError> {
         let (first, peer) = tokio::select! {
-            result = self.sidecar.wait() => (result, &mut self.mgba),
-            result = self.mgba.wait() => (result, &mut self.sidecar),
-        };
-        let first = first.map_err(ProcessError::Termination).and_then(|status| {
-            if status.success() {
-                Ok(())
-            } else {
-                Err(ProcessError::ChildExited)
+            result = self.sidecar.wait() => {
+                let first = result.map_err(ProcessError::Termination).and_then(|status| {
+                    if status.success() { Ok(()) } else { Err(ProcessError::ChildExited) }
+                });
+                let peer = self.mgba.stop().await;
+                (first, peer)
             }
-        });
-        let peer = stop_child(peer).await;
+            result = self.mgba.wait() => {
+                let first = result.map_err(ProcessError::Termination).and_then(|status| {
+                    if status.success() { Ok(()) } else { Err(ProcessError::ChildExited) }
+                });
+                let peer = stop_child(&mut self.sidecar).await;
+                (first, peer)
+            }
+        };
         match (first, peer) {
             (Ok(()), Ok(())) => self.cleanup_owned_rom(),
             // Both children are reaped even when the first one exits with a
@@ -1329,17 +1962,18 @@ impl SupervisedChildren {
     ///
     /// # Errors
     ///
-    /// Returns an error when control I/O or child reaping fails.  Any control
-    /// or protocol error first stops and reaps both children; if that proof
-    /// fails, the returned [`ProcessError::EventCleanup`] preserves both
-    /// failures for lease-release gating.
+    /// Returns an error when control I/O or child reaping fails. Any control
+    /// or protocol error first stops both children and attempts root reaping;
+    /// if that cleanup status is uncertain, the returned
+    /// [`ProcessError::EventCleanup`] preserves both failures for
+    /// lease-release gating.
     pub async fn next_event(&mut self) -> Result<SupervisorEvent, ProcessError> {
         let result = tokio::select! {
             result = self.control.receive() => result.map(SupervisorEvent::Control),
             result = self.sidecar.wait() => {
                 match result {
                     Err(error) => Err(ProcessError::Termination(error)),
-                    Ok(status) => match stop_child(&mut self.mgba).await {
+                    Ok(status) => match self.mgba.stop().await {
                         Err(error) => Err(error),
                         Ok(()) => self.child_exit_after_reap(status.success()),
                     },
@@ -1395,8 +2029,9 @@ impl SupervisedChildren {
         }
     }
 
-    /// Removes all launcher-owned mGBA artifacts after both children have
-    /// been confirmed reaped. The marker is deliberately last: when a
+    /// Removes all launcher-owned mGBA artifacts after both root processes
+    /// have reported termination. That observation is not proof that a Job
+    /// has no descendants. The marker is deliberately last: when a
     /// filesystem operation fails, its path and any remaining files stay
     /// available for explicit recovery.
     fn cleanup_owned_rom(&mut self) -> Result<(), ProcessError> {
@@ -1490,8 +2125,8 @@ fn binding_with_access(
     }
     reject_symlink_ancestors(path)?;
     let parent = path.parent().ok_or(ProcessError::InvalidArgument)?;
-    let ancestor_guards =
-        open_directory_ancestor_guards(parent).map_err(|_| ProcessError::InvalidArgument)?;
+    let ancestor_guards = open_directory_ancestor_guards(parent, delete_access)
+        .map_err(|_| ProcessError::InvalidArgument)?;
     let Some(file) = open_executable_file(path, delete_access)? else {
         return Ok((None, None));
     };
@@ -1503,7 +2138,8 @@ fn binding_with_access(
         return Err(ProcessError::InvalidArgument);
     }
     let canonical = fs::canonicalize(path).map_err(|_| ProcessError::InvalidArgument)?;
-    let digest = hash_file_handle(&file_guard).map_err(|_| ProcessError::InvalidArgument)?;
+    let digest = hash_file_handle_bounded(&file_guard, crate::compat::MAX_MGBA_EXECUTABLE_BYTES)
+        .map_err(|_| ProcessError::InvalidArgument)?;
     Ok((
         Some(ExecutableIdentity {
             canonical,
@@ -1516,6 +2152,25 @@ fn binding_with_access(
             ancestors: ancestor_guards,
         }),
     ))
+}
+
+#[cfg(windows)]
+pub(crate) fn with_mgba_executable_guard<T>(
+    path: &Path,
+    operation: impl FnOnce(&Path, [u8; 32]) -> T,
+) -> Result<T, ProcessError> {
+    let (identity, guards) = executable_binding(path)?;
+    let Some(identity) = identity else {
+        return Err(ProcessError::MgbaIdentity);
+    };
+    let Some(_guards) = guards else {
+        return Err(ProcessError::MgbaIdentity);
+    };
+    let digest = crate::compat::expected_mgba_executable_digest();
+    if identity.digest != digest {
+        return Err(ProcessError::MgbaIdentity);
+    }
+    Ok(operation(identity.canonical.as_path(), identity.digest))
 }
 
 #[cfg(not(windows))]
@@ -1558,14 +2213,12 @@ fn open_executable_file(
 ) -> Result<Option<fs::File>, ProcessError> {
     use std::os::windows::fs::OpenOptionsExt;
     let mut options = fs::OpenOptions::new();
-    options.read(true).share_mode(if delete_access {
-        0x0000_0007
-    } else {
-        0x0000_0001
-    });
-    if delete_access {
-        options.access_mode(0x8000_0000 | 0x0001_0000);
-    }
+    let _ = delete_access;
+    // mGBA opens the ROM through the read-only CRT. Requesting DELETE on this
+    // long-lived handle makes that open fail when the CRT does not include
+    // FILE_SHARE_DELETE. Cleanup takes a separate delete handle after this
+    // read-only integrity guard is released.
+    options.read(true).share_mode(0x0000_0001);
     options.custom_flags(0x0020_0000);
     match options.open(path) {
         Ok(file) => Ok(Some(file)),
@@ -1575,26 +2228,33 @@ fn open_executable_file(
 }
 
 #[cfg(windows)]
-fn open_directory_guard(path: &Path) -> io::Result<fs::File> {
+fn open_directory_guard(path: &Path, delete_access: bool) -> io::Result<fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
     let mut options = fs::OpenOptions::new();
     options
         .read(true)
-        // Owner directories must share delete so the guarded file can be
-        // removed through a DELETE_ON_CLOSE handle while this boundary stays
-        // open. Final identity revalidation controls replacement of the
-        // payload; this directory handle only pins the ancestor boundary.
-        .share_mode(0x0000_0007)
+        // Owned staged artifacts must share delete so DELETE_ON_CLOSE cleanup
+        // can proceed. Executable bindings deny directory delete/rename while
+        // the guarded path remains live, closing the ancestor substitution
+        // interval before CreateProcessW.
+        .share_mode(if delete_access {
+            0x0000_0007
+        } else {
+            0x0000_0003
+        })
         .custom_flags(0x0220_0000);
     options.open(path)
 }
 
 #[cfg(windows)]
-fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<Arc<fs::File>>> {
+fn open_directory_ancestor_guards(
+    path: &Path,
+    delete_access: bool,
+) -> io::Result<Vec<Arc<fs::File>>> {
     let mut guards = Vec::new();
     let mut current = path;
     loop {
-        guards.push(Arc::new(open_directory_guard(current)?));
+        guards.push(Arc::new(open_directory_guard(current, delete_access)?));
         let Some(parent) = current.parent() else {
             break;
         };
@@ -1607,15 +2267,33 @@ fn open_directory_ancestor_guards(path: &Path) -> io::Result<Vec<Arc<fs::File>>>
 }
 
 fn hash_file_handle(handle: &fs::File) -> io::Result<[u8; 32]> {
+    hash_file_handle_bounded(handle, u64::MAX)
+}
+
+fn hash_file_handle_bounded(handle: &fs::File, max_bytes: u64) -> io::Result<[u8; 32]> {
     use sha2::{Digest, Sha256};
+    if handle.metadata()?.len() > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "file exceeds hashing limit",
+        ));
+    }
     let mut file = handle.try_clone()?;
     file.seek(SeekFrom::Start(0))?;
     let mut digest = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024];
+    let mut total = 0_u64;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
+        }
+        total = total.saturating_add(count as u64);
+        if total > max_bytes {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file exceeds hashing limit",
+            ));
         }
         digest.update(&buffer[..count]);
     }
@@ -1624,17 +2302,35 @@ fn hash_file_handle(handle: &fs::File) -> io::Result<[u8; 32]> {
 
 fn validate_executable_identity(spec: &CommandSpec) -> Result<(), ProcessError> {
     #[cfg(windows)]
-    if let Some(guards) = &spec.executable_guards {
+    let guarded_identity = if spec.mgba {
+        let guards = spec
+            .executable_guards
+            .as_ref()
+            .ok_or(ProcessError::MgbaIdentity)?;
         // Reading metadata through both held handles keeps the guards live
         // through this immediate validation-to-spawn boundary and documents
         // that they are security-critical, not incidental storage.
-        let _ = guards.file.metadata();
+        let actual = file_identity(&spec.executable, &guards.file)
+            .map_err(|_| ProcessError::MgbaIdentity)?;
+        if actual.digest != crate::compat::expected_mgba_executable_digest() {
+            return Err(ProcessError::MgbaIdentity);
+        }
         for ancestor in &guards.ancestors {
             let _ = ancestor.metadata();
         }
-    }
+        Some(actual)
+    } else {
+        None
+    };
     if let Some(expected) = &spec.identity {
-        let (actual, _) = executable_binding(&spec.executable)?;
+        #[cfg(windows)]
+        let actual = if let Some(actual) = guarded_identity {
+            Some(actual)
+        } else {
+            executable_binding(&spec.executable)?.0
+        };
+        #[cfg(not(windows))]
+        let actual = executable_binding(&spec.executable)?.0;
         let Some(actual) = actual else {
             return Err(ProcessError::InvalidArgument);
         };
@@ -1642,14 +2338,38 @@ fn validate_executable_identity(spec: &CommandSpec) -> Result<(), ProcessError> 
             return Err(ProcessError::InvalidArgument);
         }
     }
-    if spec.args.len() == 1 {
-        let rom = Path::new(&spec.args[0]);
+    if spec.args.len() == 1 || spec.args.len() == OWNED_MGBA_ARG_COUNT {
+        let rom = if spec.args.len() == 1 {
+            Path::new(&spec.args[0])
+        } else {
+            Path::new(&spec.args[OWNED_MGBA_ROM_ARG_INDEX])
+        };
         if let Some(expected_rom) = &spec.rom_identity {
-            let Some(actual_rom) = executable_binding(rom)?.0 else {
-                return Err(ProcessError::InvalidArgument);
+            #[cfg(windows)]
+            let actual_rom = {
+                let guards = spec.rom_guards.as_ref().ok_or(ProcessError::MgbaIdentity)?;
+                file_identity(rom, &guards.file).map_err(|_| ProcessError::MgbaIdentity)?
             };
+            #[cfg(not(windows))]
+            let actual_rom = executable_binding(rom)?
+                .0
+                .ok_or(ProcessError::InvalidArgument)?;
             if &actual_rom != expected_rom {
                 return Err(ProcessError::InvalidArgument);
+            }
+            ensure_no_auxiliary_inputs(rom)?;
+            #[cfg(windows)]
+            if spec.args.len() == OWNED_MGBA_ARG_COUNT {
+                let marker = spec
+                    .rom_marker_guards
+                    .as_ref()
+                    .ok_or(ProcessError::MgbaIdentity)?;
+                if !owned_rom_marker_matches_held_identity(expected_rom, &marker.file)
+                    .map_err(|_| ProcessError::MgbaIdentity)?
+                    || ensure_no_auxiliary_inputs(&expected_rom.canonical).is_err()
+                {
+                    return Err(ProcessError::InvalidArgument);
+                }
             }
         } else if fs::symlink_metadata(rom).is_ok() {
             // A missing ROM at binding time must not become an unbound input
@@ -1697,6 +2417,16 @@ fn ensure_absent(path: &Path) -> Result<(), ProcessError> {
         }
         Ok(_) => Err(ProcessError::InvalidArgument),
     }
+}
+
+fn ensure_no_auxiliary_inputs(rom: &Path) -> Result<(), ProcessError> {
+    // mGBA discovers these same-base files before opening the ROM. A staged
+    // namespace must therefore contain no unbound patch/cheat input that
+    // could change the effective game image or execution behavior.
+    for extension in ["ips", "ups", "bps", "cheats"] {
+        ensure_absent(&rom.with_extension(extension))?;
+    }
+    Ok(())
 }
 
 fn remove_owned_file(path: &Path, artifact: CleanupArtifact) -> Result<(), ProcessError> {
@@ -1790,17 +2520,15 @@ fn remove_owned_guarded_file(
             ),
         });
     }
-    // Open a second no-follow handle with DELETE_ON_CLOSE after the final
-    // identity check. The fresh per-launch directory isolates ordinary
-    // sessions and narrows the remaining name-resolution interval. Safe Rust
-    // cannot make that interval atomic against a hostile same-user process;
-    // production containment tracks that limitation explicitly.
+    // The read-only guard intentionally cannot coexist with a DELETE access
+    // request: the official CRT does not promise FILE_SHARE_DELETE. Release
+    // it only after the final identity check, then open DELETE_ON_CLOSE. Safe
+    // Rust cannot make this final pathname step atomic against a hostile
+    // same-user process; that documented cleanup race is retained.
+    let _ = guards.take();
     let delete_file = match open_delete_on_close(path) {
         Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let _ = guards.take();
-            return Ok(());
-        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
         Err(source) => {
             return Err(ProcessError::Cleanup {
                 artifact,
@@ -1811,7 +2539,6 @@ fn remove_owned_guarded_file(
     };
     // Once opened, DELETE_ON_CLOSE removes the exact object referenced by the
     // handle; no path unlink is attempted after the guard is released.
-    let _ = guards.take();
     drop(delete_file);
     Ok(())
 }
@@ -1919,22 +2646,32 @@ fn file_identity(path: &Path, file: &fs::File) -> io::Result<ExecutableIdentity>
         canonical: fs::canonicalize(path)?,
         length: metadata.len(),
         modified: metadata.modified().ok(),
-        digest: hash_file_handle(file)?,
+        digest: hash_file_handle_bounded(file, crate::compat::MAX_MGBA_EXECUTABLE_BYTES)?,
     })
 }
 
 impl Drop for SupervisedChildren {
     fn drop(&mut self) {
-        // Drop cannot await.  It still owns cancellation supervision: request
-        // termination and synchronously reap both children within a bounded
-        // deadline so a cancelled launcher future cannot orphan processes.
-        terminate_and_reap_sync(&mut self.mgba);
-        terminate_and_reap_sync(&mut self.sidecar);
-        let _ = self.cleanup_owned_rom();
+        // Drop cannot await. It asks the mGBA supervisor to request Job
+        // termination and join its owner; the native operation may exceed its
+        // nominal polling deadline. It then boundedly kills and polls only
+        // the sidecar root. Neither root observation proves an empty Job.
+        let mgba = self.mgba.stop_sync();
+        let sidecar_reaped = terminate_and_reap_sync(&mut self.sidecar);
+        if drop_cleanup_allowed(mgba, sidecar_reaped) {
+            let _ = self.cleanup_owned_rom();
+        }
     }
 }
 
-fn terminate_and_reap_sync(child: &mut Child) {
+fn drop_cleanup_allowed(mgba: MgbaShutdownReport, sidecar_reaped: bool) -> bool {
+    sidecar_reaped
+        && matches!(mgba.root_reap, RootReapEvidence::Reaped)
+        && matches!(mgba.job_termination, JobTerminationEvidence::Initiated)
+        && matches!(mgba.recovery, RecoveryDisposition::Clean)
+}
+
+fn terminate_and_reap_sync(child: &mut Child) -> bool {
     let already_exited = child.try_wait().ok().flatten().is_some();
     if !already_exited {
         let _ = child.start_kill();
@@ -1942,8 +2679,9 @@ fn terminate_and_reap_sync(child: &mut Child) {
     let deadline = Instant::now() + PROCESS_IO_TIMEOUT;
     loop {
         match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
-            Ok(None) if Instant::now() >= deadline => break,
+            Ok(Some(_)) => return true,
+            Err(_) => return false,
+            Ok(None) if Instant::now() >= deadline => return false,
             Ok(None) => std::thread::sleep(DROP_REAP_POLL),
         }
     }
@@ -1987,21 +2725,21 @@ async fn startup_failure_with_cleanup(
     let startup = startup_failure(startup, child).await;
     if !startup.cleanup_confirmed() {
         // Cleanup ownership remains with the marker when the sidecar could
-        // not be confirmed reaped. Drop still performs its bounded
-        // cancellation fallback, but must not turn an unconfirmed child into
-        // a silently successful artifact deletion here.
+        // not be confirmed reaped. Drop still performs a cancellation
+        // fallback, but its mGBA TerminateJobObject request is synchronous
+        // and may exceed the nominal deadline; never turn an unconfirmed
+        // child into a silently successful artifact deletion here.
         return startup;
     }
     startup_cleanup(startup, mgba)
 }
 
 async fn stop_child(child: &mut Child) -> Result<(), ProcessError> {
-    // The sidecar control protocol currently exposes checkpoint grant/abort,
-    // but no authenticated shutdown request, and tokio::process::Child does
-    // not provide a portable graceful-control primitive for mGBA.  Keep
-    // cancellation deterministic with the bounded kill-and-reap operation
-    // below; adding a graceful phase requires a protocol change rather than
-    // an implicit signal or stdin convention.
+    // This is the fail-closed fallback for startup failures or shutdown paths
+    // where the authenticated control transaction was unavailable or not
+    // accepted. Keep cancellation deterministic with the bounded kill-and-reap
+    // operation below instead of inventing an implicit signal or stdin
+    // convention.
     match child.try_wait().map_err(ProcessError::Termination)? {
         Some(_) => return Ok(()),
         None => {
@@ -2047,6 +2785,64 @@ async fn stop_child(child: &mut Child) -> Result<(), ProcessError> {
     }
 }
 
+async fn reap_sidecar_until(
+    child: &mut Child,
+    deadline: tokio::time::Instant,
+    allow_natural_wait: bool,
+) -> bool {
+    let natural_deadline = if allow_natural_wait {
+        (tokio::time::Instant::now() + Duration::from_secs(2)).min(deadline)
+    } else {
+        tokio::time::Instant::now()
+    };
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Err(_) => return false,
+            Ok(None) => {}
+        }
+        let now = tokio::time::Instant::now();
+        if now >= natural_deadline {
+            // start_kill is the only sidecar fallback; a race with natural
+            // exit is confirmed through the retained Child handle below.
+            if child.start_kill().is_err() && child.try_wait().ok().flatten().is_none() {
+                return false;
+            }
+            let value = matches!(
+                tokio::time::timeout_at(deadline, child.wait()).await,
+                Ok(Ok(_))
+            );
+            return value;
+        }
+        if now >= deadline {
+            return false;
+        }
+        let next_poll = (now + Duration::from_millis(10)).min(deadline);
+        tokio::time::sleep_until(next_poll).await;
+    }
+}
+
+#[cfg(any(not(windows), test))]
+async fn reap_tokio_child_until(child: &mut Child, deadline: Instant) -> bool {
+    if child.try_wait().ok().flatten().is_some() {
+        return true;
+    }
+    if child.start_kill().is_err() && child.try_wait().ok().flatten().is_none() {
+        return false;
+    }
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Err(_) => return false,
+            Ok(None) if Instant::now() >= deadline => return false,
+            Ok(None) => {
+                let next_poll = (Instant::now() + Duration::from_millis(10)).min(deadline);
+                tokio::time::sleep_until(tokio::time::Instant::from_std(next_poll)).await;
+            }
+        }
+    }
+}
+
 /// # Panics
 ///
 /// This cannot panic because a UUID v4 is rendered in canonical form.
@@ -2065,8 +2861,11 @@ const _: Option<ProtocolVersion> = None;
 #[cfg(test)]
 mod tests {
     use super::{
-        CleanupArtifact, CommandSpec, ControlChannel, PROCESS_IO_TIMEOUT, ProcessError,
-        SupervisedChildren, SupervisorEvent, ensure_absent, terminate_and_reap_sync,
+        CleanupArtifact, CommandSpec, ControlChannel, ControlShutdownEvidence,
+        DescendantCompletionEvidence, JobTerminationEvidence, MgbaShutdownReport,
+        OWNED_MGBA_ROM_ARG_INDEX, PROCESS_IO_TIMEOUT, ProcessError, RecoveryDisposition,
+        RootReapEvidence, ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
+        drop_cleanup_allowed, ensure_absent, new_command_id, terminate_and_reap_sync,
     };
     #[cfg(windows)]
     use super::{
@@ -2077,12 +2876,19 @@ mod tests {
     use crate::session::SessionWorkspace;
     #[cfg(windows)]
     use coop_sidecar::LocalSidecar;
+    use coop_sidecar::control::{
+        CommandStatus, ControlCommand, ControlEvent, MAX_CONTROL_LINE_BYTES,
+    };
     #[cfg(windows)]
     use std::fs;
-    use std::process::Stdio;
+    use std::{process::Stdio, time::Duration};
     #[cfg(windows)]
     use tempfile::tempdir;
-    use tokio::{net::TcpListener, process::Command};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        process::Command,
+    };
 
     fn long_running_child() -> tokio::process::Child {
         #[cfg(windows)]
@@ -2131,7 +2937,7 @@ mod tests {
         let directory = tempdir().unwrap();
         let executable = directory.path().join("tool.exe");
         fs::write(&executable, b"trusted").unwrap();
-        let spec = CommandSpec::mgba(&executable, "rom.gba").unwrap();
+        let spec = CommandSpec::sidecar(&executable, 1).unwrap();
         let replacement = directory.path().join("replacement.exe");
         fs::write(&replacement, b"attacker").unwrap();
         assert!(fs::remove_file(&executable).is_err());
@@ -2286,6 +3092,242 @@ mod tests {
         server.await.unwrap();
     }
 
+    async fn shutdown_control_pair(
+        response: impl FnOnce(coop_sidecar::control::CommandId) -> ControlEvent + Send + 'static,
+    ) -> (ControlChannel, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut line = Vec::new();
+            loop {
+                let mut byte = [0_u8; 1];
+                stream.read_exact(&mut byte).await.unwrap();
+                if byte[0] == b'\n' {
+                    break;
+                }
+                line.push(byte[0]);
+            }
+            let command: ControlCommand = serde_json::from_slice(&line).unwrap();
+            let ControlCommand::ShutdownRequest(request) = command else {
+                panic!("shutdown test must receive the shutdown command")
+            };
+            let mut bytes = serde_json::to_vec(&response(request.command_id)).unwrap();
+            bytes.push(b'\n');
+            stream.write_all(&bytes).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        (ControlChannel::from_stream_for_test(stream), server)
+    }
+
+    async fn shutdown_raw_control_pair(
+        response: Option<Vec<u8>>,
+        delay: std::time::Duration,
+    ) -> (ControlChannel, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut line = Vec::new();
+            loop {
+                let mut byte = [0_u8; 1];
+                stream.read_exact(&mut byte).await.unwrap();
+                if byte[0] == b'\n' {
+                    break;
+                }
+                line.push(byte[0]);
+            }
+            tokio::time::sleep(delay).await;
+            if let Some(response) = response {
+                let _ = stream.write_all(&response).await;
+            }
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        (ControlChannel::from_stream_for_test(stream), server)
+    }
+
+    #[tokio::test]
+    async fn shutdown_accepts_only_the_correlated_applied_result_and_is_idempotent() {
+        let (control, server) = shutdown_control_pair(|command_id| ControlEvent::CommandResult {
+            command_id,
+            status: CommandStatus::Applied,
+            reason: None,
+        })
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Graceful);
+        assert_eq!(disposition.control, ControlShutdownEvidence::Accepted);
+        assert_eq!(disposition.sidecar, RootReapEvidence::Reaped);
+        assert_eq!(disposition.mgba, RootReapEvidence::Reaped);
+        assert_eq!(
+            disposition.job_termination,
+            JobTerminationEvidence::Initiated
+        );
+        assert_eq!(
+            disposition.descendant_completion,
+            DescendantCompletionEvidence::NotAvailable
+        );
+        assert_eq!(children.shutdown(1, true).await, disposition);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_wrong_command_result_enters_forced_path_without_retrying_control() {
+        let (control, server) = shutdown_control_pair(|_| ControlEvent::CommandResult {
+            command_id: new_command_id(),
+            status: CommandStatus::Applied,
+            reason: None,
+        })
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        assert_eq!(disposition.sidecar, RootReapEvidence::Reaped);
+        assert_eq!(disposition.mgba, RootReapEvidence::Reaped);
+        assert_eq!(children.shutdown(1, true).await, disposition);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_accepts_an_exact_replayed_result() {
+        let (control, server) = shutdown_control_pair(|command_id| ControlEvent::CommandResult {
+            command_id,
+            status: CommandStatus::Replayed,
+            reason: None,
+        })
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Graceful);
+        assert_eq!(disposition.control, ControlShutdownEvidence::Accepted);
+        assert!(disposition.clean());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_rejected_result_enters_forced_path() {
+        let (control, server) = shutdown_control_pair(|command_id| ControlEvent::CommandResult {
+            command_id,
+            status: CommandStatus::Rejected,
+            reason: Some(coop_sidecar::control::CommandReason::WrongState),
+        })
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        assert!(disposition.clean());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_applied_with_a_reason_is_not_an_ack() {
+        let (control, server) = shutdown_control_pair(|command_id| ControlEvent::CommandResult {
+            command_id,
+            status: CommandStatus::Applied,
+            reason: Some(coop_sidecar::control::CommandReason::WrongState),
+        })
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_malformed_ack_enters_forced_path() {
+        let (control, server) =
+            shutdown_raw_control_pair(Some(b"not-json\n".to_vec()), Duration::ZERO).await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_oversized_ack_enters_forced_path() {
+        let (control, server) = shutdown_raw_control_pair(
+            Some(vec![b'x'; MAX_CONTROL_LINE_BYTES + 32]),
+            Duration::ZERO,
+        )
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_eof_before_ack_enters_forced_path() {
+        let (control, server) = shutdown_raw_control_pair(None, Duration::ZERO).await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_ack_timeout_enters_forced_path() {
+        let (control, server) = shutdown_raw_control_pair(
+            Some(b"{\"type\":\"checkpoint_ready\"}\n".to_vec()),
+            Duration::from_millis(700),
+        )
+        .await;
+        let mut children =
+            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
+        let disposition = children.shutdown(1, true).await;
+        assert_eq!(disposition.path, ShutdownPath::Forced);
+        assert_eq!(disposition.control, ControlShutdownEvidence::NotAccepted);
+        server.await.unwrap();
+    }
+
+    #[test]
+    fn drop_cleanup_requires_both_roots_and_job_evidence() {
+        let clean = MgbaShutdownReport {
+            soft_close: SoftCloseDisposition::NotAttempted,
+            root_reap: RootReapEvidence::Reaped,
+            job_termination: JobTerminationEvidence::Initiated,
+            recovery: RecoveryDisposition::Clean,
+        };
+        assert!(drop_cleanup_allowed(clean, true));
+        assert!(!drop_cleanup_allowed(clean, false));
+        assert!(!drop_cleanup_allowed(
+            MgbaShutdownReport {
+                root_reap: RootReapEvidence::Unknown,
+                ..clean
+            },
+            true
+        ));
+        assert!(!drop_cleanup_allowed(
+            MgbaShutdownReport {
+                job_termination: JobTerminationEvidence::Unknown,
+                ..clean
+            },
+            true
+        ));
+        assert!(!drop_cleanup_allowed(
+            MgbaShutdownReport {
+                recovery: RecoveryDisposition::Required,
+                ..clean
+            },
+            true
+        ));
+    }
+
     #[test]
     fn unmarked_staged_name_is_never_owned_for_cleanup() {
         let directory = tempfile::tempdir().unwrap();
@@ -2421,7 +3463,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn owned_mgba_argv_pins_implicit_save_path_and_disables_state_autoload() {
+    fn owned_mgba_argv_pins_implicit_save_and_disables_all_automatic_loads() {
         let directory = tempdir().unwrap();
         let executable = directory.path().join("mgba.exe");
         let rom = directory.path().join("rom.gba");
@@ -2430,16 +3472,24 @@ mod tests {
         let marker = staged_rom_marker_path(&rom);
         fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
         let spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        let canonical_rom = rom.canonicalize().unwrap();
+        let canonical_parent = canonical_rom.parent().unwrap();
         assert_eq!(
             spec.args,
             vec![
                 "-C".to_owned(),
-                format!("savegamePath={}", directory.path().to_string_lossy()),
+                format!("savegamePath={}", canonical_parent.to_string_lossy()),
                 "-C".to_owned(),
                 "autoload=0".to_owned(),
                 "-C".to_owned(),
                 "autosave=0".to_owned(),
-                rom.to_string_lossy().into_owned(),
+                "-C".to_owned(),
+                "cheatAutoload=0".to_owned(),
+                "-C".to_owned(),
+                "cheatAutosave=0".to_owned(),
+                "-p".to_owned(),
+                "NUL".to_owned(),
+                canonical_rom.to_string_lossy().into_owned(),
             ]
         );
         assert_eq!(
@@ -2493,12 +3543,34 @@ mod tests {
         );
         assert!(!spec.has_supported_argv());
         spec.args[1] = format!("savegamePath={}", directory.path().to_string_lossy());
-        spec.args[6] = directory
+        spec.args[OWNED_MGBA_ROM_ARG_INDEX] = directory
             .path()
             .join("other.gba")
             .to_string_lossy()
             .into_owned();
         assert!(!spec.has_supported_argv());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn staged_rom_rejects_auto_discovered_patch_and_cheat_siblings() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("mgba.exe");
+        let rom = directory.path().join("rom.gba");
+        fs::write(&executable, b"trusted emulator").unwrap();
+        fs::write(&rom, b"trusted rom").unwrap();
+        let marker = staged_rom_marker_path(&rom);
+        fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+        for extension in ["ips", "ups", "bps", "cheats"] {
+            fs::write(rom.with_extension(extension), b"unbound input").unwrap();
+            assert!(matches!(
+                CommandSpec::mgba_owned_staged(&executable, &rom, &marker),
+                Err(ProcessError::InvalidArgument)
+            ));
+            fs::remove_file(rom.with_extension(extension)).unwrap();
+        }
+        assert!(rom.exists());
+        assert!(marker.exists());
     }
 
     #[cfg(windows)]
@@ -2511,7 +3583,11 @@ mod tests {
         fs::write(&rom, b"trusted rom").unwrap();
         let marker = staged_rom_marker_path(&rom);
         fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
-        let spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        let mut spec = CommandSpec::mgba_owned_staged(&executable, &rom, &marker).unwrap();
+        // The production guard intentionally denies DELETE so official mGBA's
+        // read-only CRT open remains compatible. Simulate a hostile replacement
+        // only after the guard is explicitly lost; cleanup must retain evidence.
+        let _ = spec.rom_guards.take();
         fs::remove_file(&rom).unwrap();
         fs::write(&rom, b"foreign replacement").unwrap();
 
@@ -2557,7 +3633,7 @@ mod tests {
         let sidecar = CommandSpec::sidecar(&mgba_path, 1).unwrap();
         assert!(matches!(
             SupervisedChildren::start(sidecar, mgba, 1).await,
-            Err(ProcessError::InvalidArgument)
+            Err(ProcessError::MgbaIdentity)
         ));
     }
 

@@ -367,7 +367,15 @@ fn fixed_ids() -> (
 
 fn compatibility() -> BuildCompatibility {
     let manifest = serde_json::from_value(serde_json::json!({
-        "schema_version": 2,
+        "schema_version": 3,
+        "emulator": {
+            "name": "mGBA",
+            "version": "0.10.5",
+            "platform": "windows-x64",
+            "variant": "Qt",
+            "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
+            "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+        },
         "game_build": {
             "id": "pokeemerald-coop",
             "numeric_id": 65536,

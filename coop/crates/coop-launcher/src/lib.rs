@@ -8,13 +8,17 @@ pub mod epoch;
 pub mod keychain;
 pub mod process;
 pub mod session;
+#[cfg(windows)]
+pub mod windows_mgba_supervisor;
 
 pub use auth::{AuthApi, AuthError, AuthSession};
 pub use compat::{BuildCompatibility, CompatibilityError};
 pub use epoch::{EpochError, EpochRecord, EpochStore};
 pub use keychain::{KeychainError, OsKeychain, RefreshTokenStore};
 pub use process::{
-    CommandSpec, ControlChannel, ProcessError, SupervisedChildren, SupervisorEvent,
+    CommandSpec, ControlChannel, ControlShutdownEvidence, DescendantCompletionEvidence,
+    JobTerminationEvidence, ProcessError, RecoveryDisposition, RootReapEvidence,
+    ShutdownDisposition, ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
     materialize_bridge_session,
 };
 pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};

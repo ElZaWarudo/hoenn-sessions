@@ -66,9 +66,10 @@ savestates, and BIOS files remain ignored and local.
 The smoke exercises invite registration, case-insensitive login, lease fencing,
 snapshot prepare/upload/finalize, signed resume verification, reconnect, stale
 fence rejection, release, and revision-preserving reacquire. Its synthetic SAV
-is an opaque serialized `CharacterCloudState` fixture used to test regional
-serialization and CAS behavior. It is not a production `.sav` block and does
-not demonstrate interoperability with a real ROM save.
+is a byte-accurate 128 KiB PokéCrossroads Flash1M image containing two rotated
+sector slots and the frozen `CSP1` v1 payload. It is constructed at the
+deterministic ROM/mGBA seam, so it validates canonical save parsing and CAS
+behavior without claiming that stock mGBA produced the bytes interactively.
 
 If a smoke fails, first stop the server/launcher processes and rerun the
 command; private temporary session directories are cleaned up by the test. A
@@ -85,6 +86,15 @@ listener ownership checks and likewise fails before launching any target on
 other operating systems. Cross-platform secure process binding is a later
 milestone; the server and integration test code remains portable to compile.
 
+On Windows, both the version probe and gameplay mGBA process are attached to a
+kill-on-close Job Object during process creation through the exactly pinned
+`windows-spawn` 0.1.0 boundary. After checkpoint drain, shutdown uses a 500 ms
+acknowledgement bound and one nominal 10-second process-cleanup deadline.
+Invalid, missing, or late acknowledgements select forced cleanup. The
+dependency exposes no Job-empty oracle, and synchronous Windows calls are not
+cancellable, so neither zero remaining descendants nor a hard 10-second
+wall-clock maximum is claimed.
+
 ## Run the sidecar and mGBA bridge
 
 The cloud server owns the durable, nonzero session epoch. The launcher persists
@@ -97,24 +107,35 @@ response when launching the sidecar; never substitute a hand-written epoch:
 cargo run -p coop-sidecar -- --session-epoch <server-issued-session-epoch>
 ```
 
-The sidecar prints one JSON descriptor containing its OS-selected loopback port
-and ephemeral secret. Use it to create ignored `bridge/session.lua` from the
-example. After a legal local ROM build, generate the address artifacts:
+The sidecar prints one bounded JSON descriptor containing distinct OS-selected
+loopback bridge and control endpoints with independent ephemeral secrets. Only
+the bridge endpoint and bridge secret are written to `session.lua`. After a
+legal local ROM build, generate the address artifacts:
 
 ```text
 python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
 ```
 
+The generated `dist/bridge_manifest.json` uses outer schema 3 and identifies
+the official mGBA 0.10.5 Windows x64 Qt artifact: archive SHA-256
+`b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a` and
+executable SHA-256
+`5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247`. The launcher
+owns executable identity validation before probing or spawning mGBA. Lua gets
+only the generated address projection and does not receive or validate those
+host executable digests.
+
 Before creating `session.lua` or starting the sidecar, the launcher must hash
 the selected ROM and require an exact match with `game_build.rom_sha256` in
-`dist/bridge_manifest.json`. The Lua API does not replace this whole-file
-launcher check.
+`dist/bridge_manifest.json`; it must fail closed on a mismatch. The Lua API
+does not replace this whole-file launcher check or the launcher-owned mGBA
+identity check.
 
-Open the matching ROM in pinned mGBA 0.10.5, choose **Tools → Scripting**, and
-manually load `bridge/main.lua`. Stock mGBA 0.10.5 requires this UI action;
-there is no supported script-autoload command-line flag. Generated addresses,
-session secrets, ROMs, saves, savestates, and BIOS files must remain
-uncommitted.
+Open the matching ROM in the validated official mGBA 0.10.5 Windows x64 Qt
+build, choose **Tools → Scripting**, and manually load `bridge/main.lua`.
+Stock mGBA 0.10.5 requires this UI action; there is no supported script autoload
+command-line flag. Generated addresses, session secrets, ROMs, saves,
+savestates, and BIOS files must remain uncommitted.
 
 ## Deliberately deferred
 

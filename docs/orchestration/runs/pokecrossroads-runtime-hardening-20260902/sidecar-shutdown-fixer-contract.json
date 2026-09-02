@@ -1,0 +1,113 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Initial and pre-bridge quiescing selectors use persistent bounded reader tasks or persistent codecs, so cancellation cannot discard fragmented authenticated control bytes or authenticated bridge-frame bytes; race-focused fragmentation tests pass.",
+      "id": "SSF-001"
+    },
+    {
+      "description": "ReconnectState, including every non-Idle checkpoint state, is carried through replacement control and replacement bridge acquisition; shutdown remains WrongState while a checkpoint is pending, and non-shutdown commands received before bridge authentication are deferred and later applied exactly once.",
+      "id": "SSF-002"
+    },
+    {
+      "description": "Once a bridge has authenticated, only bridge EOF proves emulator exit. Control FIN, RST, or ambiguous ACK loss preserves Quiescing and concurrently watches bridge EOF while allowing authenticated replay, all under one absolute quiescing deadline. Before any bridge authenticates, authenticated control EOF after an Applied shutdown may complete shutdown.",
+      "id": "SSF-003"
+    },
+    {
+      "description": "Routine checkpoint ledger saturation reserves capacity for one lifecycle shutdown record, so a correct authenticated shutdown still enters Quiescing and remains exactly replayable in active and pre-bridge states without weakening command-ID conflict detection.",
+      "id": "SSF-004"
+    },
+    {
+      "description": "Unauthenticated or invalid bridge candidates cannot serially block authenticated shutdown handling for a handshake timeout; candidate authentication is raced safely against persistent control input and bounded by the existing handshake and the single quiescing deadline.",
+      "id": "SSF-005"
+    },
+    {
+      "description": "All prior sidecar checkpoint/reconnect tests plus new regression tests pass; sidecar clippy with warnings denied, formatting, locked metadata, and diff checks pass with edits confined to owned_files.",
+      "id": "SSF-006"
+    }
+  ],
+  "closed_decisions": [
+    "This fixer starts from the sealed sidecar shutdown patch sha256:c9166db6a9ca8319afd4c09a94df3ce9bafba26abd8d7b105632da9f22ee617a applied to base e376beb7defda5d88d665a55c82d0472c3346d0a; preserve protocol v2 and its typed shutdown_request wire shape.",
+    "Do not reset retained reconnect state during pair acquisition. A shutdown is accepted only from the true retained Idle state; pending checkpoint state remains authoritative across both control and bridge replacement.",
+    "Use persistent bounded reader ownership across tokio::select cancellation points. A future-local partially consumed JSON line or bridge frame must never be dropped and resumed mid-message.",
+    "Before an authenticated bridge exists, defer at most the bounded commands already accepted by the persistent control reader and hand them into the active session in FIFO order; do not permanently ledger a grant or abort as WrongState merely because bridge authentication is pending.",
+    "After an authenticated bridge exists, control closure is not emulator-exit proof. Continue observing bridge EOF while accepting a replacement authenticated control peer for exact result replay. Use one absolute five-second quiescing deadline across retries; timeout is a typed failure and never an Applied emulator-exit claim.",
+    "Reserve shutdown capacity independently from routine checkpoint history. Command-ID reuse across checkpoint and shutdown records still conflicts, and an Applied shutdown result is recorded before Quiescing and before ACK.",
+    "Keep all channels, command queues, reads, writes, authentication attempts, histories, and deadlines bounded. Keep bridge ABI/game protocol at 1 and make no launcher/session edits in this unit."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-sidecar/src/control.rs coop/crates/coop-sidecar/src/server.rs",
+      "rtk rg -n Quiescing coop/crates/coop-sidecar/src/server.rs"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:3cac2a59bd9ebcfa0ea000fd525bfd375ba8cbe4280a43f56bdbe44fd51e4159",
+  "contract_id": "pokecrossroads-runtime-hardening-20260902-sidecar-shutdown-fixer-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit launcher, cloud, protocol, server, save, bridge/Lua, ROM, manifest, documentation, Cargo manifests, Cargo.lock, orchestration state, or any path outside owned_files.",
+    "Do not change the public control-v2 command/event shapes, accept shutdown from retained non-Idle state, treat control EOF as emulator exit after bridge authentication, silently drop deferred commands, or weaken replay conflict behavior.",
+    "Do not add dependencies, unsafe Rust, diagnostic allow attributes, shell execution, unbounded reads/writes/channels/retries/histories, detached tasks, or secret-bearing logs/errors.",
+    "Do not stage, commit, branch, fetch, pull, push, contact Git remotes, create/remove worktrees, or revert edits made by another worker."
+  ],
+  "lane": "deep",
+  "objective": "Correct the reviewed sidecar shutdown implementation so fragmented input is cancellation-safe, reconnect state is preserved, quiescing cannot miss bridge exit, lifecycle shutdown survives routine-ledger saturation, and invalid bridge candidates cannot strand authenticated shutdown.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/swarm/swarm-startup.md",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "bridge/main.lua"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required verification command has a recorded outcome.",
+      "A required change crosses owned_files or the five-second quiescing contract cannot be implemented without weakening checkpoint semantics.",
+      "A concrete protocol or lifecycle blocker prevents safe progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "sidecar-authenticated-shutdown-fixer"
+}

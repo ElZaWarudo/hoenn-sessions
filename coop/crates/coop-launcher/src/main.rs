@@ -412,7 +412,7 @@ async fn run() -> Result<(), CliError> {
         .await
         .map_err(|_| CliError::Runtime)?;
     eprintln!(
-        "Session materialized at {}. Stock mGBA 0.10.5 has no certified startup-script flag; load {} through Tools > Scripting, then load {} manually if present. New captures must be written to {}.",
+        "Session materialized at {}. The launcher validated the official mGBA 0.10.5 Windows x64 Qt artifact; it has no certified startup-script flag, so load {} through Tools > Scripting, then load {} manually if present. New captures must be written to {}.",
         session.workspace.path().display(),
         session.workspace.path().join("main.lua").display(),
         session.workspace.path().join("resume.input.ss1").display(),

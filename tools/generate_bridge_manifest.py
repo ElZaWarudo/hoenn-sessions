@@ -26,7 +26,17 @@ BRIDGE_SYMBOL = "gCoopNetBridge"
 SAVE_BLOCK3_SYMBOL = "gSaveblock3"
 SAVE_DESCRIPTOR_SYMBOL = "gCoopSaveSchemaDescriptor"
 ABI_SYMBOLS = frozenset((BRIDGE_SYMBOL, SAVE_BLOCK3_SYMBOL, SAVE_DESCRIPTOR_SYMBOL))
-MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_SCHEMA_VERSION = 3
+EMULATOR_NAME = "mGBA"
+EMULATOR_VERSION = "0.10.5"
+EMULATOR_PLATFORM = "windows-x64"
+EMULATOR_VARIANT = "Qt"
+EMULATOR_ARCHIVE_SHA256 = (
+    "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a"
+)
+EMULATOR_EXECUTABLE_SHA256 = (
+    "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+)
 BRIDGE_MAGIC = 0x504B434F
 BRIDGE_ABI_VERSION = 1
 GAME_PROTOCOL_VERSION = 1
@@ -110,6 +120,25 @@ class SaveSchemaDescriptor:
     gym_bits_offset: int
     status_flags_offset: int
     regional_progress_offset: int
+
+
+def validate_emulator_contract(value: object) -> dict[str, str]:
+    """Return the exact official Windows Qt mGBA artifact contract."""
+    expected = {
+        "name": EMULATOR_NAME,
+        "version": EMULATOR_VERSION,
+        "platform": EMULATOR_PLATFORM,
+        "variant": EMULATOR_VARIANT,
+        "archive_sha256": EMULATOR_ARCHIVE_SHA256,
+        "executable_sha256": EMULATOR_EXECUTABLE_SHA256,
+    }
+    if not isinstance(value, dict) or set(value) != set(expected):
+        raise ManifestError("manifest emulator contract has unexpected fields")
+    for field, wanted in expected.items():
+        actual = value[field]
+        if not isinstance(actual, str) or actual != wanted:
+            raise ManifestError(f"manifest emulator {field} is not pinned")
+    return expected.copy()
 
 
 def parse_nm_symbols(output: str) -> dict[str, Symbol]:
@@ -445,6 +474,16 @@ def build_manifest(
 
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
+        "emulator": validate_emulator_contract(
+            {
+                "name": EMULATOR_NAME,
+                "version": EMULATOR_VERSION,
+                "platform": EMULATOR_PLATFORM,
+                "variant": EMULATOR_VARIANT,
+                "archive_sha256": EMULATOR_ARCHIVE_SHA256,
+                "executable_sha256": EMULATOR_EXECUTABLE_SHA256,
+            }
+        ),
         "game_build": {
             "id": validate_game_build_id(GAME_BUILD_TEXT_ID),
             "numeric_id": GAME_BUILD_ID,

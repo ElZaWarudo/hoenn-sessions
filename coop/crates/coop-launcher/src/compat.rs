@@ -4,10 +4,15 @@ use std::{
     fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
+    time::Duration,
+};
+
+#[cfg(not(windows))]
+use std::{
     process::{Command, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use coop_cloud::{
@@ -20,20 +25,46 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub const EXPECTED_MGBA_VERSION: &str = "0.10.5";
+pub const EXPECTED_MGBA_PLATFORM: &str = "windows-x64";
+pub const EXPECTED_MGBA_VARIANT: &str = "Qt";
+pub const EXPECTED_MGBA_EXECUTABLE_SHA256: &str =
+    "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247";
+pub const EXPECTED_MGBA_ARCHIVE_SHA256: &str =
+    "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a";
 pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 /// Keep this in sync with the CLI's source-ROM admission limit.  The public
 /// compatibility API is also callable without the CLI, so it must enforce
 /// the same bound before hashing an untrusted path.
 pub const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_MGBA_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_MGBA_OUTPUT_BYTES: usize = 64 * 1024;
 pub const MGBA_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-pub const BRIDGE_MANIFEST_SCHEMA: u16 = 2;
+pub const BRIDGE_MANIFEST_SCHEMA: u16 = 3;
 pub const BRIDGE_ABI: u16 = 1;
 pub const GAME_PROTOCOL: u16 = 1;
 pub const BRIDGE_MESSAGE_BYTES: u64 = 144;
 pub const BRIDGE_PAYLOAD_BYTES: u64 = 128;
 pub const BRIDGE_QUEUE_CAPACITY: u64 = 32;
 pub const BRIDGE_SIZE: u64 = 9244;
+
+pub(crate) fn expected_mgba_executable_digest() -> [u8; 32] {
+    let encoded = EXPECTED_MGBA_EXECUTABLE_SHA256.as_bytes();
+    let mut digest = [0_u8; 32];
+    let mut index = 0;
+    while index < digest.len() {
+        digest[index] = (hex_value(encoded[index * 2]) << 4) | hex_value(encoded[index * 2 + 1]);
+        index += 1;
+    }
+    digest
+}
+
+const fn hex_value(value: u8) -> u8 {
+    match value {
+        b'0'..=b'9' => value - b'0',
+        b'a'..=b'f' => value - b'a' + 10,
+        _ => 0,
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum CompatibilityError {
@@ -47,6 +78,8 @@ pub enum CompatibilityError {
     RomHash,
     #[error("mGBA executable cannot be started")]
     Mgba(#[source] io::Error),
+    #[error("official mGBA executable identity does not match the pinned artifact")]
+    MgbaIdentity,
     #[error("mGBA output is too large")]
     MgbaOutput,
     #[error("mGBA probe descendant cleanup could not be confirmed")]
@@ -74,6 +107,19 @@ pub struct BridgeManifest {
     pub game_build: GameBuildManifest,
     pub net_bridge: NetBridgeManifest,
     pub save: SaveManifest,
+    #[serde(default)]
+    pub emulator: Option<EmulatorManifest>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmulatorManifest {
+    pub name: String,
+    pub version: String,
+    pub platform: String,
+    pub variant: String,
+    pub archive_sha256: String,
+    pub executable_sha256: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -235,13 +281,35 @@ impl BuildCompatibility {
         let manifest: BridgeManifest =
             serde_json::from_slice(&manifest_bytes).map_err(|_| CompatibilityError::Manifest)?;
         validate_manifest(&manifest)?;
+        #[cfg(windows)]
+        crate::process::with_mgba_executable_guard(mgba_path, |path, digest| {
+            if digest != crate::compat::expected_mgba_executable_digest() {
+                return Err(CompatibilityError::MgbaIdentity);
+            }
+            probe_mgba(path)
+        })
+        .map_err(|error| match error {
+            crate::process::ProcessError::MgbaIdentity => CompatibilityError::MgbaIdentity,
+            crate::process::ProcessError::Spawn(source) => CompatibilityError::Mgba(source),
+            _ => CompatibilityError::Mgba(io::Error::other("mGBA executable binding failed")),
+        })??;
+        #[cfg(not(windows))]
+        {
+            let mgba_sha256 = hash_file_bounded(mgba_path, MAX_MGBA_EXECUTABLE_BYTES)
+                .map_err(CompatibilityError::Mgba)?;
+            let expected_mgba_sha256 = Sha256Digest::parse(EXPECTED_MGBA_EXECUTABLE_SHA256)
+                .map_err(|_| CompatibilityError::Manifest)?;
+            if mgba_sha256 != expected_mgba_sha256 {
+                return Err(CompatibilityError::MgbaIdentity);
+            }
+            probe_mgba(mgba_path)?;
+        }
         let rom_sha256 = hash_file(rom_path).map_err(CompatibilityError::Rom)?;
         let expected_hash = Sha256Digest::parse(&manifest.game_build.rom_sha256)
             .map_err(|_| CompatibilityError::Manifest)?;
         if rom_sha256 != expected_hash {
             return Err(CompatibilityError::RomHash);
         }
-        probe_mgba(mgba_path)?;
         let game_build_id = GameBuildId::new(manifest.game_build.id.clone())
             .map_err(|_| CompatibilityError::Manifest)?;
         let target = CompatibilityTarget::new(
@@ -262,6 +330,20 @@ impl BuildCompatibility {
 }
 
 fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError> {
+    let Some(emulator) = manifest.emulator.as_ref() else {
+        return Err(CompatibilityError::Manifest);
+    };
+    if emulator.name != "mGBA"
+        || emulator.version != EXPECTED_MGBA_VERSION
+        || emulator.platform != EXPECTED_MGBA_PLATFORM
+        || emulator.variant != EXPECTED_MGBA_VARIANT
+        || Sha256Digest::parse(&emulator.archive_sha256).is_err()
+        || Sha256Digest::parse(&emulator.executable_sha256).is_err()
+        || emulator.archive_sha256 != EXPECTED_MGBA_ARCHIVE_SHA256
+        || emulator.executable_sha256 != EXPECTED_MGBA_EXECUTABLE_SHA256
+    {
+        return Err(CompatibilityError::Manifest);
+    }
     let game = &manifest.game_build;
     let bridge = &manifest.net_bridge;
     GameBuildId::new(game.id.clone()).map_err(|_| CompatibilityError::Manifest)?;
@@ -338,8 +420,12 @@ fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError
 }
 
 fn hash_file(path: &Path) -> io::Result<Sha256Digest> {
+    hash_file_bounded(path, MAX_ROM_BYTES)
+}
+
+fn hash_file_bounded(path: &Path, max_bytes: u64) -> io::Result<Sha256Digest> {
     use sha2::{Digest, Sha256};
-    let mut file = open_bounded_regular_file(path, MAX_ROM_BYTES)?;
+    let mut file = open_bounded_regular_file(path, max_bytes)?;
     let mut digest = Sha256::new();
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut total = 0_u64;
@@ -351,7 +437,7 @@ fn hash_file(path: &Path) -> io::Result<Sha256Digest> {
         total = total
             .checked_add(read as u64)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "ROM is too large"))?;
-        if total > MAX_ROM_BYTES {
+        if total > max_bytes {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "ROM is too large",
@@ -456,6 +542,42 @@ fn reject_symlink_components(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
+    let output =
+        crate::windows_mgba_supervisor::probe(path, &["--version".to_owned()], MGBA_PROBE_TIMEOUT)
+            .map_err(|failure| match failure {
+                crate::windows_mgba_supervisor::ProbeFailure::Spawn(error)
+                | crate::windows_mgba_supervisor::ProbeFailure::Output(error) => {
+                    CompatibilityError::Mgba(error)
+                }
+                crate::windows_mgba_supervisor::ProbeFailure::Cleanup(_) => {
+                    CompatibilityError::MgbaCleanup
+                }
+                crate::windows_mgba_supervisor::ProbeFailure::OutputTooLarge => {
+                    CompatibilityError::MgbaOutput
+                }
+                crate::windows_mgba_supervisor::ProbeFailure::Timeout => {
+                    CompatibilityError::MgbaTimeout
+                }
+            })?;
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    if !output.status.success()
+        || !text.lines().any(|line| {
+            let line = line.trim();
+            line.contains("mGBA")
+                && line
+                    .split_whitespace()
+                    .any(|token| token == EXPECTED_MGBA_VERSION)
+        })
+    {
+        return Err(CompatibilityError::MgbaVersion);
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
 fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
     let deadline = Instant::now() + MGBA_PROBE_TIMEOUT;
     let mut command = Command::new(path);
@@ -563,14 +685,17 @@ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 type ProbeCapture = (Vec<u8>, bool);
 
+#[cfg(not(windows))]
 struct ProbeOutput {
     stderr: bool,
     bytes: Vec<u8>,
     oversized: bool,
 }
 
+#[cfg(not(windows))]
 fn spawn_bounded_reader<R: Read + Send + 'static>(
     mut reader: R,
     stderr: bool,
@@ -599,6 +724,7 @@ fn spawn_bounded_reader<R: Read + Send + 'static>(
     });
 }
 
+#[cfg(not(windows))]
 fn receive_probe_outputs(
     receiver: &Receiver<ProbeOutput>,
     deadline: Instant,
@@ -639,6 +765,7 @@ fn receive_probe_outputs(
     ))
 }
 
+#[cfg(not(windows))]
 fn store_probe_output(
     result: ProbeOutput,
     stdout: &mut Option<ProbeCapture>,
@@ -654,60 +781,17 @@ fn store_probe_output(
     Ok(())
 }
 
+#[cfg(not(windows))]
 fn terminate_probe_child(child: &mut std::process::Child, deadline: Instant) -> bool {
     // If the root has already exited, its PID is no longer a safe process-tree
     // handle. A descendant may still own either pipe, and without a Job Object
     // there is no safe std-only way to prove those descendants are gone.
     let root_exited = matches!(child.try_wait(), Ok(Some(_)));
-    #[cfg(windows)]
-    let mut cleanup_confirmed = !root_exited;
-    #[cfg(not(windows))]
-    let mut cleanup_confirmed = {
-        // The production launcher is Windows-only.  The portable standard
-        // library can reap the direct child, but cannot prove that inherited
-        // pipe descendants were terminated, so fail closed on this boundary.
-        let _ = root_exited;
-        false
-    };
-    #[cfg(windows)]
-    {
-        // `Child::kill` only terminates the direct process on Windows.  Use
-        // the OS-provided process-tree terminator with a bounded wait only
-        // while the root is still live (timeout/output failure). Calling it
-        // after `try_wait` observed exit could target a recycled PID.
-        if !root_exited {
-            let pid = child.id();
-            if pid != 0
-                && let Some((taskkill, _taskkill_guard, _system32_guards)) = trusted_taskkill()
-            {
-                let mut command = Command::new(taskkill);
-                command
-                    .env_clear()
-                    .arg("/PID")
-                    .arg(pid.to_string())
-                    .arg("/T")
-                    .arg("/F")
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
-                if let Ok(mut killer) = command.spawn() {
-                    cleanup_confirmed = wait_for_probe_child(&mut killer, deadline)
-                        .is_some_and(|status| status.success());
-                    if !cleanup_confirmed {
-                        // Do not use Child::wait here: a compromised or
-                        // wedged helper must never extend probe cleanup past
-                        // the single absolute deadline.
-                        let _ = killer.kill();
-                        let _ = wait_for_probe_child(&mut killer, deadline);
-                    }
-                } else {
-                    cleanup_confirmed = false;
-                }
-            } else {
-                cleanup_confirmed = false;
-            }
-        }
-    }
+    // The portable standard library can reap the direct child, but cannot
+    // prove that inherited pipe descendants were terminated. The production
+    // Windows boundary uses a Job Object in `windows_mgba_supervisor`.
+    let mut cleanup_confirmed = false;
+    let _ = root_exited;
     if child.kill().is_err() && !matches!(child.try_wait(), Ok(Some(_))) {
         cleanup_confirmed = false;
     }
@@ -718,6 +802,7 @@ fn terminate_probe_child(child: &mut std::process::Child, deadline: Instant) -> 
     cleanup_confirmed
 }
 
+#[cfg(not(windows))]
 fn wait_for_probe_child(
     child: &mut std::process::Child,
     deadline: Instant,
@@ -739,50 +824,7 @@ fn wait_for_probe_child(
     }
 }
 
-#[cfg(windows)]
-fn trusted_taskkill() -> Option<(std::path::PathBuf, std::fs::File, Vec<std::fs::File>)> {
-    use std::os::windows::fs::OpenOptionsExt;
-    // System32 is the only accepted process-tree terminator location.  A
-    // missing or redirected installation fails closed to direct-child kill.
-    let taskkill = std::path::PathBuf::from(r"C:\Windows\System32\taskkill.exe");
-    let parent = taskkill.parent()?;
-    let mut system32_guards = Vec::new();
-    let mut ancestor = Some(parent);
-    while let Some(path) = ancestor {
-        let mut parent_options = std::fs::OpenOptions::new();
-        parent_options
-            .read(true)
-            .share_mode(0x0000_0003)
-            .custom_flags(0x0220_0000);
-        system32_guards.push(parent_options.open(path).ok()?);
-        ancestor = path.parent().filter(|next| *next != path);
-    }
-    let canonical = std::fs::canonicalize(&taskkill).ok()?;
-    if !is_fixed_taskkill_path(&canonical) {
-        return None;
-    }
-    let mut file_options = std::fs::OpenOptions::new();
-    file_options
-        .read(true)
-        .share_mode(0x0000_0001)
-        .custom_flags(0x0020_0000);
-    let file = file_options.open(&taskkill).ok()?;
-    Some((taskkill, file, system32_guards))
-}
-
-#[cfg(windows)]
-fn normalize_windows_path(path: &Path) -> Option<String> {
-    let path = path.to_str()?;
-    let path = path.strip_prefix("\\\\?\\").unwrap_or(path);
-    Some(path.replace('/', "\\").to_ascii_lowercase())
-}
-
-#[cfg(windows)]
-fn is_fixed_taskkill_path(path: &Path) -> bool {
-    normalize_windows_path(path)
-        .is_some_and(|path| path.trim_end_matches('\\') == r"c:\windows\system32\taskkill.exe")
-}
-
+#[cfg(not(windows))]
 fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
     if output.len().saturating_add(chunk.len()) > MAX_MGBA_OUTPUT_BYTES {
         return true;
@@ -793,17 +835,22 @@ fn append_bounded_probe_bytes(output: &mut Vec<u8>, chunk: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    #[cfg(not(windows))]
     use std::{
-        fs,
         sync::mpsc,
         time::{Duration, Instant},
     };
 
+    use super::{CompatibilityError, MAX_MANIFEST_BYTES, open_bounded_regular_file};
+
+    #[cfg(not(windows))]
     use super::{
-        CompatibilityError, MAX_MANIFEST_BYTES, MAX_MGBA_OUTPUT_BYTES, ProbeOutput,
-        append_bounded_probe_bytes, open_bounded_regular_file, receive_probe_outputs,
+        MAX_MGBA_OUTPUT_BYTES, ProbeOutput, append_bounded_probe_bytes, receive_probe_outputs,
     };
 
+    #[cfg(not(windows))]
     #[test]
     fn probe_output_is_bounded_without_storing_untrusted_bytes() {
         let input = vec![b'x'; MAX_MGBA_OUTPUT_BYTES];
@@ -813,6 +860,7 @@ mod tests {
         assert_eq!(output.len(), MAX_MGBA_OUTPUT_BYTES);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn probe_output_collection_uses_one_absolute_deadline() {
         let (_sender, receiver) = mpsc::channel();
@@ -824,6 +872,7 @@ mod tests {
         assert!(started.elapsed() < Duration::from_millis(80));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn oversized_probe_output_aborts_collection_immediately() {
         let (sender, receiver) = mpsc::channel();
@@ -844,6 +893,7 @@ mod tests {
         ));
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn early_probe_output_is_preserved_for_final_collection() {
         let (sender, receiver) = mpsc::channel();
@@ -891,28 +941,59 @@ mod tests {
         assert!(open_bounded_regular_file(&link, MAX_MANIFEST_BYTES).is_err());
     }
 
-    #[cfg(windows)]
     #[test]
-    fn exited_probe_root_does_not_claim_descendant_cleanup() {
-        let mut child = std::process::Command::new("cmd.exe")
-            .args(["/C", "exit", "0"])
-            .spawn()
-            .unwrap();
-        assert!(
-            super::wait_for_probe_child(&mut child, Instant::now() + Duration::from_secs(1))
-                .is_some()
-        );
-        assert!(!super::terminate_probe_child(
-            &mut child,
-            Instant::now() + Duration::from_secs(1)
-        ));
+    fn checked_manifest_requires_the_pinned_emulator_contract() {
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("dist")
+            .join("bridge_manifest.json");
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        for mutation in ["missing", "wrong-version", "unknown-field", "wrong-digest"] {
+            let mut mutated = value.clone();
+            match mutation {
+                "missing" => {
+                    mutated.as_object_mut().unwrap().remove("emulator");
+                }
+                "wrong-version" => {
+                    mutated["emulator"]["version"] = serde_json::Value::from("0.10.4");
+                }
+                "unknown-field" => {
+                    mutated["emulator"]["unexpected"] = serde_json::Value::from(true);
+                }
+                "wrong-digest" => {
+                    mutated["emulator"]["executable_sha256"] =
+                        serde_json::Value::from("00".repeat(32));
+                }
+                _ => unreachable!(),
+            }
+            let directory = tempfile::tempdir().unwrap();
+            let manifest = directory.path().join("manifest.json");
+            fs::write(&manifest, serde_json::to_vec(&mutated).unwrap()).unwrap();
+            assert!(matches!(
+                super::BuildCompatibility::validate(&manifest, "missing.gba", "missing.exe"),
+                Err(CompatibilityError::Manifest)
+            ));
+        }
     }
 
-    #[cfg(windows)]
     #[test]
-    fn trusted_taskkill_accepts_normalized_fixed_system_path() {
-        let extended = std::path::Path::new(r"\\?\C:\Windows\System32\taskkill.exe");
-        assert!(super::is_fixed_taskkill_path(extended));
-        assert!(super::trusted_taskkill().is_some());
+    fn wrong_executable_digest_is_rejected_before_probe() {
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("dist")
+            .join("bridge_manifest.json");
+        let directory = tempfile::tempdir().unwrap();
+        let manifest = directory.path().join("manifest.json");
+        fs::copy(source, &manifest).unwrap();
+        let executable = directory.path().join("mGBA.exe");
+        fs::write(&executable, b"not the official mGBA executable").unwrap();
+        assert!(matches!(
+            super::BuildCompatibility::validate(&manifest, "missing.gba", &executable),
+            Err(CompatibilityError::MgbaIdentity)
+        ));
     }
 }

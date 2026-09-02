@@ -40,10 +40,20 @@ The bridge and control listeners use distinct per-process ephemeral secrets.
 The launcher authenticates control first, then writes only the bridge address
 and bridge secret to its private generated `session.lua`; never copy the
 control secret into Lua or an environment variable. Do not print any secret or
-token. If the local process is interrupted, stop its children and remove only
-the private temporary session directory before retrying. Reconnect must use the
-server-issued epoch and the persisted monotonic epoch record; never hand-edit
-or wrap it.
+token. A requested launcher shutdown drains at most one already-ready
+authenticated checkpoint and never fabricates a new checkpoint. It then sends
+one epoch-bound `shutdown_request` over the authenticated control channel and
+accepts only a correlated `Applied` or `Replayed` result without a reason. The
+sidecar records an accepted command before acknowledging it and can replay that
+result across control reconnects within the same process. After acknowledgement,
+the launcher gives mGBA one best-effort non-forced close opportunity, then
+attempts Job termination and root reaping. Uncertain evidence retains recovery
+material.
+
+If interrupted, let the launcher perform child cleanup. Do not manually remove
+a retained session directory or ownership marker when shutdown evidence
+requires recovery. Reconnect must use the server-issued epoch and persisted
+monotonic epoch record; never hand-edit or wrap it.
 
 After linking a legal local ROM build, generate the address module and manifest:
 
@@ -51,11 +61,18 @@ After linking a legal local ROM build, generate the address module and manifest:
 python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
 ```
 
-The generated `dist/bridge_manifest.json` uses outer schema 2. In addition to
+The generated `dist/bridge_manifest.json` uses outer schema 3. In addition to
 the NetBridge ABI and whole-ROM SHA-256, it binds the linked `SaveBlock3`
-address, `CSP1` offset and size, generation and CRC offsets, and the exact
-regional identity-registry version and digest. The embedded save schema remains
-`CSP1` version 1; manifest schema 2 does not rename or migrate the persisted
+address, `CSP1` offset and size, generation and CRC offsets, the exact regional
+identity-registry version and digest, and the official mGBA 0.10.5 Windows x64
+Qt artifact. Its archive SHA-256 is
+`b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a`, and its
+executable SHA-256 is
+`5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247`. The launcher
+owns validation of that executable identity before probe/gameplay. Lua
+receives only the generated address projection; it does not receive or
+validate host executable digests. The embedded save schema remains `CSP1`
+version 1, and manifest schema 3 does not rename or migrate the persisted
 format.
 
 ## Canonical save and compatible-state lifecycle
@@ -83,10 +100,13 @@ skipped generations fail closed.
 
 Before writing `bridge/session.lua` or starting the sidecar, the launcher MUST
 compute the SHA-256 of the exact built ROM and compare it with
-`game_build.rom_sha256` in `dist/bridge_manifest.json`. It must fail closed on a
-mismatch. Lua validates the in-memory bridge ABI header, but it cannot hash the
-whole ROM; the hash embedded in the generated Lua address module is therefore
-metadata, not runtime proof of the loaded ROM.
+`game_build.rom_sha256` in `dist/bridge_manifest.json`. It must also validate
+the selected mGBA executable against the manifest's official Windows x64 Qt
+identity before probing or spawning it, and fail closed on either mismatch.
+Lua validates the in-memory bridge ABI header, but it cannot hash the whole ROM
+or host executable. The ROM hash embedded in the generated Lua address module
+is therefore metadata, not runtime proof of the loaded ROM; emulator digests
+are intentionally omitted from Lua and remain launcher-owned.
 
 `game_build.id` is the canonical textual cloud build identity. The launcher
 MUST read it from the generated manifest, and the server MUST sign resume
@@ -130,10 +150,11 @@ The exact command outcomes for the 2026-09-02 local save-interop checkpoint are
 recorded in
 `docs/orchestration/runs/pokecrossroads-save-interop-20260902/save-interop-terminal-reconciliation.json`.
 That checkpoint does not claim completion of the later product phases or full
-MVP acceptance. In particular, stock mGBA 0.10.5 still needs an interactive
-ROM/Lua conformance run; production PostgreSQL/Firebase adapters and background
-object garbage collection are not certified; snapshot validation is not the
-gameplay commit ledger that authorizes individual progression changes; and the
-provenance/license, Windows atomic Job Object plus vendor-binary digest, and
-first-snapshot anti-cloning decisions remain open. Canonical details are in
-`docs/swarm/blockers.yaml`.
+MVP acceptance. The mGBA executable digest, creation-time Job containment, and
+authenticated shutdown-to-forced-cleanup path are implemented. Still open are
+interactive stock-mGBA ROM/Lua conformance, same-user-resistant atomic
+staged-file cleanup, proof that a terminated Job has no active descendants,
+production storage, gameplay-commit authority, provenance, and first-snapshot
+anti-cloning. Process shutdown does not request a fresh checkpoint, so it is
+not yet the complete product-level “Save and exit” workflow. Canonical details
+are in `docs/swarm/blockers.yaml`.

@@ -283,7 +283,18 @@ class BridgeManifestTests(unittest.TestCase):
         manifest = generator.build_manifest(bridge, block3, descriptor, registry, digest)
         lua = generator.render_lua(manifest)
 
-        self.assertEqual(manifest["schema_version"], 2)
+        self.assertEqual(manifest["schema_version"], 3)
+        self.assertEqual(
+            manifest["emulator"],
+            {
+                "name": "mGBA",
+                "version": "0.10.5",
+                "platform": "windows-x64",
+                "variant": "Qt",
+                "archive_sha256": generator.EMULATOR_ARCHIVE_SHA256,
+                "executable_sha256": generator.EMULATOR_EXECUTABLE_SHA256,
+            },
+        )
         self.assertEqual(
             manifest["game_build"]["id"],
             "pokecrossroads-beta-1.4-e05c8286-coop-v1",
@@ -306,6 +317,7 @@ class BridgeManifestTests(unittest.TestCase):
             },
         )
         self.assertIn("address = 0x020376BC", lua)
+        self.assertIn("schema_version = 3", lua)
         self.assertIn("checksum = 140", lua)
         self.assertIn("save = {", lua)
         self.assertIn("block3_address = 0x02000100", lua)
@@ -386,7 +398,7 @@ class BridgeManifestTests(unittest.TestCase):
     def test_accepts_maximum_length_textual_build_id(self) -> None:
         self.assertEqual(generator.validate_game_build_id("A" * 128), "A" * 128)
 
-    def test_checked_in_manifest_requires_a_fresh_linked_rom_for_schema_two(self) -> None:
+    def test_checked_in_manifest_requires_a_fresh_linked_rom_for_schema_three(self) -> None:
         manifest_path = REPO_ROOT / "dist" / "bridge_manifest.json"
         checked_in_text = manifest_path.read_text(encoding="utf-8")
         checked_in = json.loads(checked_in_text)
@@ -422,19 +434,23 @@ class BridgeManifestTests(unittest.TestCase):
                 checked_in_text,
                 json.dumps(expected, indent=2, sort_keys=True) + "\n",
             )
-            self.assertEqual(
-                (REPO_ROOT / "bridge" / "generated_addresses.lua").read_text(
-                    encoding="utf-8"
-                ),
-                generator.render_lua(expected),
-            )
+            generated_lua = REPO_ROOT / "bridge" / "generated_addresses.lua"
+            # The checked-in bridge source intentionally has no materialized
+            # generated-address file; session startup renders it from the
+            # validated manifest. When a build materializes that artifact,
+            # retain the exact generator-vs-artifact regression assertion.
+            if generated_lua.exists():
+                self.assertEqual(
+                    generated_lua.read_text(encoding="utf-8"),
+                    generator.render_lua(expected),
+                )
 
-    def test_example_lua_documents_schema_two_save_contract(self) -> None:
+    def test_example_lua_documents_schema_three_save_contract(self) -> None:
         example = (REPO_ROOT / "bridge" / "generated_addresses.lua.example").read_text(
             encoding="utf-8"
         )
         for expected in (
-            "schema_version = 2",
+            "schema_version = 3",
             "save = {",
             "coop_offset = 4",
             "generation_offset = 28",

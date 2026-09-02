@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "run_id": "pokecrossroads-runtime-hardening-20260902",
+  "base_revision": "e376beb7defda5d88d665a55c82d0472c3346d0a",
+  "workspace_plan_hash": "sha256:3b37baa51e4bffb5046216fcb6ccc912e8364ece79e6871d1e69584f18b6a68f",
+  "baseline_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515",
+  "invocations": [
+    {
+      "id": "sidecar-shutdown-implementer",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-sidecar-shutdown-implementer",
+      "path": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/sidecar-shutdown-implementer",
+      "branch": "seneschal/pokecrossroads-runtime-hardening-20260902/sidecar-shutdown-implementer",
+      "contract_hash": "sha256:6ceab75b5ae2acc924ca2e9d9429571001e1e5a26a8e22476fe83e109b39ecdb",
+      "dependency_patch_hashes": [],
+      "sealed_index_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515"
+    },
+    {
+      "id": "mgba-containment-implementer",
+      "workspace_id": "pokecrossroads-runtime-hardening-20260902-mgba-containment-implementer",
+      "path": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-runtime-hardening-20260902/mgba-containment-implementer",
+      "branch": "seneschal/pokecrossroads-runtime-hardening-20260902/mgba-containment-implementer",
+      "contract_hash": "sha256:c994f5fff3b3852541c84c36c951d39f967d0fdd6e4e189a4bac48715cc43d38",
+      "dependency_patch_hashes": [],
+      "sealed_index_tree": "07571e32f436ec60b233b0e1a45df0219a0a0515"
+    }
+  ]
+}

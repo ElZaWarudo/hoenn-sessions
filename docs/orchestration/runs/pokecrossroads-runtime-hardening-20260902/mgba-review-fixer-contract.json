@@ -1,0 +1,109 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Repeated stop and more than the wait-command capacity of cancelled waits remain successful and leak-free under Windows regressions.",
+      "id": "MRF-001"
+    },
+    {
+      "description": "Both mGBA argv forms revalidate the exact held ROM immediately before contained spawn; the owned form uses canonical argv and its integrity guard permits the pinned real mGBA to open the ROM while denying mutation/replacement for the process lifetime.",
+      "id": "MRF-002"
+    },
+    {
+      "description": "Probe capture has no blocking pipe-reader thread lifetime, rejects oversized output, uses an explicit final cleanup deadline, and reports cleanup uncertainty with the dedicated typed error before other failures.",
+      "id": "MRF-003"
+    },
+    {
+      "description": "Every destructive descendant test proves the descendant started first, path-with-spaces fixtures work, and the opt-in real-artifact test exercises digest/version/ROM plus production guarded gameplay spawn and cleanup.",
+      "id": "MRF-004"
+    },
+    {
+      "description": "Launcher tests, the opt-in real artifact test, strict launcher clippy, formatting, locked metadata, and diff checks pass; unclosable safe-Rust/platform limitations are reported exactly.",
+      "id": "MRF-005"
+    }
+  ],
+  "closed_decisions": [
+    "Keep windows-spawn =0.1.0 and its creation-time PROC_THREAD_ATTRIBUTE_JOB_LIST plus kill-on-close Jobs. Do not fall back to PID-only termination or direct std/tokio mGBA spawn on Windows.",
+    "Make MgbaSupervisor stop idempotent with a cached typed outcome. Repeated SupervisedChildren stop after lifecycle compensation must not return BrokenPipe or skip lease release.",
+    "Make repeated cancellation of MgbaSupervisor::wait harmless: closed wait replies must never fill the bounded pending queue or turn routine heartbeat/select cancellation into a process failure. Add a regression exceeding queue capacity.",
+    "The seven-argument owned-ROM launch must revalidate the held ROM identity immediately before CreateProcess, just like the one-argument form, and use the bound canonical ROM path as argv. Hold a GENERIC_READ-only deny-write/delete ROM integrity guard through the full mGBA lifetime. It must be compatible with official mGBA's read-only CRT open. Preserve the separately documented same-user cleanup race rather than claiming handle-atomic deletion.",
+    "Replace captured anonymous probe pipes and blocking reader threads with bounded temporary-file capture (or an equally robust safe-Rust mechanism) so windows-spawn's documented reverse handle-inheritance race cannot retain a writer and hang reader joins. Enforce bounded file size while polling and bounded reads afterward.",
+    "Probe cleanup failure outranks timeout/output/version failure and maps to CompatibilityError::MgbaCleanup. Use one explicit absolute final cleanup deadline for post-spawn probe operation; never return an ordinary timeout when Job termination is unconfirmed.",
+    "Do not claim that safe Rust can cancel a synchronous stalled CreateProcessW call or that root-process reaping proves a terminated Job has zero active descendants. Preserve these as explicit residual limitations; do not detach supervisor or reader threads.",
+    "Containment fixtures must wait for an immediate descendant-started handshake before triggering timeout/drop/cancellation/stop and must quote paths with spaces. Add successful real official-mGBA gameplay-open evidence through the production ROM guard/spawn path when COOP_REAL_MGBA and COOP_REAL_ROM are supplied; keep it opt-in for ordinary CI."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk rg -n MgbaSupervisor coop/crates/coop-launcher"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:2ce5b956e4d58965677c529907796a4a21144597455901b6fb72fdcff816ee12",
+  "contract_id": "pokecrossroads-runtime-hardening-20260902-mgba-review-fixer-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit sidecar/session/main lifecycle, manifest/generator/schema consumers, docs, cloud/server/protocol/save/ROM, Cargo manifests, or orchestration artifacts.",
+    "Do not add unsafe Rust, allow attributes, direct Win32 FFI, shell-based production launch, unbounded output storage, detached threads, or a fallback that executes an unverified/uncontained binary.",
+    "Do not weaken exact executable digest/version/platform validation, ROM hash validation, environment clearing, Job kill-on-close, checkpoint semantics, lease ordering, or cleanup fail-closed behavior.",
+    "Do not stage, commit, branch, fetch, pull, push, create/remove worktrees, or revert another worker's changes."
+  ],
+  "lane": "deep",
+  "objective": "Correct the integrated Windows mGBA supervisor and staged-ROM boundary using the independent correctness/security findings, without weakening first-instruction Job containment or overstating platform guarantees.",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/compat.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/windows_mgba_supervisor.rs",
+    "coop/crates/coop-launcher/tests/windows_mgba_containment.rs",
+    "coop/crates/coop-launcher/tests/real_mgba_compat.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/orchestration/runs/pokecrossroads-runtime-hardening-20260902/mgba-containment-worker-contract.json",
+    "docs/orchestration/runs/pokecrossroads-runtime-hardening-20260902/mgba-containment-patch.json",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/src/main.rs",
+    "C:/Users/User/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/windows-spawn-0.1.0/docs/crate.md"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "A required correction cannot be implemented in safe Rust within owned_files without weakening containment or cleanup safety."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "mgba-containment-review-fixes"
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "reviewed_contract_hash": "sha256:3cac2a59bd9ebcfa0ea000fd525bfd375ba8cbe4280a43f56bdbe44fd51e4159",
+  "reviewed_patch_sha256": "sha256:fba098413ba5e4599a0d894cb3de5f0ddd225757b699cef3e7202c09cf2365a3",
+  "reviewer": "/root/sidecar_fixer_review",
+  "verdict": "reject_pending_fixes",
+  "findings": [
+    {
+      "id": "SSF-R2-001",
+      "priority": "P1",
+      "summary": "Biased pair-acquisition selects poll unauthenticated bridge work before an already-ready authenticated shutdown, so a sustained invalid-candidate stream can starve lifecycle control indefinitely."
+    },
+    {
+      "id": "SSF-R2-002",
+      "priority": "P1",
+      "summary": "A deferred grant at the FIFO head waits unconditionally in Idle, so grant then shutdown can remain blocked forever even after the replacement bridge acknowledges RomReady."
+    },
+    {
+      "id": "SSF-R2-003",
+      "priority": "P1",
+      "summary": "Reconnect state forgets that an authenticated bridge ended ambiguously; replacement-control EOF can therefore be misclassified as emulator-exit proof after bridge RST."
+    },
+    {
+      "id": "SSF-R2-004",
+      "priority": "P2",
+      "summary": "AwaitDecision's absolute deadline is not advanced during pair acquisition, permitting indefinite pending state and a permanently ledgered WrongState shutdown after expiry."
+    },
+    {
+      "id": "SSF-R2-005",
+      "priority": "P2",
+      "summary": "The ACK-loss replay test does not deterministically prove the first ACK write failed."
+    }
+  ]
+}
