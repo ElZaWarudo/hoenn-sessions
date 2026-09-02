@@ -1,0 +1,151 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Two accounts created through real register/login/header-auth/acquire flows connect in Hoenn/Littleroot and receive exact symmetric non-self spawns with distinct nonzero handles, canonical usernames, original states, and server sequence 1.",
+      "id": "PSC-001"
+    },
+    {
+      "description": "Authentication, enabled-user ownership, active stable lease, revision independence, exact server build, authoritative region/map/channel, partition/global capacity, fresh replacement handle, and zero-mutating failure behavior are exhaustively tested.",
+      "id": "PSC-002"
+    },
+    {
+      "description": "100 ms coalescing, RFC 1982 source ordering and wrap, per-subject server sequencing and wrap, hidden/resurface, unsupported travel, exact 1500 ms staleness, explicit disconnect, and lease invalidation produce deterministic tested transitions.",
+      "id": "PSC-003"
+    },
+    {
+      "description": "Every outbound queue remains bounded; update folding/dropping preserves lifecycle boundaries and counters; critical overflow disconnects slow consumers with deterministic bounded cascades; all observable fan-out ordering is ascending by handle.",
+      "id": "PSC-004"
+    },
+    {
+      "description": "Interactions accept only exact currently observable adjacent targets and reject self, unknown, foreign-partition, hidden, stale, spoofed sequence/warp/coordinate, elevation, direction, distance, and overflow cases without mutating state.",
+      "id": "PSC-005"
+    },
+    {
+      "description": "Repository failure and concurrent tick/replacement/lease-transition cases preserve strict gate->repository->presence lock order, linearizability, deadlines, and generation invariants; app clones share live presence while a new app over the same repository restores no presence state.",
+      "id": "PSC-006"
+    },
+    {
+      "description": "At least the 24 named deterministic state-machine scenarios from the discovery design are implemented, including real authentication fixtures rather than manufactured actors and exact errors/event order/oracles.",
+      "id": "PSC-007"
+    },
+    {
+      "description": "Focused and full server/workspace tests, strict workspace clippy, formatting, locked metadata, and diff checks pass with changes confined to owned_files.",
+      "id": "PSC-008"
+    },
+    {
+      "description": "Deterministic concurrency and ABA regressions prove connect versus lease transition linearizability, successful acquire/heartbeat/release/reconnect reconciliation before return, deadlock-free gate ordering, fail-closed post-commit poison recovery, and rejection of a stale generation capability after deliberate handle reuse.",
+      "id": "PSC-009"
+    }
+  ],
+  "closed_decisions": [
+    "This unit is a synchronous process-local PresenceService shared by every Phase2App clone. Presence records, handles, poses, partitions, queues, and counters are strictly ephemeral and must not enter storage::State, Repository, ObjectStore, snapshots, manifests, migrations, or serialization.",
+    "Use the already accepted coop-protocol V1 presence records and RFC 1982 sequence helpers plus coop-cloud RuntimeBuildIdentity, StableRuntimeSession, and RuntimeLeaseFence. Keep bridge ABI and protocol version at 1 here; do not add HTTP, WebSocket, ticket, sidecar, Lua, C, or ROM behavior.",
+    "The only supported production partition is server-pinned runtime build + shard 1 + RegionId::Hoenn + generated catalog map LITTLEROOT_TOWN at map_group 0/map_number 9 + the character's nonzero authoritative WorldZone channel. The initial pose must agree with that regional map identity. Different channels never observe or interact with one another.",
+    "Production constants are tick 100 ms, stale threshold 1500 ms, four remotes per client, five connections per partition, 1024 global connections, 32 outbound events per connection, and 16 collision-checked handle candidates. Hidden connections count toward capacity.",
+    "Connect authenticates an enabled stored user, character ownership, the exact current unexpired and unreleased stable lease identity, the authoritative world zone, the server-pinned build, and the stored canonical username. Save revision is deliberately ignored. Client-supplied usernames and self handles are forbidden.",
+    "PresenceConnection is an opaque non-serializable trusted-process capability containing private PresenceHandle and NonZeroU64 generation fields, with only a redacted Debug implementation and a public read-only handle accessor. It has no public constructor, From, Default, or serde implementation. Every service call validates both fields, so a stale token cannot control a later connection after handle reuse. Generations advance monotonically with checked nonzero arithmetic and fail closed before reuse. Same-character reconnect atomically replaces the old capability, emits Replaced before the new spawn, and remains admissible at a full capacity limit.",
+    "Generate all bounded handle candidates through the existing entropy seam before taking any runtime or presence lock. Never perform entropy, external I/O, or async work while holding either mutex. Every repository/presence transition follows the one strict order runtime-transition gate -> repository transaction -> presence mutex; no operation holding presence may acquire the gate or repository. Repository callbacks never call presence.",
+    "Phase2App and PresenceService share one Arc<Mutex<()>> runtime-transition gate. Connect holds it from exact repository validation through presence insertion. Tick holds it across repository snapshot and presence reconciliation. Phase2App acquire, heartbeat, reconnect, and release hold it across the existing repository transition and a nonfallible presence reconciliation before returning. Acquire and heartbeat retain only the matching stable runtime identity and refresh any cached expiry; reconnect evicts the old epoch; release evicts every presence connection for that character with LeaseInvalid. Thus a successful lease transition returns only after stale capabilities are unusable, while overlapping operations have a valid total order.",
+    "Post-commit presence reconciliation must not turn an already-committed lease transition into a reported failure. If the presence mutex is poisoned, recover its guard, clear every ephemeral presence/index/queue record fail-closed, reset scheduling state, and return the successful lease result. Before any repository commit, gate/lock failure may return the existing internal error. Production code must contain no panic path while either runtime mutex is held.",
+    "Initial visible connects fan out symmetric spawns immediately in ascending handle order with server sequence 1; hidden newcomers remain unadvertised but still receive existing visible spawns. No client ever receives a self event. Observer-only spawn does not advance the subject sequence.",
+    "Accept a submitted state only when its nonzero source sequence is newer under RFC 1982. Duplicate, older, zero, and ambiguous half-range values are ignored without refreshing liveness. Coalesce multiple accepted states until the globally gated 100 ms tick; delayed ticks publish only the latest value and schedule now+100 with no catch-up burst.",
+    "A map identity or initial warp-sequence change is unsupported travel: remove the connection, emit PartitionLeft once if advertised, and return DisconnectedUnsupportedTravel. This single-map fail-closed behavior is temporary and must retain RegionId in every location/partition identity.",
+    "Advance the nonzero server sequence exactly once per subject lifecycle/update event, not per recipient: visible update, visible-to-hidden despawn, hidden-to-visible spawn, or advertised removal. Hidden-to-hidden publication changes internal published state without emitting or advancing. Use next_sequence so wrap skips zero.",
+    "A due tick holds the shared runtime-transition gate, performs one batched repository validation without holding the presence mutex, then locks presence and validates handle plus capability generation and stable session before applying results in ascending handle order. Disposition precedence is lease/user/owner invalid -> LeaseInvalid, authoritative zone change -> PartitionLeft, age >=1500 ms -> Stale, then dirty publication. Repository failure preserves all presence state and leaves the deadline due. Concurrent ticks recheck the deadline so only one advances a window.",
+    "Outbound queues are FIFO and capped at 32. A later update may replace only the most recent queued Update for the same handle or fold into its queued Spawn, never cross a Despawn. A full queue may drop only a position Update and increment a saturating counter. Spawn and Despawn are critical: if one cannot be retained, disconnect that slow destination and propagate its Disconnected lifecycle event to remaining peers in deterministic handle order, with cascades bounded by partition capacity.",
+    "Explicit disconnect is idempotent. Advertised removals emit exactly one reason: Hidden, Stale, Disconnected, LeaseInvalid, Replaced, or PartitionLeft as appropriate. Empty partition indexes are removed and the global next-tick deadline resets when no connections remain.",
+    "Interaction validation is read-only and does not refresh liveness. It requires a distinct live advertised target in the same exact partition; exact observed target server sequence, warp sequence, and published coordinates; equal elevation; and a one-tile target in the initiator's latest accepted facing direction using checked coordinate arithmetic. The result exposes exact initiator and target StableRuntimeSession values plus target handle.",
+    "PresenceServiceError remains an internal precise taxonomy: Authentication, LeaseInactive, LeaseFenceMismatch, IncompatibleBuild, UnsupportedZone, GlobalCapacity, PartitionCapacity, HandleAllocation, NotConnected, InvalidState, InteractionTargetUnavailable, InteractionObservationMismatch, InteractionOutOfRange, and Internal. A later transport must collapse sensitive distinctions at its public boundary.",
+    "Add the canonical coop_cloud::Username to UserRecord at registration. Add one current_runtime_build_identity helper in saves.rs that parses the existing embedded bridge manifest and pinned mGBA 0.10.5; both resume-package construction and PresenceService initialization must reuse it so build identity cannot drift. No database migration is required in the current in-memory-only adapter.",
+    "Expose PresenceService, opaque PresenceConnection, PresenceOutboundV1, PresenceSubmitOutcome, PresenceDrain, PresenceTickReport, ValidatedInteraction, error type, and documented production constants through the existing server library surface. Phase2App::presence returns a clone sharing the same inner state."
+  ],
+  "commands": {
+    "exact": [
+      "rtk cargo metadata --locked --format-version 1 --no-deps"
+    ],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff -- coop/crates/coop-server",
+      "rtk rg -n PresenceService coop/crates/coop-server"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server phase2::presence --all-features --locked",
+        "rtk cargo test -p coop-server --all-features --locked",
+        "rtk cargo clippy -p coop-server --all-targets --all-features --locked -- -D warnings"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test --workspace --all-features --locked",
+        "rtk cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:9c1c7087e8623854a91100cf8a745251c695a68b7ec53fc952ef8dac8f9c10b6",
+  "contract_id": "pokecrossroads-phase3-presence-20260902-server-v3",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "runtime-audited"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 2,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit Cargo manifests/lock, coop-cloud, coop-protocol, launcher, sidecar, bridge/Lua, C/ROM, dist manifests, generated catalogs, database migrations, general documentation, or orchestration artifacts outside this contract.",
+    "Do not add a network endpoint, realtime ticket, background task, persistence record, dependency, unsafe Rust, allow attribute, unbounded collection, client-selectable username/self handle, handle-only connection capability, wrapping/reusable capability generation, global badge logic, regionless map identity, protocol-version bump, compatibility fallback, or simulated multi-replica guarantee.",
+    "Do not weaken Phase 2 auth, lease, save, snapshot, build, or manifest validation and do not expose sensitive authentication distinctions through a transport.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Implement the deterministic, ephemeral and lease-linearizable coop-server Phase 3 presence state machine for up to two authenticated active-lease users walking together in Hoenn/Littleroot, without activating any realtime network transport or protocol-version bump.",
+  "owned_files": [
+    "coop/crates/coop-server/src/phase2/presence.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/saves.rs",
+    "coop/crates/coop-server/src/lib.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-wire-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-cloud-contract-v2.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-server-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-server-contract-v2.json",
+    "coop/crates/coop-protocol/src/presence.rs",
+    "coop/crates/coop-cloud/src/presence.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/src/phase2/storage.rs",
+    "coop/crates/coop-server/src/phase2/auth.rs",
+    "coop/crates/coop-server/src/phase2/saves.rs",
+    "coop/crates/coop-protocol/src/generated_map_catalog.rs",
+    "dist/bridge_manifest.json"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and verification outcomes are recorded.",
+      "A required invariant cannot be implemented without changing a closed decision, adding persistence/transport, or crossing owned_files."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "presence-server-state-machine"
+}
