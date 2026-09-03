@@ -580,12 +580,22 @@ static bool8 SamePartition(const struct CoopPresencePartition *partition,
         && partition->warp_sequence == warp_sequence;
 }
 
-static bool8 RemoteStateMatchesPartition(const struct CoopPresenceReducer *reducer,
-                                         const struct CoopPresenceLocalState *state)
+static bool8 RemoteLocationMatchesPartition(
+    const struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceLocalState *state)
 {
     return reducer->context_valid
-        && SamePartition(&reducer->partition, &state->pose.location,
-                         state->pose.warp_sequence);
+        && reducer->partition.region == state->pose.location.region
+        && reducer->partition.map_group == state->pose.location.map_group
+        && reducer->partition.map_number == state->pose.location.map_number;
+}
+
+static bool8 RemoteWarpMatchesActiveTarget(
+    const struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceLocalState *state)
+{
+    return reducer->remote.state.pose.warp_sequence
+        == state->pose.warp_sequence;
 }
 
 void CoopPresenceReducer_Init(struct CoopPresenceReducer *reducer)
@@ -656,12 +666,14 @@ enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawn(
      || !IsHandleValid(spawn->handle) || !IsSequenceValid(spawn->server_sequence)
      || !IsLocalStateValid(&spawn->state) || !ValidateUsername(&spawn->username))
         return COOP_PRESENCE_APPLY_REJECTED;
-    if (!RemoteStateMatchesPartition(reducer, &spawn->state))
+    if (!RemoteLocationMatchesPartition(reducer, &spawn->state))
         return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
     if (reducer->remote_active)
     {
         if (reducer->remote.handle != spawn->handle)
             return COOP_PRESENCE_APPLY_CAPACITY;
+        if (!RemoteWarpMatchesActiveTarget(reducer, &spawn->state))
+            return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
         if (!CoopPresence_SequenceIsNewer(spawn->server_sequence,
                                           reducer->remote.server_sequence))
             return COOP_PRESENCE_APPLY_STALE;
@@ -686,7 +698,9 @@ enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdate(
         return COOP_PRESENCE_APPLY_NOT_ACTIVE;
     if (reducer->remote.handle != update->handle)
         return COOP_PRESENCE_APPLY_HANDLE_MISMATCH;
-    if (!RemoteStateMatchesPartition(reducer, &update->state))
+    if (!RemoteLocationMatchesPartition(reducer, &update->state))
+        return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
+    if (!RemoteWarpMatchesActiveTarget(reducer, &update->state))
         return COOP_PRESENCE_APPLY_PARTITION_MISMATCH;
     if (!CoopPresence_SequenceIsNewer(update->server_sequence,
                                       reducer->remote.server_sequence))
@@ -752,8 +766,7 @@ bool8 CoopPresence_EncodeInteraction(
     if (reducer->remote.state.pose.elevation != local->elevation
      || reducer->remote.state.pose.location.region != local->location.region
      || reducer->remote.state.pose.location.map_group != local->location.map_group
-     || reducer->remote.state.pose.location.map_number != local->location.map_number
-     || reducer->remote.state.pose.warp_sequence != local->warp_sequence)
+     || reducer->remote.state.pose.location.map_number != local->location.map_number)
         return FALSE;
 
     targetX = local->location.x;

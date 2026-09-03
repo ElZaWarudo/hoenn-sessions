@@ -1097,10 +1097,10 @@ TEST("Cloud Coop presence reducer rejects partition and handle mismatches")
     EstablishReducer(&reducer);
     spawn.state.pose.warp_sequence = 1;
     update.state.pose.warp_sequence = 1;
-    spawn.state.pose.warp_sequence++;
+    spawn.state.pose.location.map_number++;
     EXPECT_EQ(CoopPresenceReducer_ApplySpawn(&reducer, &spawn),
               COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
-    spawn.state.pose.warp_sequence--;
+    spawn.state.pose.location.map_number--;
     EXPECT(CoopPresenceReducer_ApplySpawn(&reducer, &spawn) == COOP_PRESENCE_APPLY_APPLIED);
     update.handle = 2;
     EXPECT_EQ(CoopPresenceReducer_ApplyUpdate(&reducer, &update),
@@ -2094,6 +2094,83 @@ TEST("Cloud Coop presence interaction decodes all facings and rejects context tr
     EXPECT(CoopPresenceReducer_IsActive(&reducer));
     EXPECT(!CoopPresenceReducer_IsVisible(&reducer));
     ExpectInteractionRejected(&reducer, &local, bytes, 0x39);
+}
+
+TEST("Cloud Coop presence keeps local and remote warp sequences independent")
+{
+    struct CoopPresenceReducer reducer;
+    struct WorldLocation location = Location(10, 10);
+    struct CoopPresenceLocalContext local = {
+        .session_epoch = 9,
+        .location = location,
+        .elevation = 7,
+        .direction = COOP_PRESENCE_DIRECTION_SOUTH,
+        .warp_sequence = 7,
+    };
+    struct CoopPresenceSpawn spawn = Spawn(1, 10, 10, 11,
+                                           COOP_PRESENCE_DIRECTION_NORTH,
+                                           COOP_PRESENCE_PLAYER_OVERWORLD);
+    struct CoopPresenceUpdate update;
+    struct CoopPresenceInteraction interaction;
+    u8 bytes[COOP_PRESENCE_INTERACTION_SIZE];
+    u8 snapshot[sizeof(reducer)];
+
+    CoopPresenceReducer_Init(&reducer);
+    EXPECT(CoopPresenceReducer_Synchronize(&reducer, local.session_epoch,
+                                           &local.location,
+                                           local.warp_sequence));
+    spawn.state.pose.warp_sequence = 41;
+    EXPECT(CoopPresenceReducer_ApplySpawn(&reducer, &spawn)
+           == COOP_PRESENCE_APPLY_APPLIED);
+    EXPECT(CoopPresenceReducer_IsActive(&reducer));
+    EXPECT_EQ(CoopPresenceReducer_GetRemote(&reducer)->state.pose.warp_sequence,
+                                             41);
+
+    EXPECT(CoopPresence_EncodeInteraction(&reducer, &local, bytes,
+                                           sizeof(bytes)));
+    EXPECT(CoopPresence_DecodeInteraction(bytes, sizeof(bytes), &interaction));
+    EXPECT_EQ(interaction.observed_warp_sequence, 41);
+
+    update.handle = spawn.handle;
+    update.server_sequence = 11;
+    update.state = spawn.state;
+    EXPECT(CoopPresenceReducer_ApplyUpdate(&reducer, &update)
+           == COOP_PRESENCE_APPLY_APPLIED);
+    EXPECT_EQ(CoopPresenceReducer_GetRemote(&reducer)->state.pose.warp_sequence,
+                                             41);
+
+    CopyTestBytes(snapshot, (const u8 *)&reducer, sizeof(reducer));
+    update.server_sequence = 12;
+    update.state.pose.warp_sequence = 42;
+    EXPECT(CoopPresenceReducer_ApplyUpdate(&reducer, &update)
+           == COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    ExpectStructBytes(&reducer, snapshot, sizeof(reducer));
+
+    spawn.server_sequence = 13;
+    spawn.state.pose.warp_sequence = 42;
+    EXPECT(CoopPresenceReducer_ApplySpawn(&reducer, &spawn)
+           == COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    ExpectStructBytes(&reducer, snapshot, sizeof(reducer));
+
+    EXPECT(CoopPresenceReducer_Synchronize(&reducer, local.session_epoch,
+                                           &local.location, 8));
+    ExpectReducerClearedAt(&reducer, local.session_epoch, &local.location, 8);
+
+    /* Region and map mismatches are still rejected at admission. */
+    EstablishReducer(&reducer);
+    spawn.state.pose.warp_sequence = 41;
+    spawn.state.pose.location.region = COOP_REGION_KANTO;
+    spawn.state.pose.location.map_group = 37;
+    spawn.state.pose.location.map_number = 0;
+    EXPECT(CoopPresenceReducer_ApplySpawn(&reducer, &spawn)
+           == COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    EXPECT(!CoopPresenceReducer_IsActive(&reducer));
+    spawn.state.pose.location.region = COOP_REGION_HOENN;
+    spawn.state.pose.location.map_group = 2;
+    spawn.state.pose.location.map_number = 0;
+    EXPECT(CoopPresenceReducer_ApplySpawn(&reducer, &spawn)
+           == COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    EXPECT(!CoopPresenceReducer_IsActive(&reducer));
 }
 
 TEST("Cloud Coop presence interaction rejects signed-coordinate overflow at every edge")
