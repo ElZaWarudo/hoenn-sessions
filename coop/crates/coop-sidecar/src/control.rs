@@ -11,6 +11,10 @@ use std::{
     time::Duration,
 };
 
+use coop_protocol::{
+    LocalPresenceStateV1, PresenceInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
+    RemotePlayerUpdateV1,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -23,7 +27,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub const CONTROL_PROTOCOL_VERSION: u16 = 1;
+pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
 /// The terminating LF is included in this limit.
 pub const MAX_CONTROL_LINE_BYTES: usize = 512;
 pub const CONTROL_HANDSHAKE_ACCEPTED_LINE: &[u8] = b"{\"ok\":true}\n";
@@ -158,6 +162,12 @@ pub enum ControlCommand {
     CheckpointAbort(CheckpointAbort),
     #[serde(rename = "shutdown_request")]
     ShutdownRequest(ShutdownRequest),
+    #[serde(rename = "remote_player_spawn")]
+    RemotePlayerSpawn(RemotePlayerSpawnV1),
+    #[serde(rename = "remote_player_update")]
+    RemotePlayerUpdate(RemotePlayerUpdateV1),
+    #[serde(rename = "remote_player_despawn")]
+    RemotePlayerDespawn(RemotePlayerDespawnV1),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -228,7 +238,7 @@ pub enum CommandReason {
 }
 
 /// Typed events emitted to the launcher in FIFO order.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlEvent {
     #[serde(rename = "checkpoint_ready")]
@@ -254,6 +264,97 @@ pub enum ControlEvent {
         status: CommandStatus,
         reason: Option<CommandReason>,
     },
+    #[serde(rename = "player_state")]
+    PlayerState(LocalPresenceStateV1),
+    #[serde(rename = "interact_remote_player")]
+    InteractRemotePlayer(PresenceInteractionV1),
+    #[serde(rename = "rom_presence_reset")]
+    RomPresenceReset,
+}
+
+// Serde accepts unknown fields on an internally tagged unit variant even when
+// `deny_unknown_fields` is present.  Decode through an empty struct for the
+// fieldless reset so its canonical object remains strict as every other
+// control record is.
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum ControlEventWire {
+    #[serde(rename = "checkpoint_ready")]
+    CheckpointReady {
+        session_epoch: u32,
+        ready_sequence: u32,
+    },
+    #[serde(rename = "save_data_updated")]
+    SaveDataUpdated {
+        session_epoch: u32,
+        ready_sequence: u32,
+        save_sequence: u32,
+        save_generation: u32,
+    },
+    #[serde(rename = "checkpoint_expired")]
+    CheckpointExpired {
+        session_epoch: u32,
+        ready_sequence: u32,
+    },
+    #[serde(rename = "command_result")]
+    CommandResult {
+        command_id: CommandId,
+        status: CommandStatus,
+        reason: Option<CommandReason>,
+    },
+    #[serde(rename = "player_state")]
+    PlayerState(LocalPresenceStateV1),
+    #[serde(rename = "interact_remote_player")]
+    InteractRemotePlayer(PresenceInteractionV1),
+    #[serde(rename = "rom_presence_reset")]
+    RomPresenceReset {},
+}
+
+impl<'de> Deserialize<'de> for ControlEvent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(match ControlEventWire::deserialize(deserializer)? {
+            ControlEventWire::CheckpointReady {
+                session_epoch,
+                ready_sequence,
+            } => Self::CheckpointReady {
+                session_epoch,
+                ready_sequence,
+            },
+            ControlEventWire::SaveDataUpdated {
+                session_epoch,
+                ready_sequence,
+                save_sequence,
+                save_generation,
+            } => Self::SaveDataUpdated {
+                session_epoch,
+                ready_sequence,
+                save_sequence,
+                save_generation,
+            },
+            ControlEventWire::CheckpointExpired {
+                session_epoch,
+                ready_sequence,
+            } => Self::CheckpointExpired {
+                session_epoch,
+                ready_sequence,
+            },
+            ControlEventWire::CommandResult {
+                command_id,
+                status,
+                reason,
+            } => Self::CommandResult {
+                command_id,
+                status,
+                reason,
+            },
+            ControlEventWire::PlayerState(value) => Self::PlayerState(value),
+            ControlEventWire::InteractRemotePlayer(value) => Self::InteractRemotePlayer(value),
+            ControlEventWire::RomPresenceReset {} => Self::RomPresenceReset,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -536,10 +637,59 @@ async fn read_bounded_line_with_prefix(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use coop_protocol::{
+        CanonicalUsername, DespawnReason, LocalPresenceStateV1, PresenceHandle,
+        PresenceInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+    };
+    use serde_json::Value;
     use tokio::net::TcpStream;
 
     fn command_id() -> CommandId {
         CommandId::parse("00000000-0000-4000-8000-000000000001").unwrap()
+    }
+
+    fn local_presence_state() -> LocalPresenceStateV1 {
+        LocalPresenceStateV1::decode(&[
+            1, 1, 0, 3, 0, 252, 255, 9, 0, 0, 7, 4, 68, 51, 34, 17, 136, 119, 102, 85, 2, 1, 2, 1,
+            204, 187, 170, 153,
+        ])
+        .unwrap()
+    }
+
+    fn presence_commands() -> [ControlCommand; 3] {
+        let state = local_presence_state();
+        [
+            ControlCommand::RemotePlayerSpawn(
+                RemotePlayerSpawnV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    1,
+                    state.clone(),
+                    CanonicalUsername::new("ash").unwrap(),
+                )
+                .unwrap(),
+            ),
+            ControlCommand::RemotePlayerUpdate(
+                RemotePlayerUpdateV1::new(PresenceHandle::new(1).unwrap(), 2, state).unwrap(),
+            ),
+            ControlCommand::RemotePlayerDespawn(
+                RemotePlayerDespawnV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    3,
+                    DespawnReason::Disconnected,
+                )
+                .unwrap(),
+            ),
+        ]
+    }
+
+    fn presence_events() -> [ControlEvent; 3] {
+        [
+            ControlEvent::PlayerState(local_presence_state()),
+            ControlEvent::InteractRemotePlayer(
+                PresenceInteractionV1::new(PresenceHandle::new(1).unwrap(), 2, 3, -4, 5).unwrap(),
+            ),
+            ControlEvent::RomPresenceReset,
+        ]
     }
 
     #[test]
@@ -590,6 +740,63 @@ mod tests {
     }
 
     #[test]
+    fn presence_records_are_canonical_strict_and_lf_bounded() {
+        for record in presence_commands()
+            .into_iter()
+            .map(|command| serde_json::to_value(command).unwrap())
+            .chain(
+                presence_events()
+                    .into_iter()
+                    .map(|event| serde_json::to_value(event).unwrap()),
+            )
+        {
+            let mut line = serde_json::to_vec(&record).unwrap();
+            line.push(b'\n');
+            assert!(line.len() <= MAX_CONTROL_LINE_BYTES);
+            let round_trip = if record["type"] == "rom_presence_reset"
+                || record["type"] == "player_state"
+                || record["type"] == "interact_remote_player"
+            {
+                serde_json::from_slice::<ControlEvent>(&line[..line.len() - 1])
+                    .map(|event| serde_json::to_value(event).unwrap())
+            } else {
+                serde_json::from_slice::<ControlCommand>(&line[..line.len() - 1])
+                    .map(|command| serde_json::to_value(command).unwrap())
+            };
+            assert_eq!(round_trip.unwrap(), record);
+        }
+    }
+
+    #[test]
+    fn presence_records_reject_unknown_and_invalid_fields() {
+        let mut unknown = serde_json::to_value(presence_commands()[1].clone()).unwrap();
+        unknown
+            .as_object_mut()
+            .unwrap()
+            .insert("extra".to_owned(), Value::Bool(true));
+        assert!(serde_json::from_value::<ControlCommand>(unknown).is_err());
+
+        let mut invalid_state = serde_json::to_value(presence_events()[0].clone()).unwrap();
+        invalid_state["source_sequence"] = Value::from(0_u32);
+        assert!(serde_json::from_value::<ControlEvent>(invalid_state).is_err());
+
+        let mut invalid_interaction = serde_json::to_value(presence_events()[1].clone()).unwrap();
+        invalid_interaction["observed_server_sequence"] = Value::from(0_u32);
+        assert!(serde_json::from_value::<ControlEvent>(invalid_interaction).is_err());
+
+        assert!(
+            serde_json::from_str::<ControlCommand>(
+                r#"{"type":"remote_player_unknown","handle":1}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<ControlEvent>(r#"{"type":"rom_presence_reset","extra":true}"#)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn save_update_events_preserve_the_full_generation_domain() {
         for save_generation in [0, u32::MAX] {
             let event = ControlEvent::SaveDataUpdated {
@@ -630,12 +837,15 @@ mod tests {
         let secret = listener.secret().expose().to_owned();
         let task = tokio::spawn(async move { listener.accept().await });
         let mut stream = TcpStream::connect(address).await.unwrap();
-        let line =
-            format!("{{\"secret\":\"{secret}\",\"control_version\":2,\"session_epoch\":7}}\n");
+        let line = format!(
+            "{{\"secret\":\"{secret}\",\"control_version\":{},\"session_epoch\":7}}\n",
+            CONTROL_PROTOCOL_VERSION + 1
+        );
         stream.write_all(line.as_bytes()).await.unwrap();
         assert!(matches!(
             task.await.unwrap(),
-            Err(ControlError::IncompatibleVersion(2))
+            Err(ControlError::IncompatibleVersion(version))
+                if version == CONTROL_PROTOCOL_VERSION + 1
         ));
 
         let listener = ControlListener::bind(7).await.unwrap();

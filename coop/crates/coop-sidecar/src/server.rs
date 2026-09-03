@@ -5,10 +5,14 @@ use std::{
     io,
     net::{Ipv4Addr, SocketAddr},
     pin::Pin,
-    sync::Arc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
+use coop_protocol::{LocalPresenceStateV1, PresenceInteractionV1};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -17,9 +21,9 @@ use tokio::{
         TcpListener, TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
-    sync::{mpsc, watch},
+    sync::{Notify, mpsc, oneshot, watch},
     task::{AbortHandle, Id, JoinHandle, JoinSet},
-    time::{Instant, sleep_until, timeout},
+    time::{Instant, sleep_until, timeout, timeout_at},
 };
 use uuid::Uuid;
 
@@ -46,6 +50,10 @@ pub const MAX_DESCRIPTOR_BYTES: usize = 512;
 const MAX_COMMAND_HISTORY: usize = 1024;
 const MAX_DEFERRED_ROUTINE_COMMANDS: usize = 16;
 const MAX_DEFERRED_COMMANDS: usize = MAX_DEFERRED_ROUTINE_COMMANDS + 1;
+/// The owner realtime pump is allowed to have at most one bounded batch of
+/// lifecycle records in flight.  Lifecycle records are ordered and are never
+/// coalesced or discarded at this boundary.
+pub const MAX_PRESENCE_COMMANDS: usize = 32;
 const MAX_CONTROL_AUTH_CANDIDATES: usize = 16;
 const MAX_BRIDGE_AUTH_CANDIDATES: usize = 16;
 
@@ -356,6 +364,8 @@ pub enum SidecarError {
     CommandLedgerFull,
     #[error("pre-bridge command queue reached its bounded capacity")]
     DeferredCommandQueueFull,
+    #[error("authenticated presence mailbox reached its bounded capacity")]
+    PresenceQueueFull,
     #[error("authenticated shutdown exceeded its five-second grace period")]
     ShutdownTimeout,
 }
@@ -378,10 +388,7 @@ impl AuthenticatedConnection {
 
     pub(crate) fn into_split(self) -> (BridgeReader, BridgeWriter) {
         let (reader, writer) = self.stream.into_split();
-        (
-            BridgeReader { stream: reader },
-            BridgeWriter { stream: writer },
-        )
+        (BridgeReader { stream: reader }, BridgeWriter::new(writer))
     }
 }
 
@@ -441,22 +448,550 @@ impl BridgeReader {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BridgeWriteClass {
+    Critical,
+    Lifecycle,
+    Cutover,
+    GenerationFence,
+}
+
+struct BridgeWriteRequest {
+    bytes: [u8; BRIDGE_FRAME_SIZE],
+    class: BridgeWriteClass,
+    readiness_generation: u64,
+    completion: Option<oneshot::Sender<Result<(), SidecarError>>>,
+}
+
+struct BridgeWriterState {
+    failed: AtomicBool,
+    failure: Mutex<Option<SidecarError>>,
+    failure_signal: watch::Sender<bool>,
+    _failure_observer: Mutex<watch::Receiver<bool>>,
+    poisoned: AtomicBool,
+    in_flight: AtomicBool,
+    poison_notify: Notify,
+    fence: Mutex<()>,
+    requested_generation: std::sync::atomic::AtomicU64,
+    #[cfg(test)]
+    test_write_gate: Mutex<Option<Arc<Notify>>>,
+    #[cfg(test)]
+    test_write_observer: Mutex<Option<TestWriterObserver>>,
+    #[cfg(test)]
+    test_failure_gate: Mutex<Option<Arc<Notify>>>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct TestWriterObserver {
+    admitted: Arc<AtomicBool>,
+    admission_signal: Arc<Notify>,
+    dropped: Arc<AtomicBool>,
+    drop_signal: Arc<Notify>,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct TestBlockedWriterGate {
+    release: Arc<Notify>,
+    observer: TestWriterObserver,
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct TestWriterFailureGate {
+    trigger: Arc<Notify>,
+    registered: Arc<Notify>,
+    registration_seen: Arc<AtomicBool>,
+}
+
+#[cfg(test)]
+struct WriterTaskDropSignal(Arc<BridgeWriterState>);
+
+#[cfg(test)]
+impl Drop for WriterTaskDropSignal {
+    fn drop(&mut self) {
+        if let Some(observer) = self
+            .0
+            .test_write_observer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            observer.dropped.store(true, Ordering::Release);
+            observer.drop_signal.notify_waiters();
+        }
+    }
+}
+
 pub(crate) struct BridgeWriter {
-    stream: OwnedWriteHalf,
+    requests: Option<mpsc::Sender<BridgeWriteRequest>>,
+    state: Arc<BridgeWriterState>,
+    task: Option<JoinHandle<()>>,
 }
 
 impl BridgeWriter {
+    #[allow(clippy::too_many_lines)]
+    fn new(stream: OwnedWriteHalf) -> Self {
+        let (requests, mut request_rx) =
+            mpsc::channel::<BridgeWriteRequest>(MAX_PRESENCE_COMMANDS + 1);
+        let (failure_signal, failure_observer) = watch::channel(false);
+        let state = Arc::new(BridgeWriterState {
+            failed: AtomicBool::new(false),
+            failure: Mutex::new(None),
+            failure_signal,
+            _failure_observer: Mutex::new(failure_observer),
+            poisoned: AtomicBool::new(false),
+            in_flight: AtomicBool::new(false),
+            poison_notify: Notify::new(),
+            fence: Mutex::new(()),
+            requested_generation: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(test)]
+            test_write_gate: Mutex::new(None),
+            #[cfg(test)]
+            test_write_observer: Mutex::new(None),
+            #[cfg(test)]
+            test_failure_gate: Mutex::new(None),
+        });
+        let actor_state = Arc::clone(&state);
+        let task = tokio::spawn(async move {
+            #[cfg(test)]
+            let _task_drop_signal = WriterTaskDropSignal(Arc::clone(&actor_state));
+            let mut stream = stream;
+            loop {
+                #[cfg(test)]
+                let request = {
+                    let failure_gate = actor_state
+                        .test_failure_gate
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    tokio::select! {
+                        biased;
+                        () = async move {
+                            if let Some(trigger) = failure_gate {
+                                trigger.notified().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {
+                            let error = BridgeWriter::writer_terminated_error();
+                            actor_state.record_failure(&error);
+                            break;
+                        }
+                        request = request_rx.recv() => request,
+                    }
+                };
+                #[cfg(not(test))]
+                let request = request_rx.recv().await;
+                let Some(request) = request else {
+                    break;
+                };
+                let should_write = {
+                    let _fence = actor_state
+                        .fence
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if actor_state.poisoned.load(Ordering::Acquire)
+                        || (request.class == BridgeWriteClass::Lifecycle
+                            && request.readiness_generation
+                                != actor_state.requested_generation.load(Ordering::Acquire))
+                    {
+                        false
+                    } else if request.class == BridgeWriteClass::GenerationFence {
+                        actor_state
+                            .requested_generation
+                            .store(request.readiness_generation, Ordering::Release);
+                        false
+                    } else {
+                        if request.class == BridgeWriteClass::Lifecycle {
+                            actor_state.in_flight.store(true, Ordering::Release);
+                            #[cfg(test)]
+                            if let Some(observer) = actor_state
+                                .test_write_observer
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .as_ref()
+                            {
+                                observer.admitted.store(true, Ordering::Release);
+                                observer.admission_signal.notify_waiters();
+                            }
+                        }
+                        true
+                    }
+                };
+
+                if !should_write {
+                    if let Some(completion) = request.completion {
+                        let result = if actor_state.poisoned.load(Ordering::Acquire) {
+                            Err(BridgeWriter::writer_terminated_error())
+                        } else {
+                            Ok(())
+                        };
+                        let _ = completion.send(result);
+                    }
+                    continue;
+                }
+
+                let in_flight = request.class == BridgeWriteClass::Lifecycle;
+                #[cfg(test)]
+                let test_write_gate = (in_flight).then(|| {
+                    actor_state
+                        .test_write_gate
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone()
+                });
+                #[cfg(test)]
+                if let Some(Some(gate)) = test_write_gate {
+                    tokio::select! {
+                        () = gate.notified() => {}
+                        () = actor_state.poison_notify.notified() => {
+                            let error = BridgeWriter::writer_terminated_error();
+                            actor_state.record_failure(&error);
+                            if in_flight {
+                                let _fence = actor_state
+                                    .fence
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                actor_state.in_flight.store(false, Ordering::Release);
+                                #[cfg(test)]
+                                if let Some(observer) = actor_state
+                                    .test_write_observer
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .as_ref()
+                                {
+                                    observer.admitted.store(false, Ordering::Release);
+                                }
+                            }
+                            if let Some(completion) = request.completion {
+                                let _ = completion.send(Err(error));
+                            }
+                            break;
+                        }
+                    }
+                }
+                let result = tokio::select! {
+                    result = timeout(BRIDGE_FRAME_TIMEOUT, stream.write_all(&request.bytes)) => {
+                        match result {
+                            Ok(Ok(())) => Ok(()),
+                            Ok(Err(error)) => Err(SidecarError::BridgeWriteConnection(error)),
+                            Err(_) => Err(SidecarError::BridgeWriteTimeout),
+                        }
+                    }
+                    () = actor_state.poison_notify.notified() => {
+                        Err(BridgeWriter::writer_terminated_error())
+                    }
+                };
+                if in_flight {
+                    let _fence = actor_state
+                        .fence
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    actor_state.in_flight.store(false, Ordering::Release);
+                    #[cfg(test)]
+                    if let Some(observer) = actor_state
+                        .test_write_observer
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .as_ref()
+                    {
+                        observer.admitted.store(false, Ordering::Release);
+                    }
+                }
+                if let Err(error) = &result {
+                    actor_state.record_failure(error);
+                }
+                if let Some(completion) = request.completion {
+                    let _ = completion.send(result);
+                }
+                if actor_state.failed.load(Ordering::Acquire) {
+                    break;
+                }
+            }
+        });
+        Self {
+            requests: Some(requests),
+            state,
+            task: Some(task),
+        }
+    }
+
+    #[cfg(test)]
+    fn new_blocked(stream: OwnedWriteHalf) -> (Self, Arc<Notify>) {
+        let writer = Self::new(stream);
+        let gate = Arc::new(Notify::new());
+        *writer
+            .state
+            .test_write_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::clone(&gate));
+        (writer, gate)
+    }
+
+    #[cfg(test)]
+    fn install_test_write_gate(&self, gate: TestBlockedWriterGate) {
+        *self
+            .state
+            .test_write_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(gate.release);
+        *self
+            .state
+            .test_write_observer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(gate.observer);
+    }
+
+    #[cfg(test)]
+    fn install_test_failure_gate(&self, gate: &TestWriterFailureGate) {
+        *self
+            .state
+            .test_failure_gate
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::clone(&gate.trigger));
+    }
+
+    fn writer_terminated_error() -> SidecarError {
+        SidecarError::BridgeWriteConnection(io::Error::new(
+            io::ErrorKind::ConnectionAborted,
+            "bridge writer terminated",
+        ))
+    }
+
+    fn write_failure(&self) -> Option<SidecarError> {
+        self.state
+            .failed
+            .load(Ordering::Acquire)
+            .then(Self::writer_terminated_error)
+    }
+
+    fn take_failure(&self) -> Option<SidecarError> {
+        self.state
+            .failure
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
+    fn failure_receiver(&self) -> watch::Receiver<bool> {
+        self.state.failure_signal.subscribe()
+    }
+
+    fn record_failure(&self, error: &SidecarError) {
+        self.state.record_failure(error);
+    }
+
+    fn poison(&self, error: &SidecarError) {
+        self.record_failure(error);
+    }
+
+    fn set_generation(&self, generation: u64) {
+        let _fence = self
+            .state
+            .fence
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.state
+            .requested_generation
+            .store(generation, Ordering::Release);
+    }
+
+    async fn cutover(&mut self, generation: u64) -> Result<(), SidecarError> {
+        {
+            let _fence = self
+                .state
+                .fence
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.state.failed.load(Ordering::Acquire) {
+                return Err(self
+                    .take_failure()
+                    .unwrap_or_else(Self::writer_terminated_error));
+            }
+            self.state
+                .requested_generation
+                .store(generation, Ordering::Release);
+            if self.state.in_flight.load(Ordering::Acquire) {
+                let error = Self::writer_terminated_error();
+                self.poison(&error);
+                return Err(self
+                    .take_failure()
+                    .unwrap_or_else(Self::writer_terminated_error));
+            }
+            if self.state.poisoned.load(Ordering::Acquire) {
+                return Err(self
+                    .take_failure()
+                    .unwrap_or_else(Self::writer_terminated_error));
+            }
+        }
+        let (completion_tx, completion_rx) = oneshot::channel();
+        self.enqueue(
+            BridgeWriteRequest {
+                bytes: [0; BRIDGE_FRAME_SIZE],
+                class: BridgeWriteClass::GenerationFence,
+                readiness_generation: generation,
+                completion: Some(completion_tx),
+            },
+            completion_rx,
+        )
+        .await
+    }
+
     async fn send(
         &mut self,
         frame: &BridgeFrame,
         expected_direction: Direction,
     ) -> Result<(), SidecarError> {
+        self.send_with_class(
+            frame,
+            expected_direction,
+            BridgeWriteClass::Critical,
+            self.state.requested_generation.load(Ordering::Acquire),
+        )
+        .await
+    }
+
+    async fn send_with_class(
+        &mut self,
+        frame: &BridgeFrame,
+        expected_direction: Direction,
+        class: BridgeWriteClass,
+        readiness_generation: u64,
+    ) -> Result<(), SidecarError> {
         frame.ensure_direction(expected_direction)?;
-        let bytes = frame.encode();
-        timeout(BRIDGE_FRAME_TIMEOUT, self.stream.write_all(&bytes))
-            .await
-            .map_err(|_| SidecarError::BridgeWriteTimeout)?
-            .map_err(SidecarError::BridgeWriteConnection)
+        let (completion_tx, completion_rx) = oneshot::channel();
+        self.enqueue(
+            BridgeWriteRequest {
+                bytes: frame.encode(),
+                class,
+                readiness_generation,
+                completion: Some(completion_tx),
+            },
+            completion_rx,
+        )
+        .await
+    }
+
+    fn send_presence_at(
+        &mut self,
+        frame: &BridgeFrame,
+        expected_direction: Direction,
+        readiness_generation: u64,
+    ) -> Result<(), SidecarError> {
+        frame.ensure_direction(expected_direction)?;
+        if self.write_failure().is_some() {
+            return Err(self
+                .take_failure()
+                .unwrap_or_else(Self::writer_terminated_error));
+        }
+        // Keep one slot reserved for critical bridge traffic. Presence is
+        // transient and must never make a later SESSION_READY or checkpoint
+        // frame wait for an unbounded lifecycle backlog.
+        let requests = self
+            .requests
+            .as_ref()
+            .ok_or_else(Self::writer_terminated_error)?
+            .clone();
+        if requests.capacity() <= 1 {
+            return Err(SidecarError::PresenceQueueFull);
+        }
+        requests
+            .try_send(BridgeWriteRequest {
+                bytes: frame.encode(),
+                class: BridgeWriteClass::Lifecycle,
+                readiness_generation,
+                completion: None,
+            })
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => SidecarError::PresenceQueueFull,
+                mpsc::error::TrySendError::Closed(_) => SidecarError::BridgeWriteConnection(
+                    io::Error::new(io::ErrorKind::ConnectionAborted, "bridge writer terminated"),
+                ),
+            })
+    }
+
+    async fn enqueue(
+        &mut self,
+        request: BridgeWriteRequest,
+        completion_rx: oneshot::Receiver<Result<(), SidecarError>>,
+    ) -> Result<(), SidecarError> {
+        let requests = self
+            .requests
+            .as_ref()
+            .ok_or_else(Self::writer_terminated_error)?;
+        if self.state.failed.load(Ordering::Acquire) {
+            return Err(self
+                .take_failure()
+                .unwrap_or_else(Self::writer_terminated_error));
+        }
+        let deadline = Instant::now() + BRIDGE_FRAME_TIMEOUT;
+        match timeout_at(deadline, requests.send(request)).await {
+            Err(_) => {
+                let error = SidecarError::BridgeWriteTimeout;
+                self.poison(&error);
+                return Err(SidecarError::BridgeWriteTimeout);
+            }
+            Ok(Err(_)) => return Err(Self::writer_terminated_error()),
+            Ok(Ok(())) => {}
+        }
+        match timeout_at(deadline, completion_rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(Self::writer_terminated_error()),
+            Err(_) => {
+                let error = SidecarError::BridgeWriteTimeout;
+                self.poison(&error);
+                Err(SidecarError::BridgeWriteTimeout)
+            }
+        }
+    }
+
+    async fn shutdown(&mut self) {
+        let error = Self::writer_terminated_error();
+        self.poison(&error);
+        self.requests.take();
+        if let Some(task) = self.task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+}
+
+impl BridgeWriterState {
+    fn record_failure(&self, error: &SidecarError) {
+        if !self.failed.swap(true, Ordering::AcqRel) {
+            let mut failure = self
+                .failure
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if failure.is_none() {
+                *failure = Some(match error {
+                    SidecarError::BridgeWriteTimeout => SidecarError::BridgeWriteTimeout,
+                    SidecarError::BridgeWriteConnection(source) => {
+                        SidecarError::BridgeWriteConnection(io::Error::new(
+                            source.kind(),
+                            source.to_string(),
+                        ))
+                    }
+                    _ => BridgeWriter::writer_terminated_error(),
+                });
+            }
+            self.failure_signal.send_replace(true);
+            self.poisoned.store(true, Ordering::Release);
+            self.poison_notify.notify_waiters();
+        }
+    }
+}
+
+impl Drop for BridgeWriter {
+    fn drop(&mut self) {
+        let error = Self::writer_terminated_error();
+        self.poison(&error);
+        self.requests.take();
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 
@@ -589,9 +1124,77 @@ impl Drop for ReaderTasks {
 /// transferred into the active bridge session. Keeping the task alive across
 /// listener and handshake races makes partially received JSONL cancellation
 /// safe; dropping the owner always aborts rather than detaches the task.
+type ControlResult = Result<ControlCommand, SidecarError>;
+type ControlReceiver = mpsc::Receiver<ControlResult>;
+type PresenceResult = Result<StampedPresenceCommand, SidecarError>;
+type PresenceReceiver = mpsc::Receiver<PresenceResult>;
+#[cfg(test)]
+type ControlReceiverPair<'a> = (&'a mut ControlReceiver, &'a mut PresenceReceiver);
+type ControlIoParts = (
+    ControlWriter,
+    ControlReceiver,
+    PresenceReceiver,
+    Arc<AtomicBool>,
+    Arc<Notify>,
+    Arc<ControlTerminalState>,
+    watch::Receiver<bool>,
+    JoinHandle<()>,
+);
+
+struct ControlTerminalState {
+    published: AtomicBool,
+    error: Mutex<Option<SidecarError>>,
+    signal: watch::Sender<bool>,
+}
+
+impl ControlTerminalState {
+    fn new() -> Arc<Self> {
+        let (signal, _) = watch::channel(false);
+        Arc::new(Self {
+            published: AtomicBool::new(false),
+            error: Mutex::new(None),
+            signal,
+        })
+    }
+
+    fn publish(&self, error: SidecarError) {
+        let mut slot = self
+            .error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_none() {
+            *slot = Some(error);
+            self.published.store(true, Ordering::Release);
+            let _ = self.signal.send(true);
+        }
+    }
+
+    fn take_error(&self) -> Option<SidecarError> {
+        self.error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
+    fn is_published(&self) -> bool {
+        self.published.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StampedPresenceCommand {
+    command: ControlCommand,
+    readiness_generation: u64,
+}
+
 struct ControlIo {
     writer: Option<ControlWriter>,
-    receiver: Option<mpsc::Receiver<Result<ControlCommand, SidecarError>>>,
+    receiver: Option<ControlReceiver>,
+    presence_receiver: Option<PresenceReceiver>,
+    presence_overflow: Arc<AtomicBool>,
+    presence_overflow_notify: Arc<Notify>,
+    terminal: Arc<ControlTerminalState>,
+    terminal_receiver: watch::Receiver<bool>,
     task: Option<JoinHandle<()>>,
 }
 
@@ -600,20 +1203,53 @@ impl ControlIo {
         self.writer.as_mut().expect("control writer is owned")
     }
 
-    fn receiver(&mut self) -> &mut mpsc::Receiver<Result<ControlCommand, SidecarError>> {
+    #[cfg(test)]
+    fn receiver(&mut self) -> &mut ControlReceiver {
         self.receiver.as_mut().expect("control receiver is owned")
     }
 
-    fn into_parts(
-        mut self,
+    #[cfg(test)]
+    fn receivers(&mut self) -> ControlReceiverPair<'_> {
+        let control = self.receiver.as_mut().expect("control receiver is owned");
+        let presence = self
+            .presence_receiver
+            .as_mut()
+            .expect("presence receiver is owned");
+        (control, presence)
+    }
+
+    fn receivers_and_terminal(
+        &mut self,
     ) -> (
-        ControlWriter,
-        mpsc::Receiver<Result<ControlCommand, SidecarError>>,
-        JoinHandle<()>,
+        &mut ControlReceiver,
+        &mut PresenceReceiver,
+        &Arc<ControlTerminalState>,
+        &mut watch::Receiver<bool>,
     ) {
+        let control = self.receiver.as_mut().expect("control receiver is owned");
+        let presence = self
+            .presence_receiver
+            .as_mut()
+            .expect("presence receiver is owned");
+        (
+            control,
+            presence,
+            &self.terminal,
+            &mut self.terminal_receiver,
+        )
+    }
+
+    fn into_parts(mut self) -> ControlIoParts {
         (
             self.writer.take().expect("control writer is owned"),
             self.receiver.take().expect("control receiver is owned"),
+            self.presence_receiver
+                .take()
+                .expect("presence receiver is owned"),
+            self.presence_overflow.clone(),
+            self.presence_overflow_notify.clone(),
+            self.terminal.clone(),
+            self.terminal_receiver.clone(),
             self.task.take().expect("control task is owned"),
         )
     }
@@ -625,6 +1261,7 @@ impl ControlIo {
         }
         self.writer = None;
         self.receiver = None;
+        self.presence_receiver = None;
     }
 }
 
@@ -661,9 +1298,15 @@ struct ActiveSessionIo {
     bridge_rx: mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
     bridge_terminal: watch::Receiver<Option<BridgeTerminal>>,
     control_rx: mpsc::Receiver<Result<ControlCommand, SidecarError>>,
+    presence_rx: PresenceReceiver,
+    presence_overflow: Arc<AtomicBool>,
+    presence_overflow_notify: Arc<Notify>,
+    control_terminal: Arc<ControlTerminalState>,
+    control_terminal_receiver: watch::Receiver<bool>,
 }
 
 type BridgeReacquisitionParts<'a> = (
+    &'a mut BridgeWriter,
     &'a mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
     &'a mut watch::Receiver<Option<BridgeTerminal>>,
     &'a mut Option<Box<BridgeFrame>>,
@@ -671,11 +1314,16 @@ type BridgeReacquisitionParts<'a> = (
 
 enum ActiveSessionEvent {
     Deadline,
+    BridgeWriterFailed,
+    ControlTerminal,
     Control(Option<Result<ControlCommand, SidecarError>>),
+    Presence(Option<PresenceResult>),
+    PresenceOverflow,
     Bridge(Option<Result<BridgeFrame, SidecarError>>),
 }
 
 enum ControlGapEvent {
+    BridgeWriterFailed,
     Control(Result<ControlConnection, SidecarError>),
     Bridge(Option<Result<BridgeFrame, SidecarError>>),
     BridgeTerminal(Option<BridgeTerminal>),
@@ -724,6 +1372,7 @@ impl BridgeTerminal {
 impl BridgeIo {
     fn reacquisition_parts(&mut self) -> BridgeReacquisitionParts<'_> {
         (
+            self.writer.as_mut().expect("bridge writer is owned"),
             self.receiver.as_mut().expect("bridge receiver is owned"),
             &mut self.terminal,
             &mut self.pending_frame,
@@ -739,6 +1388,19 @@ impl BridgeIo {
             pending_frame: self.pending_frame.take(),
         }
     }
+
+    async fn shutdown(&mut self) {
+        if let Some(writer) = self.writer.as_mut() {
+            writer.shutdown().await;
+        }
+        if let Some(task) = self.task.take() {
+            task.abort();
+            let _ = task.await;
+        }
+        self.writer = None;
+        self.receiver = None;
+        self.pending_frame = None;
+    }
 }
 
 impl Drop for BridgeIo {
@@ -749,19 +1411,54 @@ impl Drop for BridgeIo {
     }
 }
 
+#[cfg(test)]
 fn spawn_control_reader(control: ControlConnection) -> ControlIo {
+    spawn_control_reader_with_generation(control, Arc::new(std::sync::atomic::AtomicU64::new(0)))
+}
+
+fn spawn_control_reader_with_generation(
+    control: ControlConnection,
+    presence_generation: Arc<std::sync::atomic::AtomicU64>,
+) -> ControlIo {
     let (mut control_reader, control_writer) = control.into_split();
     let (control_tx, control_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
+    let (presence_tx, presence_rx) = mpsc::channel::<PresenceResult>(MAX_PRESENCE_COMMANDS);
+    let presence_overflow = Arc::new(AtomicBool::new(false));
+    let presence_overflow_notify = Arc::new(Notify::new());
+    let overflow_signal = Arc::clone(&presence_overflow);
+    let overflow_notify = Arc::clone(&presence_overflow_notify);
+    let terminal = ControlTerminalState::new();
+    let terminal_signal = Arc::clone(&terminal);
+    let terminal_receiver = terminal.signal.subscribe();
     let control_task = tokio::spawn(async move {
         loop {
             match control_reader.receive_command().await {
                 Ok(command) => {
-                    if control_tx.send(Ok(command)).await.is_err() {
+                    if is_presence_command(&command) {
+                        // Presence is ordered lifecycle state. A full lane is
+                        // a terminal condition, not permission to lose one
+                        // transition: the owner observes the signal after
+                        // draining any already accepted records and tears
+                        // down this authenticated session.
+                        let stamped = StampedPresenceCommand {
+                            command,
+                            readiness_generation: presence_generation.load(Ordering::Acquire),
+                        };
+                        match presence_tx.try_send(Ok(stamped)) {
+                            Ok(()) => {}
+                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                overflow_signal.store(true, Ordering::Release);
+                                overflow_notify.notify_one();
+                                break;
+                            }
+                            Err(mpsc::error::TrySendError::Closed(_)) => break,
+                        }
+                    } else if control_tx.send(Ok(command)).await.is_err() {
                         break;
                     }
                 }
                 Err(error) => {
-                    let _ = control_tx.send(Err(SidecarError::Control(error))).await;
+                    terminal_signal.publish(SidecarError::Control(error));
                     break;
                 }
             }
@@ -770,17 +1467,34 @@ fn spawn_control_reader(control: ControlConnection) -> ControlIo {
     ControlIo {
         writer: Some(control_writer),
         receiver: Some(control_rx),
+        presence_receiver: Some(presence_rx),
+        presence_overflow,
+        presence_overflow_notify,
+        terminal,
+        terminal_receiver,
         task: Some(control_task),
     }
 }
 
 #[cfg(test)]
-fn spawn_control_reader_observed<F>(control: ControlConnection, mut prefix_observer: F) -> ControlIo
+fn spawn_control_reader_observed_with_generation<F>(
+    control: ControlConnection,
+    presence_generation: Arc<std::sync::atomic::AtomicU64>,
+    mut prefix_observer: F,
+) -> ControlIo
 where
     F: FnMut() + Send + 'static,
 {
     let (mut control_reader, control_writer) = control.into_split();
     let (control_tx, control_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
+    let (presence_tx, presence_rx) = mpsc::channel::<PresenceResult>(MAX_PRESENCE_COMMANDS);
+    let presence_overflow = Arc::new(AtomicBool::new(false));
+    let presence_overflow_notify = Arc::new(Notify::new());
+    let overflow_signal = Arc::clone(&presence_overflow);
+    let overflow_notify = Arc::clone(&presence_overflow_notify);
+    let terminal = ControlTerminalState::new();
+    let terminal_signal = Arc::clone(&terminal);
+    let terminal_receiver = terminal.signal.subscribe();
     let control_task = tokio::spawn(async move {
         loop {
             match control_reader
@@ -788,12 +1502,29 @@ where
                 .await
             {
                 Ok(command) => {
-                    if control_tx.send(Ok(command)).await.is_err() {
+                    if is_presence_command(&command) {
+                        // Keep this path nonblocking so a lifecycle flood
+                        // cannot strand a later critical command behind the
+                        // bounded lane. Saturation is fatal and observable.
+                        let stamped = StampedPresenceCommand {
+                            command,
+                            readiness_generation: presence_generation.load(Ordering::Acquire),
+                        };
+                        match presence_tx.try_send(Ok(stamped)) {
+                            Ok(()) => prefix_observer(),
+                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                overflow_signal.store(true, Ordering::Release);
+                                overflow_notify.notify_one();
+                                break;
+                            }
+                            Err(mpsc::error::TrySendError::Closed(_)) => break,
+                        }
+                    } else if control_tx.send(Ok(command)).await.is_err() {
                         break;
                     }
                 }
                 Err(error) => {
-                    let _ = control_tx.send(Err(SidecarError::Control(error))).await;
+                    terminal_signal.publish(SidecarError::Control(error));
                     break;
                 }
             }
@@ -802,6 +1533,11 @@ where
     ControlIo {
         writer: Some(control_writer),
         receiver: Some(control_rx),
+        presence_receiver: Some(presence_rx),
+        presence_overflow,
+        presence_overflow_notify,
+        terminal,
+        terminal_receiver,
         task: Some(control_task),
     }
 }
@@ -939,14 +1675,20 @@ enum ListenerRaceEvent {
 
 enum ControlledBridgeEvent {
     Bridge(Result<AuthenticatedConnection, SidecarError>),
+    ControlTerminal,
     Command(Option<Result<ControlCommand, SidecarError>>),
+    Presence(Option<PresenceResult>),
+    PresenceOverflow,
     Deadline,
 }
 
 #[cfg(test)]
 enum ControlledListenerEvent {
     Bridge(Result<AuthenticatedConnection, SidecarError>),
+    ControlTerminal,
     Command(Option<Result<ControlCommand, SidecarError>>),
+    Presence(Option<PresenceResult>),
+    PresenceOverflow,
     Deadline,
 }
 
@@ -978,12 +1720,22 @@ pub struct LocalSidecar {
     sequence_state: SessionSequenceState,
     command_history: HashMap<CommandId, CommandRecord>,
     applied_shutdown: Option<CommandId>,
+    // A ROM reboot closes the launcher realtime generation.  This latch is
+    // deliberately owned by the sidecar rather than a reconnectable session
+    // state so a control-only or bridge reconnect cannot accidentally revive
+    // stale lifecycle forwarding in the same local session.
+    lifecycle_forwarding_disabled: bool,
+    presence_generation: Arc<std::sync::atomic::AtomicU64>,
     #[cfg(test)]
     handshake_prefix_observer: Option<mpsc::Sender<()>>,
     #[cfg(test)]
     bridge_prefix_observer: Option<mpsc::Sender<()>>,
     #[cfg(test)]
     control_prefix_observer: Option<mpsc::Sender<()>>,
+    #[cfg(test)]
+    test_write_gate: Option<TestBlockedWriterGate>,
+    #[cfg(test)]
+    test_writer_failure_gate: Option<TestWriterFailureGate>,
 }
 
 impl LocalSidecar {
@@ -1013,12 +1765,18 @@ impl LocalSidecar {
             sequence_state: SessionSequenceState::default(),
             command_history: HashMap::new(),
             applied_shutdown: None,
+            lifecycle_forwarding_disabled: false,
+            presence_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             #[cfg(test)]
             handshake_prefix_observer: None,
             #[cfg(test)]
             bridge_prefix_observer: None,
             #[cfg(test)]
             control_prefix_observer: None,
+            #[cfg(test)]
+            test_write_gate: None,
+            #[cfg(test)]
+            test_writer_failure_gate: None,
         })
     }
 
@@ -1063,25 +1821,83 @@ impl LocalSidecar {
     fn spawn_control_io(&self, control: ControlConnection) -> ControlIo {
         #[cfg(test)]
         if let Some(observer) = self.control_prefix_observer.clone() {
-            return spawn_control_reader_observed(control, move || {
-                let _ = observer.try_send(());
-            });
+            return spawn_control_reader_observed_with_generation(
+                control,
+                Arc::clone(&self.presence_generation),
+                move || {
+                    let _ = observer.try_send(());
+                },
+            );
         }
         #[cfg(not(test))]
         debug_assert!(self.session_epoch != 0);
-        spawn_control_reader(control)
+        spawn_control_reader_with_generation(control, Arc::clone(&self.presence_generation))
     }
 
     fn spawn_bridge_io(&self, bridge: AuthenticatedConnection) -> BridgeIo {
         #[cfg(test)]
         if let Some(observer) = self.bridge_prefix_observer.clone() {
-            return spawn_bridge_reader_observed(bridge, move || {
+            let io = spawn_bridge_reader_observed(bridge, move || {
                 let _ = observer.try_send(());
             });
+            if let Some(gate) = self.test_write_gate.clone() {
+                io.writer
+                    .as_ref()
+                    .expect("bridge writer is owned")
+                    .install_test_write_gate(gate);
+            }
+            if let Some(gate) = self.test_writer_failure_gate.as_ref() {
+                io.writer
+                    .as_ref()
+                    .expect("bridge writer is owned")
+                    .install_test_failure_gate(gate);
+            }
+            return io;
         }
         #[cfg(not(test))]
         debug_assert!(self.session_epoch != 0);
-        spawn_bridge_reader(bridge)
+        let io = spawn_bridge_reader(bridge);
+        #[cfg(test)]
+        if let Some(gate) = self.test_write_gate.clone() {
+            io.writer
+                .as_ref()
+                .expect("bridge writer is owned")
+                .install_test_write_gate(gate);
+        }
+        #[cfg(test)]
+        if let Some(gate) = self.test_writer_failure_gate.as_ref() {
+            io.writer
+                .as_ref()
+                .expect("bridge writer is owned")
+                .install_test_failure_gate(gate);
+        }
+        io
+    }
+
+    #[cfg(test)]
+    fn install_test_blocked_writer_gate(&mut self) -> TestBlockedWriterGate {
+        let gate = TestBlockedWriterGate {
+            release: Arc::new(Notify::new()),
+            observer: TestWriterObserver {
+                admitted: Arc::new(AtomicBool::new(false)),
+                admission_signal: Arc::new(Notify::new()),
+                dropped: Arc::new(AtomicBool::new(false)),
+                drop_signal: Arc::new(Notify::new()),
+            },
+        };
+        self.test_write_gate = Some(gate.clone());
+        gate
+    }
+
+    #[cfg(test)]
+    fn install_test_writer_failure_gate(&mut self) -> TestWriterFailureGate {
+        let gate = TestWriterFailureGate {
+            trigger: Arc::new(Notify::new()),
+            registered: Arc::new(Notify::new()),
+            registration_seen: Arc::new(AtomicBool::new(false)),
+        };
+        self.test_writer_failure_gate = Some(gate.clone());
+        gate
     }
 
     /// Accepts exactly one authenticated bridge peer.
@@ -1223,15 +2039,23 @@ impl LocalSidecar {
         bridge: &mut BridgeIo,
         reconnect: &mut ReconnectContext,
     ) -> Result<ControlRecovery, SidecarError> {
-        let (bridge_rx, bridge_terminal, pending_bridge_frame) = bridge.reacquisition_parts();
-        self.recover_control_with_bridge(
-            bridge_rx,
-            bridge_terminal,
-            &mut reconnect.state,
-            pending_bridge_frame,
-            &mut reconnect.bridge_lifecycle,
-        )
-        .await
+        let result = {
+            let (bridge_writer, bridge_rx, bridge_terminal, pending_bridge_frame) =
+                bridge.reacquisition_parts();
+            self.recover_control_with_bridge(
+                bridge_writer,
+                bridge_rx,
+                bridge_terminal,
+                &mut reconnect.state,
+                pending_bridge_frame,
+                &mut reconnect.bridge_lifecycle,
+            )
+            .await
+        };
+        if result.is_err() {
+            bridge.shutdown().await;
+        }
+        result
     }
 
     async fn race_lost_control_with_bridge_auth(
@@ -1335,26 +2159,74 @@ impl LocalSidecar {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn drive_control_with_bridge_auth(
         &mut self,
         authentication: &mut BridgeAuthentication,
         control: &mut ControlIo,
         reconnect: &mut ReconnectContext,
     ) -> Result<ControlledAcquisitionStep, SidecarError> {
-        let event = tokio::select! {
-            biased;
-            () = checkpoint_deadline(reconnect.state.checkpoint_state.deadline()) => {
-                ControlledBridgeEvent::Deadline
-            }
-            command = control.receiver().recv(),
-                if can_receive_deferred_command(&reconnect.deferred_commands)
-                    || reconnect.state.checkpoint_state.is_quiescing() =>
+        if control.terminal.is_published() {
+            let error = control
+                .terminal
+                .take_error()
+                .unwrap_or(SidecarError::ProtocolViolation("control reader terminated"));
+            if self
+                .process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
+                .await?
             {
-                ControlledBridgeEvent::Command(command)
+                return Ok(ControlledAcquisitionStep::Shutdown);
             }
-            result = authentication => ControlledBridgeEvent::Bridge(result),
+            return Ok(if control.task.is_none() {
+                ControlledAcquisitionStep::ControlLost
+            } else {
+                ControlledAcquisitionStep::Continue
+            });
+        }
+        if control.presence_overflow.load(Ordering::Acquire) {
+            return Err(SidecarError::PresenceQueueFull);
+        }
+        let presence_overflow_notify = Arc::clone(&control.presence_overflow_notify);
+        let terminal_state = Arc::clone(&control.terminal);
+        let event = {
+            let (control_rx, presence_rx, _terminal, terminal_receiver) =
+                control.receivers_and_terminal();
+            tokio::select! {
+                biased;
+                changed = terminal_receiver.changed() => {
+                    let _ = changed;
+                    ControlledBridgeEvent::ControlTerminal
+                }
+                () = presence_overflow_notify.notified() => ControlledBridgeEvent::PresenceOverflow,
+                () = checkpoint_deadline(reconnect.state.checkpoint_state.deadline()) => {
+                    ControlledBridgeEvent::Deadline
+                }
+                command = control_rx.recv(),
+                    if can_receive_deferred_command(&reconnect.deferred_commands)
+                        || reconnect.state.checkpoint_state.is_quiescing() =>
+                {
+                    ControlledBridgeEvent::Command(command)
+                }
+                result = authentication => ControlledBridgeEvent::Bridge(result),
+                presence = presence_rx.recv() => {
+                    ControlledBridgeEvent::Presence(presence)
+                }
+            }
         };
         match event {
+            ControlledBridgeEvent::ControlTerminal => {
+                let error = terminal_state
+                    .take_error()
+                    .unwrap_or(SidecarError::ProtocolViolation("control reader terminated"));
+                if self
+                    .process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
+                    .await?
+                {
+                    Ok(ControlledAcquisitionStep::Shutdown)
+                } else {
+                    Ok(ControlledAcquisitionStep::ControlLost)
+                }
+            }
             ControlledBridgeEvent::Deadline => {
                 self.handle_pair_acquisition_deadline(control, reconnect)
                     .await
@@ -1378,6 +2250,9 @@ impl LocalSidecar {
                 ))
             }
             ControlledBridgeEvent::Command(result) => {
+                if control.presence_overflow.load(Ordering::Acquire) {
+                    return Err(SidecarError::PresenceQueueFull);
+                }
                 if self
                     .process_pre_bridge_control_result(result, control, reconnect)
                     .await?
@@ -1390,33 +2265,107 @@ impl LocalSidecar {
                     ControlledAcquisitionStep::Continue
                 })
             }
+            ControlledBridgeEvent::Presence(result) => {
+                if self
+                    .process_pre_bridge_presence_result(result, control, reconnect, &terminal_state)
+                    .await?
+                {
+                    return Ok(ControlledAcquisitionStep::Shutdown);
+                }
+                Ok(if control.task.is_none() {
+                    ControlledAcquisitionStep::ControlLost
+                } else {
+                    ControlledAcquisitionStep::Continue
+                })
+            }
+            ControlledBridgeEvent::PresenceOverflow => {
+                if let Some(error) = terminal_state.take_error() {
+                    self.process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
+                        .await
+                        .map(|shutdown| {
+                            if shutdown {
+                                ControlledAcquisitionStep::Shutdown
+                            } else {
+                                ControlledAcquisitionStep::ControlLost
+                            }
+                        })
+                } else {
+                    Err(SidecarError::PresenceQueueFull)
+                }
+            }
         }
     }
 
     #[cfg(test)]
+    #[allow(clippy::too_many_lines)]
     async fn drive_control_with_bridge_listener(
         &mut self,
         control: &mut ControlIo,
         reconnect: &mut ReconnectContext,
     ) -> Result<ControlledAcquisitionStep, SidecarError> {
+        if control.terminal.is_published() {
+            let error = control
+                .terminal
+                .take_error()
+                .unwrap_or(SidecarError::ProtocolViolation("control reader terminated"));
+            if self
+                .process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
+                .await?
+            {
+                return Ok(ControlledAcquisitionStep::Shutdown);
+            }
+            return Ok(if control.task.is_none() {
+                ControlledAcquisitionStep::ControlLost
+            } else {
+                ControlledAcquisitionStep::Continue
+            });
+        }
+        if control.presence_overflow.load(Ordering::Acquire) {
+            return Err(SidecarError::PresenceQueueFull);
+        }
+        let presence_overflow_notify = Arc::clone(&control.presence_overflow_notify);
+        let terminal_state = Arc::clone(&control.terminal);
         let bridge_authentication = self.start_bridge_authentication_pump();
         tokio::pin!(bridge_authentication);
         let event = {
+            let (control_rx, presence_rx, _terminal, terminal_receiver) =
+                control.receivers_and_terminal();
             tokio::select! {
                 biased;
+                changed = terminal_receiver.changed() => {
+                    let _ = changed;
+                    ControlledListenerEvent::ControlTerminal
+                }
+                () = presence_overflow_notify.notified() => ControlledListenerEvent::PresenceOverflow,
                 () = checkpoint_deadline(
                     reconnect.state.checkpoint_state.deadline()
                 ) => ControlledListenerEvent::Deadline,
-                command = control.receiver().recv(),
+                command = control_rx.recv(),
                     if can_receive_deferred_command(&reconnect.deferred_commands)
                         || reconnect.state.checkpoint_state.is_quiescing() =>
                 {
                     ControlledListenerEvent::Command(command)
                 }
                 result = &mut bridge_authentication => ControlledListenerEvent::Bridge(result),
+                presence = presence_rx.recv() => {
+                    ControlledListenerEvent::Presence(presence)
+                }
             }
         };
         match event {
+            ControlledListenerEvent::ControlTerminal => {
+                let error = terminal_state
+                    .take_error()
+                    .unwrap_or(SidecarError::ProtocolViolation("control reader terminated"));
+                if self
+                    .process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
+                    .await?
+                {
+                    Ok(ControlledAcquisitionStep::Shutdown)
+                } else {
+                    Ok(ControlledAcquisitionStep::ControlLost)
+                }
+            }
             ControlledListenerEvent::Deadline => {
                 self.handle_pair_acquisition_deadline(control, reconnect)
                     .await
@@ -1446,6 +2395,9 @@ impl LocalSidecar {
                 ))
             }
             ControlledListenerEvent::Command(result) => {
+                if control.presence_overflow.load(Ordering::Acquire) {
+                    return Err(SidecarError::PresenceQueueFull);
+                }
                 if self
                     .process_pre_bridge_control_result(result, control, reconnect)
                     .await?
@@ -1458,9 +2410,38 @@ impl LocalSidecar {
                     ControlledAcquisitionStep::Continue
                 })
             }
+            ControlledListenerEvent::Presence(result) => {
+                if self
+                    .process_pre_bridge_presence_result(result, control, reconnect, &terminal_state)
+                    .await?
+                {
+                    return Ok(ControlledAcquisitionStep::Shutdown);
+                }
+                Ok(if control.task.is_none() {
+                    ControlledAcquisitionStep::ControlLost
+                } else {
+                    ControlledAcquisitionStep::Continue
+                })
+            }
+            ControlledListenerEvent::PresenceOverflow => {
+                if let Some(error) = terminal_state.take_error() {
+                    self.process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
+                        .await
+                        .map(|shutdown| {
+                            if shutdown {
+                                ControlledAcquisitionStep::Shutdown
+                            } else {
+                                ControlledAcquisitionStep::ControlLost
+                            }
+                        })
+                } else {
+                    Err(SidecarError::PresenceQueueFull)
+                }
+            }
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn accept_initial_bridge_or_shutdown(
         &mut self,
         mut control: ControlIo,
@@ -1474,13 +2455,23 @@ impl LocalSidecar {
         let mut bridge: Option<BridgeIo> = None;
         let mut has_control = true;
         loop {
-            if has_control
-                && !self
+            if has_control {
+                match self
                     .handoff_pair_acquisition_expiry(&mut control, &mut reconnect)
-                    .await?
-            {
-                has_control = false;
-                continue;
+                    .await
+                {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        has_control = false;
+                        continue;
+                    }
+                    Err(error) => {
+                        if let Some(mut pending_bridge) = bridge.take() {
+                            pending_bridge.shutdown().await;
+                        }
+                        return Err(error);
+                    }
+                }
             }
             if has_control && let Some(bridge) = bridge.take() {
                 reconnect.bridge_lifecycle.mark_authenticated();
@@ -1492,17 +2483,39 @@ impl LocalSidecar {
             }
 
             if !has_control {
-                if let Some(pending_bridge) = bridge.as_mut() {
-                    match self
-                        .reacquire_control_with_bridge(pending_bridge, &mut reconnect)
-                        .await?
-                    {
+                if bridge.is_some() {
+                    let recovery_result = {
+                        let pending_bridge = bridge
+                            .as_mut()
+                            .expect("bridge is present for control reacquisition");
+                        self.reacquire_control_with_bridge(pending_bridge, &mut reconnect)
+                            .await
+                    };
+                    let recovery = match recovery_result {
+                        Ok(recovery) => recovery,
+                        Err(error) => {
+                            if let Some(mut pending_bridge) = bridge.take() {
+                                pending_bridge.shutdown().await;
+                            }
+                            return Err(error);
+                        }
+                    };
+                    match recovery {
                         ControlRecovery::Control(replacement) => {
                             control = replacement;
                             has_control = true;
                         }
-                        ControlRecovery::Reconnect => bridge = None,
-                        ControlRecovery::Shutdown => return Ok(InitialAccept::Shutdown),
+                        ControlRecovery::Reconnect => {
+                            if let Some(mut pending_bridge) = bridge.take() {
+                                pending_bridge.shutdown().await;
+                            }
+                        }
+                        ControlRecovery::Shutdown => {
+                            if let Some(mut pending_bridge) = bridge.take() {
+                                pending_bridge.shutdown().await;
+                            }
+                            return Ok(InitialAccept::Shutdown);
+                        }
                     }
                 } else if let Some(authentication) = bridge_authentication.as_mut() {
                     match self
@@ -1623,13 +2636,64 @@ impl LocalSidecar {
                 Ok(false)
             }
             Some(Err(error)) => {
-                let clean_pre_bridge_shutdown = reconnect.state.checkpoint_state.is_quiescing()
-                    && reconnect.bridge_lifecycle.control_eof_proves_shutdown()
-                    && matches!(error, SidecarError::Control(ControlError::LineClosed));
-                if clean_pre_bridge_shutdown {
-                    control.shutdown().await;
-                    return Ok(true);
+                self.process_pre_bridge_control_error(error, control, reconnect)
+                    .await
+            }
+            None => {
+                if let Some(error) = control.terminal.take_error() {
+                    return self
+                        .process_pre_bridge_control_error(error, control, reconnect)
+                        .await;
                 }
+                if control.presence_overflow.load(Ordering::Acquire) {
+                    return Err(SidecarError::PresenceQueueFull);
+                }
+                control.shutdown().await;
+                // A vanished decoder task is not transport EOF proof and
+                // cannot authorize reconnect or clean shutdown.
+                Err(SidecarError::ProtocolViolation("control reader terminated"))
+            }
+        }
+    }
+
+    async fn process_pre_bridge_control_error(
+        &mut self,
+        error: SidecarError,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+    ) -> Result<bool, SidecarError> {
+        let clean_pre_bridge_shutdown = reconnect.state.checkpoint_state.is_quiescing()
+            && reconnect.bridge_lifecycle.control_eof_proves_shutdown()
+            && matches!(error, SidecarError::Control(ControlError::LineClosed));
+        if clean_pre_bridge_shutdown {
+            control.shutdown().await;
+            return Ok(true);
+        }
+        if can_reconnect_after(&error) && is_control_reconnect_error(&error) {
+            control.shutdown().await;
+            return Ok(false);
+        }
+        Err(error)
+    }
+
+    async fn process_pre_bridge_presence_result(
+        &mut self,
+        result: Option<PresenceResult>,
+        control: &mut ControlIo,
+        reconnect: &mut ReconnectContext,
+        terminal: &ControlTerminalState,
+    ) -> Result<bool, SidecarError> {
+        if let Some(error) = terminal.take_error() {
+            return self
+                .process_pre_bridge_control_error(error, control, reconnect)
+                .await;
+        }
+        if control.presence_overflow.load(Ordering::Acquire) {
+            return Err(SidecarError::PresenceQueueFull);
+        }
+        match result {
+            Some(Ok(_)) => Ok(false),
+            Some(Err(error)) => {
                 if can_reconnect_after(&error) && is_control_reconnect_error(&error) {
                     control.shutdown().await;
                     return Ok(false);
@@ -1638,10 +2702,10 @@ impl LocalSidecar {
             }
             None => {
                 control.shutdown().await;
-                // A vanished decoder task is not transport EOF proof. Only
-                // the explicit LineClosed result above can complete a
-                // pre-authentication shutdown.
-                Ok(false)
+                // Presence EOF is a sibling-channel observation only. It is
+                // never authoritative control EOF and cannot prove shutdown
+                // or authorize a reconnect.
+                Err(SidecarError::ProtocolViolation("control reader terminated"))
             }
         }
     }
@@ -1785,11 +2849,34 @@ impl LocalSidecar {
         &mut self,
         connection: &mut BridgeWriter,
     ) -> Result<(), SidecarError> {
-        let sequence = self.sequence_state.take_sidecar_sequence();
-        let frame = BridgeFrame::new(MessageType::SessionReady, sequence, self.session_epoch, &[])?;
-        connection.send(&frame, Direction::SidecarToRom).await
+        self.send_session_ready_to_stream_at(
+            connection,
+            self.presence_generation.load(Ordering::Acquire),
+            BridgeWriteClass::Critical,
+        )
+        .await
     }
 
+    async fn send_session_ready_to_stream_at(
+        &mut self,
+        connection: &mut BridgeWriter,
+        readiness_generation: u64,
+        class: BridgeWriteClass,
+    ) -> Result<(), SidecarError> {
+        let sequence = self.sequence_state.take_sidecar_sequence();
+        let frame = BridgeFrame::new(MessageType::SessionReady, sequence, self.session_epoch, &[])?;
+        connection
+            .send_with_class(&frame, Direction::SidecarToRom, class, readiness_generation)
+            .await
+    }
+
+    fn acknowledge_rom_ready(&self, bridge: &BridgeWriter, session: &mut ActiveSessionState) {
+        session.acknowledged_rom_ready = true;
+        let generation = self.presence_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        bridge.set_generation(generation);
+    }
+
+    #[allow(clippy::too_many_lines)]
     async fn serve_authenticated_controlled_client(
         &mut self,
         bridge: BridgeIo,
@@ -1818,7 +2905,16 @@ impl LocalSidecar {
         let mut pending_bridge_frame = pending_bridge_frame;
 
         loop {
-            let (control_writer, control_rx, control_task) = control.into_parts();
+            let (
+                control_writer,
+                control_rx,
+                presence_rx,
+                presence_overflow,
+                presence_overflow_notify,
+                control_terminal,
+                control_terminal_receiver,
+                control_task,
+            ) = control.into_parts();
             reader_tasks.set_control(control_task);
 
             let io = ActiveSessionIo {
@@ -1827,6 +2923,11 @@ impl LocalSidecar {
                 bridge_rx,
                 bridge_terminal,
                 control_rx,
+                presence_rx,
+                presence_overflow,
+                presence_overflow_notify,
+                control_terminal,
+                control_terminal_receiver,
             };
             let (result, next_state, next_io) = self
                 .run_checkpoint_session(
@@ -1844,6 +2945,7 @@ impl LocalSidecar {
 
             match result {
                 Ok(()) => {
+                    bridge_writer.shutdown().await;
                     reader_tasks.shutdown().await;
                     return Ok(completed_session_exit(
                         next_state,
@@ -1855,18 +2957,48 @@ impl LocalSidecar {
                     // Keep the bridge I/O alive while replacement control
                     // authenticates; its bounded channel retains in-flight frames.
                     reconnect_state = next_state;
-                    match self
+                    // If the retained bridge has already published its
+                    // terminal state, retire the pair before starting a new
+                    // control authentication. Otherwise that in-flight
+                    // authentication can be cancelled by the bridge EOF and
+                    // the next control peer observes a spurious reset.
+                    let retained_bridge_terminal = bridge_terminal.borrow().as_ref().copied();
+                    if let Some(terminal) = retained_bridge_terminal {
+                        let bridge_error = terminal.into_error();
+                        bridge_lifecycle.record_termination(&bridge_error);
+                        bridge_writer.shutdown().await;
+                        reader_tasks.shutdown().await;
+                        if reconnect_state.checkpoint_state.is_quiescing()
+                            && is_bridge_shutdown_eof(&bridge_error)
+                        {
+                            return Ok(SessionExit::Shutdown);
+                        }
+                        if can_reconnect_bridge_loss(
+                            &bridge_error,
+                            reconnect_state.checkpoint_state,
+                        ) {
+                            return Ok(SessionExit::Reconnect(ReconnectContext {
+                                state: reconnect_state,
+                                deferred_commands,
+                                bridge_lifecycle,
+                            }));
+                        }
+                        return Err(bridge_error);
+                    }
+                    let recovery = self
                         .recover_control_with_bridge(
+                            &mut bridge_writer,
                             &mut bridge_rx,
                             &mut bridge_terminal,
                             &mut reconnect_state,
                             &mut pending_bridge_frame,
                             &mut bridge_lifecycle,
                         )
-                        .await?
-                    {
-                        ControlRecovery::Control(replacement) => control = replacement,
-                        ControlRecovery::Reconnect => {
+                        .await;
+                    match recovery {
+                        Ok(ControlRecovery::Control(replacement)) => control = replacement,
+                        Ok(ControlRecovery::Reconnect) => {
+                            bridge_writer.shutdown().await;
                             reader_tasks.shutdown().await;
                             return Ok(SessionExit::Reconnect(ReconnectContext {
                                 state: reconnect_state,
@@ -1874,9 +3006,15 @@ impl LocalSidecar {
                                 bridge_lifecycle,
                             }));
                         }
-                        ControlRecovery::Shutdown => {
+                        Ok(ControlRecovery::Shutdown) => {
+                            bridge_writer.shutdown().await;
                             reader_tasks.shutdown().await;
                             return Ok(SessionExit::Shutdown);
+                        }
+                        Err(error) => {
+                            bridge_writer.shutdown().await;
+                            reader_tasks.shutdown().await;
+                            return Err(error);
                         }
                     }
                     new_bridge_connection = false;
@@ -1884,6 +3022,7 @@ impl LocalSidecar {
                 Err(error) if can_reconnect_bridge_loss(&error, next_state.checkpoint_state) => {
                     // A terminal bridge reader must be replaced, never polled again.
                     bridge_lifecycle.record_termination(&error);
+                    bridge_writer.shutdown().await;
                     reader_tasks.shutdown().await;
                     return Ok(SessionExit::Reconnect(ReconnectContext {
                         state: next_state,
@@ -1892,6 +3031,7 @@ impl LocalSidecar {
                     }));
                 }
                 Err(error) => {
+                    bridge_writer.shutdown().await;
                     reader_tasks.shutdown().await;
                     return Err(error);
                 }
@@ -1899,6 +3039,7 @@ impl LocalSidecar {
         }
     }
 
+    #[cfg(test)]
     async fn await_control_or_bridge(
         &mut self,
         bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
@@ -1928,6 +3069,9 @@ impl LocalSidecar {
                 }
             };
             match event {
+                ControlGapEvent::BridgeWriterFailed => unreachable!(
+                    "the writer-failure event is only emitted by the writer-aware reacquisition"
+                ),
                 ControlGapEvent::Deadline => {
                     advance_reconnect_deadline(
                         &mut self.sequence_state,
@@ -1960,8 +3104,98 @@ impl LocalSidecar {
         }
     }
 
+    async fn await_control_or_bridge_with_writer(
+        &mut self,
+        bridge_writer: &mut BridgeWriter,
+        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+        bridge_terminal: &mut watch::Receiver<Option<BridgeTerminal>>,
+        reconnect: &mut ReconnectState,
+        pending_bridge_frame: &mut Option<Box<BridgeFrame>>,
+    ) -> Result<ControlReacquisition, SidecarError> {
+        // Register the durable writer-failure watch before checking its
+        // current state. A failure between a check and subscribe must not
+        // leave control reacquisition waiting forever for replacement input.
+        let mut writer_failure_receiver = bridge_writer.failure_receiver();
+        let replacement = self.start_control_authentication();
+        tokio::pin!(replacement);
+        loop {
+            if let Some(error) = bridge_writer
+                .take_failure()
+                .or_else(|| bridge_writer.write_failure())
+            {
+                return Ok(ControlReacquisition::BridgeTerminated(error));
+            }
+            let event = tokio::select! {
+                biased;
+                changed = writer_failure_receiver.changed() => {
+                    let _ = changed;
+                    ControlGapEvent::BridgeWriterFailed
+                }
+                () = checkpoint_deadline(reconnect.checkpoint_state.deadline()) => {
+                    ControlGapEvent::Deadline
+                }
+                result = &mut replacement => ControlGapEvent::Control(result),
+                result = bridge_rx.recv(), if pending_bridge_frame.is_none() => {
+                    ControlGapEvent::Bridge(result)
+                }
+                changed = bridge_terminal.changed() => {
+                    ControlGapEvent::BridgeTerminal(
+                        changed.ok().and_then(|()| *bridge_terminal.borrow())
+                    )
+                }
+            };
+            match event {
+                ControlGapEvent::BridgeWriterFailed => {
+                    return Ok(ControlReacquisition::BridgeTerminated(
+                        bridge_writer
+                            .take_failure()
+                            .or_else(|| bridge_writer.write_failure())
+                            .unwrap_or_else(BridgeWriter::writer_terminated_error),
+                    ));
+                }
+                ControlGapEvent::Deadline => {
+                    advance_reconnect_deadline(
+                        &mut self.sequence_state,
+                        reconnect,
+                        Instant::now(),
+                    )?;
+                }
+                ControlGapEvent::Control(result) => {
+                    // A reconnectable control EOF must not win a simultaneous
+                    // writer-failure race and revive a retired bridge.
+                    if let Some(error) = bridge_writer
+                        .take_failure()
+                        .or_else(|| bridge_writer.write_failure())
+                    {
+                        return Ok(ControlReacquisition::BridgeTerminated(error));
+                    }
+                    return result.map(ControlReacquisition::Control);
+                }
+                ControlGapEvent::BridgeTerminal(Some(terminal)) => {
+                    return Ok(ControlReacquisition::BridgeTerminated(
+                        terminal.into_error(),
+                    ));
+                }
+                ControlGapEvent::BridgeTerminal(None) | ControlGapEvent::Bridge(None) => {
+                    return Err(SidecarError::ProtocolViolation("bridge reader terminated"));
+                }
+                ControlGapEvent::Bridge(Some(Ok(_)))
+                    if reconnect.checkpoint_state.is_quiescing() => {}
+                ControlGapEvent::Bridge(Some(Ok(frame))) => {
+                    if pending_bridge_frame.is_none() {
+                        *pending_bridge_frame = Some(Box::new(frame));
+                    }
+                }
+                ControlGapEvent::Bridge(Some(Err(error))) => {
+                    return Ok(ControlReacquisition::BridgeTerminated(error));
+                }
+            }
+        }
+    }
+
     async fn recover_control_with_bridge(
         &mut self,
+        bridge_writer: &mut BridgeWriter,
         bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
         bridge_terminal: &mut watch::Receiver<Option<BridgeTerminal>>,
         reconnect: &mut ReconnectState,
@@ -1969,7 +3203,13 @@ impl LocalSidecar {
         bridge_lifecycle: &mut BridgeLifecycle,
     ) -> Result<ControlRecovery, SidecarError> {
         match self
-            .await_control_or_bridge(bridge_rx, bridge_terminal, reconnect, pending_bridge_frame)
+            .await_control_or_bridge_with_writer(
+                bridge_writer,
+                bridge_rx,
+                bridge_terminal,
+                reconnect,
+                pending_bridge_frame,
+            )
             .await?
         {
             ControlReacquisition::Control(replacement) => {
@@ -1988,6 +3228,7 @@ impl LocalSidecar {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn run_checkpoint_session(
         &mut self,
         mut io: ActiveSessionIo,
@@ -2012,6 +3253,11 @@ impl LocalSidecar {
                 bridge_rx,
                 bridge_terminal: _bridge_terminal,
                 control_rx,
+                presence_rx,
+                presence_overflow,
+                presence_overflow_notify,
+                control_terminal,
+                control_terminal_receiver,
             } = &mut io;
             self.prepare_active_session(
                 bridge_rx,
@@ -2020,28 +3266,79 @@ impl LocalSidecar {
                 deferred_commands,
                 &mut session,
                 pending_bridge_frame,
-            )
-            .await?;
-            loop {
+                )
+                .await?;
+                loop {
                 self.prepare_active_iteration(
                     bridge_rx,
                     bridge_writer,
                     control_writer,
                     deferred_commands,
                     &mut session,
-                )
+                    )
                 .await?;
+                let mut writer_failure_receiver = bridge_writer.failure_receiver();
+                #[cfg(test)]
+                if let Some(gate) = self.test_writer_failure_gate.as_ref() {
+                    gate.registration_seen.store(true, Ordering::Release);
+                    gate.registered.notify_waiters();
+                }
+                if control_terminal.is_published()
+                    || presence_overflow.load(Ordering::Acquire)
+                    || bridge_writer.write_failure().is_some()
+                {
+                    return Err(take_active_terminal_error(
+                        bridge_writer,
+                        control_terminal,
+                        presence_overflow.load(Ordering::Acquire),
+                    ));
+                }
                 let deadline = session.checkpoint_state.deadline();
                 let event = tokio::select! {
                     biased;
+                    changed = control_terminal_receiver.changed() => {
+                        let _ = changed;
+                        ActiveSessionEvent::ControlTerminal
+                    }
+                    () = presence_overflow_notify.notified() => ActiveSessionEvent::PresenceOverflow,
+                    changed = writer_failure_receiver.changed() => {
+                        let _ = changed;
+                        ActiveSessionEvent::BridgeWriterFailed
+                    }
                     () = checkpoint_deadline(deadline) => ActiveSessionEvent::Deadline,
                     result = control_rx.recv(),
-                        if can_receive_deferred_command(deferred_commands) => {
+                        if can_receive_deferred_command(deferred_commands)
+                            || session.checkpoint_state.is_quiescing() => {
                         ActiveSessionEvent::Control(result)
                     }
                     result = bridge_rx.recv() => ActiveSessionEvent::Bridge(result),
+                    result = presence_rx.recv() => ActiveSessionEvent::Presence(result),
                 };
+                if control_terminal.is_published()
+                    || presence_overflow.load(Ordering::Acquire)
+                    || bridge_writer.write_failure().is_some()
+                {
+                    return Err(take_active_terminal_error(
+                        bridge_writer,
+                        control_terminal,
+                        presence_overflow.load(Ordering::Acquire),
+                    ));
+                }
                 match event {
+                    ActiveSessionEvent::ControlTerminal | ActiveSessionEvent::BridgeWriterFailed => {
+                        return Err(take_active_terminal_error(
+                            bridge_writer,
+                            control_terminal,
+                            presence_overflow.load(Ordering::Acquire),
+                        ));
+                    }
+                    ActiveSessionEvent::PresenceOverflow => {
+                        return Err(take_active_terminal_error(
+                            bridge_writer,
+                            control_terminal,
+                            true,
+                        ));
+                    }
                     ActiveSessionEvent::Deadline => {
                         self.handle_active_session_deadline(
                             control_writer,
@@ -2054,13 +3351,19 @@ impl LocalSidecar {
                     ActiveSessionEvent::Control(result) => {
                         self.handle_active_control_event(
                             result,
-                            bridge_rx,
                             bridge_writer,
                             control_writer,
                             deferred_commands,
                             &mut session,
                         )
                         .await?;
+                    }
+                    ActiveSessionEvent::Presence(result) => {
+                        self.handle_active_presence_event(
+                            result,
+                            bridge_writer,
+                            &mut session,
+                        )?;
                     }
                     ActiveSessionEvent::Bridge(result) => {
                         if matches!(
@@ -2149,29 +3452,21 @@ impl LocalSidecar {
     async fn handle_active_control_event(
         &mut self,
         result: Option<Result<ControlCommand, SidecarError>>,
-        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
         bridge: &mut BridgeWriter,
         control: &mut ControlWriter,
         deferred_commands: &mut VecDeque<ControlCommand>,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
         let Some(result) = result else {
-            self.drain_queued_bridge_frames(bridge_rx, bridge, control, session)
-                .await?;
-            return Err(SidecarError::Control(ControlError::Connection(
-                io::Error::new(io::ErrorKind::UnexpectedEof, "control reader terminated"),
-            )));
+            return Err(SidecarError::ProtocolViolation("control reader terminated"));
         };
         let command = match result {
             Ok(command) => command,
-            Err(error) => {
-                if !session.checkpoint_state.is_quiescing() {
-                    self.drain_queued_bridge_frames(bridge_rx, bridge, control, session)
-                        .await?;
-                }
-                return Err(error);
-            }
+            Err(error) => return Err(error),
         };
+        if is_presence_command(&command) {
+            return self.handle_presence_command(command, bridge, session);
+        }
         let (command_id, _, _, _) = command_parts(&command);
         let can_replay = self.command_history.contains_key(&command_id);
         if !deferred_commands.is_empty() && !can_replay {
@@ -2196,6 +3491,19 @@ impl LocalSidecar {
         }
         self.handle_control_command(command, bridge, control, Instant::now(), session)
             .await
+    }
+
+    fn handle_active_presence_event(
+        &mut self,
+        result: Option<PresenceResult>,
+        bridge: &mut BridgeWriter,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        let Some(result) = result else {
+            return Err(SidecarError::ProtocolViolation("control reader terminated"));
+        };
+        let stamped = result?;
+        self.handle_stamped_presence_command(stamped, bridge, session)
     }
 
     async fn handle_active_bridge_event(
@@ -2278,12 +3586,73 @@ impl LocalSidecar {
             .await
     }
 
+    fn handle_presence_command(
+        &mut self,
+        command: ControlCommand,
+        bridge: &mut BridgeWriter,
+        session: &ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        let stamped = StampedPresenceCommand {
+            command,
+            readiness_generation: self.presence_generation.load(Ordering::Acquire),
+        };
+        self.handle_stamped_presence_command(stamped, bridge, session)
+    }
+
+    fn handle_stamped_presence_command(
+        &mut self,
+        stamped: StampedPresenceCommand,
+        bridge: &mut BridgeWriter,
+        session: &ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        // Presence is best effort. It is intentionally rejected before ROM
+        // readiness and once quiescing begins, without touching any command
+        // ledger or deferred queue and without allocating an outer sequence.
+        if self.lifecycle_forwarding_disabled
+            || session.checkpoint_state.is_quiescing()
+            || !session.acknowledged_rom_ready
+            || stamped.readiness_generation != self.presence_generation.load(Ordering::Acquire)
+        {
+            return Ok(());
+        }
+
+        let StampedPresenceCommand {
+            command,
+            readiness_generation,
+        } = stamped;
+        let (message_type, payload) = match command {
+            ControlCommand::RemotePlayerSpawn(value) => {
+                (MessageType::RemotePlayerSpawn, value.encode().to_vec())
+            }
+            ControlCommand::RemotePlayerUpdate(value) => {
+                (MessageType::RemotePlayerUpdate, value.encode().to_vec())
+            }
+            ControlCommand::RemotePlayerDespawn(value) => {
+                (MessageType::RemotePlayerDespawn, value.encode().to_vec())
+            }
+            _ => return Err(SidecarError::ProtocolViolation("invalid presence command")),
+        };
+        let sequence = self.sequence_state.take_sidecar_sequence();
+        let frame = BridgeFrame::new(message_type, sequence, self.session_epoch, &payload)?;
+        bridge.send_presence_at(&frame, Direction::SidecarToRom, readiness_generation)
+    }
+
     async fn resume_checkpoint_handoff(
         &mut self,
         session: &mut ActiveSessionState,
         bridge: &mut BridgeWriter,
         control: &mut ControlWriter,
     ) -> Result<(), SidecarError> {
+        // SESSION_READY is sent before the reset event. If the bounded event
+        // write was ambiguous and control reconnects, retain the reboot mark
+        // so the launcher still receives the one generation notification.
+        if session.rearm_after_reboot
+            && matches!(session.checkpoint_state, CheckpointState::Idle)
+            && session.acknowledged_rom_ready
+        {
+            control.send_event(&ControlEvent::RomPresenceReset).await?;
+            session.rearm_after_reboot = false;
+        }
         match session.checkpoint_state {
             CheckpointState::ReadyPendingHandoff { key } => {
                 // A ready frame is staged until its critical control event has
@@ -2311,7 +3680,7 @@ impl LocalSidecar {
                     .await?;
                 session.checkpoint_state = CheckpointState::Idle;
                 if session.rearm_after_reboot {
-                    self.complete_reboot_rearm(bridge, session).await?;
+                    self.complete_reboot_rearm(bridge, control, session).await?;
                 }
             }
             // An AwaitDecision event was already handed off before reconnect;
@@ -2328,17 +3697,26 @@ impl LocalSidecar {
     async fn complete_reboot_rearm(
         &mut self,
         bridge: &mut BridgeWriter,
+        control: &mut ControlWriter,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
+        let next_generation = self.presence_generation.load(Ordering::Acquire) + 1;
+        // Set the admission fence before allocating the new SESSION_READY.
+        // Queued lifecycle frames from the retired generation are discarded
+        // by the sole writer; an in-flight frame poisons the bridge.
+        bridge.cutover(next_generation).await?;
         self.sequence_state.rearm_session_after_rom_reboot(1);
         session.acknowledged_rom_ready = false;
         // This write is bounded and fatal on failure. Only after the ROM has
         // received its new SESSION_READY may the old exact-key tombstone be
         // rotated, allowing sequence one in the new generation.
-        self.send_session_ready_to_stream(bridge).await?;
-        session.acknowledged_rom_ready = true;
-        session.rearm_after_reboot = false;
+        self.send_session_ready_to_stream_at(bridge, next_generation, BridgeWriteClass::Cutover)
+            .await?;
+        self.acknowledge_rom_ready(bridge, session);
+        session.rearm_after_reboot = true;
         session.expired_checkpoint = None;
+        control.send_event(&ControlEvent::RomPresenceReset).await?;
+        session.rearm_after_reboot = false;
         Ok(())
     }
 
@@ -2358,6 +3736,9 @@ impl LocalSidecar {
             return Ok(());
         }
         match frame.message_type() {
+            MessageType::PlayerState | MessageType::InteractRemotePlayer => {
+                self.handle_presence_frame(frame, control, session).await?;
+            }
             MessageType::CheckpointReady => {
                 if frame.session_epoch() != self.session_epoch || !frame.payload().is_empty() {
                     return Err(SidecarError::ProtocolViolation("invalid checkpoint ready"));
@@ -2442,11 +3823,55 @@ impl LocalSidecar {
                 if frame.message_type() == MessageType::RomReady && !session.acknowledged_rom_ready
                 {
                     self.send_session_ready_to_stream(bridge).await?;
-                    session.acknowledged_rom_ready = true;
+                    self.acknowledge_rom_ready(bridge, session);
                 }
                 rotate_expired_tombstone(&frame, &mut session.expired_checkpoint);
             }
         }
+        Ok(())
+    }
+
+    async fn handle_presence_frame(
+        &mut self,
+        frame: BridgeFrame,
+        control: &mut ControlWriter,
+        session: &mut ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        if frame.session_epoch() != self.session_epoch {
+            return Err(SidecarError::ProtocolViolation(
+                "presence frame has wrong session epoch",
+            ));
+        }
+        if !session.acknowledged_rom_ready {
+            return Err(SidecarError::ProtocolViolation(
+                "presence frame before rom ready",
+            ));
+        }
+        if !self
+            .sequence_state
+            .inspect_rom_frame(&frame, self.session_epoch)
+        {
+            return Ok(());
+        }
+
+        let event = match frame.message_type() {
+            MessageType::PlayerState => ControlEvent::PlayerState(
+                LocalPresenceStateV1::decode(frame.payload())
+                    .map_err(|_| SidecarError::ProtocolViolation("invalid player state"))?,
+            ),
+            MessageType::InteractRemotePlayer => ControlEvent::InteractRemotePlayer(
+                PresenceInteractionV1::decode(frame.payload()).map_err(|_| {
+                    SidecarError::ProtocolViolation("invalid remote player interaction")
+                })?,
+            ),
+            _ => return Err(SidecarError::ProtocolViolation("invalid presence frame")),
+        };
+
+        // Commit before the bounded control write. A write with ambiguous
+        // delivery must not cause the same transient frame to be replayed.
+        self.sequence_state.commit_rom_frame(&frame);
+        rotate_expired_tombstone(&frame, &mut session.expired_checkpoint);
+        control.send_event(&event).await?;
         Ok(())
     }
 
@@ -2467,11 +3892,15 @@ impl LocalSidecar {
             return Ok(false);
         }
         match session.checkpoint_state {
-            CheckpointState::AwaitSaveData { .. } => Err(SidecarError::ProtocolViolation(
-                "rom reboot during post-grant checkpoint",
-            )),
+            CheckpointState::AwaitSaveData { .. } => {
+                self.lifecycle_forwarding_disabled = true;
+                Err(SidecarError::ProtocolViolation(
+                    "rom reboot during post-grant checkpoint",
+                ))
+            }
             CheckpointState::ReadyPendingHandoff { key }
             | CheckpointState::AwaitDecision { key, .. } => {
+                self.lifecycle_forwarding_disabled = true;
                 // Retire a staged/awaiting checkpoint before rearming the ROM
                 // cursor. The exact-key tombstone below also blocks a replay
                 // of this frame after the reboot resets the ROM sequence.
@@ -2486,17 +3915,19 @@ impl LocalSidecar {
                     })
                     .await?;
                 session.checkpoint_state = CheckpointState::Idle;
-                self.complete_reboot_rearm(bridge, session).await?;
+                self.complete_reboot_rearm(bridge, control, session).await?;
                 Ok(true)
             }
             CheckpointState::Idle
                 if is_boot_epoch_reboot || self.sequence_state.last_session_rom > 1 =>
             {
+                self.lifecycle_forwarding_disabled = true;
                 session.rearm_after_reboot = true;
-                self.complete_reboot_rearm(bridge, session).await?;
+                self.complete_reboot_rearm(bridge, control, session).await?;
                 Ok(true)
             }
             CheckpointState::ExpiryPendingHandoff { key } => {
+                self.lifecycle_forwarding_disabled = true;
                 // Timer expiry may have staged the durable handoff before a
                 // failed control write. If the queued epoch-zero READY is
                 // drained after that failure, retain the reboot intent for
@@ -2507,7 +3938,10 @@ impl LocalSidecar {
                 session.rearm_after_reboot = true;
                 Ok(true)
             }
-            CheckpointState::Quiescing { .. } => Ok(true),
+            CheckpointState::Quiescing { .. } => {
+                self.lifecycle_forwarding_disabled = true;
+                Ok(true)
+            }
             CheckpointState::Idle => Ok(false),
         }
     }
@@ -2945,6 +4379,7 @@ struct InitialPair {
     reconnect: ReconnectContext,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum InitialAccept {
     Pair(InitialPair),
     Shutdown,
@@ -3080,6 +4515,35 @@ fn is_listener_failure(error: &SidecarError) -> bool {
         error,
         SidecarError::Control(ControlError::Listener(_)) | SidecarError::Listener(_)
     )
+}
+
+fn take_active_terminal_error(
+    bridge_writer: &mut BridgeWriter,
+    control_terminal: &ControlTerminalState,
+    presence_overflow: bool,
+) -> SidecarError {
+    let control_error = control_terminal.take_error();
+    if let Some(error) = control_error {
+        if is_control_reconnect_error(&error) {
+            if presence_overflow {
+                return SidecarError::PresenceQueueFull;
+            }
+            if let Some(writer_error) = bridge_writer
+                .take_failure()
+                .or_else(|| bridge_writer.write_failure())
+            {
+                return writer_error;
+            }
+        }
+        return error;
+    }
+    if presence_overflow {
+        return SidecarError::PresenceQueueFull;
+    }
+    bridge_writer
+        .take_failure()
+        .or_else(|| bridge_writer.write_failure())
+        .unwrap_or(SidecarError::ProtocolViolation("control reader terminated"))
 }
 
 fn advance_reconnect_deadline(
@@ -3221,6 +4685,11 @@ fn command_parts(
             None,
             CommandKind::Shutdown,
         ),
+        ControlCommand::RemotePlayerSpawn(_)
+        | ControlCommand::RemotePlayerUpdate(_)
+        | ControlCommand::RemotePlayerDespawn(_) => {
+            unreachable!("presence commands bypass command ledgers")
+        }
     }
 }
 
@@ -3229,7 +4698,21 @@ fn command_epoch(command: &ControlCommand) -> u32 {
         ControlCommand::CheckpointGrant(command) => command.session_epoch,
         ControlCommand::CheckpointAbort(command) => command.session_epoch,
         ControlCommand::ShutdownRequest(command) => command.session_epoch,
+        ControlCommand::RemotePlayerSpawn(_)
+        | ControlCommand::RemotePlayerUpdate(_)
+        | ControlCommand::RemotePlayerDespawn(_) => {
+            unreachable!("presence commands have no session epoch")
+        }
     }
+}
+
+fn is_presence_command(command: &ControlCommand) -> bool {
+    matches!(
+        command,
+        ControlCommand::RemotePlayerSpawn(_)
+            | ControlCommand::RemotePlayerUpdate(_)
+            | ControlCommand::RemotePlayerDespawn(_)
+    )
 }
 
 fn command_is_expired(
@@ -3248,6 +4731,9 @@ fn deferred_command_waits_for_bridge_state(
         ControlCommand::CheckpointGrant(command) => (Some(command.key()), true),
         ControlCommand::CheckpointAbort(command) => (Some(command.key()), false),
         ControlCommand::ShutdownRequest(_) => (None, false),
+        ControlCommand::RemotePlayerSpawn(_)
+        | ControlCommand::RemotePlayerUpdate(_)
+        | ControlCommand::RemotePlayerDespawn(_) => return false,
     };
     let Some(key) = key else {
         return false;
@@ -3455,6 +4941,10 @@ fn complete_bridge_authentication(
 
 #[cfg(test)]
 mod tests {
+    use coop_protocol::{
+        CanonicalUsername, DespawnReason, LocalPresenceStateV1, PresenceHandle,
+        RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+    };
     use serde::Serialize;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -3473,6 +4963,33 @@ mod tests {
             sequence,
             TEST_SESSION_EPOCH,
             &generation.to_le_bytes(),
+        )
+        .unwrap()
+    }
+
+    fn valid_local_presence_state() -> [u8; 28] {
+        [
+            1, 1, 0, 3, 0, 252, 255, 9, 0, 0, 7, 4, 68, 51, 34, 17, 136, 119, 102, 85, 2, 1, 2, 1,
+            204, 187, 170, 153,
+        ]
+    }
+
+    fn remote_update_command() -> ControlCommand {
+        let state = LocalPresenceStateV1::decode(&valid_local_presence_state()).unwrap();
+        ControlCommand::RemotePlayerUpdate(
+            RemotePlayerUpdateV1::new(PresenceHandle::new(1).unwrap(), 1, state).unwrap(),
+        )
+    }
+
+    fn remote_presence_frame(sequence: u32) -> BridgeFrame {
+        let ControlCommand::RemotePlayerUpdate(value) = remote_update_command() else {
+            unreachable!("remote update helper must return an update")
+        };
+        BridgeFrame::new(
+            MessageType::RemotePlayerUpdate,
+            sequence,
+            TEST_SESSION_EPOCH,
+            &value.encode(),
         )
         .unwrap()
     }
@@ -3585,6 +5102,17 @@ mod tests {
         (writer, client)
     }
 
+    async fn blocked_bridge_writer_pair() -> (BridgeWriter, TcpStream) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = TcpStream::connect(address).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        let (reader, writer) = server.into_split();
+        let (writer, _gate) = BridgeWriter::new_blocked(writer);
+        drop(reader);
+        (writer, client)
+    }
+
     async fn control_writer_pair() -> (ControlWriter, TcpStream) {
         let (_, writer, client) = control_reader_writer_pair().await;
         (writer, client)
@@ -3600,15 +5128,34 @@ mod tests {
         (reader, writer, client)
     }
 
+    async fn spawned_control_io() -> (ControlIo, TcpStream) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = TcpStream::connect(address).await.unwrap();
+        let (server, _) = listener.accept().await.unwrap();
+        (
+            spawn_control_reader(ControlConnection::from_authenticated_stream(server)),
+            client,
+        )
+    }
+
     async fn preloaded_control_io(command: ControlCommand) -> (ControlIo, TcpStream) {
         let (writer, client) = control_writer_pair().await;
         let (sender, receiver) = mpsc::channel(1);
+        let (_presence_sender, presence_receiver) = mpsc::channel(1);
         sender.send(Ok(command)).await.unwrap();
         let task = tokio::spawn(std::future::pending::<()>());
+        let terminal = ControlTerminalState::new();
+        let terminal_receiver = terminal.signal.subscribe();
         (
             ControlIo {
                 writer: Some(writer),
                 receiver: Some(receiver),
+                presence_receiver: Some(presence_receiver),
+                presence_overflow: Arc::new(AtomicBool::new(false)),
+                presence_overflow_notify: Arc::new(Notify::new()),
+                terminal,
+                terminal_receiver,
                 task: Some(task),
             },
             client,
@@ -3659,6 +5206,31 @@ mod tests {
                 (CommandId::parse(command_id).unwrap(), status, reason)
             ),
             event => panic!("expected command result, received {event:?}"),
+        }
+    }
+
+    async fn assert_presence_and_command_result(stream: &mut TcpStream) {
+        let first_event = read_event(stream).await;
+        if matches!(first_event, ControlEvent::PlayerState(_)) {
+            assert!(matches!(
+                read_event(stream).await,
+                ControlEvent::CommandResult {
+                    status: CommandStatus::Applied,
+                    ..
+                }
+            ));
+        } else {
+            assert!(matches!(
+                first_event,
+                ControlEvent::CommandResult {
+                    status: CommandStatus::Applied,
+                    ..
+                }
+            ));
+            assert!(matches!(
+                read_event(stream).await,
+                ControlEvent::PlayerState(_)
+            ));
         }
     }
 
@@ -3839,6 +5411,697 @@ mod tests {
             None,
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn pre_bridge_presence_flood_does_not_strand_shutdown_reservation() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+
+        for index in 0..MAX_DEFERRED_ROUTINE_COMMANDS {
+            send_command(
+                &mut control,
+                &abort(
+                    &format!("10000000-0000-4000-8000-{index:012x}"),
+                    TEST_SESSION_EPOCH - 1,
+                    1,
+                ),
+            )
+            .await;
+        }
+        let presence = remote_update_command();
+        for _ in 0..32 {
+            send_command(&mut control, &presence).await;
+        }
+        let shutdown_id = "00000000-0000-4000-8000-0000000000f1";
+        send_command(&mut control, &shutdown(shutdown_id, TEST_SESSION_EPOCH)).await;
+        assert_command_result(&mut control, shutdown_id, CommandStatus::Applied, None).await;
+
+        drop(control);
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn initial_active_rom_ready_does_not_disable_lifecycle_forwarding() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+
+        // The first active-epoch READY is a legitimate initial session frame,
+        // not a reboot. Lifecycle forwarding must remain enabled afterwards.
+        let active_ready =
+            BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&active_ready.encode()).await.unwrap();
+        send_command(&mut control, &remote_update_command()).await;
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        timeout(Duration::from_millis(500), bridge.read_exact(&mut bytes))
+            .await
+            .expect("post-ready lifecycle frame must be forwarded")
+            .unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::RemotePlayerUpdate);
+
+        send_command(
+            &mut control,
+            &shutdown("00000000-0000-4000-8000-0000000000f3", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert_command_result(
+            &mut control,
+            "00000000-0000-4000-8000-0000000000f3",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        drop(bridge);
+        drop(control);
+        server_task.abort();
+        let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn presence_overflow_terminates_serving_loop_as_presence_queue_full() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (control_io, mut control) = spawned_control_io().await;
+
+        let presence = remote_update_command();
+        for _ in 0..=MAX_PRESENCE_COMMANDS {
+            send_command(&mut control, &presence).await;
+        }
+        timeout(Duration::from_secs(1), async {
+            while !control_io.presence_overflow.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("overflow must be published before the receiver observes EOF");
+
+        let result = timeout(
+            Duration::from_millis(500),
+            server.accept_initial_bridge_or_shutdown(control_io, ReconnectContext::default()),
+        )
+        .await
+        .expect("overflow must wake the real serving loop");
+        assert!(matches!(result, Err(SidecarError::PresenceQueueFull)));
+        drop(control);
+    }
+
+    #[tokio::test]
+    async fn stalled_presence_bridge_write_does_not_delay_shutdown_ack() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let blocked_writer = server.install_test_blocked_writer_gate();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+
+        // Prove the sole writer has admitted a lifecycle record and is held
+        // behind the server-owned gate before the critical shutdown arrives.
+        let admission = blocked_writer.observer.admission_signal.notified();
+        send_command(&mut control, &remote_update_command()).await;
+        timeout(Duration::from_secs(1), admission)
+            .await
+            .expect("lifecycle output must be pending before shutdown");
+        assert!(blocked_writer.observer.admitted.load(Ordering::Acquire));
+        let shutdown_id = "00000000-0000-4000-8000-0000000000f4";
+        send_command(&mut control, &shutdown(shutdown_id, TEST_SESSION_EPOCH)).await;
+        timeout(
+            Duration::from_millis(500),
+            assert_command_result(&mut control, shutdown_id, CommandStatus::Applied, None),
+        )
+        .await
+        .expect("stalled lifecycle output must not delay shutdown ACK");
+
+        // The peer half-closes its write side to provide the authenticated
+        // clean bridge EOF that completes the quiescing session. Keep the
+        // read side so the test can observe the server's joined writer close.
+        bridge.shutdown().await.unwrap();
+        let result = timeout(Duration::from_secs(1), server_task)
+            .await
+            .expect("server must finish without task cancellation")
+            .unwrap();
+        assert!(result.is_ok());
+        assert!(blocked_writer.observer.dropped.load(Ordering::Acquire));
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), bridge.read(&mut closed))
+                .await
+                .expect("bridge peer must close after writer teardown")
+                .unwrap(),
+            0
+        );
+        drop(control);
+    }
+
+    #[tokio::test]
+    async fn control_terminal_cause_wins_over_presence_eof_when_deferred_lane_is_full() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+
+        // Fifteen routine records plus the reserved shutdown slot leave the
+        // deferred lane full. The malformed line then closes the sibling
+        // presence sender, but the authoritative terminal retains the exact
+        // decoder cause and wakes the real serving loop.
+        for index in 0..(MAX_DEFERRED_ROUTINE_COMMANDS - 1) {
+            send_command(
+                &mut control,
+                &abort(
+                    &format!("20000000-0000-4000-8000-{index:012x}"),
+                    TEST_SESSION_EPOCH - 1,
+                    1,
+                ),
+            )
+            .await;
+        }
+        send_command(
+            &mut control,
+            &shutdown("20000000-0000-4000-8000-0000000000a1", TEST_SESSION_EPOCH),
+        )
+        .await;
+        control
+            .write_all(b"{\"type\":\"not-a-command\"}\n")
+            .await
+            .unwrap();
+
+        let result = timeout(Duration::from_secs(2), server_task)
+            .await
+            .expect("decoder terminal must wake the serving loop")
+            .unwrap();
+        assert!(matches!(
+            result,
+            Err(SidecarError::Control(ControlError::MalformedCommand(_)))
+        ));
+        drop(control);
+    }
+
+    #[tokio::test]
+    async fn bridge_writer_failure_wakes_idle_session_after_registration_race() {
+        let (mut writer, peer) = bridge_writer_pair().await;
+        peer.set_zero_linger().unwrap();
+        drop(peer);
+        let mut failure = writer.failure_receiver();
+        let frame =
+            BridgeFrame::new(MessageType::SessionReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        let result = timeout(
+            Duration::from_secs(1),
+            writer.send(&frame, Direction::SidecarToRom),
+        )
+        .await
+        .expect("writer failure must wake the completion");
+        assert!(matches!(
+            result,
+            Err(SidecarError::BridgeWriteConnection(_) | SidecarError::BridgeWriteTimeout)
+        ));
+        assert!(writer.write_failure().is_some());
+        assert!(failure.changed().await.is_ok());
+        assert!(*failure.borrow());
+        writer.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn active_writer_failure_precedes_simultaneous_control_eof() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let failure_gate = server.install_test_writer_failure_gate();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+
+        timeout(Duration::from_secs(1), async {
+            while !failure_gate.registration_seen.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("active loop must register writer failure before waiting");
+
+        // Trigger the durable writer failure and close control without
+        // allowing reconnectable control EOF to revive the retained bridge.
+        failure_gate.trigger.notify_one();
+        drop(control);
+        let result = timeout(Duration::from_secs(1), server_task)
+            .await
+            .expect("writer failure must terminate the active session")
+            .unwrap();
+        assert!(matches!(
+            result,
+            Err(SidecarError::BridgeWriteConnection(_) | SidecarError::BridgeWriteTimeout)
+        ));
+        let mut closed = [0_u8; 1];
+        assert_eq!(
+            timeout(Duration::from_secs(1), bridge.read(&mut closed))
+                .await
+                .expect("bridge socket must close with the failed writer")
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn reboot_cutover_discards_queued_old_generation_lifecycle() {
+        let (mut writer, mut peer) = bridge_writer_pair().await;
+        writer
+            .send_presence_at(&remote_presence_frame(1), Direction::SidecarToRom, 0)
+            .unwrap();
+        writer.cutover(1).await.unwrap();
+        assert_no_bridge_data(&mut peer).await;
+        writer
+            .send_presence_at(&remote_presence_frame(2), Direction::SidecarToRom, 1)
+            .unwrap();
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        timeout(Duration::from_secs(1), peer.read_exact(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.sequence(), 2);
+        writer.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn reboot_cutover_retires_unsafe_inflight_write() {
+        let (mut writer, _peer) = blocked_bridge_writer_pair().await;
+        writer
+            .send_presence_at(&remote_presence_frame(1), Direction::SidecarToRom, 0)
+            .unwrap();
+        timeout(Duration::from_secs(1), async {
+            while !writer.state.in_flight.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("blocked lifecycle write must be in flight");
+        let error = writer
+            .cutover(1)
+            .await
+            .expect_err("unsafe in-flight lifecycle must retire bridge");
+        assert!(matches!(
+            error,
+            SidecarError::BridgeWriteConnection(_) | SidecarError::BridgeWriteTimeout
+        ));
+        writer.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pre_ready_presence_is_not_forwarded_after_bridge_authentication() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (_handshake_prefixes, _bridge_prefixes, mut control_prefixes) =
+            server.observe_reader_prefixes();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+
+        send_command(&mut control, &remote_update_command()).await;
+        await_prefix(&mut control_prefixes, "pre-ready lifecycle command").await;
+
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        assert_no_bridge_data(&mut bridge).await;
+
+        // A fresh command after readiness is stamped with the new generation
+        // and is forwarded with the next outer sequence.
+        send_command(&mut control, &remote_update_command()).await;
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        timeout(Duration::from_millis(500), bridge.read_exact(&mut bytes))
+            .await
+            .expect("post-ready lifecycle command must be forwarded")
+            .unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::RemotePlayerUpdate);
+        assert_eq!(frame.sequence(), 3);
+
+        send_command(
+            &mut control,
+            &shutdown("00000000-0000-4000-8000-0000000000f5", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert_command_result(
+            &mut control,
+            "00000000-0000-4000-8000-0000000000f5",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        drop(control);
+        drop(bridge);
+        assert!(
+            timeout(Duration::from_secs(1), server_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn presence_lane_retains_capacity_and_never_strands_shutdown() {
+        let (mut io, mut peer) = spawned_control_io().await;
+        let presence = remote_update_command();
+        for _ in 0..MAX_PRESENCE_COMMANDS {
+            send_command(&mut peer, &presence).await;
+        }
+        let shutdown_id = "00000000-0000-4000-8000-0000000000f2";
+        send_command(&mut peer, &shutdown(shutdown_id, TEST_SESSION_EPOCH)).await;
+
+        let critical = timeout(Duration::from_secs(1), io.receiver().recv())
+            .await
+            .expect("critical command must not wait on lifecycle capacity")
+            .expect("control reader must remain alive")
+            .expect("critical command must be valid");
+        assert!(matches!(critical, ControlCommand::ShutdownRequest(_)));
+        let (_, presence_rx) = io.receivers();
+        for _ in 0..MAX_PRESENCE_COMMANDS {
+            assert!(matches!(
+                presence_rx.recv().await,
+                Some(Ok(StampedPresenceCommand {
+                    command: ControlCommand::RemotePlayerUpdate(_),
+                    ..
+                }))
+            ));
+        }
+        assert!(!io.presence_overflow.load(Ordering::Acquire));
+        io.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn presence_lane_overflow_is_a_stable_fatal_signal() {
+        let (mut io, mut peer) = spawned_control_io().await;
+        let presence = remote_update_command();
+        for _ in 0..=MAX_PRESENCE_COMMANDS {
+            send_command(&mut peer, &presence).await;
+        }
+        timeout(Duration::from_secs(1), async {
+            while !io.presence_overflow.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("overflow must be surfaced instead of silently dropping a record");
+        assert!(io.presence_overflow.load(Ordering::Acquire));
+        io.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn malformed_presence_payload_does_not_commit_rom_sequence() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let (_, bridge_peer) = bridge_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let frame =
+            BridgeFrame::new(MessageType::PlayerState, 4, TEST_SESSION_EPOCH, &[0; 27]).unwrap();
+        let error = sidecar
+            .handle_presence_frame(frame, &mut control, &mut session)
+            .await
+            .expect_err("truncated presence must be rejected");
+        assert!(matches!(
+            error,
+            SidecarError::ProtocolViolation("invalid player state")
+        ));
+        assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+        let frame = BridgeFrame::new(
+            MessageType::InteractRemotePlayer,
+            5,
+            TEST_SESSION_EPOCH,
+            &[0; 19],
+        )
+        .unwrap();
+        let error = sidecar
+            .handle_presence_frame(frame, &mut control, &mut session)
+            .await
+            .expect_err("truncated interaction must be rejected");
+        assert!(matches!(
+            error,
+            SidecarError::ProtocolViolation("invalid remote player interaction")
+        ));
+        assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+        assert!(
+            timeout(
+                Duration::from_millis(100),
+                control_peer.read(&mut [0_u8; 1])
+            )
+            .await
+            .is_err()
+        );
+        drop(bridge_peer);
+    }
+
+    #[tokio::test]
+    async fn outbound_presence_preserves_inner_bytes_and_uses_independent_sequences() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let state = LocalPresenceStateV1::decode(&valid_local_presence_state()).unwrap();
+        let commands = [
+            ControlCommand::RemotePlayerSpawn(
+                RemotePlayerSpawnV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    1,
+                    state.clone(),
+                    CanonicalUsername::new("ash").unwrap(),
+                )
+                .unwrap(),
+            ),
+            ControlCommand::RemotePlayerUpdate(
+                RemotePlayerUpdateV1::new(PresenceHandle::new(1).unwrap(), 2, state).unwrap(),
+            ),
+            ControlCommand::RemotePlayerDespawn(
+                RemotePlayerDespawnV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    3,
+                    DespawnReason::Disconnected,
+                )
+                .unwrap(),
+            ),
+        ];
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        for (index, command) in commands.into_iter().enumerate() {
+            sidecar
+                .handle_presence_command(command, &mut bridge, &session)
+                .unwrap();
+            let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+            bridge_peer.read_exact(&mut bytes).await.unwrap();
+            let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+            assert_eq!(frame.sequence(), u32::try_from(index).unwrap() + 1);
+            assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+            let expected = match index {
+                0 => RemotePlayerSpawnV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    1,
+                    LocalPresenceStateV1::decode(&valid_local_presence_state()).unwrap(),
+                    CanonicalUsername::new("ash").unwrap(),
+                )
+                .unwrap()
+                .encode()
+                .to_vec(),
+                1 => RemotePlayerUpdateV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    2,
+                    LocalPresenceStateV1::decode(&valid_local_presence_state()).unwrap(),
+                )
+                .unwrap()
+                .encode()
+                .to_vec(),
+                _ => RemotePlayerDespawnV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    3,
+                    DespawnReason::Disconnected,
+                )
+                .unwrap()
+                .encode()
+                .to_vec(),
+            };
+            assert_eq!(frame.payload(), expected.as_slice());
+        }
+        assert_eq!(sidecar.sequence_state.next_sidecar, 4);
+        session.checkpoint_state = CheckpointState::Quiescing {
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+        sidecar
+            .handle_presence_command(remote_update_command(), &mut bridge, &session)
+            .unwrap();
+        assert_eq!(sidecar.sequence_state.next_sidecar, 4);
+        assert_no_bridge_data(&mut bridge_peer).await;
+    }
+
+    #[tokio::test]
+    async fn reboot_reset_fences_queued_presence_for_the_local_session() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        sidecar.sequence_state.last_session_rom = 2;
+        let reboot = BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        assert!(
+            sidecar
+                .handle_rom_reboot(&reboot, &mut bridge, &mut control, &mut session)
+                .await
+                .unwrap()
+        );
+        let mut ready_bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut ready_bytes).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&ready_bytes, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::SessionReady
+        );
+        assert!(matches!(
+            read_event(&mut control_peer).await,
+            ControlEvent::RomPresenceReset
+        ));
+        assert!(sidecar.lifecycle_forwarding_disabled);
+        assert_eq!(sidecar.sequence_state.next_sidecar, 2);
+        sidecar
+            .handle_presence_command(remote_update_command(), &mut bridge, &session)
+            .unwrap();
+        assert_eq!(sidecar.sequence_state.next_sidecar, 2);
+        assert_no_bridge_data(&mut bridge_peer).await;
+    }
+
+    #[tokio::test]
+    async fn fieldless_reset_retry_requires_launcher_fatal_no_restart_policy() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, control_peer) = control_writer_pair().await;
+        control_peer.set_zero_linger().unwrap();
+        drop(control_peer);
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        sidecar.sequence_state.last_session_rom = 2;
+        let reboot = BridgeFrame::new(MessageType::RomReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        let error = sidecar
+            .handle_rom_reboot(&reboot, &mut bridge, &mut control, &mut session)
+            .await
+            .expect_err("ambiguous reset write must terminate the attempt");
+        assert!(matches!(
+            error,
+            SidecarError::Control(ControlError::WriteConnection(_))
+        ));
+        let mut ready_bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut ready_bytes).await.unwrap();
+        assert!(sidecar.lifecycle_forwarding_disabled);
+        assert!(session.rearm_after_reboot);
+
+        // A replacement control channel may retry the fieldless marker only
+        // while the launcher treats the ambiguous handoff as fatal and does
+        // not start another realtime core in this local session.
+        let (mut replacement, mut replacement_peer) = control_writer_pair().await;
+        sidecar
+            .resume_checkpoint_handoff(&mut session, &mut bridge, &mut replacement)
+            .await
+            .unwrap();
+        assert!(matches!(
+            read_event(&mut replacement_peer).await,
+            ControlEvent::RomPresenceReset
+        ));
+        assert!(!session.rearm_after_reboot);
     }
 
     #[tokio::test]
@@ -5620,6 +7883,10 @@ mod tests {
                 .message_type(),
             MessageType::SessionReady
         );
+        assert_eq!(
+            read_event(&mut control).await,
+            ControlEvent::RomPresenceReset
+        );
 
         let ready =
             BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
@@ -5688,6 +7955,10 @@ mod tests {
                 .unwrap()
                 .message_type(),
             MessageType::SessionReady
+        );
+        assert_eq!(
+            read_event(&mut control).await,
+            ControlEvent::RomPresenceReset
         );
 
         let next_ready =
@@ -6258,18 +8529,17 @@ mod tests {
         // While the grant command is still fragmented, deliver a complete
         // competing bridge event. The sidecar must service it without
         // cancelling or losing the control decoder's partial line.
-        let player_state =
-            BridgeFrame::new(MessageType::PlayerState, 2, TEST_SESSION_EPOCH, &[]).unwrap();
+        let player_state = BridgeFrame::new(
+            MessageType::PlayerState,
+            2,
+            TEST_SESSION_EPOCH,
+            &valid_local_presence_state(),
+        )
+        .unwrap();
         bridge.write_all(&player_state.encode()).await.unwrap();
         await_prefix(&mut bridge_prefixes, "competing player-state frame").await;
         control.write_all(&command_bytes[split..]).await.unwrap();
-        assert!(matches!(
-            read_event(&mut control).await,
-            ControlEvent::CommandResult {
-                status: CommandStatus::Applied,
-                ..
-            }
-        ));
+        assert_presence_and_command_result(&mut control).await;
         let mut granted = [0; BRIDGE_FRAME_SIZE];
         bridge.read_exact(&mut granted).await.unwrap();
 
@@ -7198,6 +9468,10 @@ mod tests {
         assert!(!session.rearm_after_reboot);
         assert!(session.acknowledged_rom_ready);
         assert_eq!(sidecar.sequence_state.last_session_rom, 1);
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::RomPresenceReset
+        );
 
         let replacement =
             BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
