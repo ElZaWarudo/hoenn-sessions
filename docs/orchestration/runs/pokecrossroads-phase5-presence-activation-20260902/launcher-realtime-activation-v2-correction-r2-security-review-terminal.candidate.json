@@ -1,0 +1,154 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+  "finding_feedback": [
+    {
+      "finding_id": "F-2D10E061",
+      "action": "corroborate",
+      "rationale": "The live successful activation gap is resolved with a delayed one-use grant and a complete loopback lifecycle that proves freshest-state handoff, Ready, lifecycle mapping, interaction delivery, shutdown, and joined teardown.",
+      "evidence": [
+        "realtime_activation_runs_ready_lifecycle_interaction_and_joined_teardown sends state sequence 17 during the pending mint and verifies it is the initial WebSocket state.",
+        "cargo test -p coop-launcher realtime --all-features --locked passes the successful activation regression."
+      ]
+    },
+    {
+      "finding_id": "F-30423722",
+      "action": "corroborate",
+      "rationale": "Both mint-shutdown branches reconcile the latched checkpoint through shutdown_during_realtime_mint before authenticated child shutdown.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2174-2191 routes first- and second-mint shutdown through the same checkpoint-draining helper.",
+        "realtime_mint_shutdown_drains_latched_checkpoint_before_child_teardown passes."
+      ]
+    },
+    {
+      "finding_id": "F-46C50542",
+      "action": "corroborate",
+      "rationale": "All public realtime lifecycle errors now invoke supervised stop regardless of whether mint began.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2026-2031 has no realtime_attempted cleanup guard.",
+        "Reset-before-mint and heartbeat-error-before-mint regressions join their control pumps."
+      ]
+    },
+    {
+      "finding_id": "F-58EDE2B0",
+      "action": "corroborate",
+      "rationale": "Server readiness and interaction admission are separated, and a sequence watermark distinguishes coordinator-observed interactions before and after Ready.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:175-239 records the Ready interaction watermark and queues only post-watermark interactions for activation.",
+        "realtime_checkpoint_watermark_drops_pre_ready_and_preserves_post_ready passes."
+      ]
+    },
+    {
+      "finding_id": "F-BDD4C8DE",
+      "action": "corroborate",
+      "rationale": "Completed driver state preempts a saturated owner queue in the coordinator.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:247-282 polls or reaps the completed task before mapping a received owner event.",
+        "Both saturated-owner-queue and held event-return regressions pass."
+      ]
+    },
+    {
+      "finding_id": "F-82E32A6B",
+      "action": "corroborate",
+      "rationale": "The r2 sequence watermark preserves interactions processed after Ready while dropping only those processed before it.",
+      "evidence": [
+        "RealtimeCoordinator stores pending interactions with monotonic sequence values and activate_interactions drops only sequence values at or below ready_interaction_watermark.",
+        "The synchronized checkpoint watermark regression proves both sides of the cutover."
+      ]
+    },
+    {
+      "finding_id": "F-830116ED",
+      "action": "challenge",
+      "rationale": "The fixed eight-control budget improves single-source liveness but does not guarantee heartbeat, deadline, or activation progress when another higher-priority source is also continuously ready.",
+      "evidence": [
+        "next_realtime_loop_input service-first mode places realtime before heartbeat.",
+        "next_checkpoint_input places Deadline last in both modes.",
+        "next_realtime_cutover_input places Activate after realtime in both modes."
+      ]
+    },
+    {
+      "finding_id": "F-A208DC98",
+      "action": "corroborate",
+      "rationale": "The coordinator now uses the post-receipt task-state check as the event-versus-terminal linearization point and has a barrier-controlled regression where the driver terminates during the held return.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:268-278 rechecks JoinHandle::is_finished before mapping the event.",
+        "coordinator_rechecks_driver_after_owner_event_wins_poll_race passes."
+      ]
+    },
+    {
+      "finding_id": "F-F3308A85",
+      "action": "challenge",
+      "rationale": "Freshest-state and active-reset coverage were added, but production activation-level lifecycle backpressure and active child-exit cleanup remain unexercised.",
+      "evidence": [
+        "The added active tests cover peer close and ROM reset but contain no active SidecarExited or MgbaExited path.",
+        "No activation-level test forces ControlTerminalCause::LifecycleOverflow through run_until_shutdown_with_realtime."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "checkpoint-deadline-must-preempt-authenticated-input",
+      "observation": "next_checkpoint_input places the absolute Deadline branch after control, realtime, and heartbeat in both arbitration modes. Once the deadline is ready, a continuously ready authenticated control source still wins every normal poll and still precedes Deadline in the service-first poll, so receive_checkpoint_event_before_activation can run beyond its supposedly absolute checkpoint deadline indefinitely.",
+      "impact": "An authenticated local producer can prevent a checkpoint correlation timeout, indefinitely delaying fail-closed reconciliation, shutdown, coordinator termination, and child/artifact cleanup. This breaks the sealed finite-checkpoint guarantee and creates a local denial-of-service path.",
+      "recommendation": "Check the absolute deadline before each arbitration or give the ready deadline unconditional priority, then add a continuously-ready PlayerState regression where no correlated checkpoint response arrives and assert CheckpointTimeout plus bounded coordinator/child teardown.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:122-145 places Deadline last in both next_checkpoint_input select forms.",
+        "coop/crates/coop-launcher/src/session.rs:2637-2675 relies on that branch as the only absolute timeout while continuing to consume PlayerState and interaction input.",
+        "The focused realtime tests pass but include no missing-checkpoint-response case with sustained control input."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "service-budget-must-cover-all-ready-sources",
+      "observation": "After eight control events, active service-first arbitration always polls realtime before heartbeat. With both PlayerState and valid remote lifecycle input continuously ready, execution deterministically alternates control bursts with one realtime event and never services the overdue heartbeat.",
+      "impact": "Cooperating or compromised authenticated peers can starve lease maintenance while keeping both bounded streams draining, leaving the realtime connection active beyond the launcher's lease cadence and delaying the fail-closed lease error path.",
+      "recommendation": "Use independent bounded budgets or rotate service priority so an overdue heartbeat cannot be displaced by a continuously ready realtime stream. Add a deterministic simultaneous control-and-realtime flood test that proves heartbeat progress and eventual terminal handling.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:96-119 orders realtime before heartbeat in service-first mode and control before both in normal mode.",
+        "coop/crates/coop-launcher/src/session.rs:2233-2352 resets control_burst after each realtime event, recreating the eight-control-plus-one-realtime cycle.",
+        "active_arbitration_observes_terminal_amid_continuous_player_state passes only with an already completed realtime task; the successful flood test withholds server frames until after it observes a heartbeat."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "ready-cutover-must-have-bounded-activation-progress",
+      "observation": "next_realtime_cutover_input places realtime events before Activate in both normal and service-first modes. Once Ready is observed, a peer that continues sending valid lifecycle events can keep realtime.next_event continuously ready, preventing interaction activation while buffer_checkpoint_realtime_event grows until the fixed owner-event bound is reached and the session fails closed.",
+      "impact": "A valid busy server state, including a near-capacity initial remote population followed by another update, can force every checkpoint-overlapped startup to terminate instead of completing the Ready cutover. A peer can reliably induce this bounded-buffer denial of service without violating frame validation.",
+      "recommendation": "Define a bounded post-Ready drain and then prioritize activation, while preserving the explicit interaction watermark and FIFO for already classified events. Add a Ready-followed-by-continuous-valid-lifecycle regression proving activation completes without overflow or interaction misclassification.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:148-171 orders Realtime before Activate in both cutover modes.",
+        "coop/crates/coop-launcher/src/session.rs:2711-2737 keeps buffering realtime events until Activate wins, but no iteration or event budget makes that branch win.",
+        "coop/crates/coop-launcher/src/session.rs:2679-2693 terminates once the lifecycle buffer reaches MAX_OWNER_EVENT_QUEUE."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "LRA2-006-active-backpressure-and-child-exit-coverage-r2",
+      "observation": "The r2 suite adds active reset, peer-close, freshest-mint-state, and arbitration tests, but still does not drive lifecycle pump overflow or an active sidecar/emulator child exit through the production realtime lifecycle.",
+      "impact": "The required ordering of lifecycle disable, coordinator stop/join, peer settlement, pump join, artifact cleanup, and no post-terminal ROM output remains unproved for two distinct production terminal classes.",
+      "recommendation": "Add activation-level deterministic tests for lifecycle enqueue overflow and each active child-exit side, asserting no remint/reconnect, lifecycle disabled, coordinator joined before settlement, peer reaped, and owned artifact cleanup completed.",
+      "evidence": [
+        "Searching session.rs finds active reset and peer-close regressions but no active SidecarExited, MgbaExited, or LifecycleOverflow activation test.",
+        "F-F3308A85 explicitly required active backpressure and child-failure cleanup coverage."
+      ]
+    }
+  ],
+  "review_plan_hash": "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0",
+  "reviewer_id": "/root/launcher_activation_v2_security",
+  "risk_boundaries_checked": [
+    "bounded-liveness-under-sustained-control-input",
+    "coordinator-task-child-socket-and-artifact-teardown",
+    "no-remint-replay-reconnect-or-second-endpoint",
+    "reset-generation-backpressure-and-ambiguous-outcome-fail-closed",
+    "resolution-of-all-nine-recorded-findings",
+    "ticket-token-endpoint-and-error-confinement"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "launcher-realtime-activation-v2-security-r2"
+}

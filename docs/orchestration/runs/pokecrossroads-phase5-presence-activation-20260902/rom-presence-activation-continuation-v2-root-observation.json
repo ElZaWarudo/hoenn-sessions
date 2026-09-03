@@ -1,0 +1,27 @@
+{
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "baseline_digest": "sha256:4752d943902ae45f1e9883915075bf2e63091b22308b8e028a3a40ef4b99c142",
+  "baseline_tree": "b70a2f772101654658b87c774ea61e68e7cad0fa",
+  "changed_files": [
+    "src/coop/presence_runtime.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+  "dependency_patch_hashes": [
+    "sha256:d7d4a41157d8856f06c7c225cc245feff5c9c55b3c05d25377c14434e37cadff"
+  ],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:23623844ae7d0614ec9bcdd479e15ea6e109e2d075889bd6bb8de34145c6e876",
+  "owned_paths": [
+    "src/coop/presence_runtime.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "dist/bridge_manifest.json"
+  ],
+  "role": "integration-candidate",
+  "unit_id": "phase5-rom-presence-activation",
+  "worker_id": "/root/rom_presence_continuation_v2",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-continuation-v2"
+}

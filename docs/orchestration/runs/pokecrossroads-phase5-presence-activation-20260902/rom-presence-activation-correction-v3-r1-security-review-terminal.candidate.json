@@ -1,0 +1,31 @@
+{
+  "contract_hash": "sha256:3df5c5cdde02b103cc17f81f5efa1f78d452056bdb87fd0c0037366af16d78e8",
+  "diff_digest": "sha256:e7cbe39c62a1c7baac836c1bcee889723a46125be6476e24aee10e13b96f0fc6",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "src/event_object_movement.c:6639-6671 changes GetObjectObjectCollidesWith by excluding collisions whenever either the candidate target or moving source is the reserved remote.",
+        "test/coop/presence_runtime.c:763-838 executes GetObjectEventIdByPosition and GetInteractedLinkPlayerScript, but no candidate test calls GetObjectObjectCollidesWith or CheckForObjectEventCollision.",
+        "The sealed RPAC3-005 requirement calls for deterministic execution of local-link isolation paths, including preservation of legacy local-link behavior while remotes remain nonblocking."
+      ],
+      "impact": "The focused suite can pass even if the global collision filter later makes an ordinary link-player ObjectEvent ignore a real object or otherwise regresses legacy link/RFU collision behavior.",
+      "observation": "The corrected local-link regression proves lookup and link-interaction isolation, but it still does not execute the collision function whose source-and-target behavior changed.",
+      "principle": "testing",
+      "recommendation": "Extend the focused regression to call GetObjectObjectCollidesWith with a genuine link-player ObjectEvent, a reserved remote, and an ordinary overlapping object; prove only the remote is nonblocking and ordinary link-player-to-real-object collision remains unchanged.",
+      "rule_id": "RPAC3-005/local-link-collision-proof-r1",
+      "severity": "p2"
+    }
+  ],
+  "review_plan_hash": "sha256:21b6b68b2c0f38ee94b396df6ab76eaca59a2f3200a33355dd5020dda6737d18",
+  "reviewer_id": "/root/rom_presence_security_review_v3b",
+  "risk_boundaries_checked": [
+    "checksum-length-epoch-type-and-sequence-fail-closed-atomicity",
+    "cross-map-warp-stale-hidden-reset-and-replay-confinement",
+    "exact-rom-manifest-attestation-and-launcher-compatibility",
+    "reused-sprite-false-ownership-and-local-link-isolation"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "rom-presence-activation-security-v3-r1"
+}

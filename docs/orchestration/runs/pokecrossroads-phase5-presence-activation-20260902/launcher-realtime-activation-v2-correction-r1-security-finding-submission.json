@@ -1,0 +1,22 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+  "review_plan_hash": "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19",
+  "surface_id": "launcher-realtime-activation-v2-security-r1",
+  "reporter_id": "/root/launcher_activation_v2_security",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "biased-control-input-must-not-starve-heartbeat-or-terminal-observation",
+      "observation": "Biased active and checkpoint selects give unbounded preference to continuously ready control state over heartbeat, realtime terminal, Ready, and cutover progress.",
+      "impact": "A high-rate authenticated control producer can starve lease maintenance and terminal observation, keep a WebSocket active past local cadence, or prevent bounded cutover completion.",
+      "recommendation": "Use bounded draining or fair arbitration while preserving an explicit Ready watermark; add continuously-ready PlayerState regressions for heartbeat, terminal observation, and bounded cutover.",
+      "evidence": [
+        "session.rs active lifecycle orders children.observe_raw ahead of realtime and heartbeat under biased select.",
+        "checkpoint cutover orders control.receive ahead of realtime and activation with no heartbeat branch.",
+        "coalesced PlayerState can remain continuously ready without bounded queue backpressure."
+      ]
+    }
+  ]
+}

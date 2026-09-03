@@ -1,0 +1,31 @@
+{
+  "contract_hash": "sha256:3df5c5cdde02b103cc17f81f5efa1f78d452056bdb87fd0c0037366af16d78e8",
+  "diff_digest": "sha256:e7cbe39c62a1c7baac836c1bcee889723a46125be6476e24aee10e13b96f0fc6",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "RPAC3-005/local-link-collision-proof-r1",
+      "observation": "The corrected local-link test executes position and interaction-script lookup, but it never calls the collision function whose behavior the candidate changes for remote sources and targets.",
+      "impact": "The focused suite can pass even if the new GetObjectObjectCollidesWith filtering later makes ordinary link-player ObjectEvents ignore real objects or otherwise changes legacy link collision behavior, leaving the required local-link isolation proof incomplete.",
+      "recommendation": "Extend the focused local-link regression to call GetObjectObjectCollidesWith with a genuine link-player ObjectEvent, a reserved remote, and an ordinary overlapping object; prove the remote alone is nonblocking while ordinary link-player-to-real-object collision remains unchanged.",
+      "evidence": [
+        "src/event_object_movement.c:6639-6671 changes GetObjectObjectCollidesWith by excluding a collision whenever either the candidate target or moving source is the reserved remote.",
+        "test/coop/presence_runtime.c:763-834 exercises GetObjectEventIdByPosition and GetInteractedLinkPlayerScript only; no candidate test calls GetObjectObjectCollidesWith or CheckForObjectEventCollision.",
+        "The sealed RPAC3-005 coverage requirement calls for deterministic execution of local-link isolation paths, and the earlier ownership review specifically identified both lookup and collision behavior as affected surfaces."
+      ]
+    }
+  ],
+  "review_plan_hash": "sha256:21b6b68b2c0f38ee94b396df6ab76eaca59a2f3200a33355dd5020dda6737d18",
+  "reviewer_id": "/root/rom_presence_correctness_review_v3b",
+  "risk_boundaries_checked": [
+    "executable-hidden-stale-warp-capacity-and-local-link-coverage",
+    "field-action-precedence-including-dive-and-remote-fallback",
+    "renderer-object-sprite-generation-ownership-retirement-and-recreation",
+    "same-epoch-cutover-interpolation-animation-and-sequence-domains"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 2,
+  "surface_id": "rom-presence-activation-correctness-v3-r1"
+}

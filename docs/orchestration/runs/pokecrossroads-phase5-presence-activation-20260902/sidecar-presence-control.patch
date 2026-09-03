@@ -1,0 +1,737 @@
+diff --git a/coop/crates/coop-sidecar/src/control.rs b/coop/crates/coop-sidecar/src/control.rs
+index 17b478ca52a5315111009045ccdaf197577d183f..4f7fedf1cefd65fcd00b95c7e79fd43cbbc09116 100644
+--- a/coop/crates/coop-sidecar/src/control.rs
++++ b/coop/crates/coop-sidecar/src/control.rs
+@@ -11,6 +11,10 @@ use std::{
+     time::Duration,
+ };
+ 
++use coop_protocol::{
++    LocalPresenceStateV1, PresenceInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
++    RemotePlayerUpdateV1,
++};
+ use serde::{Deserialize, Serialize};
+ use thiserror::Error;
+ use tokio::{
+@@ -23,7 +27,7 @@ use tokio::{
+ };
+ use uuid::Uuid;
+ 
+-pub const CONTROL_PROTOCOL_VERSION: u16 = 1;
++pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
+ /// The terminating LF is included in this limit.
+ pub const MAX_CONTROL_LINE_BYTES: usize = 512;
+ pub const CONTROL_HANDSHAKE_ACCEPTED_LINE: &[u8] = b"{\"ok\":true}\n";
+@@ -158,6 +162,12 @@ pub enum ControlCommand {
+     CheckpointAbort(CheckpointAbort),
+     #[serde(rename = "shutdown_request")]
+     ShutdownRequest(ShutdownRequest),
++    #[serde(rename = "remote_player_spawn")]
++    RemotePlayerSpawn(RemotePlayerSpawnV1),
++    #[serde(rename = "remote_player_update")]
++    RemotePlayerUpdate(RemotePlayerUpdateV1),
++    #[serde(rename = "remote_player_despawn")]
++    RemotePlayerDespawn(RemotePlayerDespawnV1),
+ }
+ 
+ #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+@@ -254,6 +264,12 @@ pub enum ControlEvent {
+         status: CommandStatus,
+         reason: Option<CommandReason>,
+     },
++    #[serde(rename = "player_state")]
++    PlayerState(LocalPresenceStateV1),
++    #[serde(rename = "interact_remote_player")]
++    InteractRemotePlayer(PresenceInteractionV1),
++    #[serde(rename = "rom_presence_reset")]
++    RomPresenceReset,
+ }
+ 
+ #[derive(Debug, Deserialize)]
+@@ -630,12 +646,15 @@ mod tests {
+         let secret = listener.secret().expose().to_owned();
+         let task = tokio::spawn(async move { listener.accept().await });
+         let mut stream = TcpStream::connect(address).await.unwrap();
+-        let line =
+-            format!("{{\"secret\":\"{secret}\",\"control_version\":2,\"session_epoch\":7}}\n");
++        let line = format!(
++            "{{\"secret\":\"{secret}\",\"control_version\":{},\"session_epoch\":7}}\n",
++            CONTROL_PROTOCOL_VERSION + 1
++        );
+         stream.write_all(line.as_bytes()).await.unwrap();
+         assert!(matches!(
+             task.await.unwrap(),
+-            Err(ControlError::IncompatibleVersion(2))
++            Err(ControlError::IncompatibleVersion(version))
++                if version == CONTROL_PROTOCOL_VERSION + 1
+         ));
+ 
+         let listener = ControlListener::bind(7).await.unwrap();
+diff --git a/coop/crates/coop-sidecar/src/server.rs b/coop/crates/coop-sidecar/src/server.rs
+index 9ac84ad3bb65686741c445cce467d51d6c8e92f3..afcdb3af631ec03ea085a943f4ee5c2948f7f198 100644
+--- a/coop/crates/coop-sidecar/src/server.rs
++++ b/coop/crates/coop-sidecar/src/server.rs
+@@ -9,6 +9,7 @@ use std::{
+     time::Duration,
+ };
+ 
++use coop_protocol::{LocalPresenceStateV1, PresenceInteractionV1};
+ use serde::{Deserialize, Serialize};
+ use thiserror::Error;
+ use tokio::{
+@@ -589,9 +590,20 @@ impl Drop for ReaderTasks {
+ /// transferred into the active bridge session. Keeping the task alive across
+ /// listener and handshake races makes partially received JSONL cancellation
+ /// safe; dropping the owner always aborts rather than detaches the task.
++type ControlResult = Result<ControlCommand, SidecarError>;
++type ControlReceiver = mpsc::Receiver<ControlResult>;
++type ControlReceiverPair<'a> = (&'a mut ControlReceiver, &'a mut ControlReceiver);
++type ControlIoParts = (
++    ControlWriter,
++    ControlReceiver,
++    ControlReceiver,
++    JoinHandle<()>,
++);
++
+ struct ControlIo {
+     writer: Option<ControlWriter>,
+-    receiver: Option<mpsc::Receiver<Result<ControlCommand, SidecarError>>>,
++    receiver: Option<ControlReceiver>,
++    presence_receiver: Option<ControlReceiver>,
+     task: Option<JoinHandle<()>>,
+ }
+ 
+@@ -600,20 +612,27 @@ impl ControlIo {
+         self.writer.as_mut().expect("control writer is owned")
+     }
+ 
+-    fn receiver(&mut self) -> &mut mpsc::Receiver<Result<ControlCommand, SidecarError>> {
++    #[cfg(test)]
++    fn receiver(&mut self) -> &mut ControlReceiver {
+         self.receiver.as_mut().expect("control receiver is owned")
+     }
+ 
+-    fn into_parts(
+-        mut self,
+-    ) -> (
+-        ControlWriter,
+-        mpsc::Receiver<Result<ControlCommand, SidecarError>>,
+-        JoinHandle<()>,
+-    ) {
++    fn receivers(&mut self) -> ControlReceiverPair<'_> {
++        let control = self.receiver.as_mut().expect("control receiver is owned");
++        let presence = self
++            .presence_receiver
++            .as_mut()
++            .expect("presence receiver is owned");
++        (control, presence)
++    }
++
++    fn into_parts(mut self) -> ControlIoParts {
+         (
+             self.writer.take().expect("control writer is owned"),
+             self.receiver.take().expect("control receiver is owned"),
++            self.presence_receiver
++                .take()
++                .expect("presence receiver is owned"),
+             self.task.take().expect("control task is owned"),
+         )
+     }
+@@ -625,6 +644,7 @@ impl ControlIo {
+         }
+         self.writer = None;
+         self.receiver = None;
++        self.presence_receiver = None;
+     }
+ }
+ 
+@@ -661,6 +681,7 @@ struct ActiveSessionIo {
+     bridge_rx: mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+     bridge_terminal: watch::Receiver<Option<BridgeTerminal>>,
+     control_rx: mpsc::Receiver<Result<ControlCommand, SidecarError>>,
++    presence_rx: mpsc::Receiver<Result<ControlCommand, SidecarError>>,
+ }
+ 
+ type BridgeReacquisitionParts<'a> = (
+@@ -672,6 +693,7 @@ type BridgeReacquisitionParts<'a> = (
+ enum ActiveSessionEvent {
+     Deadline,
+     Control(Option<Result<ControlCommand, SidecarError>>),
++    Presence(Option<Result<ControlCommand, SidecarError>>),
+     Bridge(Option<Result<BridgeFrame, SidecarError>>),
+ }
+ 
+@@ -752,11 +774,20 @@ impl Drop for BridgeIo {
+ fn spawn_control_reader(control: ControlConnection) -> ControlIo {
+     let (mut control_reader, control_writer) = control.into_split();
+     let (control_tx, control_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
++    let (presence_tx, presence_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
+     let control_task = tokio::spawn(async move {
+         loop {
+             match control_reader.receive_command().await {
+                 Ok(command) => {
+-                    if control_tx.send(Ok(command)).await.is_err() {
++                    if is_presence_command(&command) {
++                        // Presence is best effort. Never let a full
++                        // capacity-one transient lane block the parser from
++                        // reaching a later checkpoint or shutdown command.
++                        match presence_tx.try_send(Ok(command)) {
++                            Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
++                            Err(mpsc::error::TrySendError::Closed(_)) => break,
++                        }
++                    } else if control_tx.send(Ok(command)).await.is_err() {
+                         break;
+                     }
+                 }
+@@ -770,6 +801,7 @@ fn spawn_control_reader(control: ControlConnection) -> ControlIo {
+     ControlIo {
+         writer: Some(control_writer),
+         receiver: Some(control_rx),
++        presence_receiver: Some(presence_rx),
+         task: Some(control_task),
+     }
+ }
+@@ -781,6 +813,7 @@ where
+ {
+     let (mut control_reader, control_writer) = control.into_split();
+     let (control_tx, control_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
++    let (presence_tx, presence_rx) = mpsc::channel::<Result<ControlCommand, SidecarError>>(1);
+     let control_task = tokio::spawn(async move {
+         loop {
+             match control_reader
+@@ -788,7 +821,15 @@ where
+                 .await
+             {
+                 Ok(command) => {
+-                    if control_tx.send(Ok(command)).await.is_err() {
++                    if is_presence_command(&command) {
++                        // Presence is best effort. Never let a full
++                        // capacity-one transient lane block the parser from
++                        // reaching a later checkpoint or shutdown command.
++                        match presence_tx.try_send(Ok(command)) {
++                            Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
++                            Err(mpsc::error::TrySendError::Closed(_)) => break,
++                        }
++                    } else if control_tx.send(Ok(command)).await.is_err() {
+                         break;
+                     }
+                 }
+@@ -802,6 +843,7 @@ where
+     ControlIo {
+         writer: Some(control_writer),
+         receiver: Some(control_rx),
++        presence_receiver: Some(presence_rx),
+         task: Some(control_task),
+     }
+ }
+@@ -1341,18 +1383,22 @@ impl LocalSidecar {
+         control: &mut ControlIo,
+         reconnect: &mut ReconnectContext,
+     ) -> Result<ControlledAcquisitionStep, SidecarError> {
++        let (control_rx, presence_rx) = control.receivers();
+         let event = tokio::select! {
+             biased;
+             () = checkpoint_deadline(reconnect.state.checkpoint_state.deadline()) => {
+                 ControlledBridgeEvent::Deadline
+             }
+-            command = control.receiver().recv(),
++            command = control_rx.recv(),
+                 if can_receive_deferred_command(&reconnect.deferred_commands)
+                     || reconnect.state.checkpoint_state.is_quiescing() =>
+             {
+                 ControlledBridgeEvent::Command(command)
+             }
+             result = authentication => ControlledBridgeEvent::Bridge(result),
++            presence = presence_rx.recv() => {
++                ControlledBridgeEvent::Command(presence)
++            }
+         };
+         match event {
+             ControlledBridgeEvent::Deadline => {
+@@ -1399,6 +1445,7 @@ impl LocalSidecar {
+         control: &mut ControlIo,
+         reconnect: &mut ReconnectContext,
+     ) -> Result<ControlledAcquisitionStep, SidecarError> {
++        let (control_rx, presence_rx) = control.receivers();
+         let bridge_authentication = self.start_bridge_authentication_pump();
+         tokio::pin!(bridge_authentication);
+         let event = {
+@@ -1407,13 +1454,16 @@ impl LocalSidecar {
+                 () = checkpoint_deadline(
+                     reconnect.state.checkpoint_state.deadline()
+                 ) => ControlledListenerEvent::Deadline,
+-                command = control.receiver().recv(),
++                command = control_rx.recv(),
+                     if can_receive_deferred_command(&reconnect.deferred_commands)
+                         || reconnect.state.checkpoint_state.is_quiescing() =>
+                 {
+                     ControlledListenerEvent::Command(command)
+                 }
+                 result = &mut bridge_authentication => ControlledListenerEvent::Bridge(result),
++                presence = presence_rx.recv() => {
++                    ControlledListenerEvent::Command(presence)
++                }
+             }
+         };
+         match event {
+@@ -1573,6 +1623,12 @@ impl LocalSidecar {
+     ) -> Result<bool, SidecarError> {
+         match result {
+             Some(Ok(command)) => {
++                if is_presence_command(&command) {
++                    // Presence is transient and has no command identity or
++                    // replay semantics. Before bridge readiness there is no
++                    // authenticated ROM recipient, so reject it silently.
++                    return Ok(false);
++                }
+                 let command_id = command_parts(&command).0;
+                 let can_replay_without_bridge = self.command_history.contains_key(&command_id);
+                 let handled = if reconnect.state.checkpoint_state.is_quiescing() {
+@@ -1818,7 +1874,7 @@ impl LocalSidecar {
+         let mut pending_bridge_frame = pending_bridge_frame;
+ 
+         loop {
+-            let (control_writer, control_rx, control_task) = control.into_parts();
++            let (control_writer, control_rx, presence_rx, control_task) = control.into_parts();
+             reader_tasks.set_control(control_task);
+ 
+             let io = ActiveSessionIo {
+@@ -1827,6 +1883,7 @@ impl LocalSidecar {
+                 bridge_rx,
+                 bridge_terminal,
+                 control_rx,
++                presence_rx,
+             };
+             let (result, next_state, next_io) = self
+                 .run_checkpoint_session(
+@@ -2012,6 +2069,7 @@ impl LocalSidecar {
+                 bridge_rx,
+                 bridge_terminal: _bridge_terminal,
+                 control_rx,
++                presence_rx,
+             } = &mut io;
+             self.prepare_active_session(
+                 bridge_rx,
+@@ -2036,10 +2094,12 @@ impl LocalSidecar {
+                     biased;
+                     () = checkpoint_deadline(deadline) => ActiveSessionEvent::Deadline,
+                     result = control_rx.recv(),
+-                        if can_receive_deferred_command(deferred_commands) => {
++                        if can_receive_deferred_command(deferred_commands)
++                            || session.checkpoint_state.is_quiescing() => {
+                         ActiveSessionEvent::Control(result)
+                     }
+                     result = bridge_rx.recv() => ActiveSessionEvent::Bridge(result),
++                    result = presence_rx.recv() => ActiveSessionEvent::Presence(result),
+                 };
+                 match event {
+                     ActiveSessionEvent::Deadline => {
+@@ -2051,7 +2111,7 @@ impl LocalSidecar {
+                         )
+                         .await?;
+                     }
+-                    ActiveSessionEvent::Control(result) => {
++                    ActiveSessionEvent::Control(result) | ActiveSessionEvent::Presence(result) => {
+                         self.handle_active_control_event(
+                             result,
+                             bridge_rx,
+@@ -2172,6 +2232,9 @@ impl LocalSidecar {
+                 return Err(error);
+             }
+         };
++        if is_presence_command(&command) {
++            return self.handle_presence_command(command, bridge, session).await;
++        }
+         let (command_id, _, _, _) = command_parts(&command);
+         let can_replay = self.command_history.contains_key(&command_id);
+         if !deferred_commands.is_empty() && !can_replay {
+@@ -2278,12 +2341,52 @@ impl LocalSidecar {
+             .await
+     }
+ 
++    async fn handle_presence_command(
++        &mut self,
++        command: ControlCommand,
++        bridge: &mut BridgeWriter,
++        session: &ActiveSessionState,
++    ) -> Result<(), SidecarError> {
++        // Presence is best effort. It is intentionally rejected before ROM
++        // readiness and once quiescing begins, without touching any command
++        // ledger or deferred queue and without allocating an outer sequence.
++        if session.checkpoint_state.is_quiescing() || !session.acknowledged_rom_ready {
++            return Ok(());
++        }
++
++        let (message_type, payload) = match command {
++            ControlCommand::RemotePlayerSpawn(value) => {
++                (MessageType::RemotePlayerSpawn, value.encode().to_vec())
++            }
++            ControlCommand::RemotePlayerUpdate(value) => {
++                (MessageType::RemotePlayerUpdate, value.encode().to_vec())
++            }
++            ControlCommand::RemotePlayerDespawn(value) => {
++                (MessageType::RemotePlayerDespawn, value.encode().to_vec())
++            }
++            _ => return Err(SidecarError::ProtocolViolation("invalid presence command")),
++        };
++        let sequence = self.sequence_state.take_sidecar_sequence();
++        let frame = BridgeFrame::new(message_type, sequence, self.session_epoch, &payload)?;
++        bridge.send(&frame, Direction::SidecarToRom).await
++    }
++
+     async fn resume_checkpoint_handoff(
+         &mut self,
+         session: &mut ActiveSessionState,
+         bridge: &mut BridgeWriter,
+         control: &mut ControlWriter,
+     ) -> Result<(), SidecarError> {
++        // SESSION_READY is sent before the reset event. If the bounded event
++        // write was ambiguous and control reconnects, retain the reboot mark
++        // so the launcher still receives the one generation notification.
++        if session.rearm_after_reboot
++            && matches!(session.checkpoint_state, CheckpointState::Idle)
++            && session.acknowledged_rom_ready
++        {
++            control.send_event(&ControlEvent::RomPresenceReset).await?;
++            session.rearm_after_reboot = false;
++        }
+         match session.checkpoint_state {
+             CheckpointState::ReadyPendingHandoff { key } => {
+                 // A ready frame is staged until its critical control event has
+@@ -2311,7 +2414,7 @@ impl LocalSidecar {
+                     .await?;
+                 session.checkpoint_state = CheckpointState::Idle;
+                 if session.rearm_after_reboot {
+-                    self.complete_reboot_rearm(bridge, session).await?;
++                    self.complete_reboot_rearm(bridge, control, session).await?;
+                 }
+             }
+             // An AwaitDecision event was already handed off before reconnect;
+@@ -2328,6 +2431,7 @@ impl LocalSidecar {
+     async fn complete_reboot_rearm(
+         &mut self,
+         bridge: &mut BridgeWriter,
++        control: &mut ControlWriter,
+         session: &mut ActiveSessionState,
+     ) -> Result<(), SidecarError> {
+         self.sequence_state.rearm_session_after_rom_reboot(1);
+@@ -2337,8 +2441,10 @@ impl LocalSidecar {
+         // rotated, allowing sequence one in the new generation.
+         self.send_session_ready_to_stream(bridge).await?;
+         session.acknowledged_rom_ready = true;
+-        session.rearm_after_reboot = false;
++        session.rearm_after_reboot = true;
+         session.expired_checkpoint = None;
++        control.send_event(&ControlEvent::RomPresenceReset).await?;
++        session.rearm_after_reboot = false;
+         Ok(())
+     }
+ 
+@@ -2358,6 +2464,9 @@ impl LocalSidecar {
+             return Ok(());
+         }
+         match frame.message_type() {
++            MessageType::PlayerState | MessageType::InteractRemotePlayer => {
++                self.handle_presence_frame(frame, control, session).await?;
++            }
+             MessageType::CheckpointReady => {
+                 if frame.session_epoch() != self.session_epoch || !frame.payload().is_empty() {
+                     return Err(SidecarError::ProtocolViolation("invalid checkpoint ready"));
+@@ -2450,6 +2559,50 @@ impl LocalSidecar {
+         Ok(())
+     }
+ 
++    async fn handle_presence_frame(
++        &mut self,
++        frame: BridgeFrame,
++        control: &mut ControlWriter,
++        session: &mut ActiveSessionState,
++    ) -> Result<(), SidecarError> {
++        if frame.session_epoch() != self.session_epoch {
++            return Err(SidecarError::ProtocolViolation(
++                "presence frame has wrong session epoch",
++            ));
++        }
++        if !session.acknowledged_rom_ready {
++            return Err(SidecarError::ProtocolViolation(
++                "presence frame before rom ready",
++            ));
++        }
++        if !self
++            .sequence_state
++            .inspect_rom_frame(&frame, self.session_epoch)
++        {
++            return Ok(());
++        }
++
++        let event = match frame.message_type() {
++            MessageType::PlayerState => ControlEvent::PlayerState(
++                LocalPresenceStateV1::decode(frame.payload())
++                    .map_err(|_| SidecarError::ProtocolViolation("invalid player state"))?,
++            ),
++            MessageType::InteractRemotePlayer => ControlEvent::InteractRemotePlayer(
++                PresenceInteractionV1::decode(frame.payload()).map_err(|_| {
++                    SidecarError::ProtocolViolation("invalid remote player interaction")
++                })?,
++            ),
++            _ => return Err(SidecarError::ProtocolViolation("invalid presence frame")),
++        };
++
++        // Commit before the bounded control write. A write with ambiguous
++        // delivery must not cause the same transient frame to be replayed.
++        self.sequence_state.commit_rom_frame(&frame);
++        rotate_expired_tombstone(&frame, &mut session.expired_checkpoint);
++        control.send_event(&event).await?;
++        Ok(())
++    }
++
+     async fn handle_rom_reboot(
+         &mut self,
+         frame: &BridgeFrame,
+@@ -2486,14 +2639,14 @@ impl LocalSidecar {
+                     })
+                     .await?;
+                 session.checkpoint_state = CheckpointState::Idle;
+-                self.complete_reboot_rearm(bridge, session).await?;
++                self.complete_reboot_rearm(bridge, control, session).await?;
+                 Ok(true)
+             }
+             CheckpointState::Idle
+                 if is_boot_epoch_reboot || self.sequence_state.last_session_rom > 1 =>
+             {
+                 session.rearm_after_reboot = true;
+-                self.complete_reboot_rearm(bridge, session).await?;
++                self.complete_reboot_rearm(bridge, control, session).await?;
+                 Ok(true)
+             }
+             CheckpointState::ExpiryPendingHandoff { key } => {
+@@ -3221,6 +3374,11 @@ fn command_parts(
+             None,
+             CommandKind::Shutdown,
+         ),
++        ControlCommand::RemotePlayerSpawn(_)
++        | ControlCommand::RemotePlayerUpdate(_)
++        | ControlCommand::RemotePlayerDespawn(_) => {
++            unreachable!("presence commands bypass command ledgers")
++        }
+     }
+ }
+ 
+@@ -3229,9 +3387,23 @@ fn command_epoch(command: &ControlCommand) -> u32 {
+         ControlCommand::CheckpointGrant(command) => command.session_epoch,
+         ControlCommand::CheckpointAbort(command) => command.session_epoch,
+         ControlCommand::ShutdownRequest(command) => command.session_epoch,
++        ControlCommand::RemotePlayerSpawn(_)
++        | ControlCommand::RemotePlayerUpdate(_)
++        | ControlCommand::RemotePlayerDespawn(_) => {
++            unreachable!("presence commands have no session epoch")
++        }
+     }
+ }
+ 
++fn is_presence_command(command: &ControlCommand) -> bool {
++    matches!(
++        command,
++        ControlCommand::RemotePlayerSpawn(_)
++            | ControlCommand::RemotePlayerUpdate(_)
++            | ControlCommand::RemotePlayerDespawn(_)
++    )
++}
++
+ fn command_is_expired(
+     key: Option<CheckpointKey>,
+     expired_checkpoint: Option<CheckpointKey>,
+@@ -3248,6 +3420,9 @@ fn deferred_command_waits_for_bridge_state(
+         ControlCommand::CheckpointGrant(command) => (Some(command.key()), true),
+         ControlCommand::CheckpointAbort(command) => (Some(command.key()), false),
+         ControlCommand::ShutdownRequest(_) => (None, false),
++        ControlCommand::RemotePlayerSpawn(_)
++        | ControlCommand::RemotePlayerUpdate(_)
++        | ControlCommand::RemotePlayerDespawn(_) => return false,
+     };
+     let Some(key) = key else {
+         return false;
+@@ -3455,6 +3630,7 @@ fn complete_bridge_authentication(
+ 
+ #[cfg(test)]
+ mod tests {
++    use coop_protocol::{LocalPresenceStateV1, PresenceHandle, RemotePlayerUpdateV1};
+     use serde::Serialize;
+     use tokio::{
+         io::{AsyncReadExt, AsyncWriteExt},
+@@ -3477,6 +3653,20 @@ mod tests {
+         .unwrap()
+     }
+ 
++    fn valid_local_presence_state() -> [u8; 28] {
++        [
++            1, 1, 0, 3, 0, 252, 255, 9, 0, 0, 7, 4, 68, 51, 34, 17, 136, 119, 102, 85, 2, 1, 2, 1,
++            204, 187, 170, 153,
++        ]
++    }
++
++    fn remote_update_command() -> ControlCommand {
++        let state = LocalPresenceStateV1::decode(&valid_local_presence_state()).unwrap();
++        ControlCommand::RemotePlayerUpdate(
++            RemotePlayerUpdateV1::new(PresenceHandle::new(1).unwrap(), 1, state).unwrap(),
++        )
++    }
++
+     #[derive(Serialize)]
+     struct TestHandshake<'a> {
+         secret: &'a str,
+@@ -3603,12 +3793,14 @@ mod tests {
+     async fn preloaded_control_io(command: ControlCommand) -> (ControlIo, TcpStream) {
+         let (writer, client) = control_writer_pair().await;
+         let (sender, receiver) = mpsc::channel(1);
++        let (_presence_sender, presence_receiver) = mpsc::channel(1);
+         sender.send(Ok(command)).await.unwrap();
+         let task = tokio::spawn(std::future::pending::<()>());
+         (
+             ControlIo {
+                 writer: Some(writer),
+                 receiver: Some(receiver),
++                presence_receiver: Some(presence_receiver),
+                 task: Some(task),
+             },
+             client,
+@@ -3662,6 +3854,31 @@ mod tests {
+         }
+     }
+ 
++    async fn assert_presence_and_command_result(stream: &mut TcpStream) {
++        let first_event = read_event(stream).await;
++        if matches!(first_event, ControlEvent::PlayerState(_)) {
++            assert!(matches!(
++                read_event(stream).await,
++                ControlEvent::CommandResult {
++                    status: CommandStatus::Applied,
++                    ..
++                }
++            ));
++        } else {
++            assert!(matches!(
++                first_event,
++                ControlEvent::CommandResult {
++                    status: CommandStatus::Applied,
++                    ..
++                }
++            ));
++            assert!(matches!(
++                read_event(stream).await,
++                ControlEvent::PlayerState(_)
++            ));
++        }
++    }
++
+     fn grant(command_id: &str, epoch: u32, sequence: u32) -> ControlCommand {
+         ControlCommand::CheckpointGrant(CheckpointGrant {
+             command_id: CommandId::parse(command_id).unwrap(),
+@@ -3841,6 +4058,47 @@ mod tests {
+         .await;
+     }
+ 
++    #[tokio::test]
++    async fn pre_bridge_presence_flood_does_not_strand_shutdown_reservation() {
++        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
++            .await
++            .unwrap();
++        let descriptor = server.session_descriptor();
++        let server_task = tokio::spawn(server.serve());
++        let mut control = TcpStream::connect(descriptor.control_address())
++            .await
++            .unwrap();
++        write_control_handshake(
++            &mut control,
++            &descriptor,
++            descriptor.control_secret(),
++            TEST_SESSION_EPOCH,
++        )
++        .await;
++
++        for index in 0..MAX_DEFERRED_ROUTINE_COMMANDS {
++            send_command(
++                &mut control,
++                &abort(
++                    &format!("10000000-0000-4000-8000-{index:012x}"),
++                    TEST_SESSION_EPOCH - 1,
++                    1,
++                ),
++            )
++            .await;
++        }
++        let presence = remote_update_command();
++        for _ in 0..32 {
++            send_command(&mut control, &presence).await;
++        }
++        let shutdown_id = "00000000-0000-4000-8000-0000000000f1";
++        send_command(&mut control, &shutdown(shutdown_id, TEST_SESSION_EPOCH)).await;
++        assert_command_result(&mut control, shutdown_id, CommandStatus::Applied, None).await;
++
++        drop(control);
++        server_task.abort();
++    }
++
+     #[tokio::test]
+     async fn full_deferred_routine_queue_still_admits_ready_shutdown_during_bridge_auth() {
+         let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+@@ -5620,6 +5878,10 @@ mod tests {
+                 .message_type(),
+             MessageType::SessionReady
+         );
++        assert_eq!(
++            read_event(&mut control).await,
++            ControlEvent::RomPresenceReset
++        );
+ 
+         let ready =
+             BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
+@@ -5689,6 +5951,10 @@ mod tests {
+                 .message_type(),
+             MessageType::SessionReady
+         );
++        assert_eq!(
++            read_event(&mut control).await,
++            ControlEvent::RomPresenceReset
++        );
+ 
+         let next_ready =
+             BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();
+@@ -6258,18 +6524,17 @@ mod tests {
+         // While the grant command is still fragmented, deliver a complete
+         // competing bridge event. The sidecar must service it without
+         // cancelling or losing the control decoder's partial line.
+-        let player_state =
+-            BridgeFrame::new(MessageType::PlayerState, 2, TEST_SESSION_EPOCH, &[]).unwrap();
++        let player_state = BridgeFrame::new(
++            MessageType::PlayerState,
++            2,
++            TEST_SESSION_EPOCH,
++            &valid_local_presence_state(),
++        )
++        .unwrap();
+         bridge.write_all(&player_state.encode()).await.unwrap();
+         await_prefix(&mut bridge_prefixes, "competing player-state frame").await;
+         control.write_all(&command_bytes[split..]).await.unwrap();
+-        assert!(matches!(
+-            read_event(&mut control).await,
+-            ControlEvent::CommandResult {
+-                status: CommandStatus::Applied,
+-                ..
+-            }
+-        ));
++        assert_presence_and_command_result(&mut control).await;
+         let mut granted = [0; BRIDGE_FRAME_SIZE];
+         bridge.read_exact(&mut granted).await.unwrap();
+ 
+@@ -7198,6 +7463,10 @@ mod tests {
+         assert!(!session.rearm_after_reboot);
+         assert!(session.acknowledged_rom_ready);
+         assert_eq!(sidecar.sequence_state.last_session_rom, 1);
++        assert_eq!(
++            read_event(&mut control_peer).await,
++            ControlEvent::RomPresenceReset
++        );
+ 
+         let replacement =
+             BridgeFrame::new(MessageType::CheckpointReady, 2, TEST_SESSION_EPOCH, &[]).unwrap();

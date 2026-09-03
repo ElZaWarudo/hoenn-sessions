@@ -1,0 +1,97 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "LRA2-001",
+      "status": "satisfied",
+      "evidence": "Production main now calls the additive run_until_shutdown_with_realtime entry point with ReqwestCloudApi. CloudApi, RealtimeApi one-POST behavior, the legacy run_until_shutdown method, and existing fake/nonrealtime callers remain source-compatible. The full launcher and sidecar suite passed."
+    },
+    {
+      "criterion_id": "LRA2-002",
+      "status": "satisfied",
+      "evidence": "SessionLifecycle carries a persistent realtime_attempted latch initialized false and never cleared; reconnect rejects after an attempt. Admission requires a current non-reset pump generation and freshest state, proactively refreshes, constructs MintRealtimeTicketRequest::v1 from RuntimeLeaseFence::from_lease_contract and the canonical manifest target, sets the latch before the first POST, and permits exactly one second POST only for typed mint-origin RealtimeHttpError::Unauthorized. Inline tests prove no-state/no-mint, reset/no-mint, exact typed-401 retry, identical canonical requests, transport no-retry, and reconnect rejection."
+    },
+    {
+      "criterion_id": "LRA2-003",
+      "status": "satisfied",
+      "evidence": "realtime.rs owns one RealtimeCoordinator around coop_sidecar::realtime_channel and run_realtime, including RealtimeOwner, JoinHandle, fixed generation, separate server-Ready and interaction-admission latches, an ordered interaction watermark, and deterministic stop/join. Driver completion is prioritized before queued owner events and rechecked after an owner event wins its poll race; deterministic real-WebSocket saturation and held-return regressions prove terminal precedence. Ready remains internal, latest state uses the sidecar watch/coalescing seam, interactions at or before the Ready watermark are dropped, post-watermark interactions stay in a bounded FIFO until activation, and Spawn/Update/Despawn map exactly to their ControlCommand lifecycle variants."
+    },
+    {
+      "criterion_id": "LRA2-004",
+      "status": "satisfied",
+      "evidence": "Reset, generation drift, unexpected control input, mint/core/coordinator failure, queue/input failure, lifecycle enqueue backpressure, pump/control failure, child exit, and reconnect-after-attempt all terminate without remint or restart. Every error path, including failures before the first mint, now stops and joins supervised children and control pumps; deterministic pre-mint reset and heartbeat-error tests assert pump teardown. Lifecycle output is disabled and the coordinator is stopped and joined before child settlement or stop; the sticky attempt latch prevents replay and the coordinator Drop fallback aborts any otherwise-unreachable task."
+    },
+    {
+      "criterion_id": "LRA2-005",
+      "status": "satisfied",
+      "evidence": "Heartbeat and raw child/control observation remain selected while awaiting state, mint, and active realtime. Active, checkpoint, and Ready-cutover arbitration bound control preference to eight observations before prioritizing realtime/heartbeat progress. Checkpoint work stays pinned while control and coordinator events are concurrently drained into bounded latches; terminal state is applied before buffered lifecycle is released. A monotonic interaction watermark captured on Ready drops pre-marker interactions while preserving post-marker interactions FIFO through checkpoint reconciliation. Synchronized tests cover both sides of the marker, sustained PlayerState input, heartbeat and Ready progress, completed realtime-task progress, and bounded cutover. Shutdown during mint drains any locally latched authenticated CheckpointReady before passing the safe disposition into child shutdown. The coordinator stops before authenticated shutdown, raw child settlement, cleanup, or release."
+    },
+    {
+      "criterion_id": "LRA2-006",
+      "status": "satisfied",
+      "evidence": "Inline realtime.rs and session.rs tests cover admission/reset gating, exact retry tagging and fence reuse, no ambiguous retry, both terminal-first owner-queue races, an exact checkpoint Ready watermark, mint-shutdown checkpoint preservation, pre-mint child/pump cleanup, persistent attempt/reconnect rejection, sustained-input liveness, active-reset teardown, and a successful controllably-pending mint lifecycle. That loopback proves the freshest same-generation state is the initial WebSocket frame, heartbeat/Ready progress under sustained PlayerState input, exact Spawn/Update/Despawn mapping, post-Ready interaction, authenticated shutdown, and joined teardown without synchronization sleeps. Required focused filters passed (realtime 15, realtime_activation 7, checkpoint 8 including phase2 smoke, shutdown 18); the exact combined all-feature launcher and sidecar command passed 257 tests with one ignored; strict Clippy, cargo fmt --check, and git diff --check passed. The unstaged r2 delta is confined to realtime.rs and session.rs, retaining the previously reviewed staged production main switch. contract_hash=sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f"
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-launcher realtime --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher realtime_activation --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-launcher realtime --all-features --locked",
+    "rtk cargo test -p coop-launcher realtime_activation --all-features --locked",
+    "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+    "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+    "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [],
+  "scope_extension": null
+}

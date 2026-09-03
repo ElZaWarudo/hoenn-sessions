@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "validator_id": "/root/launcher_http_targeted_validator_v2",
+  "assignment_hash": "sha256:e0a5cf7638b4cc985dadb5d2d048b68a8ea474e0188b79953e7c1bb939003043",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "candidate_tree": "9b45da6f84d9319e706cdc29d4bce9075a9c64ef",
+  "status": "passed",
+  "claims": [
+    {"id": "LRTV-001", "verdict": "passed", "evidence": ["ReqwestCloudApi::new configures no_proxy(), and the passing ambient_proxy_does_not_intercept_loopback_mint regression supplies HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, and lowercase variants while observing a direct origin request and no proxy connection."]},
+    {"id": "LRTV-002", "verdict": "passed", "evidence": ["ReqwestCloudApi::new uses reqwest redirect Policy::none(); valid_cross_authority_redirect_is_rejected_without_target_contact passed with a syntactically valid Location, origin rejection as ResponseRejected, and a target listener that received no connection."]},
+    {"id": "LRTV-003", "verdict": "passed", "evidence": ["bounded_body preflights Content-Length and enforces cumulative streamed bytes; chunked_response_bound_accepts_exact_limit_and_rejects_one_byte_over passed for exactly 8192 accepted bytes and 8193 rejected bytes, while malformed_oversized_and_mismatched_responses_fail_closed covered oversized Content-Length with InvalidResponse."]},
+    {"id": "LRTV-004", "verdict": "passed", "evidence": ["mint_uses_one_exact_authenticated_json_post_and_consumes_grant passed with one POST to /v1/realtime/tickets, exactly one Authorization value equal to Bearer access-secret, no Sec-WebSocket-Protocol ticket channel, and Debug output containing neither access-secret nor the distinct minted ticket text."]},
+    {"id": "LRTV-005", "verdict": "passed", "evidence": ["Production mint_realtime samples unix_now() only after bounded decode and request correlation; the delayed-response integration case passed, and fixed_clock_private_seam_covers_expired_exact_and_excessive_ttl passed expired, exact REALTIME_TICKET_TTL_MS, and excessive-TTL boundaries without retries."]}
+  ],
+  "commands": [
+    {"command": "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked", "exit_code": 0, "summary": "8 tests passed in the realtime_http integration suite."},
+    {"command": "rtk git diff --check", "exit_code": 0, "summary": "No whitespace errors reported."}
+  ],
+  "new_p0_p1": []
+}

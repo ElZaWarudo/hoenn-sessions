@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+  "changed_paths": [
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "launcher-realtime-activation-v2-correctness-r5",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/main.rs",
+        "coop/crates/coop-launcher/src/realtime.rs",
+        "coop/crates/coop-launcher/src/session.rs"
+      ],
+      "risk_boundaries": [
+        "exact-all-ready-round-robin-oracle",
+        "terminal-and-shutdown-priority",
+        "production-helper-semantic-equivalence",
+        "resolution-of-all-recorded-findings"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "launcher-realtime-activation-v2-security-r5",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/main.rs",
+        "coop/crates/coop-launcher/src/realtime.rs",
+        "coop/crates/coop-launcher/src/session.rs"
+      ],
+      "risk_boundaries": [
+        "shutdown-priority-preservation",
+        "no-remint-replay-orphan",
+        "ticket-and-endpoint-confinement",
+        "resolution-of-all-recorded-findings"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

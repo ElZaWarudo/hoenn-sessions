@@ -1,0 +1,47 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:103-119 promotes realtime and heartbeat after a control burst, but realtime remains ordered before heartbeat in the service-first branch and both remain behind control in the normal branch.",
+        "coop/crates/coop-launcher/src/session.rs:2323-2349 resets control_burst to zero whenever a realtime event is consumed, so simultaneous continuously-ready control and realtime streams can repeat eight control events plus one realtime event forever without selecting an already-due heartbeat.",
+        "coop/crates/coop-launcher/src/session.rs:153-170 and 2729-2734 have the analogous cutover ordering: a continuously-ready realtime event wins ahead of Activate after every control burst, resets the burst, and can prevent Ready activation until the bounded lifecycle buffer fails closed.",
+        "coop/crates/coop-launcher/src/session.rs:4948-4958 deliberately waits for a heartbeat before the WebSocket server begins sending lifecycle frames, while the terminal fairness test at 5091-5171 closes the realtime peer before flooding PlayerState; neither test makes control, realtime, and heartbeat/activation ready together."
+      ],
+      "impact": "An authenticated high-rate local state stream combined with a server lifecycle stream can starve lease heartbeat indefinitely, causing avoidable lease expiry while the WebSocket remains active. The same arbitration can prevent a valid Ready cutover and turn otherwise processable bounded traffic into terminal failure, so F-830116ED is not fully resolved.",
+      "observation": "The r2 burst limiter bounds consecutive control selections but does not provide round-robin or deadline priority across realtime and heartbeat/activation; consuming realtime resets the only fairness counter.",
+      "principle": "correctness",
+      "recommendation": "Track service debt independently for heartbeat, realtime, and Ready activation, or check due heartbeat/activation before resetting the control budget. Guarantee each continuously-ready service branch runs within a fixed number of other selections. Add deterministic tests with simultaneous sustained PlayerState and lifecycle readiness that prove a due heartbeat occurs and Ready activation completes without buffer failure.",
+      "rule_id": "LRA2-005-multi-source-arbitration-heartbeat-cutover-fairness-r2",
+      "severity": "p1"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:4836-4998 now covers pending-mint freshest-state handoff and a successful joined lifecycle, and 5000-5088 covers active reset teardown.",
+        "No activation-level test in coop/crates/coop-launcher/src/session.rs induces ControlTerminalCause::LifecycleOverflow or InteractionOverflow after activation, and no successful active coordinator test drives MgbaExited or SidecarExited through the session cleanup branch at 2303-2319.",
+        "The sealed LRA2-006 criterion requires lifecycle mapping/backpressure, cleanup ordering, and task termination coverage; direct pump/core tests do not prove their composition through run_until_shutdown_with_realtime."
+      ],
+      "impact": "F-F3308A85 is only partially resolved: freshest-state and reset evidence now exist, but active queue-backpressure and child-failure composition can regress without a failing activation-level test.",
+      "observation": "The r2 suite closes most of the earlier integration gap but still omits two explicitly required active terminal paths through the production lifecycle.",
+      "principle": "testing",
+      "recommendation": "Add deterministic activation tests that saturate the lifecycle or interaction lane and that exit each supervised child after Ready. Assert one attempt, no post-terminal ROM output, disabled lifecycle, coordinator join before raw settlement, pump/peer reaping, and retained cleanup evidence on failure.",
+      "rule_id": "LRA2-006-active-backpressure-child-failure-coverage-r2",
+      "severity": "p2"
+    }
+  ],
+  "review_plan_hash": "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0",
+  "reviewer_id": "/root/launcher_activation_v2_correctness",
+  "risk_boundaries_checked": [
+    "attempt-fence-refresh-and-mint-origin-auth-tagging",
+    "bounded-control-arbitration",
+    "heartbeat-checkpoint-shutdown-and-child-settlement-ordering",
+    "ready-watermark-and-post-ready-fifo",
+    "resolution-of-all-nine-recorded-findings",
+    "terminal-poll-to-return-race"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 2,
+  "surface_id": "launcher-realtime-activation-v2-correctness-r2"
+}

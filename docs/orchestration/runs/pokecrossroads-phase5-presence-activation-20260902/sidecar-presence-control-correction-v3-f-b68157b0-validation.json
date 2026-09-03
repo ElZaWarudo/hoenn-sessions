@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-B68157B0",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected cumulative tree 80daf109a7939972ec2f25d124b7505a10e31164: run_checkpoint_session prechecks write_failure before calling failure_receiver, then waits on changed without any post-subscribe state recheck, preserving the documented watch-version lost wakeup."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

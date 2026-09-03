@@ -1,0 +1,46 @@
+{
+  "approval_required": false,
+  "assignments": [
+    {
+      "cross_cutting": false,
+      "id": "sidecar-control-correction-correctness-v4",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "priority": 0,
+      "reviewer_role": "reviewer",
+      "risk_boundaries": [
+        "deterministic-serving-stall-proof-with-generation-cutover-regression-preservation",
+        "explicit-writer-abort-await-on-every-owned-terminal-exit",
+        "nonrecursive-exact-control-terminal-classification-and-preactive-cleanup",
+        "writer-failure-register-recheck-and-retained-bridge-recovery-precedence"
+      ]
+    },
+    {
+      "cross_cutting": true,
+      "id": "sidecar-control-correction-security-v4",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "priority": 0,
+      "reviewer_role": "security-sentinel",
+      "risk_boundaries": [
+        "authenticated-control-ambiguity-and-exact-cause-confinement",
+        "bounded-writer-resource-task-and-socket-teardown-confinement",
+        "test-only-gate-isolation-and-no-generation-replay-regression",
+        "writer-failure-before-control-eof-with-no-retained-bridge-reconnect"
+      ]
+    }
+  ],
+  "assurance_tier": "high",
+  "changed_paths": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "coverage_complete": true,
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "queued": [],
+  "review_plan_hash": "sha256:d5b815a6dce51a494b4dd5edaaa9d78073a3b1dc57462ea79db59c36cd06dcf6",
+  "schema_version": 2,
+  "validation_wave_required": true
+}

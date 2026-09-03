@@ -1,0 +1,8 @@
+{
+  "role": "security-sentinel",
+  "actor_id": "/root/sidecar_presence_security_reviewer_v4",
+  "status": "passed",
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "findings": []
+}

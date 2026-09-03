@@ -1,0 +1,185 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:ce4e5be1ac68fcb8978ac087dc9f5c40f64d91cd601570bc1ea021df990ddf89",
+  "finding_feedback": [
+    {
+      "finding_id": "F-2D10E061",
+      "action": "corroborate",
+      "rationale": "Resolved: the successful activation regression exercises a delayed one-use grant, freshest-state handoff, Ready, lifecycle and interaction delivery, shutdown, and joined teardown.",
+      "evidence": [
+        "session.rs retains realtime_activation_runs_ready_lifecycle_interaction_and_joined_teardown.",
+        "The r3 worker terminal reports all 20 realtime and 9 realtime_activation focused tests passing."
+      ]
+    },
+    {
+      "finding_id": "F-30423722",
+      "action": "corroborate",
+      "rationale": "Resolved: both mint-shutdown branches drain a latched checkpoint through the common shutdown helper before authenticated child shutdown.",
+      "evidence": [
+        "session.rs routes first- and retry-mint shutdown through shutdown_during_realtime_mint.",
+        "realtime_mint_shutdown_drains_latched_checkpoint_before_child_teardown remains present."
+      ]
+    },
+    {
+      "finding_id": "F-46C50542",
+      "action": "corroborate",
+      "rationale": "Resolved: public lifecycle errors unconditionally invoke supervised stop, including failures before mint begins.",
+      "evidence": [
+        "run_until_shutdown_with_realtime stops children when its inner lifecycle returns any error.",
+        "Reset-before-mint and heartbeat-error-before-mint regressions verify joined control-pump cleanup."
+      ]
+    },
+    {
+      "finding_id": "F-58EDE2B0",
+      "action": "corroborate",
+      "rationale": "Resolved: Ready remains internal and the coordinator watermark confines interaction activation to post-Ready observations.",
+      "evidence": [
+        "realtime.rs records ready_interaction_watermark and activate_interactions drops entries at or below it.",
+        "realtime_checkpoint_watermark_drops_pre_ready_and_preserves_post_ready remains present."
+      ]
+    },
+    {
+      "finding_id": "F-BDD4C8DE",
+      "action": "corroborate",
+      "rationale": "Resolved: completed driver state preempts a saturated owner queue.",
+      "evidence": [
+        "realtime.rs polls or reaps the completed task before mapping a received owner event.",
+        "Saturated-owner-queue and held event-return terminal regressions remain present."
+      ]
+    },
+    {
+      "finding_id": "F-82E32A6B",
+      "action": "corroborate",
+      "rationale": "Resolved: monotonic interaction sequencing preserves post-Ready FIFO while dropping only pre-Ready interactions.",
+      "evidence": [
+        "RealtimeCoordinator queues interactions with sequence values and activates only values after ready_interaction_watermark.",
+        "The synchronized checkpoint watermark regression covers both sides of the cutover."
+      ]
+    },
+    {
+      "finding_id": "F-830116ED",
+      "action": "corroborate",
+      "rationale": "Resolved: r3 replaces the fixed burst budget with rotating source priority and keeps shutdown first in every active-loop ordering.",
+      "evidence": [
+        "session.rs:120-142 implements Control, Realtime, and Heartbeat rotations with shutdown first.",
+        "active_round_robin_advances_control_realtime_heartbeat_and_terminal is added."
+      ]
+    },
+    {
+      "finding_id": "F-A208DC98",
+      "action": "corroborate",
+      "rationale": "Resolved: the coordinator rechecks driver completion after owner-event receipt before returning the event.",
+      "evidence": [
+        "realtime.rs uses the post-receipt JoinHandle completion check as the event-versus-terminal linearization point.",
+        "coordinator_rechecks_driver_after_owner_event_wins_poll_race remains present."
+      ]
+    },
+    {
+      "finding_id": "F-F3308A85",
+      "action": "corroborate",
+      "rationale": "Resolved: r3 adds activation-level lifecycle overflow and both-child-exit cleanup regressions.",
+      "evidence": [
+        "realtime_activation_interaction_backpressure_joins_everything is added.",
+        "realtime_activation_both_child_exits_stop_coordinator_before_settlement is added."
+      ]
+    },
+    {
+      "finding_id": "F-3BC4C902",
+      "action": "corroborate",
+      "rationale": "Resolved: the production activation path now has deterministic backpressure and both child-exit cleanup coverage.",
+      "evidence": [
+        "The new overflow regression asserts fail-closed joined teardown.",
+        "The new child regression exercises sidecar and emulator exits before settlement."
+      ]
+    },
+    {
+      "finding_id": "F-4DA3B9E2",
+      "action": "corroborate",
+      "rationale": "Resolved for the active all-ready loop: each serviced source rotates priority to the next source, and shutdown remains absolute first.",
+      "evidence": [
+        "next_realtime_loop_input has three rotating biased orderings.",
+        "active_round_robin_advances_control_realtime_heartbeat_and_terminal proves all-source progress."
+      ]
+    },
+    {
+      "finding_id": "F-65C99A19",
+      "action": "corroborate",
+      "rationale": "Resolved for checkpoint correlation: an elapsed deadline is checked before arbitration and the timer is first in every source ordering.",
+      "evidence": [
+        "session.rs:152-176 makes Deadline unconditional once elapsed.",
+        "realtime_checkpoint_deadline_preempts_sustained_player_state is added."
+      ]
+    },
+    {
+      "finding_id": "F-991C5777",
+      "action": "corroborate",
+      "rationale": "Resolved: after Ready is processed, cutover rotates to an Activate-first ordering, preventing lifecycle traffic from indefinitely displacing activation.",
+      "evidence": [
+        "session.rs:202-209 gives Activate unconditional first position when CutoverSource::Activate.",
+        "realtime_ready_cutover_activates_before_continuous_lifecycle is added."
+      ]
+    },
+    {
+      "finding_id": "F-A721B843",
+      "action": "corroborate",
+      "rationale": "Resolved: r3 supplies the previously absent active lifecycle-overflow and child-failure cleanup tests.",
+      "evidence": [
+        "The interaction backpressure test reaches the production activation lifecycle.",
+        "The both-child-exits test verifies coordinator stop before child settlement."
+      ]
+    },
+    {
+      "finding_id": "F-ECA67938",
+      "action": "corroborate",
+      "rationale": "Resolved: active arbitration rotates from realtime to heartbeat, so simultaneous control and realtime readiness cannot indefinitely suppress lease maintenance.",
+      "evidence": [
+        "run_until_shutdown_with_realtime_inner sets priority to Heartbeat after each realtime event.",
+        "The active round-robin regression exercises control, realtime, heartbeat, and terminal progress."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "checkpoint-cloud-reconciliation-must-not-be-cancelled",
+      "observation": "After the correlated SaveDataUpdated event, checkpoint_before_activation_with_realtime pins checkpoint_files but still races the entire future against the original correlation deadline. Deadline wins before Complete and drops checkpoint_files even after prepare, upload, or finalize may have taken effect.",
+      "impact": "A slow or ambiguous cloud response can leave a committed snapshot with stale local revision and lease fence state, while the launcher reports CheckpointTimeout and tears down. This creates exactly the unresolved ambiguous mutation outcome that the sealed contract forbids and can cause later reconciliation conflict or data loss.",
+      "recommendation": "Apply the absolute deadline only through grant and ROM-save correlation. Once checkpoint_files begins, drive it to a definitive result while continuing its existing heartbeat-fenced idempotent retry behavior and buffering realtime/control input. Add a regression that delays prepare or finalize past the correlation deadline and proves completion rather than cancellation.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2601-2650 returns CheckpointTimeout from the deadline branch while checkpoint_files is pinned and therefore drops that in-flight future.",
+        "coop/crates/coop-launcher/src/session.rs:3110-3155 performs prepare, uploads, finalize, and only then installs the returned revision and discards recovery state.",
+        "coop/crates/coop-launcher/src/session.rs:2999-3004 explicitly documents that once prepare starts it must not be cancelled because a committed snapshot could retain stale local revision.",
+        "The r3 checkpoint deadline regression withholds the initial correlated response; it does not delay post-SaveDataUpdated cloud reconciliation."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "post-checkpoint-ready-wait-must-service-heartbeat-and-shutdown",
+      "observation": "After checkpoint reconciliation completes, establish_realtime_cutover waits for Ready using only control, realtime, and Activate inputs. It accepts neither the lease heartbeat interval nor the caller shutdown future, so a connected peer that withholds Ready suppresses both until the sidecar Ready timeout terminates the coordinator.",
+      "impact": "A remote peer that accepts the authenticated WebSocket but withholds Ready can delay user shutdown and lease maintenance for the full Ready timeout, allowing the lease to age beyond its configured cadence and postponing fail-closed teardown despite shutdown already being requested.",
+      "recommendation": "Include heartbeat and shutdown inputs in the pre-Ready cutover arbitration, with shutdown first and fair rotation for other ready sources. Preserve the noncancellable checkpoint rule only while cloud reconciliation is actually in progress. Add a withheld-Ready-after-checkpoint regression that proves due heartbeats and requested shutdown are handled promptly with coordinator and child cleanup.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:180-210 defines cutover inputs only for Control, Realtime, and Activate.",
+        "coop/crates/coop-launcher/src/session.rs:2657 calls establish_realtime_cutover only after checkpoint_files completes.",
+        "coop/crates/coop-launcher/src/session.rs:2762-2786 loops without heartbeat or shutdown parameters.",
+        "coop/crates/coop-sidecar/src/realtime.rs:65 sets READY_TIMEOUT to three seconds, bounding but not preserving the lease or shutdown cadence.",
+        "The sealed contract requires heartbeat and shutdown liveness while realtime runs; no r3 regression covers withheld Ready after checkpoint with a due heartbeat or requested shutdown."
+      ]
+    }
+  ],
+  "review_plan_hash": "sha256:371e429360d72e5830be7ca229445135b204c5f0e89272ce90c09d3907dcf74a",
+  "reviewer_id": "/root/launcher_activation_v2_security",
+  "risk_boundaries_checked": [
+    "active-overflow-and-child-cleanup",
+    "bounded-liveness-under-all-ready-input",
+    "deadline-and-shutdown-preemption",
+    "no-remint-replay-orphan",
+    "resolution-of-all-recorded-findings",
+    "ticket-and-endpoint-confinement"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "launcher-realtime-activation-v2-security-r3"
+}

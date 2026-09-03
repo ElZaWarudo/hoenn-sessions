@@ -1,0 +1,19 @@
+{
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-correction-v3",
+  "worker_id": "/root/rom_presence_correction_v3",
+  "role": "integration-candidate",
+  "unit_id": "phase5-rom-presence-activation",
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "dependency_patch_hashes": [
+    "sha256:d7d4a41157d8856f06c7c225cc245feff5c9c55b3c05d25377c14434e37cadff",
+    "sha256:fe7beecf45e8548ba55b62171dbd30033592f66748a31211e6a0c423c63a8fa8"
+  ],
+  "owned_paths": [
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c"
+  ]
+}

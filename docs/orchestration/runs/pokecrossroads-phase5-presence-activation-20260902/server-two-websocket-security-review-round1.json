@@ -1,0 +1,17 @@
+{
+  "role": "security-sentinel",
+  "actor_id": "/root/server_two_websocket_security_reviewer",
+  "status": "failed",
+  "contract_hash": "sha256:9ef23ac846d1cb5fe806e15a3873f570ebe66c715f4935a942c9fa51dd544d5c",
+  "diff_digest": "sha256:1de43e0ab34ece9e0f7495f49e42f91cf4b9ca8796cc483c13ce1e586ee1d482",
+  "findings": [
+    {
+      "severity": "P2",
+      "description": "InProcessServer::shutdown consumes the JoinHandle inside timeout; on timeout it drops the handle and detaches the axum server task, potentially leaving the listener and application alive beyond the test. Abort and join the task on timeout while retaining bounded cleanup."
+    },
+    {
+      "severity": "P2",
+      "description": "start_in_process_presence_server awaits TcpListener::bind without a timeout, so server startup is not fully bounded as required by SWA-004. Wrap the bind operation in a bounded timeout."
+    }
+  ]
+}

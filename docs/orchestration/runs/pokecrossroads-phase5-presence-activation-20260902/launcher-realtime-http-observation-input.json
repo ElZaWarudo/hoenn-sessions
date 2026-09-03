@@ -1,0 +1,15 @@
+{
+  "workspace_id": "pokecrossroads-phase5-launcher-realtime-http-20260903",
+  "worker_id": "/root/launcher_realtime_http_worker",
+  "role": "integration-candidate",
+  "unit_id": "launcher-realtime-http",
+  "contract_hash": "sha256:859ed55342b5b45790888a1e768da1638101e54b334afbe72a32492b54c93851",
+  "dependency_patch_hashes": [
+    "sha256:60dad593d8023f3cb431cb442655a5040b287e6f2672e3a17b600f5f30c6c37c"
+  ],
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ]
+}

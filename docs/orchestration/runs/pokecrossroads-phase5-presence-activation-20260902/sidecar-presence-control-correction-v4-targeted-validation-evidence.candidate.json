@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "validator_id": "/root/sidecar_control_targeted_validator_v4",
+  "assignment_hash": "sha256:40ca8555601d02a4a46f8a4a661b22c565dad546e0b45a0a14f5bf367d42f742",
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "candidate_tree": "02cbe614cc7c082c7b1a6727c834c0ccb35602e8",
+  "status": "passed",
+  "claims": [
+    {
+      "id": "SPCV4-001",
+      "verdict": "passed",
+      "evidence": [
+        "The exact control_terminal filter passed 1 test (105 filtered), covering the non-recursive pre-bridge terminal path and the malformed/full-deferred fail-closed terminal-cause regression; the full sidecar suite also passed 106 tests."
+      ]
+    },
+    {
+      "id": "SPCV4-002",
+      "verdict": "passed",
+      "evidence": [
+        "The exact active_writer_failure_precedes_simultaneous_control_eof filter passed 1 test and bridge_writer passed 1 test. Together with the full 106-test sidecar suite, this independently confirms durable writer-failure precedence and retained-bridge recovery termination coverage on the staged candidate."
+      ]
+    },
+    {
+      "id": "SPCV4-003",
+      "verdict": "passed",
+      "evidence": [
+        "The exact bridge_writer and stalled_presence_bridge_write_does_not_delay_shutdown_ack filters passed, and the full sidecar suite passed 106 tests. The staged server.rs candidate is the only source delta relative to the sealed dependency tree, so explicit BridgeWriter/BridgeIo abort-and-await teardown coverage remains localized and passing."
+      ]
+    },
+    {
+      "id": "SPCV4-004",
+      "verdict": "passed",
+      "evidence": [
+        "The real serving-path stalled_presence_bridge_write_does_not_delay_shutdown_ack filter passed 1 test. The regression is present in the staged server.rs candidate and passed independently with the exact all-features/locked invocation; the full suite also passed, including its gate, Applied-ACK deadline, session, writer-task, and peer-closure assertions."
+      ]
+    },
+    {
+      "id": "SPCV4-005",
+      "verdict": "passed",
+      "evidence": [
+        "All seven assigned focused commands passed: control_terminal (1), bridge_writer (1), active writer/EOF race (1), stalled writer shutdown ACK (1), reboot_cutover (2), pre-ready presence (1), presence overflow (1), and initial active ROM_READY lifecycle forwarding (1). The full coop-sidecar suite passed 106 tests."
+      ]
+    },
+    {
+      "id": "SPCV4-006",
+      "verdict": "passed",
+      "evidence": [
+        "The exact staged candidate write-tree was 02cbe614cc7c082c7b1a6727c834c0ccb35602e8 before testing and again during reconciliation; cached paths are control.rs and server.rs, with no unstaged paths. The full suite passed 106 tests, strict Clippy reported no issues, cargo fmt --check passed, and git diff --cached --check passed."
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "command": "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar active_writer_failure_precedes_simultaneous_control_eof --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+      "exit_code": 0,
+      "summary": "2 passed, 104 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+      "exit_code": 0,
+      "summary": "1 passed, 105 filtered out (3 suites)."
+    },
+    {
+      "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+      "exit_code": 0,
+      "summary": "106 passed (4 suites, 8.72s)."
+    },
+    {
+      "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+      "exit_code": 0,
+      "summary": "No issues found."
+    },
+    {
+      "command": "rtk cargo fmt --all -- --check",
+      "exit_code": 0,
+      "summary": "Formatting check passed with no output."
+    },
+    {
+      "command": "rtk git diff --cached --check",
+      "exit_code": 0,
+      "summary": "Cached diff whitespace check passed with no errors."
+    }
+  ],
+  "new_p0_p1": []
+}

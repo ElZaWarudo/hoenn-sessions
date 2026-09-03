@@ -1,0 +1,36 @@
+{
+  "patch_sha256": "sha256:4d47ac721f5b57a87a454fddc1e8a49c14141d0371a511569bbbc8e121ed3c83",
+  "diff_digest": "sha256:598e49eb847be8a04b6b5795f7aa03359c0576771a9504488e25004ad9201b7e",
+  "verdict": "fail",
+  "review_status": "one completed independent subreview; parent consolidation interrupted for handoff",
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "line": 2721,
+      "evidence": "handle_rom_reboot sets lifecycle_forwarding_disabled before confirming that a valid initial active-epoch ROM_READY is a reboot. The non-reboot path returns false with the latch still set, so every later lifecycle command is silently rejected.",
+      "fix": "Arm the latch only in confirmed reboot branches or restore it on every non-reboot path, and prove initial boot-ready plus active-ready still forwards lifecycle output."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "line": 806,
+      "evidence": "Presence overflow sets an atomic flag and exits the reader, closing both lanes. Biased selection can observe control EOF first and classify the condition as reconnectable control loss instead of stable PresenceQueueFull; the current test only polls the flag.",
+      "fix": "Surface overflow through a wakeable non-reconnectable terminal path and test the actual serving loop classification and teardown."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "line": 2462,
+      "evidence": "handle_presence_command awaits a bridge write that may block for three seconds, preventing the critical lane from meeting the launcher's 500 ms shutdown-ACK contract.",
+      "fix": "Decouple or safely preempt lifecycle bridge writes below the critical shutdown budget and add a stalled-writer shutdown regression."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "line": 1437,
+      "evidence": "A presence command accepted before ROM readiness can remain queued across bridge authentication and be forwarded after readiness because receipt carries no readiness generation.",
+      "fix": "Gate or generation-stamp presence at receipt, atomically invalidate pre-ready records, and add a deterministic authentication-race test."
+    }
+  ]
+}

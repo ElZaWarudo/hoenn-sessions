@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "assignment_id": "rom-presence-activation-continuation-v2-targeted-validation",
+  "validator_id": "/root/rom_presence_targeted_validator_v2",
+  "workspace_root": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-validation-v2",
+  "candidate_tree": "0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b",
+  "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+  "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+  "review_plan_hash": "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91",
+  "claims": [
+    {
+      "id": "RPAV2-001",
+      "claim": "The full Cloud Coop ROM presence test slice passes for the exact composite candidate tree."
+    },
+    {
+      "id": "RPAV2-002",
+      "claim": "The modern ROM build succeeds with the v1 bridge ABI and game protocol unchanged."
+    },
+    {
+      "id": "RPAV2-003",
+      "claim": "Bridge-manifest unit tests and regeneration succeed without an unreviewed tracked delta."
+    },
+    {
+      "id": "RPAV2-004",
+      "claim": "Presence publication, lifecycle validation, six-frame interpolation, stale teardown, remote interaction, collision exclusion, and warp fencing are exercised by the focused suite."
+    },
+    {
+      "id": "RPAV2-005",
+      "claim": "The staged full candidate remains exactly tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b and has no whitespace errors before manifest regeneration."
+    }
+  ],
+  "commands": [
+    "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-validation-v2 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+    "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-validation-v2 -- bash build/codex-rom-make modern",
+    "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+    "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+    "rtk git diff --cached --check"
+  ],
+  "terminal_path": "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-continuation-v2-targeted-validation-evidence.candidate.json"
+}

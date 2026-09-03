@@ -1,0 +1,1138 @@
+diff --git a/coop/crates/coop-launcher/src/realtime.rs b/coop/crates/coop-launcher/src/realtime.rs
+index b3c8ebaf3dab670daa520aaf7b3c43480e5c1b0a..abadfb81f38a872204e7955b95d1ca2710f59470 100644
+--- a/coop/crates/coop-launcher/src/realtime.rs
++++ b/coop/crates/coop-launcher/src/realtime.rs
+@@ -27,6 +27,14 @@ use coop_sidecar::control::ControlCommand;
+ 
+ use crate::{AuthSession, HttpClientError, ReqwestCloudApi};
+ 
++#[cfg(test)]
++use base64::Engine as _;
++#[cfg(test)]
++use tokio::{
++    io::{AsyncReadExt, AsyncWriteExt},
++    net::{TcpListener, TcpStream},
++};
++
+ /// Maximum assembled realtime ticket response body, in bytes.
+ pub const REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES: usize = 8 * 1024;
+ 
+@@ -108,7 +116,8 @@ pub(crate) struct RealtimeCoordinator {
+     owner: RealtimeOwner,
+     task: Option<JoinHandle<RealtimeOutcome>>,
+     generation: u32,
+-    ready: bool,
++    server_ready: bool,
++    interaction_ready: bool,
+ }
+ 
+ impl RealtimeCoordinator {
+@@ -124,7 +133,8 @@ impl RealtimeCoordinator {
+             owner,
+             task: Some(task),
+             generation,
+-            ready: false,
++            server_ready: false,
++            interaction_ready: false,
+         })
+     }
+ 
+@@ -132,6 +142,20 @@ impl RealtimeCoordinator {
+         self.generation
+     }
+ 
++    pub(crate) const fn interaction_ready(&self) -> bool {
++        self.interaction_ready
++    }
++
++    /// Opens the interaction gate only after the launcher has established its
++    /// control-queue cutover for the observed server Ready event.
++    pub(crate) fn activate_interactions(&mut self) -> Result<(), RealtimeCoordinatorError> {
++        if !self.server_ready || self.interaction_ready {
++            return Err(RealtimeCoordinatorError::Terminated);
++        }
++        self.interaction_ready = true;
++        Ok(())
++    }
++
+     pub(crate) fn update_state(
+         &self,
+         state: LocalPresenceStateV1,
+@@ -146,7 +170,7 @@ impl RealtimeCoordinator {
+         &self,
+         interaction: PresenceInteractionV1,
+     ) -> Result<(), RealtimeCoordinatorError> {
+-        if !self.ready {
++        if !self.interaction_ready {
+             return Ok(());
+         }
+         self.owner.interact(interaction).map_err(map_input_error)
+@@ -155,15 +179,23 @@ impl RealtimeCoordinator {
+     pub(crate) async fn next_event(
+         &mut self,
+     ) -> Result<RealtimeCoordinatorEvent, RealtimeCoordinatorError> {
+-        let Some(task) = self.task.as_mut() else {
++        let Some(task) = self.task.as_ref() else {
+             return Ok(RealtimeCoordinatorEvent::Terminal);
+         };
++        // A completed driver is terminal even when its bounded owner queue
++        // still contains lifecycle events. Never forward stale peer input
++        // after the driver has already failed closed (for example, because
++        // that same queue overflowed).
++        if task.is_finished() {
++            let outcome = self.task.take().expect("finished task remains owned").await;
++            return match outcome {
++                Ok(_) => Ok(RealtimeCoordinatorEvent::Terminal),
++                Err(_) => Err(RealtimeCoordinatorError::Task),
++            };
++        }
++        let task = self.task.as_mut().expect("unfinished task remains owned");
+         tokio::select! {
+             biased;
+-            event = self.owner.recv_event() => match event {
+-                Some(event) => map_owner_event(event, &mut self.ready),
+-                None => Err(RealtimeCoordinatorError::Terminated),
+-            },
+             outcome = task => {
+                 self.task = None;
+                 match outcome {
+@@ -171,11 +203,16 @@ impl RealtimeCoordinator {
+                     Err(_) => Err(RealtimeCoordinatorError::Task),
+                 }
+             }
++            event = self.owner.recv_event() => match event {
++                Some(event) => map_owner_event(event, &mut self.server_ready),
++                None => Err(RealtimeCoordinatorError::Terminated),
++            },
+         }
+     }
+ 
+     pub(crate) async fn stop_and_join(mut self) -> Result<(), RealtimeCoordinatorError> {
+-        self.ready = false;
++        self.server_ready = false;
++        self.interaction_ready = false;
+         self.owner.stop();
+         let Some(task) = self.task.take() else {
+             return Ok(());
+@@ -223,6 +260,151 @@ fn map_owner_event(
+     }
+ }
+ 
++#[cfg(test)]
++pub(crate) async fn accept_websocket_for_test(listener: TcpListener) -> TcpStream {
++    let (mut stream, _) = listener.accept().await.expect("websocket accept");
++    let mut request = Vec::new();
++    while !request.ends_with(b"\r\n\r\n") {
++        let mut byte = [0_u8; 1];
++        stream
++            .read_exact(&mut byte)
++            .await
++            .expect("websocket request");
++        request.push(byte[0]);
++        assert!(request.len() <= 8 * 1024, "bounded websocket request");
++    }
++    let request = String::from_utf8(request).expect("ASCII websocket request");
++    let key = request
++        .lines()
++        .find_map(|line| {
++            line.split_once(':').and_then(|(name, value)| {
++                name.eq_ignore_ascii_case("sec-websocket-key")
++                    .then(|| value.trim())
++            })
++        })
++        .expect("websocket key");
++    let mut accept_input = key.as_bytes().to_vec();
++    accept_input.extend_from_slice(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
++    let accept = base64::engine::general_purpose::STANDARD.encode(sha1_for_test(&accept_input));
++    let response = format!(
++        "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
++    );
++    stream
++        .write_all(response.as_bytes())
++        .await
++        .expect("websocket response");
++    stream
++}
++
++#[cfg(test)]
++pub(crate) async fn read_websocket_text_for_test(stream: &mut TcpStream) -> Vec<u8> {
++    let mut head = [0_u8; 2];
++    stream.read_exact(&mut head).await.expect("websocket frame");
++    assert_eq!(head[0] & 0x0f, 1, "expected text frame");
++    let masked = head[1] & 0x80 != 0;
++    let mut length = u64::from(head[1] & 0x7f);
++    if length == 126 {
++        let mut bytes = [0_u8; 2];
++        stream.read_exact(&mut bytes).await.unwrap();
++        length = u64::from(u16::from_be_bytes(bytes));
++    } else if length == 127 {
++        let mut bytes = [0_u8; 8];
++        stream.read_exact(&mut bytes).await.unwrap();
++        length = u64::from_be_bytes(bytes);
++    }
++    let mut mask = [0_u8; 4];
++    if masked {
++        stream.read_exact(&mut mask).await.unwrap();
++    }
++    let mut payload = vec![0_u8; usize::try_from(length).expect("bounded frame")];
++    stream.read_exact(&mut payload).await.unwrap();
++    if masked {
++        for (index, byte) in payload.iter_mut().enumerate() {
++            *byte ^= mask[index % 4];
++        }
++    }
++    payload
++}
++
++#[cfg(test)]
++pub(crate) async fn send_websocket_text_for_test(stream: &mut TcpStream, payload: &[u8]) {
++    let mut frame = vec![0x81];
++    match payload.len() {
++        length @ 0..=125 => frame.push(u8::try_from(length).unwrap()),
++        length @ 126..=65_535 => {
++            frame.push(126);
++            frame.extend_from_slice(&u16::try_from(length).unwrap().to_be_bytes());
++        }
++        length => {
++            frame.push(127);
++            frame.extend_from_slice(&u64::try_from(length).unwrap().to_be_bytes());
++        }
++    }
++    frame.extend_from_slice(payload);
++    stream.write_all(&frame).await.expect("websocket send");
++}
++
++#[cfg(test)]
++#[expect(
++    clippy::many_single_char_names,
++    reason = "SHA-1 round variables use the names fixed by the algorithm specification"
++)]
++fn sha1_for_test(bytes: &[u8]) -> [u8; 20] {
++    let bit_len = u64::try_from(bytes.len()).unwrap().wrapping_mul(8);
++    let mut padded = bytes.to_vec();
++    padded.push(0x80);
++    while padded.len() % 64 != 56 {
++        padded.push(0);
++    }
++    padded.extend_from_slice(&bit_len.to_be_bytes());
++    let mut h = [
++        0x6745_2301_u32,
++        0xefcd_ab89,
++        0x98ba_dcfe,
++        0x1032_5476,
++        0xc3d2_e1f0,
++    ];
++    for chunk in padded.chunks_exact(64) {
++        let mut words = [0_u32; 80];
++        for (index, word) in words[..16].iter_mut().enumerate() {
++            *word = u32::from_be_bytes(chunk[index * 4..index * 4 + 4].try_into().unwrap());
++        }
++        for index in 16..80 {
++            words[index] =
++                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
++                    .rotate_left(1);
++        }
++        let [mut a, mut b, mut c, mut d, mut e] = h;
++        for (index, word) in words.into_iter().enumerate() {
++            let (f, k) = match index {
++                0..=19 => ((b & c) | ((!b) & d), 0x5a82_7999),
++                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
++                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
++                _ => (b ^ c ^ d, 0xca62_c1d6),
++            };
++            let next = a
++                .rotate_left(5)
++                .wrapping_add(f)
++                .wrapping_add(e)
++                .wrapping_add(k)
++                .wrapping_add(word);
++            e = d;
++            d = c;
++            c = b.rotate_left(30);
++            b = a;
++            a = next;
++        }
++        for (slot, value) in h.iter_mut().zip([a, b, c, d, e]) {
++            *slot = slot.wrapping_add(value);
++        }
++    }
++    let mut digest = [0_u8; 20];
++    for (chunk, word) in digest.chunks_exact_mut(4).zip(h) {
++        chunk.copy_from_slice(&word.to_be_bytes());
++    }
++    digest
++}
++
+ impl ReqwestCloudApi {
+     /// Derives the canonical realtime WebSocket endpoint from this API's
+     /// validated HTTP(S) base.
+@@ -388,7 +570,8 @@ mod tests {
+         BridgeAbiVersion, CharacterId, ClientInstanceId, GameBuildId, MgbaVersion,
+         MintRealtimeTicketRequest, MintRealtimeTicketResponse, ProtocolVersion,
+         REALTIME_TICKET_TTL_MS, RealtimeTicket, RuntimeBuildIdentity, RuntimeLeaseFence,
+-        SessionEpoch, SessionId, Sha256Digest, StableRuntimeSession,
++        ServerRealtimeFrameV1, SessionEpoch, SessionId, Sha256Digest, StableRuntimeSession,
++        encode_server_realtime_frame,
+     };
+     use coop_protocol::{
+         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
+@@ -535,4 +718,70 @@ mod tests {
+         .expect("coordinator task must terminate without a synchronization sleep")
+         .unwrap();
+     }
++
++    #[tokio::test]
++    async fn coordinator_observes_finished_driver_before_saturated_owner_queue() {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let port = listener.local_addr().unwrap().port();
++        let remote = PresenceHandle::new(44).unwrap();
++        let server = tokio::spawn(async move {
++            let mut socket = accept_websocket_for_test(listener).await;
++            let _cached = read_websocket_text_for_test(&mut socket).await;
++            let ready = ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap());
++            send_websocket_text_for_test(
++                &mut socket,
++                &encode_server_realtime_frame(&ready).unwrap(),
++            )
++            .await;
++            let spawn = ServerRealtimeFrameV1::remote_player_spawn(
++                RemotePlayerSpawnV1::new(
++                    remote,
++                    1,
++                    state(1),
++                    CanonicalUsername::new("misty").unwrap(),
++                )
++                .unwrap(),
++            );
++            send_websocket_text_for_test(
++                &mut socket,
++                &encode_server_realtime_frame(&spawn).unwrap(),
++            )
++            .await;
++            let last_sequence = u32::try_from(coop_sidecar::MAX_OWNER_EVENT_QUEUE).unwrap() + 3;
++            for sequence in 2..=last_sequence {
++                let update = ServerRealtimeFrameV1::remote_player_update(
++                    RemotePlayerUpdateV1::new(remote, sequence, state(sequence)).unwrap(),
++                );
++                send_websocket_text_for_test(
++                    &mut socket,
++                    &encode_server_realtime_frame(&update).unwrap(),
++                )
++                .await;
++            }
++        });
++        let now = unix_now();
++        let grant = RealtimeGrant::with_now(
++            RealtimeTicket::from_bytes([45; 32]).unwrap(),
++            RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime")).unwrap(),
++            UnixTimestampMillis::new(now.value() + REALTIME_TICKET_TTL_MS),
++            now,
++        )
++        .unwrap();
++        let mut coordinator = RealtimeCoordinator::start(grant, 1, state(1)).unwrap();
++        tokio::time::timeout(std::time::Duration::from_secs(2), async {
++            loop {
++                if coordinator.task.as_ref().unwrap().is_finished() {
++                    break;
++                }
++                tokio::task::yield_now().await;
++            }
++        })
++        .await
++        .expect("owner backpressure must terminate the driver");
++        assert!(matches!(
++            coordinator.next_event().await,
++            Ok(RealtimeCoordinatorEvent::Terminal)
++        ));
++        server.await.unwrap();
++    }
+ }
+diff --git a/coop/crates/coop-launcher/src/session.rs b/coop/crates/coop-launcher/src/session.rs
+index 8f2e8c9d5794abf0210dffcea6bb5327f4054c9f..e2183fd9d81f848654285b7b503704c68777a766 100644
+--- a/coop/crates/coop-launcher/src/session.rs
++++ b/coop/crates/coop-launcher/src/session.rs
+@@ -1907,7 +1907,7 @@ impl SessionLifecycle {
+         let result = self
+             .run_until_shutdown_with_realtime_inner(api, children, shutdown)
+             .await;
+-        if result.is_err() && self.realtime_attempted {
++        if result.is_err() {
+             let _ = children.stop_in_place().await;
+         }
+         result
+@@ -2049,14 +2049,9 @@ impl SessionLifecycle {
+                     MintWait::Grant(grant) => grant,
+                     MintWait::Unauthorized => return Err(SessionError::Realtime),
+                     MintWait::Shutdown => {
+-                        let disposition = children
+-                            .shutdown(self.lease.session_epoch.value(), false)
++                        return self
++                            .shutdown_during_realtime_mint(api, children, &mut pending_checkpoint)
+                             .await;
+-                        return if disposition.recovery_required() {
+-                            Err(SessionError::Realtime)
+-                        } else {
+-                            Ok(())
+-                        };
+                     }
+                     MintWait::Child(child) => {
+                         return children
+@@ -2068,14 +2063,9 @@ impl SessionLifecycle {
+                 }
+             }
+             Ok(MintWait::Shutdown) => {
+-                let disposition = children
+-                    .shutdown(self.lease.session_epoch.value(), false)
++                return self
++                    .shutdown_during_realtime_mint(api, children, &mut pending_checkpoint)
+                     .await;
+-                return if disposition.recovery_required() {
+-                    Err(SessionError::Realtime)
+-                } else {
+-                    Ok(())
+-                };
+             }
+             Ok(MintWait::Child(child)) => {
+                 return children
+@@ -2120,6 +2110,7 @@ impl SessionLifecycle {
+         while result.is_ok() {
+             let realtime = coordinator.as_mut().expect("coordinator remains owned");
+             tokio::select! {
++                biased;
+                 () = &mut shutdown => {
+                     let drain = self
+                         .drain_shutdown_checkpoint_with_realtime(api, children, realtime)
+@@ -2136,32 +2127,6 @@ impl SessionLifecycle {
+                     };
+                     break;
+                 }
+-                _ = heartbeat.tick() => {
+-                    if let Err(error) = self.heartbeat(api).await {
+-                        result = Err(error);
+-                    }
+-                }
+-                event = realtime.next_event() => match event {
+-                    Ok(RealtimeCoordinatorEvent::Ready) => {
+-                        if children.control.reset_latched()
+-                            || children.control.lifecycle_generation() != generation
+-                            || children.control.enable_lifecycle(generation).is_err()
+-                        {
+-                            result = Err(SessionError::Realtime);
+-                        }
+-                    }
+-                    Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
+-                        if children.control.reset_latched()
+-                            || children.control.lifecycle_generation() != generation
+-                            || children.control.enqueue_lifecycle(generation, command).is_err()
+-                        {
+-                            result = Err(SessionError::Realtime);
+-                        }
+-                    }
+-                    Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => {
+-                        result = Err(SessionError::Realtime);
+-                    }
+-                },
+                 observation = children.observe_raw() => match observation {
+                     Err(error) => result = Err(SessionError::Control(error)),
+                     Ok(RawSupervisorEvent::Control(ControlEvent::PlayerState(_))) => {
+@@ -2201,6 +2166,29 @@ impl SessionLifecycle {
+                         };
+                         break;
+                     }
++                },
++                event = realtime.next_event() => match event {
++                    Ok(RealtimeCoordinatorEvent::Ready) => {
++                        if Self::activate_realtime(&children.control, realtime).is_err() {
++                            result = Err(SessionError::Realtime);
++                        }
++                    }
++                    Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
++                        if children.control.reset_latched()
++                            || children.control.lifecycle_generation() != generation
++                            || children.control.enqueue_lifecycle(generation, command).is_err()
++                        {
++                            result = Err(SessionError::Realtime);
++                        }
++                    }
++                    Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => {
++                        result = Err(SessionError::Realtime);
++                    }
++                },
++                _ = heartbeat.tick() => {
++                    if let Err(error) = self.heartbeat(api).await {
++                        result = Err(error);
++                    }
+                 }
+             }
+         }
+@@ -2214,6 +2202,46 @@ impl SessionLifecycle {
+         result
+     }
+ 
++    async fn shutdown_during_realtime_mint<A: CloudApi>(
++        &mut self,
++        api: &A,
++        children: &mut SupervisedChildren,
++        pending_checkpoint: &mut Option<ControlEvent>,
++    ) -> Result<(), SessionError> {
++        let drain = match pending_checkpoint.take() {
++            Some(ready) => self
++                .checkpoint_with_deadline(api, &mut children.control, ready)
++                .await
++                .map(|_| ()),
++            None => self.drain_shutdown_checkpoint(api, children).await,
++        };
++        let disposition = children
++            .shutdown(self.lease.session_epoch.value(), drain.is_ok())
++            .await;
++        match (drain, disposition.recovery_required()) {
++            (Err(error), _) => Err(error),
++            (_, true) => Err(SessionError::Realtime),
++            _ => Ok(()),
++        }
++    }
++
++    fn activate_realtime(
++        control: &ControlChannel,
++        realtime: &mut RealtimeCoordinator,
++    ) -> Result<(), SessionError> {
++        if control.reset_latched()
++            || control.lifecycle_generation() != realtime.generation()
++            || control.enable_lifecycle(realtime.generation()).is_err()
++        {
++            return Err(SessionError::Realtime);
++        }
++        if realtime.activate_interactions().is_err() {
++            control.disable_lifecycle();
++            return Err(SessionError::Realtime);
++        }
++        Ok(())
++    }
++
+     async fn checkpoint_with_realtime<A: CloudApi>(
+         &mut self,
+         api: &A,
+@@ -2221,6 +2249,7 @@ impl SessionLifecycle {
+         ready: ControlEvent,
+         realtime: &mut RealtimeCoordinator,
+     ) -> Result<Revision, SessionError> {
++        let was_active = realtime.interaction_ready();
+         let mut buffered = Vec::new();
+         let mut ready_seen = false;
+         let mut terminal = false;
+@@ -2232,7 +2261,6 @@ impl SessionLifecycle {
+                     biased;
+                     result = &mut checkpoint => break result,
+                     event = realtime.next_event(), if !terminal => match event {
+-                        Ok(RealtimeCoordinatorEvent::Ready) => ready_seen = true,
+                         Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
+                             if buffered.len() == coop_sidecar::MAX_OWNER_EVENT_QUEUE {
+                                 terminal = true;
+@@ -2240,7 +2268,12 @@ impl SessionLifecycle {
+                                 buffered.push(command);
+                             }
+                         }
+-                        Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => terminal = true,
++                        Ok(RealtimeCoordinatorEvent::Ready) if !was_active && !ready_seen => {
++                            ready_seen = true;
++                        }
++                        Ok(RealtimeCoordinatorEvent::Ready | RealtimeCoordinatorEvent::Terminal) | Err(_) => {
++                            terminal = true;
++                        }
+                     }
+                 }
+             }
+@@ -2252,10 +2285,8 @@ impl SessionLifecycle {
+             control.disable_lifecycle();
+             return Err(SessionError::Realtime);
+         }
+-        if ready_seen {
+-            control
+-                .enable_lifecycle(realtime.generation())
+-                .map_err(|_| SessionError::Realtime)?;
++        if !was_active {
++            Self::establish_realtime_cutover(control, realtime, ready_seen, &mut buffered).await?;
+         }
+         for command in buffered {
+             control
+@@ -2274,6 +2305,66 @@ impl SessionLifecycle {
+         Ok(revision)
+     }
+ 
++    async fn establish_realtime_cutover(
++        control: &mut ControlChannel,
++        realtime: &mut RealtimeCoordinator,
++        mut ready_seen: bool,
++        buffered: &mut Vec<ControlCommand>,
++    ) -> Result<(), SessionError> {
++        loop {
++            tokio::select! {
++                biased;
++                observation = control.receive() => {
++                    Self::drop_pre_ready_control(observation, control, realtime)?;
++                },
++                event = realtime.next_event() => match event {
++                    Ok(RealtimeCoordinatorEvent::Ready) if !ready_seen => {
++                        ready_seen = true;
++                    }
++                    Ok(RealtimeCoordinatorEvent::Lifecycle(command)) if ready_seen => {
++                        if buffered.len() == coop_sidecar::MAX_OWNER_EVENT_QUEUE {
++                            return Err(SessionError::Realtime);
++                        }
++                        buffered.push(command);
++                    }
++                    Ok(RealtimeCoordinatorEvent::Ready | RealtimeCoordinatorEvent::Lifecycle(_) | RealtimeCoordinatorEvent::Terminal)
++                    | Err(_) => return Err(SessionError::Realtime),
++                },
++                () = std::future::ready(()), if ready_seen => {
++                    return Self::activate_realtime(control, realtime);
++                }
++            }
++        }
++    }
++
++    fn drop_pre_ready_control(
++        observation: Result<ControlEvent, ProcessError>,
++        control: &ControlChannel,
++        realtime: &RealtimeCoordinator,
++    ) -> Result<(), SessionError> {
++        match observation.map_err(SessionError::Control)? {
++            ControlEvent::PlayerState(_) => {
++                let Some((generation, _, state)) = control.latest_presence_state() else {
++                    return Err(SessionError::Realtime);
++                };
++                if control.reset_latched() || generation != realtime.generation() {
++                    return Err(SessionError::Realtime);
++                }
++                realtime
++                    .update_state(state)
++                    .map_err(|_| SessionError::Realtime)
++            }
++            ControlEvent::InteractRemotePlayer(interaction) => realtime
++                .interact(interaction)
++                .map_err(|_| SessionError::Realtime),
++            ControlEvent::RomPresenceReset
++            | ControlEvent::CheckpointReady { .. }
++            | ControlEvent::SaveDataUpdated { .. }
++            | ControlEvent::CheckpointExpired { .. }
++            | ControlEvent::CommandResult { .. } => Err(SessionError::Realtime),
++        }
++    }
++
+     async fn drain_shutdown_checkpoint_with_realtime<A: CloudApi>(
+         &mut self,
+         api: &A,
+@@ -3058,18 +3149,21 @@ mod lifecycle_tests {
+ 
+     use coop_cloud::{
+         AccessToken, ApiVersion, ArtifactIdentity, BridgeAbiVersion, CharacterId, ClientInstanceId,
+-        CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest, LeaseContract, LeaseFence,
+-        LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, MgbaVersion,
+-        MintRealtimeTicketRequest, Password, PrepareSnapshotRequest, ProtocolVersion,
+-        ReconnectLeaseRequest, RefreshFamilyId, RefreshRequest, RefreshResponse, RefreshToken,
+-        ReleaseLeaseRequest, ResumePackageManifest, Revision, RuntimeLeaseFence, SessionEpoch,
+-        SessionId, Sha256Digest, SnapshotFence, SnapshotFinalizeRequest, SnapshotListRequest,
+-        SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest,
+-        SnapshotRestoreResponse, TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
++        ClientRealtimeFrameV1, CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest,
++        LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse,
++        MgbaVersion, MintRealtimeTicketRequest, Password, PrepareSnapshotRequest, ProtocolVersion,
++        RealtimeTicket, ReconnectLeaseRequest, RefreshFamilyId, RefreshRequest, RefreshResponse,
++        RefreshToken, ReleaseLeaseRequest, ResumePackageManifest, Revision, RuntimeLeaseFence,
++        ServerRealtimeFrameV1, SessionEpoch, SessionId, Sha256Digest, SnapshotFence,
++        SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
++        SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
++        TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
++        decode_client_realtime_frame, encode_server_realtime_frame,
+     };
+     use coop_protocol::{
+-        AnimationId, AvatarId, Direction, LocalPresenceStateV1, MovementMode, PlayerState,
+-        PresencePoseV1, RegionId, WorldLocation,
++        AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
++        MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1, RegionId,
++        RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
+     };
+     use serde_json::json;
+     use tempfile::{TempDir, tempdir};
+@@ -3087,7 +3181,12 @@ mod lifecycle_tests {
+     use crate::{
+         AuthApi, AuthError, AuthSession, BuildCompatibility, CloudApi, ControlChannel, EpochStore,
+         KeychainError, RealtimeApi, RealtimeFuture, RealtimeHttpError, RefreshTokenStore,
+-        SessionConfig, SessionError, SessionLifecycle, SupervisedChildren, auth::AuthFuture,
++        SessionConfig, SessionError, SessionLifecycle, SupervisedChildren,
++        auth::AuthFuture,
++        realtime::{
++            RealtimeCoordinator, accept_websocket_for_test, read_websocket_text_for_test,
++            send_websocket_text_for_test,
++        },
+     };
+     use coop_save::{
+         COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SCHEMA_VERSION, COOP_SAVE_V1_SIZE,
+@@ -3149,6 +3248,7 @@ mod lifecycle_tests {
+         release_requests: Mutex<Vec<ReleaseLeaseRequest>>,
+         logouts: Mutex<usize>,
+         realtime_errors: Mutex<VecDeque<RealtimeHttpError>>,
++        realtime_grants: Mutex<VecDeque<coop_sidecar::RealtimeGrant>>,
+         realtime_requests: Mutex<Vec<MintRealtimeTicketRequest>>,
+     }
+ 
+@@ -3177,6 +3277,7 @@ mod lifecycle_tests {
+                 release_requests: Mutex::new(Vec::new()),
+                 logouts: Mutex::new(0),
+                 realtime_errors: Mutex::new(VecDeque::new()),
++                realtime_grants: Mutex::new(VecDeque::new()),
+                 realtime_requests: Mutex::new(Vec::new()),
+             }
+         }
+@@ -3217,6 +3318,10 @@ mod lifecycle_tests {
+         fn set_realtime_errors(&self, errors: impl IntoIterator<Item = RealtimeHttpError>) {
+             *self.realtime_errors.lock().unwrap() = errors.into_iter().collect();
+         }
++
++        fn push_realtime_grant(&self, grant: coop_sidecar::RealtimeGrant) {
++            self.realtime_grants.lock().unwrap().push_back(grant);
++        }
+     }
+ 
+     impl AuthApi for TestCloud {
+@@ -3433,6 +3538,9 @@ mod lifecycle_tests {
+             request: MintRealtimeTicketRequest,
+         ) -> RealtimeFuture<'a, coop_sidecar::RealtimeGrant> {
+             self.realtime_requests.lock().unwrap().push(request);
++            if let Some(grant) = self.realtime_grants.lock().unwrap().pop_front() {
++                return Box::pin(async move { Ok(grant) });
++            }
+             let error = self
+                 .realtime_errors
+                 .lock()
+@@ -4295,6 +4403,394 @@ mod lifecycle_tests {
+         )
+     }
+ 
++    fn realtime_grant(port: u16) -> coop_sidecar::RealtimeGrant {
++        let now = super::now_millis();
++        coop_sidecar::RealtimeGrant::with_now(
++            RealtimeTicket::from_bytes([61; 32]).unwrap(),
++            coop_sidecar::RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime"))
++                .unwrap(),
++            UnixTimestampMillis::new(now + 30_000),
++            UnixTimestampMillis::new(now),
++        )
++        .unwrap()
++    }
++
++    async fn read_control_command(stream: &mut tokio::net::TcpStream) -> ControlCommand {
++        let mut line = Vec::new();
++        loop {
++            let mut byte = [0_u8; 1];
++            stream.read_exact(&mut byte).await.unwrap();
++            if byte[0] == b'\n' {
++                return serde_json::from_slice(&line).unwrap();
++            }
++            line.push(byte[0]);
++        }
++    }
++
++    async fn write_control_event(stream: &mut tokio::net::TcpStream, event: &ControlEvent) {
++        let mut line = serde_json::to_vec(event).unwrap();
++        line.push(b'\n');
++        stream.write_all(&line).await.unwrap();
++    }
++
++    #[tokio::test]
++    #[expect(
++        clippy::too_many_lines,
++        reason = "the integration test keeps both loopback peers and lifecycle assertions together"
++    )]
++    async fn realtime_activation_runs_ready_lifecycle_interaction_and_joined_teardown() {
++        let (_root, mut session, cloud) = bootstrap(false).await;
++        let websocket_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let websocket_port = websocket_listener.local_addr().unwrap().port();
++        cloud.push_realtime_grant(realtime_grant(websocket_port));
++
++        let remote = PresenceHandle::new(62).unwrap();
++        let spawn = RemotePlayerSpawnV1::new(
++            remote,
++            1,
++            realtime_presence_state(2),
++            CanonicalUsername::new("misty").unwrap(),
++        )
++        .unwrap();
++        let update = RemotePlayerUpdateV1::new(remote, 2, realtime_presence_state(3)).unwrap();
++        let despawn = RemotePlayerDespawnV1::new(remote, 3, DespawnReason::Disconnected).unwrap();
++        let pre_ready = PresenceInteractionV1::new(remote, 1, 1, 4, 5).unwrap();
++        let post_ready = PresenceInteractionV1::new(remote, 2, 1, 5, 5).unwrap();
++
++        let control_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let control_address = control_listener.local_addr().unwrap();
++        let expected_spawn = spawn.clone();
++        let expected_update = update.clone();
++        let expected_despawn = despawn.clone();
++        let post_for_control = post_ready.clone();
++        let control_server = tokio::spawn(async move {
++            let (mut stream, _) = control_listener.accept().await.unwrap();
++            write_control_event(
++                &mut stream,
++                &ControlEvent::PlayerState(realtime_presence_state(1)),
++            )
++            .await;
++            write_control_event(&mut stream, &ControlEvent::InteractRemotePlayer(pre_ready)).await;
++            assert_eq!(
++                read_control_command(&mut stream).await,
++                ControlCommand::RemotePlayerSpawn(expected_spawn)
++            );
++            write_control_event(
++                &mut stream,
++                &ControlEvent::InteractRemotePlayer(post_for_control),
++            )
++            .await;
++            assert_eq!(
++                read_control_command(&mut stream).await,
++                ControlCommand::RemotePlayerUpdate(expected_update)
++            );
++            assert_eq!(
++                read_control_command(&mut stream).await,
++                ControlCommand::RemotePlayerDespawn(expected_despawn)
++            );
++            let ControlCommand::ShutdownRequest(request) = read_control_command(&mut stream).await
++            else {
++                panic!("joined teardown must request authenticated shutdown")
++            };
++            write_control_event(
++                &mut stream,
++                &ControlEvent::CommandResult {
++                    command_id: request.command_id,
++                    status: CommandStatus::Applied,
++                    reason: None,
++                },
++            )
++            .await;
++            let mut remainder = Vec::new();
++            stream.read_to_end(&mut remainder).await.unwrap();
++        });
++        let stream = tokio::net::TcpStream::connect(control_address)
++            .await
++            .unwrap();
++        let control = ControlChannel::from_stream_for_test(stream);
++        let mut children = SupervisedChildren::for_test(
++            long_running_test_child(),
++            long_running_test_child(),
++            control,
++        );
++
++        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
++        let websocket_server = tokio::spawn(async move {
++            let mut socket = accept_websocket_for_test(websocket_listener).await;
++            let cached = read_websocket_text_for_test(&mut socket).await;
++            assert_eq!(
++                decode_client_realtime_frame(&cached).unwrap(),
++                ClientRealtimeFrameV1::player_state(realtime_presence_state(1))
++            );
++            for frame in [
++                ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
++                ServerRealtimeFrameV1::remote_player_spawn(spawn),
++                ServerRealtimeFrameV1::remote_player_update(update),
++                ServerRealtimeFrameV1::remote_player_despawn(despawn),
++            ] {
++                send_websocket_text_for_test(
++                    &mut socket,
++                    &encode_server_realtime_frame(&frame).unwrap(),
++                )
++                .await;
++            }
++            let interaction = read_websocket_text_for_test(&mut socket).await;
++            assert_eq!(
++                decode_client_realtime_frame(&interaction).unwrap(),
++                ClientRealtimeFrameV1::interact_remote_player(post_ready)
++            );
++            shutdown_tx.send(()).unwrap();
++            let mut remainder = Vec::new();
++            socket.read_to_end(&mut remainder).await.unwrap();
++        });
++
++        let result = timeout(
++            Duration::from_secs(3),
++            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
++                let _ = shutdown_rx.await;
++            }),
++        )
++        .await
++        .expect("successful realtime lifecycle remains bounded");
++        assert!(result.is_ok(), "realtime lifecycle result: {result:?}");
++        assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
++        timeout(Duration::from_secs(1), control_server)
++            .await
++            .expect("control pumps joined")
++            .unwrap();
++        timeout(Duration::from_secs(1), websocket_server)
++            .await
++            .expect("realtime task joined")
++            .unwrap();
++    }
++
++    #[tokio::test]
++    #[expect(
++        clippy::too_many_lines,
++        reason = "the deterministic cutover regression keeps its synchronized peer script inline"
++    )]
++    async fn realtime_checkpoint_drops_interaction_queued_before_ready_cutover() {
++        let (_root, mut session, cloud) = bootstrap(false).await;
++        std::fs::write(
++            session.workspace.path().join("character.sav"),
++            valid_save(1),
++        )
++        .unwrap();
++        let websocket_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let websocket_port = websocket_listener.local_addr().unwrap().port();
++        let remote = PresenceHandle::new(72).unwrap();
++        let pre_ready = PresenceInteractionV1::new(remote, 1, 1, 4, 5).unwrap();
++        let post_ready = PresenceInteractionV1::new(remote, 1, 1, 5, 5).unwrap();
++        let spawn = RemotePlayerSpawnV1::new(
++            remote,
++            1,
++            realtime_presence_state(2),
++            CanonicalUsername::new("may").unwrap(),
++        )
++        .unwrap();
++
++        let control_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let control_address = control_listener.local_addr().unwrap();
++        let (send_ready_tx, send_ready_rx) = tokio::sync::oneshot::channel();
++        let (ready_sent_tx, ready_sent_rx) = tokio::sync::oneshot::channel();
++        let (interaction_seen_tx, interaction_seen_rx) = tokio::sync::oneshot::channel();
++        let expected_spawn = spawn.clone();
++        let post_for_control = post_ready.clone();
++        let control_server = tokio::spawn(async move {
++            let (mut stream, _) = control_listener.accept().await.unwrap();
++            write_control_event(
++                &mut stream,
++                &ControlEvent::PlayerState(realtime_presence_state(1)),
++            )
++            .await;
++            let ControlCommand::CheckpointGrant(grant) = read_control_command(&mut stream).await
++            else {
++                panic!("checkpoint must begin with its grant")
++            };
++            write_control_event(&mut stream, &ControlEvent::InteractRemotePlayer(pre_ready)).await;
++            send_ready_tx.send(()).unwrap();
++            ready_sent_rx.await.unwrap();
++            for event in [
++                ControlEvent::CommandResult {
++                    command_id: grant.command_id,
++                    status: CommandStatus::Applied,
++                    reason: None,
++                },
++                ControlEvent::SaveDataUpdated {
++                    session_epoch: 1,
++                    ready_sequence: 1,
++                    save_sequence: 2,
++                    save_generation: 1,
++                },
++            ] {
++                write_control_event(&mut stream, &event).await;
++            }
++            assert_eq!(
++                read_control_command(&mut stream).await,
++                ControlCommand::RemotePlayerSpawn(expected_spawn)
++            );
++            write_control_event(
++                &mut stream,
++                &ControlEvent::InteractRemotePlayer(post_for_control),
++            )
++            .await;
++            let mut remainder = Vec::new();
++            stream.read_to_end(&mut remainder).await.unwrap();
++        });
++
++        let websocket_server = tokio::spawn(async move {
++            let mut socket = accept_websocket_for_test(websocket_listener).await;
++            let _cached = read_websocket_text_for_test(&mut socket).await;
++            send_ready_rx.await.unwrap();
++            for frame in [
++                ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
++                ServerRealtimeFrameV1::remote_player_spawn(spawn),
++            ] {
++                send_websocket_text_for_test(
++                    &mut socket,
++                    &encode_server_realtime_frame(&frame).unwrap(),
++                )
++                .await;
++            }
++            ready_sent_tx.send(()).unwrap();
++            let interaction = read_websocket_text_for_test(&mut socket).await;
++            assert_eq!(
++                decode_client_realtime_frame(&interaction).unwrap(),
++                ClientRealtimeFrameV1::interact_remote_player(post_ready)
++            );
++            interaction_seen_tx.send(()).unwrap();
++            let mut remainder = Vec::new();
++            socket.read_to_end(&mut remainder).await.unwrap();
++        });
++
++        let stream = tokio::net::TcpStream::connect(control_address)
++            .await
++            .unwrap();
++        let control = ControlChannel::from_stream_for_test(stream);
++        let mut children = SupervisedChildren::for_test(
++            long_running_test_child(),
++            long_running_test_child(),
++            control,
++        );
++        let mut realtime = RealtimeCoordinator::start(
++            realtime_grant(websocket_port),
++            children.control.lifecycle_generation(),
++            realtime_presence_state(1),
++        )
++        .unwrap();
++        let revision = timeout(
++            Duration::from_secs(3),
++            session.checkpoint_with_realtime(
++                cloud.as_ref(),
++                &mut children.control,
++                ControlEvent::CheckpointReady {
++                    session_epoch: 1,
++                    ready_sequence: 1,
++                },
++                &mut realtime,
++            ),
++        )
++        .await
++        .expect("checkpoint cutover remains bounded")
++        .unwrap();
++        assert_eq!(revision, Revision::new(1));
++        let ControlEvent::InteractRemotePlayer(interaction) =
++            children.control.receive().await.unwrap()
++        else {
++            panic!("post-Ready interaction must remain FIFO")
++        };
++        realtime.interact(interaction).unwrap();
++        timeout(Duration::from_secs(1), interaction_seen_rx)
++            .await
++            .expect("post-Ready interaction delivered")
++            .unwrap();
++        realtime.stop_and_join().await.unwrap();
++        children.stop_in_place().await.unwrap();
++        timeout(Duration::from_secs(1), control_server)
++            .await
++            .expect("control teardown")
++            .unwrap();
++        timeout(Duration::from_secs(1), websocket_server)
++            .await
++            .expect("realtime teardown")
++            .unwrap();
++    }
++
++    #[tokio::test]
++    async fn realtime_mint_shutdown_drains_latched_checkpoint_before_child_teardown() {
++        let (_root, mut session, cloud) = bootstrap(false).await;
++        std::fs::write(
++            session.workspace.path().join("character.sav"),
++            valid_save(1),
++        )
++        .unwrap();
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            let ControlCommand::CheckpointGrant(grant) = read_control_command(&mut stream).await
++            else {
++                panic!("latched checkpoint must be granted before shutdown")
++            };
++            for event in [
++                ControlEvent::CommandResult {
++                    command_id: grant.command_id,
++                    status: CommandStatus::Applied,
++                    reason: None,
++                },
++                ControlEvent::SaveDataUpdated {
++                    session_epoch: 1,
++                    ready_sequence: 7,
++                    save_sequence: 8,
++                    save_generation: 1,
++                },
++            ] {
++                write_control_event(&mut stream, &event).await;
++            }
++            let ControlCommand::ShutdownRequest(request) = read_control_command(&mut stream).await
++            else {
++                panic!("checkpoint drain must permit authenticated shutdown")
++            };
++            write_control_event(
++                &mut stream,
++                &ControlEvent::CommandResult {
++                    command_id: request.command_id,
++                    status: CommandStatus::Applied,
++                    reason: None,
++                },
++            )
++            .await;
++            let mut remainder = Vec::new();
++            stream.read_to_end(&mut remainder).await.unwrap();
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        let control = ControlChannel::from_stream_for_test(stream);
++        let mut children = SupervisedChildren::for_test(
++            long_running_test_child(),
++            long_running_test_child(),
++            control,
++        );
++        let mut pending = Some(ControlEvent::CheckpointReady {
++            session_epoch: 1,
++            ready_sequence: 7,
++        });
++        timeout(
++            Duration::from_secs(3),
++            session.shutdown_during_realtime_mint(cloud.as_ref(), &mut children, &mut pending),
++        )
++        .await
++        .expect("latched checkpoint shutdown remains finite")
++        .unwrap();
++        assert!(pending.is_none());
++        assert_eq!(*cloud.prepares.lock().unwrap(), 1);
++        assert_eq!(*cloud.finalizes.lock().unwrap(), 1);
++        assert!(children.shutdown_disposition().unwrap().clean());
++        timeout(Duration::from_secs(1), server)
++            .await
++            .expect("checkpoint and pump teardown joined")
++            .unwrap();
++    }
++
+     #[tokio::test]
+     async fn realtime_activation_shutdown_before_state_does_not_mint() {
+         let (_root, mut session, cloud) = bootstrap(false).await;
+@@ -4332,7 +4828,34 @@ mod lifecycle_tests {
+         assert!(matches!(result, Err(SessionError::Realtime)));
+         assert!(cloud.realtime_requests.lock().unwrap().is_empty());
+         assert!(!session.realtime_attempted);
+-        server.abort();
++        timeout(Duration::from_secs(1), server)
++            .await
++            .expect("pre-mint reset joins control pumps")
++            .unwrap();
++    }
++
++    #[tokio::test]
++    async fn realtime_activation_pre_mint_heartbeat_error_joins_control_pumps() {
++        let (_root, mut session, cloud) = bootstrap(false).await;
++        cloud.set_heartbeat_character(CharacterId::new(Uuid::from_u128(999)).unwrap());
++        let (mut children, server) = realtime_test_children(Vec::new()).await;
++        let result = timeout(
++            Duration::from_secs(2),
++            session.run_until_shutdown_with_realtime(
++                cloud.as_ref(),
++                &mut children,
++                std::future::pending(),
++            ),
++        )
++        .await
++        .expect("heartbeat failure remains bounded");
++        assert!(matches!(result, Err(SessionError::Lease)));
++        assert!(cloud.realtime_requests.lock().unwrap().is_empty());
++        assert!(!session.realtime_attempted);
++        timeout(Duration::from_secs(1), server)
++            .await
++            .expect("pre-mint heartbeat failure joins control pumps")
++            .unwrap();
+     }
+ 
+     #[tokio::test]

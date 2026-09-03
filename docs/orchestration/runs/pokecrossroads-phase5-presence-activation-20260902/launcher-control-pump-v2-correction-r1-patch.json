@@ -1,0 +1,26 @@
+{
+  "base_revision": "9d08840abb411f6e1f4b832a7eaaad1255a00d16",
+  "baseline_digest": "sha256:f771d04fba812ebbe19417bc44ef0d15530fad148892483fef5cf11124c20a2d",
+  "baseline_tree": "c3e6290b10ec5d01989fb6f95be1506f175c6610",
+  "changed_files": [
+    {
+      "digest": "sha256:b5ca2af7360dbfd3f4ecba0b13593dcc0ac528701c54872f1446e15fea2f8c40",
+      "path": "coop/crates/coop-launcher/src/process.rs"
+    }
+  ],
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "dependency_patch_hashes": [
+    "sha256:edede47c5acbd9b3d1148a4ba1bdb2088d59913ac431f5f9b08046c72d7b1d7e"
+  ],
+  "diff_digest": "sha256:fb96b8f0e5c242563c245b7f2ac624c798c795c09e39e6a0abfb97d0dc02635e",
+  "manifest_hash": "sha256:7c130f7868d63331342b9cce5f581604028af341422e78604a405b516a1e748c",
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/process.rs"
+  ],
+  "patch_sha256": "sha256:fc127e15b11486dd24f46846e0e0e91b359823582191f01a3b8addf0b5ff07b5",
+  "role": "integration-candidate-correction",
+  "schema_version": 1,
+  "unit_id": "phase5-launcher-control-pump",
+  "worker_id": "/root/launcher_control_pump_v2",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-control-pump-v2"
+}

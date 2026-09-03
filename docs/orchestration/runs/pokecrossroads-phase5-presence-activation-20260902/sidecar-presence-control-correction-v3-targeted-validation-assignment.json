@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "assignment_id": "sidecar-presence-control-correction-v3-targeted-validation",
+  "validator_id": "/root/sidecar_control_targeted_validator_v3",
+  "workspace_root": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-validation-v3",
+  "candidate_tree": "80daf109a7939972ec2f25d124b7505a10e31164",
+  "contract_hash": "sha256:22e30fdaa00b39c93841bc49c317c9fc6ed78e1c069e7af0b9a310703ec76ece",
+  "diff_digest": "sha256:868d4c1e2f52678566da3c9779846601a1300c9de663b024d33c4a45be74648f",
+  "review_plan_hash": "sha256:284ae7098ffc744048d493ecf200d70ec6a366c4448e262fd88a4bf57e259613",
+  "claims": [
+    {
+      "id": "SPCV3-001",
+      "claim": "Every writer socket operation and critical enqueue/completion is deadline-bounded, and all terminal session paths poison, abort, join, and close the owned writer without buffered lifecycle drain."
+    },
+    {
+      "id": "SPCV3-002",
+      "claim": "Durable writer failure signaling has register-then-recheck semantics and wakes an otherwise idle serving loop across the controlled race window."
+    },
+    {
+      "id": "SPCV3-003",
+      "claim": "A full deferred lane cannot hide a malformed control decoder terminal behind presence EOF or convert it into clean shutdown or reconnect."
+    },
+    {
+      "id": "SPCV3-004",
+      "claim": "Reboot cutover discards queued old-generation lifecycle frames and retires an unsafe in-flight writer before any new-generation SESSION_READY can reuse the socket."
+    },
+    {
+      "id": "SPCV3-005",
+      "claim": "The pre-ready barrier observes successful post-decode, post-stamp bounded admission and proves stale presence neither allocates an outer sequence nor forwards after bridge authentication."
+    },
+    {
+      "id": "SPCV3-006",
+      "claim": "The cumulative candidate tree is exact, the v3 delta is confined to server.rs, all focused and full sidecar tests pass, strict Clippy and formatting pass, and cached staged dependencies are unchanged."
+    }
+  ],
+  "commands": [
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+    "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+    "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+    "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --cached --check"
+  ],
+  "terminal_path": "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v3-targeted-validation-evidence.candidate.json"
+}

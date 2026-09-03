@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "review_plan_hash": "sha256:d5b815a6dce51a494b4dd5edaaa9d78073a3b1dc57462ea79db59c36cd06dcf6",
+  "reviewer_id": "/root/sidecar_presence_security_reviewer_v4",
+  "surface_id": "sidecar-control-correction-security-v4",
+  "risk_boundaries_checked": [
+    "authenticated-control-ambiguity-and-exact-cause-confinement",
+    "bounded-writer-resource-task-and-socket-teardown-confinement",
+    "test-only-gate-isolation-and-no-generation-replay-regression",
+    "writer-failure-before-control-eof-with-no-retained-bridge-reconnect"
+  ],
+  "candidate_findings": [],
+  "candidate_feedback": [],
+  "stop_reason": "interrupted",
+  "certifies_review": false
+}

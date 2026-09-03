@@ -1,0 +1,1 @@
+{"finding_id":"F-785B74CE","validator_id":"/root","verdict":"confirmed","evidence":["The original manifest ROM SHA differed from the exact candidate ROM and would fail launcher compatibility admission."],"revised_severity":null,"revised_observation":null,"revised_impact":null,"revised_recommendation":null}

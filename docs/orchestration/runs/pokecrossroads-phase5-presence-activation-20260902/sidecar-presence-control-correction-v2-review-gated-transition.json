@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "operation": "unit-status",
+  "unit_id": "phase5-sidecar-presence-control",
+  "from": "running",
+  "to": "review-gated"
+}

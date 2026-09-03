@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-FA7A4715",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: every runtime update calls StartSpriteAnimInDirection, whose SetAndStartSpriteAnim path seeks command zero, so multi-frame remote animations are rewound before normal progress."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

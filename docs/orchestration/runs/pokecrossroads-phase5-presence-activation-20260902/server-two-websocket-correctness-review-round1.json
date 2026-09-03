@@ -1,0 +1,17 @@
+{
+  "role": "reviewer",
+  "actor_id": "/root/server_two_websocket_correctness_reviewer",
+  "status": "failed",
+  "contract_hash": "sha256:9ef23ac846d1cb5fe806e15a3873f570ebe66c715f4935a942c9fa51dd544d5c",
+  "diff_digest": "sha256:1de43e0ab34ece9e0f7495f49e42f91cf4b9ca8796cc483c13ce1e586ee1d482",
+  "findings": [
+    {
+      "severity": "P2",
+      "description": "InProcessServer::shutdown consumes the JoinHandle inside timeout. If shutdown times out, dropping that handle detaches the axum server task while self.task is already None, so Drop cannot abort it; the listener/background task can remain alive after the test."
+    },
+    {
+      "severity": "P2",
+      "description": "The movement assertion verifies one matching update on socket B but never proves that socket B receives no duplicate or out-of-order update, so the stated single ordered peer update is only an at-least-one assertion."
+    }
+  ]
+}

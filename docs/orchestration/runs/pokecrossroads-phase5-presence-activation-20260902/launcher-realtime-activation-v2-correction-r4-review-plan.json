@@ -1,0 +1,8 @@
+{
+  "approval_required":false,
+  "assignments":[
+    {"cross_cutting":false,"id":"launcher-realtime-activation-v2-correctness-r4","owned_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"priority":0,"reviewer_role":"reviewer","risk_boundaries":["latched-terminal-after-commit","lifecycle-output-backpressure","noncancellable-cloud-checkpoint-reconciliation","post-checkpoint-heartbeat-and-shutdown","resolution-of-all-recorded-findings","simultaneous-all-ready-test-fidelity"]},
+    {"cross_cutting":true,"id":"launcher-realtime-activation-v2-security-r4","owned_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"priority":0,"reviewer_role":"security-sentinel","risk_boundaries":["active-overflow-and-child-cleanup","ambiguous-mutation-outcome-confinement","no-remint-replay-orphan","resolution-of-all-recorded-findings","shutdown-and-heartbeat-liveness","ticket-and-endpoint-confinement"]}
+  ],
+  "assurance_tier":"high","changed_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f","coverage_complete":true,"diff_digest":"sha256:7ebae85823625c113af7cea2c825fdfc3048a6484da9eb8531706459cd62b4c5","queued":[],"review_plan_hash":"sha256:c6f3060991fa2c4ecd2de314a10b0838876ac93ad53312d852e59d9708130c74","schema_version":2,"validation_wave_required":true
+}

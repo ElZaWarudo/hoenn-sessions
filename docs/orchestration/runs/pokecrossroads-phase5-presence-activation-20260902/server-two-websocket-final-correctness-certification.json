@@ -1,0 +1,8 @@
+{
+  "role": "reviewer",
+  "actor_id": "/root/server_two_websocket_correctness_reviewer",
+  "status": "passed",
+  "contract_hash": "sha256:9ef23ac846d1cb5fe806e15a3873f570ebe66c715f4935a942c9fa51dd544d5c",
+  "diff_digest": "sha256:00f11f1a99fcba1c877129ab61cc15adc7d7e0b868ec8a4d7b912fa6bac27d9f",
+  "findings": []
+}

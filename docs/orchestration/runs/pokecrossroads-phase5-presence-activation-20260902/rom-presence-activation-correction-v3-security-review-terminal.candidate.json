@@ -1,0 +1,60 @@
+{
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "src/event_object_movement.c:1423-1434 and 3527-3542 exclude reserved remote objects from centralized position lookups, and lines 6636-6668 alter collision handling for both source and target objects.",
+        "test/coop/presence_runtime.c:329-359 only checks the reserved local-ID predicate; no candidate test enters CB1_OverworldLink, creates gLinkPlayerObjectEvents, or executes link-player collision behavior.",
+        "RPAC3-005 explicitly requires deterministic tests to directly execute local-link isolation paths."
+      ],
+      "impact": "A later regression in the global lookup/collision exclusions could corrupt or mask legacy link/RFU ObjectEvents without being caught by the required focused suite.",
+      "observation": "The candidate changes centralized ObjectEvent lookup and collision behavior but does not directly execute a local-link or RFU path in any test.",
+      "principle": "testing",
+      "recommendation": "Add a focused regression that creates ordinary link-player ObjectEvents alongside a reserved remote and directly proves link-player lookup, collision, and sprite/object identity remain unchanged while only the remote stays nonblocking.",
+      "rule_id": "RPAC3-005/local-link-isolation-proof",
+      "severity": "p2"
+    },
+    {
+      "evidence": [
+        "dist/bridge_manifest.json records game_build.rom_sha256 as c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165.",
+        "The exact correction-v3 implementation worktree's built pokeemerald.gba hashes to d9009861b8c7f89a3f2788bb0aa34a34e25beb4acedd166becd4771e0501e2fd.",
+        "tools/generate_bridge_manifest.py:646-653 derives rom_sha256 from the supplied ROM and atomically rewrites dist/bridge_manifest.json; regeneration changes that digest.",
+        "coop/crates/coop-launcher/src/compat.rs:307-312 compares the ROM against the manifest and returns CompatibilityError::RomHash on any mismatch."
+      ],
+      "impact": "The launcher correctly fails closed, so the stale attestation does not weaken ROM identity verification, but the exact candidate ROM cannot pass compatibility admission and cloud co-op activation is unavailable.",
+      "observation": "The candidate's checked-in bridge manifest still attests the pre-change ROM digest even though the exact correction-v3 build produces a different ROM digest.",
+      "principle": "security",
+      "recommendation": "Regenerate and include dist/bridge_manifest.json from the exact final pokeemerald.elf and pokeemerald.gba, then rerun the launcher compatibility check against that immutable ROM/manifest pair.",
+      "rule_id": "RPAC3-006/rom-manifest-attestation-drift",
+      "severity": "p2"
+    },
+    {
+      "evidence": [
+        "src/overworld.c:2552-2556 resets the sprite table before the return-to-field ObjectEvent pass runs.",
+        "src/event_object_movement.c:2972-2980 calls RemoveObjectEvent, which destroys the pointed sprite, whenever the reused sprite is in use and data[0] happens to equal the reserved ObjectEvent index.",
+        "src/coop/presence_runtime.c:268-283 likewise destroys a cached sprite using only inUse plus data[0] equality, without a reverse ObjectEvent-to-sprite match or sprite callback/type proof.",
+        "Sprite data[0] is not a global ownership tag: src/overworld.c:3623 stores a linkPlayerId there, and many non-ObjectEvent sprite callbacks use the same field for arbitrary state.",
+        "test/coop/presence_runtime.c:600-625 and 649-658 cover a foreign sprite whose data[0] is deliberately different from the remote ObjectEvent index, but do not cover a reused foreign sprite with a coincidentally equal data[0]."
+      ],
+      "impact": "During a normal sprite-table reset/return-to-field window, cleanup can destroy a foreign sprite and corrupt unrelated local field or link state, violating the no-reused-identity-mutation and renderer memory-ownership guarantees.",
+      "observation": "Return-to-field and cached cleanup treat a sprite's data[0] equality as sufficient proof of remote ownership even after the sprite slot may have been reset and reused.",
+      "principle": "security",
+      "recommendation": "Retire the proven remote renderer before ResetSpriteData, or carry a generation/type-aware ownership marker across the transition. After reset, require type-aware bidirectional proof before destruction and otherwise retire only the stale reserved ObjectEvent. Add a regression with a reused foreign sprite whose data[0] coincidentally equals the remote ObjectEvent index.",
+      "rule_id": "RPAC3-002/reused-sprite-false-ownership",
+      "severity": "p2"
+    }
+  ],
+  "review_plan_hash": "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40",
+  "reviewer_id": "/root/rom_presence_security_review_v3b",
+  "risk_boundaries_checked": [
+    "bounded-queues-real-object-precedence-and-local-link-isolation",
+    "checksum-length-epoch-type-and-sequence-fail-closed-atomicity",
+    "cross-map-warp-stale-hidden-reset-and-replay-confinement",
+    "reserved-object-and-sprite-backlink-memory-ownership"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 0,
+  "surface_id": "rom-presence-activation-security-v3"
+}

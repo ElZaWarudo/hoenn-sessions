@@ -1,0 +1,44 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "RTP-001",
+      "status": "satisfied",
+      "evidence": "Added public MintRealtimeTicketResponse::into_parts(self) that destructures and moves realtime version, runtime fence, non-Clone RealtimeTicket, and expiry without exposing or copying ticket text."
+    },
+    {
+      "criterion_id": "RTP-002",
+      "status": "satisfied",
+      "evidence": "Preserved constructors, strict response JSON, matches_request correlation, borrowing accessors, validation, Debug redaction, zeroization, and protocol version; added an ownership-preservation test using only a ticket fingerprint."
+    },
+    {
+      "criterion_id": "RTP-003",
+      "status": "satisfied",
+      "evidence": "Focused and full coop-cloud tests, strict Clippy, formatting, and git diff checks passed; final worktree diff contains only coop/crates/coop-cloud/src/realtime.rs."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {"command": "rtk cargo test -p coop-cloud realtime --all-features --locked", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk cargo test -p coop-cloud --all-features --locked", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk cargo clippy -p coop-cloud --all-targets --all-features --locked -- -D warnings", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk cargo fmt --all -- --check", "attempts": 2, "outcome": "passed"},
+      {"command": "rtk git diff --check", "attempts": 1, "outcome": "passed"}
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-cloud realtime --all-features --locked",
+    "rtk cargo test -p coop-cloud --all-features --locked",
+    "rtk cargo clippy -p coop-cloud --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

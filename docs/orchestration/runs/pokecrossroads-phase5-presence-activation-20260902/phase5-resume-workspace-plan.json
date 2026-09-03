@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "run_id": "pokecrossroads-phase5-presence-resume-20260903",
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "worktree_parent": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions",
+  "invocations": [
+    {
+      "id": "launcher-http-candidate-v2",
+      "unit_id": "phase5-launcher-realtime-http",
+      "role": "implementer",
+      "depends_on": [],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/realtime.rs",
+        "coop/crates/coop-launcher/tests/realtime_http.rs"
+      ]
+    },
+    {
+      "id": "launcher-http-correctness-v2",
+      "unit_id": "phase5-launcher-realtime-http",
+      "role": "reviewer",
+      "depends_on": [],
+      "candidate_invocations": ["launcher-http-candidate-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "launcher-http-security-v2",
+      "unit_id": "phase5-launcher-realtime-http",
+      "role": "security-reviewer",
+      "depends_on": [],
+      "candidate_invocations": ["launcher-http-candidate-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "launcher-http-validation-v2",
+      "unit_id": "phase5-launcher-realtime-http",
+      "role": "targeted-validator",
+      "depends_on": ["launcher-http-correctness-v2", "launcher-http-security-v2"],
+      "candidate_invocations": ["launcher-http-candidate-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "sidecar-control-candidate-v2",
+      "unit_id": "phase5-sidecar-presence-control",
+      "role": "implementer",
+      "depends_on": [],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs"
+      ]
+    },
+    {
+      "id": "sidecar-control-discovery-v2",
+      "unit_id": "phase5-sidecar-presence-control",
+      "role": "discovery",
+      "depends_on": ["sidecar-control-candidate-v2"],
+      "candidate_invocations": [],
+      "owned_paths": []
+    },
+    {
+      "id": "sidecar-control-correction-v2",
+      "unit_id": "phase5-sidecar-presence-control",
+      "role": "implementer",
+      "depends_on": ["sidecar-control-candidate-v2", "sidecar-control-discovery-v2"],
+      "candidate_invocations": [],
+      "owned_paths": ["coop/crates/coop-sidecar/src/server.rs"]
+    },
+    {
+      "id": "sidecar-control-correctness-v2",
+      "unit_id": "phase5-sidecar-presence-control",
+      "role": "reviewer",
+      "depends_on": [],
+      "candidate_invocations": ["sidecar-control-correction-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "sidecar-control-security-v2",
+      "unit_id": "phase5-sidecar-presence-control",
+      "role": "security-reviewer",
+      "depends_on": [],
+      "candidate_invocations": ["sidecar-control-correction-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "sidecar-control-validation-v2",
+      "unit_id": "phase5-sidecar-presence-control",
+      "role": "targeted-validator",
+      "depends_on": ["sidecar-control-correctness-v2", "sidecar-control-security-v2"],
+      "candidate_invocations": ["sidecar-control-correction-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "rom-presence-candidate-v2",
+      "unit_id": "phase5-rom-presence-activation",
+      "role": "implementer",
+      "depends_on": [],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ]
+    },
+    {
+      "id": "rom-presence-discovery-v2",
+      "unit_id": "phase5-rom-presence-activation",
+      "role": "discovery",
+      "depends_on": ["rom-presence-candidate-v2"],
+      "candidate_invocations": [],
+      "owned_paths": []
+    },
+    {
+      "id": "rom-presence-continuation-v2",
+      "unit_id": "phase5-rom-presence-activation",
+      "role": "implementer",
+      "depends_on": ["rom-presence-candidate-v2", "rom-presence-discovery-v2"],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ]
+    },
+    {
+      "id": "rom-presence-correctness-v2",
+      "unit_id": "phase5-rom-presence-activation",
+      "role": "reviewer",
+      "depends_on": [],
+      "candidate_invocations": ["rom-presence-continuation-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "rom-presence-security-v2",
+      "unit_id": "phase5-rom-presence-activation",
+      "role": "security-reviewer",
+      "depends_on": [],
+      "candidate_invocations": ["rom-presence-continuation-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "rom-presence-validation-v2",
+      "unit_id": "phase5-rom-presence-activation",
+      "role": "targeted-validator",
+      "depends_on": ["rom-presence-correctness-v2", "rom-presence-security-v2"],
+      "candidate_invocations": ["rom-presence-continuation-v2"],
+      "owned_paths": []
+    },
+    {
+      "id": "phase5-integrator-v2",
+      "unit_id": "phase5-presence-integration",
+      "role": "integrator",
+      "depends_on": [
+        "launcher-http-validation-v2",
+        "rom-presence-validation-v2",
+        "sidecar-control-validation-v2"
+      ],
+      "candidate_invocations": [],
+      "owned_paths": [
+        "coop/crates/coop-launcher",
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs",
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ]
+    }
+  ]
+}

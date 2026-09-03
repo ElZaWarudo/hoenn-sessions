@@ -1,0 +1,30 @@
+{
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-validation-v2",
+  "worker_id": "/root",
+  "role": "integration-candidate-composite",
+  "unit_id": "phase5-rom-presence-activation",
+  "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+  "dependency_patch_hashes": [
+    "sha256:d7d4a41157d8856f06c7c225cc245feff5c9c55b3c05d25377c14434e37cadff"
+  ],
+  "lineage_patch_hashes": [
+    "sha256:d7d4a41157d8856f06c7c225cc245feff5c9c55b3c05d25377c14434e37cadff",
+    "sha256:fe7beecf45e8548ba55b62171dbd30033592f66748a31211e6a0c423c63a8fa8"
+  ],
+  "candidate_tree": "0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b",
+  "owned_paths": [
+    "include/constants/event_objects.h",
+    "include/coop/net_bridge.h",
+    "include/coop/presence_runtime.h",
+    "include/field_control_avatar.h",
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/coop/region.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "src/overworld.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "test/coop/region.c"
+  ]
+}

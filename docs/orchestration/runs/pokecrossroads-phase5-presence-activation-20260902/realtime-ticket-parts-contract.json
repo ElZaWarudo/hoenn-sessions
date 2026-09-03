@@ -1,0 +1,92 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "into_parts consumes the response and returns all four exact owned fields, moving the non-Clone ticket without a textual or byte copy.",
+      "id": "RTP-001"
+    },
+    {
+      "description": "Existing response construction, strict JSON, matches_request correlation, borrowing accessors, and secret redaction remain unchanged.",
+      "id": "RTP-002"
+    },
+    {
+      "description": "Focused/full coop-cloud tests, strict Clippy, formatting, and diff checks pass with only realtime.rs changed.",
+      "id": "RTP-003"
+    }
+  ],
+  "closed_decisions": [
+    "Add a public consuming MintRealtimeTicketResponse::into_parts(self) accessor returning realtime version, runtime fence, owned non-Clone RealtimeTicket, and expiry without exposing or copying ticket text.",
+    "Callers must still invoke matches_request before consuming the response; the accessor performs no implicit authorization or correlation decision.",
+    "Do not remove the existing borrowing accessors or change serialized JSON, constructors, validation, Debug redaction, ticket zeroization, or protocol version.",
+    "Test field preservation and ownership transfer without placing plaintext secret material in failure messages."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-cloud realtime --all-features --locked"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test -p coop-cloud --all-features --locked",
+        "rtk cargo clippy -p coop-cloud --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:a71d19a8611c171455a5cf08d185b18b5a5166bf0f727e0ca94bbe6557fb0038",
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-realtime-ticket-parts-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 1,
+    "max_elapsed_ms": 600000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit any other file, add a Clone implementation, expose ticket bytes/text, serialize a new shape, change response validation, or add launcher/sidecar integration.",
+    "Do not stage, commit, branch, fetch, pull, push, contact repository remotes, create or remove worktrees, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Add a consuming response accessor that moves a minted realtime ticket into its future in-process owner without cloning or re-encoding the secret.",
+  "owned_files": [
+    "coop/crates/coop-cloud/src/realtime.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-realtime-20260902/realtime-cloud-contract.json",
+    "coop/crates/coop-cloud/src/realtime.rs",
+    "coop/crates/coop-cloud/src/security.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "All acceptance criteria are resolved and every verification outcome is recorded.",
+      "Moving the ticket safely requires changing an unowned secret or protocol boundary.",
+      "A concrete toolchain or isolated-worktree failure prevents progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "realtime-ticket-parts"
+}

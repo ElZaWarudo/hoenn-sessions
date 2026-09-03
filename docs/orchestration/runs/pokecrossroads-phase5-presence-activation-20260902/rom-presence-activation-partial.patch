@@ -1,0 +1,1451 @@
+diff --git a/include/constants/event_objects.h b/include/constants/event_objects.h
+index 63cc63ed12b57bf0249e760d00752e3268a5fb89..ca9fc68d2c6bdcc7575870e71e13e20f4a1b60a4 100644
+--- a/include/constants/event_objects.h
++++ b/include/constants/event_objects.h
+@@ -488,6 +488,7 @@ enum
+ #define LOCALID_PLAYER                     255
+ #define OBJ_EVENT_ID_FOLLOWER              0xFE
+ #define OBJ_EVENT_ID_NPC_FOLLOWER          0xFD
++#define OBJ_EVENT_ID_COOP_REMOTE_PLAYER   0xFC
+ 
+ // Aliases for old names. "object event id" normally refers to an index into gObjectEvents, which these are not.
+ // Used for link player OWs in CreateLinkPlayerSprite
+diff --git a/include/coop/net_bridge.h b/include/coop/net_bridge.h
+index b1ac7ad8c31b1e394841cd72b066366edc9b498e..91c8240d4c79efda3374272d81eeb1cd943f81ff 100644
+--- a/include/coop/net_bridge.h
++++ b/include/coop/net_bridge.h
+@@ -5,6 +5,7 @@
+ 
+ #include "gba/defines.h"
+ #include "gba/types.h"
++#include "coop/presence.h"
+ #include "coop/region.h"
+ 
+ #define COOP_NET_BRIDGE_MAGIC 0x504B434Fu
+@@ -128,9 +129,11 @@ struct CoopNetBridge
+ 
+ struct CoopBridgePlayerState
+ {
+-    struct WorldLocation location;
+-    u8 reserved[2];
+-    u32 frame_counter;
++    /* This value is encoded with CoopPresence_EncodeLocalState before it is
++     * put on the wire.  Keep the named bridge value for source compatibility
++     * while making its in-memory shape the exact V1 28-byte state. */
++    struct CoopPresencePose pose;
++    u32 source_sequence;
+ };
+ 
+ _Static_assert(sizeof(struct CoopBridgeMessage) == 144, "CoopBridgeMessage ABI size");
+@@ -144,7 +147,8 @@ _Static_assert(sizeof(struct CoopBridgeQueue) == 4 + 144 * 32, "CoopBridgeQueue
+ _Static_assert(offsetof(struct CoopBridgeQueue, read_index) == 0, "CoopBridgeQueue read offset");
+ _Static_assert(offsetof(struct CoopBridgeQueue, write_index) == 2, "CoopBridgeQueue write offset");
+ _Static_assert(offsetof(struct CoopBridgeQueue, entries) == 4, "CoopBridgeQueue entries offset");
+-_Static_assert(sizeof(struct CoopBridgePlayerState) == 16, "CoopBridgePlayerState ABI size");
++_Static_assert(sizeof(struct CoopBridgePlayerState) == COOP_PRESENCE_LOCAL_STATE_SIZE,
++               "CoopBridgePlayerState ABI size");
+ _Static_assert(offsetof(struct CoopNetBridge, magic) == 0, "CoopNetBridge magic offset");
+ _Static_assert(offsetof(struct CoopNetBridge, abi_version) == 4, "CoopNetBridge ABI version offset");
+ _Static_assert(offsetof(struct CoopNetBridge, game_protocol_version) == 6, "CoopNetBridge protocol offset");
+@@ -172,6 +176,7 @@ bool8 CoopBridgeQueue_Pop(struct CoopBridgeQueue *queue, struct CoopBridgeMessag
+ 
+ void CoopNetBridge_Init(void);
+ void CoopNetBridge_Poll(void);
++u32 CoopNetBridge_GetSessionEpoch(void);
+ enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
+ bool8 CoopNetBridge_IsCloudMode(void);
+ bool8 CoopNetBridge_IsRecoveryRequired(void);
+diff --git a/include/field_control_avatar.h b/include/field_control_avatar.h
+index 3e921e8a6953bc3553911a954a94590ccff3b5cc..3135a012899c3d525a7593b53bee27c598df7791 100644
+--- a/include/field_control_avatar.h
++++ b/include/field_control_avatar.h
+@@ -22,6 +22,10 @@ struct FieldInput
+     u8 dpadDirection;
+ };
+ 
++#define FIELD_INPUT_RESULT_NONE 0
++#define FIELD_INPUT_RESULT_SCRIPT_STARTED 1
++#define FIELD_INPUT_RESULT_CONSUMED_NO_LOCK 2
++
+ void FieldClearPlayerInput(struct FieldInput *pStruct);
+ void FieldGetPlayerInput(struct FieldInput *pStruct, u16 keys, u16 heldKeys);
+ int ProcessPlayerFieldInput(struct FieldInput *pStruct);
+diff --git a/src/coop/net_bridge.c b/src/coop/net_bridge.c
+index fc56ce906f022435a28567c7662a9201ea501f76..3317c4d4831410a6f581bca332c14b49f2228a3f 100644
+--- a/src/coop/net_bridge.c
++++ b/src/coop/net_bridge.c
+@@ -1,5 +1,6 @@
+ #include "global.h"
+ #include "coop/net_bridge.h"
++#include "coop/presence_runtime.h"
+ #include "coop/progress.h"
+ #include "coop/save.h"
+ 
+@@ -579,19 +580,17 @@ bool8 CoopNetBridge_DequeueNetworkToGame(struct CoopBridgeMessage *message)
+ 
+ static bool8 SendPlayerState(void)
+ {
+-    struct CoopBridgePlayerState state;
++    u8 payload[COOP_PRESENCE_LOCAL_STATE_SIZE];
+ 
+     sCoopNetRuntime.last_player_state_frame = sCoopNetRuntime.frame_counter;
+-    memset(&state, 0, sizeof(state));
+-    if (!CoopWorldLocation_Export(&state.location))
++    if (!CoopPresenceRuntime_EncodeLocalState(payload, sizeof(payload)))
+     {
+         gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+         return TRUE;
+     }
+     gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
+-    state.frame_counter = sCoopNetRuntime.frame_counter;
+     if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE,
+-                                            &state, sizeof(state)))
++                                            payload, sizeof(payload)))
+         return FALSE;
+     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PLAYER_STATE_SENT;
+     return TRUE;
+@@ -622,7 +621,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
+ 
+     if (message->type == COOP_BRIDGE_MESSAGE_SESSION_READY)
+     {
+-        if (message->length != 0)
++        if (message->length != 0 || !IsEmptyPayload(message))
+         {
+             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+             return FALSE;
+@@ -654,6 +653,11 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
+             sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
+             sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
+             sCoopNetRuntime.cloud_epoch_accepted = TRUE;
++            /* A reconnect starts a fresh presence generation even when the
++             * sidecar reuses the current epoch.  Do not let an old reducer,
++             * pending lifecycle frame, or sprite survive the queue rearm. */
++            CoopPresenceRuntime_Reset();
++            CoopPresenceRuntime_SetSessionEpoch(sCoopNetRuntime.session_epoch);
+             SetCheckpointStateForAcceptedEpoch();
+             gCoopNetBridge.status_flags &= ~(COOP_BRIDGE_STATUS_QUEUE_CONGESTED
+                                           | COOP_BRIDGE_STATUS_QUEUE_ERROR
+@@ -681,6 +685,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
+         sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
+         sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
+         sCoopNetRuntime.cloud_epoch_accepted = TRUE;
++        CoopPresenceRuntime_SetSessionEpoch(sCoopNetRuntime.session_epoch);
+         SetCheckpointStateForAcceptedEpoch();
+         gCoopNetBridge.status_flags &= ~(COOP_BRIDGE_STATUS_QUEUE_CONGESTED
+                                       | COOP_BRIDGE_STATUS_QUEUE_ERROR
+@@ -717,6 +722,25 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
+         return FALSE;
+     }
+ 
++    if (message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN
++     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE
++     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN)
++    {
++        if (!IsCloudSessionActive()
++         || message->session_epoch != sCoopNetRuntime.session_epoch
++         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
++            return FALSE;
++        if (!CoopPresenceRuntime_QueueBridgeFrame(message->type,
++                                                   message->payload,
++                                                   message->length))
++        {
++            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
++            return FALSE;
++        }
++        sCoopNetRuntime.rx_sequence = message->sequence;
++        return FALSE;
++    }
++
+     /* Later milestones add handlers for the remaining documented inbound
+      * messages. Until then, do not advance the receive sequence for one. */
+     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+@@ -745,6 +769,7 @@ static void ObserveSidecarHeartbeat(void)
+             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
+             gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_SESSION_READY;
+             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE;
++            CoopPresenceRuntime_TransportLost();
+             CancelCheckpointAuthorization();
+         }
+     }
+@@ -765,6 +790,7 @@ void CoopNetBridge_Init(void)
+     sCoopNetRuntime.tx_sequence = 1;
+     sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_OFFLINE;
+     gCoopNetBridge.status_flags = COOP_BRIDGE_STATUS_INITIALIZED;
++    CoopPresenceRuntime_Init();
+ 
+     TryAnnounceRomReady();
+ }
+@@ -779,6 +805,7 @@ void CoopNetBridge_Poll(void)
+         return;
+ 
+     sCoopNetRuntime.frame_counter++;
++    CoopPresenceRuntime_AdvanceFrame();
+     /* AgbMain initializes the bridge before flash is loaded. Do not invite a
+      * cloud session until the save layer has classified and validated V1. */
+     TryAnnounceRomReady();
+@@ -846,3 +873,8 @@ void CoopNetBridge_Poll(void)
+             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_QUEUE_ERROR;
+     }
+ }
++
++u32 CoopNetBridge_GetSessionEpoch(void)
++{
++    return sCoopNetRuntime.session_epoch;
++}
+diff --git a/src/coop/region.c b/src/coop/region.c
+index 918980f51f9b5750ff593cb5fe78117f1a42147a..5c87fe6d64dfd3366ba70003488a922a81c69b69 100644
+--- a/src/coop/region.c
++++ b/src/coop/region.c
+@@ -1,5 +1,6 @@
+ #include "global.h"
+ #include "coop/region.h"
++#include "fieldmap.h"
+ #include "constants/region_map_sections.h"
+ #include "field_player_avatar.h"
+ #include "regions.h"
+@@ -155,17 +156,21 @@ bool8 CoopWorldLocation_Export(struct WorldLocation *out)
+     map_number = gSaveBlock1Ptr->location.mapNum;
+     if (map_group < 0 || map_group > 0xFFFF || map_number < 0 || map_number > 0xFFFF)
+         return FALSE;
+-    if (gObjectEvents[gPlayerAvatar.objectEventId].mapGroup != (u16)map_group
+-     || gObjectEvents[gPlayerAvatar.objectEventId].mapNum != (u16)map_number)
+-        return FALSE;
+-
+     PlayerGetDestCoords(&x, &y);
+ 
++    /* PlayerGetDestCoords and ObjectEvent coordinates include the map's
++     * seven-tile collision border.  Presence coordinates are deliberately
++     * map-local so a seamless connection cannot leak the engine offset onto
++     * the wire.  Widen before subtracting to keep the signed boundary safe. */
++    if ((s32)x - MAP_OFFSET < -32768 || (s32)x - MAP_OFFSET > 32767
++     || (s32)y - MAP_OFFSET < -32768 || (s32)y - MAP_OFFSET > 32767)
++        return FALSE;
++
+     out->region = (u8)region;
+     out->reserved = 0;
+     out->map_group = (u16)map_group;
+     out->map_number = (u16)map_number;
+-    out->x = x;
+-    out->y = y;
++    out->x = (s16)((s32)x - MAP_OFFSET);
++    out->y = (s16)((s32)y - MAP_OFFSET);
+     return TRUE;
+ }
+diff --git a/src/event_object_movement.c b/src/event_object_movement.c
+index e3307c0259e80b8b7ee44a6cd2956ef807072b21..b077d9a283f307598af9abfb81743deccb720e6b 100644
+--- a/src/event_object_movement.c
++++ b/src/event_object_movement.c
+@@ -57,6 +57,7 @@
+ #include "constants/trainer_types.h"
+ #include "constants/union_room.h"
+ #include "constants/weather.h"
++#include "coop/presence_runtime.h"
+ 
+ #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
+                                 min(LOCALID_PLAYER, \
+@@ -1424,7 +1425,9 @@ u8 GetObjectEventIdByXY(s16 x, s16 y)
+     u8 i;
+     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+     {
+-        if (gObjectEvents[i].active && gObjectEvents[i].currentCoords.x == x && gObjectEvents[i].currentCoords.y == y)
++        if (gObjectEvents[i].active
++         && !CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[i])
++         && gObjectEvents[i].currentCoords.x == x && gObjectEvents[i].currentCoords.y == y)
+             break;
+     }
+ 
+@@ -1923,7 +1926,7 @@ u8 SpawnSpecialObjectEvent(struct ObjectEventTemplate *objectEventTemplate)
+ 
+ u8 SpawnSpecialObjectEventParameterized(u16 graphicsId, u8 movementBehavior, u8 localId, s16 x, s16 y, u8 elevation)
+ {
+-    struct ObjectEventTemplate objectEventTemplate;
++    struct ObjectEventTemplate objectEventTemplate = {0};
+ 
+     x -= MAP_OFFSET;
+     y -= MAP_OFFSET;
+@@ -2966,7 +2969,8 @@ void SpawnObjectEventsOnReturnToField(s16 x, s16 y)
+     ClearPlayerAvatarInfo();
+     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+     {
+-        if (gObjectEvents[i].active)
++        if (gObjectEvents[i].active
++         && !CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[i]))
+             SpawnObjectEventOnReturnToField(i, x, y);
+     }
+     CreateReflectionEffectSprites();
+@@ -3503,7 +3507,8 @@ u8 GetObjectEventIdByPosition(u16 x, u16 y, u8 elevation)
+ 
+     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+     {
+-        if (gObjectEvents[i].active)
++        if (gObjectEvents[i].active
++         && !CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[i]))
+         {
+             if (gObjectEvents[i].currentCoords.x == x
+              && gObjectEvents[i].currentCoords.y == y
+@@ -3680,9 +3685,12 @@ void SetObjectEventDirection(struct ObjectEvent *objectEvent, enum Direction dir
+ 
+ static const u8 *GetObjectEventScriptPointerByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
+ {
++    const struct ObjectEventTemplate *objectEventTemplate;
++
+     if (localId == OBJ_EVENT_ID_FOLLOWER)
+         return EventScript_Follower;
+-    return GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup)->script;
++    objectEventTemplate = GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup);
++    return objectEventTemplate != NULL ? objectEventTemplate->script : NULL;
+ }
+ 
+ const u8 *GetObjectEventScriptPointerByObjectEventId(u8 objectEventId)
+@@ -6619,7 +6627,10 @@ u32 GetObjectObjectCollidesWith(struct ObjectEvent *objectEvent, s16 x, s16 y, b
+     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+     {
+         curObject = &gObjectEvents[i];
+-        if (curObject->active && (curObject->movementType != MOVEMENT_TYPE_FOLLOW_PLAYER || objectEvent != &gObjectEvents[gPlayerAvatar.objectEventId]) && curObject != objectEvent
++        if (curObject->active
++         && !CoopPresenceRuntime_IsRemoteObject(curObject)
++         && !CoopPresenceRuntime_IsRemoteObject(objectEvent)
++         && (curObject->movementType != MOVEMENT_TYPE_FOLLOW_PLAYER || objectEvent != &gObjectEvents[gPlayerAvatar.objectEventId]) && curObject != objectEvent
+          && !FollowerNPC_IsCollisionExempt(curObject, objectEvent)
+          )
+         {
+diff --git a/src/field_control_avatar.c b/src/field_control_avatar.c
+index 7e6852fe043a9458ee9fc0d16608a4d0428824b5..c2a06d38ebb5589cf6413b1f037d8b4229c0a373 100644
+--- a/src/field_control_avatar.c
++++ b/src/field_control_avatar.c
+@@ -1,4 +1,5 @@
+ #include "global.h"
++#include "coop/presence_runtime.h"
+ #include "battle_setup.h"
+ #include "bike.h"
+ #include "coord_event_weather.h"
+@@ -208,11 +209,21 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
+     GetInFrontOfPlayerPosition(&position);
+     metatileBehavior = MapGridGetMetatileBehaviorAt(position.x, position.y);
+ 
++    if (input->pressedAButton)
++    {
++        enum CoopPresenceInteractionResult interaction =
++            CoopPresenceRuntime_TryInteract();
++        if (interaction == COOP_PRESENCE_INTERACTION_SCRIPT_STARTED)
++            return FIELD_INPUT_RESULT_SCRIPT_STARTED;
++        if (interaction == COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK)
++            return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
++    }
++
+     if (input->heldDirection && (input->dpadDirection == playerDirection) && (TrySetUpWalkIntoSignpostScript(&position, metatileBehavior, playerDirection) == TRUE))
+-        return TRUE;
++        return FIELD_INPUT_RESULT_SCRIPT_STARTED;
+ 
+     if (input->pressedAButton && TryStartInteractionScript(&position, metatileBehavior, playerDirection) == TRUE)
+-        return TRUE;
++        return FIELD_INPUT_RESULT_SCRIPT_STARTED;
+ 
+     if (input->heldDirection2 && input->dpadDirection == playerDirection)
+     {
+@@ -253,7 +264,7 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
+         return TRUE;
+     }
+ 
+-    return FALSE;
++    return FIELD_INPUT_RESULT_NONE;
+ }
+ 
+ static void GetPlayerPosition(struct MapPosition *position)
+diff --git a/src/overworld.c b/src/overworld.c
+index 477be99e4742f4bf97c66806a9050559cd6756e1..1547c7d19921f42aa4c12d326f85785287cf4eed 100644
+--- a/src/overworld.c
++++ b/src/overworld.c
+@@ -1,4 +1,5 @@
+ #include "global.h"
++#include "coop/presence_runtime.h"
+ #include "overworld.h"
+ #include "battle_pyramid.h"
+ #include "battle_setup.h"
+@@ -619,6 +620,7 @@ void ApplyCurrentWarp(void)
+ {
+     gLastUsedWarp = gSaveBlock1Ptr->location;
+     gSaveBlock1Ptr->location = sWarpDestination;
++    CoopPresenceRuntime_OnWarpCommit();
+     sFixedDiveWarp = sDummyWarpData;
+     sFixedHoleWarp = sDummyWarpData;
+ }
+@@ -1633,14 +1635,17 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
+     CancelSignPostMessageBox(&inputStruct);
+     if (!ArePlayerFieldControlsLocked())
+     {
+-        if (ProcessPlayerFieldInput(&inputStruct) == 1)
++        switch (ProcessPlayerFieldInput(&inputStruct))
+         {
++        case FIELD_INPUT_RESULT_SCRIPT_STARTED:
+             LockPlayerFieldControls();
+             HideMapNamePopUpWindow();
+-        }
+-        else
+-        {
++            break;
++        case FIELD_INPUT_RESULT_CONSUMED_NO_LOCK:
++            break;
++        default:
+             PlayerStep(inputStruct.dpadDirection, newKeys, heldKeys);
++            break;
+         }
+     }
+     // If stop running but keep holding B -> fix follower frame.
+@@ -1651,7 +1656,10 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
+ void CB1_Overworld(void)
+ {
+     if (gMain.callback2 == CB2_Overworld)
++    {
++        CoopPresenceRuntime_Update();
+         DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
++    }
+ }
+ 
+ #define TINT_NIGHT Q_8_8(0.456) | Q_8_8(0.456) << 8 | Q_8_8(0.615) << 16
+diff --git a/test/coop/net_bridge.c b/test/coop/net_bridge.c
+index e98bb8761d8b3b5cd69a583d8ef8355b18c909f5..ad9d7380371be24f08acfb8448bd2d59730deb31 100644
+--- a/test/coop/net_bridge.c
++++ b/test/coop/net_bridge.c
+@@ -22,7 +22,7 @@ _Static_assert(offsetof(struct CoopNetBridge, last_sidecar_heartbeat) == 16, "te
+ _Static_assert(offsetof(struct CoopNetBridge, game_to_network) == 20, "tested outbound queue offset");
+ _Static_assert(offsetof(struct CoopNetBridge, network_to_game) == 4632, "tested inbound queue offset");
+ _Static_assert(sizeof(struct CoopNetBridge) == 9244, "tested bridge ABI size");
+-_Static_assert(sizeof(struct CoopBridgePlayerState) == 16, "tested player-state ABI size");
++_Static_assert(sizeof(struct CoopBridgePlayerState) == COOP_PRESENCE_LOCAL_STATE_SIZE, "tested player-state ABI size");
+ 
+ static struct CoopBridgeQueue *GetTestQueue(void)
+ {
+@@ -91,7 +91,7 @@ TEST("Cloud Coop wire ABI matches the documented compact layout")
+     EXPECT_EQ(offsetof(struct CoopNetBridge, game_to_network), 20);
+     EXPECT_EQ(offsetof(struct CoopNetBridge, network_to_game), 4632);
+     EXPECT_EQ(sizeof(struct CoopNetBridge), 9244);
+-    EXPECT_EQ(sizeof(struct CoopBridgePlayerState), 16);
++    EXPECT_EQ(sizeof(struct CoopBridgePlayerState), COOP_PRESENCE_LOCAL_STATE_SIZE);
+ }
+ 
+ TEST("Cloud Coop CRC32 matches the canonical check vector")
+diff --git a/test/coop/region.c b/test/coop/region.c
+index e04be4274337c74ac69a094c5f98b52140c1c3a4..e52fdd23a3c2cc3f4e41c32f74f5609e0181c2c9 100644
+--- a/test/coop/region.c
++++ b/test/coop/region.c
+@@ -1,6 +1,8 @@
+ #include "global.h"
+ #include "coop/region.h"
+ #include "constants/region_map_sections.h"
++#include "load_save.h"
++#include "fieldmap.h"
+ #include "test/test.h"
+ 
+ _Static_assert(sizeof(struct WorldLocation) == 10, "tested world location ABI size");
+@@ -119,3 +121,38 @@ TEST("Cloud Coop active region derives Kanto and Sevii from the current map")
+     EXPECT_EQ(region, COOP_REGION_SEVII);
+     EXPECT(!CoopRegion_TryGetActive(NULL));
+ }
++
++TEST("Cloud Coop world export removes the engine border exactly once")
++{
++    struct MapHeader savedHeader = gMapHeader;
++    struct ObjectEvent savedPlayer = gObjectEvents[0];
++    struct PlayerAvatar savedAvatar = gPlayerAvatar;
++    struct SaveBlock1 *savedSave = gSaveBlock1Ptr;
++    struct WarpData savedScratchLocation = gSaveblock1.block.location;
++    struct WorldLocation location;
++
++    gSaveBlock1Ptr = &gSaveblock1.block;
++    gSaveBlock1Ptr->location.mapGroup = 1;
++    gSaveBlock1Ptr->location.mapNum = 3;
++    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_HOENN;
++    gMapHeader.regionMapSectionId = MAPSEC_LITTLEROOT_TOWN;
++    memset(&gObjectEvents[0], 0, sizeof(gObjectEvents[0]));
++    gObjectEvents[0].active = TRUE;
++    gObjectEvents[0].isPlayer = TRUE;
++    gObjectEvents[0].currentCoords.x = MAP_OFFSET + 4;
++    gObjectEvents[0].currentCoords.y = MAP_OFFSET + 5;
++    gPlayerAvatar.objectEventId = 0;
++
++    EXPECT(CoopWorldLocation_Export(&location));
++    EXPECT_EQ(location.region, COOP_REGION_HOENN);
++    EXPECT_EQ(location.map_group, 1);
++    EXPECT_EQ(location.map_number, 3);
++    EXPECT_EQ(location.x, 4);
++    EXPECT_EQ(location.y, 5);
++
++    gMapHeader = savedHeader;
++    gObjectEvents[0] = savedPlayer;
++    gPlayerAvatar = savedAvatar;
++    gSaveblock1.block.location = savedScratchLocation;
++    gSaveBlock1Ptr = savedSave;
++}
+diff --git a/include/coop/presence_runtime.h b/include/coop/presence_runtime.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9fd76bd5531784bd20172b6aeb7466b0519b9a93
+--- /dev/null
++++ b/include/coop/presence_runtime.h
+@@ -0,0 +1,45 @@
++#ifndef GUARD_COOP_PRESENCE_RUNTIME_H
++#define GUARD_COOP_PRESENCE_RUNTIME_H
++
++#include "gba/types.h"
++#include "coop/net_bridge.h"
++#include "coop/presence.h"
++#include "constants/event_objects.h"
++
++#define COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL 6
++#define COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES 6
++#define COOP_PRESENCE_RUNTIME_STALE_FRAMES 90
++#define COOP_PRESENCE_RUNTIME_PENDING_CAPACITY COOP_NET_BRIDGE_QUEUE_CAPACITY
++#define COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID OBJ_EVENT_ID_COOP_REMOTE_PLAYER
++
++enum CoopPresenceInteractionResult
++{
++    COOP_PRESENCE_INTERACTION_NONE = 0,
++    COOP_PRESENCE_INTERACTION_SCRIPT_STARTED = 1,
++    COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK = 2,
++};
++
++/* Runtime ownership is intentionally bounded to one remote and one fixed
++ * pending frame queue.  The reducer remains the source of truth; object
++ * events and sprites are only a best-effort view of its current value. */
++void CoopPresenceRuntime_Init(void);
++void CoopPresenceRuntime_Reset(void);
++void CoopPresenceRuntime_SetSessionEpoch(u32 session_epoch);
++void CoopPresenceRuntime_TransportLost(void);
++void CoopPresenceRuntime_AdvanceFrame(void);
++
++bool8 CoopPresenceRuntime_EncodeLocalState(u8 *bytes, u32 length);
++bool8 CoopPresenceRuntime_GetLocalState(struct CoopPresenceLocalState *out);
++
++/* Called by the bridge only after outer-frame validation.  Decoding is strict
++ * and atomic; accepted values wait for the normal overworld callback before
++ * they can mutate the reducer or object-event renderer. */
++bool8 CoopPresenceRuntime_QueueBridgeFrame(u16 type, const u8 *payload, u16 length);
++void CoopPresenceRuntime_Update(void);
++void CoopPresenceRuntime_OnWarpCommit(void);
++
++enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void);
++bool8 CoopPresenceRuntime_IsRemoteObject(const struct ObjectEvent *object_event);
++const struct CoopPresenceReducer *CoopPresenceRuntime_GetReducer(void);
++
++#endif /* GUARD_COOP_PRESENCE_RUNTIME_H */
+diff --git a/src/coop/presence_runtime.c b/src/coop/presence_runtime.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a4bdca25c9901a8c8e391c779975f66ab07a90f
+--- /dev/null
++++ b/src/coop/presence_runtime.c
+@@ -0,0 +1,754 @@
++#include "global.h"
++#include "coop/net_bridge.h"
++#include "coop/presence_runtime.h"
++#include "event_object_movement.h"
++#include "field_player_avatar.h"
++#include "fieldmap.h"
++#include "overworld.h"
++#include "palette.h"
++#include "script.h"
++#include "sprite.h"
++#include "constants/event_object_movement.h"
++#include "constants/event_objects.h"
++
++enum CoopPresencePendingType
++{
++    COOP_PRESENCE_PENDING_NONE = 0,
++    COOP_PRESENCE_PENDING_SPAWN,
++    COOP_PRESENCE_PENDING_UPDATE,
++    COOP_PRESENCE_PENDING_DESPAWN,
++};
++
++struct CoopPresencePendingFrame
++{
++    enum CoopPresencePendingType type;
++    union
++    {
++        struct CoopPresenceSpawn spawn;
++        struct CoopPresenceUpdate update;
++        struct CoopPresenceDespawn despawn;
++    } value;
++};
++
++struct CoopPresenceRuntime
++{
++    struct CoopPresenceReducer reducer;
++    struct CoopPresencePendingFrame pending[COOP_PRESENCE_RUNTIME_PENDING_CAPACITY];
++    u8 pending_read;
++    u8 pending_write;
++    u8 pending_count;
++    u32 session_epoch;
++    u32 source_sequence;
++    u32 warp_sequence;
++    u32 frame_counter;
++    u32 last_lifecycle_frame;
++    struct CoopPresencePose last_pose;
++    bool8 last_pose_valid;
++    u64 rendered_handle;
++    u8 rendered_object_id;
++    u8 rendered_sprite_id;
++    u8 rendered_avatar_id;
++    u8 rendered_elevation;
++    u8 rendered_map_group;
++    u8 rendered_map_num;
++    s16 rendered_x;
++    s16 rendered_y;
++    s32 sprite_start_x;
++    s32 sprite_start_y;
++    s32 sprite_target_x;
++    s32 sprite_target_y;
++    u8 interpolation_remaining;
++    bool8 initialized;
++    bool8 transport_ready;
++    bool8 renderer_owned;
++};
++
++static EWRAM_DATA struct CoopPresenceRuntime sCoopPresenceRuntime = {0};
++
++static bool8 IsNormalOverworld(void)
++{
++    return gMain.callback1 == CB1_Overworld
++        && gMain.callback2 == CB2_Overworld;
++}
++
++static bool8 IsPlayerBindingValid(void)
++{
++    const struct ObjectEvent *player;
++
++    if (gSaveBlock1Ptr == NULL || gPlayerAvatar.objectEventId >= OBJECT_EVENTS_COUNT
++     || gPlayerAvatar.spriteId >= MAX_SPRITES)
++        return FALSE;
++    player = &gObjectEvents[gPlayerAvatar.objectEventId];
++    return player->active && player->isPlayer
++        && player->spriteId == gPlayerAvatar.spriteId
++        && gSprites[player->spriteId].inUse;
++}
++
++static bool8 IsWorldLocationCurrent(struct WorldLocation *location)
++{
++    return location != NULL && CoopWorldLocation_Export(location);
++}
++
++static bool8 IsOverworldPoseAllowed(void)
++{
++    return IsNormalOverworld()
++        && !gPaletteFade.active
++        && !ArePlayerFieldControlsLocked()
++        && IsPlayerBindingValid()
++        && (gPlayerAvatar.flags & (PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE))
++           == (PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE);
++}
++
++static bool8 BuildPose(struct CoopPresencePose *pose, bool8 visible)
++{
++    struct WorldLocation location;
++    struct ObjectEvent *player;
++    u8 flags;
++
++    if (pose == NULL)
++        return FALSE;
++    if (!IsPlayerBindingValid() || !IsWorldLocationCurrent(&location))
++    {
++        if (!sCoopPresenceRuntime.last_pose_valid)
++            return FALSE;
++        *pose = sCoopPresenceRuntime.last_pose;
++        pose->warp_sequence = sCoopPresenceRuntime.warp_sequence;
++        pose->movement_mode = COOP_PRESENCE_MOVEMENT_IDLE;
++        pose->animation_id = COOP_PRESENCE_ANIMATION_IDLE;
++        pose->player_state = COOP_PRESENCE_PLAYER_HIDDEN;
++        return TRUE;
++    }
++
++    player = &gObjectEvents[gPlayerAvatar.objectEventId];
++    flags = gPlayerAvatar.flags;
++    pose->location = location;
++    pose->elevation = player->previousElevation;
++    pose->direction = player->facingDirection;
++    pose->client_tick = sCoopPresenceRuntime.frame_counter;
++    pose->warp_sequence = sCoopPresenceRuntime.warp_sequence;
++    pose->movement_mode = COOP_PRESENCE_MOVEMENT_IDLE;
++    pose->animation_id = COOP_PRESENCE_ANIMATION_IDLE;
++    pose->avatar_id = gPlayerAvatar.gender ? COOP_PRESENCE_AVATAR_MAY
++                                           : COOP_PRESENCE_AVATAR_BRENDAN;
++    pose->player_state = visible ? COOP_PRESENCE_PLAYER_OVERWORLD
++                                 : COOP_PRESENCE_PLAYER_HIDDEN;
++
++    if (visible && gPlayerAvatar.runningState == MOVING)
++    {
++        pose->movement_mode = (flags & PLAYER_AVATAR_FLAG_DASH)
++            ? COOP_PRESENCE_MOVEMENT_RUN : COOP_PRESENCE_MOVEMENT_WALK;
++        pose->animation_id = COOP_PRESENCE_ANIMATION_LOCOMOTION;
++    }
++    sCoopPresenceRuntime.last_pose = *pose;
++    sCoopPresenceRuntime.last_pose_valid = TRUE;
++    return TRUE;
++}
++
++bool8 CoopPresenceRuntime_GetLocalState(struct CoopPresenceLocalState *out)
++{
++    struct CoopPresencePose pose;
++    struct CoopPresenceLocalState candidate;
++
++    if (out == NULL || !sCoopPresenceRuntime.initialized
++     || !sCoopPresenceRuntime.transport_ready
++     || sCoopPresenceRuntime.warp_sequence == 0)
++        return FALSE;
++
++    if (BuildPose(&pose, IsOverworldPoseAllowed()))
++    {
++        candidate.pose = pose;
++        candidate.source_sequence = sCoopPresenceRuntime.source_sequence == 0
++            ? 1 : sCoopPresenceRuntime.source_sequence;
++        *out = candidate;
++        return TRUE;
++    }
++
++    return FALSE;
++}
++
++bool8 CoopPresenceRuntime_EncodeLocalState(u8 *bytes, u32 length)
++{
++    struct CoopPresenceLocalState state;
++
++    if (bytes == NULL || length != COOP_PRESENCE_LOCAL_STATE_SIZE
++     || !CoopPresenceRuntime_GetLocalState(&state))
++        return FALSE;
++    sCoopPresenceRuntime.source_sequence = CoopPresence_NextSequence(
++        sCoopPresenceRuntime.source_sequence);
++    state.source_sequence = sCoopPresenceRuntime.source_sequence;
++    return CoopPresence_EncodeLocalState(&state, bytes, length);
++}
++
++static bool8 IsCurrentObjectEvent(const struct ObjectEvent *object_event)
++{
++    return gSaveBlock1Ptr != NULL && object_event != NULL && object_event->active
++        && object_event->localId == COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
++        && object_event->mapGroup == gSaveBlock1Ptr->location.mapGroup
++        && object_event->mapNum == gSaveBlock1Ptr->location.mapNum;
++}
++
++bool8 CoopPresenceRuntime_IsRemoteObject(const struct ObjectEvent *object_event)
++{
++    return object_event != NULL && object_event->localId == COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID;
++}
++
++static u8 FindRemoteObjectEvent(void)
++{
++    u8 i;
++
++    if (gSaveBlock1Ptr == NULL)
++        return OBJECT_EVENTS_COUNT;
++    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
++    {
++        if (IsCurrentObjectEvent(&gObjectEvents[i]))
++            return i;
++    }
++    return OBJECT_EVENTS_COUNT;
++}
++
++static bool8 FindOwnedSpriteUnchecked(struct ObjectEvent *object_event,
++                                      struct Sprite **out)
++{
++    struct Sprite *sprite;
++
++    if (out == NULL || object_event == NULL || !object_event->active
++     || object_event->localId != COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
++     || object_event->movementType != MOVEMENT_TYPE_NONE
++     || object_event->spriteId >= MAX_SPRITES)
++        return FALSE;
++    sprite = &gSprites[object_event->spriteId];
++    if (!sprite->inUse || sprite->data[0] != (s16)(object_event - gObjectEvents))
++        return FALSE;
++    *out = sprite;
++    return TRUE;
++}
++
++static bool8 FindOwnedSprite(struct ObjectEvent *object_event, struct Sprite **out)
++{
++    return IsCurrentObjectEvent(object_event)
++        && FindOwnedSpriteUnchecked(object_event, out);
++}
++
++static u8 GetRemoteAnimation(const struct CoopPresencePose *pose)
++{
++    enum Direction direction;
++
++    if (pose == NULL)
++        return ANIM_STD_FACE_SOUTH;
++    direction = (enum Direction)pose->direction;
++    if (pose->animation_id != COOP_PRESENCE_ANIMATION_LOCOMOTION)
++        return GetFaceDirectionAnimNum(direction);
++    switch (pose->movement_mode)
++    {
++    case COOP_PRESENCE_MOVEMENT_RUN:
++        switch (direction)
++        {
++        case DIR_NORTH:
++            return ANIM_RUN_NORTH;
++        case DIR_WEST:
++            return ANIM_RUN_WEST;
++        case DIR_EAST:
++            return ANIM_RUN_EAST;
++        case DIR_SOUTH:
++        default:
++            return ANIM_RUN_SOUTH;
++        }
++    case COOP_PRESENCE_MOVEMENT_WALK:
++        return GetMoveDirectionAnimNum(direction);
++    default:
++        return GetFaceDirectionAnimNum(direction);
++    }
++}
++
++static void RemoveOwnedRenderer(void)
++{
++    u8 object_id;
++    struct ObjectEvent *object_event;
++    struct Sprite *sprite;
++
++    if (!sCoopPresenceRuntime.renderer_owned)
++    {
++        sCoopPresenceRuntime.rendered_handle = 0;
++        sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
++        sCoopPresenceRuntime.rendered_sprite_id = MAX_SPRITES;
++        sCoopPresenceRuntime.interpolation_remaining = 0;
++        return;
++    }
++
++    object_id = sCoopPresenceRuntime.rendered_object_id;
++    if (object_id >= OBJECT_EVENTS_COUNT
++     || sCoopPresenceRuntime.rendered_sprite_id >= MAX_SPRITES)
++    {
++        /* The cached identity is no longer resolvable.  Abandon ownership
++         * without touching a slot that may now belong to another subsystem. */
++        sCoopPresenceRuntime.renderer_owned = FALSE;
++        sCoopPresenceRuntime.rendered_handle = 0;
++        sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
++        sCoopPresenceRuntime.rendered_sprite_id = MAX_SPRITES;
++        return;
++    }
++
++    object_event = &gObjectEvents[object_id];
++    if (!object_event->active
++     || object_event->localId != COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
++     || object_event->movementType != MOVEMENT_TYPE_NONE
++     || object_event->mapGroup != sCoopPresenceRuntime.rendered_map_group
++     || object_event->mapNum != sCoopPresenceRuntime.rendered_map_num
++     || object_event->spriteId != sCoopPresenceRuntime.rendered_sprite_id
++     || !FindOwnedSpriteUnchecked(object_event, &sprite))
++    {
++        /* A reserved local ID may have been reused by another subsystem or
++         * its sprite identity may have gone stale. Never mutate it. */
++        sCoopPresenceRuntime.renderer_owned = FALSE;
++        sCoopPresenceRuntime.rendered_handle = 0;
++        sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
++        sCoopPresenceRuntime.rendered_sprite_id = MAX_SPRITES;
++        sCoopPresenceRuntime.interpolation_remaining = 0;
++        return;
++    }
++
++    RemoveObjectEvent(object_event);
++    sCoopPresenceRuntime.renderer_owned = FALSE;
++    sCoopPresenceRuntime.rendered_handle = 0;
++    sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
++    sCoopPresenceRuntime.rendered_sprite_id = MAX_SPRITES;
++    sCoopPresenceRuntime.interpolation_remaining = 0;
++}
++
++static bool8 AddMapOffset(s16 local, s16 *map)
++{
++    s32 value = (s32)local + MAP_OFFSET;
++
++    if (map == NULL || value < 0 || value > 32767)
++        return FALSE;
++    *map = (s16)value;
++    return TRUE;
++}
++
++static bool8 RemoteCoordinatesValid(const struct CoopPresenceRemote *remote,
++                                    s16 *map_x, s16 *map_y)
++{
++    const struct MapLayout *layout;
++    s16 x;
++    s16 y;
++    s32 left;
++    s32 right;
++    s32 top;
++    s32 bottom;
++
++    if (remote == NULL || map_x == NULL || map_y == NULL || gSaveBlock1Ptr == NULL
++     || gMapHeader.mapLayout == NULL
++     || remote->state.pose.location.map_group != gSaveBlock1Ptr->location.mapGroup
++     || remote->state.pose.location.map_number != gSaveBlock1Ptr->location.mapNum
++     || remote->state.pose.elevation > ELEVATION_MULTI_LEVEL)
++        return FALSE;
++    layout = gMapHeader.mapLayout;
++    if (!AddMapOffset(remote->state.pose.location.x, &x)
++     || !AddMapOffset(remote->state.pose.location.y, &y)
++     || x < MAP_OFFSET || y < MAP_OFFSET
++     || x >= layout->width + MAP_OFFSET || y >= layout->height + MAP_OFFSET)
++        return FALSE;
++
++    left = (s32)gSaveBlock1Ptr->pos.x - 2;
++    right = (s32)gSaveBlock1Ptr->pos.x + MAP_OFFSET_W + 2;
++    top = gSaveBlock1Ptr->pos.y;
++    bottom = (s32)gSaveBlock1Ptr->pos.y + MAP_OFFSET_H + 2;
++    if ((s32)x < left || (s32)x > right || (s32)y < top || (s32)y > bottom)
++        return FALSE;
++    if (MapGridGetElevationAt(x, y) == ELEVATION_INVALID)
++        return FALSE;
++    *map_x = x;
++    *map_y = y;
++    return TRUE;
++}
++
++static bool8 GetRemoteSpriteTarget(struct ObjectEvent *object_event, s16 map_x,
++                                   s16 map_y, s32 *target_x, s32 *target_y)
++{
++    const struct ObjectEventGraphicsInfo *graphics;
++    s16 x;
++    s16 y;
++
++    if (object_event == NULL || target_x == NULL || target_y == NULL)
++        return FALSE;
++    SetSpritePosToMapCoords(map_x, map_y, &x, &y);
++    graphics = GetObjectEventGraphicsInfo(object_event->graphicsId);
++    if (graphics == NULL)
++        return FALSE;
++    *target_x = (s32)x + 8;
++    *target_y = (s32)y + 16 - (graphics->height >> 1);
++    return TRUE;
++}
++
++static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
++{
++    struct ObjectEvent *object_event;
++    struct Sprite *sprite;
++    const struct ObjectEventGraphicsInfo *graphics;
++    u16 graphics_id;
++    s16 map_x;
++    s16 map_y;
++    u8 object_id;
++    u8 created_id;
++    bool8 created = FALSE;
++
++    if (!RemoteCoordinatesValid(remote, &map_x, &map_y))
++        return FALSE;
++    graphics_id = remote->state.pose.avatar_id == COOP_PRESENCE_AVATAR_MAY
++        ? OBJ_EVENT_GFX_MAY_NORMAL : OBJ_EVENT_GFX_BRENDAN_NORMAL;
++    graphics = GetObjectEventGraphicsInfo(graphics_id);
++    if (graphics == NULL)
++        return FALSE;
++    if (graphics->paletteTag != TAG_NONE
++     && LoadObjectEventPalette(graphics->paletteTag) == 0xFF)
++        return FALSE;
++
++    object_id = FindRemoteObjectEvent();
++    if (object_id >= OBJECT_EVENTS_COUNT)
++    {
++        if (GetFirstInactiveObjectEventId() >= OBJECT_EVENTS_COUNT)
++            return FALSE;
++        created_id = SpawnSpecialObjectEventParameterized(
++            graphics_id, MOVEMENT_TYPE_NONE, COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID,
++            map_x, map_y, remote->state.pose.elevation);
++        if (created_id >= OBJECT_EVENTS_COUNT
++         || !IsCurrentObjectEvent(&gObjectEvents[created_id]))
++            return FALSE;
++        object_id = created_id;
++        created = TRUE;
++    }
++    else if (!sCoopPresenceRuntime.renderer_owned
++          || object_id != sCoopPresenceRuntime.rendered_object_id)
++    {
++        /* Do not adopt a pre-existing reserved slot: its sprite may belong to
++         * an NPC or another engine subsystem.  The next frame retries after
++         * that owner releases it. */
++        return FALSE;
++    }
++    else if (sCoopPresenceRuntime.rendered_handle != remote->handle
++          || sCoopPresenceRuntime.rendered_avatar_id != remote->state.pose.avatar_id
++          || sCoopPresenceRuntime.rendered_elevation != remote->state.pose.elevation)
++    {
++        RemoveOwnedRenderer();
++        return EnsureRemoteRenderer(remote);
++    }
++
++    object_event = &gObjectEvents[object_id];
++    if (!FindOwnedSprite(object_event, &sprite))
++        return FALSE;
++    if (created)
++    {
++        sCoopPresenceRuntime.rendered_handle = remote->handle;
++        sCoopPresenceRuntime.rendered_avatar_id = remote->state.pose.avatar_id;
++        sCoopPresenceRuntime.rendered_elevation = remote->state.pose.elevation;
++        sCoopPresenceRuntime.rendered_map_group = object_event->mapGroup;
++        sCoopPresenceRuntime.rendered_map_num = object_event->mapNum;
++        sCoopPresenceRuntime.rendered_object_id = object_id;
++        sCoopPresenceRuntime.rendered_sprite_id = object_event->spriteId;
++        sCoopPresenceRuntime.rendered_x = map_x;
++        sCoopPresenceRuntime.rendered_y = map_y;
++        sCoopPresenceRuntime.interpolation_remaining = 0;
++        sCoopPresenceRuntime.renderer_owned = TRUE;
++        object_event->initialCoords = object_event->currentCoords;
++    }
++    if (object_event->graphicsId != graphics_id)
++    {
++        ObjectEventSetGraphicsId(object_event, graphics_id);
++        if (!FindOwnedSprite(object_event, &sprite))
++        {
++            RemoveOwnedRenderer();
++            return FALSE;
++        }
++        sCoopPresenceRuntime.interpolation_remaining = 0;
++    }
++
++    if (!GetRemoteSpriteTarget(object_event, map_x, map_y,
++                               &sCoopPresenceRuntime.sprite_target_x,
++                               &sCoopPresenceRuntime.sprite_target_y))
++        return FALSE;
++
++    if (object_event->currentCoords.x != map_x || object_event->currentCoords.y != map_y
++     || object_event->currentElevation != remote->state.pose.elevation
++     || object_event->previousElevation != remote->state.pose.elevation)
++    {
++        bool8 coords_differ = object_event->currentCoords.x != map_x
++            || object_event->currentCoords.y != map_y;
++        s32 start_x = sprite->x;
++        s32 start_y = sprite->y;
++        s32 dx = (s32)map_x - object_event->currentCoords.x;
++        s32 dy = (s32)map_y - object_event->currentCoords.y;
++        bool8 snap = !coords_differ || dx > 2 || dx < -2 || dy > 2 || dy < -2
++            || object_event->currentElevation != remote->state.pose.elevation
++            || object_event->previousElevation != remote->state.pose.elevation;
++        /* MoveObjectEventToMapCoords updates the complete engine position
++         * state and ground-effect bookkeeping.  Capture the old rendered
++         * base first, then restore it only for a six-frame interpolation. */
++        MoveObjectEventToMapCoords(object_event, map_x, map_y);
++        object_event->initialCoords = object_event->currentCoords;
++        object_event->currentElevation = remote->state.pose.elevation;
++        object_event->previousElevation = remote->state.pose.elevation;
++        sCoopPresenceRuntime.sprite_target_x = sprite->x;
++        sCoopPresenceRuntime.sprite_target_y = sprite->y;
++        sCoopPresenceRuntime.rendered_x = map_x;
++        sCoopPresenceRuntime.rendered_y = map_y;
++        if (!snap)
++        {
++            sCoopPresenceRuntime.sprite_start_x = start_x;
++            sCoopPresenceRuntime.sprite_start_y = start_y;
++            sprite->x = (s16)start_x;
++            sprite->y = (s16)start_y;
++            sCoopPresenceRuntime.interpolation_remaining =
++                COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES;
++        }
++        else
++        {
++            sprite->x = (s16)sCoopPresenceRuntime.sprite_target_x;
++            sprite->y = (s16)sCoopPresenceRuntime.sprite_target_y;
++            sCoopPresenceRuntime.interpolation_remaining = 0;
++        }
++    }
++    else if (sCoopPresenceRuntime.interpolation_remaining == 0)
++    {
++        /* Spawn and recreation establish the logical tile before this first
++         * update.  Explicitly seed the base sprite position for that case. */
++        sprite->x = (s16)sCoopPresenceRuntime.sprite_target_x;
++        sprite->y = (s16)sCoopPresenceRuntime.sprite_target_y;
++    }
++
++    {
++        u8 animation = GetRemoteAnimation(&remote->state.pose);
++        SetObjectEventDirection(object_event,
++                                (enum Direction)remote->state.pose.direction);
++        StartSpriteAnimInDirection(object_event, sprite,
++                                   (enum Direction)remote->state.pose.direction,
++                                   animation);
++    }
++    sprite->x2 = 0;
++    sprite->y2 = 0;
++    if (sCoopPresenceRuntime.interpolation_remaining != 0)
++    {
++        u8 elapsed = (u8)(COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES
++                          - sCoopPresenceRuntime.interpolation_remaining + 1);
++        sprite->x = (s16)(sCoopPresenceRuntime.sprite_start_x
++            + ((sCoopPresenceRuntime.sprite_target_x - sCoopPresenceRuntime.sprite_start_x)
++               * elapsed) / COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES);
++        sprite->y = (s16)(sCoopPresenceRuntime.sprite_start_y
++            + ((sCoopPresenceRuntime.sprite_target_y - sCoopPresenceRuntime.sprite_start_y)
++               * elapsed) / COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES);
++        sCoopPresenceRuntime.interpolation_remaining--;
++    }
++    else
++    {
++        sprite->x = (s16)sCoopPresenceRuntime.sprite_target_x;
++        sprite->y = (s16)sCoopPresenceRuntime.sprite_target_y;
++    }
++    SetObjectSubpriorityByElevation(remote->state.pose.elevation, sprite, 1);
++    return TRUE;
++}
++
++static void ApplyPendingFrames(void)
++{
++    struct CoopPresenceLocalState local;
++    struct CoopPresencePendingFrame *pending;
++    enum CoopPresenceApplyResult result;
++    struct WorldLocation location;
++
++    if (!CoopPresenceRuntime_GetLocalState(&local)
++     || !IsWorldLocationCurrent(&location)
++     || !CoopPresenceReducer_Synchronize(&sCoopPresenceRuntime.reducer,
++                                          sCoopPresenceRuntime.session_epoch,
++                                          &location,
++                                          sCoopPresenceRuntime.warp_sequence))
++        return;
++
++    while (sCoopPresenceRuntime.pending_count != 0)
++    {
++        pending = &sCoopPresenceRuntime.pending[sCoopPresenceRuntime.pending_read];
++        switch (pending->type)
++        {
++        case COOP_PRESENCE_PENDING_SPAWN:
++            result = CoopPresenceReducer_ApplySpawn(&sCoopPresenceRuntime.reducer,
++                                                    &pending->value.spawn);
++            break;
++        case COOP_PRESENCE_PENDING_UPDATE:
++            result = CoopPresenceReducer_ApplyUpdate(&sCoopPresenceRuntime.reducer,
++                                                     &pending->value.update);
++            break;
++        case COOP_PRESENCE_PENDING_DESPAWN:
++            result = CoopPresenceReducer_ApplyDespawn(&sCoopPresenceRuntime.reducer,
++                                                      &pending->value.despawn);
++            break;
++        default:
++            result = COOP_PRESENCE_APPLY_REJECTED;
++            break;
++        }
++        if (result == COOP_PRESENCE_APPLY_APPLIED)
++            sCoopPresenceRuntime.last_lifecycle_frame = sCoopPresenceRuntime.frame_counter;
++        pending->type = COOP_PRESENCE_PENDING_NONE;
++        sCoopPresenceRuntime.pending_read = (u8)((sCoopPresenceRuntime.pending_read + 1)
++            % COOP_PRESENCE_RUNTIME_PENDING_CAPACITY);
++        sCoopPresenceRuntime.pending_count--;
++    }
++}
++
++void CoopPresenceRuntime_Update(void)
++{
++    const struct CoopPresenceRemote *remote;
++    struct WorldLocation location;
++
++    if (!sCoopPresenceRuntime.initialized || !IsNormalOverworld())
++        return;
++    ApplyPendingFrames();
++    if (!IsOverworldPoseAllowed())
++    {
++        RemoveOwnedRenderer();
++        return;
++    }
++    if (!IsWorldLocationCurrent(&location)
++     || !CoopPresenceReducer_Synchronize(&sCoopPresenceRuntime.reducer,
++                                         sCoopPresenceRuntime.session_epoch,
++                                         &location,
++                                         sCoopPresenceRuntime.warp_sequence)
++     || !sCoopPresenceRuntime.transport_ready)
++    {
++        RemoveOwnedRenderer();
++        return;
++    }
++    remote = CoopPresenceReducer_GetRemote(&sCoopPresenceRuntime.reducer);
++    if (remote == NULL || !CoopPresenceReducer_IsVisible(&sCoopPresenceRuntime.reducer)
++     || sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.last_lifecycle_frame
++        >= COOP_PRESENCE_RUNTIME_STALE_FRAMES)
++    {
++        RemoveOwnedRenderer();
++        return;
++    }
++    if (!EnsureRemoteRenderer(remote))
++        RemoveOwnedRenderer();
++}
++
++bool8 CoopPresenceRuntime_QueueBridgeFrame(u16 type, const u8 *payload, u16 length)
++{
++    struct CoopPresencePendingFrame candidate = {0};
++
++    if (!sCoopPresenceRuntime.initialized || payload == NULL
++     || sCoopPresenceRuntime.pending_count >= COOP_PRESENCE_RUNTIME_PENDING_CAPACITY)
++        return FALSE;
++    switch (type)
++    {
++    case COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN:
++        if (!CoopPresence_DecodeSpawn(payload, length, &candidate.value.spawn))
++            return FALSE;
++        candidate.type = COOP_PRESENCE_PENDING_SPAWN;
++        break;
++    case COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE:
++        if (!CoopPresence_DecodeUpdate(payload, length, &candidate.value.update))
++            return FALSE;
++        candidate.type = COOP_PRESENCE_PENDING_UPDATE;
++        break;
++    case COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN:
++        if (!CoopPresence_DecodeDespawn(payload, length, &candidate.value.despawn))
++            return FALSE;
++        candidate.type = COOP_PRESENCE_PENDING_DESPAWN;
++        break;
++    default:
++        return FALSE;
++    }
++    sCoopPresenceRuntime.pending[sCoopPresenceRuntime.pending_write] = candidate;
++    sCoopPresenceRuntime.pending_write = (u8)((sCoopPresenceRuntime.pending_write + 1)
++        % COOP_PRESENCE_RUNTIME_PENDING_CAPACITY);
++    sCoopPresenceRuntime.pending_count++;
++    return TRUE;
++}
++
++void CoopPresenceRuntime_Init(void)
++{
++    memset(&sCoopPresenceRuntime, 0, sizeof(sCoopPresenceRuntime));
++    CoopPresenceReducer_Init(&sCoopPresenceRuntime.reducer);
++    sCoopPresenceRuntime.warp_sequence = 1;
++    sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
++    sCoopPresenceRuntime.initialized = TRUE;
++    /* Presence is not publishable until the transport accepts a nonzero
++     * SESSION_READY epoch. */
++    sCoopPresenceRuntime.transport_ready = FALSE;
++}
++
++void CoopPresenceRuntime_Reset(void)
++{
++    if (!sCoopPresenceRuntime.initialized)
++        return;
++    CoopPresenceReducer_Reset(&sCoopPresenceRuntime.reducer);
++    sCoopPresenceRuntime.pending_read = 0;
++    sCoopPresenceRuntime.pending_write = 0;
++    sCoopPresenceRuntime.pending_count = 0;
++    sCoopPresenceRuntime.rendered_handle = 0;
++    sCoopPresenceRuntime.last_pose_valid = FALSE;
++    sCoopPresenceRuntime.last_lifecycle_frame = sCoopPresenceRuntime.frame_counter;
++    RemoveOwnedRenderer();
++}
++
++void CoopPresenceRuntime_SetSessionEpoch(u32 session_epoch)
++{
++    if (!sCoopPresenceRuntime.initialized)
++        CoopPresenceRuntime_Init();
++    if (sCoopPresenceRuntime.session_epoch != session_epoch)
++    {
++        CoopPresenceRuntime_Reset();
++        sCoopPresenceRuntime.session_epoch = session_epoch;
++    }
++    sCoopPresenceRuntime.transport_ready = session_epoch != 0;
++}
++
++void CoopPresenceRuntime_TransportLost(void)
++{
++    if (sCoopPresenceRuntime.initialized)
++    {
++        CoopPresenceRuntime_Reset();
++        sCoopPresenceRuntime.transport_ready = FALSE;
++    }
++}
++
++void CoopPresenceRuntime_AdvanceFrame(void)
++{
++    if (sCoopPresenceRuntime.initialized)
++        sCoopPresenceRuntime.frame_counter++;
++}
++
++void CoopPresenceRuntime_OnWarpCommit(void)
++{
++    if (!sCoopPresenceRuntime.initialized)
++        return;
++    sCoopPresenceRuntime.warp_sequence = CoopPresence_NextSequence(
++        sCoopPresenceRuntime.warp_sequence);
++    CoopPresenceRuntime_Reset();
++}
++
++enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void)
++{
++    struct CoopPresenceLocalState local;
++    u8 payload[COOP_PRESENCE_INTERACTION_SIZE];
++
++    if (!sCoopPresenceRuntime.initialized || !IsNormalOverworld()
++     || !sCoopPresenceRuntime.transport_ready
++     || !CoopPresenceRuntime_GetLocalState(&local)
++     || !CoopPresenceReducer_IsVisible(&sCoopPresenceRuntime.reducer)
++     || !CoopPresence_EncodeInteraction(&sCoopPresenceRuntime.reducer,
++                                        &(struct CoopPresenceLocalContext){
++                                            .session_epoch = sCoopPresenceRuntime.session_epoch,
++                                            .location = local.pose.location,
++                                            .elevation = local.pose.elevation,
++                                            .direction = local.pose.direction,
++                                            .warp_sequence = local.pose.warp_sequence,
++                                        }, payload, sizeof(payload)))
++        return COOP_PRESENCE_INTERACTION_NONE;
++
++    /* A queue-full send is still a consumed remote interaction.  The local
++     * field path must not lock controls or fall through to a vanilla script. */
++    (void)CoopNetBridge_EnqueueGameToNetwork(
++        COOP_BRIDGE_MESSAGE_INTERACT_REMOTE_PLAYER, payload, sizeof(payload));
++    return COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK;
++}
++
++const struct CoopPresenceReducer *CoopPresenceRuntime_GetReducer(void)
++{
++    return &sCoopPresenceRuntime.reducer;
++}
+diff --git a/test/coop/presence_runtime.c b/test/coop/presence_runtime.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..3416c963178f4ad832ba2f2d1e38ffcf0dddb771
+--- /dev/null
++++ b/test/coop/presence_runtime.c
+@@ -0,0 +1,155 @@
++#include "global.h"
++#include "coop/presence_runtime.h"
++#include "test/test.h"
++
++_Static_assert(COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL == 6,
++               "presence samples use the ten-Hz six-frame cadence");
++_Static_assert(COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES == 6,
++               "presence interpolation is six frames");
++_Static_assert(COOP_PRESENCE_RUNTIME_STALE_FRAMES == 90,
++               "presence visuals expire after ninety frames");
++_Static_assert(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID == 0xFC,
++               "presence owns the reserved remote object local ID");
++
++static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
++{
++    struct CoopPresenceSpawn spawn = {
++        .handle = handle,
++        .server_sequence = sequence,
++        .state = {
++            .pose = {
++                .location = {
++                    .region = COOP_REGION_HOENN,
++                    .reserved = 0,
++                    .map_group = 1,
++                    .map_number = 3,
++                    .x = 4,
++                    .y = 5,
++                },
++                .elevation = ELEVATION_DEFAULT,
++                .direction = COOP_PRESENCE_DIRECTION_SOUTH,
++                .client_tick = 1,
++                .warp_sequence = 9,
++                .movement_mode = COOP_PRESENCE_MOVEMENT_IDLE,
++                .animation_id = COOP_PRESENCE_ANIMATION_IDLE,
++                .avatar_id = COOP_PRESENCE_AVATAR_BRENDAN,
++                .player_state = COOP_PRESENCE_PLAYER_OVERWORLD,
++            },
++            .source_sequence = 1,
++        },
++        .username = {
++            .length = 3,
++            .bytes = "rom",
++        },
++    };
++    return spawn;
++}
++
++TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
++{
++    struct ObjectEvent remote = {0};
++    u8 malformed[COOP_PRESENCE_SPAWN_SIZE] = {0};
++    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
++    struct CoopPresenceSpawn spawn;
++    u8 i;
++
++    CoopPresenceRuntime_Init();
++    EXPECT(!CoopPresenceRuntime_GetLocalState(NULL));
++    EXPECT(!CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        malformed, sizeof(malformed)));
++
++    spawn = RuntimeSpawn(1, 1);
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
++    for (i = 0; i < COOP_PRESENCE_RUNTIME_PENDING_CAPACITY; i++)
++        EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++            COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++            spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(!CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
++
++    remote.localId = COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID;
++    EXPECT(CoopPresenceRuntime_IsRemoteObject(&remote));
++    remote.localId = LOCALID_NONE;
++    EXPECT(!CoopPresenceRuntime_IsRemoteObject(&remote));
++    CoopPresenceRuntime_Reset();
++}
++
++TEST("Cloud Coop presence runtime queues exact lifecycle frames atomically")
++{
++    struct CoopPresenceSpawn spawn = RuntimeSpawn(2, 7);
++    struct CoopPresenceUpdate update = {
++        .handle = 2,
++        .server_sequence = 8,
++        .state = spawn.state,
++    };
++    struct CoopPresenceDespawn despawn = {
++        .handle = 2,
++        .server_sequence = 9,
++        .reason = COOP_PRESENCE_DESPAWN_DISCONNECTED,
++    };
++    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
++    u8 update_bytes[COOP_PRESENCE_UPDATE_SIZE];
++    u8 despawn_bytes[COOP_PRESENCE_DESPAWN_SIZE];
++    u8 malformed_spawn[COOP_PRESENCE_SPAWN_SIZE];
++    u8 malformed_update[COOP_PRESENCE_UPDATE_SIZE];
++    u8 malformed_despawn[COOP_PRESENCE_DESPAWN_SIZE];
++    u8 i;
++
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(CoopPresence_EncodeUpdate(&update, update_bytes, sizeof(update_bytes)));
++    EXPECT(CoopPresence_EncodeDespawn(&despawn, despawn_bytes, sizeof(despawn_bytes)));
++    memset(malformed_spawn, 0, sizeof(malformed_spawn));
++    memset(malformed_update, 0, sizeof(malformed_update));
++    memset(malformed_despawn, 0, sizeof(malformed_despawn));
++
++    CoopPresenceRuntime_Init();
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(!CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        malformed_spawn, sizeof(malformed_spawn) - 1));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE,
++        update_bytes, sizeof(update_bytes)));
++    EXPECT(!CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE,
++        malformed_update, sizeof(malformed_update)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN,
++        despawn_bytes, sizeof(despawn_bytes)));
++    malformed_despawn[COOP_PRESENCE_DESPAWN_RESERVED_OFFSET] = 1;
++    EXPECT(!CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN,
++        malformed_despawn, sizeof(malformed_despawn)));
++
++    /* The rejected frames above consume no queue entries: exactly 29 more
++     * accepted frames fill the remaining bounded capacity. */
++    for (i = 0; i < COOP_PRESENCE_RUNTIME_PENDING_CAPACITY - 3; i++)
++        EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++            COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++            spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(!CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
++    CoopPresenceRuntime_TransportLost();
++    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
++}
++
++TEST("Cloud Coop presence runtime keeps publication gated by a ready epoch")
++{
++    struct CoopPresenceLocalState state;
++
++    CoopPresenceRuntime_Init();
++    EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
++    CoopPresenceRuntime_SetSessionEpoch(23);
++    /* The test runner has no bound on-foot avatar, so even a nonzero epoch
++     * cannot manufacture an OVERWORLD state. */
++    EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
++    CoopPresenceRuntime_TransportLost();
++    EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
++}

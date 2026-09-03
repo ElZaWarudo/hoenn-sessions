@@ -1,0 +1,33 @@
+{
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "baseline_digest": "sha256:8fb6427cf5bb8278cea95cb60fe3df3924c9545529715af16ca4f133c90ae101",
+  "baseline_tree": "0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b",
+  "changed_files": [
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "dependency_patch_hashes": [
+    "sha256:d7d4a41157d8856f06c7c225cc245feff5c9c55b3c05d25377c14434e37cadff",
+    "sha256:fe7beecf45e8548ba55b62171dbd30033592f66748a31211e6a0c423c63a8fa8"
+  ],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "owned_paths": [
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c"
+  ],
+  "role": "integration-candidate",
+  "unit_id": "phase5-rom-presence-activation",
+  "worker_id": "/root/rom_presence_correction_v3",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-correction-v3"
+}

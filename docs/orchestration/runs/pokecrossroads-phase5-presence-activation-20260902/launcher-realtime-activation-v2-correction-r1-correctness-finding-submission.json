@@ -1,0 +1,48 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+  "review_plan_hash": "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19",
+  "surface_id": "launcher-realtime-activation-v2-correctness-r1",
+  "reporter_id": "/root/launcher_activation_v2_correctness",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "LRA2-003-post-ready-checkpoint-cutover-drop",
+      "observation": "The corrected checkpoint cutover has no boundary marker between interactions queued before and after Ready, so its drain-to-empty policy drops both classes.",
+      "impact": "An interaction produced after server Ready but before an overlapping checkpoint completes is discarded, violating post-Ready FIFO preservation.",
+      "recommendation": "Establish an explicit ordered interaction cutover when Ready is observed; drop only pre-marker interactions, buffer post-marker interactions FIFO, and submit them after checkpoint reconciliation. Add a synchronized regression.",
+      "evidence": [
+        "session.rs observes Ready while checkpoint may continue.",
+        "establish_realtime_cutover drains every immediately available control event before activating interactions.",
+        "the r1 regression emits its post-Ready interaction only after checkpoint completion."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "LRA2-004-terminal-preempts-buffered-event-race-r1",
+      "observation": "Task completion has polling priority, but terminal state is not rechecked after receiving a buffered owner event, leaving a poll-to-return race.",
+      "impact": "One stale peer event can reach the ROM after the realtime task becomes terminal.",
+      "recommendation": "Recheck or nonblocking-poll the JoinHandle after owner-event receipt and before mapping/return; add a barrier-controlled regression.",
+      "evidence": [
+        "realtime.rs checks JoinHandle::is_finished only before select.",
+        "the JoinHandle may first poll Pending and finish before a buffered event returns.",
+        "the saturation test begins only after is_finished is already true."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "LRA2-006-active-fence-and-failure-integration-coverage-r1",
+      "observation": "The suite adds a successful path but does not execute freshest-state handoff during mint or active reset/backpressure/child-failure cleanup through production lifecycle.",
+      "impact": "Several required fence and teardown paths can regress without an activation-level failure.",
+      "recommendation": "Add deterministic activation-level tests for pending mint with fresher state and active terminal failures, asserting one attempt, freshest initial state, no post-terminal output, and joined cleanup.",
+      "evidence": [
+        "the successful fake grant is immediately ready and has no delayed mint seam.",
+        "successful and checkpoint tests do not induce active reset, backpressure, or child failure.",
+        "LRA2-006 explicitly requires freshest-state and active cleanup coverage."
+      ]
+    }
+  ]
+}

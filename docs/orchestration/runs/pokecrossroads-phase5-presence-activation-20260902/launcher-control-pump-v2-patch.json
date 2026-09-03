@@ -1,0 +1,32 @@
+{
+  "base_revision": "871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2",
+  "baseline_digest": "sha256:2f3fc7d425ee5a79b134582692c9b2bb284e62335f176828d4bb551fa34d2082",
+  "baseline_tree": "34e944ac66193e7b09f6df89e452a5625c33ca54",
+  "changed_files": [
+    {
+      "digest": "sha256:3b68e9ad75cb4802880ef637243a7f86a9940d0c5e04a56a698c253407a69586",
+      "path": "coop/crates/coop-launcher/src/process.rs"
+    },
+    {
+      "digest": "sha256:cb4b99a18752e6cb995e3493f758cc46295e54e28fd800b8392698f4f970adb3",
+      "path": "coop/crates/coop-launcher/src/session.rs"
+    }
+  ],
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "dependency_patch_hashes": [
+    "sha256:730ba1fe087620507a72500175a665dbb30cc9e925eef2c5db8a659c1bb2e69e",
+    "sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee"
+  ],
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "manifest_hash": "sha256:6a8ce5d99cf08136fac92167bad7e88d8cbc8a8a2c43967846e61010451fb856",
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "patch_sha256": "sha256:edede47c5acbd9b3d1148a4ba1bdb2088d59913ac431f5f9b08046c72d7b1d7e",
+  "role": "integration-candidate",
+  "schema_version": 1,
+  "unit_id": "phase5-launcher-control-pump",
+  "worker_id": "/root/launcher_control_pump_v2",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-control-pump-v2"
+}

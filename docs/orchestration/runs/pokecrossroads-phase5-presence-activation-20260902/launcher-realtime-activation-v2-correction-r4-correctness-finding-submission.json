@@ -1,0 +1,23 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:7ebae85823625c113af7cea2c825fdfc3048a6484da9eb8531706459cd62b4c5",
+  "review_plan_hash": "sha256:c6f3060991fa2c4ecd2de314a10b0838876ac93ad53312d852e59d9708130c74",
+  "surface_id": "launcher-realtime-activation-v2-correctness-r4",
+  "reporter_id": "/root/launcher_activation_v2_correctness",
+  "findings": [
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "LRA2-006-simultaneous-all-ready-test-fidelity-r4",
+      "observation": "The revised active_round_robin test still does not hold control, realtime, and due heartbeat simultaneously ready or assert their bounded selection order, so F-2FFF4874 is not resolved.",
+      "impact": "The r4 production scheduler is structurally round-robin, but a future regression to the previously confirmed multi-source starvation behavior could pass this required deterministic regression test.",
+      "recommendation": "Test the arbitration helper with synchronized readiness sources, or use explicit pump/coordinator readiness barriers plus sustained producers. Make all three branches ready before each of several polls and assert the exact C/R/H rotation and terminal preemption rather than eventual counts after finite queues drain.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:5703-5732 writes exactly four realtime frames and then withholds only the terminal; the realtime producer is finite rather than continuously ready.",
+        "coop/crates/coop-launcher/src/session.rs:5737-5755 writes one PlayerState plus eight interactions and then stops; the control producer is also finite.",
+        "coop/crates/coop-launcher/src/session.rs:5772-5775 waits for notification that bytes were written to the sockets, not that the coordinator and control pump futures are simultaneously ready at each scheduler poll.",
+        "coop/crates/coop-launcher/src/session.rs:5783-5835 asserts only eventual counts."
+      ]
+    }
+  ]
+}

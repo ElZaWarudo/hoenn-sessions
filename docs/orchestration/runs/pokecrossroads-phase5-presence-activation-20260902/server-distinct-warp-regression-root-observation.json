@@ -1,0 +1,20 @@
+{
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_digest": "sha256:53fbd907eef08fc50c7a4a41ca6bb918d0ca45f78a1c78ca1c473f7366765577",
+  "baseline_tree": "bb6725ba2e4bcef8fae97c5977ce6cc3c2a51c86",
+  "changed_files": [
+    "coop/crates/coop-server/src/phase2/presence.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:8bad96efb8baf01ffd5a9bfdebf91b8561f664ad7c521573f680c78cbfb2eed8",
+  "dependency_patch_hashes": [],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:33e795459c6d3c71f09199e3f9476dc0085099c415cf045873433eae1b8e3e1e",
+  "owned_paths": [
+    "coop/crates/coop-server/src/phase2/presence.rs"
+  ],
+  "role": "integration-candidate",
+  "unit_id": "server-presence-distinct-warp-regression",
+  "worker_id": "/root/server_distinct_warp_worker",
+  "workspace_id": "pokecrossroads-phase5-server-warp-20260902"
+}

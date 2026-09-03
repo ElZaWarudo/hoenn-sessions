@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-sidecar-control-fixer-v1",
+  "unit_id": "sidecar-presence-control-fixer",
+  "objective": "Resolve the certified lifecycle-loss and reboot-staleness defects in the typed sidecar presence-control relay while preserving checkpoint and shutdown guarantees.",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correctness-review-round1.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-security-review-round1.json",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "closed_decisions": [
+    "Keep control protocol v2 and the existing direct typed presence records; do not add credentials, arbitrary values, or generic byte escape hatches.",
+    "Use a bounded presence lane sized to the realtime owner event bound (32). Never silently discard a parsed spawn, update, or despawn. If the authenticated lane is genuinely saturated, surface one stable terminal error and stop the session rather than continue with ambiguous lifecycle state.",
+    "Presence remains outside command IDs, replay history, deferred commands, and routine/shutdown reservation. Critical control parsing and the absolute shutdown path remain bounded and prioritized.",
+    "A same-socket ROM reboot is a terminal presence-generation boundary for the current launcher realtime attempt. Before SESSION_READY/reset handoff, permanently disable lifecycle forwarding for the remainder of that local session and reject every queued or later presence command without allocating an outer sequence. The launcher integration must treat RomPresenceReset or control ambiguity as session-fatal and may not start another realtime core in that session.",
+    "Retain the fieldless reset record. Its possible retry after an ambiguous write is harmless only under the mandatory fatal launcher policy above; tests and comments must make that cross-unit invariant explicit.",
+    "Keep exact 28/20-byte inbound and 72/40/16-byte outbound codecs, current epoch/readiness checks, independent outer sequences, SESSION_READY-before-reset order, and secret-safe bounded JSONL."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "SPCF-001",
+      "description": "The bounded presence mailbox preserves all accepted lifecycle ordering through its declared capacity and converts overflow into a stable fatal session result; no Full branch silently succeeds, and checkpoint/shutdown parsing is not stranded."
+    },
+    {
+      "id": "SPCF-002",
+      "description": "Every ROM reboot boundary disables presence forwarding before SESSION_READY/reset and invalidates queued/in-flight old-generation commands; deterministic preloaded/flood tests prove no lifecycle frame follows reset in the same session."
+    },
+    {
+      "id": "SPCF-003",
+      "description": "Fieldless reset retry ambiguity is documented and tested against the required launcher-fatal/no-restart invariant, without claiming exactly-once delivery."
+    },
+    {
+      "id": "SPCF-004",
+      "description": "All new control records have strict canonical round-trip, unknown/invalid-field rejection, and LF-inclusive <=512-byte tests; inbound malformed frames do not commit sequence, outbound lifecycle preserves exact inner values with independent outer sequence, and quiescing allocates nothing."
+    },
+    {
+      "id": "SPCF-005",
+      "description": "Focused/full sidecar tests, strict Clippy, formatting, diff checks, and launcher compilation with the companion candidate are reported honestly; production edits remain confined to the owned files."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar control --all-features --locked",
+        "rtk cargo test -p coop-sidecar server --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 3,
+    "fix_rounds": 3,
+    "review_rounds": 0,
+    "max_elapsed_ms": 1800000,
+    "extra_verification": "forbidden"
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "forbidden_changes": [
+    "Do not edit launcher, protocol, realtime-core, cloud, server, ROM, Lua, Cargo, documentation, generated artifact, or orchestration files.",
+    "Do not weaken loopback authentication, bounds, epoch/sequence validation, checkpoint semantics, shutdown reservation, error redaction, or reconnect cleanup.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert other workers. Preserve all unowned edits."
+  ],
+  "terminal_protocol": {
+    "return_when": [
+      "All fixer criteria and required checks are resolved.",
+      "A safe fix requires changing a forbidden cross-unit boundary.",
+      "A concrete toolchain failure prevents progress within budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1"
+}

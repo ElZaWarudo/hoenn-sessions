@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-D506B040",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected the sealed candidate: stalled_presence_bridge_write_does_not_delay_shutdown_ack has no deterministic blocked-writer gate and aborts the server task after the ACK instead of proving writer cleanup."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

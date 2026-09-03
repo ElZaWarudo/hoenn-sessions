@@ -1,0 +1,1 @@
+{"finding_id":"F-140F60EF","validator_id":"/root","verdict":"confirmed","evidence":["The original candidate tests did not enter the production hidden, stale, warp, capacity, or local-link paths; the final candidate adds executable fixtures for each."],"revised_severity":null,"revised_observation":null,"revised_impact":null,"revised_recommendation":null}

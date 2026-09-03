@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "review_plan_hash": "sha256:98eb58fe72eb954d1244077b610241613808788c255542b07cd2a607b6d4739e",
+  "reviewer_id": "/root/launcher_http_correctness_reviewer_v2",
+  "surface_id": "launcher-http-correctness-final",
+  "risk_boundaries_checked": [
+    "bounded-response-correlation-and-grant-time-validity",
+    "canonical-endpoint-single-post-and-typed-error-contract",
+    "regression-oracle-public-api-and-no-retry-fidelity"
+  ],
+  "candidate_findings": [],
+  "candidate_feedback": [],
+  "stop_reason": "interrupted",
+  "certifies_review": false
+}

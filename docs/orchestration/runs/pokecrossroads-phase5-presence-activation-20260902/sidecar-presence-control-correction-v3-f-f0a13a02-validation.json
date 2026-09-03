@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-F0A13A02",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected cumulative tree 80daf109a7939972ec2f25d124b7505a10e31164: control terminal is checked before writer failure before and after select, and recover_control_with_bridge/await_control_or_bridge receives no writer-failure signal while retaining the bridge."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

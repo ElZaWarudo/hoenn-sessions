@@ -1,0 +1,23 @@
+{
+  "contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest":"sha256:ce4e5be1ac68fcb8978ac087dc9f5c40f64d91cd601570bc1ea021df990ddf89",
+  "review_plan_hash":"sha256:371e429360d72e5830be7ca229445135b204c5f0e89272ce90c09d3907dcf74a",
+  "surface_id":"launcher-realtime-activation-v2-security-r3",
+  "reporter_id":"/root/launcher_activation_v2_security",
+  "findings":[
+    {
+      "severity":"p1","principle":"security","rule_id":"checkpoint-cloud-reconciliation-must-not-be-cancelled",
+      "observation":"After correlated SaveDataUpdated, checkpoint_files still races the original deadline and terminal inputs, so prepare/upload/finalize can be dropped after side effects begin.",
+      "impact":"A committed snapshot can leave stale local revision and lease fence state, producing ambiguous mutation outcome and later conflict/data loss.",
+      "recommendation":"Apply deadline only through correlation; once checkpoint_files begins, drive it to definitive result with heartbeat-fenced idempotent retries while latching other terminal input.",
+      "evidence":["deadline branch drops the pinned future","revision installs only after finalize","session.rs documents noncancellation once prepare begins"]
+    },
+    {
+      "severity":"p1","principle":"security","rule_id":"post-checkpoint-ready-wait-must-service-heartbeat-and-shutdown",
+      "observation":"After checkpoint reconciliation, Ready cutover arbitrates only control, realtime, and Activate; heartbeat and caller shutdown are absent.",
+      "impact":"A peer withholding Ready delays lease maintenance and user shutdown until the three-second core Ready timeout.",
+      "recommendation":"Add shutdown-first and heartbeat-live cutover arbitration; test withheld Ready after checkpoint with due heartbeat and prompt shutdown.",
+      "evidence":["cutover input enum lacks heartbeat and shutdown","establish_realtime_cutover loops without those futures","sidecar READY_TIMEOUT is three seconds"]
+    }
+  ]
+}

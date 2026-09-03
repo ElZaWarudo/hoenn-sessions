@@ -1,0 +1,16 @@
+{
+  "approval_required": false,
+  "assignments": [
+    {"cross_cutting":false,"id":"launcher-realtime-activation-v2-correctness","owned_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"priority":0,"reviewer_role":"reviewer","risk_boundaries":["attempt-fence-refresh-and-mint-origin-auth-tagging","deterministic-test-fidelity-and-production-main-activation","heartbeat-checkpoint-shutdown-and-child-settlement-ordering","pump-to-realtime-state-machine-ready-gating-and-lifecycle-mapping"]},
+    {"cross_cutting":true,"id":"launcher-realtime-activation-v2-security","owned_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"priority":0,"reviewer_role":"security-sentinel","risk_boundaries":["coordinator-task-child-socket-and-artifact-teardown","no-remint-replay-reconnect-or-second-endpoint","reset-generation-backpressure-and-ambiguous-outcome-fail-closed","ticket-token-endpoint-and-error-confinement"]}
+  ],
+  "assurance_tier":"high",
+  "changed_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],
+  "contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "coverage_complete":true,
+  "diff_digest":"sha256:529f8dd467a174024c3f09d13c31d15b80f3b6550764423b91c98ea1674a106b",
+  "queued":[],
+  "review_plan_hash":"sha256:6fe39d370b3393484ad9cdbcee09fe4ab4ecfb5483ccd6c306b777390c4fe4ef",
+  "schema_version":2,
+  "validation_wave_required":true
+}

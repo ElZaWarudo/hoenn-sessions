@@ -1,0 +1,11 @@
+{
+  "event": "discovery_complete",
+  "edit_path_found": true,
+  "planned_files": [
+    "src/coop/presence_runtime.c",
+    "test/coop/presence_runtime.c",
+    "test/coop/net_bridge.c",
+    "dist/bridge_manifest.json"
+  ],
+  "evidence_digest": "edit src/coop/presence_runtime.c | symbol=BuildPose, EnsureRemoteRenderer; pattern=last_pose is written unconditionally and renderer mutation lacks cached sprite identity revalidation; why=preserve last-valid hidden poses and enforce safe bounded renderer ownership.\nedit test/coop/presence_runtime.c | symbol=presence runtime tests; pattern=coverage lacks hidden-pose preservation, six-frame interpolation/retargeting, discontinuity snap, 90-frame staleness, warp fencing, and interaction queue-full cases; why=add focused RPA regression coverage.\nedit test/coop/net_bridge.c | symbol=ProcessInboundMessage tests; pattern=coverage lacks remote lifecycle exact-length, epoch, sequence, and atomic queue validation; why=add bridge-level RPA-002/RPA-008 evidence.\nedit dist/bridge_manifest.json | symbol=gCoopNetBridge; pattern=manifest remains baseline generated output while staged ROM sources require a modern-build regeneration; why=RPA-008 and the product spec require the generated bridge manifest."
+}

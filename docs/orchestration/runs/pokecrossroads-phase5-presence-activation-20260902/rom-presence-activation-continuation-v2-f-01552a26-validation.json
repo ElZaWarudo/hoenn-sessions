@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-01552A26",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: Update removes the renderer at the 90-frame boundary without clearing reducer visibility, while TryInteract checks neither lifecycle age nor current renderer ownership before consuming A."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

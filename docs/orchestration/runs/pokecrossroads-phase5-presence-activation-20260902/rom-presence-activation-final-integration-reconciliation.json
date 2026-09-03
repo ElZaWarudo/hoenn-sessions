@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "release-ready",
+  "unit_id": "phase5-rom-presence-activation",
+  "contract_hash": "sha256:3df5c5cdde02b103cc17f81f5efa1f78d452056bdb87fd0c0037366af16d78e8",
+  "initial_patch_hash": "sha256:eeb61d6827d07d73544bd3cb7f39b183e0dd94f4851af764b854872bf2093df9",
+  "correction_patch_hash": "sha256:79ddb148429f2a0a09e84395fd68368548f1503cce79877534ba87baa39680ca",
+  "manifest_patch_hash": "sha256:6fc8eda26a520be2d99fd3ab9dfb148ff182c01145684cf74a17e08189b4606a",
+  "review_correction_patch_hash": "sha256:e396663eaff12896a363df8985bc2090007b08c7aad7a6e09c7fb7c762d330e2",
+  "candidate_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+  "candidate_commit": "cc421eb8e1bd9a5357c78c2bb0dc1b26129426e3",
+  "candidate_tree": "49207d93f1d7c83778baf4d45292fbf09c2f4e7a",
+  "integration_commit": "da8372b5fdae4a022ef768d016e7e4a3ab571c30",
+  "integration_tree": "3d0cc36d026d8f4a923e8142654bcfddf827f8e5",
+  "owned_path_blob_match": true,
+  "stacked_tree_difference_expected": true,
+  "rom_sha256": "f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574",
+  "correctness_certification": "rom-presence-activation-correction-v3-r2-correctness-certification.json",
+  "security_certification": "rom-presence-activation-correction-v3-r2-security-certification.json",
+  "targeted_validation": "rom-presence-activation-correction-v3-r2-targeted-validation-evidence.json",
+  "findings_registry": "rom-presence-activation-correction-v3-findings-registry.json",
+  "findings_registry_digest": "sha256:1dec9ac428d7c8308987d5402c7e2356081cfe762aa006851b6b3bd3ff05e3c1"
+}

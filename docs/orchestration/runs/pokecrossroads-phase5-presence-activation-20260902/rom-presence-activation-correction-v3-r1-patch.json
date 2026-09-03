@@ -1,0 +1,41 @@
+{
+  "base_revision": "3084b9d518eb4d757be0d839beabcdbdb6ec6d73",
+  "baseline_digest": "sha256:e9a0b5ca2520f37710f1b31690b87d4e9a6782545ef7a3d766f9fbd853aa2f7c",
+  "baseline_tree": "b6c941293901a7d28d78780c9a3f26776016f623",
+  "changed_files": [
+    {
+      "digest": "sha256:b163e91af99552d1daf76f977ef2250f829c73f45e4ef506ff5ab693b7912067",
+      "path": "src/coop/presence_runtime.c"
+    },
+    {
+      "digest": "sha256:b9d653d53d6efbd3eb038cf4c8ee5cca06ef5ab55ee11f4e341742431a980d92",
+      "path": "src/event_object_movement.c"
+    },
+    {
+      "digest": "sha256:0207bd4370df738ad0fd37a7ba7a107d94c147d1a4d2d00e26425ad670396ab7",
+      "path": "src/field_control_avatar.c"
+    },
+    {
+      "digest": "sha256:585bcef7b90e44402e2284884c2b6b1aba7f725a0b7ab6919eccaa8b95fba127",
+      "path": "test/coop/presence_runtime.c"
+    }
+  ],
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "dependency_patch_hashes": [
+    "sha256:eeb61d6827d07d73544bd3cb7f39b183e0dd94f4851af764b854872bf2093df9"
+  ],
+  "diff_digest": "sha256:b4504f509466ebf773ba7532fd1a0f40a1c3fc80521d05d3eb11ce0493710bc4",
+  "manifest_hash": "sha256:04a3522f0d8b33f1ab17f6c92dce5ab47d64dba91273469e3522639cbc8ab662",
+  "owned_paths": [
+    "src/coop/presence_runtime.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "test/coop/presence_runtime.c"
+  ],
+  "patch_sha256": "sha256:79ddb148429f2a0a09e84395fd68368548f1503cce79877534ba87baa39680ca",
+  "role": "integration-candidate-correction",
+  "schema_version": 1,
+  "unit_id": "phase5-rom-presence-activation",
+  "worker_id": "/root/rom_presence_correction_v3",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-correction-v3"
+}

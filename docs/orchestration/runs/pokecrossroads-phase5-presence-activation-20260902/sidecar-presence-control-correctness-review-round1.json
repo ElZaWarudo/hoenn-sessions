@@ -1,0 +1,42 @@
+{
+  "role": "reviewer",
+  "actor_id": "/root/runtime_launcher_test_fixer/inspect_probe_test_fixtures",
+  "status": "failed",
+  "contract_hash": "sha256:2fd90bbe5b75fe1e1884fc4dd74d0ea39ae5f16d2a46c8f4a91be6b1c6eb9174",
+  "patch_sha256": "sha256:5cbc08fc7786cbf850dc2450710ec3da4e1861d26b95ea0389daa3cfb816405c",
+  "diff_digest": "sha256:c7a23517182b57a877b4e68cf052ad30f6aa74c3aa4a6a435f67b24d04e0c775",
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "line": 786,
+      "evidence": "A legal Spawn-to-Despawn or Update-to-Spawn burst can silently lose a required lifecycle transition when the capacity-one lane is full.",
+      "required_fix": "Preserve ordered lifecycle transitions in a bounded lane or fail closed; coalesce only demonstrably replaceable updates and add exact overflow tests."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "line": 2101,
+      "evidence": "A queued pre-reboot presence command can be emitted after the replacement SESSION_READY and reset because the queue is neither drained nor generation-fenced.",
+      "required_fix": "Generation-fence or permanently invalidate old queued presence and prove the reboot interleaving deterministically."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-launcher/src/process.rs",
+      "line": 1895,
+      "evidence": "The candidate intentionally makes downstream launcher matches non-exhaustive, so it cannot land independently.",
+      "required_fix": "Integrate atomically with the launcher control-pump/event handling unit."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-sidecar/src/control.rs; coop/crates/coop-sidecar/src/server.rs",
+      "line": "572; routing tests",
+      "evidence": "The required strict new-record serialization, bounds, sequence, malformed-frame, quiescing, overflow, and reboot matrix is incomplete.",
+      "required_fix": "Add the complete protocol/routing regression matrix before certification."
+    }
+  ],
+  "validation": {
+    "cargo test -p coop-sidecar --all-features --locked": "passed",
+    "cargo check -p coop-launcher --all-targets --all-features --locked": "failed as expected due to atomic launcher dependency"
+  }
+}

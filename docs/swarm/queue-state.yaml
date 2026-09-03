@@ -1,5 +1,5 @@
 schema_version: 2
-updated_at: "2026-09-02T13:33:41Z"
+updated_at: '2026-09-03T21:09:41Z'
 mode: autonomous-team-flow
 documentation_gate:
   status: in_review
@@ -7,13 +7,13 @@ documentation_gate:
   approved_at: null
   initiative_contract: docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
   source_artifacts:
-    - docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
-    - docs/swarm/swarm-startup.md
-    - docs/swarm/queue-state.yaml
-    - docs/swarm/blockers.yaml
+  - docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
+  - docs/swarm/swarm-startup.md
+  - docs/swarm/queue-state.yaml
+  - docs/swarm/blockers.yaml
   approval_artifacts:
-    - docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
-    - docs/swarm/swarm-startup.md
+  - docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
+  - docs/swarm/swarm-startup.md
   approval_receipt: null
   approved_packet_digest: null
   approval_receipt_digest: null
@@ -23,31 +23,34 @@ documentation_gate:
     recorded_in: docs/swarm/swarm-startup.md
     remote_mutations: denied
   feedback_log:
-    - at: "2026-09-01T00:00:00Z"
-      by: user
-      summary: Authorized immediate local implementation and subagent dispatch; denied all remote mutation.
-    - at: "2026-09-01T00:00:01Z"
-      by: user
-      summary: Changed the engine basis to eonlynx/pokecrossroads.
-    - at: "2026-09-01T00:00:02Z"
-      by: user
-      summary: Required region-qualified identities, regional battle tiers, one cross-region world, and gated group travel.
+  - at: '2026-09-01T00:00:00Z'
+    by: user
+    summary: Authorized immediate local implementation and subagent dispatch; denied
+      all remote mutation.
+  - at: '2026-09-01T00:00:01Z'
+    by: user
+    summary: Changed the engine basis to eonlynx/pokecrossroads.
+  - at: '2026-09-01T00:00:02Z'
+    by: user
+    summary: Required region-qualified identities, regional battle tiers, one cross-region
+      world, and gated group travel.
 initiative:
   contract_path: docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md
   artifact_contract: ce-unified-plan/v1
   artifact_readiness: requirements-only
   implementation_authority: explicit-local-bypass
   next_player_visible_milestone: authenticated-littleroot-presence
-  shared_revision: "0085f127045523cffe30a6ea9cf6c82c18281746"
+  shared_revision: 54d5ebf9157154eab94bf4e7a090840cab00d98a
   shared_decisions:
-    - PokéCrossroads Beta-1.4 is the pinned engine basis.
-    - Region ordinals and all persistent identities are explicit and region-qualified.
-    - The current run is local-only; publication, deployment, and remote GitHub mutation are forbidden.
+  - PokéCrossroads Beta-1.4 is the pinned engine basis.
+  - Region ordinals and all persistent identities are explicit and region-qualified.
+  - The current run is local-only; publication, deployment, and remote GitHub mutation
+    are forbidden.
 compound_runs:
   pokecrossroads-save-interop-20260902:
     status: terminal-reconciled-with-protocol-gaps
-    source_revision: "fdb781cdccb751a035c6776e3d1fb139ad1ffd8e"
-    candidate_revision: "0085f127045523cffe30a6ea9cf6c82c18281746"
+    source_revision: fdb781cdccb751a035c6776e3d1fb139ad1ffd8e
+    candidate_revision: 0085f127045523cffe30a6ea9cf6c82c18281746
     candidate_diff_digest: sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4
     working_tree_state: implementation-committed-documentation-pending-local-commit
     terminal_artifact: docs/orchestration/runs/pokecrossroads-save-interop-20260902/save-interop-terminal-reconciliation.json
@@ -56,7 +59,12 @@ compound_runs:
     release_ready: false
 autonomy:
   mode: explicit-local-bypass
-  ledger_path: docs/swarm/swarm-startup.md
+  ledger_path: null
+  external_mutation_mode: denied
+  authorization_event:
+    source: active-goal
+    thread_id: 01a0666b-9cf2-7351-8cfd-efb469df4688
+    objective_digest: sha256:ba8639b1cb10f7f1e6162713832768c0db70895a0d3cee86b8774f673710625e
 source_artifacts:
   specification:
     path: C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md
@@ -71,45 +79,80 @@ units:
     status: release-ready
     depends_on: []
     blocked_by: []
-    affects_dependents: [regional-protocol, rom-netbridge]
-    owns: [build-audit, integration-seams, provenance]
+    affects_dependents:
+    - regional-protocol
+    - rom-netbridge
+    owns:
+    - build-audit
+    - integration-seams
+    - provenance
   regional-protocol:
     title: Region-safe shared realtime and world protocol
     status: release-ready
-    depends_on: [discovery]
+    depends_on:
+    - discovery
     blocked_by: []
-    affects_dependents: [server-slice, sidecar-slice, phase2-cloud-foundation]
-    owns: [Cargo.toml, rust-toolchain.toml, coop/crates/coop-protocol]
+    affects_dependents:
+    - server-slice
+    - sidecar-slice
+    - phase2-cloud-foundation
+    owns:
+    - Cargo.toml
+    - rust-toolchain.toml
+    - coop/crates/coop-protocol
   rom-netbridge:
     title: ROM NetBridge ABI and mGBA Lua bridge
     status: release-ready
-    depends_on: [discovery]
+    depends_on:
+    - discovery
     blocked_by: []
-    affects_dependents: [sidecar-slice, phase2-launcher-core]
-    owns: [include/coop, src/coop, test/coop, bridge, tools/generate_bridge_manifest.py, src/main.c]
+    affects_dependents:
+    - sidecar-slice
+    - phase2-launcher-core
+    owns:
+    - include/coop
+    - src/coop
+    - test/coop
+    - bridge
+    - tools/generate_bridge_manifest.py
+    - src/main.c
   server-slice:
     title: Region-aware authoritative loopback server slice
     status: release-ready
-    depends_on: [regional-protocol]
+    depends_on:
+    - regional-protocol
     blocked_by: []
-    affects_dependents: [phase2-server-auth-save]
-    owns: [coop/crates/coop-server, coop/migrations]
+    affects_dependents:
+    - phase2-server-auth-save
+    owns:
+    - coop/crates/coop-server
+    - coop/migrations
   sidecar-slice:
     title: Authenticated loopback sidecar transport
     status: release-ready
-    depends_on: [regional-protocol, rom-netbridge]
+    depends_on:
+    - regional-protocol
+    - rom-netbridge
     blocked_by: []
-    affects_dependents: [phase2-launcher-core]
-    owns: [coop/crates/coop-sidecar]
+    affects_dependents:
+    - phase2-launcher-core
+    owns:
+    - coop/crates/coop-sidecar
   phase2-cloud-foundation:
     title: Shared auth, lease, resume-package, snapshot, and signature contracts
     status: review-gated
     implementation_state: committed-local-checkpoint
     certification_status: review-gated-missing-worker-terminal
-    depends_on: [regional-protocol]
+    depends_on:
+    - regional-protocol
     blocked_by: []
-    affects_dependents: [phase2-server-auth-save, phase2-launcher-core]
-    owns: [Cargo.toml, Cargo.lock, coop/crates/coop-cloud]
+    affects_dependents:
+    - phase2-server-auth-save
+    - phase2-launcher-core
+    owns:
+    - Cargo.toml
+    - Cargo.lock
+    - coop/crates/coop-cloud
     execution:
       route: swarm
       lane: deep
@@ -121,41 +164,79 @@ units:
     status: review-gated
     implementation_state: committed-local-checkpoint
     certification_status: review-gated-missing-worker-terminal-and-diff-bound-certificates
-    depends_on: [phase2-cloud-foundation, server-slice]
-    blocked_by: []
-    residual_blockers: [BLK-FIREBASE, BLK-GAMEPLAY-LEDGER, BLK-FIRST-SNAPSHOT-CLONING]
-    affects_dependents: [phase2-integration]
-    owns: [coop/crates/coop-server, coop/crates/coop-server/migrations]
+    depends_on:
+    - phase2-cloud-foundation
+    - server-slice
+    blocked_by:
+    - BLK-GAMEPLAY-LEDGER
+    - BLK-FIRST-SNAPSHOT-CLONING
+    residual_blockers:
+    - BLK-FIREBASE
+    - BLK-GAMEPLAY-LEDGER
+    - BLK-FIRST-SNAPSHOT-CLONING
+    affects_dependents:
+    - phase2-integration
+    owns:
+    - coop/crates/coop-server
+    - coop/crates/coop-server/migrations
   phase2-launcher-core:
     title: Secure launcher core and supervised mGBA session CLI
     status: review-gated
     implementation_state: committed-local-checkpoint-with-production-lifecycle-gaps
     certification_status: review-gated-missing-worker-terminal-and-diff-bound-certificates
-    depends_on: [phase2-cloud-foundation, sidecar-slice]
-    blocked_by: []
-    residual_blockers: [BLK-MGBA-JOB, BLK-MGBA-CONFORMANCE]
-    affects_dependents: [phase2-integration]
-    owns: [coop/crates/coop-launcher]
+    depends_on:
+    - phase2-cloud-foundation
+    - sidecar-slice
+    blocked_by:
+    - BLK-MGBA-JOB
+    residual_blockers:
+    - BLK-MGBA-JOB
+    - BLK-MGBA-CONFORMANCE
+    affects_dependents:
+    - phase2-integration
+    owns:
+    - coop/crates/coop-launcher
   phase2-integration:
     title: Local cross-device auth/save/launcher vertical slice
     status: review-gated
     implementation_state: local-smoke-passed
     certification_status: review-gated-missing-worker-terminal-and-diff-bound-certificates
-    depends_on: [phase2-server-auth-save, phase2-launcher-core]
-    blocked_by: []
-    residual_blockers: [BLK-MGBA-CONFORMANCE]
+    depends_on:
+    - phase2-server-auth-save
+    - phase2-launcher-core
+    blocked_by:
+    - BLK-MGBA-CONFORMANCE
+    residual_blockers:
+    - BLK-MGBA-CONFORMANCE
     affects_dependents: []
-    owns: [integration-tests, local-smoke, operational-docs]
+    owns:
+    - integration-tests
+    - local-smoke
+    - operational-docs
   save-interop-rom-hardening:
     title: Byte-accurate CSP1 ROM persistence and generation-correlated checkpointing
-    status: terminal-local-checkpoint
+    status: review-gated
     implementation_state: committed-in-0085f127045523cffe30a6ea9cf6c82c18281746
     certification_status: review-gated-missing-worker-terminal-and-diff-bound-certificates
-    depends_on: [rom-netbridge, phase2-integration]
+    depends_on:
+    - rom-netbridge
+    - phase2-integration
     blocked_by: []
-    residual_blockers: [BLK-MGBA-CONFORMANCE]
-    affects_dependents: [distribution]
-    owns: [include/coop/save.h, src/coop/save.c, src/load_save.c, src/save.c, src/new_game.c, include/coop/net_bridge.h, src/coop/net_bridge.c, test/coop/save.c, test/coop/net_bridge.c, test/save.c]
+    residual_blockers:
+    - BLK-MGBA-CONFORMANCE
+    affects_dependents:
+    - distribution
+    owns:
+    - include/coop/save.h
+    - src/coop/save.c
+    - src/load_save.c
+    - src/save.c
+    - src/new_game.c
+    - include/coop/net_bridge.h
+    - src/coop/net_bridge.c
+    - test/coop/save.c
+    - test/coop/net_bridge.c
+    - test/save.c
     execution:
       route: swarm
       contract: docs/orchestration/runs/pokecrossroads-save-interop-20260902/rom-save-hardening-worker-contract.json
@@ -164,14 +245,24 @@ units:
       persisted_worker_terminal: null
   save-interop-server-hardening:
     title: Validated CSP1 snapshot lineage, quotas, and orphan cleanup
-    status: terminal-local-checkpoint
+    status: review-gated
     implementation_state: committed-in-0085f127045523cffe30a6ea9cf6c82c18281746
     certification_status: review-gated-missing-worker-terminal-and-diff-bound-certificates
-    depends_on: [phase2-server-auth-save, save-interop-rom-hardening]
+    depends_on:
+    - phase2-server-auth-save
+    - save-interop-rom-hardening
     blocked_by: []
-    residual_blockers: [BLK-FIREBASE, BLK-GAMEPLAY-LEDGER, BLK-FIRST-SNAPSHOT-CLONING]
-    affects_dependents: [distribution]
-    owns: [coop/crates/coop-server/src/phase2/saves.rs, coop/crates/coop-server/src/phase2/storage.rs, coop/crates/coop-server/src/phase2.rs, coop/crates/coop-server/tests/phase2_http.rs]
+    residual_blockers:
+    - BLK-FIREBASE
+    - BLK-GAMEPLAY-LEDGER
+    - BLK-FIRST-SNAPSHOT-CLONING
+    affects_dependents:
+    - distribution
+    owns:
+    - coop/crates/coop-server/src/phase2/saves.rs
+    - coop/crates/coop-server/src/phase2/storage.rs
+    - coop/crates/coop-server/src/phase2.rs
+    - coop/crates/coop-server/tests/phase2_http.rs
     execution:
       route: swarm
       contract: docs/orchestration/runs/pokecrossroads-save-interop-20260902/server-save-hardening-worker-contract.json
@@ -181,37 +272,60 @@ units:
   distribution:
     title: Publication and redistribution readiness
     status: blocked
-    depends_on: [phase2-integration]
-    blocked_by: [BLK-PROVENANCE, BLK-FIREBASE, BLK-MGBA-JOB, BLK-MGBA-CONFORMANCE, BLK-GAMEPLAY-LEDGER, BLK-FIRST-SNAPSHOT-CLONING]
+    depends_on:
+    - phase2-integration
+    blocked_by:
+    - BLK-PROVENANCE
+    - BLK-FIREBASE
+    - BLK-MGBA-JOB
+    - BLK-MGBA-CONFORMANCE
+    - BLK-GAMEPLAY-LEDGER
+    - BLK-FIRST-SNAPSHOT-CLONING
     affects_dependents: []
-    owns: [licensing, publication]
+    owns:
+    - licensing
+    - publication
   cloud-storage:
     title: Credential-backed PostgreSQL and Firebase production adapters
     status: deferred
-    depends_on: [phase2-server-auth-save]
-    blocked_by: [BLK-FIREBASE]
+    depends_on:
+    - phase2-server-auth-save
+    blocked_by:
+    - BLK-FIREBASE
     affects_dependents: []
-    owns: [production-database, production-object-storage]
+    owns:
+    - production-database
+    - production-object-storage
   phase4-group-travel:
     title: Authenticated symmetric groups and atomic regional travel
-    status: certified-local-checkpoint
+    status: release-ready
     implementation_state: integrated-local-checkpoint
     certification_status: correctness-and-security-certified-for-frozen-patch
-    depends_on: [phase2-cloud-foundation, phase2-server-auth-save]
+    depends_on:
+    - phase2-cloud-foundation
+    - phase2-server-auth-save
     blocked_by: []
-    residual_exclusions: [live-sidecar-warp-delivery, remote-avatar-rendering, realtime-invite-ui, reconnect-leave-lifecycle, production-postgresql-firebase-adapters, gameplay-progress-ingestion]
-    affects_dependents: [authenticated-littleroot-presence, multi-region-client-travel]
+    residual_exclusions:
+    - live-sidecar-warp-delivery
+    - remote-avatar-rendering
+    - realtime-invite-ui
+    - reconnect-leave-lifecycle
+    - production-postgresql-firebase-adapters
+    - gameplay-progress-ingestion
+    affects_dependents:
+    - authenticated-littleroot-presence
+    - multi-region-client-travel
     owns:
-      - coop/crates/coop-cloud/src/group.rs
-      - coop/crates/coop-cloud/src/ids.rs
-      - coop/crates/coop-cloud/src/lib.rs
-      - coop/crates/coop-server/src/phase2/group_travel.rs
-      - coop/crates/coop-server/src/phase2/auth.rs
-      - coop/crates/coop-server/src/phase2/storage.rs
-      - coop/crates/coop-server/src/phase2.rs
-      - coop/crates/coop-server/migrations/0002_phase2_group_travel.sql
-      - coop/crates/coop-server/tests/phase2_group_travel.rs
-      - coop/crates/coop-server/tests/phase2_migration_contract.rs
+    - coop/crates/coop-cloud/src/group.rs
+    - coop/crates/coop-cloud/src/ids.rs
+    - coop/crates/coop-cloud/src/lib.rs
+    - coop/crates/coop-server/src/phase2/group_travel.rs
+    - coop/crates/coop-server/src/phase2/auth.rs
+    - coop/crates/coop-server/src/phase2/storage.rs
+    - coop/crates/coop-server/src/phase2.rs
+    - coop/crates/coop-server/migrations/0002_phase2_group_travel.sql
+    - coop/crates/coop-server/tests/phase2_group_travel.rs
+    - coop/crates/coop-server/tests/phase2_migration_contract.rs
     execution:
       route: swarm
       lane: deep
@@ -228,96 +342,421 @@ units:
       integration_validation: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-main-integration-validation.json
   authenticated-littleroot-presence:
     title: End-to-end authenticated Littleroot presence
-    status: next-player-visible-milestone
+    status: planned
     implementation_state: server-realtime-ready-client-path-not-integrated
-    depends_on: [regional-protocol, rom-netbridge, phase2-integration]
+    depends_on:
+    - regional-protocol
+    - rom-netbridge
+    - phase2-integration
     blocked_by: []
-    affects_dependents: [multi-region-client-travel]
-    owns: [sidecar-websocket-client, rom-remote-object-events, presence-interpolation, avatar-interaction]
+    affects_dependents:
+    - multi-region-client-travel
+    owns:
+    - sidecar-websocket-client
+    - rom-remote-object-events
+    - presence-interpolation
+    - avatar-interaction
+  phase2-launcher-production:
+    title: Residual Windows launcher containment and completion proof
+    status: blocked
+    depends_on:
+    - phase2-launcher-core
+    blocked_by:
+    - BLK-MGBA-JOB
+    affects_dependents:
+    - distribution
+    owns:
+    - launcher-handle-relative-cleanup
+    - launcher-job-completion
+  phase2-mgba-conformance:
+    title: Stock mGBA ROM and Lua runtime conformance
+    status: blocked
+    depends_on:
+    - phase2-integration
+    blocked_by:
+    - BLK-MGBA-CONFORMANCE
+    affects_dependents:
+    - distribution
+    owns:
+    - interactive-mgba-conformance
+  gameplay-commit-ledger:
+    title: Server-authorized gameplay progression ledger
+    status: blocked
+    depends_on:
+    - phase2-server-auth-save
+    blocked_by:
+    - BLK-GAMEPLAY-LEDGER
+    affects_dependents:
+    - distribution
+    owns:
+    - progression-commit-authority
+  character-enrollment:
+    title: Trusted first-snapshot character enrollment
+    status: blocked
+    depends_on:
+    - phase2-server-auth-save
+    blocked_by:
+    - BLK-FIRST-SNAPSHOT-CLONING
+    affects_dependents:
+    - distribution
+    owns:
+    - character-enrollment-authority
+  phase5-launcher-realtime-http:
+    title: Strict authenticated launcher realtime ticket HTTP client
+    status: release-ready
+    implementation_state: integrated-in-54d5ebf9157154eab94bf4e7a090840cab00d98a
+    certification_status: correctness-security-and-targeted-validation-passed
+    depends_on:
+    - phase2-launcher-core
+    - sidecar-slice
+    blocked_by: []
+    affects_dependents:
+    - phase5-launcher-control-pump
+    - phase5-launcher-realtime-activation
+    owns:
+    - coop/crates/coop-launcher/src/lib.rs
+    - coop/crates/coop-launcher/src/realtime.rs
+    - coop/crates/coop-launcher/tests/realtime_http.rs
+    execution:
+      route: swarm
+      lane: deep
+      assurance: high
+      contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-fixer-contract.json
+      contract_hash: sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233
+      final_patch: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final.patch
+      final_patch_hash: sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee
+      final_diff_digest: sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b
+      correctness_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-correctness-certification.json
+      security_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-security-certification.json
+      targeted_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-targeted-validation-evidence.json
+      integration_reconciliation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-integration-reconciliation.json
+      integration_commit: 54d5ebf9157154eab94bf4e7a090840cab00d98a
+  phase5-sidecar-presence-control:
+    title: Bounded sidecar presence-control lifecycle
+    status: release-ready
+    implementation_state: correction-v4-integrated
+    certification_status: certified-local-checkpoint
+    documentation_gate_exemption:
+      basis: explicit-execution-ready-unit
+      authorization_event_digest: sha256:ba8639b1cb10f7f1e6162713832768c0db70895a0d3cee86b8774f673710625e
+    depends_on:
+    - sidecar-slice
+    - phase4-group-travel
+    blocked_by: []
+    affects_dependents:
+    - phase5-launcher-control-pump
+    - phase5-launcher-realtime-activation
+    owns:
+    - coop/crates/coop-sidecar/src/control.rs
+    - coop/crates/coop-sidecar/src/server.rs
+    execution:
+      route: swarm
+      lane: deep
+      assurance: high
+      finding_source: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correctness-review-round2.json
+      rejected_patch: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-final.patch
+      rejected_patch_hash: sha256:4d47ac721f5b57a87a454fddc1e8a49c14141d0371a511569bbbc8e121ed3c83
+      rejected_diff_digest: sha256:598e49eb847be8a04b6b5795f7aa03359c0576771a9504488e25004ad9201b7e
+      superseded_correction_contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-contract.json
+      superseded_correction_contract_hash: sha256:f98be8e90bf3bf0e71f29b3c498380fc5132b57f175929b75c878a80e4535c7c
+      superseded_correction_patch: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2.patch
+      superseded_correction_patch_hash: sha256:2e8e51db093c9e3c24c14c125d586995b947a337a0e12a4a9ebbea78271bafae
+      superseded_findings_registry: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v3-findings-registry.json
+      superseded_findings_registry_digest: sha256:37d4d7043cc33e79d825a851f669ec527da779f4dc48362ffe0f277fefae85ef
+      active_contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-contract.json
+      active_contract_hash: sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e
+      sealed_dependency_tree: 80daf109a7939972ec2f25d124b7505a10e31164
+      certified_candidate_tree: 02cbe614cc7c082c7b1a6727c834c0ccb35602e8
+      correction_patch: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4.patch
+      correction_patch_hash: sha256:730ba1fe087620507a72500175a665dbb30cc9e925eef2c5db8a659c1bb2e69e
+      correction_patch_manifest_hash: sha256:c5e4ee879da2f2cbc37258683b0b415c32a982cfc9a43b05855cfc7b6f6c7c9b
+      correction_diff_digest: sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3
+      findings_registry: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-findings-registry.json
+      findings_registry_digest: sha256:6b313c12a5c4010b4e6f19f5e23bb0b04c2b81e65091de6c74ce31abb11d9e4b
+      review_plan: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-review-plan.json
+      review_plan_hash: sha256:d5b815a6dce51a494b4dd5edaaa9d78073a3b1dc57462ea79db59c36cd06dcf6
+      correctness_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-correctness-certification.json
+      security_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-security-certification.json
+      targeted_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-targeted-validation-evidence.json
+      root_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-root-validation.json
+      integration_reconciliation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-final-integration-reconciliation.json
+      integration_commit: 871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2
+  phase5-rom-presence-activation:
+    title: Region-safe ROM presence publication and remote avatars
+    status: release-ready
+    implementation_state: integrated-in-da8372b5fdae4a022ef768d016e7e4a3ab571c30
+    certification_status: correctness-security-and-targeted-validation-passed
+    documentation_gate_exemption:
+      basis: explicit-execution-ready-unit
+      authorization_event_digest: sha256:ba8639b1cb10f7f1e6162713832768c0db70895a0d3cee86b8774f673710625e
+    depends_on:
+    - rom-netbridge
+    - phase4-group-travel
+    blocked_by: []
+    affects_dependents:
+    - phase5-launcher-realtime-activation
+    owns:
+    - include/coop/presence_runtime.h
+    - src/coop/presence_runtime.c
+    - include/coop/net_bridge.h
+    - src/coop/net_bridge.c
+    - src/coop/region.c
+    - test/coop/region.c
+    - src/overworld.c
+    - include/field_control_avatar.h
+    - src/field_control_avatar.c
+    - include/constants/event_objects.h
+    - src/event_object_movement.c
+    - test/coop/net_bridge.c
+    - test/coop/presence_runtime.c
+    - dist/bridge_manifest.json
+    execution:
+      route: swarm
+      lane: deep
+      assurance: high
+      original_contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-contract.json
+      original_contract_hash: sha256:a1459cfcf1a69e4ee8f5a9ac2d42b30867db522a19e17c848b18554ae0a6338d
+      final_contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-correction-v3-contract.json
+      final_contract_hash: sha256:3df5c5cdde02b103cc17f81f5efa1f78d452056bdb87fd0c0037366af16d78e8
+      final_diff_digest: sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44
+      certified_candidate_tree: 49207d93f1d7c83778baf4d45292fbf09c2f4e7a
+      rom_sha256: f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574
+      correctness_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-correction-v3-r2-correctness-certification.json
+      security_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-correction-v3-r2-security-certification.json
+      targeted_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-correction-v3-r2-targeted-validation-evidence.json
+      integration_reconciliation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-final-integration-reconciliation.json
+      integration_commit: da8372b5fdae4a022ef768d016e7e4a3ab571c30
+  phase5-launcher-control-pump:
+    title: Preemptible launcher-side presence control pump
+    status: release-ready
+    implementation_state: integrated-in-f6ce9d7b5416dfb192b256e047854f0b915347ea
+    certification_status: correctness-security-and-targeted-validation-passed
+    documentation_gate_exemption:
+      basis: explicit-execution-ready-unit
+      authorization_event_digest: sha256:ba8639b1cb10f7f1e6162713832768c0db70895a0d3cee86b8774f673710625e
+    depends_on:
+    - phase5-launcher-realtime-http
+    - phase5-sidecar-presence-control
+    blocked_by: []
+    affects_dependents:
+    - phase5-launcher-realtime-activation
+    owns:
+    - coop/crates/coop-launcher
+    execution:
+      route: swarm
+      lane: deep
+      assurance: high
+      active_contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-contract.json
+      active_contract_hash: sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36
+      sealed_dependency_tree: 34e944ac66193e7b09f6df89e452a5625c33ca54
+      discovery_checkpoint: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-discovery-checkpoint.json
+      final_diff_digest: sha256:25bdd962cde65c380288ac66065aab800b2774f98353bf69353df8122f086c7f
+      certified_candidate_tree: 87e81de81864fe413b4af8a6329cfc4bf3c7e7fe
+      correctness_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-r1-correctness-certification.json
+      security_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-r1-security-certification.json
+      targeted_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-r1-targeted-validation-evidence.json
+      integration_reconciliation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-final-integration-reconciliation.json
+      integration_commit: f6ce9d7b5416dfb192b256e047854f0b915347ea
+  phase5-launcher-realtime-activation:
+    title: One-attempt production launcher realtime lifecycle
+    status: release-ready
+    implementation_state: integrated-in-83d9acde9748081b5b384ce2a7b680441771810d
+    certification_status: correctness-security-and-targeted-validation-passed
+    depends_on:
+    - phase5-launcher-control-pump
+    - phase5-rom-presence-activation
+    blocked_by: []
+    affects_dependents: []
+    owns:
+    - coop/crates/coop-launcher/src/main.rs
+    - coop/crates/coop-launcher/src/realtime.rs
+    - coop/crates/coop-launcher/src/session.rs
+    execution:
+      route: swarm
+      lane: deep
+      assurance: high
+      contract: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-contract.json
+      contract_hash: sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f
+      final_diff_digest: sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade
+      certified_candidate_tree: 213f409049f98c750789c936c3ddc7cd29aa25e5
+      review_plan: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-correction-r5-review-plan.json
+      review_plan_hash: sha256:3e042c024eb1d894a08f59064f29ef0c386cd351dceedb4346c99c81c5ab96a5
+      correctness_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-correction-r5-correctness-certification.json
+      security_certification: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-correction-r5-security-certification.json
+      targeted_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-correction-r5-targeted-validation-evidence.json
+      root_validation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-correction-r5-root-validation.json
+      integration_reconciliation: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-final-integration-reconciliation.json
+      integration_commit: 83d9acde9748081b5b384ce2a7b680441771810d
 wave_history:
-  - id: phase1-vertical-slice-20260901
-    selected_units: [regional-protocol, rom-netbridge, server-slice, sidecar-slice]
-    result: certified-and-committed
-    verification_summary:
-      - Rust workspace tests, clippy, and formatting passed.
-      - ROM focused ARM tests and modern build passed.
-      - Python bridge-manifest and Lua bridge tests passed.
-  - id: phase2-auth-cloud-save-launcher-20260901
-    selected_units: [phase2-cloud-foundation, phase2-server-auth-save, phase2-launcher-core, phase2-integration]
-    staged_topology:
-      parent_unit_id: phase2-auth-cloud-save-launcher
-      artifact: docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/staged-decomposition.json
-      topology_hash: sha256:6d2d93d6c666d9e6288bf510de65cabb4ee442f5847295ed2dec7fa9d023df90
-      foundation_unit_id: phase2-cloud-foundation
-      foundation_baseline:
-        base_revision: "23553f5adff729614bc367427d03041d5224e1a9"
-        baseline_tree: "673e1fdb2c9bc5ee4a47de4ea1b8de563182ed98"
-        diff_digest: null
-        patch_manifest_hash: null
-        isolation_ref: docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-baseline.json
-    workspace_plan:
-      artifact: null
-      workspace_plan_hash: null
-      consolidation_invocation: null
-      invocations: []
-    concurrency:
-      implementer_cap: 2
-      cap_reasons: [shared-contract-foundation, auth-and-data-risk]
-      total_slots: 9
-      usable_slots: 8
-      reserve_slots: 1
-    result: local-checkpoint-reconciled-with-protocol-gaps
-    aggregate_verification:
-      owner: seneschal-root
-      fingerprint: sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4
-      fingerprint_artifact: docs/orchestration/runs/pokecrossroads-save-interop-20260902/save-interop-terminal-reconciliation.json
-      result: passed-with-runtime-exclusions
-    gates:
-      scope: local-checkpoint-complete
-      verification: passed
-      review: review-gated-missing-required-artifacts
-      security: review-gated-missing-required-artifacts
-      state: terminal-local-checkpoint
-    release_ready: false
-    residual_blockers: [BLK-MGBA-CONFORMANCE, BLK-FIREBASE, BLK-GAMEPLAY-LEDGER, BLK-PROVENANCE, BLK-MGBA-JOB, BLK-FIRST-SNAPSHOT-CLONING]
-  - id: save-interop-hardening-20260902
-    selected_units: [save-interop-rom-hardening, save-interop-server-hardening]
-    source_revision: "fdb781cdccb751a035c6776e3d1fb139ad1ffd8e"
-    candidate_revision: "0085f127045523cffe30a6ea9cf6c82c18281746"
-    result: terminal-reconciled-with-protocol-gaps
-    terminal_artifact: docs/orchestration/runs/pokecrossroads-save-interop-20260902/save-interop-terminal-reconciliation.json
-    aggregate_verification:
-      owner: seneschal-root
-      fingerprint: sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4
-      result: passed-with-runtime-exclusions
-    gates:
-      scope: local-checkpoint-complete
-      verification: passed
-      review: review-gated-missing-required-artifacts
-      security: review-gated-missing-required-artifacts
-      state: terminal-local-checkpoint
-    release_ready: false
-    residual_blockers: [BLK-MGBA-CONFORMANCE, BLK-FIREBASE, BLK-GAMEPLAY-LEDGER, BLK-PROVENANCE, BLK-MGBA-JOB, BLK-FIRST-SNAPSHOT-CLONING]
-  - id: phase4-group-travel-20260902
-    selected_units: [phase4-group-travel]
-    source_revision: "d643099cc60ce3a8d41bca4e73f3ec797286f722"
-    integration_base_revision: "e1dc9747"
-    result: certified-local-checkpoint
-    final_patch_hash: sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a
-    final_diff_digest: sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc
-    aggregate_verification:
-      owner: seneschal-root
-      artifact: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-main-integration-validation.json
-      result: passed
-    certifications:
-      correctness: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-correctness-certification.json
-      security: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-security-certification.json
-      result: approved
-    gates:
-      scope: local-checkpoint-complete
-      verification: passed
-      review: certified
-      security: certified
-      state: certified-local-checkpoint
-    release_ready: false
-    residual_exclusions: [live-sidecar-warp-delivery, remote-avatar-rendering, realtime-invite-ui, reconnect-leave-lifecycle, production-postgresql-firebase-adapters, gameplay-progress-ingestion]
+- id: phase1-vertical-slice-20260901
+  selected_units:
+  - regional-protocol
+  - rom-netbridge
+  - server-slice
+  - sidecar-slice
+  result: certified-and-committed
+  verification_summary:
+  - Rust workspace tests, clippy, and formatting passed.
+  - ROM focused ARM tests and modern build passed.
+  - Python bridge-manifest and Lua bridge tests passed.
+- id: phase2-auth-cloud-save-launcher-20260901
+  selected_units:
+  - phase2-cloud-foundation
+  - phase2-server-auth-save
+  - phase2-launcher-core
+  - phase2-integration
+  staged_topology:
+    parent_unit_id: phase2-auth-cloud-save-launcher
+    artifact: docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/staged-decomposition.json
+    topology_hash: sha256:6d2d93d6c666d9e6288bf510de65cabb4ee442f5847295ed2dec7fa9d023df90
+    foundation_unit_id: phase2-cloud-foundation
+    foundation_baseline:
+      base_revision: 23553f5adff729614bc367427d03041d5224e1a9
+      baseline_tree: 673e1fdb2c9bc5ee4a47de4ea1b8de563182ed98
+      diff_digest: null
+      patch_manifest_hash: null
+      isolation_ref: docs/orchestration/runs/pokecrossroads-cloud-coop-phase2-20260901/cloud-foundation-baseline.json
+  workspace_plan:
+    artifact: null
+    workspace_plan_hash: null
+    consolidation_invocation: null
+    invocations: []
+  concurrency:
+    implementer_cap: 2
+    cap_reasons:
+    - shared-contract-foundation
+    - auth-and-data-risk
+    total_slots: 9
+    usable_slots: 8
+    reserve_slots: 1
+  result: local-checkpoint-reconciled-with-protocol-gaps
+  aggregate_verification:
+    owner: seneschal-root
+    fingerprint: sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4
+    fingerprint_artifact: docs/orchestration/runs/pokecrossroads-save-interop-20260902/save-interop-terminal-reconciliation.json
+    result: passed-with-runtime-exclusions
+  gates:
+    scope: local-checkpoint-complete
+    verification: passed
+    review: review-gated-missing-required-artifacts
+    security: review-gated-missing-required-artifacts
+    state: terminal-local-checkpoint
+  release_ready: false
+  residual_blockers:
+  - BLK-MGBA-CONFORMANCE
+  - BLK-FIREBASE
+  - BLK-GAMEPLAY-LEDGER
+  - BLK-PROVENANCE
+  - BLK-MGBA-JOB
+  - BLK-FIRST-SNAPSHOT-CLONING
+- id: save-interop-hardening-20260902
+  selected_units:
+  - save-interop-rom-hardening
+  - save-interop-server-hardening
+  source_revision: fdb781cdccb751a035c6776e3d1fb139ad1ffd8e
+  candidate_revision: 0085f127045523cffe30a6ea9cf6c82c18281746
+  result: terminal-reconciled-with-protocol-gaps
+  terminal_artifact: docs/orchestration/runs/pokecrossroads-save-interop-20260902/save-interop-terminal-reconciliation.json
+  aggregate_verification:
+    owner: seneschal-root
+    fingerprint: sha256:301007851c0775ffe3bb94f606f5b47c492995b64fb95404991f5a69a230e5a4
+    result: passed-with-runtime-exclusions
+  gates:
+    scope: local-checkpoint-complete
+    verification: passed
+    review: review-gated-missing-required-artifacts
+    security: review-gated-missing-required-artifacts
+    state: terminal-local-checkpoint
+  release_ready: false
+  residual_blockers:
+  - BLK-MGBA-CONFORMANCE
+  - BLK-FIREBASE
+  - BLK-GAMEPLAY-LEDGER
+  - BLK-PROVENANCE
+  - BLK-MGBA-JOB
+  - BLK-FIRST-SNAPSHOT-CLONING
+- id: phase4-group-travel-20260902
+  selected_units:
+  - phase4-group-travel
+  source_revision: d643099cc60ce3a8d41bca4e73f3ec797286f722
+  integration_base_revision: e1dc9747
+  result: certified-local-checkpoint
+  final_patch_hash: sha256:b5071d3e606f5d8c05ef42c597e3fedad10bc1a5aa78ec2ce77d9bf12e37521a
+  final_diff_digest: sha256:f55f9c7f8b0b6008f761a0290592ddf85b7620ce9b8acdeb3086f370e339eecc
+  aggregate_verification:
+    owner: seneschal-root
+    artifact: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-main-integration-validation.json
+    result: passed
+  certifications:
+    correctness: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-correctness-certification.json
+    security: docs/orchestration/runs/pokecrossroads-phase4-group-travel-20260902/group-travel-final-v2-security-certification.json
+    result: approved
+  gates:
+    scope: local-checkpoint-complete
+    verification: passed
+    review: certified
+    security: certified
+    state: certified-local-checkpoint
+  release_ready: false
+  residual_exclusions:
+  - live-sidecar-warp-delivery
+  - remote-avatar-rendering
+  - realtime-invite-ui
+  - reconnect-leave-lifecycle
+  - production-postgresql-firebase-adapters
+  - gameplay-progress-ingestion
+- id: pokecrossroads-phase5-presence-resume-20260903
+  selected_units:
+  - phase5-launcher-realtime-http
+  - phase5-sidecar-presence-control
+  - phase5-rom-presence-activation
+  - phase5-launcher-control-pump
+  - phase5-launcher-realtime-activation
+  source_revision: 00a030b2f213e423047115b3f197fe114d06e86e
+  result: certified-local-checkpoint
+  workspace_plan:
+    artifact: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/phase5-resume-compiled-workspaces.json
+    workspace_plan_hash: sha256:b78a0ceb2e28c96cc3ad4f931a7b9f77cb08611c52b6a2cde25c546289d9c8df
+    consolidation_invocation: phase5-integrator-v2
+    invocations:
+    - launcher-http-candidate-v2
+    - launcher-http-correctness-v2
+    - launcher-http-security-v2
+    - launcher-http-validation-v2
+    - sidecar-control-candidate-v2
+    - sidecar-control-discovery-v2
+    - sidecar-control-correction-v2
+    - sidecar-control-correctness-v2
+    - sidecar-control-security-v2
+    - sidecar-control-validation-v2
+    - rom-presence-candidate-v2
+    - rom-presence-discovery-v2
+    - rom-presence-continuation-v2
+    - rom-presence-correctness-v2
+    - rom-presence-security-v2
+    - rom-presence-validation-v2
+    - phase5-integrator-v2
+  concurrency:
+    implementer_cap: 2
+    total_slots: 9
+    usable_slots: 8
+    reserve_slots: 1
+  gates:
+    scope: local-checkpoint-complete
+    verification: passed
+    review: certified
+    security: certified
+    state: certified-local-checkpoint
+  release_ready: false
+  aggregate_verification:
+    owner: seneschal-root
+    result: passed
+    artifact: docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-activation-v2-correction-r5-root-validation.json
+    final_integration_commit: 83d9acde9748081b5b384ce2a7b680441771810d
+  residual_exclusions:
+  - real-stock-mgba-lua-timing-conformance
+  - production-postgresql-firebase-adapters
+  - public-redistribution-provenance
+  - gameplay-progress-ingestion
+  - trusted-first-snapshot-enrollment
+  - strict-job-descendant-emptiness-proof

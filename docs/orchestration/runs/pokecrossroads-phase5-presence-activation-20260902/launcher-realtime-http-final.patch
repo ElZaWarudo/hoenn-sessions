@@ -1,0 +1,966 @@
+diff --git a/coop/crates/coop-launcher/src/lib.rs b/coop/crates/coop-launcher/src/lib.rs
+index 5adcc1918e418b0e34d820efc177ffc50ea28e79..f9a6ab5c380532ece13b442c5680bd266700166c 100644
+--- a/coop/crates/coop-launcher/src/lib.rs
++++ b/coop/crates/coop-launcher/src/lib.rs
+@@ -7,6 +7,7 @@ pub mod compat;
+ pub mod epoch;
+ pub mod keychain;
+ pub mod process;
++pub mod realtime;
+ pub mod session;
+ #[cfg(windows)]
+ pub mod windows_mgba_supervisor;
+@@ -21,6 +22,9 @@ pub use process::{
+     ShutdownDisposition, ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
+     materialize_bridge_session,
+ };
++pub use realtime::{
++    REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES, RealtimeApi, RealtimeFuture, RealtimeHttpError,
++};
+ pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};
+ 
+ use std::time::Duration;
+@@ -96,6 +100,7 @@ impl ReqwestCloudApi {
+         }
+         validate_endpoint(&base)?;
+         let client = Client::builder()
++            .no_proxy()
+             .redirect(reqwest::redirect::Policy::none())
+             .timeout(Duration::from_secs(15))
+             .build()
+diff --git a/coop/crates/coop-launcher/src/realtime.rs b/coop/crates/coop-launcher/src/realtime.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a7cdad9ec51a839c3a667c1427c82f89379650d
+--- /dev/null
++++ b/coop/crates/coop-launcher/src/realtime.rs
+@@ -0,0 +1,286 @@
++//! Credential-safe HTTP minting for one authenticated realtime attempt.
++//!
++//! The launcher owns the HTTP request and derives the WebSocket endpoint from
++//! its already validated cloud base.  The sidecar still owns the WebSocket
++//! transport: this module only hands it one consuming [`RealtimeGrant`].
++
++use std::{
++    future::Future,
++    pin::Pin,
++    time::{SystemTime, UNIX_EPOCH},
++};
++
++use coop_cloud::{
++    MintRealtimeTicketRequest, MintRealtimeTicketResponse, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES,
++    UnixTimestampMillis,
++};
++use coop_sidecar::{RealtimeEndpoint, RealtimeGrant};
++use reqwest::{Method, StatusCode, header::CONTENT_TYPE};
++use thiserror::Error;
++
++use crate::{AuthSession, HttpClientError, ReqwestCloudApi};
++
++/// Maximum assembled realtime ticket response body, in bytes.
++pub const REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES: usize = 8 * 1024;
++
++/// Stable errors returned by the launcher realtime HTTP seam.
++///
++/// These variants intentionally do not carry response bodies, URLs, header
++/// values, parser diagnostics, or transport error text.  In particular, a
++/// minted ticket never appears in an error or debug representation.
++#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
++pub enum RealtimeHttpError {
++    #[error("realtime endpoint is invalid")]
++    InvalidEndpoint,
++    #[error("authentication session is no longer active")]
++    SessionClosed,
++    #[error("realtime request is invalid")]
++    InvalidRequest,
++    #[error("realtime request failed")]
++    RequestFailed,
++    #[error("realtime response was unauthorized")]
++    Unauthorized,
++    #[error("realtime response was rejected")]
++    ResponseRejected,
++    #[error("realtime response was invalid or too large")]
++    InvalidResponse,
++    #[error("realtime response did not match its request")]
++    CorrelationFailed,
++    #[error("realtime grant is invalid")]
++    InvalidGrant,
++    #[error("realtime grant has expired")]
++    ExpiredGrant,
++}
++
++/// A boxed future used by the additive realtime API trait.
++pub type RealtimeFuture<'a, T> =
++    Pin<Box<dyn Future<Output = Result<T, RealtimeHttpError>> + Send + 'a>>;
++
++/// Additive launcher API for minting one realtime grant.
++pub trait RealtimeApi: Send + Sync {
++    /// Mints exactly one bounded HTTP ticket and consumes it into a grant.
++    ///
++    /// The grant clock is sampled after the response has been received and
++    /// decoded, so request latency cannot make a valid server-issued 30-second
++    /// grant appear too long.  No retry or refresh is performed by this
++    /// method.
++    fn mint_realtime<'a>(
++        &'a self,
++        auth: &'a AuthSession,
++        request: MintRealtimeTicketRequest,
++    ) -> RealtimeFuture<'a, RealtimeGrant>;
++}
++
++impl ReqwestCloudApi {
++    /// Derives the canonical realtime WebSocket endpoint from this API's
++    /// validated HTTP(S) base.
++    ///
++    /// HTTPS bases become WSS and literal-loopback HTTP bases become WS.  The
++    /// authority and any explicit port are retained, while the path is fixed
++    /// to `/v1/realtime` and cannot receive query or fragment data.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeHttpError::InvalidEndpoint`] if the endpoint cannot
++    /// be represented by the sidecar's validated realtime endpoint type.
++    pub fn realtime_endpoint(&self) -> Result<RealtimeEndpoint, RealtimeHttpError> {
++        let mut endpoint = self.base.clone();
++        let scheme = match endpoint.scheme() {
++            "https" => "wss",
++            "http" if matches!(endpoint.host_str(), Some("127.0.0.1" | "[::1]" | "::1")) => "ws",
++            _ => return Err(RealtimeHttpError::InvalidEndpoint),
++        };
++        endpoint
++            .set_scheme(scheme)
++            .map_err(|()| RealtimeHttpError::InvalidEndpoint)?;
++        endpoint.set_path("/v1/realtime");
++        endpoint.set_query(None);
++        endpoint.set_fragment(None);
++        RealtimeEndpoint::new(endpoint.as_str()).map_err(|_| RealtimeHttpError::InvalidEndpoint)
++    }
++
++    /// Mints and consumes one authenticated realtime grant.
++    ///
++    /// Exactly one POST is attempted.  The request uses the active access
++    /// token as its Authorization bearer and the strict mint DTO as its JSON
++    /// body.  The response is bounded before decoding, correlated before its
++    /// non-Clone ticket is moved, and then validated against a clock sampled
++    /// after the response is decoded.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeHttpError::Unauthorized`] only for HTTP 401.  All
++    /// other HTTP, transport, parse, bound, correlation, and grant failures
++    /// use stable, secret-free variants.
++    pub async fn mint_realtime(
++        &self,
++        auth: &AuthSession,
++        request: MintRealtimeTicketRequest,
++    ) -> Result<RealtimeGrant, RealtimeHttpError> {
++        let endpoint = self.realtime_endpoint()?;
++        let url = self
++            .url("v1/realtime/tickets")
++            .map_err(|_| RealtimeHttpError::InvalidEndpoint)?;
++        let body = serde_json::to_vec(&request).map_err(|_| RealtimeHttpError::InvalidRequest)?;
++        if body.len() > REALTIME_TICKET_REQUEST_BODY_MAX_BYTES {
++            return Err(RealtimeHttpError::InvalidRequest);
++        }
++        let http_request = self
++            .authenticated(Method::POST, url, auth)
++            .map_err(|error| map_http_error(&error))?
++            .header(CONTENT_TYPE, "application/json")
++            .body(body);
++        let response = http_request
++            .send()
++            .await
++            .map_err(|_| RealtimeHttpError::RequestFailed)?;
++        if response.status() == StatusCode::UNAUTHORIZED {
++            return Err(RealtimeHttpError::Unauthorized);
++        }
++        if !response.status().is_success() {
++            return Err(RealtimeHttpError::ResponseRejected);
++        }
++        let bytes = crate::bounded_body(response, REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES)
++            .await
++            .map_err(|error| map_body_error(&error))?;
++        let response: MintRealtimeTicketResponse =
++            serde_json::from_slice(&bytes).map_err(|_| RealtimeHttpError::InvalidResponse)?;
++        if !response.matches_request(&request) {
++            return Err(RealtimeHttpError::CorrelationFailed);
++        }
++        // Sample only after the complete response has arrived and passed
++        // strict decoding/correlation.  This keeps server-issued TTL bounds
++        // independent of HTTP request and response latency.
++        grant_from_response(endpoint, &request, response, unix_now())
++    }
++
++    /// Alias for [`Self::mint_realtime`] emphasizing the consuming result.
++    ///
++    /// # Errors
++    ///
++    /// Returns the same stable errors as [`Self::mint_realtime`].
++    pub async fn mint_realtime_grant(
++        &self,
++        auth: &AuthSession,
++        request: MintRealtimeTicketRequest,
++    ) -> Result<RealtimeGrant, RealtimeHttpError> {
++        self.mint_realtime(auth, request).await
++    }
++}
++
++impl RealtimeApi for ReqwestCloudApi {
++    fn mint_realtime<'a>(
++        &'a self,
++        auth: &'a AuthSession,
++        request: MintRealtimeTicketRequest,
++    ) -> RealtimeFuture<'a, RealtimeGrant> {
++        Box::pin(async move { self.mint_realtime(auth, request).await })
++    }
++}
++
++fn grant_from_response(
++    endpoint: RealtimeEndpoint,
++    request: &MintRealtimeTicketRequest,
++    response: MintRealtimeTicketResponse,
++    now: UnixTimestampMillis,
++) -> Result<RealtimeGrant, RealtimeHttpError> {
++    // Correlation is deliberately repeated in this consuming seam so its
++    // ownership contract remains explicit if another launcher caller uses it
++    // later.  The public adapter already performs this check before calling
++    // here, and this function never exposes the ticket.
++    if !response.matches_request(request) {
++        return Err(RealtimeHttpError::CorrelationFailed);
++    }
++    let (_, _, ticket, expires_at) = response.into_parts();
++    RealtimeGrant::with_now(ticket, endpoint, expires_at, now).map_err(map_grant_error)
++}
++
++fn unix_now() -> UnixTimestampMillis {
++    let millis = SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .unwrap_or_default()
++        .as_millis();
++    UnixTimestampMillis::new(u64::try_from(millis).unwrap_or(u64::MAX))
++}
++
++fn map_http_error(error: &HttpClientError) -> RealtimeHttpError {
++    match error {
++        HttpClientError::InvalidEndpoint => RealtimeHttpError::InvalidEndpoint,
++        HttpClientError::SessionClosed => RealtimeHttpError::SessionClosed,
++        HttpClientError::Transport(_) | HttpClientError::Response | HttpClientError::Status(_) => {
++            RealtimeHttpError::RequestFailed
++        }
++    }
++}
++
++fn map_body_error(error: &HttpClientError) -> RealtimeHttpError {
++    match error {
++        HttpClientError::Transport(_) => RealtimeHttpError::RequestFailed,
++        _ => RealtimeHttpError::InvalidResponse,
++    }
++}
++
++fn map_grant_error(error: coop_sidecar::RealtimeError) -> RealtimeHttpError {
++    match error {
++        coop_sidecar::RealtimeError::ExpiredGrant => RealtimeHttpError::ExpiredGrant,
++        coop_sidecar::RealtimeError::InvalidGrant
++        | coop_sidecar::RealtimeError::InvalidEndpoint
++        | coop_sidecar::RealtimeError::InvalidState => RealtimeHttpError::InvalidGrant,
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use coop_cloud::{
++        BridgeAbiVersion, CharacterId, ClientInstanceId, GameBuildId, MgbaVersion,
++        MintRealtimeTicketRequest, MintRealtimeTicketResponse, ProtocolVersion,
++        REALTIME_TICKET_TTL_MS, RealtimeTicket, RuntimeBuildIdentity, RuntimeLeaseFence,
++        SessionEpoch, SessionId, Sha256Digest, StableRuntimeSession,
++    };
++    use uuid::Uuid;
++
++    fn runtime() -> RuntimeLeaseFence {
++        let session = StableRuntimeSession::new(
++            SessionId::new(Uuid::from_u128(101)).expect("session id"),
++            CharacterId::new(Uuid::from_u128(102)).expect("character id"),
++            SessionEpoch::new(103).expect("session epoch"),
++            ClientInstanceId::new(Uuid::from_u128(104)).expect("client id"),
++        );
++        let build = RuntimeBuildIdentity::new(
++            GameBuildId::new("launcher-realtime-test").expect("build id"),
++            Sha256Digest::from_bytes([9; 32]),
++            MgbaVersion::new("0.11.3").expect("mGBA version"),
++            BridgeAbiVersion::new(1).expect("bridge ABI"),
++            ProtocolVersion::new(1).expect("protocol version"),
++        );
++        RuntimeLeaseFence::new(session, build)
++    }
++
++    fn consume_at(now: u64, expires_at: u64) -> Result<RealtimeGrant, RealtimeHttpError> {
++        let request = MintRealtimeTicketRequest::v1(runtime());
++        let response = MintRealtimeTicketResponse::v1(
++            request.runtime().clone(),
++            RealtimeTicket::from_bytes([31; 32]).expect("ticket"),
++            UnixTimestampMillis::new(expires_at),
++        )
++        .expect("response");
++        let endpoint = RealtimeEndpoint::new("ws://127.0.0.1:3000/v1/realtime").expect("endpoint");
++        grant_from_response(endpoint, &request, response, UnixTimestampMillis::new(now))
++    }
++
++    #[test]
++    fn fixed_clock_private_seam_covers_expired_exact_and_excessive_ttl() {
++        let now = 1_000_000;
++        assert!(matches!(
++            consume_at(now, now - 1),
++            Err(RealtimeHttpError::ExpiredGrant)
++        ));
++        let exact = consume_at(now, now + REALTIME_TICKET_TTL_MS).expect("exact TTL grant");
++        assert_eq!(exact.expires_at().value(), now + REALTIME_TICKET_TTL_MS);
++        assert!(matches!(
++            consume_at(now, now + REALTIME_TICKET_TTL_MS + 1),
++            Err(RealtimeHttpError::InvalidGrant)
++        ));
++    }
++}
+diff --git a/coop/crates/coop-launcher/tests/realtime_http.rs b/coop/crates/coop-launcher/tests/realtime_http.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..5def04fb64a7568e9dc948641ffd2ffb391b59f7
+--- /dev/null
++++ b/coop/crates/coop-launcher/tests/realtime_http.rs
+@@ -0,0 +1,638 @@
++use std::{
++    env,
++    process::Stdio,
++    time::{Duration, SystemTime, UNIX_EPOCH},
++};
++
++use coop_cloud::{
++    AccessToken, BridgeAbiVersion, CharacterId, ClientInstanceId, GameBuildId, LoginRequest,
++    LoginResponse, LogoutRequest, LogoutResponse, MgbaVersion, MintRealtimeTicketRequest,
++    MintRealtimeTicketResponse, Password, ProtocolVersion, RealtimeTicket, RefreshFamilyId,
++    RefreshRequest, RefreshResponse, RefreshToken, RuntimeBuildIdentity, RuntimeLeaseFence,
++    SessionEpoch, SessionId, Sha256Digest, StableRuntimeSession, UnixTimestampMillis, UserId,
++};
++use coop_launcher::{
++    AuthApi, AuthError, AuthSession, REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES, RealtimeHttpError,
++    RefreshTokenStore, ReqwestCloudApi,
++};
++use tokio::{
++    io::{AsyncReadExt, AsyncWriteExt},
++    net::{TcpListener, TcpStream},
++};
++use uuid::Uuid;
++
++#[derive(Default)]
++struct TestKeychain;
++
++impl RefreshTokenStore for TestKeychain {
++    fn load(
++        &self,
++        _service: &str,
++        _username: &str,
++    ) -> Result<Option<RefreshToken>, coop_launcher::KeychainError> {
++        Ok(None)
++    }
++
++    fn store(
++        &self,
++        _service: &str,
++        _username: &str,
++        _token: &RefreshToken,
++    ) -> Result<(), coop_launcher::KeychainError> {
++        Ok(())
++    }
++
++    fn delete(&self, _service: &str, _username: &str) -> Result<(), coop_launcher::KeychainError> {
++        Ok(())
++    }
++}
++
++#[derive(Clone)]
++struct TestAuthApi {
++    response: LoginResponse,
++}
++
++impl AuthApi for TestAuthApi {
++    fn login(&self, _request: LoginRequest) -> coop_launcher::auth::AuthFuture<'_, LoginResponse> {
++        let response = self.response.clone();
++        Box::pin(async move { Ok(response) })
++    }
++
++    fn refresh(
++        &self,
++        _request: RefreshRequest,
++    ) -> coop_launcher::auth::AuthFuture<'_, RefreshResponse> {
++        Box::pin(async { Err(AuthError::Transport) })
++    }
++
++    fn logout(
++        &self,
++        _request: LogoutRequest,
++    ) -> coop_launcher::auth::AuthFuture<'_, LogoutResponse> {
++        Box::pin(async { Ok(LogoutResponse::default()) })
++    }
++}
++
++fn runtime() -> RuntimeLeaseFence {
++    let session = StableRuntimeSession::new(
++        SessionId::new(Uuid::from_u128(1)).expect("session id"),
++        CharacterId::new(Uuid::from_u128(2)).expect("character id"),
++        SessionEpoch::new(3).expect("session epoch"),
++        ClientInstanceId::new(Uuid::from_u128(4)).expect("client id"),
++    );
++    let build = RuntimeBuildIdentity::new(
++        GameBuildId::new("emerald-coop-test").expect("build id"),
++        Sha256Digest::from_bytes([7; 32]),
++        MgbaVersion::new("0.11.3").expect("mGBA version"),
++        BridgeAbiVersion::new(1).expect("bridge ABI"),
++        ProtocolVersion::new(1).expect("protocol version"),
++    );
++    RuntimeLeaseFence::new(session, build)
++}
++
++fn login_response() -> LoginResponse {
++    LoginResponse::new(
++        UserId::new(Uuid::from_u128(5)).expect("user id"),
++        CharacterId::new(Uuid::from_u128(2)).expect("character id"),
++        AccessToken::new("access-secret").expect("access token"),
++        RefreshToken::new("refresh-secret").expect("refresh token"),
++        RefreshFamilyId::new(Uuid::from_u128(6)).expect("refresh family"),
++        UnixTimestampMillis::new(9_000_000_000_000),
++        UnixTimestampMillis::new(9_000_000_100_000),
++    )
++    .expect("login response")
++}
++
++async fn auth_session() -> AuthSession {
++    let api = TestAuthApi {
++        response: login_response(),
++    };
++    AuthSession::login(
++        &api,
++        &TestKeychain,
++        "ash",
++        Password::new("password").expect("password"),
++    )
++    .await
++    .expect("auth session")
++}
++
++async fn read_request(stream: &mut TcpStream) -> (String, Vec<u8>) {
++    let mut head = Vec::new();
++    loop {
++        let mut byte = [0_u8; 1];
++        stream.read_exact(&mut byte).await.expect("request header");
++        head.push(byte[0]);
++        assert!(head.len() <= 16 * 1024, "request header bound");
++        if head.ends_with(b"\r\n\r\n") {
++            break;
++        }
++    }
++    let text = String::from_utf8(head.clone()).expect("request headers are ASCII");
++    let length = text
++        .lines()
++        .find_map(|line| {
++            line.strip_prefix("Content-Length:")
++                .or_else(|| line.strip_prefix("content-length:"))
++        })
++        .and_then(|value| value.trim().parse::<usize>().ok())
++        .unwrap_or(0);
++    assert!(length <= 8 * 1024, "request body bound");
++    let mut body = vec![0_u8; length];
++    stream.read_exact(&mut body).await.expect("request body");
++    (text, body)
++}
++
++async fn response(stream: &mut TcpStream, status: &str, body: &[u8]) {
++    let header = format!(
++        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n",
++        body.len()
++    );
++    stream
++        .write_all(header.as_bytes())
++        .await
++        .expect("response header");
++    stream.write_all(body).await.expect("response body");
++}
++
++async fn chunked_response(stream: &mut TcpStream, status: &str, chunks: &[Vec<u8>]) {
++    let header = format!(
++        "HTTP/1.1 {status}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n"
++    );
++    stream
++        .write_all(header.as_bytes())
++        .await
++        .expect("chunked response header");
++    for chunk in chunks {
++        stream
++            .write_all(format!("{:X}\r\n", chunk.len()).as_bytes())
++            .await
++            .expect("chunk size");
++        stream.write_all(chunk).await.expect("chunk body");
++        stream.write_all(b"\r\n").await.expect("chunk terminator");
++    }
++    stream.write_all(b"0\r\n\r\n").await.expect("chunk end");
++}
++
++async fn redirect_response(stream: &mut TcpStream, target_port: u16) {
++    let header = format!(
++        "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{target_port}/v1/realtime/tickets\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
++    );
++    stream
++        .write_all(header.as_bytes())
++        .await
++        .expect("redirect response");
++}
++
++fn header_values<'a>(headers: &'a str, name: &str) -> Vec<&'a str> {
++    headers
++        .lines()
++        .skip(1)
++        .filter_map(|line| line.split_once(':'))
++        .filter(|(field, _)| field.eq_ignore_ascii_case(name))
++        .map(|(_, value)| value.trim())
++        .collect()
++}
++
++fn expected_response(request: &MintRealtimeTicketRequest, now: u64) -> Vec<u8> {
++    serde_json::to_vec(
++        &MintRealtimeTicketResponse::v1(
++            request.runtime().clone(),
++            RealtimeTicket::from_bytes([11; 32]).expect("ticket"),
++            UnixTimestampMillis::new(now),
++        )
++        .expect("mint response"),
++    )
++    .expect("response JSON")
++}
++
++fn padded_response(request: &MintRealtimeTicketRequest, now: u64, length: usize) -> Vec<u8> {
++    let mut body = expected_response(request, now);
++    assert!(
++        body.len() <= length,
++        "test response fixture must fit its bound"
++    );
++    body.resize(length, b' ');
++    body
++}
++
++fn unix_now() -> u64 {
++    u64::try_from(
++        SystemTime::now()
++            .duration_since(UNIX_EPOCH)
++            .expect("system clock")
++            .as_millis(),
++    )
++    .expect("timestamp fits")
++}
++
++#[test]
++fn endpoint_derivation_is_canonical_and_preserves_authority() {
++    let secure = ReqwestCloudApi::new("https://cloud.example:8443").expect("secure base");
++    assert_eq!(
++        secure
++            .realtime_endpoint()
++            .expect("secure endpoint")
++            .as_str(),
++        "wss://cloud.example:8443/v1/realtime"
++    );
++
++    let loopback = ReqwestCloudApi::new("http://127.0.0.1:43127").expect("loopback base");
++    assert_eq!(
++        loopback
++            .realtime_endpoint()
++            .expect("loopback endpoint")
++            .as_str(),
++        "ws://127.0.0.1:43127/v1/realtime"
++    );
++    let default_loopback = ReqwestCloudApi::new("http://127.0.0.1").expect("default loopback");
++    let default_endpoint = default_loopback.realtime_endpoint();
++    assert!(
++        default_endpoint.is_ok(),
++        "default endpoint: {default_endpoint:?}"
++    );
++    assert_eq!(
++        default_endpoint
++            .expect("default loopback endpoint")
++            .as_str(),
++        "ws://127.0.0.1/v1/realtime"
++    );
++    assert!(ReqwestCloudApi::new("https://cloud.example?endpoint=evil").is_err());
++}
++
++#[tokio::test]
++async fn mint_uses_one_exact_authenticated_json_post_and_consumes_grant() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++    let port = listener.local_addr().expect("listener address").port();
++    let request = MintRealtimeTicketRequest::v1(runtime());
++    let expected_ticket = RealtimeTicket::from_bytes([11; 32]).expect("ticket");
++    let expected_ticket_text = expected_ticket.expose_secret().to_owned();
++    let response_request = request.clone();
++    let expected_request = serde_json::to_value(&request).expect("request JSON");
++    let server = tokio::spawn(async move {
++        let (mut stream, _) = listener.accept().await.expect("mint connection");
++        let (headers, body_bytes) = read_request(&mut stream).await;
++        assert!(headers.starts_with("POST /v1/realtime/tickets HTTP/1.1\r\n"));
++        assert_eq!(
++            header_values(&headers, "Authorization"),
++            ["Bearer access-secret"]
++        );
++        assert_eq!(header_values(&headers, "Authorization").len(), 1);
++        assert_eq!(
++            header_values(&headers, "Content-Type"),
++            ["application/json"]
++        );
++        assert!(header_values(&headers, "Sec-WebSocket-Protocol").is_empty());
++        assert_eq!(
++            serde_json::from_slice::<serde_json::Value>(&body_bytes).expect("body JSON"),
++            expected_request
++        );
++        assert!(
++            !body_bytes
++                .windows(b"access-secret".len())
++                .any(|window| window == b"access-secret")
++        );
++        // The cloud samples issuance before its response is delayed. A
++        // caller-side pre-await clock would see more than the fixed TTL.
++        let issued_at = unix_now();
++        tokio::time::sleep(Duration::from_millis(50)).await;
++        let body = expected_response(
++            &response_request,
++            issued_at + coop_cloud::REALTIME_TICKET_TTL_MS,
++        );
++        response(&mut stream, "200 OK", &body).await;
++    });
++
++    let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{port}")).expect("API");
++    let auth = auth_session().await;
++    let grant = api.mint_realtime(&auth, request).await.expect("grant");
++    assert_eq!(
++        grant.endpoint().as_str(),
++        format!("ws://127.0.0.1:{port}/v1/realtime")
++    );
++    assert!(grant.expires_at().value() > unix_now());
++    let rendered = format!("{grant:?}");
++    assert!(rendered.contains("[REDACTED]"));
++    assert!(!rendered.contains("access-secret"));
++    assert!(!rendered.contains(&expected_ticket_text));
++    server.await.expect("server task");
++}
++
++#[tokio::test]
++async fn ambient_proxy_does_not_intercept_loopback_mint() {
++    if env::var_os("REALTIME_PROXY_CHILD").is_some() {
++        let port = env::var("REALTIME_ORIGIN_PORT")
++            .expect("origin port")
++            .parse::<u16>()
++            .expect("origin port number");
++        let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{port}")).expect("API");
++        let auth = auth_session().await;
++        api.mint_realtime(&auth, MintRealtimeTicketRequest::v1(runtime()))
++            .await
++            .expect("loopback mint should bypass configured proxy");
++        return;
++    }
++
++    let origin = TcpListener::bind(("127.0.0.1", 0))
++        .await
++        .expect("origin listener");
++    let origin_port = origin.local_addr().expect("origin address").port();
++    let proxy = TcpListener::bind(("127.0.0.1", 0))
++        .await
++        .expect("proxy listener");
++    let proxy_port = proxy.local_addr().expect("proxy address").port();
++    let origin_server = tokio::spawn(async move {
++        let (mut stream, _) = origin.accept().await.expect("origin connection");
++        let (headers, _) = read_request(&mut stream).await;
++        assert_eq!(
++            header_values(&headers, "Authorization"),
++            ["Bearer access-secret"]
++        );
++        let request = MintRealtimeTicketRequest::v1(runtime());
++        let body = expected_response(&request, unix_now() + 5_000);
++        response(&mut stream, "200 OK", &body).await;
++    });
++    let proxy_observer = tokio::spawn(async move {
++        match tokio::time::timeout(Duration::from_secs(2), proxy.accept()).await {
++            Ok(Ok((mut stream, _))) => {
++                let _ = stream.shutdown().await;
++                true
++            }
++            Ok(Err(_)) | Err(_) => false,
++        }
++    });
++
++    let executable = env::current_exe().expect("test executable");
++    let proxy_url = format!("http://127.0.0.1:{proxy_port}");
++    let output = tokio::process::Command::new(executable)
++        .arg("--exact")
++        .arg("ambient_proxy_does_not_intercept_loopback_mint")
++        .arg("--nocapture")
++        .env("REALTIME_PROXY_CHILD", "1")
++        .env("REALTIME_ORIGIN_PORT", origin_port.to_string())
++        .env("HTTP_PROXY", &proxy_url)
++        .env("http_proxy", &proxy_url)
++        .env("HTTPS_PROXY", &proxy_url)
++        .env("https_proxy", &proxy_url)
++        .env("ALL_PROXY", &proxy_url)
++        .env("all_proxy", &proxy_url)
++        .env_remove("NO_PROXY")
++        .env_remove("no_proxy")
++        .stdout(Stdio::null())
++        .stderr(Stdio::null())
++        .output()
++        .await
++        .expect("proxy child");
++    assert!(output.status.success(), "proxy child failed");
++    origin_server.await.expect("origin task");
++    assert!(!proxy_observer.await.expect("proxy observer"));
++}
++
++#[tokio::test]
++async fn unauthorized_is_stable_and_does_not_retry() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++    let port = listener.local_addr().expect("listener address").port();
++    let server = tokio::spawn(async move {
++        let (mut stream, _) = listener.accept().await.expect("connection");
++        let (headers, _) = read_request(&mut stream).await;
++        assert_eq!(
++            header_values(&headers, "Authorization"),
++            ["Bearer access-secret"]
++        );
++        response(&mut stream, "401 Unauthorized", b"peer-secret-body").await;
++        assert!(
++            tokio::time::timeout(Duration::from_millis(150), listener.accept())
++                .await
++                .is_err(),
++            "unauthorized mint must not retry"
++        );
++    });
++    let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{port}")).expect("API");
++    let auth = auth_session().await;
++    let error = api
++        .mint_realtime(&auth, MintRealtimeTicketRequest::v1(runtime()))
++        .await
++        .expect_err("request should fail");
++    assert_eq!(error, RealtimeHttpError::Unauthorized);
++    assert!(!error.to_string().contains("peer-secret"));
++    server.await.expect("server task");
++}
++
++#[tokio::test]
++async fn valid_cross_authority_redirect_is_rejected_without_target_contact() {
++    let origin = TcpListener::bind(("127.0.0.1", 0))
++        .await
++        .expect("origin listener");
++    let origin_port = origin.local_addr().expect("origin address").port();
++    let target = TcpListener::bind(("127.0.0.1", 0))
++        .await
++        .expect("target listener");
++    let target_port = target.local_addr().expect("target address").port();
++    let server = tokio::spawn(async move {
++        let (mut stream, _) = origin.accept().await.expect("origin connection");
++        let (headers, _) = read_request(&mut stream).await;
++        assert_eq!(
++            header_values(&headers, "Authorization"),
++            ["Bearer access-secret"]
++        );
++        redirect_response(&mut stream, target_port).await;
++    });
++    let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{origin_port}")).expect("API");
++    let auth = auth_session().await;
++    let error = api
++        .mint_realtime(&auth, MintRealtimeTicketRequest::v1(runtime()))
++        .await
++        .expect_err("redirect should fail");
++    assert_eq!(error, RealtimeHttpError::ResponseRejected);
++    assert!(!error.to_string().contains("peer-secret"));
++    assert!(
++        tokio::time::timeout(Duration::from_millis(200), target.accept())
++            .await
++            .is_err(),
++        "redirect target must not receive a connection"
++    );
++    server.await.expect("origin task");
++}
++
++#[tokio::test]
++async fn malformed_oversized_and_mismatched_responses_fail_closed() {
++    let cases: &[(&str, Vec<u8>, RealtimeHttpError)] = &[
++        (
++            "malformed",
++            b"not-json".to_vec(),
++            RealtimeHttpError::InvalidResponse,
++        ),
++        (
++            "oversized",
++            vec![b'x'; REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES + 1],
++            RealtimeHttpError::InvalidResponse,
++        ),
++    ];
++    for (name, response_body, expected) in cases {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++        let port = listener.local_addr().expect("listener address").port();
++        let response_body = response_body.clone();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.expect("connection");
++            let _ = read_request(&mut stream).await;
++            response(&mut stream, "200 OK", &response_body).await;
++        });
++        let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{port}")).expect("API");
++        let auth = auth_session().await;
++        let error = api
++            .mint_realtime(&auth, MintRealtimeTicketRequest::v1(runtime()))
++            .await
++            .expect_err(name);
++        assert_eq!(error, *expected);
++        server.await.expect("server task");
++    }
++
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++    let port = listener.local_addr().expect("listener address").port();
++    let response_body = serde_json::to_vec(
++        &MintRealtimeTicketResponse::v1(
++            runtime(),
++            RealtimeTicket::from_bytes([12; 32]).expect("ticket"),
++            UnixTimestampMillis::new(9_000_000_002_000),
++        )
++        .expect("mismatched response"),
++    )
++    .expect("response JSON");
++    let distinct_ticket = RealtimeTicket::from_bytes([12; 32]).expect("ticket");
++    let distinct_ticket_text = distinct_ticket.expose_secret().to_owned();
++    let server = tokio::spawn(async move {
++        let (mut stream, _) = listener.accept().await.expect("connection");
++        let _ = read_request(&mut stream).await;
++        response(&mut stream, "200 OK", &response_body).await;
++    });
++    let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{port}")).expect("API");
++    let auth = auth_session().await;
++    let request = MintRealtimeTicketRequest::v1(RuntimeLeaseFence::new(
++        StableRuntimeSession::new(
++            SessionId::new(Uuid::from_u128(10)).expect("session id"),
++            CharacterId::new(Uuid::from_u128(2)).expect("character id"),
++            SessionEpoch::new(3).expect("session epoch"),
++            ClientInstanceId::new(Uuid::from_u128(4)).expect("client id"),
++        ),
++        runtime().build.clone(),
++    ));
++    let error = api
++        .mint_realtime(&auth, request)
++        .await
++        .expect_err("mismatched response should fail");
++    assert_eq!(error, RealtimeHttpError::CorrelationFailed);
++    assert!(!format!("{error:?}").contains(&distinct_ticket_text));
++    assert!(!error.to_string().contains(&distinct_ticket_text));
++    assert!(!format!("{error:?}").contains("access-secret"));
++    server.await.expect("server task");
++}
++
++#[tokio::test]
++async fn chunked_response_bound_accepts_exact_limit_and_rejects_one_byte_over() {
++    let request = MintRealtimeTicketRequest::v1(runtime());
++    let exact_body = padded_response(
++        &request,
++        unix_now() + 5_000,
++        REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES,
++    );
++    let exact_chunks = vec![exact_body[..4_096].to_vec(), exact_body[4_096..].to_vec()];
++    let exact_listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++    let exact_port = exact_listener
++        .local_addr()
++        .expect("listener address")
++        .port();
++    let exact_server = tokio::spawn(async move {
++        let (mut stream, _) = exact_listener.accept().await.expect("connection");
++        let _ = read_request(&mut stream).await;
++        chunked_response(&mut stream, "200 OK", &exact_chunks).await;
++    });
++    let exact_api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{exact_port}")).expect("API");
++    let auth = auth_session().await;
++    exact_api
++        .mint_realtime(&auth, request.clone())
++        .await
++        .expect("exactly bounded chunked response should succeed");
++    exact_server.await.expect("exact server task");
++
++    let over_body = padded_response(
++        &request,
++        unix_now() + 5_000,
++        REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES + 1,
++    );
++    let over_chunks = vec![over_body[..4_096].to_vec(), over_body[4_096..].to_vec()];
++    let over_listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++    let over_port = over_listener.local_addr().expect("listener address").port();
++    let over_server = tokio::spawn(async move {
++        let (mut stream, _) = over_listener.accept().await.expect("connection");
++        let _ = read_request(&mut stream).await;
++        chunked_response(&mut stream, "200 OK", &over_chunks).await;
++    });
++    let over_api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{over_port}")).expect("API");
++    let auth = auth_session().await;
++    let error = over_api
++        .mint_realtime(&auth, request)
++        .await
++        .expect_err("one byte over the cumulative bound should fail");
++    assert_eq!(error, RealtimeHttpError::InvalidResponse);
++    over_server.await.expect("over server task");
++}
++
++#[tokio::test]
++async fn grant_expiry_ttl_and_closed_session_fail_without_secret_text() {
++    let now = unix_now();
++    for (expires_at, expected) in [
++        (now, RealtimeHttpError::ExpiredGrant),
++        (
++            now + coop_cloud::REALTIME_TICKET_TTL_MS + 1_000,
++            RealtimeHttpError::InvalidGrant,
++        ),
++    ] {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("listener");
++        let port = listener.local_addr().expect("listener address").port();
++        let response_body = serde_json::to_vec(
++            &MintRealtimeTicketResponse::v1(
++                runtime(),
++                RealtimeTicket::from_bytes([13; 32]).expect("ticket"),
++                UnixTimestampMillis::new(expires_at),
++            )
++            .expect("response"),
++        )
++        .expect("response JSON");
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.expect("connection");
++            let _ = read_request(&mut stream).await;
++            response(&mut stream, "200 OK", &response_body).await;
++        });
++        let cloud = ReqwestCloudApi::new(&format!("http://127.0.0.1:{port}")).expect("API");
++        let auth = auth_session().await;
++        let error = cloud
++            .mint_realtime(&auth, MintRealtimeTicketRequest::v1(runtime()))
++            .await
++            .expect_err("invalid grant");
++        assert_eq!(error, expected);
++        assert!(!error.to_string().contains("ticket"));
++        server.await.expect("server task");
++    }
++
++    let cloud = ReqwestCloudApi::new("http://127.0.0.1:43127").expect("API");
++    let auth_api = TestAuthApi {
++        response: login_response(),
++    };
++    let mut auth = AuthSession::login(
++        &auth_api,
++        &TestKeychain,
++        "ash",
++        Password::new("password").expect("password"),
++    )
++    .await
++    .expect("auth session");
++    auth.logout(&auth_api, &TestKeychain)
++        .await
++        .expect("local logout");
++    let error = cloud
++        .mint_realtime(&auth, MintRealtimeTicketRequest::v1(runtime()))
++        .await
++        .expect_err("closed session");
++    assert_eq!(error, RealtimeHttpError::SessionClosed);
++    assert!(!error.to_string().contains("access-secret"));
++}

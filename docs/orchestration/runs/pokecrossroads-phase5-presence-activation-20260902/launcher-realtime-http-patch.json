@@ -1,0 +1,36 @@
+{
+  "base_revision": "2d1e9114f7f9d599a13a62d7abb71916f779d9dc",
+  "baseline_digest": "sha256:8817b20b0e377a6cc83918fa7a19a4523566b15da25d09b8d623c68661a22f6a",
+  "baseline_tree": "15712dfb64d4374024ef7c85abc5dc04a4770df4",
+  "changed_files": [
+    {
+      "digest": "sha256:e12215bbdbfcaad6055db34cf87d05fbb3d1b5c19e92c4cf9d4efa7ee3025a21",
+      "path": "coop/crates/coop-launcher/src/lib.rs"
+    },
+    {
+      "digest": "sha256:191e5669b4e35a9563120005dd029d39bd93ade7d4fecabe5a30019f2e7ecd24",
+      "path": "coop/crates/coop-launcher/src/realtime.rs"
+    },
+    {
+      "digest": "sha256:7811853ebc6b168e1db13385673417f18dbf1c76e7cf2fd624ddd6f3a70fa0ba",
+      "path": "coop/crates/coop-launcher/tests/realtime_http.rs"
+    }
+  ],
+  "contract_hash": "sha256:859ed55342b5b45790888a1e768da1638101e54b334afbe72a32492b54c93851",
+  "dependency_patch_hashes": [
+    "sha256:60dad593d8023f3cb431cb442655a5040b287e6f2672e3a17b600f5f30c6c37c"
+  ],
+  "diff_digest": "sha256:7593ddfaf73a4fd4a789c00d615e8b5bedaa3cf3e74bb5d340d8e790786774ba",
+  "manifest_hash": "sha256:b24e9b11ef5e1f3c36f21d4db7b09d01d542ee7e845b9205ec982b8ca2f5af3b",
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "patch_sha256": "sha256:12d621dde9b937f8e3ea346402aa4179da8697e273d1de0d99fad81b5fe5c80e",
+  "role": "integration-candidate",
+  "schema_version": 1,
+  "unit_id": "launcher-realtime-http",
+  "worker_id": "/root/launcher_realtime_http_worker",
+  "workspace_id": "pokecrossroads-phase5-launcher-realtime-http-20260903"
+}

@@ -1,0 +1,9 @@
+{
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "findings": [],
+  "registry_digest": "sha256:6b313c12a5c4010b4e6f19f5e23bb0b04c2b81e65091de6c74ce31abb11d9e4b",
+  "registry_id": "pokecrossroads-phase5-sidecar-control-correction-v4",
+  "revision": 0,
+  "schema_version": 1
+}

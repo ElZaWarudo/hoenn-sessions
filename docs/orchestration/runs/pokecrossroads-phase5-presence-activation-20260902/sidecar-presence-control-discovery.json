@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "mode": "read-only-discovery",
+  "agent": "/root/sidecar_presence_control_discovery",
+  "base_revision": "d1e726fb00137c7bb8318e3bed0a96f10db7acbd",
+  "objective": "Close the authenticated nonsecret sidecar control and ROM bridge seam for regional presence.",
+  "decisions": [
+    "Keep GAME_PROTOCOL_VERSION and the fixed bridge ABI at version 1; the five presence bridge message IDs already exist.",
+    "Bump only CONTROL_PROTOCOL_VERSION from 1 to 2 so new launchers fail the handshake against old sidecars before exchanging new variants.",
+    "Reuse strict coop-protocol LocalPresenceStateV1, PresenceInteractionV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, and RemotePlayerDespawnV1 types directly.",
+    "Add remote_player_spawn, remote_player_update, and remote_player_despawn ControlCommand variants from launcher to sidecar.",
+    "Add player_state and interact_remote_player ControlEvent variants from sidecar to launcher.",
+    "Do not include session_epoch in presence messages because the authenticated control connection is already epoch-bound.",
+    "Never transfer endpoint, bearer ticket, access or refresh token, runtime fence, PresenceReady, or build identity across local IPC.",
+    "Decode and validate exact ROM payloads before committing the incoming outer sequence; commit before the best-effort control-event write to avoid replaying an ambiguous interaction.",
+    "Preserve embedded cloud server_sequence values and allocate independent sidecar-owned outer bridge sequences for every lifecycle frame.",
+    "Transient presence bypasses command_history, deferred_commands, checkpoint replay, and routine command capacity.",
+    "Reject launcher-origin presence before ROM readiness and during quiescing; never defer presence across a bridge generation.",
+    "On same-socket ROM reboot, SESSION_READY remains first and queued presence is not replayed. Launcher integration must cancel the current realtime core and mint a fresh ticket after the generation reset."
+  ],
+  "wire_limits": {
+    "control_line_bytes_including_lf": 512,
+    "estimated_max_spawn_line_bytes": 459,
+    "estimated_max_update_line_bytes": 414,
+    "estimated_max_player_state_line_bytes": 339,
+    "estimated_max_interaction_line_bytes": 158,
+    "bridge_frame_bytes": 144,
+    "local_state_payload_bytes": 28,
+    "interaction_payload_bytes": 20,
+    "remote_spawn_payload_bytes": 72,
+    "remote_update_payload_bytes": 40,
+    "remote_despawn_payload_bytes": 16
+  },
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "non_owned_files": [
+    "coop/crates/coop-sidecar/src/codec.rs",
+    "coop/crates/coop-sidecar/src/lib.rs",
+    "coop/crates/coop-sidecar/src/main.rs",
+    "coop/crates/coop-sidecar/Cargo.toml"
+  ],
+  "implementation_requirements": [
+    "Keep the existing loopback-only three-second authenticated handshake and bounded sixteen-candidate acceptance behavior.",
+    "Keep the control reader and bridge reader single-owner tasks and capacity-one channels; LocalSidecar remains the sole ControlWriter and BridgeWriter owner.",
+    "PlayerState and Interaction frames require current epoch and acknowledged ROM readiness.",
+    "Malformed presence payloads produce a fixed protocol violation without advancing last_session_rom.",
+    "Valid stale outer frames may be ignored through existing serial-order inspection without mutating presence.",
+    "Allocate no presence bridge sequence and perform no presence write once quiescing begins.",
+    "Retain current biased shutdown/deadline priority and clean EOF behavior.",
+    "Update exhaustive launcher matches in the later launcher integration unit; do not weaken local message strictness to ease integration."
+  ],
+  "required_tests": [
+    "Strict canonical round trips, unknown-field rejection, invalid values, and sub-512-byte lines for all five control variants.",
+    "Control protocol incompatibility uses CONTROL_PROTOCOL_VERSION + 1 rather than a hard-coded value.",
+    "Bidirectional relay preserves exact inner payloads, current epoch, and independent outer bridge sequences.",
+    "Malformed 28-byte and 20-byte payload cases prove no ROM sequence commit and no control event.",
+    "Presence variants never enter command_history or deferred_commands.",
+    "Quiescing produces no presence bridge write or sequence allocation.",
+    "Pre-bridge presence flood leaves shutdown reservation usable.",
+    "Reboot ordering proves SESSION_READY precedes fresh presence.",
+    "Fragmented/interleaved bridge-control coverage accounts for the newly emitted PlayerState event."
+  ],
+  "known_integration_risks": [
+    "The current launcher ControlChannel is synchronously borrowed; the end-to-end launcher unit needs a continuously draining bounded I/O owner so 10 Hz presence cannot consume checkpoint timing.",
+    "A same-socket ROM reboot resets inner source and warp sequences; continuing the existing realtime connection would make the cloud ignore regressed local state and can strand cleared remote reducers.",
+    "A single TCP stream cannot overtake transient JSON already written, so launcher output coalescing and critical-write priority remain necessary."
+  ]
+}

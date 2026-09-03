@@ -1,0 +1,17 @@
+{
+  "role": "reviewer",
+  "actor_id": "/root/server_two_ws_correctness_reviewer",
+  "status": "failed",
+  "contract_hash": "sha256:046e45694f1bb802169ab6b391509db248f7e05e3eba98f025561e52601d9d7b",
+  "diff_digest": "sha256:56a804de8e1961f950ad6102c36e07e736641e269b12eaf58f3b7548df006264",
+  "findings": [
+    {
+      "severity": "P1",
+      "description": "realtime.rs applies RFC1982 ordering through one global last_server_sequence instead of per-remote-handle sequences. Valid independent lifecycle streams therefore conflict: a second remote SPAWN with sequence 1, or a new remote whose sequence is lower than another remote's latest sequence, is rejected as ProtocolViolation. This breaks the required multi-remote capacity and valid server lifecycle semantics."
+    },
+    {
+      "severity": "P1",
+      "description": "run_realtime schedules grant expiry as a terminal branch after the WebSocket is authenticated and Ready, returning Expired and closing the active session at the 30-second ticket deadline. The grant is a one-use upgrade capability; the authoritative scope bounds redemption/upgrade, not the lifetime of an authenticated session."
+    }
+  ]
+}

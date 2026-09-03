@@ -1,0 +1,17 @@
+{
+  "role": "security-sentinel",
+  "actor_id": "/root/server_two_ws_security_reviewer",
+  "status": "failed",
+  "contract_hash": "sha256:046e45694f1bb802169ab6b391509db248f7e05e3eba98f025561e52601d9d7b",
+  "diff_digest": "sha256:56a804de8e1961f950ad6102c36e07e736641e269b12eaf58f3b7548df006264",
+  "findings": [
+    {
+      "severity": "P2",
+      "description": "run_realtime retains the RealtimeGrant, including the bearer ticket, through the entire post-upgrade session and unconditionally returns Expired at the original grant expiry. Drop the ticket immediately after constructing the handshake request and apply expiry only to the WebSocket upgrade; authenticated session lifetime is governed separately."
+    },
+    {
+      "severity": "P2",
+      "description": "realtime_one_attempt_sends_cached_state_first_and_decodes_lifecycle compares the captured full Authorization bearer value with assert_eq!. A mismatch panic prints both strings, exposing the bearer ticket in test or CI output. Compare a non-secret boolean or fingerprint instead."
+    }
+  ]
+}

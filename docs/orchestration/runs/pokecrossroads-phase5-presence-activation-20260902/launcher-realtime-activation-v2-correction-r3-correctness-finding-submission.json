@@ -1,0 +1,30 @@
+{
+  "contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest":"sha256:ce4e5be1ac68fcb8978ac087dc9f5c40f64d91cd601570bc1ea021df990ddf89",
+  "review_plan_hash":"sha256:371e429360d72e5830be7ca229445135b204c5f0e89272ce90c09d3907dcf74a",
+  "surface_id":"launcher-realtime-activation-v2-correctness-r3",
+  "reporter_id":"/root/launcher_activation_v2_correctness",
+  "findings":[
+    {
+      "severity":"p1","principle":"correctness","rule_id":"LRA2-005-noncancellable-checkpoint-reconciliation-r3",
+      "observation":"The pre-activation realtime checkpoint path can cancel checkpoint_files after the cloud transaction begins instead of latching terminal state through reconciliation.",
+      "impact":"Prepare or finalize may commit remotely while local revision remains stale, causing later conflict or data loss.",
+      "recommendation":"Limit the deadline to grant/save correlation; once prepare begins, drive idempotent cloud reconciliation to a conclusive result while bounding/latching other inputs, then handle terminal state.",
+      "evidence":["checkpoint_files is raced against the original deadline","reset/control/realtime terminal branches can also drop it","the existing invariant says prepare must not be cancelled after it begins"]
+    },
+    {
+      "severity":"p2","principle":"testing","rule_id":"LRA2-006-simultaneous-all-ready-test-fidelity-r3",
+      "observation":"The round-robin test does not hold control, realtime, and due heartbeat ready at the same arbitration points.",
+      "impact":"A regression to the previous multi-source starvation shape could pass after finite producers drain.",
+      "recommendation":"Use barriers or sustained producers to hold all sources ready and assert bounded C/R/H rotation.",
+      "evidence":["test queues only Ready and one Spawn","control burst is finite","assertions are eventual booleans rather than bounded selection order"]
+    },
+    {
+      "severity":"p2","principle":"testing","rule_id":"LRA2-006-active-lifecycle-backpressure-coverage-r3",
+      "observation":"R3 covers interaction overflow but not launcher lifecycle-output enqueue backpressure through the production activation path.",
+      "impact":"Lifecycle mapping/backpressure cleanup can regress without activation-level failure.",
+      "recommendation":"Stall ROM control reads, fill lifecycle output after activation, and assert terminal joined cleanup and no remint/trailing output.",
+      "evidence":["interaction overflow test fills MAX_INTERACTION_QUEUE","no session test makes enqueue_lifecycle fail","owner-event queue tests cover a different queue"]
+    }
+  ]
+}

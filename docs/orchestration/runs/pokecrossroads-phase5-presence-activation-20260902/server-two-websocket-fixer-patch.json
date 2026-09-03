@@ -1,0 +1,26 @@
+{
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_digest": "sha256:bc4d0d41f6e407c1eacad496f3b50645ed6b69ef84f1cf6ed69763d78b7730ba",
+  "baseline_tree": "52b806db4e4ec1e80067439fa29b5ddad038b541",
+  "changed_files": [
+    {
+      "digest": "sha256:715d651c4e7e21ead042974ee751cd8d21feec73f4ef42543d6f2cbdeea433e3",
+      "path": "coop/crates/coop-server/tests/phase2_http.rs"
+    }
+  ],
+  "contract_hash": "sha256:d3dc446b15dca7265f2cdfc6a1f943e71bcef2bc89d88bab1d8ef1159674a1b4",
+  "dependency_patch_hashes": [
+    "sha256:cce9087ec450b2b92b24e9f48397f2adc21a47f70c486c5554d41cd1ba6a528e"
+  ],
+  "diff_digest": "sha256:66d3328f3054ff0f06f600be88208c3df65453cc889c06406f53d757b62c03d7",
+  "manifest_hash": "sha256:cb0d3b7ddda3c246063c58c1ec1344d63f8232f638a477776bd9cd046aa3c876",
+  "owned_paths": [
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ],
+  "patch_sha256": "sha256:cbffd6e5ec497806c5d0411765a5fe36493e45894d09b1ffa0facb72abefa392",
+  "role": "fixer-candidate",
+  "schema_version": 1,
+  "unit_id": "server-two-websocket-presence-fixer",
+  "worker_id": "/root/server_two_websocket_fixer",
+  "workspace_id": "pokecrossroads-phase5-server-two-websocket-fixer-20260902"
+}

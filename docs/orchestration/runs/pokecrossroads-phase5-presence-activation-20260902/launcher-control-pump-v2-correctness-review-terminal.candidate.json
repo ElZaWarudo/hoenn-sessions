@@ -1,0 +1,31 @@
+{
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/process.rs:1388-1393 awaits critical_rx.recv(), then checks take_reset_notification and returns RomPresenceReset after the critical event has already been removed from the FIFO.",
+        "coop/crates/coop-launcher/src/process.rs:1444-1449 repeats the same consume-then-reset-return sequence in receive_bounded, the checkpoint and shutdown critical-only path.",
+        "coop/crates/coop-launcher/src/process.rs:4288-4305 asserts that reset wins over a queued critical event but never performs a second receive to prove the previously queued CommandResult remains deliverable."
+      ],
+      "impact": "A reset that is published while either awaited receive resolves can permanently discard CheckpointReady, SaveDataUpdated, CheckpointExpired, or CommandResult. Checkpoint or shutdown correlation can then time out or require recovery even though the authenticated critical record was received, violating the lossless critical FIFO contract.",
+      "observation": "Both asynchronous critical receive branches can dequeue a critical event and then return a newly observed reset notification without retaining the dequeued event for the next call.",
+      "principle": "correctness",
+      "recommendation": "Retain the dequeued critical event in a pending slot when reset wins the post-receive race, or establish reset ordering before removing an event from the FIFO; add a barrier-controlled regression that returns reset first and the exact critical record on the following receive for both receive and receive_bounded.",
+      "rule_id": "LCP2-002-lossless-reset-critical-race",
+      "severity": "p1"
+    }
+  ],
+  "review_plan_hash": "sha256:efe0aedb762247c31ba9795fd9ef7efd595d7b05de4fae8cbe6bf81a57b80e3e",
+  "reviewer_id": "/root/launcher_pump_correctness_review_v2",
+  "risk_boundaries_checked": [
+    "atomic-reset-generation-permit-and-lifecycle-write-linearization",
+    "critical-priority-completion-cancellation-and-absolute-deadlines",
+    "persistent-owned-halves-bounded-lanes-and-exact-event-routing",
+    "raw-observation-child-fairness-startup-and-joined-teardown"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 0,
+  "surface_id": "launcher-control-pump-correctness-v2"
+}

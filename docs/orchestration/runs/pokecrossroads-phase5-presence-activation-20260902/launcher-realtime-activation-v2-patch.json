@@ -1,0 +1,39 @@
+{
+  "base_revision": "da8372b5fdae4a022ef768d016e7e4a3ab571c30",
+  "baseline_digest": "sha256:03cef2dafd0a12fa23e598d88498d672afd0ce11786e0dab8d62c27ef14b96cf",
+  "baseline_tree": "3d0cc36d026d8f4a923e8142654bcfddf827f8e5",
+  "changed_files": [
+    {
+      "digest": "sha256:1fe8457b151a13c51caa22b670554c0ef0bd4a5919060047d530228c364ce29a",
+      "path": "coop/crates/coop-launcher/src/main.rs"
+    },
+    {
+      "digest": "sha256:c34678c5f1e94f295b09f46d641939f2879a52f88bc93c4aa6257cd03e5b7c54",
+      "path": "coop/crates/coop-launcher/src/realtime.rs"
+    },
+    {
+      "digest": "sha256:486b2cf1b6a200d95e5f160e4dca0eba605f1c98d6a1976a2936c99fca8d4aaa",
+      "path": "coop/crates/coop-launcher/src/session.rs"
+    }
+  ],
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "dependency_patch_hashes": [
+    "sha256:158b15ada28687bb151884fe5ae4a49d3497ed1fbe833c6e88333082bb80ac62",
+    "sha256:e396663eaff12896a363df8985bc2090007b08c7aad7a6e09c7fb7c762d330e2",
+    "sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee",
+    "sha256:fc127e15b11486dd24f46846e0e0e91b359823582191f01a3b8addf0b5ff07b5"
+  ],
+  "diff_digest": "sha256:c647ad16a36ce14c6a71bda1e260b61b03f1b64dfcee2478f017eaa419369cd7",
+  "manifest_hash": "sha256:bbfb60737f4195b9d1d35faf20a6a8ce8e6790239d5a6de46ab977c7a4f22b49",
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "patch_sha256": "sha256:50df0668af1c0f61f1c16954d7764ae5da5f53692adb7207ea8cd461bfdfe40d",
+  "role": "implementation",
+  "schema_version": 1,
+  "unit_id": "phase5-launcher-realtime-activation",
+  "worker_id": "/root/launcher_activation_v2_impl_retry",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-realtime-activation-v2"
+}

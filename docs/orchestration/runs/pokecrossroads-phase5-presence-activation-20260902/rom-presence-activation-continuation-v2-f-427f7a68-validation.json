@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-427F7A68",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: ResumeMap resets sprites, the return-to-field loop preserves but does not respawn the remote ObjectEvent, and EnsureRemoteRenderer cannot recover the resulting active unsprited reserved object."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

@@ -1,0 +1,13 @@
+{
+  "finding_id": "F-3463D690",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "The original exact-candidate code dequeued a critical event before rechecking the sticky reset notification in both receive APIs.",
+    "The correction adds a durable pending critical slot and deterministic barriers proving reset-first then exact-event delivery."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

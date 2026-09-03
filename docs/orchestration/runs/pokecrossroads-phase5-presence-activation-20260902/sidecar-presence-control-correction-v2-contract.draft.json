@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-sidecar-control-correction-v2",
+  "unit_id": "phase5-sidecar-presence-control",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Repair the exact rejected sidecar presence-control candidate so readiness, overflow, lifecycle writes, and shutdown remain deterministic without changing the public control contract.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-fixer-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-final-patch.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correctness-review-round2.json",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "closed_decisions": [
+    "Keep authenticated bounded JSONL control protocol v2 and every existing typed payload, size, sequence, checkpoint, reset, and reconnect-cleanup invariant.",
+    "Preserve coop/crates/coop-sidecar/src/control.rs exactly at SHA-256 8cdc427060af9159e2c563e396483ccbed2ef1e7bb1f70ec020b622d297f3179; the correction is confined to server.rs.",
+    "Stamp lifecycle commands at receipt with a readiness generation, invalidate pre-ready and prior-generation records atomically, and recheck the stamp before allocating the outer bridge sequence.",
+    "Publish mailbox overflow through an independently wakeable non-reconnectable terminal cause so channel EOF cannot obscure PresenceQueueFull.",
+    "Only a confirmed reboot branch may arm the sticky lifecycle-forwarding disable latch; a legitimate initial active-epoch ROM_READY must retain forwarding.",
+    "Use one non-cancellable sole bridge-writer path or equivalent frame-safe ownership so lifecycle traffic cannot block the critical shutdown lane beyond its 500 ms acknowledgement bound; failed or partial writes close the bridge and it is never reused.",
+    "Do not reconnect, remint, retry lifecycle records, or restart realtime after reset, lifecycle-terminal, overflow, or control ambiguity in one authenticated session."
+  ],
+  "forbidden_changes": [
+    "Do not edit control.rs, launcher, protocol, realtime-core, cloud, server-service, ROM, Lua, Cargo, documentation, generated artifacts, or orchestration files.",
+    "Do not weaken authentication, the 512-byte LF-inclusive JSONL bound, epoch or sequence validation, checkpoint semantics, shutdown reservation, error redaction, or reconnect cleanup.",
+    "Do not add credentials, endpoint data, generic serde_json::Value, arbitrary bytes, unbounded queues, silent lifecycle loss, cancelled partial bridge frames, or a second bridge writer.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create or remove worktrees, or revert any other worker's edits; preserve the sealed index and all unowned content."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "SPCF2-001",
+      "description": "A legitimate initial active-epoch ROM_READY cannot disable lifecycle forwarding; only a confirmed reboot arms the sticky latch, and a real serving-loop regression proves a subsequent lifecycle command is forwarded."
+    },
+    {
+      "id": "SPCF2-002",
+      "description": "Capacity overflow wakes the real serving loop through a stable terminal path and deterministically returns PresenceQueueFull before reconnectable EOF can win."
+    },
+    {
+      "id": "SPCF2-003",
+      "description": "A deterministically stalled lifecycle bridge write cannot delay a correlated authenticated shutdown Applied result beyond the 500 ms launcher bound, while sole-writer ownership and complete bridge-frame integrity remain fail-closed."
+    },
+    {
+      "id": "SPCF2-004",
+      "description": "A lifecycle command received before readiness cannot later forward after bridge authentication, cannot consume an outer sequence, and a fresh post-ready command does forward."
+    },
+    {
+      "id": "SPCF2-005",
+      "description": "Existing authenticated protocol, payload, sequence, checkpoint, reset, reboot, and reconnect-cleanup invariants remain unchanged."
+    },
+    {
+      "id": "SPCF2-006",
+      "description": "Focused real-serving-path regressions, the full sidecar suite, strict Clippy, formatting, and diff checks pass; the root-observed implementation delta contains only server.rs and control.rs remains byte-identical."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python3 C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+        "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+        "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+        "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 1
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "implementation_rounds": 3,
+    "fix_rounds": 2,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 2400000
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "Every acceptance criterion is resolved and every required command outcome is recorded.",
+      "A safe correction requires changing a forbidden public or cross-unit boundary.",
+      "A concrete toolchain failure prevents further progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "self-reported",
+    "changed_files_source": "root-diff"
+  }
+}

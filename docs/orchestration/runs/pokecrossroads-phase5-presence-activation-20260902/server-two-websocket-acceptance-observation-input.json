@@ -1,0 +1,11 @@
+{
+  "workspace_id": "pokecrossroads-phase5-server-two-websocket-20260902",
+  "worker_id": "/root/server_two_websocket_worker",
+  "role": "integration-candidate",
+  "unit_id": "server-two-websocket-presence-acceptance",
+  "contract_hash": "sha256:9ef23ac846d1cb5fe806e15a3873f570ebe66c715f4935a942c9fa51dd544d5c",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ]
+}

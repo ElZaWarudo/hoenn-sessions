@@ -1,0 +1,11 @@
+{
+  "workspace_id": "pokecrossroads-phase5-ticket-parts-20260903",
+  "worker_id": "/root/realtime_ticket_parts_worker",
+  "role": "integration-candidate",
+  "unit_id": "realtime-ticket-parts",
+  "contract_hash": "sha256:a71d19a8611c171455a5cf08d185b18b5a5166bf0f727e0ca94bbe6557fb0038",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "coop/crates/coop-cloud/src/realtime.rs"
+  ]
+}

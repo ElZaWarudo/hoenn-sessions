@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-launcher-realtime-activation-v1",
+  "unit_id": "launcher-realtime-activation",
+  "objective": "Activate one authenticated, region-qualified realtime presence attempt in the production launcher by composing the bounded control pump, consuming ticket client, and existing sidecar WebSocket core with fail-closed lifecycle ownership.",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/tests/realtime_vertical_slice.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-integration-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-session-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-final-root-observation.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-root-observation.json",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/src/main.rs"
+  ],
+  "closed_decisions": [
+    "Keep CloudApi and existing run_until_shutdown source-compatible. Add a production run_until_shutdown_with_realtime entry point requiring CloudApi plus RealtimeApi, and call it from main.rs.",
+    "Add one persistent realtime_attempted boolean. Set it before the first mint POST; the explicit mint-401 refresh and second POST are part of that same attempt. Never clear the flag or reconnect after it is set.",
+    "Wait for the first validated local PlayerState while heartbeats, checkpoints, user shutdown, control failure, and child observation remain live. Any RomPresenceReset at any point is session-fatal and no ticket may be minted afterward.",
+    "Proactively refresh before mint. Only an inner typed mint Unauthorized permits one refresh and one new POST. A heartbeat Unauthorized or any transport, timeout, decode, correlation, grant, control, queue, reset, child, or core failure is not retryable.",
+    "Construct RuntimeLeaseFence only from the active lease plus canonical manifest target and require the freshest same-generation state after every await before moving the non-Clone grant into the core.",
+    "Compose coop_sidecar::realtime_channel and run_realtime in one launcher-owned coordinator task; do not duplicate WebSocket code or spawn a detached second core task.",
+    "Ready remains launcher-internal. Same-generation PlayerState coalesces into owner.update_state; pre-Ready interactions are dropped; post-Ready interactions remain FIFO; Spawn/Update/Despawn map exactly to control-v2 lifecycle commands.",
+    "Any reset, terminal core outcome, unexpected input state, full/closed presence lane, lifecycle backpressure, authenticated control failure, or child exit terminates the attempt and session. No restart, remint, replay, or second endpoint exists.",
+    "Disable lifecycle output and stop plus join or abort the coordinator before authenticated child shutdown, peer settlement, fail-closed cleanup, credential release, or reconnect. Save revision changes alone retain the same WebSocket.",
+    "Keep the existing bounded checkpoint transaction noncancellable once begun. The independent coordinator continues draining realtime and latches terminal state for immediate handling after reconciliation."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "LRA-001",
+      "description": "Production main activates the additive one-attempt realtime lifecycle without breaking CloudApi or existing nonrealtime lifecycle callers and fakes."
+    },
+    {
+      "id": "LRA-002",
+      "description": "First-state gating, canonical RuntimeLeaseFence construction, proactive refresh, exactly one explicit mint-401 retry, and no ambiguous retry are deterministic and fully tested."
+    },
+    {
+      "id": "LRA-003",
+      "description": "The coordinator moves the single grant into the existing core, sends the freshest initial state, keeps Ready local, coalesces state, preserves interaction FIFO, and maps exact lifecycle commands without credentials crossing IPC."
+    },
+    {
+      "id": "LRA-004",
+      "description": "Reset at any point, core/control/queue/child failure, attempted reconnect, and every terminal path fail closed with zero remints and no surviving coordinator task."
+    },
+    {
+      "id": "LRA-005",
+      "description": "Checkpoint correlation and its finite transaction remain correct under sustained presence; realtime is closed before shutdown request, child cleanup, credential release, or process termination, while save revision changes do not reconnect."
+    },
+    {
+      "id": "LRA-006",
+      "description": "Focused vertical tests, full launcher and sidecar tests, strict Clippy, formatting, and diff checks pass with production edits confined to owned files."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher --test realtime_vertical_slice --all-features --locked",
+        "rtk cargo test -p coop-launcher realtime --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 4,
+    "fix_rounds": 4,
+    "review_rounds": 0,
+    "max_elapsed_ms": 3000000,
+    "extra_verification": "forbidden"
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "forbidden_changes": [
+    "Do not edit control-pump, sidecar, cloud/server, Cargo, ROM/Lua, product documentation, generated artifacts, or orchestration state.",
+    "Do not duplicate WebSocket transport, accept a second endpoint, reconnect/remint after attempt, cancel an ambiguous checkpoint transaction, or relax any bound/correlation/deadline.",
+    "Do not expose tokens or tickets through control IPC, frames other than the WebSocket Authorization header, URL/query/subprotocol, logs, errors, Debug, files, argv, or environment.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert other workers. Preserve all unowned edits."
+  ],
+  "terminal_protocol": {
+    "return_when": [
+      "All activation criteria and required checks are resolved.",
+      "The landed pump or sidecar interface cannot support the closed lifecycle guarantees.",
+      "A concrete toolchain failure prevents progress within budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1"
+}

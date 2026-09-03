@@ -1,0 +1,60 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:ce4e5be1ac68fcb8978ac087dc9f5c40f64d91cd601570bc1ea021df990ddf89",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2601-2650 pins checkpoint_files after accepting the correlated SaveDataUpdated, but gives the absolute deadline first priority and returns CheckpointTimeout directly; the pinned checkpoint future is then dropped.",
+        "coop/crates/coop-launcher/src/session.rs:2640-2646 also propagates reset/control/realtime terminal errors with ? while checkpoint_files is in flight, likewise dropping the transaction instead of latching the terminal until reconciliation.",
+        "coop/crates/coop-launcher/src/session.rs:3000-3003 documents the existing invariant: once prepare starts, idempotent retries and heartbeat fencing must finish because cancellation can leave a committed snapshot with stale local revision.",
+        "coop/crates/coop-launcher/src/session.rs:5678-5738 proves only a deadline while waiting for the sidecar correlation events; it never emits CommandResult or SaveDataUpdated and therefore never enters the ambiguous cloud transaction being cancelled by the new branch."
+      ],
+      "impact": "If the deadline, a reset, or a realtime/control terminal arrives after prepare/finalize has been sent, the launcher can abandon an ambiguous checkpoint and tear down with a stale local revision even though the server may commit it. That violates the noncancellable checkpoint and post-reconciliation terminal-ordering guarantees and can strand the next session behind an unexplained revision conflict.",
+      "observation": "The pre-activation realtime checkpoint path cancels checkpoint_files after the cloud transaction may have begun, rather than latching terminal state and reconciling the checkpoint before teardown.",
+      "principle": "correctness",
+      "recommendation": "Keep the absolute deadline on grant/save correlation and the local correlated-save wait, but once the cloud prepare phase can begin, let checkpoint_files and its idempotent retries run to a conclusive result. During that phase, drain realtime/control only into bounded buffers or a sticky terminal flag, then handle the terminal immediately after reconciliation. Add a deterministic test that delays finalize beyond the correlation deadline, makes deadline/reset/realtime terminal ready after prepare, and proves the committed revision is installed before the terminal result is returned.",
+      "rule_id": "LRA2-005-noncancellable-checkpoint-reconciliation-r3",
+      "severity": "p1"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:5390-5417 queues only two realtime events (Ready and one Spawn), then deliberately prevents the realtime terminal until all four booleans have already been observed.",
+        "coop/crates/coop-launcher/src/session.rs:5422-5430 supplies only a finite 256-event control burst, and lines 5453-5507 merely assert that each source was observed eventually; there is no barrier proving control, realtime, and heartbeat were continuously ready at the same arbitration points.",
+        "The r2 defect was specifically the old scheduler repeating control plus realtime forever while starving heartbeat. This test would still terminate after the finite realtime/control inputs drain, so it is not a deterministic regression oracle for that simultaneous-all-ready failure mode."
+      ],
+      "impact": "The new rotation is structurally sound, but the required all-ready regression can pass if future changes restore the exact multi-source starvation pattern fixed in r3.",
+      "observation": "The test named active_round_robin_advances_control_realtime_heartbeat_and_terminal does not actually hold all three service sources ready together or assert a bounded selection order.",
+      "principle": "testing",
+      "recommendation": "Use synchronized mock futures or sustained producers with an explicit readiness barrier so Control, Realtime, and an already-due Heartbeat are all ready before polling. Assert the exact bounded C/R/H rotation (and separately Ready-to-Activate priority) rather than eventual booleans after finite producers drain.",
+      "rule_id": "LRA2-006-simultaneous-all-ready-test-fidelity-r3",
+      "severity": "p2"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:5177-5289 adds an activation-level InteractionOverflow cleanup test by filling MAX_INTERACTION_QUEUE while checkpoint correlation is stalled.",
+        "No activation-level session test fills the pump lifecycle output lane or makes enqueue_lifecycle fail at the production branch in coop/crates/coop-launcher/src/session.rs:2371-2380.",
+        "coop/crates/coop-launcher/src/realtime.rs:816-949 covers sidecar owner-event backpressure and terminal-before-buffered-event behavior, but that is a different queue and does not exercise launcher lifecycle-output backpressure, ROM-output suppression, or session cleanup composition."
+      ],
+      "impact": "The child-exit and interaction-overflow gaps are closed, but the LRA2-006 lifecycle mapping/backpressure cleanup path can regress without an activation-level failure.",
+      "observation": "R3 resolves only the interaction half of the recorded active lifecycle/interaction backpressure coverage gap.",
+      "principle": "testing",
+      "recommendation": "Add a run_until_shutdown_with_realtime test that stalls ROM control reads after activation, emits enough server lifecycle commands to fill the lifecycle lane, and asserts terminal error, disabled lifecycle, no post-terminal ROM output, no remint/reconnect, and joined coordinator/pumps.",
+      "rule_id": "LRA2-006-active-lifecycle-backpressure-coverage-r3",
+      "severity": "p2"
+    }
+  ],
+  "review_plan_hash": "sha256:371e429360d72e5830be7ca229445135b204c5f0e89272ce90c09d3907dcf74a",
+  "reviewer_id": "/root/launcher_activation_v2_correctness",
+  "risk_boundaries_checked": [
+    "absolute-checkpoint-deadline",
+    "active-backpressure-and-both-child-exits",
+    "attempt-fence-and-terminal-ordering",
+    "ready-cutover-activation-progress",
+    "resolution-of-all-recorded-findings",
+    "rotating-all-ready-arbitration"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 2,
+  "surface_id": "launcher-realtime-activation-v2-correctness-r3"
+}

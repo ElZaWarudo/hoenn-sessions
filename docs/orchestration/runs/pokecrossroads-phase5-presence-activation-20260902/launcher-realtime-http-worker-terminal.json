@@ -1,0 +1,38 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {"criterion_id": "LRH-001", "status": "satisfied", "evidence": "ReqwestCloudApi::realtime_endpoint derives only wss/ws /v1/realtime from the validated base, retaining authority and explicit ports; canonical no-port loopback ws now resolves its known default port through dependency commit 00a030b2."},
+    {"criterion_id": "LRH-002", "status": "satisfied", "evidence": "ReqwestCloudApi::mint_realtime performs one authenticated POST /v1/realtime/tickets with strict JSON and active bearer authorization; exact request and typed 401 Unauthorized behavior pass integration tests."},
+    {"criterion_id": "LRH-003", "status": "satisfied", "evidence": "REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES enforces the 8 KiB Content-Length and streamed cumulative cap before strict decoding; malformed, oversized, redirect, non-success, and transport paths remain stable and secret-free."},
+    {"criterion_id": "LRH-004", "status": "satisfied", "evidence": "matches_request precedes consuming into_parts; the owned ticket moves directly into RealtimeGrant::with_now using a timestamp sampled after response decode, and delayed exact-TTL, mismatch, expiry, excessive-TTL, and closed-session tests pass."},
+    {"criterion_id": "LRH-005", "status": "satisfied", "evidence": "realtime_http.rs passes all five integration tests covering exact method/path/body/bearer handling, absent query/subprotocol ticket channels, HTTPS/loopback endpoint conversion including no-port loopback, redirect denial, size limits, correlation, and redacted debug/error behavior."},
+    {"criterion_id": "LRH-006", "status": "satisfied", "evidence": "Contract sha256:859ed55342b5b45790888a1e768da1638101e54b334afbe72a32492b54c93851 checks pass: focused tests, full coop-launcher tests, strict Clippy, cargo fmt check, and git diff check. Dependency behavior comes from main commit 00a030b2; no dependency files are part of this worker patch."}
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {"command": "rtk cargo test -p coop-launcher realtime --all-features --locked", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked", "attempts": 2, "outcome": "passed"},
+      {"command": "rtk cargo test -p coop-launcher --all-features --locked", "attempts": 2, "outcome": "passed"},
+      {"command": "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk cargo fmt --all -- --check", "attempts": 1, "outcome": "passed"},
+      {"command": "rtk git diff --check", "attempts": 1, "outcome": "passed"}
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-launcher realtime --all-features --locked",
+    "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked",
+    "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked",
+    "rtk cargo test -p coop-launcher --all-features --locked",
+    "rtk cargo test -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

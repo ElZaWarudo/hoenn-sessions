@@ -1,0 +1,118 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Control protocol v2 exposes exactly typed, deny-unknown-field regional presence records in both directions; all canonical JSONL messages remain below 512 bytes and no secret-capable generic variant exists.",
+      "id": "SPC-001"
+    },
+    {
+      "description": "Exact 28-byte local-state and 20-byte interaction ROM payloads are validated before incoming-sequence commit and emitted once; malformed, wrong-epoch, pre-ready, stale, or ambiguous frames cannot partially mutate or leak through control.",
+      "id": "SPC-002"
+    },
+    {
+      "description": "Exact 72/40/16-byte remote lifecycle payloads preserve inner cloud sequence and use independent monotonically allocated sidecar outer sequence and current epoch through the sole BridgeWriter.",
+      "id": "SPC-003"
+    },
+    {
+      "description": "Presence bypasses replay/deferred/command-ID ledgers, is rejected before readiness and during quiescing, never consumes shutdown reservation, and does not weaken checkpoint or absolute shutdown behavior under a presence flood.",
+      "id": "SPC-004"
+    },
+    {
+      "description": "A same-socket ROM reboot writes SESSION_READY first, re-arms incoming sequence, retains outgoing sequence monotonicity, replays no presence, and emits one bounded RomPresenceReset event.",
+      "id": "SPC-005"
+    },
+    {
+      "description": "Focused and full coop-sidecar tests, strict Clippy, formatting, and diff checks pass with production changes confined to the two owned files.",
+      "id": "SPC-006"
+    }
+  ],
+  "closed_decisions": [
+    "Keep GAME_PROTOCOL_VERSION and the bridge ABI at version 1. Bump only CONTROL_PROTOCOL_VERSION to 2.",
+    "Use strict coop-protocol types directly. Launcher-to-sidecar ControlCommand adds RemotePlayerSpawn, RemotePlayerUpdate, and RemotePlayerDespawn. Sidecar-to-launcher ControlEvent adds PlayerState, InteractRemotePlayer, and a fieldless RomPresenceReset generation notification.",
+    "Presence control records omit session_epoch because authentication binds the connection to the exact epoch. They never contain endpoint, bearer ticket, token, lease fence, cloud readiness, build identity, arbitrary bytes, base64, or serde_json::Value.",
+    "Keep the 512-byte LF-terminated control-line bound. Canonical serialization of every new record must fit it.",
+    "For ROM PlayerState and InteractRemotePlayer, require the current epoch and acknowledged ROM readiness, inspect the incoming outer sequence, decode the exact 28-byte or 20-byte strict payload, then commit. Malformed data must not advance last_session_rom or emit an event.",
+    "Commit a valid newer presence frame before one bounded control-event write. These records are best-effort and must not be replayed after an ambiguous local handoff.",
+    "For remote lifecycle commands, preserve the cloud server_sequence inside the exact 72-byte, 40-byte, or 16-byte payload, allocate an independent sidecar-owned outer sequence, use the authenticated session epoch, and write only through the sole BridgeWriter.",
+    "Presence commands take a fast path before command IDs, fingerprints, replay history, deferred commands, and routine command capacity. Reject them before bridge readiness and once quiescing begins; never defer or replay them across a bridge generation.",
+    "On same-socket ROM reboot, retain checkpoint-first handling, write SESSION_READY before any new lifecycle bridge frame, do not reset outgoing sidecar sequence, discard stale presence, and emit one must-deliver nonsecret RomPresenceReset event so the launcher can stop its current realtime core.",
+    "Preserve existing loopback authentication, three-second I/O bounds, sixteen-candidate anti-slowloris admission, single reader/writer ownership, biased shutdown/deadline ordering, checkpoint semantics, and clean EOF behavior."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar control --all-features --locked",
+        "rtk cargo test -p coop-sidecar server --all-features --locked"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:2fd90bbe5b75fe1e1884fc4dd74d0ea39ae5f16d2a46c8f4a91be6b1c6eb9174",
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-sidecar-control-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "extra_verification": "forbidden",
+    "fix_rounds": 3,
+    "implementation_rounds": 3,
+    "max_elapsed_ms": 1800000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit codec.rs, lib.rs, main.rs, Cargo files, the standalone realtime core, launcher/cloud/server/ROM/Lua code, documentation, generated artifacts, or orchestration state.",
+    "Do not add a generic frame/bytes/value escape hatch, expose a credential or capability, enlarge an unbounded queue, couple outer bridge sequences to cloud server sequences, or accept malformed/unknown/duplicate presence fields.",
+    "Do not place presence in command_history, deferred_commands, checkpoint replay, or routine command reservation; do not allocate a presence bridge sequence before readiness or during quiescing.",
+    "Do not stage, commit, branch, fetch, pull, push, contact repository remotes, create or remove worktrees, or revert another worker's edits. You are not alone in the codebase; preserve all edits outside your owned files."
+  ],
+  "lane": "deep",
+  "objective": "Relay the accepted regional presence records across the authenticated local control socket and fixed ROM bridge without credentials, replay ambiguity, sequence-domain coupling, or checkpoint/shutdown starvation.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-wire-contract.json",
+    "coop/crates/coop-protocol/src/presence.rs",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/codec.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "All acceptance criteria are resolved and required verification outcomes are recorded.",
+      "A safe implementation requires changing a forbidden launcher, protocol, credential, replay, or queue boundary.",
+      "A concrete toolchain or isolated-worktree failure prevents further progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "sidecar-presence-control"
+}

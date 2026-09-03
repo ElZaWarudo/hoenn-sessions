@@ -1,0 +1,17 @@
+{
+  "workspace_id": "pokecrossroads-phase5-sidecar-realtime-core-20260902",
+  "worker_id": "/root/sidecar_realtime_core_worker",
+  "unit_id": "sidecar-realtime-core",
+  "role": "integration-candidate",
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_tree": "bb6725ba2e4bcef8fae97c5977ce6cc3c2a51c86",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "Cargo.lock",
+    "coop/crates/coop-sidecar/Cargo.toml",
+    "coop/crates/coop-sidecar/src/lib.rs",
+    "coop/crates/coop-sidecar/src/realtime.rs",
+    "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+  ],
+  "contract_hash": "sha256:046e45694f1bb802169ab6b391509db248f7e05e3eba98f025561e52601d9d7b"
+}

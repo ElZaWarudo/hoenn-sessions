@@ -1,0 +1,13 @@
+diff --git a/dist/bridge_manifest.json b/dist/bridge_manifest.json
+index b19fe300754cae4617245ad81831ddd8444a0e80..ef2f8aea627b8f3435d3901787698716697a12e2 100644
+--- a/dist/bridge_manifest.json
++++ b/dist/bridge_manifest.json
+@@ -10,7 +10,7 @@
+   "game_build": {
+     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
+     "numeric_id": 65536,
+-    "rom_sha256": "c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165"
++    "rom_sha256": "f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574"
+   },
+   "net_bridge": {
+     "abi_version": 1,

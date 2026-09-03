@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "unit_id": "phase5-launcher-realtime-activation",
+  "candidate_commit": "db0198f622b6efcba41865930ea52452598cafff",
+  "candidate_tree": "213f409049f98c750789c936c3ddc7cd29aa25e5",
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+  "commands": [
+    {"command": "cargo test -p coop-launcher --lib realtime_active_round_robin_exactly_rotates_when_every_source_stays_ready", "result": "1 passed"},
+    {"command": "cargo test -p coop-launcher realtime --all-features --locked", "result": "24 passed"},
+    {"command": "cargo test -p coop-launcher realtime_activation --all-features --locked", "result": "10 passed"},
+    {"command": "cargo test -p coop-launcher checkpoint --all-features --locked", "result": "12 passed"},
+    {"command": "cargo test -p coop-launcher shutdown --all-features --locked", "result": "19 passed"}
+  ],
+  "oracle": "all control, realtime, and heartbeat futures remain immediately ready for twelve selections; exact C/R/H rotation, realtime terminal selection, and shutdown-first behavior in every priority state are asserted"
+}

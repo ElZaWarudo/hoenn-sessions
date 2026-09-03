@@ -1,0 +1,25 @@
+{
+  "base_revision": "871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2",
+  "baseline_digest": "sha256:2f3fc7d425ee5a79b134582692c9b2bb284e62335f176828d4bb551fa34d2082",
+  "baseline_tree": "34e944ac66193e7b09f6df89e452a5625c33ca54",
+  "changed_files": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "dependency_patch_hashes": [
+    "sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee",
+    "sha256:730ba1fe087620507a72500175a665dbb30cc9e925eef2c5db8a659c1bb2e69e"
+  ],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "role": "integration-candidate",
+  "unit_id": "phase5-launcher-control-pump",
+  "worker_id": "/root/launcher_control_pump_v2",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-control-pump-v2"
+}

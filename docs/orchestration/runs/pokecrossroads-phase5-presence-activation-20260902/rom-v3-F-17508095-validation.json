@@ -1,0 +1,1 @@
+{"finding_id":"F-17508095","validator_id":"/root","verdict":"confirmed","evidence":["The original remote A-button fallback preceded Dive and could consume an otherwise valid local dive action."],"revised_severity":null,"revised_observation":null,"revised_impact":null,"revised_recommendation":null}

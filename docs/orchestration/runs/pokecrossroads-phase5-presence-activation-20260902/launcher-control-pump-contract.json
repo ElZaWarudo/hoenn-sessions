@@ -1,0 +1,119 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Persistent reader/writer ownership eliminates cancellation-sensitive socket borrowing while preserving authenticated handshake, strict JSONL bounds, and all existing control behavior.",
+      "id": "LCP-001"
+    },
+    {
+      "description": "Critical events, latest PlayerState, interaction FIFO, reset generation, and sticky terminal state are deterministically isolated with the exact declared bounds; presence cannot corrupt checkpoint or shutdown correlation.",
+      "id": "LCP-002"
+    },
+    {
+      "description": "Critical writes complete before send returns and retain priority under lifecycle traffic; lifecycle overflow, closed lanes, partial writes, or stale generation fail or drop exactly according to the contract without JSONL corruption or replay.",
+      "id": "LCP-003"
+    },
+    {
+      "description": "Raw observation permits realtime-before-child teardown, public next_event remains source-compatible, child exit cannot starve, and explicit teardown joins both pump tasks within the existing absolute shutdown budget.",
+      "id": "LCP-004"
+    },
+    {
+      "description": "Deterministic tests cover coalescing, FIFO/overflow, atomic reset generation, stale traffic, critical priority/completion, partial writes, ACK-before-EOF, child fairness, teardown, checkpoint interleaving, and shutdown under sustained presence.",
+      "id": "LCP-005"
+    },
+    {
+      "description": "Focused and full launcher plus sidecar tests, strict Clippy, formatting, and diff checks pass with worker edits confined to owned launcher files.",
+      "id": "LCP-006"
+    }
+  ],
+  "closed_decisions": [
+    "Treat the root-materialized fixed sidecar control-v2 patch as a staged dependency and do not edit it; production integration will land the dependency and launcher patch atomically.",
+    "Preserve the public ControlChannel and SupervisedChildren APIs and all current observable behavior. Keep the authenticated handshake synchronous, then split the socket into one persistent reader task and one persistent writer task.",
+    "Use exact capacities: critical write 1, lifecycle write 32, critical event 16, interaction 16, terminal 1, and one latest-state watch slot.",
+    "The reader routes checkpoint/shutdown events to a lossless backpressured critical FIFO, PlayerState to one atomic generation plus revision plus optional-state slot, and interactions to a generation-tagged FIFO whose overflow is terminal.",
+    "RomPresenceReset atomically advances generation, clears state, disables lifecycle output, and remains separately observable even if a newer state arrives before the consumer wakes. Old-generation interactions are discarded.",
+    "Critical send waits for complete write acknowledgement within one existing absolute PROCESS_IO_TIMEOUT. Lifecycle output is generation-tagged, nonblocking, bounded, never retried, and full/closed/partial-write is terminal.",
+    "Bias writer scheduling stop, critical, generation/permit change, then lifecycle; critical output overtakes all lifecycle records that have not begun writing.",
+    "Checkpoint and authenticated shutdown use only critical lanes. A correlated ACK parsed before immediate EOF remains deliverable.",
+    "Factor raw child/control observation from settlement so the later realtime coordinator can stop before peer cleanup, while public next_event preserves current fail-closed semantics.",
+    "Explicit shutdown joins pump tasks inside the existing 10-second absolute budget; Drop only aborts as a safety net."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher control_pump --all-features --locked",
+        "rtk cargo test -p coop-launcher rom_presence --all-features --locked",
+        "rtk cargo test -p coop-launcher shutdown --all-features --locked"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:e9954f3849aa13f58b7c9ed1312e17a2bafb185b3f271801c52429a5c028d5e4",
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-launcher-control-pump-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "extra_verification": "forbidden",
+    "fix_rounds": 4,
+    "implementation_rounds": 4,
+    "max_elapsed_ms": 2700000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit sidecar dependency files, launcher realtime HTTP, main, Cargo, cloud/server/ROM/Lua code, product docs, generated artifacts, or orchestration state.",
+    "Do not weaken authentication, JSONL/frame bounds, sequence/epoch validation, checkpoint correlation, shutdown evidence/deadlines, error redaction, or fail-closed child cleanup.",
+    "Do not put credentials or tickets in control IPC, logs, errors, files, argv, environment, query strings, WebSocket subprotocols, or frames.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert other workers. Preserve all unowned edits."
+  ],
+  "lane": "deep",
+  "objective": "Integrate the fixed control-v2 sidecar dependency with a continuously draining, bounded launcher control pump that isolates critical checkpoint/shutdown traffic from region-qualified presence and exposes a generation-safe seam for the later realtime lifecycle.",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-session-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-fixer-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-final-root-observation.json",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-sidecar/src/control.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "All acceptance criteria and required checks are resolved.",
+      "The fixed control-v2 dependency does not provide the required safe interface.",
+      "A concrete toolchain failure prevents progress within the budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "launcher-control-pump"
+}

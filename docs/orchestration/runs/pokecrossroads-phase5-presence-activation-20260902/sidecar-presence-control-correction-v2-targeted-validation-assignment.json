@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "assignment_id": "sidecar-presence-control-correction-v2-targeted-validation",
+  "validator_id": "/root/sidecar_control_targeted_validator_v2",
+  "workspace_root": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-validation-v2",
+  "candidate_tree": "da385949706ef78081fbd0e6145b394bd4b70218",
+  "contract_hash": "sha256:f98be8e90bf3bf0e71f29b3c498380fc5132b57f175929b75c878a80e4535c7c",
+  "diff_digest": "sha256:1d373c5d02ea00e757121e6d1aedf80b450ddb0a41fbf7a72baa7cbb322f6835",
+  "review_plan_hash": "sha256:d86f23733b0512dc1f5a9b917103d9a4be8eb769b95f78a7b72225ed81211ab8",
+  "claims": [
+    {
+      "id": "SPCV2-001",
+      "claim": "An initial active-epoch ROM_READY does not arm the reboot latch, while a legitimate post-ready lifecycle command still reaches the bridge."
+    },
+    {
+      "id": "SPCV2-002",
+      "claim": "Presence admission overflow is independently wakeable and terminates the serving loop as stable PresenceQueueFull rather than reconnectable EOF."
+    },
+    {
+      "id": "SPCV2-003",
+      "claim": "The sole bridge-writer actor prevents a stalled lifecycle write from delaying an authenticated shutdown acknowledgment beyond the 500 ms regression bound."
+    },
+    {
+      "id": "SPCV2-004",
+      "claim": "Pre-ready presence is generation-stamped, discarded after readiness without consuming bridge sequence, and never replayed after authentication."
+    },
+    {
+      "id": "SPCV2-005",
+      "claim": "The repair delta is confined to server.rs while the staged control-v2 dependency remains byte-for-byte unchanged and the sealed candidate tree is exact."
+    }
+  ],
+  "commands": [
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+    "rtk git diff --cached --check"
+  ],
+  "terminal_path": "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-targeted-validation-evidence.candidate.json"
+}

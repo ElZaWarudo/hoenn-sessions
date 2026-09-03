@@ -1,0 +1,82 @@
+{
+  "approval_required": false,
+  "assignments": [
+    {
+      "cross_cutting": false,
+      "id": "rom-presence-activation-correctness-v2",
+      "owned_paths": [
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "priority": 0,
+      "reviewer_role": "reviewer",
+      "risk_boundaries": [
+        "atomic-inbound-reducer-validation-interpolation-retargeting-and-stale-removal",
+        "interaction-queue-full-semantics-warp-fencing-and-renderer-teardown",
+        "remote-object-sprite-palette-ownership-collision-exclusion-and-local-link-isolation",
+        "wire-abi-location-publication-hidden-gating-and-independent-sequence-domains"
+      ]
+    },
+    {
+      "cross_cutting": true,
+      "id": "rom-presence-activation-security-v2",
+      "owned_paths": [
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "priority": 0,
+      "reviewer_role": "security-sentinel",
+      "risk_boundaries": [
+        "bounded-queues-reserved-identifiers-and-no-npc-or-local-player-corruption",
+        "checksum-length-epoch-type-and-sequence-fail-closed-atomicity",
+        "cross-map-warp-stale-replay-hidden-context-and-session-reset-confinement",
+        "signed-coordinate-bounds-palette-capacity-and-object-sprite-memory-ownership"
+      ]
+    }
+  ],
+  "assurance_tier": "high",
+  "changed_paths": [
+    "include/constants/event_objects.h",
+    "include/coop/net_bridge.h",
+    "include/coop/presence_runtime.h",
+    "include/field_control_avatar.h",
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/coop/region.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "src/overworld.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "test/coop/region.c"
+  ],
+  "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+  "coverage_complete": true,
+  "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+  "queued": [],
+  "review_plan_hash": "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91",
+  "schema_version": 2,
+  "validation_wave_required": true
+}

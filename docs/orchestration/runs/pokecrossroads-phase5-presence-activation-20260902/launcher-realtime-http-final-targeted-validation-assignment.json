@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "assignment_id": "launcher-realtime-http-final-targeted-validation-v2",
+  "validator_id": "/root/launcher_http_targeted_validator_v2",
+  "workspace_root": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/launcher-http-validation-v2",
+  "candidate_tree": "9b45da6f84d9319e706cdc29d4bce9075a9c64ef",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "review_plan_hash": "sha256:98eb58fe72eb954d1244077b610241613808788c255542b07cd2a607b6d4739e",
+  "claims": [
+    {
+      "id": "LRTV-001",
+      "claim": "Ambient proxies are disabled and a literal-loopback authenticated mint request cannot be intercepted by configured proxy state."
+    },
+    {
+      "id": "LRTV-002",
+      "claim": "Cross-authority redirects are rejected before any target connection or bearer disclosure."
+    },
+    {
+      "id": "LRTV-003",
+      "claim": "Response bodies accept exactly 8192 cumulative chunked bytes and reject 8193 bytes or oversized Content-Length with stable typed errors."
+    },
+    {
+      "id": "LRTV-004",
+      "claim": "Exactly one case-sensitive Authorization bearer is sent and access tokens plus minted tickets remain absent from Debug and Display output."
+    },
+    {
+      "id": "LRTV-005",
+      "claim": "The production clock sample occurs after response receipt while private fixed-time tests prove expired, exact-max-TTL, and excessive-TTL boundaries without adding retries."
+    }
+  ],
+  "commands": [
+    "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked",
+    "rtk git diff --check"
+  ],
+  "terminal_path": "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-targeted-validation-evidence.candidate.json"
+}

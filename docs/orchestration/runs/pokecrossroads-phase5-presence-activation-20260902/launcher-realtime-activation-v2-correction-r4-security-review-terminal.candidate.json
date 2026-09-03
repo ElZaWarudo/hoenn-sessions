@@ -1,0 +1,186 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:7ebae85823625c113af7cea2c825fdfc3048a6484da9eb8531706459cd62b4c5",
+  "finding_feedback": [
+    {
+      "finding_id": "F-2D10E061",
+      "action": "corroborate",
+      "rationale": "Resolved: successful activation still proves freshest-state handoff, Ready, lifecycle and interaction delivery, shutdown, and joined teardown.",
+      "evidence": [
+        "realtime_activation_runs_ready_lifecycle_interaction_and_joined_teardown passes in the 24-test realtime replay."
+      ]
+    },
+    {
+      "finding_id": "F-30423722",
+      "action": "corroborate",
+      "rationale": "Resolved: both mint shutdown branches use the common latched-checkpoint drain before authenticated child shutdown.",
+      "evidence": [
+        "realtime_mint_shutdown_drains_latched_checkpoint_before_child_teardown passes."
+      ]
+    },
+    {
+      "finding_id": "F-46C50542",
+      "action": "corroborate",
+      "rationale": "Resolved: any public realtime lifecycle error invokes supervised child stop, including pre-mint failures.",
+      "evidence": [
+        "Reset-before-mint and pre-mint heartbeat-error cleanup tests pass."
+      ]
+    },
+    {
+      "finding_id": "F-58EDE2B0",
+      "action": "corroborate",
+      "rationale": "Resolved: Ready remains internal and the coordinator watermark confines activation to post-Ready interactions.",
+      "evidence": [
+        "realtime_checkpoint_watermark_drops_pre_ready_and_preserves_post_ready passes."
+      ]
+    },
+    {
+      "finding_id": "F-BDD4C8DE",
+      "action": "corroborate",
+      "rationale": "Resolved: completed driver state preempts saturated owner events.",
+      "evidence": [
+        "Coordinator saturation and post-receipt terminal race tests pass in the realtime replay."
+      ]
+    },
+    {
+      "finding_id": "F-82E32A6B",
+      "action": "corroborate",
+      "rationale": "Resolved: monotonic interaction sequencing preserves post-Ready FIFO and drops only pre-Ready interactions.",
+      "evidence": [
+        "The synchronized checkpoint watermark regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-830116ED",
+      "action": "corroborate",
+      "rationale": "Resolved in production: rotating active arbitration advances control, realtime, and heartbeat while shutdown remains first.",
+      "evidence": [
+        "session.rs:121-150 implements rotating order with shutdown first in every case."
+      ]
+    },
+    {
+      "finding_id": "F-A208DC98",
+      "action": "corroborate",
+      "rationale": "Resolved: the coordinator rechecks driver completion after owner-event receipt before returning an event.",
+      "evidence": [
+        "coordinator_rechecks_driver_after_owner_event_wins_poll_race passes."
+      ]
+    },
+    {
+      "finding_id": "F-F3308A85",
+      "action": "corroborate",
+      "rationale": "Resolved: activation-level interaction overflow, lifecycle-output overflow, and both child-exit cleanup regressions now pass.",
+      "evidence": [
+        "Both activation backpressure tests and realtime_activation_both_child_exits_stop_coordinator_before_settlement pass."
+      ]
+    },
+    {
+      "finding_id": "F-3BC4C902",
+      "action": "corroborate",
+      "rationale": "Resolved: production activation cleanup is exercised for both backpressure classes and both child-exit sides.",
+      "evidence": [
+        "The focused activation suite passes 10 tests, including all four terminal classes."
+      ]
+    },
+    {
+      "finding_id": "F-4DA3B9E2",
+      "action": "corroborate",
+      "rationale": "Resolved in production: each serviced active source rotates priority to the next source, with shutdown absolute first.",
+      "evidence": [
+        "next_realtime_loop_input has three rotating biased orderings."
+      ]
+    },
+    {
+      "finding_id": "F-65C99A19",
+      "action": "corroborate",
+      "rationale": "Resolved: checkpoint correlation checks elapsed deadline before arbitration and selects the timer first in every ordering.",
+      "evidence": [
+        "realtime_checkpoint_deadline_preempts_sustained_player_state passes."
+      ]
+    },
+    {
+      "finding_id": "F-991C5777",
+      "action": "corroborate",
+      "rationale": "Resolved: Ready processing rotates cutover to Activate-first so valid lifecycle traffic cannot displace activation.",
+      "evidence": [
+        "realtime_ready_cutover_activates_before_continuous_lifecycle passes."
+      ]
+    },
+    {
+      "finding_id": "F-A721B843",
+      "action": "corroborate",
+      "rationale": "Resolved: active overflow and both-child cleanup tests assert disabled lifecycle, one mint, no reconnect, and joined tasks.",
+      "evidence": [
+        "The 10-test realtime_activation replay passes."
+      ]
+    },
+    {
+      "finding_id": "F-ECA67938",
+      "action": "corroborate",
+      "rationale": "Resolved in production: realtime service rotates directly to heartbeat priority.",
+      "evidence": [
+        "session.rs:2421-2423 rotates Realtime to Heartbeat and the realtime suite passes."
+      ]
+    },
+    {
+      "finding_id": "F-0663A373",
+      "action": "corroborate",
+      "rationale": "Resolved: post-checkpoint cutover now accepts shutdown and heartbeat, places shutdown first in every ordering, and rotates to heartbeat before Ready.",
+      "evidence": [
+        "session.rs:188-235 adds shutdown-first heartbeat-aware cutover arbitration.",
+        "realtime_checkpoint_withheld_ready_keeps_heartbeat_and_shutdown_live passes."
+      ]
+    },
+    {
+      "finding_id": "F-2FFF4874",
+      "action": "challenge",
+      "rationale": "Not fully resolved: r4 adds producer-completion signals, more finite events, and a due heartbeat, but it still asserts eventual counts after finite control and realtime inputs drain rather than proving bounded behavior while all sources remain continuously ready.",
+      "evidence": [
+        "session.rs:5703-5753 queues exactly four realtime frames and eight control interactions, then both producers stop.",
+        "session.rs:5820-5835 closes the peer only after eventual counts reach three/four/three; the prior fixed-burst scheduler would also reach those counts once the finite queues drain.",
+        "No barrier asserts each source future is ready at every C/R/H arbitration or checks the exact bounded rotation."
+      ]
+    },
+    {
+      "finding_id": "F-8F877E3A",
+      "action": "corroborate",
+      "rationale": "Resolved: r4 deterministically fills the actual launcher lifecycle-output queue, reaches enqueue_lifecycle failure, and checks fail-closed joined cleanup with no trailing sentinel output.",
+      "evidence": [
+        "session.rs:2430-2457 uses the real generation-fenced enqueue_lifecycle branch.",
+        "realtime_activation_lifecycle_output_backpressure_joins_everything stalls ROM reads, fills the queue synchronously through a test-only burst seam, and passes."
+      ]
+    },
+    {
+      "finding_id": "F-A9F4163F",
+      "action": "corroborate",
+      "rationale": "Resolved: after correlated SaveDataUpdated, the cloud checkpoint future is no longer raced against the old deadline or dropped for terminal input; terminal and shutdown state are latched until definitive reconciliation.",
+      "evidence": [
+        "session.rs:2694-2751 awaits checkpoint completion after latching terminal or shutdown and has no Deadline input.",
+        "Delayed prepare and delayed finalize regressions both exceed the correlation deadline, install revision 1, and pass."
+      ]
+    },
+    {
+      "finding_id": "F-B7FCE378",
+      "action": "corroborate",
+      "rationale": "Resolved: reset, realtime terminal, and caller shutdown are latched while prepare/upload/finalize proceeds, then handled before cutover or lifecycle output.",
+      "evidence": [
+        "session.rs:2753-2764 clears completed checkpoint state, returns shutdown or terminal, and checks the sticky reset before cutover.",
+        "The delayed-prepare reset and delayed-finalize shutdown tests pass."
+      ]
+    }
+  ],
+  "findings": [],
+  "review_plan_hash": "sha256:c6f3060991fa2c4ecd2de314a10b0838876ac93ad53312d852e59d9708130c74",
+  "reviewer_id": "/root/launcher_activation_v2_security",
+  "risk_boundaries_checked": [
+    "active-overflow-and-child-cleanup",
+    "ambiguous-mutation-outcome-confinement",
+    "no-remint-replay-orphan",
+    "resolution-of-all-recorded-findings",
+    "shutdown-and-heartbeat-liveness",
+    "ticket-and-endpoint-confinement"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 2,
+  "surface_id": "launcher-realtime-activation-v2-security-r4"
+}

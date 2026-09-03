@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "assignment_id": "sidecar-presence-control-correction-v4-targeted-validation",
+  "validator_id": "/root/sidecar_control_targeted_validator_v4",
+  "workspace_root": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-validation-v4",
+  "candidate_tree": "02cbe614cc7c082c7b1a6727c834c0ccb35602e8",
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "review_plan_hash": "sha256:d5b815a6dce51a494b4dd5edaaa9d78073a3b1dc57462ea79db59c36cd06dcf6",
+  "claims": [
+    {
+      "id": "SPCV4-001",
+      "claim": "The pre-bridge control path compiles without async recursion and preserves exact fail-closed terminal classification when the deferred lane is full."
+    },
+    {
+      "id": "SPCV4-002",
+      "claim": "Durable writer failure cannot be lost, outranks simultaneous reconnectable control EOF, and terminates retained-bridge control recovery."
+    },
+    {
+      "id": "SPCV4-003",
+      "claim": "All owned writer terminal paths abort and await their tasks without draining buffered lifecycle frames or leaving a live bridge socket."
+    },
+    {
+      "id": "SPCV4-004",
+      "claim": "The real serving-path stalled-writer regression proves admitted lifecycle output, an Applied shutdown ACK within 500 ms, and joined writer/session/socket termination."
+    },
+    {
+      "id": "SPCV4-005",
+      "claim": "Initial-ready, overflow, pre-ready, control-terminal, writer, and queued/in-flight generation-cutover behavior remains covered and passing."
+    },
+    {
+      "id": "SPCV4-006",
+      "claim": "The full sidecar suite and strict quality checks pass on the exact staged candidate tree with no source changes outside server.rs relative to the sealed dependency tree."
+    }
+  ],
+  "commands": [
+    "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+    "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+    "rtk cargo test -p coop-sidecar active_writer_failure_precedes_simultaneous_control_eof --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+    "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --cached --check"
+  ],
+  "terminal_path": "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-targeted-validation-evidence.candidate.json"
+}

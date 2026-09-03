@@ -1,5 +1,5 @@
 schema_version: 1
-updated_at: "2026-09-02T10:35:13Z"
+updated_at: "2026-09-03T21:09:41Z"
 blockers:
   - id: BLK-ARM-TOOLCHAIN
     jira_issue_key: null
@@ -74,7 +74,7 @@ blockers:
     description: The checkpoint has SQL schema, storage interfaces, bounded local adapters, and synchronous cleanup, but no credential-backed PostgreSQL/Firebase adapter or production background garbage collector. No running Docker daemon, Firebase project/emulator configuration, or credentials were supplied.
     decision_required: Implement the production adapters and retryable authenticated object-GC lifecycle, then supply a non-production PostgreSQL/Firebase environment for integration validation.
     impact_if_ignored: Local transactional behavior is testable, but cloud durability, restart recovery, and eventual cleanup of expired/orphaned objects cannot be claimed.
-    affected_units: [cloud-storage]
+    affected_units: [cloud-storage, distribution]
     blocks_dependents: false
     suggested_owner: user
     detected_at: "2026-09-01T00:00:00Z"

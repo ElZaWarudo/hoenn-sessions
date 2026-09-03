@@ -1,0 +1,17 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+  "finding_feedback": [],
+  "findings": [],
+  "review_plan_hash": "sha256:3e042c024eb1d894a08f59064f29ef0c386cd351dceedb4346c99c81c5ab96a5",
+  "reviewer_id": "/root/launcher_activation_v2_correctness",
+  "risk_boundaries_checked": [
+    "exact-all-ready-round-robin-oracle",
+    "production-helper-semantic-equivalence",
+    "resolution-of-all-recorded-findings",
+    "terminal-and-shutdown-priority"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "launcher-realtime-activation-v2-correctness-r5"
+}

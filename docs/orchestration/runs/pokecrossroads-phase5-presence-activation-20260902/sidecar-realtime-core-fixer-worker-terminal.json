@@ -1,0 +1,73 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "SRF-001",
+      "status": "satisfied",
+      "evidence": "Per-PresenceHandle lifecycle sequencing implemented and interleaved sequence-1 remotes tested."
+    },
+    {
+      "criterion_id": "SRF-002",
+      "status": "satisfied",
+      "evidence": "Visibility-aware capacity and bounded hidden tombstones implemented and tested."
+    },
+    {
+      "criterion_id": "SRF-003",
+      "status": "satisfied",
+      "evidence": "Grant is dropped before network await; expiry gates upgrade only; post-expiry authenticated session test passes."
+    },
+    {
+      "criterion_id": "SRF-004",
+      "status": "satisfied",
+      "evidence": "Exact bearer authentication is verified using a non-secret boolean without plaintext assertion output."
+    },
+    {
+      "criterion_id": "SRF-005",
+      "status": "satisfied",
+      "evidence": "Focused/full tests, Clippy, formatting, and diff checks passed; unstaged changes are confined to the two owned files."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-sidecar realtime --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-sidecar realtime --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

@@ -1,0 +1,27 @@
+{
+  "base_revision": "2d1e9114f7f9d599a13a62d7abb71916f779d9dc",
+  "baseline_digest": "sha256:8817b20b0e377a6cc83918fa7a19a4523566b15da25d09b8d623c68661a22f6a",
+  "baseline_tree": "15712dfb64d4374024ef7c85abc5dc04a4770df4",
+  "changed_files": [
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "dependency_patch_hashes": [
+    "sha256:12d621dde9b937f8e3ea346402aa4179da8697e273d1de0d99fad81b5fe5c80e",
+    "sha256:60dad593d8023f3cb431cb442655a5040b287e6f2672e3a17b600f5f30c6c37c"
+  ],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "role": "integration-candidate",
+  "unit_id": "launcher-realtime-http-final",
+  "worker_id": "/root/launcher_realtime_http_worker",
+  "workspace_id": "pokecrossroads-phase5-launcher-realtime-http-final-20260903"
+}

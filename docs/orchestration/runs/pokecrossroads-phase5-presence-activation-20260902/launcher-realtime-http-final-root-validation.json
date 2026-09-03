@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "validated_at": "2026-09-03T09:37:20Z",
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "candidate_tree": "9b45da6f84d9319e706cdc29d4bce9075a9c64ef",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "patch_hash": "sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "review_plan_hash": "sha256:98eb58fe72eb954d1244077b610241613808788c255542b07cd2a607b6d4739e",
+  "findings_registry_digest": "sha256:6adc82c89aa33b4d5a2a29ef140284d8d3f1f61284998f0f443c54e19b9d1c31",
+  "correctness_terminal_digest": "sha256:59b2d85fe54418e82b797b2ec4f262385f22c21dda345a2dfbc59c92841cb441",
+  "security_terminal_digest": "sha256:79d08d858ede6ad08f083742b24cd466dcbba3e8430545aa2ceac7cf4dc06e9f",
+  "targeted_validation_candidate_digest": "sha256:bdd41f53b3d22be054e3955f2f1a4ebc17a2861bd7842a09d45dc44ed442e3a8",
+  "targeted_validation_digest": "sha256:908f471af772a75fb72925550b312b595a7af652f137c9854b28f6481aef82b1",
+  "commands": [
+    {"command": "rtk cargo test -p coop-launcher --all-features --locked", "exit_code": 0, "summary": "120 passed, 1 ignored, 79 filtered out across 9 suites."},
+    {"command": "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings", "exit_code": 0, "summary": "No issues found."},
+    {"command": "rtk cargo fmt --all -- --check", "exit_code": 0, "summary": "Passed."},
+    {"command": "git diff --cached --check", "exit_code": 0, "summary": "Passed on the sealed staged candidate."}
+  ],
+  "status": "passed"
+}

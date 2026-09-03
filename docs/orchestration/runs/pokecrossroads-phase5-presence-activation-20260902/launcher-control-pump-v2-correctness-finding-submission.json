@@ -1,0 +1,22 @@
+{
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "review_plan_hash": "sha256:efe0aedb762247c31ba9795fd9ef7efd595d7b05de4fae8cbe6bf81a57b80e3e",
+  "surface_id": "launcher-control-pump-correctness-v2",
+  "reporter_id": "/root/launcher_pump_correctness_review_v2",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "LCP2-002-lossless-reset-critical-race",
+      "observation": "Both asynchronous critical receive branches can dequeue a critical event and then return a newly observed reset notification without retaining the dequeued event for the next call.",
+      "impact": "A reset that is published while either awaited receive resolves can permanently discard a critical correlation record, causing checkpoint or shutdown recovery despite the authenticated record having arrived.",
+      "recommendation": "Retain the dequeued critical event when reset wins the post-receive race and prove reset-first then exact-critical delivery for both receive APIs with deterministic barriers.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/process.rs:1388-1393 dequeues from critical_rx before returning the reset notification.",
+        "coop/crates/coop-launcher/src/process.rs:1444-1449 repeats the consume-then-reset sequence in receive_bounded.",
+        "The existing reset-priority regression never performs a second receive to prove the queued critical event remains deliverable."
+      ]
+    }
+  ]
+}

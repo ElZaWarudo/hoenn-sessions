@@ -1,0 +1,90 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "SPCF-001",
+      "status": "satisfied",
+      "evidence": "server.rs declares the bounded MAX_PRESENCE_COMMANDS capacity as 32, preserves FIFO lifecycle records with nonblocking try_send, and turns TrySendError::Full into the shared PresenceQueueFull fatal signal. The presence_lane_retains_capacity_and_never_strands_shutdown and presence_lane_overflow_is_a_stable_fatal_signal tests passed; no Full branch silently succeeds."
+    },
+    {
+      "criterion_id": "SPCF-002",
+      "status": "satisfied",
+      "evidence": "server.rs sets lifecycle_forwarding_disabled before SESSION_READY/reset rearm and handle_presence_command rejects queued or later lifecycle records without allocating a sidecar sequence. reboot_reset_fences_queued_presence_for_the_local_session passed and proves no lifecycle frame follows reset."
+    },
+    {
+      "criterion_id": "SPCF-003",
+      "status": "satisfied",
+      "evidence": "The fieldless RomPresenceReset remains the canonical event; complete_reboot_rearm sends SESSION_READY first and retains rearm_after_reboot on an ambiguous reset write, while resume_checkpoint_handoff retries it only under the documented launcher-fatal/no-restart invariant. fieldless_reset_retry_requires_launcher_fatal_no_restart_policy passed, without claiming exactly-once delivery."
+    },
+    {
+      "criterion_id": "SPCF-004",
+      "status": "satisfied",
+      "evidence": "control.rs has strict canonical round-trip, unknown-field, invalid-field, and LF-inclusive <=512-byte coverage for all six presence records, including a custom strict empty-object reset decoder. server.rs covers malformed exact 28/20-byte inbound payloads with no sequence commit, exact 72/40/16-byte outbound payloads with independent outer sequences, and quiescing no-allocation behavior; all passed."
+    },
+    {
+      "criterion_id": "SPCF-005",
+      "status": "satisfied",
+      "evidence": "The focused and full coop-sidecar tests passed (88 total), strict Clippy with -D warnings passed, cargo fmt --check passed, and git diff --check passed. Launcher compilation is intentionally not duplicated: it is a root-owned aggregate/cross-unit check and is outside this worker's two-file ownership and fixer verification manifest; this is reported rather than represented as a worker pass."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-sidecar control --all-features --locked",
+        "attempts": 3,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar server --all-features --locked",
+        "attempts": 3,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "attempts": 3,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 3,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 3,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-sidecar control --all-features --locked",
+    "rtk cargo test -p coop-sidecar control --all-features --locked",
+    "rtk cargo test -p coop-sidecar control --all-features --locked",
+    "rtk cargo test -p coop-sidecar server --all-features --locked",
+    "rtk cargo test -p coop-sidecar server --all-features --locked",
+    "rtk cargo test -p coop-sidecar server --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check",
+    "rtk git diff --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

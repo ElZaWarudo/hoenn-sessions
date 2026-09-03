@@ -1,0 +1,362 @@
+diff --git a/coop/crates/coop-server/tests/phase2_http.rs b/coop/crates/coop-server/tests/phase2_http.rs
+index dd7b91161b2d3bdb6e25d5daad6f474fd84d35a5..036d219b7e0c31f2d8b943566f8726693e46c80a 100644
+--- a/coop/crates/coop-server/tests/phase2_http.rs
++++ b/coop/crates/coop-server/tests/phase2_http.rs
+@@ -1,9 +1,10 @@
+ //! Bounded black-box proof of the local Phase 2 HTTP service.
+ //!
+-//! This test deliberately talks to the built server binary instead of using
+-//! `Phase2App::router`: the router is an internal implementation detail, and
+-//! this is the proof that the operator-facing binary, environment loading, and
+-//! loopback HTTP surface agree.
++//! Most tests deliberately talk to the built server binary, proving that the
++//! operator-facing binary, environment loading, and loopback HTTP surface
++//! agree. The two-client presence acceptance test also drives one explicit
++//! in-process `Phase2App` so it can verify the authenticated WebSocket fanout
++//! without adding a production bootstrap seam.
+ 
+ use std::{
+     error::Error,
+@@ -19,19 +20,21 @@ use coop_cloud::{
+     InvitationCode, LeaseContract, LoginRequest, MgbaVersion, MintRealtimeTicketRequest,
+     MintRealtimeTicketResponse, Password, ProtocolVersion, ReconnectLeaseRequest, RefreshRequest,
+     RefreshResponse, RegisterRequest, Revision, RuntimeBuildIdentity, RuntimeLeaseFence,
+-    ServerRealtimeFrameV1, Sha256Digest, SignedManifestEnvelope, SnapshotFile,
++    ServerRealtimeFrameV1, Sha256Digest, SignedManifestEnvelope, SigningPrivateKey, SnapshotFile,
+     SnapshotFinalizeFence, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareFence,
+     SnapshotPrepareRequest, StableRuntimeSession, TrustedManifestKey,
+ };
+ use coop_protocol::{
+-    AnimationId, AvatarId, Direction, LocalPresenceStateV1, MovementMode, PlayerState,
+-    PresencePoseV1, RegionId, WorldLocation,
++    AnimationId, AvatarId, DespawnReason, Direction, LocalPresenceStateV1, MovementMode,
++    PlayerState, PresenceHandle, PresencePoseV1, RegionId, WorldLocation,
+ };
++use coop_server::{Phase2App, Phase2Config};
+ use futures_util::{SinkExt, StreamExt};
+ use tokio::{
+     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+     net::{TcpListener, TcpStream},
+-    sync::Mutex,
++    sync::{Mutex, oneshot},
++    task::JoinHandle,
+     time::timeout,
+ };
+ use tokio_tungstenite::{
+@@ -749,6 +752,16 @@ fn realtime_state_at(
+     y: i16,
+     source_sequence: u32,
+     player_state: PlayerState,
++) -> LocalPresenceStateV1 {
++    realtime_state_with_warp(x, y, source_sequence, source_sequence, player_state)
++}
++
++fn realtime_state_with_warp(
++    x: i16,
++    y: i16,
++    source_sequence: u32,
++    warp_sequence: u32,
++    player_state: PlayerState,
+ ) -> LocalPresenceStateV1 {
+     let location = WorldLocation::new(RegionId::Hoenn, 0, 9, 1, 1).unwrap();
+     let pose = PresencePoseV1::new(
+@@ -763,7 +776,7 @@ fn realtime_state_at(
+         0,
+         Direction::South,
+         1,
+-        source_sequence,
++        warp_sequence,
+         MovementMode::Idle,
+         AnimationId::Idle,
+         AvatarId::Brendan,
+@@ -816,6 +829,290 @@ where
+     Ok(())
+ }
+ 
++type RealtimeSocket =
++    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
++
++struct InProcessServer {
++    address: SocketAddr,
++    shutdown: Option<oneshot::Sender<()>>,
++    task: Option<JoinHandle<Result<(), std::io::Error>>>,
++}
++
++impl InProcessServer {
++    async fn shutdown(mut self) -> TestResult<()> {
++        let shutdown = self
++            .shutdown
++            .take()
++            .ok_or("in-process server shutdown was already requested")?;
++        shutdown
++            .send(())
++            .map_err(|()| "in-process server stopped before shutdown")?;
++        let task = self
++            .task
++            .as_mut()
++            .ok_or("in-process server task was already taken")?;
++        match timeout(SHUTDOWN_TIMEOUT, &mut *task).await {
++            Ok(Ok(Ok(()))) => {
++                self.task.take();
++                Ok(())
++            }
++            Ok(Ok(Err(error))) => Err(error.into()),
++            Ok(Err(error)) => Err(error.into()),
++            Err(_) => {
++                task.abort();
++                match timeout(SHUTDOWN_TIMEOUT, &mut *task).await {
++                    Ok(Ok(Ok(())) | Err(_)) => {
++                        self.task.take();
++                        Err("in-process server did not shut down within the bound".into())
++                    }
++                    Ok(Ok(Err(error))) => {
++                        self.task.take();
++                        Err(error.into())
++                    }
++                    Err(_) => Err(
++                        "in-process server abort did not complete within the cleanup bound".into(),
++                    ),
++                }
++            }
++        }
++    }
++}
++
++impl Drop for InProcessServer {
++    fn drop(&mut self) {
++        if let Some(task) = self.task.take() {
++            task.abort();
++        }
++    }
++}
++
++async fn start_in_process_presence_server() -> TestResult<InProcessServer> {
++    let listener = timeout(STARTUP_TIMEOUT, TcpListener::bind(("127.0.0.1", 0)))
++        .await
++        .map_err(|_| "in-process server listener bind timed out")??;
++    let address = listener.local_addr()?;
++    let config = Phase2Config::local(
++        vec![0x07; 32],
++        SigningPrivateKey::from_bytes([7; 32]),
++        SIGNING_KEY_ID,
++    )?;
++    let app = Phase2App::new(config)?;
++    app.add_invitation("two-websocket-invite-a")?;
++    app.add_invitation("two-websocket-invite-b")?;
++    let (shutdown, signal) = oneshot::channel();
++    let task = tokio::spawn(async move {
++        axum::serve(listener, app.router())
++            .with_graceful_shutdown(async move {
++                let _ = signal.await;
++            })
++            .await
++    });
++    Ok(InProcessServer {
++        address,
++        shutdown: Some(shutdown),
++        task: Some(task),
++    })
++}
++
++async fn connect_realtime_socket(address: SocketAddr, ticket: &str) -> TestResult<RealtimeSocket> {
++    let mut request = format!("ws://{address}/v1/realtime").into_client_request()?;
++    request.headers_mut().insert(
++        "authorization",
++        HeaderValue::from_str(&format!("Bearer {ticket}"))?,
++    );
++    let (socket, response) = timeout(HTTP_TIMEOUT, connect_async(request)).await??;
++    assert_eq!(response.status().as_u16(), 101);
++    assert_eq!(
++        response
++            .headers()
++            .get("cache-control")
++            .and_then(|value| value.to_str().ok()),
++        Some("no-store")
++    );
++    Ok(socket)
++}
++
++async fn next_realtime_frame<S>(
++    socket: &mut tokio_tungstenite::WebSocketStream<S>,
++) -> TestResult<ServerRealtimeFrameV1>
++where
++    S: AsyncRead + AsyncWrite + Unpin,
++{
++    let message = timeout(HTTP_TIMEOUT, socket.next())
++        .await?
++        .ok_or("WebSocket closed before the expected realtime frame")??;
++    match message {
++        WsMessage::Text(text) => Ok(coop_cloud::decode_server_realtime_frame(text.as_bytes())?),
++        other => Err(format!("unexpected non-text realtime message: {other:?}").into()),
++    }
++}
++
++async fn expect_realtime_ready_handle<S>(
++    socket: &mut tokio_tungstenite::WebSocketStream<S>,
++) -> TestResult<PresenceHandle>
++where
++    S: AsyncRead + AsyncWrite + Unpin,
++{
++    match next_realtime_frame(socket).await? {
++        ServerRealtimeFrameV1::PresenceReady(readiness) => Ok(readiness.self_handle()),
++        other => Err(format!("expected PRESENCE_READY, received {other:?}").into()),
++    }
++}
++
++async fn assert_no_realtime_frame<S>(
++    socket: &mut tokio_tungstenite::WebSocketStream<S>,
++    wait: Duration,
++) -> TestResult<()>
++where
++    S: AsyncRead + AsyncWrite + Unpin,
++{
++    match timeout(wait, socket.next()).await {
++        Err(_) => Ok(()),
++        Ok(Some(Ok(message))) => Err(format!("unexpected self realtime frame: {message:?}").into()),
++        Ok(Some(Err(error))) => Err(error.into()),
++        Ok(None) => Err("WebSocket closed while checking for self events".into()),
++    }
++}
++
++async fn establish_in_process_realtime_user(
++    address: SocketAddr,
++    username: &str,
++    invitation: &str,
++    id_base: u128,
++) -> TestResult<(AccessToken, LeaseContract)> {
++    let password_text = format!("{username}-password");
++    let password = Password::new(&password_text)?;
++    let register =
++        RegisterRequest::new(username, password.clone(), InvitationCode::new(invitation)?)?;
++    let response = json_request(address, "POST", "/v1/auth/register", &[], &register).await?;
++    expect_status(&response, 201);
++    let registered: coop_cloud::RegisterResponse = serde_json::from_slice(&response.body)?;
++    let login = LoginRequest::new(username, password)?;
++    let response = json_request(address, "POST", "/v1/auth/login", &[], &login).await?;
++    expect_status(&response, 200);
++    let login: coop_cloud::LoginResponse = serde_json::from_slice(&response.body)?;
++    let acquire = AcquireLeaseRequest::new(
++        registered.character_id,
++        ClientInstanceId::new(Uuid::from_u128(id_base))?,
++        IdempotencyKey::new(Uuid::from_u128(id_base + 1))?,
++    );
++    let response = json_request(
++        address,
++        "POST",
++        "/v1/sessions/acquire",
++        &auth_headers(&login.access_token),
++        &acquire,
++    )
++    .await?;
++    expect_status(&response, 200);
++    let lease: LeaseContract = serde_json::from_slice(&response.body)?;
++    Ok((login.access_token, lease))
++}
++
++#[tokio::test]
++async fn realtime_two_authenticated_clients_share_littleroot() -> TestResult<()> {
++    if !cfg!(any(target_os = "linux", target_os = "windows")) {
++        return Err("realtime presence acceptance requires Linux or Windows".into());
++    }
++    let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
++    let server = start_in_process_presence_server().await?;
++    let address = server.address;
++    let flow = timeout(
++        HTTP_FLOW_TIMEOUT,
++        realtime_two_authenticated_clients_flow(address),
++    )
++    .await
++    .map_err(|_| "two-client realtime acceptance exceeded its bound")?;
++    let shutdown = server.shutdown().await;
++    flow?;
++    shutdown
++}
++
++async fn realtime_two_authenticated_clients_flow(address: SocketAddr) -> TestResult<()> {
++    let (access_a, mut lease_a) = establish_in_process_realtime_user(
++        address,
++        "presencealice",
++        "two-websocket-invite-a",
++        0x5a00,
++    )
++    .await?;
++    let (access_b, mut lease_b) = establish_in_process_realtime_user(
++        address,
++        "presencebob",
++        "two-websocket-invite-b",
++        0x5b00,
++    )
++    .await?;
++    let ticket_a = mint_fresh_realtime_ticket(address, &access_a, &mut lease_a).await?;
++    let ticket_b = mint_fresh_realtime_ticket(address, &access_b, &mut lease_b).await?;
++
++    let mut socket_a = connect_realtime_socket(address, &ticket_a).await?;
++    let state_a = realtime_state_at(1, 1, 7, PlayerState::Overworld);
++    timeout(HTTP_TIMEOUT, send_player_state(&mut socket_a, &state_a)).await??;
++    let handle_a = expect_realtime_ready_handle(&mut socket_a).await?;
++    assert_no_realtime_frame(&mut socket_a, Duration::from_millis(150)).await?;
++
++    let mut socket_b = connect_realtime_socket(address, &ticket_b).await?;
++    let state_b = realtime_state_at(2, 1, 41, PlayerState::Overworld);
++    timeout(HTTP_TIMEOUT, send_player_state(&mut socket_b, &state_b)).await??;
++    let handle_b = expect_realtime_ready_handle(&mut socket_b).await?;
++    assert_ne!(handle_a, handle_b);
++    assert_ne!(handle_a.as_u64(), 0);
++    assert_ne!(handle_b.as_u64(), 0);
++
++    let spawn_a_on_b = match next_realtime_frame(&mut socket_b).await? {
++        ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
++            assert_eq!(spawn.handle(), handle_a);
++            assert_eq!(spawn.username().as_str(), "presencealice");
++            assert_eq!(spawn.state(), &state_a);
++            assert_eq!(spawn.state().pose().warp_sequence(), 7);
++            spawn.server_sequence()
++        }
++        other => return Err(format!("expected Alice spawn on Bob, received {other:?}").into()),
++    };
++    let spawn_b_on_a = match next_realtime_frame(&mut socket_a).await? {
++        ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
++            assert_eq!(spawn.handle(), handle_b);
++            assert_eq!(spawn.username().as_str(), "presencebob");
++            assert_eq!(spawn.state(), &state_b);
++            assert_eq!(spawn.state().pose().warp_sequence(), 41);
++            spawn.server_sequence()
++        }
++        other => return Err(format!("expected Bob spawn on Alice, received {other:?}").into()),
++    };
++    assert_no_realtime_frame(&mut socket_a, Duration::from_millis(150)).await?;
++    assert_no_realtime_frame(&mut socket_b, Duration::from_millis(150)).await?;
++
++    let moved_a = realtime_state_with_warp(3, 1, 8, 7, PlayerState::Overworld);
++    timeout(HTTP_TIMEOUT, send_player_state(&mut socket_a, &moved_a)).await??;
++    let update_server_sequence = match next_realtime_frame(&mut socket_b).await? {
++        ServerRealtimeFrameV1::RemotePlayerUpdate(update) => {
++            assert_eq!(update.handle(), handle_a);
++            assert_eq!(update.state(), &moved_a);
++            assert!(update.server_sequence() > spawn_a_on_b);
++            update.server_sequence()
++        }
++        other => return Err(format!("expected Alice movement on Bob, received {other:?}").into()),
++    };
++    assert_no_realtime_frame(&mut socket_b, Duration::from_millis(150)).await?;
++    assert_no_realtime_frame(&mut socket_a, Duration::from_millis(150)).await?;
++
++    timeout(HTTP_TIMEOUT, socket_a.close(None)).await??;
++    match next_realtime_frame(&mut socket_b).await? {
++        ServerRealtimeFrameV1::RemotePlayerDespawn(despawn) => {
++            assert_eq!(despawn.handle(), handle_a);
++            assert_eq!(despawn.reason(), DespawnReason::Disconnected);
++            assert!(despawn.server_sequence() > update_server_sequence);
++        }
++        other => {
++            return Err(format!("expected Alice disconnect on Bob, received {other:?}").into());
++        }
++    }
++    assert_ne!(spawn_b_on_a, 0);
++    timeout(HTTP_TIMEOUT, socket_b.close(None)).await??;
++    Ok(())
++}
++
+ async fn establish_realtime_user(
+     address: SocketAddr,
+     username: &str,

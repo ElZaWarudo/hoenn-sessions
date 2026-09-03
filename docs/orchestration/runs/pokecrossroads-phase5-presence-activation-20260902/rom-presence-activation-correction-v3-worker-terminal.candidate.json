@@ -1,0 +1,82 @@
+{
+  "status": "done_with_baseline_gaps",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "RPAC3-001",
+      "status": "satisfied",
+      "evidence": "The live same-epoch SESSION_READY cutover is implemented in src/coop/net_bridge.c and the focused regression 'Cloud Coop newer live same epoch SESSION_READY cuts over pending presence' exercises queued presence, malformed lifecycle input, same-epoch replacement, reducer reset, ROM_READY, and queue clearing. Focused Cloud Coop validation passed 91/91."
+    },
+    {
+      "criterion_id": "RPAC3-002",
+      "status": "satisfied",
+      "evidence": "src/event_object_movement.c exposes the narrow return-to-field retirement seam and SpawnObjectEventsOnReturnToField uses it for reserved remotes; src/coop/presence_runtime.c keeps strict cached map/object/sprite ownership and backlink-protected cleanup. The direct runtime regression proves unsprited retirement, deterministic recreation, foreign NPC/sprite preservation, stale cached identity cleanup, and no foreign mutation; focused validation passed."
+    },
+    {
+      "criterion_id": "RPAC3-003",
+      "status": "satisfied",
+      "evidence": "src/coop/presence_runtime.c starts animation only on direction/animation changes and retains six-frame interpolation with zero sprite offsets. The direct renderer regression asserts animation command progress, an intermediate in-between position, exact six-update arrival, and discontinuity snap; focused validation passed."
+    },
+    {
+      "criterion_id": "RPAC3-004",
+      "status": "satisfied",
+      "evidence": "CoopPresenceRuntime_TryInteract requires a fresh effectively visible owned renderer and allowed local pose, while src/field_control_avatar.c runs vanilla interaction before remote fallback. The executable field-input regression proves a real overlapping local object starts its script without queueing remote interaction, then a remote-only pressed-A falls back as CONSUMED_NO_LOCK; direct tests also cover hidden/stale/warp/queue-full admission. Focused validation passed."
+    },
+    {
+      "criterion_id": "RPAC3-005",
+      "status": "satisfied",
+      "evidence": "The focused Cloud Coop suite directly executes the outer-sequence cutover, renderer recreation and ownership isolation, interpolation/animation, stale and warp fencing, field-input precedence, hidden publication, and queue-full seams. The final focused command completed with 91 passed and 0 failed."
+    },
+    {
+      "criterion_id": "RPAC3-006",
+      "status": "satisfied",
+      "evidence": "The final focused Cloud Coop command passed 91/91; the modern ROM build passed with memory usage EWRAM 240432/262144, IWRAM 28648/32768, ROM 28597020/33554432; bridge-manifest unittest passed all 15 tests; and git diff --check passed. The prescribed regeneration command was attempted twice but is an environment baseline gap because native Windows Python could not launch the configured nm executable (FileNotFoundError [WinError 2]); no owned source assertion or build failure occurred."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make modern",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+        "attempts": 2,
+        "outcome": "unowned_failure"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+    "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+    "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make modern",
+    "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+    "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+    "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [
+    "The prescribed bridge-manifest regeneration command failed on both attempts before tool execution because native Windows Python could not launch the configured nm executable (FileNotFoundError [WinError 2]); this is an environment/toolchain baseline gap, not an owned source failure."
+  ]
+}

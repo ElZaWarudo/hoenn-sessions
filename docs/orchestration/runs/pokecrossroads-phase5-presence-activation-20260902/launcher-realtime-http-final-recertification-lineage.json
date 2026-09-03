@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unit_id": "phase5-launcher-realtime-http",
+  "workspace_plan_hash": "sha256:b78a0ceb2e28c96cc3ad4f931a7b9f77cb08611c52b6a2cde25c546289d9c8df",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "original_base_revision": "2d1e9114f7f9d599a13a62d7abb71916f779d9dc",
+  "sealed_baseline_tree": "15712dfb64d4374024ef7c85abc5dc04a4770df4",
+  "content_equivalent_source_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "historical_dependency_patch_hashes": [
+    "sha256:12d621dde9b937f8e3ea346402aa4179da8697e273d1de0d99fad81b5fe5c80e",
+    "sha256:60dad593d8023f3cb431cb442655a5040b287e6f2672e3a17b600f5f30c6c37c"
+  ],
+  "historical_dependency_status": "superseded-and-not-topologically-replayable",
+  "reconstruction": {
+    "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+    "base_tree": "15712dfb64d4374024ef7c85abc5dc04a4770df4",
+    "ordered_candidate_patches": [
+      {
+        "path": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final.patch",
+        "sha256": "sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee"
+      }
+    ],
+    "candidate_tree": "9b45da6f84d9319e706cdc29d4bce9075a9c64ef",
+    "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b"
+  },
+  "root_observation": "All four fresh candidate/reviewer/validator worktrees produced the identical candidate tree after applying only the exact cumulative final patch to commit 00a030b2, whose tree equals the original sealed baseline. Superseded patch hashes are retained as history and are not applied."
+}

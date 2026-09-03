@@ -1,0 +1,285 @@
+diff --git a/coop/crates/coop-launcher/src/session.rs b/coop/crates/coop-launcher/src/session.rs
+index ad45199e70a170ff5310f9765707dab6c5df3937..c05d2569498e9bdfd23c7cd63aeb52fdfff6b7e6 100644
+--- a/coop/crates/coop-launcher/src/session.rs
++++ b/coop/crates/coop-launcher/src/session.rs
+@@ -125,27 +125,50 @@ async fn next_realtime_loop_input<F: Future<Output = ()>>(
+     heartbeat: &mut tokio::time::Interval,
+     priority: RealtimeSource,
+ ) -> RealtimeLoopInput {
++    arbitrate_realtime_loop_input(
++        shutdown.as_mut(),
++        children.observe_raw(),
++        realtime.next_event(),
++        heartbeat.tick(),
++        priority,
++    )
++    .await
++}
++
++async fn arbitrate_realtime_loop_input<S, C, R, H, T>(
++    shutdown: S,
++    control: C,
++    realtime: R,
++    heartbeat: H,
++    priority: RealtimeSource,
++) -> RealtimeLoopInput
++where
++    S: Future<Output = ()>,
++    C: Future<Output = Result<RawSupervisorEvent, ProcessError>>,
++    R: Future<Output = Result<RealtimeCoordinatorEvent, crate::realtime::RealtimeCoordinatorError>>,
++    H: Future<Output = T>,
++{
+     match priority {
+         RealtimeSource::Control => tokio::select! {
+             biased;
+-            () = shutdown.as_mut() => RealtimeLoopInput::Shutdown,
+-            event = children.observe_raw() => RealtimeLoopInput::Control(event),
+-            event = realtime.next_event() => RealtimeLoopInput::Realtime(event),
+-            _ = heartbeat.tick() => RealtimeLoopInput::Heartbeat,
++            () = shutdown => RealtimeLoopInput::Shutdown,
++            event = control => RealtimeLoopInput::Control(event),
++            event = realtime => RealtimeLoopInput::Realtime(event),
++            _ = heartbeat => RealtimeLoopInput::Heartbeat,
+         },
+         RealtimeSource::Realtime => tokio::select! {
+             biased;
+-            () = shutdown.as_mut() => RealtimeLoopInput::Shutdown,
+-            event = realtime.next_event() => RealtimeLoopInput::Realtime(event),
+-            _ = heartbeat.tick() => RealtimeLoopInput::Heartbeat,
+-            event = children.observe_raw() => RealtimeLoopInput::Control(event),
++            () = shutdown => RealtimeLoopInput::Shutdown,
++            event = realtime => RealtimeLoopInput::Realtime(event),
++            _ = heartbeat => RealtimeLoopInput::Heartbeat,
++            event = control => RealtimeLoopInput::Control(event),
+         },
+         RealtimeSource::Heartbeat => tokio::select! {
+             biased;
+-            () = shutdown.as_mut() => RealtimeLoopInput::Shutdown,
+-            _ = heartbeat.tick() => RealtimeLoopInput::Heartbeat,
+-            event = children.observe_raw() => RealtimeLoopInput::Control(event),
+-            event = realtime.next_event() => RealtimeLoopInput::Realtime(event),
++            () = shutdown => RealtimeLoopInput::Shutdown,
++            _ = heartbeat => RealtimeLoopInput::Heartbeat,
++            event = control => RealtimeLoopInput::Control(event),
++            event = realtime => RealtimeLoopInput::Realtime(event),
+         },
+     }
+ }
+@@ -5689,157 +5712,72 @@ mod lifecycle_tests {
+     }
+ 
+     #[tokio::test]
+-    #[expect(
+-        clippy::too_many_lines,
+-        reason = "the arbitration regression keeps all simultaneously-ready sources inline"
+-    )]
+-    async fn active_round_robin_advances_control_realtime_heartbeat_and_terminal() {
+-        let websocket_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+-        let websocket_port = websocket_listener.local_addr().unwrap().port();
+-        let (close_peer_tx, close_peer_rx) = tokio::sync::oneshot::channel();
+-        let (realtime_queued_tx, realtime_queued_rx) = tokio::sync::oneshot::channel();
+-        let (control_queued_tx, control_queued_rx) = tokio::sync::oneshot::channel();
+-        let remote = PresenceHandle::new(64).unwrap();
+-        let websocket_server = tokio::spawn(async move {
+-            let mut socket = accept_websocket_for_test(websocket_listener).await;
+-            let _cached = read_websocket_text_for_test(&mut socket).await;
+-            for frame in [
+-                ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
+-                ServerRealtimeFrameV1::remote_player_spawn(
+-                    RemotePlayerSpawnV1::new(
+-                        remote,
+-                        1,
+-                        realtime_presence_state(2),
+-                        CanonicalUsername::new("tracey").unwrap(),
+-                    )
+-                    .unwrap(),
+-                ),
+-                ServerRealtimeFrameV1::remote_player_update(
+-                    RemotePlayerUpdateV1::new(remote, 2, realtime_presence_state(3)).unwrap(),
+-                ),
+-                ServerRealtimeFrameV1::remote_player_update(
+-                    RemotePlayerUpdateV1::new(remote, 3, realtime_presence_state(4)).unwrap(),
+-                ),
+-            ] {
+-                send_websocket_text_for_test(
+-                    &mut socket,
+-                    &encode_server_realtime_frame(&frame).unwrap(),
+-                )
+-                .await;
+-            }
+-            realtime_queued_tx.send(()).unwrap();
+-            close_peer_rx.await.unwrap();
+-            drop(socket);
+-        });
++    async fn realtime_active_round_robin_exactly_rotates_when_every_source_stays_ready() {
++        use super::{
++            RawSupervisorEvent, RealtimeCoordinatorEvent, RealtimeLoopInput, RealtimeSource,
++            arbitrate_realtime_loop_input,
++        };
+ 
+-        let control_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+-        let control_address = control_listener.local_addr().unwrap();
+-        let control_server = tokio::spawn(async move {
+-            let (mut stream, _) = control_listener.accept().await.unwrap();
+-            write_control_event(
+-                &mut stream,
+-                &ControlEvent::PlayerState(realtime_presence_state(1)),
++        for (selection, priority) in [
++            RealtimeSource::Control,
++            RealtimeSource::Realtime,
++            RealtimeSource::Heartbeat,
++        ]
++        .into_iter()
++        .cycle()
++        .take(12)
++        .enumerate()
++        {
++            let input = arbitrate_realtime_loop_input(
++                std::future::pending(),
++                std::future::ready(Ok(RawSupervisorEvent::Control(ControlEvent::PlayerState(
++                    realtime_presence_state(1),
++                )))),
++                std::future::ready(Ok(RealtimeCoordinatorEvent::Ready)),
++                std::future::ready(()),
++                priority,
+             )
+             .await;
+-            for sequence in 1..=8 {
+-                write_control_event(
+-                    &mut stream,
+-                    &ControlEvent::InteractRemotePlayer(
+-                        PresenceInteractionV1::new(remote, sequence, 1, 4, 5).unwrap(),
+-                    ),
+-                )
+-                .await;
++            match selection % 3 {
++                0 => assert!(matches!(input, RealtimeLoopInput::Control(Ok(_)))),
++                1 => assert!(matches!(input, RealtimeLoopInput::Realtime(Ok(_)))),
++                2 => assert!(matches!(input, RealtimeLoopInput::Heartbeat)),
++                _ => unreachable!(),
+             }
+-            control_queued_tx.send(()).unwrap();
+-            let mut remainder = Vec::new();
+-            stream.read_to_end(&mut remainder).await.unwrap();
+-        });
+-        let stream = tokio::net::TcpStream::connect(control_address)
+-            .await
+-            .unwrap();
+-        let control = ControlChannel::from_stream_for_test(stream);
+-        let mut children = SupervisedChildren::for_test(
+-            long_running_test_child(),
+-            long_running_test_child(),
+-            control,
+-        );
+-        let mut realtime = RealtimeCoordinator::start(
+-            realtime_grant(websocket_port),
+-            children.control.lifecycle_generation(),
+-            realtime_presence_state(1),
++        }
++
++        let terminal = arbitrate_realtime_loop_input(
++            std::future::pending(),
++            std::future::ready(Ok(RawSupervisorEvent::Control(ControlEvent::PlayerState(
++                realtime_presence_state(2),
++            )))),
++            std::future::ready(Ok(RealtimeCoordinatorEvent::Terminal)),
++            std::future::ready(()),
++            RealtimeSource::Realtime,
+         )
+-        .unwrap();
+-        realtime_queued_rx.await.unwrap();
+-        control_queued_rx.await.unwrap();
++        .await;
++        assert!(matches!(
++            terminal,
++            RealtimeLoopInput::Realtime(Ok(RealtimeCoordinatorEvent::Terminal))
++        ));
+ 
+-        let mut heartbeat = tokio::time::interval(Duration::from_nanos(1));
+-        let mut shutdown = Box::pin(std::future::pending::<()>());
+-        let mut priority = super::RealtimeSource::Control;
+-        let mut control_count = 0_usize;
+-        let mut saw_ready = false;
+-        let mut realtime_count = 0_usize;
+-        let mut heartbeat_count = 0_usize;
+-        let mut close_peer_tx = Some(close_peer_tx);
+-        let observed_terminal = timeout(Duration::from_secs(2), async {
+-            loop {
+-                match super::next_realtime_loop_input(
+-                    &mut children,
+-                    &mut realtime,
+-                    &mut shutdown,
+-                    &mut heartbeat,
+-                    priority,
+-                )
+-                .await
+-                {
+-                    super::RealtimeLoopInput::Control(_) => {
+-                        control_count += 1;
+-                        priority = super::RealtimeSource::Realtime;
+-                    }
+-                    super::RealtimeLoopInput::Realtime(
+-                        Ok(crate::realtime::RealtimeCoordinatorEvent::Terminal) | Err(_),
+-                    ) => break true,
+-                    super::RealtimeLoopInput::Realtime(Ok(
+-                        crate::realtime::RealtimeCoordinatorEvent::Ready,
+-                    )) => {
+-                        saw_ready = true;
+-                        realtime_count += 1;
+-                        priority = super::RealtimeSource::Heartbeat;
+-                    }
+-                    super::RealtimeLoopInput::Realtime(Ok(
+-                        crate::realtime::RealtimeCoordinatorEvent::Lifecycle(_),
+-                    )) => {
+-                        realtime_count += 1;
+-                        priority = super::RealtimeSource::Heartbeat;
+-                    }
+-                    super::RealtimeLoopInput::Heartbeat => {
+-                        heartbeat_count += 1;
+-                        priority = super::RealtimeSource::Control;
+-                    }
+-                    super::RealtimeLoopInput::Shutdown => break false,
+-                }
+-                if control_count >= 3
+-                    && saw_ready
+-                    && realtime_count >= 4
+-                    && heartbeat_count >= 3
+-                    && let Some(sender) = close_peer_tx.take()
+-                {
+-                    sender.send(()).unwrap();
+-                }
+-            }
+-        })
+-        .await
+-        .expect("completed realtime task must not be starved by control input");
+-        assert!(observed_terminal);
+-        assert!(control_count >= 3);
+-        assert!(saw_ready && realtime_count >= 4);
+-        assert!(heartbeat_count >= 3);
+-        realtime.stop_and_join().await.unwrap();
+-        children.stop_in_place().await.unwrap();
+-        websocket_server.await.unwrap();
+-        timeout(Duration::from_secs(1), control_server)
+-            .await
+-            .expect("control flood pump joined")
+-            .unwrap();
++        for priority in [
++            RealtimeSource::Control,
++            RealtimeSource::Realtime,
++            RealtimeSource::Heartbeat,
++        ] {
++            let input = arbitrate_realtime_loop_input(
++                std::future::ready(()),
++                std::future::ready(Ok(RawSupervisorEvent::Control(ControlEvent::PlayerState(
++                    realtime_presence_state(3),
++                )))),
++                std::future::ready(Ok(RealtimeCoordinatorEvent::Terminal)),
++                std::future::ready(()),
++                priority,
++            )
++            .await;
++            assert!(matches!(input, RealtimeLoopInput::Shutdown));
++        }
+     }
+ 
+     #[tokio::test]

@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-130E6076",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root independently inspected the cited control-reader and bridge-writer structures in sealed candidate tree da385949706ef78081fbd0e6145b394bd4b70218 and confirmed this contract-grounded failure mode; reviewer terminals sha256:8cc92875ebd19b38163a8c1c410be43092a4b029f0df39a8442bb78c418050f7 and sha256:a5aae36eae8492978681d457aa2804c3b30b0eac807832637df1ddc149eae677 remain bound to the exact diff."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

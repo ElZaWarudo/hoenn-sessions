@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "contract_hash": "sha256:f98be8e90bf3bf0e71f29b3c498380fc5132b57f175929b75c878a80e4535c7c",
+  "diff_digest": "sha256:1d373c5d02ea00e757121e6d1aedf80b450ddb0a41fbf7a72baa7cbb322f6835",
+  "review_plan_hash": "sha256:d86f23733b0512dc1f5a9b917103d9a4be8eb769b95f78a7b72225ed81211ab8",
+  "reviewer_id": "/root/sidecar_control_security_reviewer_v2",
+  "surface_id": "sidecar-control-correction-security-v2",
+  "risk_boundaries_checked": [
+    "authenticated-control-input-and-readiness-gating",
+    "bounded-queues-stable-redacted-failure-and-overflow-confinement",
+    "reset-generation-reconnect-cleanup-and-no-stale-replay",
+    "writer-actor-failure-notification-and-shutdown-starvation-resistance"
+  ],
+  "candidate_findings": [
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "SPCF2-004/readiness-receipt-proof",
+      "observation": "The pre-ready regression synchronizes on the control reader's first-byte observer, but readiness generation is stamped only after the complete JSON command has been read and deserialized. The test can therefore advance bridge authentication before the purported pre-ready command has reached the generation-stamping boundary.",
+      "impact": "The required deterministic denial-path proof is missing: a scheduling change can make the test exercise a post-ready stamp while still passing, so a regression that forwards a command accepted before readiness would not be reliably detected.",
+      "recommendation": "Synchronize the regression after the presence command has been stamped and admitted to the bounded presence receiver, then authenticate the bridge and assert that the stale record neither allocates an outer sequence nor produces a bridge frame before verifying a fresh post-ready command.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/control.rs:584 invokes the test observer immediately after reading only the first byte; full-line reading and deserialization occur at lines 585-588.",
+        "coop/crates/coop-sidecar/src/server.rs:918-922 stamps the generation only after receive_command_observed returns a fully decoded command.",
+        "coop/crates/coop-sidecar/src/server.rs:4574-4577 waits for the first-byte prefix signal before beginning bridge authentication, so it does not prove pre-ready admission as required by SPCF2-004."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "SPCF2-005/control-terminal-cause-preservation",
+      "observation": "The split control reader publishes decoder errors only to control_rx and then drops presence_tx. When the control branch is admission-gated, presence_rx can therefore report None while the exact non-reconnectable decoder error remains buffered; the new presence-EOF handlers convert that sibling-channel closure into generic reconnectable control loss, and the pre-bridge handler can even treat it as clean shutdown proof.",
+      "impact": "An authenticated control peer can combine a filled deferred lane with a malformed, oversized, or timed-out record and cause the session to discard the fail-closed terminal cause, reconnect with retained state, or certify shutdown through an ambiguous decoder exit. This violates the stable-failure and no-reconnect-after-control-ambiguity contract.",
+      "recommendation": "Publish one independently wakeable authoritative control-reader terminal cause shared by both lanes, and never derive reconnect or clean-shutdown semantics from presence_rx closure. Before reacquisition or shutdown completion, surface the exact decoder error; add a full-deferred-lane regression that sends a non-reconnectable malformed frame and asserts fatal termination with no replacement-control path.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:938-940 sends every receive_command error only through control_tx and then exits, which closes presence_tx without carrying the cause.",
+        "coop/crates/coop-sidecar/src/server.rs:1578-1580 disables control_rx polling when the deferred queue has consumed its shutdown reservation, while presence_rx remains selectable at lines 1585-1587.",
+        "coop/crates/coop-sidecar/src/server.rs:1939-1947 treats presence-channel EOF as reconnectable loss or clean shutdown without observing the buffered control error; lines 2561-2564 similarly synthesize a reconnectable UnexpectedEof.",
+        "coop/crates/coop-sidecar/src/server.rs:3778-3783 shows the reachable guard state where a sixteen-entry deferred queue containing shutdown prevents the authoritative control terminal from being read."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "SPCF2-005/writer-generation-fence",
+      "observation": "Readiness generation is checked only before a lifecycle frame is encoded and enqueued. BridgeWriteRequest retains only frame bytes, so already accepted lifecycle frames in the writer actor have no generation or terminal fence and are always drained FIFO even after a confirmed reboot disables lifecycle forwarding and rearms the outer sequence.",
+      "impact": "Under bridge backpressure, old-generation spawn, update, or despawn frames can be written to the rebooted ROM after its ROM_READY and ahead of the new SESSION_READY sequence-one frame. The reset transition therefore does not atomically invalidate queued lifecycle state and can expose stale player state across the generation boundary.",
+      "recommendation": "Carry request class and readiness generation into the sole writer actor and implement an ordered generation cutover that discards queued old-generation presence before allocating or writing the new SESSION_READY. If a lifecycle write is already in progress and cannot be safely fenced, close and retire that bridge rather than reuse it across the reset. Add a backpressured, preloaded-writer reboot regression that proves no old lifecycle frame is emitted across the cutover.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:451-453 defines BridgeWriteRequest with bytes and completion only; no generation or lifecycle classification survives admission.",
+        "coop/crates/coop-sidecar/src/server.rs:472-486 drains every buffered request FIFO, while lines 549-553 enqueue encoded presence bytes unconditionally after the caller-side check.",
+        "coop/crates/coop-sidecar/src/server.rs:2672-2694 performs the sole generation comparison before sequence allocation and writer admission; the confirmed reboot path at lines 2972-2978 cannot invalidate requests that have already crossed that point.",
+        "coop/crates/coop-sidecar/src/server.rs:4820-4860 tests only a presence call made after reboot latching with an otherwise empty writer and does not cover lifecycle requests already queued or in flight."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "SPCF2-003/critical-writer-timeout",
+      "observation": "The sole writer actor performs write_all without the existing BRIDGE_FRAME_TIMEOUT, and BridgeWriter::send waits for completion without any bound. Because critical SESSION_READY and checkpoint frames share the FIFO behind lifecycle traffic and their handlers run on the only session loop, a stalled lifecycle write can still trap that loop before it reads a queued authenticated shutdown.",
+      "impact": "A backpressured authenticated bridge can prevent the sidecar from issuing the correlated shutdown Applied result within 500 ms, and can prevent the five-second shutdown state from being entered at all. This defeats the claimed critical-lane isolation and creates a local availability and cleanup denial of service.",
+      "recommendation": "Enforce the bridge-frame timeout inside the sole writer actor and make timeout terminal by closing the writer connection and publishing a durable failure; do not let any awaited bridge completion monopolize shutdown command intake. Add a deterministic blocked-writer test that queues a critical bridge operation ahead of shutdown and proves the Applied result stays within the launcher bound.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:473-476 awaits raw write_all with no timeout, replacing the previously bounded write path.",
+        "coop/crates/coop-sidecar/src/server.rs:514-531 enqueues a critical request and awaits its oneshot completion indefinitely.",
+        "coop/crates/coop-sidecar/src/server.rs:3050-3057 awaits a checkpoint bridge send on the sole session loop; reboot SESSION_READY similarly awaits the shared writer at lines 2760-2766.",
+        "coop/crates/coop-sidecar/src/server.rs:4534-4565 sends only one 64-byte frame into a fresh loopback socket and never proves the actor write is pending, so the named stalled-writer regression does not exercise backpressure."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "SPCF2-003/writer-actor-ownership",
+      "observation": "BridgeWriter discards the JoinHandle returned by tokio::spawn and has no teardown path for its writer actor. Dropping BridgeWriter closes only the sender; the receiver loop continues processing buffered frames, and a blocked write keeps the OwnedWriteHalf and task alive after the session owner has returned.",
+      "impact": "Fatal overflow, shutdown, or bridge-reconnect cleanup can leave a retired authenticated connection emitting buffered lifecycle frames after terminal state. A peer that stops reading and repeatedly reconnects can also accumulate unbounded detached writer tasks and sockets, violating no-stale-replay and bounded cleanup guarantees.",
+      "recommendation": "Make the writer task an explicitly owned session resource with a terminal close operation and join/abort handle. On every session exit or bridge replacement, discard queued lifecycle work, close the underlying socket, and await task termination; if cancellation can interrupt a frame, treat the connection as poisoned and never reuse it. Add teardown tests for overflow, shutdown, and repeated reconnect with a blocked writer.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:470-487 spawns the actor and drops its JoinHandle, while BridgeWriter at lines 456-460 stores no task owner and implements no Drop cleanup.",
+        "coop/crates/coop-sidecar/src/server.rs:472-486 keeps receiving buffered requests until the channel is empty, so sender drop is not a queue purge and cannot stop an in-progress write.",
+        "coop/crates/coop-sidecar/src/server.rs:2164-2215 shuts down tracked reader tasks on completion, reconnect, and error but has no corresponding writer-task termination before bridge_writer is dropped."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "correctness",
+      "rule_id": "SPCF2-003/writer-failure-wakeup",
+      "observation": "Writer failure uses a check-then-wait pair across an AtomicBool and Notify::notify_waiters. If the actor fails after write_failure returns None but before the next Notified future is registered, notify_waiters leaves no permit for that future and the idle session select can sleep without observing the already-published failure.",
+      "impact": "Bridge-writer failure is not independently wakeable as required; cleanup and terminal classification can be delayed indefinitely until unrelated bridge or control traffic arrives, leaving a failed connection represented as active.",
+      "recommendation": "Use a durable terminal channel such as watch, or a race-free notification protocol that registers before checking and rechecks after registration (or stores a notify_one permit). Add a barrier-controlled regression that delivers failure exactly between the state check and wait registration and asserts immediate terminal wakeup.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:481-484 stores write_failed and calls notify_waiters, whose notification is not retained for future waiters.",
+        "coop/crates/coop-sidecar/src/server.rs:2357-2364 checks write_failure first and only then constructs a fresh failure_notified wait, leaving a lost-wakeup interval.",
+        "coop/crates/coop-sidecar/src/server.rs:562-563 creates a new Notified future for each iteration rather than retaining a registered waiter or receiving a durable terminal value."
+      ]
+    }
+  ],
+  "candidate_feedback": [],
+  "stop_reason": "interrupted",
+  "certifies_review": false
+}

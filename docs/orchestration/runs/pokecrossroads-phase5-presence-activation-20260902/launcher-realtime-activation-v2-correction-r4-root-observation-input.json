@@ -1,0 +1,5 @@
+{
+  "schema_version":1,"workspace_id":"pokecrossroads-phase5-presence-resume-20260903-launcher-realtime-activation-v2-r4-validation","worker_id":"/root","unit_id":"phase5-launcher-realtime-activation","role":"exact-candidate-correction-observation",
+  "candidate_commit":"984d8f6c0d73278d18e7423bcae082c41650464c","candidate_tree":"07f22650ff3dc76259a216c8259b985b78c32d1e","contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "initial_patch_hash":"sha256:50df0668af1c0f61f1c16954d7764ae5da5f53692adb7207ea8cd461bfdfe40d","correction_r1_patch_hash":"sha256:1dace61948b3ef9cce923458777b932ff07c1dccf1d408199c72b66ab7c82e2e","correction_r2_patch_hash":"sha256:d261e7613aeccbf36ec1f7a40f6373c4fe00a16d191ab1619c3a473ab5a7b573","correction_r3_patch_hash":"sha256:bc46ba0cbc36ccd397b21da4169e96ebd590259170ac2d3e773387726c689b54","correction_r4_patch_hash":"sha256:843470edc1b49cdba228c38eca0efbf1fe166c5906a6768c4e9a13fba9fce6e2"
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-launcher-realtime-http-fixer-v1",
+  "unit_id": "launcher-realtime-http-fixer",
+  "objective": "Resolve the certified proxy-boundary and verification defects in the launcher realtime ticket client without widening its credential or endpoint surface.",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-correctness-review-round1.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-security-review-round1.json",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "closed_decisions": [
+    "Disable all ambient/system proxy discovery on the strict ReqwestCloudApi client. Both HTTPS and literal-loopback traffic connect directly to the validated authority; proxy support is outside this MVP security boundary.",
+    "Prove redirect denial with a syntactically valid cross-authority Location and a live target listener that receives no connection or bearer.",
+    "Prove both response-bound paths: oversized Content-Length preflight plus cumulative chunked streaming at exactly 8192 accepted bytes and 8193 rejected bytes.",
+    "Parse request headers by field name and require exactly one Authorization field with the exact case-sensitive Bearer access-secret value.",
+    "Assert the known distinct ticket serialization is absent from grant Debug and relevant error Debug/Display in addition to access-token redaction.",
+    "The original contract wording about a caller-supplied timestamp is superseded. A timestamp captured before an awaited POST is stale and rejects a valid server-issued exact-TTL grant under ordinary latency. Production must sample wall time only after the bounded response has been fully received, decoded, and correlated.",
+    "Keep deterministic expiry and excessive-TTL boundary tests at the private consuming seam using an injected fixed timestamp. Do not expose a caller-controlled production timestamp or weaken maximum-TTL validation.",
+    "Preserve exactly one POST per method call, typed 401 only, exact response correlation before ticket consumption, canonical endpoint derivation, no retries, and stable secret-free errors."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "LRHF-001",
+      "description": "The strict cloud HTTP client disables ambient/system proxies, and a deterministic regression proves a configured proxy cannot intercept a literal-loopback authenticated mint request."
+    },
+    {
+      "id": "LRHF-002",
+      "description": "A valid cross-authority redirect is rejected at the origin and its live target observes no connection, request, or bearer."
+    },
+    {
+      "id": "LRHF-003",
+      "description": "Tests prove exact 8 KiB chunked acceptance, 8 KiB plus one cumulative rejection, and oversized Content-Length preflight with stable errors."
+    },
+    {
+      "id": "LRHF-004",
+      "description": "Header assertions require one exact Authorization bearer and Debug/Display assertions cover both access token and distinct minted ticket text."
+    },
+    {
+      "id": "LRHF-005",
+      "description": "Post-response production clock sampling remains latency-safe, while fixed-time private seam tests deterministically prove expired, exact maximum TTL, and excessive TTL boundaries."
+    },
+    {
+      "id": "LRHF-006",
+      "description": "Focused/full launcher tests, strict Clippy, formatting, and diff checks pass with changes confined to the three owned files above the staged dependency baseline."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher realtime --all-features --locked",
+        "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 0,
+    "implementation_rounds": 2,
+    "fix_rounds": 3,
+    "review_rounds": 0,
+    "max_elapsed_ms": 1200000,
+    "extra_verification": "forbidden"
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "forbidden_changes": [
+    "Do not edit Cargo, process, session, main, sidecar/cloud/server/ROM/Lua code, product documentation, generated artifacts, or orchestration state.",
+    "Do not enable caller-selected proxies, endpoints, clocks, redirects, retries, or new ticket transfer channels.",
+    "Do not log, copy, persist, serialize outward, or expose access/refresh tokens or tickets through URL, query, subprotocol, IPC, argv, environment, files, errors, or Debug.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create/remove worktrees, or revert other workers. Preserve all unowned edits."
+  ],
+  "terminal_protocol": {
+    "return_when": [
+      "All fixer criteria and required checks are resolved.",
+      "A safe fix requires widening a forbidden credential or endpoint boundary.",
+      "A concrete toolchain failure prevents progress within budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1"
+}

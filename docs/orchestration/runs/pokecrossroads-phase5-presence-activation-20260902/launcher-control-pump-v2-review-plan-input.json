@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "changed_paths": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "launcher-control-pump-correctness-v2",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/process.rs",
+        "coop/crates/coop-launcher/src/session.rs"
+      ],
+      "risk_boundaries": [
+        "persistent-owned-halves-bounded-lanes-and-exact-event-routing",
+        "critical-priority-completion-cancellation-and-absolute-deadlines",
+        "atomic-reset-generation-permit-and-lifecycle-write-linearization",
+        "raw-observation-child-fairness-startup-and-joined-teardown"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "launcher-control-pump-security-v2",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/process.rs",
+        "coop/crates/coop-launcher/src/session.rs"
+      ],
+      "risk_boundaries": [
+        "authenticated-control-secret-confinement-and-error-redaction",
+        "reset-replay-stale-generation-and-post-reset-fail-closed-behavior",
+        "bounded-overflow-partial-write-ambiguity-and-terminal-cause-integrity",
+        "task-child-socket-and-owned-artifact-cleanup-confinement"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

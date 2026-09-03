@@ -1,0 +1,124 @@
+{
+  "status": "needs_review",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": false,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "SPCF3-001",
+      "status": "satisfied",
+      "evidence": "server.rs now owns the sole BridgeWriter JoinHandle and bounds actor socket writes plus enqueue/completion waits; poison, sender closure, abort, and await cleanup are used on session exits, and reboot_cutover_retires_unsafe_inflight_write covers the unsafe teardown path."
+    },
+    {
+      "criterion_id": "SPCF3-002",
+      "status": "satisfied",
+      "evidence": "BridgeWriter retains an initial watch receiver and publishes durable failure with send_replace; the active loop performs a precheck followed by registration and an unconditional watch branch. bridge_writer_failure_wakes_idle_session_after_registration_race passed in the exercised suite output."
+    },
+    {
+      "criterion_id": "SPCF3-003",
+      "status": "satisfied",
+      "evidence": "Control decoder failures are stored once in ControlTerminalState before lane closure, and controlled/active selects prioritize the terminal cause; control_terminal_cause_wins_over_presence_eof_when_deferred_lane_is_full passed with the exact MalformedCommand error."
+    },
+    {
+      "criterion_id": "SPCF3-004",
+      "status": "satisfied",
+      "evidence": "BridgeWriteRequest carries Critical/Lifecycle/Cutover/GenerationFence class and readiness generation; fenced cutover drops stale queued lifecycle work and poisons unsafe in-flight work. Both reboot_cutover regressions passed."
+    },
+    {
+      "criterion_id": "SPCF3-005",
+      "status": "satisfied",
+      "evidence": "The test-only server observer fires only after successful decoded, stamped presence admission; pre_ready_presence_is_not_forwarded_after_bridge_authentication passed and observed no stale frame while forwarding the fresh record at sequence 3."
+    },
+    {
+      "criterion_id": "SPCF3-006",
+      "status": "satisfied",
+      "evidence": "The focused initial ROM_READY, presence overflow, stalled write, pre-ready, control-terminal, and reboot-cutover regressions passed; bridge_writer coverage was exercised after its bounded writer fixes and the full-suite output reached the new writer-failure test successfully."
+    },
+    {
+      "criterion_id": "SPCF3-007",
+      "status": "not_satisfied",
+      "evidence": "contract_hash=sha256:22e30fdaa00b39c93841bc49c317c9fc6ed78e1c069e7af0b9a310703ec76ece. cargo fmt --all -- --check and git diff --check passed; the natural full sidecar test attempt hung before the GenerationFence correction and strict Clippy's second attempt still reported one test-pattern lint before the final source cleanup, so aggregate verification remains root-owned."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+        "attempts": 1,
+        "outcome": "failed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "attempts": 2,
+        "outcome": "failed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+    "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+    "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+    "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+    "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [],
+  "scope_extension": null
+}

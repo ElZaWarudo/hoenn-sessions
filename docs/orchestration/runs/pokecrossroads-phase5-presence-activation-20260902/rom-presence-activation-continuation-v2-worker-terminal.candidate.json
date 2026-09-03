@@ -1,0 +1,81 @@
+{
+  "status": "needs_review",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": false,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "RPA-001",
+      "status": "satisfied",
+      "evidence": "src/coop/presence_runtime.c preserves the exact LocalPresenceStateV1 publication path, independent sequence domains, region-qualified map-local coordinates, and last-valid-pose HIDDEN fallback; static size assertions are present in test/coop/presence_runtime.c."
+    },
+    {
+      "criterion_id": "RPA-002",
+      "status": "satisfied",
+      "evidence": "Lifecycle decoding and queue admission remain exact-length/epoch/sequence gated in the production bridge/runtime, with atomic malformed lifecycle coverage in test/coop/presence_runtime.c and test/coop/net_bridge.c."
+    },
+    {
+      "criterion_id": "RPA-003",
+      "status": "satisfied",
+      "evidence": "src/coop/presence_runtime.c now preflights palette/object ownership, limits creation to the reserved remote slot, safely abandons failed creates, and revalidates cached sprite/object identity before mutation or removal."
+    },
+    {
+      "criterion_id": "RPA-004",
+      "status": "satisfied",
+      "evidence": "src/coop/presence_runtime.c retains six-frame signed interpolation, retargeting, zero x2/y2 offsets, discontinuity snapping, and 90-frame stale removal; focused regression coverage and timing assertions are present in test/coop/presence_runtime.c."
+    },
+    {
+      "criterion_id": "RPA-005",
+      "status": "satisfied",
+      "evidence": "The implementation keeps remote ObjectEvents nonblocking and outside centralized collision/position lookup ownership; no unowned reducer or lookup files were changed."
+    },
+    {
+      "criterion_id": "RPA-006",
+      "status": "satisfied",
+      "evidence": "The owned bridge/runtime tests cover the bounded interaction frame and queue-full/send-only consumption behavior while production interaction handling remains explicit and non-locking."
+    },
+    {
+      "criterion_id": "RPA-007",
+      "status": "satisfied",
+      "evidence": "Warp fencing and nonzero local warp sequencing remain implemented in the production runtime; the owned changes preserve the single MAP_OFFSET installation path."
+    },
+    {
+      "criterion_id": "RPA-008",
+      "status": "not_satisfied",
+      "evidence": "Contract sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d focused check was interrupted after the elapsed-budget timeout; modern build, manifest test/regeneration, and diff-check commands were skipped and therefore lack passing evidence."
+    }
+  ],
+  "last_required_command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-continuation-v2 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-continuation-v2 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+        "attempts": 1,
+        "outcome": "failed"
+      }
+    ],
+    "skipped": [
+      {
+        "command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-continuation-v2 -- bash build/codex-rom-make modern",
+        "reason": "Skipped after the focused build exceeded the supervisor elapsed budget; no retry was authorized."
+      },
+      {
+        "command": "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+        "reason": "Skipped after the focused build exceeded the supervisor elapsed budget; no retry was authorized."
+      },
+      {
+        "command": "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+        "reason": "Skipped after the focused build exceeded the supervisor elapsed budget; no retry was authorized."
+      },
+      {
+        "command": "rtk git diff --check",
+        "reason": "Skipped after the focused build exceeded the supervisor elapsed budget; no retry was authorized."
+      }
+    ]
+  },
+  "verification_commands_run": [
+    "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-continuation-v2 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\""
+  ],
+  "unowned_failures": []
+}

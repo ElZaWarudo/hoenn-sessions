@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:22e30fdaa00b39c93841bc49c317c9fc6ed78e1c069e7af0b9a310703ec76ece",
+  "diff_digest": "sha256:868d4c1e2f52678566da3c9779846601a1300c9de663b024d33c4a45be74648f",
+  "changed_paths": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "sidecar-control-correction-correctness-v3",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "risk_boundaries": [
+        "sole-writer-deadline-ownership-poison-and-joined-terminal-cleanup",
+        "durable-writer-failure-registration-race-and-idle-session-wakeup",
+        "authoritative-control-terminal-cause-ordering-and-lane-closure-precedence",
+        "queued-and-inflight-generation-cutover-without-stale-lifecycle-replay"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "sidecar-control-correction-security-v3",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "risk_boundaries": [
+        "authenticated-control-terminal-error-confinement-and-no-ambiguous-reconnect",
+        "bounded-writer-backpressure-shutdown-availability-and-task-resource-confinement",
+        "reset-generation-linearization-no-cross-generation-replay-and-retired-socket-safety",
+        "post-admission-pre-ready-drop-sequence-preservation-and-test-seam-integrity"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

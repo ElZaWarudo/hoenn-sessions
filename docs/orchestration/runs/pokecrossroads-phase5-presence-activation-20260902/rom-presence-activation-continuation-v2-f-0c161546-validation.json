@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-0C161546",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: remote admission runs ahead of vanilla interaction resolution and relies on reducer visibility without checking renderer identity, freshness, or local eligible pose."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

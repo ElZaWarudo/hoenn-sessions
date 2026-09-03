@@ -1,0 +1,8 @@
+{
+  "event": "discovery_complete",
+  "edit_path_found": true,
+  "planned_files": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "evidence_digest": "server.rs:451-565 BridgeWriter::{new,send,send_presence,failure_notified} needs an owned JoinHandle, actor-side and completion deadlines, poisoned close, durable terminal state, and explicit join; server.rs:900-1014 plus 1561-1737/1843-1950/2311-2568 must publish the exact single-take control decoder error before blocked lane sends and poll an unconditional durable terminal wake so presence EOF cannot synthesize reconnect or clean shutdown; server.rs:2650-2771/2929-2997 must carry Critical/Lifecycle/Cutover class and readiness generation through writer admission, discard queued stale lifecycle work at ordered reboot cutover, and retire the bridge if an in-flight write cannot be fenced; server.rs:900-1014/1183-1280/4574-4634 can expose a test-only callback immediately after decode, generation stamping, and successful bounded presence enqueue while control.rs remains frozen. Deterministic coverage must strengthen stalled_presence_bridge_write_does_not_delay_shutdown_ack and pre_ready_presence_is_not_forwarded_after_bridge_authentication and add bridge_writer_failure_wakes_idle_session_after_registration_race, control_terminal_cause_wins_over_presence_eof_when_deferred_lane_is_full, reboot_cutover_discards_queued_old_generation_lifecycle, and reboot_cutover_retires_unsafe_inflight_write. SidecarError is not Clone, so keep the exact error in an owned slot while the watch carries only durable readiness; preserve the reserved critical slot and never shut down the bridge for control-only reconnect."
+}

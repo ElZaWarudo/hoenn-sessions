@@ -1,0 +1,52 @@
+{
+  "protocol": "worker-terminal-v1",
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "terminal_ready": true,
+  "remaining_actions": [],
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "RPAC3-002",
+      "status": "satisfied",
+      "evidence": "Generation marker, movement callback discriminator, and bidirectional ObjectEvent backlink proof are covered by the foreign reused-sprite regression; focused Cloud Coop suite passed 94/94."
+    },
+    {
+      "criterion_id": "RPAC3-004",
+      "status": "satisfied",
+      "evidence": "Local field actions, including the real Dive prerequisite path, take precedence over remote fallback; focused Cloud Coop suite passed 94/94."
+    },
+    {
+      "criterion_id": "RPAC3-005",
+      "status": "satisfied",
+      "evidence": "Executable lifecycle, hidden/stale teardown, warp recreation, capacity retry, link lookup, local-link collision, and remote nonblocking collision regressions all passed in the focused Cloud Coop suite (94/94)."
+    }
+  ],
+  "verification_commands_run": [
+    {
+      "command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\"",
+      "exit_code": 0,
+      "result": "PASS",
+      "tests_passed": 94,
+      "tests_total": 94
+    },
+    {
+      "command": "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make modern",
+      "exit_code": 0,
+      "result": "PASS",
+      "memory": {
+        "ewram": "240432/262144",
+        "iwram": "28648/32768",
+        "rom": "28597020/33554432"
+      }
+    },
+    {
+      "command": "rtk git diff --check",
+      "exit_code": 0,
+      "result": "PASS"
+    }
+  ],
+  "changed_paths": [
+    "test/coop/presence_runtime.c"
+  ],
+  "remaining_risk": "dist/bridge_manifest.json regeneration and aggregate validation remain root-owned and were not modified by this worker."
+}

@@ -1,0 +1,86 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "LRHF-001",
+      "status": "satisfied",
+      "evidence": "ReqwestCloudApi::new configures the strict client with no_proxy(), and ambient_proxy_does_not_intercept_loopback_mint runs a child with every HTTP/HTTPS/all proxy variable pointed at a live proxy while the authenticated literal-loopback mint reaches only its origin. The known-default loopback endpoint behavior is supplied by staged dependency baseline commit 00a030b2, which is not part of this worker patch."
+    },
+    {
+      "criterion_id": "LRHF-002",
+      "status": "satisfied",
+      "evidence": "valid_cross_authority_redirect_is_rejected_without_target_contact serves a syntactically valid Location on the origin, asserts the origin received the one exact bearer, expects ResponseRejected, and proves a live second listener receives no connection. The client retains Policy::none and performs no redirect request."
+    },
+    {
+      "criterion_id": "LRHF-003",
+      "status": "satisfied",
+      "evidence": "The explicitly named REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES response cap is applied to Content-Length preflight and cumulative streamed chunks. realtime_http.rs covers oversized Content-Length, exact 8192-byte chunked acceptance, and 8193-byte chunked rejection with InvalidResponse, alongside malformed response rejection."
+    },
+    {
+      "criterion_id": "LRHF-004",
+      "status": "satisfied",
+      "evidence": "Header parsing by field name requires exactly one Authorization value equal to Bearer access-secret. Grant Debug includes [REDACTED] while excluding both access-secret and the distinct serialized ticket; mismatch error Debug/Display similarly exclude the distinct ticket and access token."
+    },
+    {
+      "criterion_id": "LRHF-005",
+      "status": "satisfied",
+      "evidence": "Production mint_realtime samples unix_now() only after bounded response receipt, strict decode, and correlation, so the delayed server-issued exact-TTL integration case succeeds. The private grant_from_response seam has fixed-time tests for expired, exact REALTIME_TICKET_TTL_MS, and excessive TTL boundaries without exposing a caller-controlled production clock."
+    },
+    {
+      "criterion_id": "LRHF-006",
+      "status": "satisfied",
+      "evidence": "contract_hash sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233: focused realtime tests, realtime_http integration tests, full coop-launcher tests, strict Clippy, formatting, and git diff checks passed. Worker edits are confined to coop/crates/coop-launcher/src/realtime.rs, coop/crates/coop-launcher/src/lib.rs, and coop/crates/coop-launcher/tests/realtime_http.rs above staged dependency baseline commit 00a030b2."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-launcher realtime --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 2,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-launcher realtime --all-features --locked",
+    "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked",
+    "rtk cargo test -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

@@ -1,0 +1,41 @@
+{
+  "status":"done",
+  "phase":"closeout",
+  "remaining_actions":[],
+  "terminal_ready":true,
+  "acceptance_criteria_resolved":true,
+  "acceptance_evidence":[
+    {"criterion_id":"LRA2-001","status":"satisfied","evidence":"Production main retains the additive realtime lifecycle call and legacy interfaces remain source-compatible."},
+    {"criterion_id":"LRA2-002","status":"satisfied","evidence":"Persistent one-attempt admission, canonical lease/build fence, and typed mint-only 401 retry remain covered by the exact focused suite."},
+    {"criterion_id":"LRA2-003","status":"satisfied","evidence":"Realtime coordinator retains exact Ready interaction watermark, pre-marker drop, post-marker bounded FIFO, lifecycle mapping, and terminal-before-buffered-event behavior."},
+    {"criterion_id":"LRA2-004","status":"satisfied","evidence":"Reset, backpressure, child exit, coordinator, control, and mint failures terminate without remint or restart; new activation tests prove interaction-backpressure teardown and both SidecarExited and MgbaExited classifications."},
+    {"criterion_id":"LRA2-005","status":"satisfied","evidence":"Checkpoint deadline preempts all authenticated input. Active/checkpoint arbitration rotates Control, Realtime, Heartbeat; Ready cutover rotates Control, Realtime, Activate and schedules Activate immediately after Ready. Deterministic sustained-input tests prove deadline, heartbeat, terminal, and activation progress."},
+    {"criterion_id":"LRA2-006","status":"satisfied","evidence":"Exact replay passed realtime 20, realtime_activation 9, checkpoint 9, shutdown 18, combined launcher+sidecar 261 with one ignored, strict Clippy, fmt, and diff check. The r3 delta is solely session.rs. contract_hash=sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f"}
+  ],
+  "last_required_command":"rtk git diff --check",
+  "verification":{
+    "attempted":[
+      {"command":"rtk cargo test -p coop-launcher realtime --all-features --locked","attempts":1,"outcome":"passed"},
+      {"command":"rtk cargo test -p coop-launcher realtime_activation --all-features --locked","attempts":1,"outcome":"passed"},
+      {"command":"rtk cargo test -p coop-launcher checkpoint --all-features --locked","attempts":1,"outcome":"passed"},
+      {"command":"rtk cargo test -p coop-launcher shutdown --all-features --locked","attempts":1,"outcome":"passed"},
+      {"command":"rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked","attempts":1,"outcome":"passed"},
+      {"command":"rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings","attempts":1,"outcome":"passed"},
+      {"command":"rtk cargo fmt --all -- --check","attempts":1,"outcome":"passed"},
+      {"command":"rtk git diff --check","attempts":1,"outcome":"passed"}
+    ],
+    "skipped":[]
+  },
+  "verification_commands_run":[
+    "rtk cargo test -p coop-launcher realtime --all-features --locked",
+    "rtk cargo test -p coop-launcher realtime_activation --all-features --locked",
+    "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+    "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+    "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures":[],
+  "scope_extension":null
+}

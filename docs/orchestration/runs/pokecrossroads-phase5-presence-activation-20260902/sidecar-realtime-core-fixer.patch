@@ -1,0 +1,585 @@
+diff --git a/coop/crates/coop-sidecar/src/realtime.rs b/coop/crates/coop-sidecar/src/realtime.rs
+index 8643e4072e9055d2756dad372c939a89b62e3849..5347f626bba4e758dbc74243373fed68346d4681 100644
+--- a/coop/crates/coop-sidecar/src/realtime.rs
++++ b/coop/crates/coop-sidecar/src/realtime.rs
+@@ -21,8 +21,8 @@ use coop_cloud::{
+     encode_client_realtime_frame,
+ };
+ use coop_protocol::{
+-    LocalPresenceStateV1, PresenceHandle, PresenceInteractionV1, RemotePlayerSpawnV1,
+-    RemotePlayerUpdateV1, sequence_is_newer,
++    DespawnReason, LocalPresenceStateV1, PlayerState, PresenceHandle, PresenceInteractionV1,
++    RemotePlayerSpawnV1, RemotePlayerUpdateV1, sequence_is_newer,
+ };
+ use futures_util::{SinkExt, StreamExt};
+ use thiserror::Error;
+@@ -45,6 +45,12 @@ use url::Url;
+ pub const MAX_REALTIME_ENDPOINT_BYTES: usize = 256;
+ /// Maximum number of non-self remote handles tracked by one owner.
+ pub const MAX_REMOTE_PLAYERS: usize = 4;
++/// Maximum number of remote lifecycle records, including hidden tombstones.
++///
++/// Hidden handles remain tracked so a later visible respawn cannot reset its
++/// per-handle sequence.  Keeping this separate from the visible-player bound
++/// makes the tombstone policy explicit and keeps memory bounded.
++const MAX_TRACKED_REMOTE_HANDLES: usize = MAX_REMOTE_PLAYERS * 2;
+ /// Bounded interaction queue capacity.
+ pub const MAX_INTERACTION_QUEUE: usize = 16;
+ /// Bounded owner event queue capacity.
+@@ -457,6 +463,10 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
+     let Ok(request) = request_for(&grant) else {
+         return RealtimeOutcome::ProtocolViolation;
+     };
++    // The request owns the only bearer header needed by the upgrade.  Drop
++    // the capability before any network await so the ticket is zeroized as
++    // soon as request construction is complete.
++    drop(grant);
+     let connect_deadline = std::cmp::min(Instant::now() + CONNECT_TIMEOUT, expiry);
+     let websocket_config = WebSocketConfig::default()
+         .read_buffer_size(MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES)
+@@ -491,7 +501,9 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
+         return RealtimeOutcome::WriteFailed;
+     }
+ 
+-    let ready_deadline = std::cmp::min(Instant::now() + READY_TIMEOUT, expiry);
++    // Once the authenticated upgrade succeeds, ticket expiry no longer
++    // governs the session.  Readiness has its own fixed transport deadline.
++    let ready_deadline = Instant::now() + READY_TIMEOUT;
+     let self_handle = loop {
+         tokio::select! {
+             changed = driver.stop_rx.changed() => {
+@@ -512,7 +524,7 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
+                 }
+             }
+             () = time::sleep_until(ready_deadline) => {
+-                return if expiry <= Instant::now() { RealtimeOutcome::Expired } else { RealtimeOutcome::ReadyTimeout };
++                return RealtimeOutcome::ReadyTimeout;
+             }
+         }
+     };
+@@ -529,7 +541,6 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
+     }
+ 
+     let mut remotes = BTreeMap::new();
+-    let mut last_server_sequence = None;
+     let mut last_sent = driver.state_rx.borrow().clone();
+     let mut tick = time::interval_at(Instant::now() + PRESENCE_TICK, PRESENCE_TICK);
+     tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+@@ -574,7 +585,6 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
+                             &frame,
+                             self_handle,
+                             &mut remotes,
+-                            &mut last_server_sequence,
+                             &driver.event_tx,
+                         );
+                         if let Err(outcome) = outcome {
+@@ -596,10 +606,6 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
+                     }
+                 }
+             }
+-            () = time::sleep_until(expiry) => {
+-                driver.ready.store(false, Ordering::Release);
+-                return RealtimeOutcome::Expired;
+-            }
+         }
+     }
+ }
+@@ -705,7 +711,6 @@ fn apply_lifecycle(
+     frame: &ServerRealtimeFrameV1,
+     self_handle: PresenceHandle,
+     remotes: &mut BTreeMap<PresenceHandle, RemoteState>,
+-    last_server_sequence: &mut Option<u32>,
+     event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
+ ) -> Result<(), RealtimeOutcome> {
+     let (handle, sequence) = match &frame {
+@@ -720,60 +725,122 @@ fn apply_lifecycle(
+         }
+         ServerRealtimeFrameV1::PresenceReady(_) => return Err(RealtimeOutcome::ProtocolViolation),
+     };
+-    let sequence_is_valid =
+-        last_server_sequence.is_none_or(|previous| sequence_is_newer(sequence, previous));
+-    if handle == self_handle || !sequence_is_valid {
++    if handle == self_handle {
++        return Err(RealtimeOutcome::ProtocolViolation);
++    }
++
++    // Server sequences are scoped to a remote handle.  A new remote may
++    // legitimately begin at sequence 1 even when another remote has advanced
++    // much farther, while stale/equal/half-range values remain invalid for
++    // the affected handle.
++    if let Some(previous) = remotes.get(&handle).map(|remote| remote.sequence)
++        && !sequence_is_newer(sequence, previous)
++    {
+         return Err(RealtimeOutcome::ProtocolViolation);
+     }
++
+     match &frame {
+         ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
+-            if remotes.contains_key(&handle) {
+-                return Err(RealtimeOutcome::ProtocolViolation);
+-            }
+-            if remotes.len() >= MAX_REMOTE_PLAYERS {
+-                return Err(RealtimeOutcome::CapacityExceeded);
++            let visible = state_is_visible(spawn.state());
++            match remotes.get(&handle) {
++                // A visible spawn is the only valid respawn transition for a
++                // hidden handle.  It must still advance that handle's
++                // sequence and consumes one visible slot.
++                Some(remote) if !remote.visible && visible => {
++                    if visible_remote_count(remotes) >= MAX_REMOTE_PLAYERS {
++                        return Err(RealtimeOutcome::CapacityExceeded);
++                    }
++                    send_event(event_tx, RealtimeOwnerEvent::Spawn(spawn.clone()))
++                        .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++                    remotes.insert(handle, RemoteState::new(sequence, true));
++                }
++                // Duplicate spawn, including hidden-to-hidden spawn, is not
++                // a lifecycle transition and is rejected for this handle.
++                Some(_) => return Err(RealtimeOutcome::ProtocolViolation),
++                None => {
++                    if remotes.len() >= MAX_TRACKED_REMOTE_HANDLES {
++                        return Err(RealtimeOutcome::CapacityExceeded);
++                    }
++                    if visible && visible_remote_count(remotes) >= MAX_REMOTE_PLAYERS {
++                        return Err(RealtimeOutcome::CapacityExceeded);
++                    }
++                    if visible {
++                        send_event(event_tx, RealtimeOwnerEvent::Spawn(spawn.clone()))
++                            .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++                    }
++                    remotes.insert(handle, RemoteState::new(sequence, visible));
++                }
+             }
+-            send_event(event_tx, RealtimeOwnerEvent::Spawn(spawn.clone()))
+-                .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
+-            remotes.insert(handle, RemoteState::from_spawn(spawn));
+         }
+         ServerRealtimeFrameV1::RemotePlayerUpdate(update) => {
+-            let Some(remote) = remotes.get_mut(&handle) else {
++            let Some(remote) = remotes.get(&handle) else {
+                 return Err(RealtimeOutcome::ProtocolViolation);
+             };
+-            if !sequence_is_newer(update.server_sequence(), remote.sequence) {
++            let was_visible = remote.visible;
++            let visible = state_is_visible(update.state());
++            if visible != was_visible {
++                return Err(RealtimeOutcome::ProtocolViolation);
++            }
++            if was_visible || visible {
++                send_event(event_tx, RealtimeOwnerEvent::Update(update.clone()))
++                    .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++            }
++            if let Some(remote) = remotes.get_mut(&handle) {
++                remote.sequence = sequence;
++                remote.visible = visible;
++            } else {
++                // The immutable lookup above guarantees this cannot happen
++                // unless this function is changed to mutate concurrently.
+                 return Err(RealtimeOutcome::ProtocolViolation);
+             }
+-            send_event(event_tx, RealtimeOwnerEvent::Update(update.clone()))
+-                .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
+-            remote.sequence = update.server_sequence();
+         }
+         ServerRealtimeFrameV1::RemotePlayerDespawn(despawn) => {
+-            if !remotes.contains_key(&handle) {
++            let Some(remote) = remotes.get(&handle) else {
++                return Err(RealtimeOutcome::ProtocolViolation);
++            };
++            if despawn.reason() == DespawnReason::Hidden && !remote.visible {
+                 return Err(RealtimeOutcome::ProtocolViolation);
+             }
+-            send_event(event_tx, RealtimeOwnerEvent::Despawn(despawn.clone()))
+-                .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
+-            remotes.remove(&handle);
++            if remote.visible {
++                send_event(event_tx, RealtimeOwnerEvent::Despawn(despawn.clone()))
++                    .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++            }
++            if despawn.reason() == DespawnReason::Hidden {
++                // Preserve the sequence tombstone for a hidden handle so a
++                // subsequent visible spawn must be newer than this removal.
++                if let Some(remote) = remotes.get_mut(&handle) {
++                    remote.sequence = sequence;
++                    remote.visible = false;
++                }
++            } else {
++                // Terminal reasons release the handle record and its slot.
++                remotes.remove(&handle);
++            }
+         }
+         ServerRealtimeFrameV1::PresenceReady(_) => unreachable!(),
+     }
+-    *last_server_sequence = Some(sequence);
+     Ok(())
+ }
+ 
+ struct RemoteState {
+     sequence: u32,
++    visible: bool,
+ }
+ 
+ impl RemoteState {
+-    fn from_spawn(spawn: &RemotePlayerSpawnV1) -> Self {
+-        Self {
+-            sequence: spawn.server_sequence(),
+-        }
++    const fn new(sequence: u32, visible: bool) -> Self {
++        Self { sequence, visible }
+     }
+ }
+ 
++fn state_is_visible(state: &LocalPresenceStateV1) -> bool {
++    state.pose().player_state() != PlayerState::Hidden
++}
++
++fn visible_remote_count(remotes: &BTreeMap<PresenceHandle, RemoteState>) -> usize {
++    remotes.values().filter(|remote| remote.visible).count()
++}
++
+ fn unix_now() -> UnixTimestampMillis {
+     let millis = SystemTime::now()
+         .duration_since(UNIX_EPOCH)
+diff --git a/coop/crates/coop-sidecar/tests/realtime_loopback.rs b/coop/crates/coop-sidecar/tests/realtime_loopback.rs
+index 83bc5552fe03543bc5c70280dc0083bdcc164ffd..a3a70ed96249b71f598c0cfd77a14c3066fa9952 100644
+--- a/coop/crates/coop-sidecar/tests/realtime_loopback.rs
++++ b/coop/crates/coop-sidecar/tests/realtime_loopback.rs
+@@ -21,6 +21,18 @@ use tokio::{net::TcpListener, time::timeout};
+ use tokio_tungstenite::{accept_hdr_async, tungstenite::Message};
+ 
+ fn state(source_sequence: u32, client_tick: u32) -> LocalPresenceStateV1 {
++    state_with_player_state(source_sequence, client_tick, PlayerState::Overworld)
++}
++
++fn hidden_state(source_sequence: u32, client_tick: u32) -> LocalPresenceStateV1 {
++    state_with_player_state(source_sequence, client_tick, PlayerState::Hidden)
++}
++
++fn state_with_player_state(
++    source_sequence: u32,
++    client_tick: u32,
++    player_state: PlayerState,
++) -> LocalPresenceStateV1 {
+     let location = WorldLocation::new(RegionId::Hoenn, 1, 0, 4, 5).unwrap();
+     let pose = PresencePoseV1::new(
+         location,
+@@ -31,13 +43,17 @@ fn state(source_sequence: u32, client_tick: u32) -> LocalPresenceStateV1 {
+         MovementMode::Idle,
+         AnimationId::Idle,
+         AvatarId::Brendan,
+-        PlayerState::Overworld,
++        player_state,
+     )
+     .unwrap();
+     LocalPresenceStateV1::new(pose, source_sequence).unwrap()
+ }
+ 
+ fn grant(port: u16) -> RealtimeGrant {
++    grant_with_ttl(port, 30_000)
++}
++
++fn grant_with_ttl(port: u16, ttl_ms: u64) -> RealtimeGrant {
+     let ticket = RealtimeTicket::from_bytes([7; 32]).unwrap();
+     let endpoint = RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime")).unwrap();
+     let now = u64::try_from(
+@@ -50,7 +66,7 @@ fn grant(port: u16) -> RealtimeGrant {
+     RealtimeGrant::with_now(
+         ticket,
+         endpoint,
+-        UnixTimestampMillis::new(now + 30_000),
++        UnixTimestampMillis::new(now + ttl_ms),
+         UnixTimestampMillis::new(now),
+     )
+     .unwrap()
+@@ -58,21 +74,24 @@ fn grant(port: u16) -> RealtimeGrant {
+ 
+ async fn accept_server(
+     listener: TcpListener,
+-    observed: Arc<Mutex<Option<(String, bool, bool)>>>,
++    observed: Arc<Mutex<Option<(bool, bool, bool)>>>,
+ ) -> tokio_tungstenite::WebSocketStream<tokio::net::TcpStream> {
+     let (stream, _) = listener.accept().await.unwrap();
++    let expected_authorization = format!(
++        "Bearer {}",
++        RealtimeTicket::from_bytes([7; 32]).unwrap().expose_secret()
++    );
+     accept_hdr_async(
+         stream,
+         |request: &tokio_tungstenite::tungstenite::handshake::server::Request, response| {
+-            let authorization = request
++            let authorization_exact = request
+                 .headers()
+                 .get("authorization")
+                 .and_then(|value| value.to_str().ok())
+-                .unwrap_or_default()
+-                .to_owned();
++                .is_some_and(|value| value == expected_authorization);
+             let has_query = request.uri().query().is_some();
+             let has_subprotocol = request.headers().contains_key("sec-websocket-protocol");
+-            *observed.lock().unwrap() = Some((authorization, has_query, has_subprotocol));
++            *observed.lock().unwrap() = Some((authorization_exact, has_query, has_subprotocol));
+             Ok(response)
+         },
+     )
+@@ -234,16 +253,254 @@ async fn realtime_one_attempt_sends_cached_state_first_and_decodes_lifecycle() {
+     let outcome = timeout(Duration::from_secs(1), run).await.unwrap().unwrap();
+     assert_eq!(outcome, RealtimeOutcome::OwnerStopped);
+     server.await.unwrap();
+-    let observed = observed.lock().unwrap().clone().unwrap();
++    let observed = (*observed.lock().unwrap()).unwrap();
++    assert!(observed.0);
++    assert!(!observed.1);
++    assert!(!observed.2);
++}
++
++#[tokio::test]
++async fn realtime_remote_sequences_are_scoped_per_handle_and_interleavable() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let observed = Arc::new(Mutex::new(None));
++    let cached = state(1, 11);
++    let first_handle = PresenceHandle::new(0x31).unwrap();
++    let second_handle = PresenceHandle::new(0x32).unwrap();
++    let first_user = CanonicalUsername::new("misty").unwrap();
++    let second_user = CanonicalUsername::new("brock").unwrap();
++    let frames = vec![
++        ServerRealtimeFrameV1::remote_player_spawn(
++            RemotePlayerSpawnV1::new(first_handle, 1, state(1, 21), first_user).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_spawn(
++            RemotePlayerSpawnV1::new(second_handle, 1, state(1, 31), second_user).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_update(
++            RemotePlayerUpdateV1::new(first_handle, 2, state(2, 22)).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_update(
++            RemotePlayerUpdateV1::new(second_handle, 2, state(2, 32)).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_despawn(
++            RemotePlayerDespawnV1::new(first_handle, 3, DespawnReason::Disconnected).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_despawn(
++            RemotePlayerDespawnV1::new(second_handle, 3, DespawnReason::Disconnected).unwrap(),
++        ),
++    ];
++    let server = tokio::spawn(async move {
++        let mut socket = accept_server(listener, observed).await;
++        let _ = socket.next().await.unwrap().unwrap();
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
++        )
++        .await;
++        for frame in frames {
++            send_frame(&mut socket, frame).await;
++        }
++        tokio::time::sleep(Duration::from_secs(1)).await;
++    });
++
++    let (mut owner, driver) = realtime_channel(cached).unwrap();
++    let run = tokio::spawn(run_realtime(grant(port), driver));
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Ready(_))
++    ));
++    let mut lifecycle = Vec::new();
++    for _ in 0..6 {
++        let event = timeout(Duration::from_secs(1), owner.recv_event())
++            .await
++            .unwrap()
++            .unwrap();
++        lifecycle.push(event);
++    }
++    assert!(matches!(
++        lifecycle[0],
++        RealtimeOwnerEvent::Spawn(ref spawn) if spawn.handle() == first_handle
++    ));
++    assert!(matches!(
++        lifecycle[1],
++        RealtimeOwnerEvent::Spawn(ref spawn) if spawn.handle() == second_handle
++    ));
++    assert!(matches!(
++        lifecycle[2],
++        RealtimeOwnerEvent::Update(ref update) if update.handle() == first_handle
++    ));
++    assert!(matches!(
++        lifecycle[3],
++        RealtimeOwnerEvent::Update(ref update) if update.handle() == second_handle
++    ));
++    assert!(matches!(
++        lifecycle[4],
++        RealtimeOwnerEvent::Despawn(ref despawn) if despawn.handle() == first_handle
++    ));
++    assert!(matches!(
++        lifecycle[5],
++        RealtimeOwnerEvent::Despawn(ref despawn) if despawn.handle() == second_handle
++    ));
++    owner.stop();
++    assert_eq!(
++        timeout(Duration::from_secs(1), run).await.unwrap().unwrap(),
++        RealtimeOutcome::OwnerStopped
++    );
++    server.await.unwrap();
++}
++
++#[tokio::test]
++#[expect(
++    clippy::too_many_lines,
++    reason = "the loopback fixture keeps the complete lifecycle sequence together"
++)]
++async fn realtime_hidden_tombstones_do_not_consume_visible_capacity() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let observed = Arc::new(Mutex::new(None));
++    let cached = state(1, 11);
++    let hidden_handle = PresenceHandle::new(0x40).unwrap();
++    let hidden_only_handle = PresenceHandle::new(0x46).unwrap();
++    let visible_handles = [
++        PresenceHandle::new(0x41).unwrap(),
++        PresenceHandle::new(0x42).unwrap(),
++        PresenceHandle::new(0x43).unwrap(),
++        PresenceHandle::new(0x44).unwrap(),
++    ];
++    let hidden_user = CanonicalUsername::new("hidden").unwrap();
++    let mut frames = vec![
++        ServerRealtimeFrameV1::remote_player_spawn(
++            RemotePlayerSpawnV1::new(hidden_only_handle, 1, hidden_state(1, 41), hidden_user)
++                .unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_update(
++            RemotePlayerUpdateV1::new(hidden_only_handle, 2, hidden_state(2, 42)).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_spawn(
++            RemotePlayerSpawnV1::new(
++                hidden_handle,
++                1,
++                state(1, 42),
++                CanonicalUsername::new("resurfacing").unwrap(),
++            )
++            .unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_despawn(
++            RemotePlayerDespawnV1::new(hidden_handle, 2, DespawnReason::Hidden).unwrap(),
++        ),
++        ServerRealtimeFrameV1::remote_player_spawn(
++            RemotePlayerSpawnV1::new(
++                hidden_handle,
++                3,
++                state(1, 43),
++                CanonicalUsername::new("visible-again").unwrap(),
++            )
++            .unwrap(),
++        ),
++    ];
++    for (index, handle) in visible_handles.iter().take(3).enumerate() {
++        frames.push(ServerRealtimeFrameV1::remote_player_spawn(
++            RemotePlayerSpawnV1::new(
++                *handle,
++                1,
++                state(1, 50 + u32::try_from(index).unwrap()),
++                CanonicalUsername::new(format!("user{index}")).unwrap(),
++            )
++            .unwrap(),
++        ));
++    }
++    let over_capacity_handle = PresenceHandle::new(0x45).unwrap();
++    frames.push(ServerRealtimeFrameV1::remote_player_spawn(
++        RemotePlayerSpawnV1::new(
++            over_capacity_handle,
++            1,
++            state(1, 60),
++            CanonicalUsername::new("overflow").unwrap(),
++        )
++        .unwrap(),
++    ));
++    let server = tokio::spawn(async move {
++        let mut socket = accept_server(listener, observed).await;
++        let _ = socket.next().await.unwrap().unwrap();
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
++        )
++        .await;
++        for frame in frames {
++            send_frame(&mut socket, frame).await;
++        }
++    });
++
++    let (mut owner, driver) = realtime_channel(cached).unwrap();
++    let run = tokio::spawn(run_realtime(grant(port), driver));
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Ready(_))
++    ));
++    assert!(matches!(
++        timeout(Duration::from_secs(1), owner.recv_event())
++            .await
++            .unwrap(),
++        Some(RealtimeOwnerEvent::Spawn(_))
++    ));
++    assert!(matches!(
++        timeout(Duration::from_secs(1), owner.recv_event())
++            .await
++            .unwrap(),
++        Some(RealtimeOwnerEvent::Despawn(_))
++    ));
++    assert!(matches!(
++        timeout(Duration::from_secs(1), owner.recv_event())
++            .await
++            .unwrap(),
++        Some(RealtimeOwnerEvent::Spawn(_))
++    ));
++    for _ in 0..3 {
++        assert!(matches!(
++            timeout(Duration::from_secs(1), owner.recv_event())
++                .await
++                .unwrap(),
++            Some(RealtimeOwnerEvent::Spawn(_))
++        ));
++    }
+     assert_eq!(
+-        observed.0,
+-        format!(
+-            "Bearer {}",
+-            RealtimeTicket::from_bytes([7; 32]).unwrap().expose_secret()
++        timeout(Duration::from_secs(1), run).await.unwrap().unwrap(),
++        RealtimeOutcome::CapacityExceeded
++    );
++    server.await.unwrap();
++    owner.stop();
++}
++
++#[tokio::test]
++async fn realtime_authenticated_session_survives_consumed_ticket_expiry() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let observed = Arc::new(Mutex::new(None));
++    let server = tokio::spawn(async move {
++        let mut socket = accept_server(listener, observed).await;
++        let _ = socket.next().await.unwrap().unwrap();
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
+         )
++        .await;
++        tokio::time::sleep(Duration::from_secs(2)).await;
++    });
++
++    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
++    let run = tokio::spawn(run_realtime(grant_with_ttl(port, 300), driver));
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Ready(_))
++    ));
++    tokio::time::sleep(Duration::from_millis(700)).await;
++    owner.stop();
++    assert_eq!(
++        timeout(Duration::from_secs(1), run).await.unwrap().unwrap(),
++        RealtimeOutcome::OwnerStopped
+     );
+-    assert!(!observed.1);
+-    assert!(!observed.2);
++    server.await.unwrap();
+ }
+ 
+ #[tokio::test]

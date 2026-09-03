@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "changed_paths": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "sidecar-control-correction-correctness-v4",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "risk_boundaries": [
+        "nonrecursive-exact-control-terminal-classification-and-preactive-cleanup",
+        "writer-failure-register-recheck-and-retained-bridge-recovery-precedence",
+        "explicit-writer-abort-await-on-every-owned-terminal-exit",
+        "deterministic-serving-stall-proof-with-generation-cutover-regression-preservation"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "sidecar-control-correction-security-v4",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "risk_boundaries": [
+        "authenticated-control-ambiguity-and-exact-cause-confinement",
+        "writer-failure-before-control-eof-with-no-retained-bridge-reconnect",
+        "bounded-writer-resource-task-and-socket-teardown-confinement",
+        "test-only-gate-isolation-and-no-generation-replay-regression"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

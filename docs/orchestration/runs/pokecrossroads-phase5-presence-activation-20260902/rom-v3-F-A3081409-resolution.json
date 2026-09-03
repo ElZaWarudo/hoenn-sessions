@@ -1,0 +1,1 @@
+{"finding_id":"F-A3081409","resolver_id":"/root","resolution":"fixed","evidence":["Exact candidate cc421eb8 proves ordinary link-player objects remain blockers while reserved remote sources and targets remain nonblocking; both final review lenses passed."],"resolved_diff_digest":"sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44"}

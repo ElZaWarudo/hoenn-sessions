@@ -1,0 +1,1265 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 0d837de82bded103b438a3a32c59abc9e2d7ba27..39f48c3866b0e297265333d1575fa1a73e485438 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -264,12 +264,16 @@ dependencies = [
+ name = "coop-sidecar"
+ version = "0.1.0"
+ dependencies = [
++ "coop-cloud",
+  "coop-protocol",
+  "crc32fast",
++ "futures-util",
+  "serde",
+  "serde_json",
+  "thiserror",
+  "tokio",
++ "tokio-tungstenite",
++ "url",
+  "uuid",
+ ]
+ 
+@@ -634,7 +638,7 @@ dependencies = [
+  "tokio",
+  "tokio-rustls",
+  "tower-service",
+- "webpki-roots",
++ "webpki-roots 1.0.9",
+ ]
+ 
+ [[package]]
+@@ -1100,7 +1104,7 @@ dependencies = [
+  "wasm-bindgen-futures",
+  "wasm-streams",
+  "web-sys",
+- "webpki-roots",
++ "webpki-roots 1.0.9",
+ ]
+ 
+ [[package]]
+@@ -1538,8 +1542,12 @@ checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
+ dependencies = [
+  "futures-util",
+  "log",
++ "rustls",
++ "rustls-pki-types",
+  "tokio",
++ "tokio-rustls",
+  "tungstenite",
++ "webpki-roots 0.26.11",
+ ]
+ 
+ [[package]]
+@@ -1639,6 +1647,8 @@ dependencies = [
+  "httparse",
+  "log",
+  "rand 0.9.5",
++ "rustls",
++ "rustls-pki-types",
+  "sha1",
+  "thiserror",
+ ]
+@@ -1809,6 +1819,15 @@ dependencies = [
+  "wasm-bindgen",
+ ]
+ 
++[[package]]
++name = "webpki-roots"
++version = "0.26.11"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
++dependencies = [
++ "webpki-roots 1.0.9",
++]
++
+ [[package]]
+ name = "webpki-roots"
+ version = "1.0.9"
+diff --git a/coop/crates/coop-sidecar/Cargo.toml b/coop/crates/coop-sidecar/Cargo.toml
+index 82cebfdd7bd91145cd990a3bed1661776d8e730d..dd183cd71d72aea81df15d75a3d038f88b87b96b 100644
+--- a/coop/crates/coop-sidecar/Cargo.toml
++++ b/coop/crates/coop-sidecar/Cargo.toml
+@@ -5,12 +5,16 @@ edition.workspace = true
+ rust-version.workspace = true
+ 
+ [dependencies]
++coop-cloud = { path = "../coop-cloud" }
+ coop-protocol = { path = "../coop-protocol" }
+ crc32fast.workspace = true
++futures-util.workspace = true
+ serde.workspace = true
+ serde_json.workspace = true
+ thiserror.workspace = true
+ tokio.workspace = true
++tokio-tungstenite = { workspace = true, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
++url.workspace = true
+ uuid.workspace = true
+ 
+ [lints]
+diff --git a/coop/crates/coop-sidecar/src/lib.rs b/coop/crates/coop-sidecar/src/lib.rs
+index eaa2470e420957e04d24d2da691d2ca1ad010d76..a7ef6695aa8ba31f713ac8301207454775a44a16 100644
+--- a/coop/crates/coop-sidecar/src/lib.rs
++++ b/coop/crates/coop-sidecar/src/lib.rs
+@@ -5,12 +5,19 @@
+ 
+ mod codec;
+ pub mod control;
++pub mod realtime;
+ mod server;
+ 
+ pub use codec::{
+     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, BRIDGE_PAYLOAD_SIZE, BridgeFrame, Direction,
+     FrameCodecError, GAME_PROTOCOL_VERSION, MessageType,
+ };
++pub use realtime::{
++    CONNECT_TIMEOUT, MAX_INTERACTION_QUEUE, MAX_OWNER_EVENT_QUEUE, MAX_REALTIME_ENDPOINT_BYTES,
++    MAX_REMOTE_PLAYERS, PRESENCE_TICK, READY_TIMEOUT, RealtimeDriver, RealtimeEndpoint,
++    RealtimeError, RealtimeGrant, RealtimeInputError, RealtimeOutcome, RealtimeOwner,
++    RealtimeOwnerEvent, WRITE_TIMEOUT, realtime_channel, run_realtime,
++};
+ pub use server::{
+     BridgeDescriptor, ControlDescriptor, HANDSHAKE_ACCEPTED_LINE, LocalSidecar,
+     MAX_DESCRIPTOR_BYTES, MAX_HANDSHAKE_BYTES, SessionDescriptor, SidecarError,
+diff --git a/coop/crates/coop-sidecar/src/realtime.rs b/coop/crates/coop-sidecar/src/realtime.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..8643e4072e9055d2756dad372c939a89b62e3849
+--- /dev/null
++++ b/coop/crates/coop-sidecar/src/realtime.rs
+@@ -0,0 +1,789 @@
++//! One-attempt, bounded cloud presence transport for the local sidecar.
++//!
++//! This module intentionally stops at a typed owner/driver seam.  It owns the
++//! short-lived upgrade capability for exactly one connection, but never owns
++//! bridge framing or writes to the ROM TCP socket.  The public owner is a
++//! bounded command/event handle; the driver is consumed by [`run_realtime`].
++
++use std::{
++    collections::BTreeMap,
++    fmt,
++    sync::{
++        Arc,
++        atomic::{AtomicBool, Ordering},
++    },
++    time::{Duration, SystemTime, UNIX_EPOCH},
++};
++
++use coop_cloud::{
++    ClientRealtimeFrameV1, MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, REALTIME_TICKET_TTL_MS,
++    RealtimeTicket, ServerRealtimeFrameV1, UnixTimestampMillis, decode_server_realtime_frame,
++    encode_client_realtime_frame,
++};
++use coop_protocol::{
++    LocalPresenceStateV1, PresenceHandle, PresenceInteractionV1, RemotePlayerSpawnV1,
++    RemotePlayerUpdateV1, sequence_is_newer,
++};
++use futures_util::{SinkExt, StreamExt};
++use thiserror::Error;
++use tokio::{
++    sync::{mpsc, watch},
++    time::{self, Instant},
++};
++use tokio_tungstenite::{
++    connect_async_with_config,
++    tungstenite::{
++        Message,
++        client::IntoClientRequest,
++        http::{HeaderValue, Request, header::AUTHORIZATION},
++        protocol::WebSocketConfig,
++    },
++};
++use url::Url;
++
++/// Maximum UTF-8 endpoint text accepted by the sidecar core.
++pub const MAX_REALTIME_ENDPOINT_BYTES: usize = 256;
++/// Maximum number of non-self remote handles tracked by one owner.
++pub const MAX_REMOTE_PLAYERS: usize = 4;
++/// Bounded interaction queue capacity.
++pub const MAX_INTERACTION_QUEUE: usize = 16;
++/// Bounded owner event queue capacity.
++pub const MAX_OWNER_EVENT_QUEUE: usize = 32;
++/// Local state transmission cadence.
++pub const PRESENCE_TICK: Duration = Duration::from_millis(100);
++/// Maximum time allowed for a WebSocket upgrade.
++pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
++/// Maximum time allowed for each outbound WebSocket write.
++pub const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
++/// Maximum time allowed for the server's readiness frame.
++pub const READY_TIMEOUT: Duration = Duration::from_secs(3);
++
++const MAX_WEBSOCKET_WRITE_BUFFER_BYTES: usize = 4096;
++
++/// Stable construction and input errors.  No variant carries parser or
++/// peer-controlled text.
++#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
++pub enum RealtimeError {
++    #[error("realtime endpoint is invalid")]
++    InvalidEndpoint,
++    #[error("realtime grant is invalid")]
++    InvalidGrant,
++    #[error("realtime grant has expired")]
++    ExpiredGrant,
++    #[error("realtime state is invalid")]
++    InvalidState,
++}
++
++/// Stable terminal outcomes for one realtime attempt.
++#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
++pub enum RealtimeOutcome {
++    #[error("realtime owner stopped")]
++    OwnerStopped,
++    #[error("realtime grant expired")]
++    Expired,
++    #[error("realtime connection timed out")]
++    ConnectTimeout,
++    #[error("realtime readiness timed out")]
++    ReadyTimeout,
++    #[error("realtime write failed")]
++    WriteFailed,
++    #[error("realtime peer closed")]
++    PeerClosed,
++    #[error("realtime transport failed")]
++    TransportFailed,
++    #[error("realtime protocol violation")]
++    ProtocolViolation,
++    #[error("realtime remote capacity exceeded")]
++    CapacityExceeded,
++    #[error("realtime owner event queue is full")]
++    OwnerBackpressure,
++}
++
++/// Errors returned by owner-side bounded commands.
++#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
++pub enum RealtimeInputError {
++    #[error("realtime owner is stopped")]
++    Stopped,
++    #[error("realtime owner is not ready")]
++    NotReady,
++    #[error("realtime interaction queue is full")]
++    QueueFull,
++    #[error("realtime driver is closed")]
++    Closed,
++}
++
++/// A canonical, validated realtime WebSocket endpoint.
++#[derive(Clone, Eq, PartialEq)]
++pub struct RealtimeEndpoint {
++    url: Url,
++}
++
++impl RealtimeEndpoint {
++    /// Parses and validates a realtime endpoint.
++    ///
++    /// `ws` is deliberately restricted to literal loopback addresses and an
++    /// explicit nonzero port.  `wss` accepts canonical DNS/IP hosts and either
++    /// an explicit nonzero port or its standard TLS port.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeError::InvalidEndpoint`] when the URL is not a
++    /// canonical, bounded `/v1/realtime` endpoint.
++    pub fn new(value: impl AsRef<str>) -> Result<Self, RealtimeError> {
++        let value = value.as_ref();
++        if value.len() > MAX_REALTIME_ENDPOINT_BYTES || value.is_empty() {
++            return Err(RealtimeError::InvalidEndpoint);
++        }
++        let url = Url::parse(value).map_err(|_| RealtimeError::InvalidEndpoint)?;
++        if url.as_str() != value
++            || url.path() != "/v1/realtime"
++            || url.query().is_some()
++            || url.fragment().is_some()
++            || !url.username().is_empty()
++            || url.password().is_some()
++            || url.host_str().is_none()
++        {
++            return Err(RealtimeError::InvalidEndpoint);
++        }
++
++        match url.scheme() {
++            "ws" => {
++                let loopback = matches!(url.host_str(), Some("127.0.0.1" | "[::1]"));
++                if !loopback || url.port().is_none_or(|port| port == 0) {
++                    return Err(RealtimeError::InvalidEndpoint);
++                }
++            }
++            "wss" => {
++                if url.port().is_some_and(|port| port == 0) || url.port_or_known_default().is_none()
++                {
++                    return Err(RealtimeError::InvalidEndpoint);
++                }
++                if url.host_str().is_some_and(|host| host.ends_with('.')) {
++                    return Err(RealtimeError::InvalidEndpoint);
++                }
++            }
++            _ => return Err(RealtimeError::InvalidEndpoint),
++        }
++        Ok(Self { url })
++    }
++
++    /// Alias emphasizing that endpoint text is parsed, not concatenated.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeError::InvalidEndpoint`] for invalid endpoint text.
++    pub fn parse(value: &str) -> Result<Self, RealtimeError> {
++        Self::new(value)
++    }
++
++    #[must_use]
++    pub fn as_str(&self) -> &str {
++        self.url.as_str()
++    }
++
++    #[must_use]
++    pub fn is_secure(&self) -> bool {
++        self.url.scheme() == "wss"
++    }
++
++    #[must_use]
++    pub fn port(&self) -> Option<u16> {
++        self.url.port_or_known_default()
++    }
++}
++
++impl fmt::Debug for RealtimeEndpoint {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter
++            .debug_tuple("RealtimeEndpoint")
++            .field(&self.url)
++            .finish()
++    }
++}
++
++impl fmt::Display for RealtimeEndpoint {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter.write_str(self.as_str())
++    }
++}
++
++/// A one-use realtime capability and its validated endpoint.
++///
++/// The grant is intentionally non-`Clone`, non-serializable, and has no
++/// ticket accessor.  Moving it into [`run_realtime`] consumes the capability.
++pub struct RealtimeGrant {
++    ticket: RealtimeTicket,
++    endpoint: RealtimeEndpoint,
++    expires_at: UnixTimestampMillis,
++}
++
++impl RealtimeGrant {
++    /// Constructs a grant using the current wall clock for TTL validation.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeError::ExpiredGrant`] when the expiry is in the past
++    /// or [`RealtimeError::InvalidGrant`] when it exceeds the ticket TTL.
++    pub fn new(
++        ticket: RealtimeTicket,
++        endpoint: RealtimeEndpoint,
++        expires_at: UnixTimestampMillis,
++    ) -> Result<Self, RealtimeError> {
++        Self::with_now(ticket, endpoint, expires_at, unix_now())
++    }
++
++    /// Constructs a grant against an explicit timestamp, useful for callers
++    /// that already have an authenticated server clock.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeError::ExpiredGrant`] when the expiry is in the past
++    /// or [`RealtimeError::InvalidGrant`] when it exceeds the ticket TTL.
++    pub fn with_now(
++        ticket: RealtimeTicket,
++        endpoint: RealtimeEndpoint,
++        expires_at: UnixTimestampMillis,
++        now: UnixTimestampMillis,
++    ) -> Result<Self, RealtimeError> {
++        let now = now.value();
++        let expiry = expires_at.value();
++        if expiry == 0 || expiry <= now || expiry.saturating_sub(now) > REALTIME_TICKET_TTL_MS {
++            return Err(if expiry != 0 && expiry <= now {
++                RealtimeError::ExpiredGrant
++            } else {
++                RealtimeError::InvalidGrant
++            });
++        }
++        Ok(Self {
++            ticket,
++            endpoint,
++            expires_at,
++        })
++    }
++
++    /// Alias for callers handling a minted response's expiry explicitly.
++    ///
++    /// # Errors
++    ///
++    /// Returns the same validation errors as [`Self::new`].
++    pub fn from_parts(
++        ticket: RealtimeTicket,
++        endpoint: RealtimeEndpoint,
++        expires_at: UnixTimestampMillis,
++    ) -> Result<Self, RealtimeError> {
++        Self::new(ticket, endpoint, expires_at)
++    }
++
++    #[must_use]
++    pub const fn expires_at(&self) -> UnixTimestampMillis {
++        self.expires_at
++    }
++
++    #[must_use]
++    pub fn endpoint(&self) -> &RealtimeEndpoint {
++        &self.endpoint
++    }
++}
++
++impl fmt::Debug for RealtimeGrant {
++    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
++        formatter
++            .debug_struct("RealtimeGrant")
++            .field("endpoint", &self.endpoint)
++            .field("expires_at", &self.expires_at)
++            .field("ticket", &"[REDACTED]")
++            .finish()
++    }
++}
++
++/// Typed events delivered to the owner, with no transport details.
++#[derive(Clone, Debug, Eq, PartialEq)]
++pub enum RealtimeOwnerEvent {
++    Ready(coop_cloud::PresenceReadyV1),
++    Spawn(RemotePlayerSpawnV1),
++    Update(RemotePlayerUpdateV1),
++    Despawn(coop_protocol::RemotePlayerDespawnV1),
++}
++
++impl RealtimeOwnerEvent {
++    #[must_use]
++    pub const fn kind(&self) -> &'static str {
++        match self {
++            Self::Ready(_) => "PRESENCE_READY",
++            Self::Spawn(_) => "REMOTE_PLAYER_SPAWN",
++            Self::Update(_) => "REMOTE_PLAYER_UPDATE",
++            Self::Despawn(_) => "REMOTE_PLAYER_DESPAWN",
++        }
++    }
++}
++
++/// Bounded commands and events owned by the local sidecar integration.
++pub struct RealtimeOwner {
++    state_tx: watch::Sender<LocalPresenceStateV1>,
++    interaction_tx: mpsc::Sender<PresenceInteractionV1>,
++    stop_tx: watch::Sender<bool>,
++    event_rx: mpsc::Receiver<RealtimeOwnerEvent>,
++    ready: Arc<AtomicBool>,
++    stopped: Arc<AtomicBool>,
++}
++
++impl RealtimeOwner {
++    /// Publishes the latest local state.  The driver sends at most one latest
++    /// value per 100 ms tick.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeInputError::Stopped`] or
++    /// [`RealtimeInputError::Closed`] when the driver is no longer running.
++    pub fn update_state(&self, state: LocalPresenceStateV1) -> Result<(), RealtimeInputError> {
++        if self.stopped.load(Ordering::Acquire) {
++            return Err(RealtimeInputError::Stopped);
++        }
++        self.state_tx
++            .send(state)
++            .map_err(|_| RealtimeInputError::Closed)
++    }
++
++    /// Queues one interaction after readiness.  FIFO capacity is fixed at 16.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`RealtimeInputError::NotReady`] before the server readiness
++    /// event, or a bounded queue/owner state error otherwise.
++    pub fn interact(&self, interaction: PresenceInteractionV1) -> Result<(), RealtimeInputError> {
++        if self.stopped.load(Ordering::Acquire) {
++            return Err(RealtimeInputError::Stopped);
++        }
++        if !self.ready.load(Ordering::Acquire) {
++            return Err(RealtimeInputError::NotReady);
++        }
++        self.interaction_tx
++            .try_send(interaction)
++            .map_err(|error| match error {
++                mpsc::error::TrySendError::Full(_) => RealtimeInputError::QueueFull,
++                mpsc::error::TrySendError::Closed(_) => RealtimeInputError::Closed,
++            })
++    }
++
++    /// Requests a bounded, graceful stop.  Repeated calls are harmless.
++    pub fn stop(&self) {
++        self.stopped.store(true, Ordering::Release);
++        let _ = self.stop_tx.send(true);
++    }
++
++    /// Receives the next typed owner event.
++    pub async fn recv_event(&mut self) -> Option<RealtimeOwnerEvent> {
++        self.event_rx.recv().await
++    }
++
++    /// Alias for stream-oriented integrations.
++    pub async fn next_event(&mut self) -> Option<RealtimeOwnerEvent> {
++        self.recv_event().await
++    }
++}
++
++impl Drop for RealtimeOwner {
++    fn drop(&mut self) {
++        self.stopped.store(true, Ordering::Release);
++        let _ = self.stop_tx.send(true);
++    }
++}
++
++/// Driver half consumed by [`run_realtime`].
++pub struct RealtimeDriver {
++    state_rx: watch::Receiver<LocalPresenceStateV1>,
++    interaction_rx: mpsc::Receiver<PresenceInteractionV1>,
++    stop_rx: watch::Receiver<bool>,
++    event_tx: mpsc::Sender<RealtimeOwnerEvent>,
++    ready: Arc<AtomicBool>,
++    stopped: Arc<AtomicBool>,
++}
++
++/// Creates the bounded owner/driver seam around one validated cached state.
++///
++/// # Errors
++///
++/// Returns [`RealtimeError::InvalidState`] when the cached presence state is
++/// not valid for the V1 wire contract.
++pub fn realtime_channel(
++    initial_state: LocalPresenceStateV1,
++) -> Result<(RealtimeOwner, RealtimeDriver), RealtimeError> {
++    initial_state
++        .validate()
++        .map_err(|_| RealtimeError::InvalidState)?;
++    let (state_tx, state_rx) = watch::channel(initial_state);
++    let (interaction_tx, interaction_rx) = mpsc::channel(MAX_INTERACTION_QUEUE);
++    let (event_tx, event_rx) = mpsc::channel(MAX_OWNER_EVENT_QUEUE);
++    let (stop_tx, stop_rx) = watch::channel(false);
++    let ready = Arc::new(AtomicBool::new(false));
++    let stopped = Arc::new(AtomicBool::new(false));
++    Ok((
++        RealtimeOwner {
++            state_tx,
++            interaction_tx,
++            stop_tx,
++            event_rx,
++            ready: Arc::clone(&ready),
++            stopped: Arc::clone(&stopped),
++        },
++        RealtimeDriver {
++            state_rx,
++            interaction_rx,
++            stop_rx,
++            event_tx,
++            ready,
++            stopped,
++        },
++    ))
++}
++
++/// Runs one authenticated realtime attempt.  The grant and driver are both
++/// consumed; no retry or reconnect path exists in this function.
++#[expect(
++    clippy::too_many_lines,
++    reason = "the bounded transport state machine is kept together"
++)]
++pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> RealtimeOutcome {
++    if driver.stopped.load(Ordering::Acquire) {
++        return RealtimeOutcome::OwnerStopped;
++    }
++    let Some(expiry) = expiry_instant(grant.expires_at) else {
++        return RealtimeOutcome::Expired;
++    };
++    if expiry <= Instant::now() {
++        return RealtimeOutcome::Expired;
++    }
++
++    let Ok(request) = request_for(&grant) else {
++        return RealtimeOutcome::ProtocolViolation;
++    };
++    let connect_deadline = std::cmp::min(Instant::now() + CONNECT_TIMEOUT, expiry);
++    let websocket_config = WebSocketConfig::default()
++        .read_buffer_size(MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES)
++        .write_buffer_size(0)
++        .max_write_buffer_size(MAX_WEBSOCKET_WRITE_BUFFER_BYTES)
++        .max_message_size(Some(MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES))
++        .max_frame_size(Some(MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES));
++    let connect = time::timeout_at(
++        connect_deadline,
++        connect_async_with_config(request, Some(websocket_config), false),
++    );
++    let (mut socket, _) = match connect.await {
++        Ok(Ok(connection)) => connection,
++        Ok(Err(_)) => return RealtimeOutcome::TransportFailed,
++        Err(_) => {
++            return if expiry <= Instant::now() {
++                RealtimeOutcome::Expired
++            } else {
++                RealtimeOutcome::ConnectTimeout
++            };
++        }
++    };
++
++    let cached_state = driver.state_rx.borrow().clone();
++    if send_client_frame(
++        &mut socket,
++        ClientRealtimeFrameV1::player_state(cached_state),
++    )
++    .await
++        != Ok(())
++    {
++        return RealtimeOutcome::WriteFailed;
++    }
++
++    let ready_deadline = std::cmp::min(Instant::now() + READY_TIMEOUT, expiry);
++    let self_handle = loop {
++        tokio::select! {
++            changed = driver.stop_rx.changed() => {
++                let _ = changed;
++                driver.stopped.store(true, Ordering::Release);
++                return RealtimeOutcome::OwnerStopped;
++            }
++            message = socket.next() => {
++                match receive_frame(message, &mut socket).await {
++                    Receive::Ready(handle) => break handle,
++                    Receive::PeerClosed => return RealtimeOutcome::PeerClosed,
++                    Receive::PingFailure => return RealtimeOutcome::WriteFailed,
++                    Receive::Protocol | Receive::Lifecycle(_) => {
++                        return RealtimeOutcome::ProtocolViolation;
++                    }
++                    Receive::Transport => return RealtimeOutcome::TransportFailed,
++                    Receive::Ignored => {}
++                }
++            }
++            () = time::sleep_until(ready_deadline) => {
++                return if expiry <= Instant::now() { RealtimeOutcome::Expired } else { RealtimeOutcome::ReadyTimeout };
++            }
++        }
++    };
++
++    driver.ready.store(true, Ordering::Release);
++    if send_event(
++        &driver.event_tx,
++        RealtimeOwnerEvent::Ready(coop_cloud::PresenceReadyV1::new(self_handle)),
++    )
++    .is_err()
++    {
++        driver.ready.store(false, Ordering::Release);
++        return RealtimeOutcome::OwnerBackpressure;
++    }
++
++    let mut remotes = BTreeMap::new();
++    let mut last_server_sequence = None;
++    let mut last_sent = driver.state_rx.borrow().clone();
++    let mut tick = time::interval_at(Instant::now() + PRESENCE_TICK, PRESENCE_TICK);
++    tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
++
++    loop {
++        tokio::select! {
++            changed = driver.stop_rx.changed() => {
++                let _ = changed;
++                driver.stopped.store(true, Ordering::Release);
++                driver.ready.store(false, Ordering::Release);
++                return RealtimeOutcome::OwnerStopped;
++            }
++            _ = tick.tick() => {
++                let latest = driver.state_rx.borrow().clone();
++                if latest != last_sent {
++                    if send_client_frame(&mut socket, ClientRealtimeFrameV1::player_state(latest.clone())).await != Ok(()) {
++                        driver.ready.store(false, Ordering::Release);
++                        return RealtimeOutcome::WriteFailed;
++                    }
++                    last_sent = latest;
++                }
++            }
++            interaction = driver.interaction_rx.recv() => {
++                let Some(interaction) = interaction else {
++                    driver.ready.store(false, Ordering::Release);
++                    return RealtimeOutcome::OwnerStopped;
++                };
++                if send_client_frame(&mut socket, ClientRealtimeFrameV1::interact_remote_player(interaction)).await != Ok(()) {
++                    driver.ready.store(false, Ordering::Release);
++                    return RealtimeOutcome::WriteFailed;
++                }
++            }
++            message = socket.next() => {
++                match receive_frame(message, &mut socket).await {
++                    Receive::Ready(_) | Receive::Protocol => {
++                        driver.ready.store(false, Ordering::Release);
++                        return RealtimeOutcome::ProtocolViolation;
++                    }
++                    Receive::Ignored => {}
++                    Receive::Lifecycle(frame) => {
++                        let outcome = apply_lifecycle(
++                            &frame,
++                            self_handle,
++                            &mut remotes,
++                            &mut last_server_sequence,
++                            &driver.event_tx,
++                        );
++                        if let Err(outcome) = outcome {
++                            driver.ready.store(false, Ordering::Release);
++                            return outcome;
++                        }
++                    }
++                    Receive::PeerClosed => {
++                        driver.ready.store(false, Ordering::Release);
++                        return RealtimeOutcome::PeerClosed;
++                    }
++                    Receive::PingFailure => {
++                        driver.ready.store(false, Ordering::Release);
++                        return RealtimeOutcome::WriteFailed;
++                    }
++                    Receive::Transport => {
++                        driver.ready.store(false, Ordering::Release);
++                        return RealtimeOutcome::TransportFailed;
++                    }
++                }
++            }
++            () = time::sleep_until(expiry) => {
++                driver.ready.store(false, Ordering::Release);
++                return RealtimeOutcome::Expired;
++            }
++        }
++    }
++}
++
++fn request_for(grant: &RealtimeGrant) -> Result<Request<()>, ()> {
++    let authorization = format!("Bearer {}", grant.ticket.expose_secret());
++    let mut request = grant
++        .endpoint
++        .as_str()
++        .into_client_request()
++        .map_err(|_| ())?;
++    request.headers_mut().insert(
++        AUTHORIZATION,
++        HeaderValue::from_str(&authorization).map_err(|_| ())?,
++    );
++    Ok(request)
++}
++
++async fn send_client_frame<S>(socket: &mut S, frame: ClientRealtimeFrameV1) -> Result<(), ()>
++where
++    S: SinkExt<Message> + Unpin,
++{
++    let bytes = encode_client_realtime_frame(&frame).map_err(|_| ())?;
++    let text = String::from_utf8(bytes).map_err(|_| ())?;
++    time::timeout(WRITE_TIMEOUT, socket.send(Message::Text(text.into())))
++        .await
++        .map_err(|_| ())?
++        .map_err(|_| ())
++}
++
++enum Receive {
++    Ready(PresenceHandle),
++    Lifecycle(ServerRealtimeFrameV1),
++    Ignored,
++    PeerClosed,
++    PingFailure,
++    Protocol,
++    Transport,
++}
++
++async fn receive_frame<S>(
++    message: Option<Result<Message, tokio_tungstenite::tungstenite::Error>>,
++    socket: &mut S,
++) -> Receive
++where
++    S: SinkExt<Message> + Unpin,
++{
++    let message = match message {
++        Some(Ok(message)) => message,
++        Some(Err(error)) => {
++            return if matches!(
++                error,
++                tokio_tungstenite::tungstenite::Error::Capacity(_)
++                    | tokio_tungstenite::tungstenite::Error::Protocol(_)
++            ) {
++                Receive::Protocol
++            } else {
++                Receive::Transport
++            };
++        }
++        None => return Receive::PeerClosed,
++    };
++    match message {
++        Message::Text(text) => {
++            if text.len() > MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES {
++                return Receive::Protocol;
++            }
++            let Ok(frame) = decode_server_realtime_frame(text.as_bytes()) else {
++                return Receive::Protocol;
++            };
++            match frame {
++                ServerRealtimeFrameV1::PresenceReady(readiness) => {
++                    Receive::Ready(readiness.self_handle())
++                }
++                frame @ (ServerRealtimeFrameV1::RemotePlayerSpawn(_)
++                | ServerRealtimeFrameV1::RemotePlayerUpdate(_)
++                | ServerRealtimeFrameV1::RemotePlayerDespawn(_)) => Receive::Lifecycle(frame),
++            }
++        }
++        Message::Binary(_) | Message::Frame(_) => Receive::Protocol,
++        Message::Ping(payload) => {
++            if payload.len() > MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES {
++                return Receive::Protocol;
++            }
++            match time::timeout(WRITE_TIMEOUT, socket.send(Message::Pong(payload))).await {
++                Ok(Ok(())) => Receive::Ignored,
++                _ => Receive::PingFailure,
++            }
++        }
++        Message::Pong(_) => Receive::Ignored,
++        Message::Close(_) => Receive::PeerClosed,
++    }
++}
++
++fn send_event(
++    event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
++    event: RealtimeOwnerEvent,
++) -> Result<(), ()> {
++    event_tx.try_send(event).map_err(|_| ())
++}
++
++fn apply_lifecycle(
++    frame: &ServerRealtimeFrameV1,
++    self_handle: PresenceHandle,
++    remotes: &mut BTreeMap<PresenceHandle, RemoteState>,
++    last_server_sequence: &mut Option<u32>,
++    event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
++) -> Result<(), RealtimeOutcome> {
++    let (handle, sequence) = match &frame {
++        ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
++            (spawn.handle(), spawn.server_sequence())
++        }
++        ServerRealtimeFrameV1::RemotePlayerUpdate(update) => {
++            (update.handle(), update.server_sequence())
++        }
++        ServerRealtimeFrameV1::RemotePlayerDespawn(despawn) => {
++            (despawn.handle(), despawn.server_sequence())
++        }
++        ServerRealtimeFrameV1::PresenceReady(_) => return Err(RealtimeOutcome::ProtocolViolation),
++    };
++    let sequence_is_valid =
++        last_server_sequence.is_none_or(|previous| sequence_is_newer(sequence, previous));
++    if handle == self_handle || !sequence_is_valid {
++        return Err(RealtimeOutcome::ProtocolViolation);
++    }
++    match &frame {
++        ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
++            if remotes.contains_key(&handle) {
++                return Err(RealtimeOutcome::ProtocolViolation);
++            }
++            if remotes.len() >= MAX_REMOTE_PLAYERS {
++                return Err(RealtimeOutcome::CapacityExceeded);
++            }
++            send_event(event_tx, RealtimeOwnerEvent::Spawn(spawn.clone()))
++                .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++            remotes.insert(handle, RemoteState::from_spawn(spawn));
++        }
++        ServerRealtimeFrameV1::RemotePlayerUpdate(update) => {
++            let Some(remote) = remotes.get_mut(&handle) else {
++                return Err(RealtimeOutcome::ProtocolViolation);
++            };
++            if !sequence_is_newer(update.server_sequence(), remote.sequence) {
++                return Err(RealtimeOutcome::ProtocolViolation);
++            }
++            send_event(event_tx, RealtimeOwnerEvent::Update(update.clone()))
++                .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++            remote.sequence = update.server_sequence();
++        }
++        ServerRealtimeFrameV1::RemotePlayerDespawn(despawn) => {
++            if !remotes.contains_key(&handle) {
++                return Err(RealtimeOutcome::ProtocolViolation);
++            }
++            send_event(event_tx, RealtimeOwnerEvent::Despawn(despawn.clone()))
++                .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
++            remotes.remove(&handle);
++        }
++        ServerRealtimeFrameV1::PresenceReady(_) => unreachable!(),
++    }
++    *last_server_sequence = Some(sequence);
++    Ok(())
++}
++
++struct RemoteState {
++    sequence: u32,
++}
++
++impl RemoteState {
++    fn from_spawn(spawn: &RemotePlayerSpawnV1) -> Self {
++        Self {
++            sequence: spawn.server_sequence(),
++        }
++    }
++}
++
++fn unix_now() -> UnixTimestampMillis {
++    let millis = SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .unwrap_or_default()
++        .as_millis();
++    UnixTimestampMillis::new(u64::try_from(millis).unwrap_or(u64::MAX))
++}
++
++fn expiry_instant(expires_at: UnixTimestampMillis) -> Option<Instant> {
++    let now = unix_now().value();
++    let remaining = expires_at.value().checked_sub(now)?;
++    Some(Instant::now() + Duration::from_millis(remaining))
++}
+diff --git a/coop/crates/coop-sidecar/tests/realtime_loopback.rs b/coop/crates/coop-sidecar/tests/realtime_loopback.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..83bc5552fe03543bc5c70280dc0083bdcc164ffd
+--- /dev/null
++++ b/coop/crates/coop-sidecar/tests/realtime_loopback.rs
+@@ -0,0 +1,342 @@
++use std::{
++    sync::{Arc, Mutex},
++    time::Duration,
++};
++
++use coop_cloud::{
++    ClientRealtimeFrameV1, RealtimeTicket, ServerRealtimeFrameV1, UnixTimestampMillis,
++    encode_server_realtime_frame,
++};
++use coop_protocol::{
++    AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
++    MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1, RegionId,
++    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
++};
++use coop_sidecar::realtime::{
++    MAX_INTERACTION_QUEUE, RealtimeEndpoint, RealtimeError, RealtimeGrant, RealtimeOutcome,
++    RealtimeOwnerEvent, realtime_channel, run_realtime,
++};
++use futures_util::{SinkExt, StreamExt};
++use tokio::{net::TcpListener, time::timeout};
++use tokio_tungstenite::{accept_hdr_async, tungstenite::Message};
++
++fn state(source_sequence: u32, client_tick: u32) -> LocalPresenceStateV1 {
++    let location = WorldLocation::new(RegionId::Hoenn, 1, 0, 4, 5).unwrap();
++    let pose = PresencePoseV1::new(
++        location,
++        0,
++        Direction::South,
++        client_tick,
++        1,
++        MovementMode::Idle,
++        AnimationId::Idle,
++        AvatarId::Brendan,
++        PlayerState::Overworld,
++    )
++    .unwrap();
++    LocalPresenceStateV1::new(pose, source_sequence).unwrap()
++}
++
++fn grant(port: u16) -> RealtimeGrant {
++    let ticket = RealtimeTicket::from_bytes([7; 32]).unwrap();
++    let endpoint = RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime")).unwrap();
++    let now = u64::try_from(
++        std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)
++            .unwrap()
++            .as_millis(),
++    )
++    .unwrap();
++    RealtimeGrant::with_now(
++        ticket,
++        endpoint,
++        UnixTimestampMillis::new(now + 30_000),
++        UnixTimestampMillis::new(now),
++    )
++    .unwrap()
++}
++
++async fn accept_server(
++    listener: TcpListener,
++    observed: Arc<Mutex<Option<(String, bool, bool)>>>,
++) -> tokio_tungstenite::WebSocketStream<tokio::net::TcpStream> {
++    let (stream, _) = listener.accept().await.unwrap();
++    accept_hdr_async(
++        stream,
++        |request: &tokio_tungstenite::tungstenite::handshake::server::Request, response| {
++            let authorization = request
++                .headers()
++                .get("authorization")
++                .and_then(|value| value.to_str().ok())
++                .unwrap_or_default()
++                .to_owned();
++            let has_query = request.uri().query().is_some();
++            let has_subprotocol = request.headers().contains_key("sec-websocket-protocol");
++            *observed.lock().unwrap() = Some((authorization, has_query, has_subprotocol));
++            Ok(response)
++        },
++    )
++    .await
++    .unwrap()
++}
++
++async fn send_frame(
++    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
++    frame: ServerRealtimeFrameV1,
++) {
++    let bytes = encode_server_realtime_frame(&frame).unwrap();
++    socket
++        .send(Message::Text(String::from_utf8(bytes).unwrap().into()))
++        .await
++        .unwrap();
++}
++
++#[test]
++fn realtime_endpoint_boundaries_are_canonical_and_loopback_restricted() {
++    assert!(RealtimeEndpoint::new("ws://127.0.0.1:3000/v1/realtime").is_ok());
++    assert!(RealtimeEndpoint::new("ws://[::1]:3000/v1/realtime").is_ok());
++    assert!(RealtimeEndpoint::new("wss://example.com/v1/realtime").is_ok());
++    for invalid in [
++        "http://127.0.0.1:3000/v1/realtime",
++        "ws://localhost:3000/v1/realtime",
++        "ws://127.0.0.1/v1/realtime",
++        "ws://127.0.0.1:0/v1/realtime",
++        "ws://127.0.0.1:3000/v1/realtime/",
++        "ws://127.0.0.1:3000/v1/realtime?ticket=secret",
++        "ws://user:password@127.0.0.1:3000/v1/realtime",
++        "wss://example.com:0/v1/realtime",
++        "wss://example.com./v1/realtime",
++    ] {
++        assert_eq!(
++            RealtimeEndpoint::new(invalid),
++            Err(RealtimeError::InvalidEndpoint)
++        );
++    }
++    assert_eq!(
++        RealtimeEndpoint::new(format!(
++            "ws://127.0.0.1:3000/v1/realtime{}",
++            "x".repeat(300)
++        )),
++        Err(RealtimeError::InvalidEndpoint)
++    );
++}
++
++#[test]
++fn realtime_grant_ttl_and_secret_debug_boundaries_are_stable() {
++    let ticket = RealtimeTicket::from_bytes([3; 32]).unwrap();
++    let endpoint = RealtimeEndpoint::new("ws://127.0.0.1:3000/v1/realtime").unwrap();
++    assert!(
++        RealtimeGrant::with_now(
++            ticket,
++            endpoint,
++            UnixTimestampMillis::new(1_000_001),
++            UnixTimestampMillis::new(1_000_000),
++        )
++        .is_ok()
++    );
++    let ticket = RealtimeTicket::from_bytes([4; 32]).unwrap();
++    let endpoint = RealtimeEndpoint::new("ws://127.0.0.1:3000/v1/realtime").unwrap();
++    assert_eq!(
++        RealtimeGrant::with_now(
++            ticket,
++            endpoint,
++            UnixTimestampMillis::new(1_040_001),
++            UnixTimestampMillis::new(1_000_000),
++        )
++        .unwrap_err(),
++        RealtimeError::InvalidGrant
++    );
++    let ticket = RealtimeTicket::from_bytes([5; 32]).unwrap();
++    let endpoint = RealtimeEndpoint::new("ws://127.0.0.1:3000/v1/realtime").unwrap();
++    let grant = RealtimeGrant::with_now(
++        ticket,
++        endpoint,
++        UnixTimestampMillis::new(1_000_001),
++        UnixTimestampMillis::new(1_000_000),
++    )
++    .unwrap();
++    let rendered = format!("{grant:?}");
++    assert!(rendered.contains("REDACTED"));
++    assert!(!rendered.contains("BQ"));
++}
++
++#[tokio::test]
++async fn realtime_one_attempt_sends_cached_state_first_and_decodes_lifecycle() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let observed = Arc::new(Mutex::new(None));
++    let observed_server = Arc::clone(&observed);
++    let cached = state(1, 11);
++    let remote_handle = PresenceHandle::new(0x22).unwrap();
++    let remote_user = CanonicalUsername::new("misty").unwrap();
++    let spawn = RemotePlayerSpawnV1::new(remote_handle, 1, cached.clone(), remote_user).unwrap();
++    let update = RemotePlayerUpdateV1::new(remote_handle, 2, state(2, 12)).unwrap();
++    let despawn =
++        RemotePlayerDespawnV1::new(remote_handle, 3, DespawnReason::Disconnected).unwrap();
++    let expected_cached = cached.clone();
++    let server = tokio::spawn(async move {
++        let mut socket = accept_server(listener, observed_server).await;
++        let first = timeout(Duration::from_secs(1), socket.next())
++            .await
++            .unwrap()
++            .unwrap()
++            .unwrap();
++        let Message::Text(first) = first else {
++            panic!("first frame was not text")
++        };
++        assert_eq!(
++            serde_json::from_str::<ClientRealtimeFrameV1>(first.as_ref()).unwrap(),
++            ClientRealtimeFrameV1::player_state(expected_cached)
++        );
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
++        )
++        .await;
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::remote_player_spawn(spawn),
++        )
++        .await;
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::remote_player_update(update),
++        )
++        .await;
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::remote_player_despawn(despawn),
++        )
++        .await;
++        tokio::time::sleep(Duration::from_secs(1)).await;
++    });
++    let (mut owner, driver) = realtime_channel(cached.clone()).unwrap();
++    let run = tokio::spawn(run_realtime(grant(port), driver));
++    assert_eq!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Ready(coop_cloud::PresenceReadyV1::new(
++            PresenceHandle::new(1).unwrap()
++        )))
++    );
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Spawn(_))
++    ));
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Update(_))
++    ));
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Despawn(_))
++    ));
++    owner.stop();
++    let outcome = timeout(Duration::from_secs(1), run).await.unwrap().unwrap();
++    assert_eq!(outcome, RealtimeOutcome::OwnerStopped);
++    server.await.unwrap();
++    let observed = observed.lock().unwrap().clone().unwrap();
++    assert_eq!(
++        observed.0,
++        format!(
++            "Bearer {}",
++            RealtimeTicket::from_bytes([7; 32]).unwrap().expose_secret()
++        )
++    );
++    assert!(!observed.1);
++    assert!(!observed.2);
++}
++
++#[tokio::test]
++async fn realtime_interactions_are_not_accepted_before_ready_and_latest_state_is_bounded() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let observed = Arc::new(Mutex::new(None));
++    let cached = state(1, 11);
++    let updated = state(2, 99);
++    let (seen_tx, seen_rx) = tokio::sync::oneshot::channel();
++    let server = tokio::spawn(async move {
++        let mut socket = accept_server(listener, observed).await;
++        let _ = socket.next().await.unwrap().unwrap();
++        send_frame(
++            &mut socket,
++            ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
++        )
++        .await;
++        let mut seen = Vec::new();
++        for _ in 0..2 {
++            let message = timeout(Duration::from_secs(1), socket.next())
++                .await
++                .unwrap()
++                .unwrap()
++                .unwrap();
++            if let Message::Text(text) = message {
++                seen.push(serde_json::from_str::<ClientRealtimeFrameV1>(text.as_ref()).unwrap());
++            }
++        }
++        seen_tx.send(seen).unwrap();
++        tokio::time::sleep(Duration::from_secs(5)).await;
++    });
++    let (mut owner, driver) = realtime_channel(cached).unwrap();
++    let interaction =
++        PresenceInteractionV1::new(PresenceHandle::new(9).unwrap(), 1, 1, 4, 5).unwrap();
++    assert_eq!(
++        owner.interact(interaction.clone()),
++        Err(coop_sidecar::realtime::RealtimeInputError::NotReady)
++    );
++    let run = tokio::spawn(run_realtime(grant(port), driver));
++    assert!(matches!(
++        owner.recv_event().await,
++        Some(RealtimeOwnerEvent::Ready(_))
++    ));
++    assert!(owner.interact(interaction).is_ok());
++    owner.update_state(updated.clone()).unwrap();
++    owner.update_state(updated.clone()).unwrap();
++    let seen = timeout(Duration::from_secs(2), seen_rx)
++        .await
++        .unwrap()
++        .unwrap();
++    assert_eq!(seen.len(), 2);
++    assert!(
++        seen.iter()
++            .any(|frame| matches!(frame, ClientRealtimeFrameV1::InteractRemotePlayer(_)))
++    );
++    assert!(seen.iter().any(
++        |frame| matches!(frame, ClientRealtimeFrameV1::PlayerState(state) if state == &updated)
++    ));
++    owner.stop();
++    assert_eq!(
++        timeout(Duration::from_secs(1), run).await.unwrap().unwrap(),
++        RealtimeOutcome::OwnerStopped
++    );
++    server.await.unwrap();
++}
++
++#[tokio::test]
++async fn realtime_malformed_server_data_is_redacted_protocol_failure() {
++    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let observed = Arc::new(Mutex::new(None));
++    let server = tokio::spawn(async move {
++        let mut socket = accept_server(listener, observed).await;
++        let _ = socket.next().await.unwrap().unwrap();
++        socket
++            .send(Message::Text(
++                "{peer-controlled-close-reason}".to_owned().into(),
++            ))
++            .await
++            .unwrap();
++    });
++    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
++    let run = tokio::spawn(run_realtime(grant(port), driver));
++    let outcome = timeout(Duration::from_secs(1), run).await.unwrap().unwrap();
++    assert_eq!(outcome, RealtimeOutcome::ProtocolViolation);
++    assert!(format!("{outcome}").contains("protocol violation"));
++    assert!(owner.recv_event().await.is_none());
++    server.await.unwrap();
++    owner.stop();
++}
++
++#[test]
++fn realtime_interaction_queue_capacity_is_fixed() {
++    assert_eq!(MAX_INTERACTION_QUEUE, 16);
++}

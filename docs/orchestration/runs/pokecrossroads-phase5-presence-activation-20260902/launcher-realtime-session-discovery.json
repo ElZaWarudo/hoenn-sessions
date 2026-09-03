@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "mode": "read-only-discovery",
+  "agent": "/root/realtime_fixture_identity_review/inspect_realtime_fixture",
+  "base_revision": "2d1e9114f7f9d599a13a62d7abb71916f779d9dc",
+  "planned_files": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/tests/realtime_vertical_slice.rs"
+  ],
+  "source_compatibility": [
+    "Keep CloudApi and run_until_shutdown unchanged for existing fakes and nonrealtime tests.",
+    "Add run_until_shutdown_with_realtime for CloudApi plus RealtimeApi and route production main through it.",
+    "Add one persistent realtime_attempted boolean; the explicit mint-401 refresh remains part of the same attempt and the flag never resets."
+  ],
+  "attempt_states": [
+    "WaitingFirstState: heartbeat, checkpoint, shutdown, and child observation remain live; any RomPresenceReset is fatal before a ticket is minted because the sidecar permanently disables lifecycle forwarding after reboot.",
+    "PreMint: proactively refresh, re-read the atomic generation/state slot, construct the canonical RuntimeLeaseFence, then mark the single attempt before POST.",
+    "Minting: distinguish inner mint 401 from outer heartbeat 401; only the former allows one refresh and one new POST. Any reset after POST starts is fatal.",
+    "StartingCore: require the same generation and freshest state, then move the non-Clone grant directly into the existing sidecar realtime core.",
+    "Online: coalesce same-generation states, drop pre-Ready interactions, preserve post-Ready interaction FIFO, and map only Spawn/Update/Despawn to control v2."
+  ],
+  "failure_policy": [
+    "No retry after transport, timeout, malformed response, correlation, grant, WebSocket, queue, control, reset, or child failure.",
+    "Any post-mint RomPresenceReset is session-fatal and the core is never restarted or reminted.",
+    "Once realtime was attempted, epoch-changing reconnect is rejected.",
+    "Stop and join realtime before authenticated shutdown, child settlement, credential release, or fail-closed cleanup.",
+    "Save revision changes do not restart realtime because the runtime fence excludes revision and lease expiry."
+  ],
+  "clock_assumption": "Server and launcher wall clocks must be sufficiently aligned because the response carries an absolute expiry but no issued-at/server-time value.",
+  "required_vertical_tests": [
+    "no state means no mint while ordinary lifecycle remains live",
+    "reset-before-state and reset-during-mint both terminate without mint or remint",
+    "canonical fence, proactive refresh, one mint-401 retry, and no ambiguous retry",
+    "freshest state as first WebSocket frame and Ready remaining launcher-internal",
+    "state coalescing, interaction FIFO, and exact lifecycle control commands",
+    "checkpoint correlation and shutdown deadlines under sustained presence",
+    "WebSocket closure before shutdown request or child termination",
+    "no coordinator task remains after every terminal path"
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "SPCF4-001",
+      "status": "satisfied",
+      "evidence": "process_pre_bridge_control_result now dispatches terminal errors through the non-recursive process_pre_bridge_control_error helper; control_terminal coverage and the full coop-sidecar suite passed, including exact malformed-command terminal classification."
+    },
+    {
+      "criterion_id": "SPCF4-002",
+      "status": "satisfied",
+      "evidence": "The active loop subscribes to BridgeWriter failure before its durable precheck and rechecks after select; writer-aware retained-bridge recovery observes the same signal and rechecks before accepting replacement control. bridge_writer and active_writer_failure_precedes_simultaneous_control_eof passed."
+    },
+    {
+      "criterion_id": "SPCF4-003",
+      "status": "satisfied",
+      "evidence": "BridgeWriter::shutdown and BridgeIo::shutdown explicitly poison, close, abort, and await owned tasks; pre-active handoff and reacquisition error paths now shut down BridgeIo before returning. Full sidecar tests passed with no teardown failures."
+    },
+    {
+      "criterion_id": "SPCF4-004",
+      "status": "satisfied",
+      "evidence": "The real serving-path stalled_presence_bridge_write_does_not_delay_shutdown_ack test uses the LocalSidecar-owned blocked writer gate, observes lifecycle admission before shutdown, receives Applied within 500 ms, awaits server completion without abort, and observes peer EOF plus writer-task destruction."
+    },
+    {
+      "criterion_id": "SPCF4-005",
+      "status": "satisfied",
+      "evidence": "All seven required focused regressions passed: control_terminal, bridge_writer, stalled writer shutdown ACK, reboot_cutover, pre-ready presence, presence overflow, and initial active ROM_READY lifecycle forwarding; the full sidecar suite passed 106 tests."
+    },
+    {
+      "criterion_id": "SPCF4-006",
+      "status": "satisfied",
+      "evidence": "The natural full sidecar test, strict Clippy, cargo fmt check, and git diff check all passed. The unstaged correction is confined to coop/crates/coop-sidecar/src/server.rs; staged dependency content remains untouched. contract_hash=sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e"
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 2,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+    "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked",
+    "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [],
+  "scope_extension": null
+}

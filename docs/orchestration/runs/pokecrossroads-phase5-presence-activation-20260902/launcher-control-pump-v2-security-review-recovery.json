@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "review_plan_hash": "sha256:efe0aedb762247c31ba9795fd9ef7efd595d7b05de4fae8cbe6bf81a57b80e3e",
+  "reviewer_id": "/root/launcher_pump_security_review_v2",
+  "surface_id": "launcher-control-pump-security-v2",
+  "risk_boundaries_checked": [
+    "authenticated-control-secret-confinement-and-error-redaction",
+    "bounded-overflow-partial-write-ambiguity-and-terminal-cause-integrity",
+    "reset-replay-stale-generation-and-post-reset-fail-closed-behavior",
+    "task-child-socket-and-owned-artifact-cleanup-confinement"
+  ],
+  "candidate_findings": [],
+  "candidate_feedback": [],
+  "stop_reason": "interrupted",
+  "certifies_review": false
+}

@@ -1,0 +1,16 @@
+{
+  "approval_required":false,
+  "assignments":[
+    {"cross_cutting":false,"id":"launcher-realtime-activation-v2-correctness-r2","owned_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"priority":0,"reviewer_role":"reviewer","risk_boundaries":["attempt-fence-refresh-and-mint-origin-auth-tagging","bounded-control-arbitration","heartbeat-checkpoint-shutdown-and-child-settlement-ordering","ready-watermark-and-post-ready-fifo","resolution-of-all-nine-recorded-findings","terminal-poll-to-return-race"]},
+    {"cross_cutting":true,"id":"launcher-realtime-activation-v2-security-r2","owned_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],"priority":0,"reviewer_role":"security-sentinel","risk_boundaries":["bounded-liveness-under-sustained-control-input","coordinator-task-child-socket-and-artifact-teardown","no-remint-replay-reconnect-or-second-endpoint","reset-generation-backpressure-and-ambiguous-outcome-fail-closed","resolution-of-all-nine-recorded-findings","ticket-token-endpoint-and-error-confinement"]}
+  ],
+  "assurance_tier":"high",
+  "changed_paths":["coop/crates/coop-launcher/src/main.rs","coop/crates/coop-launcher/src/realtime.rs","coop/crates/coop-launcher/src/session.rs"],
+  "contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "coverage_complete":true,
+  "diff_digest":"sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+  "queued":[],
+  "review_plan_hash":"sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0",
+  "schema_version":2,
+  "validation_wave_required":true
+}

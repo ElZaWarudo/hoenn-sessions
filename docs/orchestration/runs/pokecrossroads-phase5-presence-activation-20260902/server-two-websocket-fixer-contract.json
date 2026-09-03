@@ -1,0 +1,101 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "TcpListener::bind is bounded and reports timeout without leaving a listener task.",
+      "id": "SWF-001"
+    },
+    {
+      "description": "Graceful shutdown timeout deterministically aborts and boundedly joins the retained task; no JoinHandle is dropped while its server may still run.",
+      "id": "SWF-002"
+    },
+    {
+      "description": "The movement path proves exactly one ordered peer update rather than only at least one update.",
+      "id": "SWF-003"
+    },
+    {
+      "description": "The full two-WebSocket behavior and teardown assertions still pass, and focused/full phase2_http tests, strict Clippy, formatting, and diff checks pass with only the owned test file changed from the sealed candidate.",
+      "id": "SWF-004"
+    }
+  ],
+  "closed_decisions": [
+    "Preserve the accepted two-account authentication, lease, ticket, reciprocal spawn, ordered update, and disconnected-despawn assertions exactly.",
+    "Wrap OS-selected loopback TcpListener binding in an existing bounded test timeout and return a stable test error on expiry.",
+    "Shutdown must retain ownership of the JoinHandle through the timeout decision; if graceful completion times out, abort the task and await the aborted handle under a second finite cleanup bound so it cannot detach.",
+    "Drop remains a final defensive abort path only and must not replace the explicitly awaited normal shutdown path.",
+    "After consuming the expected ordered movement update, prove the receiving peer has no duplicate or out-of-order update before initiating disconnect.",
+    "All changes remain test-only in phase2_http.rs."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server --test phase2_http realtime_two_authenticated_clients_share_littleroot --all-features --locked -- --exact"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test -p coop-server --test phase2_http --all-features --locked",
+        "rtk cargo clippy -p coop-server --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:d3dc446b15dca7265f2cdfc6a1f943e71bcef2bc89d88bab1d8ef1159674a1b4",
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260902-server-two-websocket-fixer-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 1,
+    "max_elapsed_ms": 900000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not change production code, authentication, tickets, realtime/presence behavior, assertion coverage, timeout constants globally, Cargo files, other tests, documentation, or orchestration state.",
+    "Do not detach or leak a server task after any timeout, add unbounded waits, use a fixed port, log credentials, or weaken teardown errors.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create or remove worktrees, or revert another worker's edits."
+  ],
+  "lane": "deep",
+  "objective": "Correct the three confirmed lifecycle and exact-update findings in the two-WebSocket presence acceptance test without changing its authenticated behavior or production code.",
+  "owned_files": [
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/server-two-websocket-acceptance-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/server-two-websocket-correctness-review-round1.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/server-two-websocket-security-review-round1.json",
+    "coop/crates/coop-server/src/phase2/realtime.rs",
+    "coop/crates/coop-server/src/phase2.rs",
+    "coop/crates/coop-server/Cargo.toml"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "All three confirmed P2 findings are resolved and verification outcomes are recorded.",
+      "A safe bounded fix requires a production or out-of-scope change.",
+      "A concrete toolchain or isolated-worktree failure prevents progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "server-two-websocket-presence-fixer"
+}

@@ -1,0 +1,292 @@
+diff --git a/src/coop/presence_runtime.c b/src/coop/presence_runtime.c
+index 1a4bdca25c9901a8c8e391c779975f66ab07a90f..eb48476bde096a62bfa6c883a2820df15e8d388e 100644
+--- a/src/coop/presence_runtime.c
++++ b/src/coop/presence_runtime.c
+@@ -99,6 +99,32 @@ static bool8 IsOverworldPoseAllowed(void)
+            == (PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE);
+ }
+ 
++static bool8 LastPoseMatchesLocation(const struct CoopPresencePose *pose,
++                                     const struct WorldLocation *location)
++{
++    return pose != NULL && location != NULL
++        && pose->location.region == location->region
++        && pose->location.map_group == location->map_group
++        && pose->location.map_number == location->map_number
++        && pose->warp_sequence == sCoopPresenceRuntime.warp_sequence;
++}
++
++static bool8 BuildHiddenPoseFromLast(struct CoopPresencePose *pose,
++                                     const struct WorldLocation *location)
++{
++    if (pose == NULL || !sCoopPresenceRuntime.last_pose_valid
++     || (location != NULL
++         && !LastPoseMatchesLocation(&sCoopPresenceRuntime.last_pose, location)))
++        return FALSE;
++
++    *pose = sCoopPresenceRuntime.last_pose;
++    pose->warp_sequence = sCoopPresenceRuntime.warp_sequence;
++    pose->movement_mode = COOP_PRESENCE_MOVEMENT_IDLE;
++    pose->animation_id = COOP_PRESENCE_ANIMATION_IDLE;
++    pose->player_state = COOP_PRESENCE_PLAYER_HIDDEN;
++    return TRUE;
++}
++
+ static bool8 BuildPose(struct CoopPresencePose *pose, bool8 visible)
+ {
+     struct WorldLocation location;
+@@ -108,16 +134,13 @@ static bool8 BuildPose(struct CoopPresencePose *pose, bool8 visible)
+     if (pose == NULL)
+         return FALSE;
+     if (!IsPlayerBindingValid() || !IsWorldLocationCurrent(&location))
+-    {
+-        if (!sCoopPresenceRuntime.last_pose_valid)
+-            return FALSE;
+-        *pose = sCoopPresenceRuntime.last_pose;
+-        pose->warp_sequence = sCoopPresenceRuntime.warp_sequence;
+-        pose->movement_mode = COOP_PRESENCE_MOVEMENT_IDLE;
+-        pose->animation_id = COOP_PRESENCE_ANIMATION_IDLE;
+-        pose->player_state = COOP_PRESENCE_PLAYER_HIDDEN;
+-        return TRUE;
+-    }
++        return BuildHiddenPoseFromLast(pose, NULL);
++
++    /* An unsafe field state must never replace the last compatible pose with
++     * a transient location.  If no compatible visible pose exists yet, keep
++     * publication gated until the player is safe to sample. */
++    if (!visible)
++        return BuildHiddenPoseFromLast(pose, &location);
+ 
+     player = &gObjectEvents[gPlayerAvatar.objectEventId];
+     flags = gPlayerAvatar.flags;
+@@ -229,6 +252,48 @@ static bool8 FindOwnedSprite(struct ObjectEvent *object_event, struct Sprite **o
+         && FindOwnedSpriteUnchecked(object_event, out);
+ }
+ 
++static void AbandonCreatedRenderer(u8 object_id)
++{
++    struct ObjectEvent *object_event;
++    struct Sprite *sprite;
++
++    if (object_id >= OBJECT_EVENTS_COUNT)
++        return;
++    object_event = &gObjectEvents[object_id];
++    if (!IsCurrentObjectEvent(object_event))
++        return;
++
++    /* A failed sprite setup can leave the freshly-created ObjectEvent active.
++     * Reclaim it only when the sprite is absent or still points back to this
++     * newly-created slot; never destroy a sprite that another owner acquired.
++     */
++    if (object_event->spriteId >= MAX_SPRITES)
++    {
++        object_event->active = FALSE;
++        return;
++    }
++    sprite = &gSprites[object_event->spriteId];
++    if (!sprite->inUse || sprite->data[0] == (s16)object_id)
++        RemoveObjectEvent(object_event);
++}
++
++static void RememberRendererIdentity(const struct CoopPresenceRemote *remote,
++                                     u8 object_id,
++                                     const struct ObjectEvent *object_event)
++{
++    sCoopPresenceRuntime.rendered_handle = remote->handle;
++    sCoopPresenceRuntime.rendered_avatar_id = remote->state.pose.avatar_id;
++    sCoopPresenceRuntime.rendered_elevation = remote->state.pose.elevation;
++    sCoopPresenceRuntime.rendered_map_group = object_event->mapGroup;
++    sCoopPresenceRuntime.rendered_map_num = object_event->mapNum;
++    sCoopPresenceRuntime.rendered_object_id = object_id;
++    sCoopPresenceRuntime.rendered_sprite_id = object_event->spriteId;
++    sCoopPresenceRuntime.rendered_x = object_event->currentCoords.x;
++    sCoopPresenceRuntime.rendered_y = object_event->currentCoords.y;
++    sCoopPresenceRuntime.interpolation_remaining = 0;
++    sCoopPresenceRuntime.renderer_owned = TRUE;
++}
++
+ static u8 GetRemoteAnimation(const struct CoopPresencePose *pose)
+ {
+     enum Direction direction;
+@@ -411,18 +476,49 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
+         created_id = SpawnSpecialObjectEventParameterized(
+             graphics_id, MOVEMENT_TYPE_NONE, COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID,
+             map_x, map_y, remote->state.pose.elevation);
+-        if (created_id >= OBJECT_EVENTS_COUNT
+-         || !IsCurrentObjectEvent(&gObjectEvents[created_id]))
++        if (created_id >= OBJECT_EVENTS_COUNT)
++            return FALSE;
++        if (!IsCurrentObjectEvent(&gObjectEvents[created_id]))
++        {
++            AbandonCreatedRenderer(created_id);
+             return FALSE;
++        }
+         object_id = created_id;
+         created = TRUE;
+     }
++
++    object_event = &gObjectEvents[object_id];
++    if (!FindOwnedSprite(object_event, &sprite))
++    {
++        if (created)
++            AbandonCreatedRenderer(object_id);
++        return FALSE;
++    }
++    if (created)
++    {
++        RememberRendererIdentity(remote, object_id, object_event);
++        object_event->initialCoords = object_event->currentCoords;
++    }
+     else if (!sCoopPresenceRuntime.renderer_owned
+           || object_id != sCoopPresenceRuntime.rendered_object_id)
+     {
+-        /* Do not adopt a pre-existing reserved slot: its sprite may belong to
+-         * an NPC or another engine subsystem.  The next frame retries after
+-         * that owner releases it. */
++        /* A reserved slot can survive a runtime reset.  Adopt it only after
++         * resolving the current ObjectEvent and sprite identities and
++         * confirming that it already has the expected remote graphics. */
++        if (object_event->isPlayer || object_event->graphicsId != graphics_id)
++            return FALSE;
++        RememberRendererIdentity(remote, object_id, object_event);
++        object_event->initialCoords = object_event->currentCoords;
++    }
++    else if (object_event->spriteId != sCoopPresenceRuntime.rendered_sprite_id
++          || object_event->mapGroup != sCoopPresenceRuntime.rendered_map_group
++          || object_event->mapNum != sCoopPresenceRuntime.rendered_map_num)
++    {
++        /* The reserved ObjectEvent may have been rebound after the last
++         * frame.  Do not mutate a newly attached sprite through stale cache
++         * identity; relinquish ownership and let the next update re-resolve
++         * the slot from scratch. */
++        RemoveOwnedRenderer();
+         return FALSE;
+     }
+     else if (sCoopPresenceRuntime.rendered_handle != remote->handle
+@@ -432,25 +528,6 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
+         RemoveOwnedRenderer();
+         return EnsureRemoteRenderer(remote);
+     }
+-
+-    object_event = &gObjectEvents[object_id];
+-    if (!FindOwnedSprite(object_event, &sprite))
+-        return FALSE;
+-    if (created)
+-    {
+-        sCoopPresenceRuntime.rendered_handle = remote->handle;
+-        sCoopPresenceRuntime.rendered_avatar_id = remote->state.pose.avatar_id;
+-        sCoopPresenceRuntime.rendered_elevation = remote->state.pose.elevation;
+-        sCoopPresenceRuntime.rendered_map_group = object_event->mapGroup;
+-        sCoopPresenceRuntime.rendered_map_num = object_event->mapNum;
+-        sCoopPresenceRuntime.rendered_object_id = object_id;
+-        sCoopPresenceRuntime.rendered_sprite_id = object_event->spriteId;
+-        sCoopPresenceRuntime.rendered_x = map_x;
+-        sCoopPresenceRuntime.rendered_y = map_y;
+-        sCoopPresenceRuntime.interpolation_remaining = 0;
+-        sCoopPresenceRuntime.renderer_owned = TRUE;
+-        object_event->initialCoords = object_event->currentCoords;
+-    }
+     if (object_event->graphicsId != graphics_id)
+     {
+         ObjectEventSetGraphicsId(object_event, graphics_id);
+diff --git a/test/coop/net_bridge.c b/test/coop/net_bridge.c
+index ad9d7380371be24f08acfb8448bd2d59730deb31..4a310da107c3ad49019b7a870620e6f6e9ac0791 100644
+--- a/test/coop/net_bridge.c
++++ b/test/coop/net_bridge.c
+@@ -464,6 +464,54 @@ TEST("Cloud Coop raw unsupported inbound traffic cannot suppress a valid new epo
+     EXPECT_EQ(message.session_epoch, 21);
+ }
+ 
++TEST("Cloud Coop malformed remote lifecycle payload does not consume its outer sequence")
++{
++    struct CoopBridgeMessage message;
++    u8 malformed_spawn[COOP_PRESENCE_SPAWN_SIZE] = {0};
++
++    InitTestBridge();
++    PopInitialRomReady();
++    EXPECT(CoopBridgeMessage_Seal(&message,
++                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
++                                  1,
++                                  17,
++                                  NULL,
++                                  0));
++    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
++    CoopNetBridge_Poll();
++    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
++    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
++
++    /* The outer frame is valid, but a spawn must be exactly 72 bytes.  The
++     * bridge must reject it without advancing rx_sequence or mutating the
++     * runtime's pending lifecycle queue. */
++    EXPECT(CoopBridgeMessage_Seal(&message,
++                                  COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++                                  2,
++                                  17,
++                                  malformed_spawn,
++                                  COOP_PRESENCE_SPAWN_SIZE - 1));
++    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
++    CoopNetBridge_Poll();
++    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
++
++    /* Reusing the rejected outer sequence as a fresh SESSION_READY proves
++     * that malformed remote data did not partially consume the sequence
++     * domain.  The accepted reconnect also clears pending bridge queues. */
++    EXPECT(CoopBridgeMessage_Seal(&message,
++                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
++                                  2,
++                                  17,
++                                  NULL,
++                                  0));
++    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
++    CoopNetBridge_Poll();
++    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY);
++    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
++    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
++    EXPECT_EQ(message.session_epoch, 17);
++}
++
+ static void EstablishTestCloudSession(void)
+ {
+     struct CoopBridgeMessage message;
+diff --git a/test/coop/presence_runtime.c b/test/coop/presence_runtime.c
+index 3416c963178f4ad832ba2f2d1e38ffcf0dddb771..dc293cd36b58ea9abb7a8b58cc99fa8290c94f65 100644
+--- a/test/coop/presence_runtime.c
++++ b/test/coop/presence_runtime.c
+@@ -10,6 +10,20 @@ _Static_assert(COOP_PRESENCE_RUNTIME_STALE_FRAMES == 90,
+                "presence visuals expire after ninety frames");
+ _Static_assert(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID == 0xFC,
+                "presence owns the reserved remote object local ID");
++_Static_assert(COOP_PRESENCE_WORLD_LOCATION_SIZE == 10,
++               "presence V1 locations stay exactly ten bytes");
++_Static_assert(COOP_PRESENCE_POSE_SIZE == 24,
++               "presence V1 poses stay exactly twenty-four bytes");
++_Static_assert(COOP_PRESENCE_LOCAL_STATE_SIZE == 28,
++               "presence V1 local state stays exactly twenty-eight bytes");
++_Static_assert(COOP_PRESENCE_SPAWN_SIZE == 72,
++               "presence V1 spawns stay exactly seventy-two bytes");
++_Static_assert(COOP_PRESENCE_UPDATE_SIZE == 40,
++               "presence V1 updates stay exactly forty bytes");
++_Static_assert(COOP_PRESENCE_DESPAWN_SIZE == 16,
++               "presence V1 despawns stay exactly sixteen bytes");
++_Static_assert(COOP_PRESENCE_INTERACTION_SIZE == 20,
++               "presence V1 interactions stay exactly twenty bytes");
+ 
+ static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
+ {
+@@ -45,6 +59,16 @@ static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
+     return spawn;
+ }
+ 
++TEST("Cloud Coop presence sequence domains remain wrap-safe")
++{
++    EXPECT_EQ(CoopPresence_NextSequence(0), 1);
++    EXPECT_EQ(CoopPresence_NextSequence(0xFFFFFFFFu), 1);
++    EXPECT(CoopPresence_SequenceIsNewer(1, 0xFFFFFFFFu));
++    EXPECT(!CoopPresence_SequenceIsNewer(0xFFFFFFFFu, 1));
++    EXPECT(CoopPresence_SequenceIsNewer(9, 8));
++    EXPECT(!CoopPresence_SequenceIsNewer(8, 9));
++}
++
+ TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
+ {
+     struct ObjectEvent remote = {0};

@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-713796CB",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected cumulative tree 80daf109a7939972ec2f25d124b7505a10e31164: BridgeWriter::Drop aborts without await, BridgeIo::Drop only aborts its reader, and the pre-active reacquire_control_with_bridge ? path can return while BridgeIo still owns an unjoined writer."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

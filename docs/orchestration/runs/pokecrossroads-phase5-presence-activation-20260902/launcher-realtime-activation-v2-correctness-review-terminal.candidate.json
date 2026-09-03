@@ -1,0 +1,57 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:529f8dd467a174024c3f09d13c31d15b80f3b6550764423b91c98ea1674a106b",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2231-2244 drains coordinator events during checkpoint and RealtimeCoordinator::next_event marks its local ready flag as soon as the server Ready event is received.",
+        "coop/crates/coop-launcher/src/session.rs:2177-2183 consumes control interactions only in the outer realtime loop, after checkpoint_with_realtime returns, and forwards them whenever the coordinator is then ready.",
+        "coop/crates/coop-launcher/src/process.rs:1758-1769 admits InteractRemotePlayer into the bounded interaction FIFO regardless of lifecycle permit or coordinator readiness, so an interaction produced before Ready remains queued throughout the checkpoint."
+      ],
+      "impact": "If a checkpoint overlaps the server readiness transition, an interaction emitted before Ready can remain in the control FIFO until the checkpoint completes and then be forwarded as though it were post-Ready. This violates the sealed drop-before-Ready boundary and can replay an interaction whose remote-handle context predates admission.",
+      "observation": "Checkpoint draining advances the coordinator's Ready state without concurrently consuming or timestamping the control interaction FIFO, so queued interactions can cross the readiness cutover.",
+      "principle": "correctness",
+      "recommendation": "Make the Ready cutover and interaction classification explicit across checkpoints: drain/drop every interaction known to precede Ready while checkpoint correlation remains live, then begin forwarding only interactions admitted after the cutover, preserving FIFO. Add a deterministic regression with an interaction queued during checkpoint before Ready and another after Ready.",
+      "rule_id": "LRA2-003-pre-ready-interaction-checkpoint-cutover",
+      "severity": "p1"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:130-133 records a CheckpointReady received while mint is pending in pending_checkpoint.",
+        "coop/crates/coop-launcher/src/session.rs:2070-2078 handles shutdown from the first mint by immediately calling children.shutdown(..., false), without reconciling the recorded pending_checkpoint; the identical second-mint shutdown branch is at 2051-2059.",
+        "coop/crates/coop-launcher/src/process.rs:2738-2741 makes checkpoint_drained=false skip the authenticated graceful shutdown request entirely, while the legacy shutdown drain at session.rs:2303-2323 completes an already-available CheckpointReady."
+      ],
+      "impact": "A Ctrl-C race after CheckpointReady is received but before mint settles discards the known safe checkpoint opportunity and forces child termination. Because no checkpoint was authorized, normal release need not preserve the workspace, so recent gameplay can be lost even though the lifecycle had already consumed evidence that a finite checkpoint was available.",
+      "observation": "The mint wait latches CheckpointReady but both shutdown exits discard that latch instead of completing the checkpoint before child shutdown.",
+      "principle": "correctness",
+      "recommendation": "On a mint-wait shutdown, reconcile any latched CheckpointReady with the existing finite checkpoint path before stopping children, while treating the canceled mint as terminal and never reminting. Add first- and second-mint race tests that prove the exact ready event is granted, finalized, and drained before shutdown.",
+      "rule_id": "LRA2-005-pending-checkpoint-shutdown-race",
+      "severity": "p1"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:3429-3445 implements the test RealtimeApi so every mint returns an error; it has no way to return a successful RealtimeGrant.",
+        "coop/crates/coop-launcher/src/session.rs:4299-4400 contains only shutdown/reset-before-mint and failed-mint tests, so none enters the coordinator loop at session.rs:2101-2214 or checkpoint integration at 2217-2300.",
+        "coop/crates/coop-launcher/src/realtime.rs:460-520 tests map_owner_event directly, and 522-536 starts against an unserved endpoint then immediately stops; these do not execute an authenticated Ready/state/interaction/lifecycle exchange through run_realtime."
+      ],
+      "impact": "LRA2-003 through LRA2-005 and the explicit LRA2-006 test requirement are not demonstrated by executable integration evidence. Ready gating, freshest-state handoff, lifecycle backpressure, checkpoint coexistence, child settlement ordering, and successful task termination can regress while every added test remains green.",
+      "observation": "The candidate's deterministic tests never exercise a successful mint and live realtime coordinator lifecycle, despite the worker terminal claiming that the successful path and checkpoint coexistence are covered.",
+      "principle": "testing",
+      "recommendation": "Extend the fake to return a valid one-use grant and drive a deterministic loopback WebSocket plus authenticated control fixture through successful Ready, freshest state, pre/post-Ready interactions, Spawn/Update/Despawn, checkpoint overlap, backpressure/reset/child failure, and joined teardown. Assert observable ROM commands and cleanup order rather than helper-only mappings.",
+      "rule_id": "LRA2-006-success-path-integration-coverage",
+      "severity": "p2"
+    }
+  ],
+  "review_plan_hash": "sha256:6fe39d370b3393484ad9cdbcee09fe4ab4ecfb5483ccd6c306b777390c4fe4ef",
+  "reviewer_id": "/root/launcher_activation_v2_correctness",
+  "risk_boundaries_checked": [
+    "attempt-fence-refresh-and-mint-origin-auth-tagging",
+    "deterministic-test-fidelity-and-production-main-activation",
+    "heartbeat-checkpoint-shutdown-and-child-settlement-ordering",
+    "pump-to-realtime-state-machine-ready-gating-and-lifecycle-mapping"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 2,
+  "surface_id": "launcher-realtime-activation-v2-correctness"
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "reconciled_at": "2026-09-03T09:40:02Z",
+  "unit_id": "phase5-launcher-realtime-http",
+  "source_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "integration_commit": "54d5ebf9157154eab94bf4e7a090840cab00d98a",
+  "candidate_tree": "9b45da6f84d9319e706cdc29d4bce9075a9c64ef",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "patch_hash": "sha256:ec71a1599acb139f679c50ce39e9c650e0e091c7961345f5285d8b91037b11ee",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "correctness_certification": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-correctness-certification.json",
+  "security_certification": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-security-certification.json",
+  "targeted_validation": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-targeted-validation-evidence.json",
+  "root_validation": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-root-validation.json",
+  "status": "release-ready-local-checkpoint"
+}

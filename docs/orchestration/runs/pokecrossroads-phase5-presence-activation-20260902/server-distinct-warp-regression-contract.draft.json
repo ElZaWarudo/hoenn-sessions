@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260902-server-warp-regression-v1",
+  "unit_id": "server-presence-distinct-warp-regression",
+  "lane": "standard",
+  "profile": "luna",
+  "objective": "Add a server regression proving that two players with distinct nonzero warp histories can share one regional map partition and interact only with the target's published warp sequence.",
+  "owned_files": [
+    "coop/crates/coop-server/src/phase2/presence.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-server-contract-v3.json",
+    "coop/crates/coop-protocol/src/presence.rs",
+    "coop/crates/coop-server/Cargo.toml"
+  ],
+  "closed_decisions": [
+    "Warp sequences are player-local; the shared server partition key is build, shard, region, map group, map number, and channel, excluding warp sequence.",
+    "The production server behavior is already correct and must not be changed by this unit.",
+    "The regression uses two distinct accounts and active leases in Hoenn Littleroot, with source warp 7 and target warp 41.",
+    "A valid interaction must observe the target's published warp 41; substituting the source's warp 7 must be rejected."
+  ],
+  "forbidden_changes": [
+    "Do not change production presence behavior, public APIs, message codecs, storage, authentication, realtime transport, Cargo files, documentation, or orchestration state.",
+    "Do not weaken region, map, channel, build, lease, handle, sequence, adjacency, or elevation checks.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create or remove worktrees, or revert another worker's edits."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "SDW-001",
+      "description": "A deterministic test connects two active sessions in the same Littleroot partition using warp sequences 7 and 41 and proves mutual spawn visibility."
+    },
+    {
+      "id": "SDW-002",
+      "description": "The test proves an adjacent interaction succeeds when observed_warp_sequence is 41 and fails without mutation when the caller substitutes 7."
+    },
+    {
+      "id": "SDW-003",
+      "description": "Focused server presence tests, strict Clippy, formatting, and diff checks pass with only the owned test module changed."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-server phase2::presence --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo clippy -p coop-server --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "implementation_rounds": 1,
+    "fix_rounds": 1,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 600000
+  },
+  "supervision": {
+    "mode": "terminal-only",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "Every acceptance criterion is resolved and all verification outcomes are recorded.",
+      "The regression exposes a production defect requiring changes outside the owned test file.",
+      "A concrete toolchain or isolated-worktree failure prevents progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "self-reported",
+    "changed_files_source": "root-diff"
+  }
+}

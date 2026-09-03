@@ -1,0 +1,1 @@
+{"finding_id":"F-CBB9B4FE","resolver_id":"/root","resolution":"fixed","evidence":["Exact candidate cc421eb8 requires generation, object backlink, reserved identity, and callback-type ownership; the foreign reused-sprite regression passes."],"resolved_diff_digest":"sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44"}

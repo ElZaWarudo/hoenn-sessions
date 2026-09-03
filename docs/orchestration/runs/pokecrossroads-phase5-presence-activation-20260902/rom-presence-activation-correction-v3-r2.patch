@@ -1,0 +1,27 @@
+diff --git a/test/coop/presence_runtime.c b/test/coop/presence_runtime.c
+index b8226bf708c1f6e40827d0a5bd821d47e349acc7..d8ba0503b2b4ae743d251e8b46f0f515eaa15780 100644
+--- a/test/coop/presence_runtime.c
++++ b/test/coop/presence_runtime.c
+@@ -823,6 +823,22 @@ TEST("Cloud Coop local-link lookup isolates remote presence collisions")
+                                          position.elevation), 2);
+     EXPECT(GetInteractedLinkPlayerScript(&position, 0, DIR_SOUTH) == NULL);
+ 
++    /* Collision uses the same reserved-remote exclusion in both directions:
++     * the player may pass through the visible remote, while the ordinary
++     * link-player ObjectEvent at the same tile remains a real blocker. */
++    EXPECT_EQ(GetObjectObjectCollidesWith(&gObjectEvents[0],
++                                          position.x, position.y, FALSE), 2);
++    EXPECT_EQ(GetObjectObjectCollidesWith(&gObjectEvents[1],
++                                          position.x, position.y, FALSE),
++              OBJECT_EVENTS_COUNT);
++
++    /* With the ordinary object removed, the remote alone is nonblocking. */
++    gObjectEvents[2].active = FALSE;
++    EXPECT_EQ(GetObjectObjectCollidesWith(&gObjectEvents[0],
++                                          position.x, position.y, FALSE),
++              OBJECT_EVENTS_COUNT);
++    gObjectEvents[2].active = TRUE;
++
+     /* A link record referring only to the remote does not hide the genuine
+      * local object; the local script remains independently addressable. */
+     gLinkPlayerObjectEvents[0].objEventId = 1;

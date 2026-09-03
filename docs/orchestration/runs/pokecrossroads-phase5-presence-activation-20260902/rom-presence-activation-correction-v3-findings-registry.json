@@ -1,0 +1,269 @@
+{
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "findings": [
+    {
+      "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+      "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+      "evidence": [
+        "test/coop/presence_runtime.c:438-469 never activates the reducer or renderer before stale and warp assertions.",
+        "test/coop/presence_runtime.c:424-436 never transitions a visible sample to HIDDEN.",
+        "No Cloud Coop test directly executes local-link behavior."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:140f60ef8a8aa8b115117629a641f7f79152cad7584db860114c79148c9d8d07",
+      "id": "F-140F60EF",
+      "impact": "Renderer teardown, publication, capacity retry, and local-link regressions can pass the focused suite.",
+      "observation": "Several tests claim stale, warp, hidden, capacity, and local-link coverage without entering the corresponding production states.",
+      "principle": "testing",
+      "recommendation": "Create active fixtures for stale and warp paths, visible-to-hidden publication, actual capacity failure/retry, and direct local-link isolation behavior.",
+      "reporters": [
+        "/root/rom_presence_correctness_review_v3b"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate cc421eb8 executes hidden, stale, warp, capacity retry, local-link lookup and collision regressions; the focused Cloud Coop suite passes 94/94."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40"
+      ],
+      "rule_id": "RPAC3-005-runtime-coverage-gaps",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v3"
+      ],
+      "validation": {
+        "evidence": [
+          "The original candidate tests did not enter the production hidden, stale, warp, capacity, or local-link paths; the final candidate adds executable fixtures for each."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+      "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+      "evidence": [
+        "src/field_control_avatar.c:215-229 invokes the remote fallback.",
+        "src/field_control_avatar.c:231-237 reaches TrySetupDiveDownScript only afterward."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:17508095fd08abaf7cb8db97a6b13ef12a17000b3331ed396f6c1b7de0c560e1",
+      "id": "F-17508095",
+      "impact": "A remote can prevent a valid local dive-down field action.",
+      "observation": "The remote A-button fallback runs before TrySetupDiveDownScript, so an adjacent visible remote can consume A before the dive action is evaluated.",
+      "principle": "correctness",
+      "recommendation": "Move remote interaction after all local A-triggered actions including Dive and add a dive-overlap regression.",
+      "reporters": [
+        "/root/rom_presence_correctness_review_v3b"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate cc421eb8 evaluates every local field action before the remote fallback and its real dive-overlap regression passes."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40"
+      ],
+      "rule_id": "RPAC3-004-field-action-precedence",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v3"
+      ],
+      "validation": {
+        "evidence": [
+          "The original remote A-button fallback preceded Dive and could consume an otherwise valid local dive action."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+      "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+      "evidence": [
+        "dist/bridge_manifest.json records ROM SHA c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165.",
+        "The exact candidate ROM SHA is d9009861b8c7f89a3f2788bb0aa34a34e25beb4acedd166becd4771e0501e2fd."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:785b74ce1aa757feb5f324416f5483e4b566144f60044e9a9eb3a411071814a2",
+      "id": "F-785B74CE",
+      "impact": "Launcher compatibility admission fails closed for the candidate ROM.",
+      "observation": "The candidate manifest attests the predecessor ROM rather than the exact built candidate.",
+      "principle": "contract",
+      "recommendation": "Regenerate and include dist/bridge_manifest.json from the exact accepted ELF and ROM, then rerun compatibility validation.",
+      "reporters": [
+        "/root/rom_presence_correctness_review_v3b"
+      ],
+      "resolution": {
+        "evidence": [
+          "The exact candidate ROM and generated manifest both attest f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574, and regeneration leaves no manifest diff."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40"
+      ],
+      "rule_id": "RPAC3-006-generated-rom-manifest",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v3"
+      ],
+      "validation": {
+        "evidence": [
+          "The original manifest ROM SHA differed from the exact candidate ROM and would fail launcher compatibility admission."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+      "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+      "evidence": [
+        "src/event_object_movement.c changes centralized position lookup and collision handling.",
+        "test/coop/presence_runtime.c only checks the reserved local-ID predicate."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:a30814093c168c2c017dc3a062d747163a3138fe762ed6dfe2206dbd1ed49695",
+      "id": "F-A3081409",
+      "impact": "A regression could corrupt or mask legacy link-player objects without focused coverage.",
+      "observation": "The candidate changes centralized object lookup and collision behavior without directly exercising local-link or RFU paths.",
+      "principle": "testing",
+      "recommendation": "Add a focused regression proving ordinary link-player lookup, collision, and identity remain intact alongside a reserved remote.",
+      "reporters": [
+        "/root/rom_presence_security_review_v3b"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate cc421eb8 proves ordinary link-player objects remain blockers while reserved remote sources and targets remain nonblocking; both final review lenses passed."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40"
+      ],
+      "rule_id": "RPAC3-005/local-link-isolation-proof",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "rom-presence-activation-security-v3"
+      ],
+      "validation": {
+        "evidence": [
+          "The centralized lookup and collision changes originally lacked executable proof that legacy local-link collision identity remained intact."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+      "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+      "evidence": [
+        "src/event_object_movement.c and src/coop/presence_runtime.c destroy sprites using inUse plus data[0] equality.",
+        "Sprite data[0] is reused by link-player and other sprite callbacks and is not a global ownership tag."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:cbb9b4fe543c04880540e56775c9d79ce286c9088ff0c34db74d743cbf9ccfaa",
+      "id": "F-CBB9B4FE",
+      "impact": "Cleanup can destroy an unrelated reused sprite and corrupt local or link state.",
+      "observation": "Return-to-field cleanup treats sprite data[0] equality as sufficient remote ownership proof after sprite-table reuse.",
+      "principle": "security",
+      "recommendation": "Require type-aware bidirectional ownership proof after reset and add a coincidental-data[0] reused-sprite regression.",
+      "reporters": [
+        "/root/rom_presence_security_review_v3b"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate cc421eb8 requires generation, object backlink, reserved identity, and callback-type ownership; the foreign reused-sprite regression passes."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40"
+      ],
+      "rule_id": "RPAC3-002/reused-sprite-false-ownership",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "rom-presence-activation-security-v3"
+      ],
+      "validation": {
+        "evidence": [
+          "The original ownership test relied on sprite data equality and could destroy an unrelated reused sprite."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+      "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+      "evidence": [
+        "The manifest ROM SHA is c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165.",
+        "The exact candidate ROM SHA is d9009861b8c7f89a3f2788bb0aa34a34e25beb4acedd166becd4771e0501e2fd."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:dc6d97ee6e972f802d92cf40f37773a28296bbee46162a38932310b15509da51",
+      "id": "F-DC6D97EE",
+      "impact": "The launcher safely rejects the mismatch, leaving Cloud Coop unavailable.",
+      "observation": "The checked-in manifest attests the predecessor ROM instead of the exact candidate.",
+      "principle": "security",
+      "recommendation": "Regenerate the manifest from the final immutable ELF/ROM pair and rerun launcher compatibility validation.",
+      "reporters": [
+        "/root/rom_presence_security_review_v3b"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact ROM/manifest SHA equality is restored, 15 manifest generator tests pass, and final security re-review accepts the attestation."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40"
+      ],
+      "rule_id": "RPAC3-006/rom-manifest-attestation-drift",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "rom-presence-activation-security-v3"
+      ],
+      "validation": {
+        "evidence": [
+          "The original security review independently confirmed that the checked-in manifest attested predecessor bytes."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    }
+  ],
+  "registry_digest": "sha256:1dec9ac428d7c8308987d5402c7e2356081cfe762aa006851b6b3bd3ff05e3c1",
+  "registry_id": "pokecrossroads-phase5-rom-presence-activation-correction-v3",
+  "revision": 14,
+  "schema_version": 1
+}

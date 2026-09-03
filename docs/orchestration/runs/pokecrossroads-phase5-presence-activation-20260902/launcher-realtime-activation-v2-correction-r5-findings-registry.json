@@ -1,0 +1,9 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+  "findings": [],
+  "registry_digest": "sha256:a8f3e573a6d4f2dc7dbeecf0c11149e5a1b9d1a28e4597ba9b9d22b6bcb63810",
+  "registry_id": "pokecrossroads-phase5-launcher-realtime-activation-v2-correction-r5",
+  "revision": 0,
+  "schema_version": 1
+}

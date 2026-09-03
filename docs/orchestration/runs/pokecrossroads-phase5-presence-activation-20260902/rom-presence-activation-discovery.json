@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "role": "discovery",
+  "actor_id": "/root/rom_presence_activation_discovery",
+  "status": "passed",
+  "baseline_commit": "d1e726fb00137c7bb8318e3bed0a96f10db7acbd",
+  "decisions": [
+    "Keep the game and bridge protocol at version 1; the 28-byte regional LocalPresenceStateV1 replaces the dormant 16-byte placeholder payload.",
+    "WorldLocation wire coordinates are map-local. PlayerGetDestCoords includes MAP_OFFSET, so export subtracts it and rendering adds it exactly once after signed bounds checks.",
+    "Remove the player ObjectEvent mapGroup/mapNum export guard because those fields can remain stale across seamless connections.",
+    "Decode inbound lifecycle frames in CoopNetBridge_Poll, retain a latest pending target, and mutate ObjectEvents at the start of normal CB1_Overworld before input processing.",
+    "Reserve local ObjectEvent ID 0xFC, never evict a map object, and re-resolve ObjectEvent/sprite ownership every field frame.",
+    "Interpolate sprite base x/y over exactly six frames; x2/y2 remain zero so reflections, shadows, depth, and field effects stay coherent.",
+    "Remote players never participate in normal ObjectEvent collision or first-match position lookup, while overlapping real objects remain discoverable.",
+    "Remote A interaction has an explicit consumed-without-lock result and remains consumed even when its bounded outbound queue is full.",
+    "Warp commit increments the local nonzero warp sequence and immediately clears reducer, pending interpolation, and renderer state."
+  ],
+  "risks": [
+    "SpawnSpecialObjectEventParameterized currently leaves part of its temporary template uninitialized and ignores palette allocation failure.",
+    "Cached sprite slots can be reused after ObjectEvent resets and must never be trusted for teardown.",
+    "Ordinary TRUE from the field input hook locks controls when no script was started.",
+    "Applying target mutation at the top of CB2 leaves one input frame observing stale logical coordinates."
+  ],
+  "owned_file_recommendation": [
+    "include/coop/presence_runtime.h",
+    "src/coop/presence_runtime.c",
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c",
+    "src/coop/region.c",
+    "test/coop/region.c",
+    "src/overworld.c",
+    "include/field_control_avatar.h",
+    "src/field_control_avatar.c",
+    "include/constants/event_objects.h",
+    "src/event_object_movement.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "dist/bridge_manifest.json"
+  ]
+}

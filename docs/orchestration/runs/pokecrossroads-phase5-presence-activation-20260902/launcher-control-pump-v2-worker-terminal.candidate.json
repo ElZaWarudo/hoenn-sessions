@@ -1,0 +1,97 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "LCP2-001",
+      "status": "satisfied",
+      "evidence": "process.rs now exhaustively handles the certified ControlEvent and Command variants, performs the synchronous authenticated handshake, and assigns persistent reader and writer tasks exclusive owned socket halves. The strict 512-byte LF-inclusive framing bound and validation remain enforced; the full coop-sidecar plus coop-launcher suite and strict Clippy passed."
+    },
+    {
+      "criterion_id": "LCP2-002",
+      "status": "satisfied",
+      "evidence": "The pump uses bounded critical capacity 1, lifecycle capacity 32, critical-event capacity 16, interaction capacity 16, terminal capacity 1, and one latest-state watch slot. Reset publication atomically advances the generation, clears state, latches reset, disables lifecycle, and publishes the notification; post-reset interactions are discarded and presence is excluded from bounded checkpoint/shutdown receive. A durable pending critical slot now preserves a dequeued critical record when reset wins the post-dequeue window, while reset remains first at call entry. Focused control_pump and rom_presence tests passed."
+    },
+    {
+      "criterion_id": "LCP2-003",
+      "status": "satisfied",
+      "evidence": "Critical admission and completion use one absolute deadline and sticky ambiguity/closed-lane causes. Lifecycle admission is generation- and permit-fenced under the synchronous writer-admission fence, uses exactly one nonblocking try_write, and treats overflow, closed, partial, WouldBlock, and ambiguous outcomes as terminal without retry or replay. End-to-end critical priority/completion, stale lifecycle, partial-write, and reset-fence regressions passed."
+    },
+    {
+      "criterion_id": "LCP2-004",
+      "status": "satisfied",
+      "evidence": "Raw observation and explicit settlement seams are implemented, child observation is biased ahead of control under presence flood, ACK-before-EOF remains deliverable, and wait/settle/startup cleanup paths use one absolute teardown deadline while joining both pump tasks with abort-and-await fallback. Focused shutdown tests and the full launcher/sidecar suite passed."
+    },
+    {
+      "criterion_id": "LCP2-005",
+      "status": "satisfied",
+      "evidence": "Executable regressions cover state coalescing, interaction FIFO and seventeenth-item overflow, reset/new-state/duplicate and generation exhaustion, stale interaction and lifecycle discard including post-reset admission, critical priority/completion, partial writes, ACK-before-EOF, child fairness, joined teardown, checkpoint interleaving/reset precedence, sustained-presence shutdown, invalid state validation, and deterministic reset-after-dequeue retention for both receive APIs. The focused control_pump filter passed 16 tests."
+    },
+    {
+      "criterion_id": "LCP2-006",
+      "status": "satisfied",
+      "evidence": "All four focused launcher filters passed; the natural coop-sidecar plus coop-launcher suite passed 240 tests with one ignored; strict Clippy reported no issues; cargo fmt --check and git diff --check passed. The worker delta is confined to coop/crates/coop-launcher/src/process.rs and coop/crates/coop-launcher/src/session.rs, with the sealed index untouched. contract_hash=sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36"
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-launcher control_pump --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher rom_presence --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-launcher control_pump --all-features --locked",
+    "rtk cargo test -p coop-launcher rom_presence --all-features --locked",
+    "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+    "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+    "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [],
+  "scope_extension": null
+}

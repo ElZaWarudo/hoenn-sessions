@@ -1,0 +1,903 @@
+diff --git a/coop/crates/coop-sidecar/src/server.rs b/coop/crates/coop-sidecar/src/server.rs
+index 9dcc6531e95615ef777cdeb6188d460de85d3a36..800f6937867b93496262c2ef958dda52d27d9ee7 100644
+--- a/coop/crates/coop-sidecar/src/server.rs
++++ b/coop/crates/coop-sidecar/src/server.rs
+@@ -475,6 +475,53 @@ struct BridgeWriterState {
+     requested_generation: std::sync::atomic::AtomicU64,
+     #[cfg(test)]
+     test_write_gate: Mutex<Option<Arc<Notify>>>,
++    #[cfg(test)]
++    test_write_observer: Mutex<Option<TestWriterObserver>>,
++    #[cfg(test)]
++    test_failure_gate: Mutex<Option<Arc<Notify>>>,
++}
++
++#[cfg(test)]
++#[derive(Clone)]
++struct TestWriterObserver {
++    admitted: Arc<AtomicBool>,
++    admission_signal: Arc<Notify>,
++    dropped: Arc<AtomicBool>,
++    drop_signal: Arc<Notify>,
++}
++
++#[cfg(test)]
++#[derive(Clone)]
++struct TestBlockedWriterGate {
++    release: Arc<Notify>,
++    observer: TestWriterObserver,
++}
++
++#[cfg(test)]
++#[derive(Clone)]
++struct TestWriterFailureGate {
++    trigger: Arc<Notify>,
++    registered: Arc<Notify>,
++    registration_seen: Arc<AtomicBool>,
++}
++
++#[cfg(test)]
++struct WriterTaskDropSignal(Arc<BridgeWriterState>);
++
++#[cfg(test)]
++impl Drop for WriterTaskDropSignal {
++    fn drop(&mut self) {
++        if let Some(observer) = self
++            .0
++            .test_write_observer
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner)
++            .as_ref()
++        {
++            observer.dropped.store(true, Ordering::Release);
++            observer.drop_signal.notify_waiters();
++        }
++    }
+ }
+ 
+ pub(crate) struct BridgeWriter {
+@@ -501,16 +548,50 @@ impl BridgeWriter {
+             requested_generation: std::sync::atomic::AtomicU64::new(0),
+             #[cfg(test)]
+             test_write_gate: Mutex::new(None),
++            #[cfg(test)]
++            test_write_observer: Mutex::new(None),
++            #[cfg(test)]
++            test_failure_gate: Mutex::new(None),
+         });
+         let actor_state = Arc::clone(&state);
+         let task = tokio::spawn(async move {
++            #[cfg(test)]
++            let _task_drop_signal = WriterTaskDropSignal(Arc::clone(&actor_state));
+             let mut stream = stream;
+-            while let Some(request) = request_rx.recv().await {
++            loop {
++                #[cfg(test)]
++                let request = {
++                    let failure_gate = actor_state
++                        .test_failure_gate
++                        .lock()
++                        .unwrap_or_else(std::sync::PoisonError::into_inner)
++                        .clone();
++                    tokio::select! {
++                        biased;
++                        () = async move {
++                            if let Some(trigger) = failure_gate {
++                                trigger.notified().await;
++                            } else {
++                                std::future::pending::<()>().await;
++                            }
++                        } => {
++                            let error = BridgeWriter::writer_terminated_error();
++                            actor_state.record_failure(&error);
++                            break;
++                        }
++                        request = request_rx.recv() => request,
++                    }
++                };
++                #[cfg(not(test))]
++                let request = request_rx.recv().await;
++                let Some(request) = request else {
++                    break;
++                };
+                 let should_write = {
+                     let _fence = actor_state
+                         .fence
+                         .lock()
+-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
++                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                     if actor_state.poisoned.load(Ordering::Acquire)
+                         || (request.class == BridgeWriteClass::Lifecycle
+                             && request.readiness_generation
+@@ -525,6 +606,16 @@ impl BridgeWriter {
+                     } else {
+                         if request.class == BridgeWriteClass::Lifecycle {
+                             actor_state.in_flight.store(true, Ordering::Release);
++                            #[cfg(test)]
++                            if let Some(observer) = actor_state
++                                .test_write_observer
++                                .lock()
++                                .unwrap_or_else(std::sync::PoisonError::into_inner)
++                                .as_ref()
++                            {
++                                observer.admitted.store(true, Ordering::Release);
++                                observer.admission_signal.notify_waiters();
++                            }
+                         }
+                         true
+                     }
+@@ -544,13 +635,15 @@ impl BridgeWriter {
+ 
+                 let in_flight = request.class == BridgeWriteClass::Lifecycle;
+                 #[cfg(test)]
+-                let test_write_gate = actor_state
+-                    .test_write_gate
+-                    .lock()
+-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+-                    .clone();
++                let test_write_gate = (in_flight).then(|| {
++                    actor_state
++                        .test_write_gate
++                        .lock()
++                        .unwrap_or_else(std::sync::PoisonError::into_inner)
++                        .clone()
++                });
+                 #[cfg(test)]
+-                if let Some(gate) = test_write_gate {
++                if let Some(Some(gate)) = test_write_gate {
+                     tokio::select! {
+                         () = gate.notified() => {}
+                         () = actor_state.poison_notify.notified() => {
+@@ -562,6 +655,15 @@ impl BridgeWriter {
+                                     .lock()
+                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                 actor_state.in_flight.store(false, Ordering::Release);
++                                #[cfg(test)]
++                                if let Some(observer) = actor_state
++                                    .test_write_observer
++                                    .lock()
++                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
++                                    .as_ref()
++                                {
++                                    observer.admitted.store(false, Ordering::Release);
++                                }
+                             }
+                             if let Some(completion) = request.completion {
+                                 let _ = completion.send(Err(error));
+@@ -586,8 +688,17 @@ impl BridgeWriter {
+                     let _fence = actor_state
+                         .fence
+                         .lock()
+-                        .unwrap_or_else(|poisoned| poisoned.into_inner());
++                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                     actor_state.in_flight.store(false, Ordering::Release);
++                    #[cfg(test)]
++                    if let Some(observer) = actor_state
++                        .test_write_observer
++                        .lock()
++                        .unwrap_or_else(std::sync::PoisonError::into_inner)
++                        .as_ref()
++                    {
++                        observer.admitted.store(false, Ordering::Release);
++                    }
+                 }
+                 if let Err(error) = &result {
+                     actor_state.record_failure(error);
+@@ -619,6 +730,29 @@ impl BridgeWriter {
+         (writer, gate)
+     }
+ 
++    #[cfg(test)]
++    fn install_test_write_gate(&self, gate: TestBlockedWriterGate) {
++        *self
++            .state
++            .test_write_gate
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(gate.release);
++        *self
++            .state
++            .test_write_observer
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(gate.observer);
++    }
++
++    #[cfg(test)]
++    fn install_test_failure_gate(&self, gate: &TestWriterFailureGate) {
++        *self
++            .state
++            .test_failure_gate
++            .lock()
++            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Arc::clone(&gate.trigger));
++    }
++
+     fn writer_terminated_error() -> SidecarError {
+         SidecarError::BridgeWriteConnection(io::Error::new(
+             io::ErrorKind::ConnectionAborted,
+@@ -1172,6 +1306,7 @@ struct ActiveSessionIo {
+ }
+ 
+ type BridgeReacquisitionParts<'a> = (
++    &'a mut BridgeWriter,
+     &'a mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+     &'a mut watch::Receiver<Option<BridgeTerminal>>,
+     &'a mut Option<Box<BridgeFrame>>,
+@@ -1188,6 +1323,7 @@ enum ActiveSessionEvent {
+ }
+ 
+ enum ControlGapEvent {
++    BridgeWriterFailed,
+     Control(Result<ControlConnection, SidecarError>),
+     Bridge(Option<Result<BridgeFrame, SidecarError>>),
+     BridgeTerminal(Option<BridgeTerminal>),
+@@ -1236,6 +1372,7 @@ impl BridgeTerminal {
+ impl BridgeIo {
+     fn reacquisition_parts(&mut self) -> BridgeReacquisitionParts<'_> {
+         (
++            self.writer.as_mut().expect("bridge writer is owned"),
+             self.receiver.as_mut().expect("bridge receiver is owned"),
+             &mut self.terminal,
+             &mut self.pending_frame,
+@@ -1360,7 +1497,10 @@ where
+     let terminal_receiver = terminal.signal.subscribe();
+     let control_task = tokio::spawn(async move {
+         loop {
+-            match control_reader.receive_command_observed(|| {}).await {
++            match control_reader
++                .receive_command_observed(&mut prefix_observer)
++                .await
++            {
+                 Ok(command) => {
+                     if is_presence_command(&command) {
+                         // Keep this path nonblocking so a lifecycle flood
+@@ -1592,6 +1732,10 @@ pub struct LocalSidecar {
+     bridge_prefix_observer: Option<mpsc::Sender<()>>,
+     #[cfg(test)]
+     control_prefix_observer: Option<mpsc::Sender<()>>,
++    #[cfg(test)]
++    test_write_gate: Option<TestBlockedWriterGate>,
++    #[cfg(test)]
++    test_writer_failure_gate: Option<TestWriterFailureGate>,
+ }
+ 
+ impl LocalSidecar {
+@@ -1629,6 +1773,10 @@ impl LocalSidecar {
+             bridge_prefix_observer: None,
+             #[cfg(test)]
+             control_prefix_observer: None,
++            #[cfg(test)]
++            test_write_gate: None,
++            #[cfg(test)]
++            test_writer_failure_gate: None,
+         })
+     }
+ 
+@@ -1689,13 +1837,67 @@ impl LocalSidecar {
+     fn spawn_bridge_io(&self, bridge: AuthenticatedConnection) -> BridgeIo {
+         #[cfg(test)]
+         if let Some(observer) = self.bridge_prefix_observer.clone() {
+-            return spawn_bridge_reader_observed(bridge, move || {
++            let io = spawn_bridge_reader_observed(bridge, move || {
+                 let _ = observer.try_send(());
+             });
++            if let Some(gate) = self.test_write_gate.clone() {
++                io.writer
++                    .as_ref()
++                    .expect("bridge writer is owned")
++                    .install_test_write_gate(gate);
++            }
++            if let Some(gate) = self.test_writer_failure_gate.as_ref() {
++                io.writer
++                    .as_ref()
++                    .expect("bridge writer is owned")
++                    .install_test_failure_gate(gate);
++            }
++            return io;
+         }
+         #[cfg(not(test))]
+         debug_assert!(self.session_epoch != 0);
+-        spawn_bridge_reader(bridge)
++        let io = spawn_bridge_reader(bridge);
++        #[cfg(test)]
++        if let Some(gate) = self.test_write_gate.clone() {
++            io.writer
++                .as_ref()
++                .expect("bridge writer is owned")
++                .install_test_write_gate(gate);
++        }
++        #[cfg(test)]
++        if let Some(gate) = self.test_writer_failure_gate.as_ref() {
++            io.writer
++                .as_ref()
++                .expect("bridge writer is owned")
++                .install_test_failure_gate(gate);
++        }
++        io
++    }
++
++    #[cfg(test)]
++    fn install_test_blocked_writer_gate(&mut self) -> TestBlockedWriterGate {
++        let gate = TestBlockedWriterGate {
++            release: Arc::new(Notify::new()),
++            observer: TestWriterObserver {
++                admitted: Arc::new(AtomicBool::new(false)),
++                admission_signal: Arc::new(Notify::new()),
++                dropped: Arc::new(AtomicBool::new(false)),
++                drop_signal: Arc::new(Notify::new()),
++            },
++        };
++        self.test_write_gate = Some(gate.clone());
++        gate
++    }
++
++    #[cfg(test)]
++    fn install_test_writer_failure_gate(&mut self) -> TestWriterFailureGate {
++        let gate = TestWriterFailureGate {
++            trigger: Arc::new(Notify::new()),
++            registered: Arc::new(Notify::new()),
++            registration_seen: Arc::new(AtomicBool::new(false)),
++        };
++        self.test_writer_failure_gate = Some(gate.clone());
++        gate
+     }
+ 
+     /// Accepts exactly one authenticated bridge peer.
+@@ -1837,15 +2039,23 @@ impl LocalSidecar {
+         bridge: &mut BridgeIo,
+         reconnect: &mut ReconnectContext,
+     ) -> Result<ControlRecovery, SidecarError> {
+-        let (bridge_rx, bridge_terminal, pending_bridge_frame) = bridge.reacquisition_parts();
+-        self.recover_control_with_bridge(
+-            bridge_rx,
+-            bridge_terminal,
+-            &mut reconnect.state,
+-            pending_bridge_frame,
+-            &mut reconnect.bridge_lifecycle,
+-        )
+-        .await
++        let result = {
++            let (bridge_writer, bridge_rx, bridge_terminal, pending_bridge_frame) =
++                bridge.reacquisition_parts();
++            self.recover_control_with_bridge(
++                bridge_writer,
++                bridge_rx,
++                bridge_terminal,
++                &mut reconnect.state,
++                pending_bridge_frame,
++                &mut reconnect.bridge_lifecycle,
++            )
++            .await
++        };
++        if result.is_err() {
++            bridge.shutdown().await;
++        }
++        result
+     }
+ 
+     async fn race_lost_control_with_bridge_auth(
+@@ -2245,13 +2455,23 @@ impl LocalSidecar {
+         let mut bridge: Option<BridgeIo> = None;
+         let mut has_control = true;
+         loop {
+-            if has_control
+-                && !self
++            if has_control {
++                match self
+                     .handoff_pair_acquisition_expiry(&mut control, &mut reconnect)
+-                    .await?
+-            {
+-                has_control = false;
+-                continue;
++                    .await
++                {
++                    Ok(true) => {}
++                    Ok(false) => {
++                        has_control = false;
++                        continue;
++                    }
++                    Err(error) => {
++                        if let Some(mut pending_bridge) = bridge.take() {
++                            pending_bridge.shutdown().await;
++                        }
++                        return Err(error);
++                    }
++                }
+             }
+             if has_control && let Some(bridge) = bridge.take() {
+                 reconnect.bridge_lifecycle.mark_authenticated();
+@@ -2263,10 +2483,23 @@ impl LocalSidecar {
+             }
+ 
+             if !has_control {
+-                if let Some(pending_bridge) = bridge.as_mut() {
+-                    let recovery = self
+-                        .reacquire_control_with_bridge(pending_bridge, &mut reconnect)
+-                        .await?;
++                if bridge.is_some() {
++                    let recovery_result = {
++                        let pending_bridge = bridge
++                            .as_mut()
++                            .expect("bridge is present for control reacquisition");
++                        self.reacquire_control_with_bridge(pending_bridge, &mut reconnect)
++                            .await
++                    };
++                    let recovery = match recovery_result {
++                        Ok(recovery) => recovery,
++                        Err(error) => {
++                            if let Some(mut pending_bridge) = bridge.take() {
++                                pending_bridge.shutdown().await;
++                            }
++                            return Err(error);
++                        }
++                    };
+                     match recovery {
+                         ControlRecovery::Control(replacement) => {
+                             control = replacement;
+@@ -2403,23 +2636,13 @@ impl LocalSidecar {
+                 Ok(false)
+             }
+             Some(Err(error)) => {
+-                let clean_pre_bridge_shutdown = reconnect.state.checkpoint_state.is_quiescing()
+-                    && reconnect.bridge_lifecycle.control_eof_proves_shutdown()
+-                    && matches!(error, SidecarError::Control(ControlError::LineClosed));
+-                if clean_pre_bridge_shutdown {
+-                    control.shutdown().await;
+-                    return Ok(true);
+-                }
+-                if can_reconnect_after(&error) && is_control_reconnect_error(&error) {
+-                    control.shutdown().await;
+-                    return Ok(false);
+-                }
+-                Err(error)
++                self.process_pre_bridge_control_error(error, control, reconnect)
++                    .await
+             }
+             None => {
+                 if let Some(error) = control.terminal.take_error() {
+                     return self
+-                        .process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
++                        .process_pre_bridge_control_error(error, control, reconnect)
+                         .await;
+                 }
+                 if control.presence_overflow.load(Ordering::Acquire) {
+@@ -2433,6 +2656,26 @@ impl LocalSidecar {
+         }
+     }
+ 
++    async fn process_pre_bridge_control_error(
++        &mut self,
++        error: SidecarError,
++        control: &mut ControlIo,
++        reconnect: &mut ReconnectContext,
++    ) -> Result<bool, SidecarError> {
++        let clean_pre_bridge_shutdown = reconnect.state.checkpoint_state.is_quiescing()
++            && reconnect.bridge_lifecycle.control_eof_proves_shutdown()
++            && matches!(error, SidecarError::Control(ControlError::LineClosed));
++        if clean_pre_bridge_shutdown {
++            control.shutdown().await;
++            return Ok(true);
++        }
++        if can_reconnect_after(&error) && is_control_reconnect_error(&error) {
++            control.shutdown().await;
++            return Ok(false);
++        }
++        Err(error)
++    }
++
+     async fn process_pre_bridge_presence_result(
+         &mut self,
+         result: Option<PresenceResult>,
+@@ -2442,7 +2685,7 @@ impl LocalSidecar {
+     ) -> Result<bool, SidecarError> {
+         if let Some(error) = terminal.take_error() {
+             return self
+-                .process_pre_bridge_control_result(Some(Err(error)), control, reconnect)
++                .process_pre_bridge_control_error(error, control, reconnect)
+                 .await;
+         }
+         if control.presence_overflow.load(Ordering::Acquire) {
+@@ -2714,8 +2957,37 @@ impl LocalSidecar {
+                     // Keep the bridge I/O alive while replacement control
+                     // authenticates; its bounded channel retains in-flight frames.
+                     reconnect_state = next_state;
++                    // If the retained bridge has already published its
++                    // terminal state, retire the pair before starting a new
++                    // control authentication. Otherwise that in-flight
++                    // authentication can be cancelled by the bridge EOF and
++                    // the next control peer observes a spurious reset.
++                    let retained_bridge_terminal = bridge_terminal.borrow().as_ref().copied();
++                    if let Some(terminal) = retained_bridge_terminal {
++                        let bridge_error = terminal.into_error();
++                        bridge_lifecycle.record_termination(&bridge_error);
++                        bridge_writer.shutdown().await;
++                        reader_tasks.shutdown().await;
++                        if reconnect_state.checkpoint_state.is_quiescing()
++                            && is_bridge_shutdown_eof(&bridge_error)
++                        {
++                            return Ok(SessionExit::Shutdown);
++                        }
++                        if can_reconnect_bridge_loss(
++                            &bridge_error,
++                            reconnect_state.checkpoint_state,
++                        ) {
++                            return Ok(SessionExit::Reconnect(ReconnectContext {
++                                state: reconnect_state,
++                                deferred_commands,
++                                bridge_lifecycle,
++                            }));
++                        }
++                        return Err(bridge_error);
++                    }
+                     let recovery = self
+                         .recover_control_with_bridge(
++                            &mut bridge_writer,
+                             &mut bridge_rx,
+                             &mut bridge_terminal,
+                             &mut reconnect_state,
+@@ -2767,6 +3039,7 @@ impl LocalSidecar {
+         }
+     }
+ 
++    #[cfg(test)]
+     async fn await_control_or_bridge(
+         &mut self,
+         bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+@@ -2796,6 +3069,90 @@ impl LocalSidecar {
+                 }
+             };
+             match event {
++                ControlGapEvent::BridgeWriterFailed => unreachable!(
++                    "the writer-failure event is only emitted by the writer-aware reacquisition"
++                ),
++                ControlGapEvent::Deadline => {
++                    advance_reconnect_deadline(
++                        &mut self.sequence_state,
++                        reconnect,
++                        Instant::now(),
++                    )?;
++                }
++                ControlGapEvent::Control(result) => {
++                    return result.map(ControlReacquisition::Control);
++                }
++                ControlGapEvent::BridgeTerminal(Some(terminal)) => {
++                    return Ok(ControlReacquisition::BridgeTerminated(
++                        terminal.into_error(),
++                    ));
++                }
++                ControlGapEvent::BridgeTerminal(None) | ControlGapEvent::Bridge(None) => {
++                    return Err(SidecarError::ProtocolViolation("bridge reader terminated"));
++                }
++                ControlGapEvent::Bridge(Some(Ok(_)))
++                    if reconnect.checkpoint_state.is_quiescing() => {}
++                ControlGapEvent::Bridge(Some(Ok(frame))) => {
++                    if pending_bridge_frame.is_none() {
++                        *pending_bridge_frame = Some(Box::new(frame));
++                    }
++                }
++                ControlGapEvent::Bridge(Some(Err(error))) => {
++                    return Ok(ControlReacquisition::BridgeTerminated(error));
++                }
++            }
++        }
++    }
++
++    async fn await_control_or_bridge_with_writer(
++        &mut self,
++        bridge_writer: &mut BridgeWriter,
++        bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
++        bridge_terminal: &mut watch::Receiver<Option<BridgeTerminal>>,
++        reconnect: &mut ReconnectState,
++        pending_bridge_frame: &mut Option<Box<BridgeFrame>>,
++    ) -> Result<ControlReacquisition, SidecarError> {
++        // Register the durable writer-failure watch before checking its
++        // current state. A failure between a check and subscribe must not
++        // leave control reacquisition waiting forever for replacement input.
++        let mut writer_failure_receiver = bridge_writer.failure_receiver();
++        let replacement = self.start_control_authentication();
++        tokio::pin!(replacement);
++        loop {
++            if let Some(error) = bridge_writer
++                .take_failure()
++                .or_else(|| bridge_writer.write_failure())
++            {
++                return Ok(ControlReacquisition::BridgeTerminated(error));
++            }
++            let event = tokio::select! {
++                biased;
++                changed = writer_failure_receiver.changed() => {
++                    let _ = changed;
++                    ControlGapEvent::BridgeWriterFailed
++                }
++                () = checkpoint_deadline(reconnect.checkpoint_state.deadline()) => {
++                    ControlGapEvent::Deadline
++                }
++                result = &mut replacement => ControlGapEvent::Control(result),
++                result = bridge_rx.recv(), if pending_bridge_frame.is_none() => {
++                    ControlGapEvent::Bridge(result)
++                }
++                changed = bridge_terminal.changed() => {
++                    ControlGapEvent::BridgeTerminal(
++                        changed.ok().and_then(|()| *bridge_terminal.borrow())
++                    )
++                }
++            };
++            match event {
++                ControlGapEvent::BridgeWriterFailed => {
++                    return Ok(ControlReacquisition::BridgeTerminated(
++                        bridge_writer
++                            .take_failure()
++                            .or_else(|| bridge_writer.write_failure())
++                            .unwrap_or_else(BridgeWriter::writer_terminated_error),
++                    ));
++                }
+                 ControlGapEvent::Deadline => {
+                     advance_reconnect_deadline(
+                         &mut self.sequence_state,
+@@ -2804,6 +3161,14 @@ impl LocalSidecar {
+                     )?;
+                 }
+                 ControlGapEvent::Control(result) => {
++                    // A reconnectable control EOF must not win a simultaneous
++                    // writer-failure race and revive a retired bridge.
++                    if let Some(error) = bridge_writer
++                        .take_failure()
++                        .or_else(|| bridge_writer.write_failure())
++                    {
++                        return Ok(ControlReacquisition::BridgeTerminated(error));
++                    }
+                     return result.map(ControlReacquisition::Control);
+                 }
+                 ControlGapEvent::BridgeTerminal(Some(terminal)) => {
+@@ -2830,6 +3195,7 @@ impl LocalSidecar {
+ 
+     async fn recover_control_with_bridge(
+         &mut self,
++        bridge_writer: &mut BridgeWriter,
+         bridge_rx: &mut mpsc::Receiver<Result<BridgeFrame, SidecarError>>,
+         bridge_terminal: &mut watch::Receiver<Option<BridgeTerminal>>,
+         reconnect: &mut ReconnectState,
+@@ -2837,7 +3203,13 @@ impl LocalSidecar {
+         bridge_lifecycle: &mut BridgeLifecycle,
+     ) -> Result<ControlRecovery, SidecarError> {
+         match self
+-            .await_control_or_bridge(bridge_rx, bridge_terminal, reconnect, pending_bridge_frame)
++            .await_control_or_bridge_with_writer(
++                bridge_writer,
++                bridge_rx,
++                bridge_terminal,
++                reconnect,
++                pending_bridge_frame,
++            )
+             .await?
+         {
+             ControlReacquisition::Control(replacement) => {
+@@ -2904,16 +3276,23 @@ impl LocalSidecar {
+                     deferred_commands,
+                     &mut session,
+                     )
+-                    .await?;
+-                if control_terminal.is_published() {
+-                    return Err(take_control_terminal_error(control_terminal));
++                .await?;
++                let mut writer_failure_receiver = bridge_writer.failure_receiver();
++                #[cfg(test)]
++                if let Some(gate) = self.test_writer_failure_gate.as_ref() {
++                    gate.registration_seen.store(true, Ordering::Release);
++                    gate.registered.notify_waiters();
+                 }
+-                if bridge_writer.write_failure().is_some() {
+-                    return Err(bridge_writer
+-                        .take_failure()
+-                        .unwrap_or_else(BridgeWriter::writer_terminated_error));
++                if control_terminal.is_published()
++                    || presence_overflow.load(Ordering::Acquire)
++                    || bridge_writer.write_failure().is_some()
++                {
++                    return Err(take_active_terminal_error(
++                        bridge_writer,
++                        control_terminal,
++                        presence_overflow.load(Ordering::Acquire),
++                    ));
+                 }
+-                let mut writer_failure_receiver = bridge_writer.failure_receiver();
+                 let deadline = session.checkpoint_state.deadline();
+                 let event = tokio::select! {
+                     biased;
+@@ -2935,24 +3314,30 @@ impl LocalSidecar {
+                     result = bridge_rx.recv() => ActiveSessionEvent::Bridge(result),
+                     result = presence_rx.recv() => ActiveSessionEvent::Presence(result),
+                 };
+-                if control_terminal.is_published() {
+-                    return Err(take_control_terminal_error(control_terminal));
+-                }
+-                if presence_overflow.load(Ordering::Acquire) {
+-                    return Err(SidecarError::PresenceQueueFull);
++                if control_terminal.is_published()
++                    || presence_overflow.load(Ordering::Acquire)
++                    || bridge_writer.write_failure().is_some()
++                {
++                    return Err(take_active_terminal_error(
++                        bridge_writer,
++                        control_terminal,
++                        presence_overflow.load(Ordering::Acquire),
++                    ));
+                 }
+                 match event {
+-                    ActiveSessionEvent::ControlTerminal => {
+-                        return Err(take_control_terminal_error(control_terminal));
++                    ActiveSessionEvent::ControlTerminal | ActiveSessionEvent::BridgeWriterFailed => {
++                        return Err(take_active_terminal_error(
++                            bridge_writer,
++                            control_terminal,
++                            presence_overflow.load(Ordering::Acquire),
++                        ));
+                     }
+                     ActiveSessionEvent::PresenceOverflow => {
+-                        return Err(SidecarError::PresenceQueueFull);
+-                    }
+-                    ActiveSessionEvent::BridgeWriterFailed => {
+-                        return Err(bridge_writer
+-                            .take_failure()
+-                            .or_else(|| bridge_writer.write_failure())
+-                            .unwrap_or_else(BridgeWriter::writer_terminated_error));
++                        return Err(take_active_terminal_error(
++                            bridge_writer,
++                            control_terminal,
++                            true,
++                        ));
+                     }
+                     ActiveSessionEvent::Deadline => {
+                         self.handle_active_session_deadline(
+@@ -4132,9 +4517,32 @@ fn is_listener_failure(error: &SidecarError) -> bool {
+     )
+ }
+ 
+-fn take_control_terminal_error(terminal: &ControlTerminalState) -> SidecarError {
+-    terminal
+-        .take_error()
++fn take_active_terminal_error(
++    bridge_writer: &mut BridgeWriter,
++    control_terminal: &ControlTerminalState,
++    presence_overflow: bool,
++) -> SidecarError {
++    let control_error = control_terminal.take_error();
++    if let Some(error) = control_error {
++        if is_control_reconnect_error(&error) {
++            if presence_overflow {
++                return SidecarError::PresenceQueueFull;
++            }
++            if let Some(writer_error) = bridge_writer
++                .take_failure()
++                .or_else(|| bridge_writer.write_failure())
++            {
++                return writer_error;
++            }
++        }
++        return error;
++    }
++    if presence_overflow {
++        return SidecarError::PresenceQueueFull;
++    }
++    bridge_writer
++        .take_failure()
++        .or_else(|| bridge_writer.write_failure())
+         .unwrap_or(SidecarError::ProtocolViolation("control reader terminated"))
+ }
+ 
+@@ -5130,9 +5538,10 @@ mod tests {
+ 
+     #[tokio::test]
+     async fn stalled_presence_bridge_write_does_not_delay_shutdown_ack() {
+-        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
++        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+             .await
+             .unwrap();
++        let blocked_writer = server.install_test_blocked_writer_gate();
+         let descriptor = server.session_descriptor();
+         let server_task = tokio::spawn(server.serve());
+         let mut control = TcpStream::connect(descriptor.control_address())
+@@ -5149,10 +5558,14 @@ mod tests {
+         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+         establish_rom_session(&mut bridge).await;
+ 
+-        // Leave the bridge peer unread while the lifecycle writer owns its
+-        // independent, non-cancellable write. The control lane must still
+-        // acknowledge shutdown within the launcher's bound.
++        // Prove the sole writer has admitted a lifecycle record and is held
++        // behind the server-owned gate before the critical shutdown arrives.
++        let admission = blocked_writer.observer.admission_signal.notified();
+         send_command(&mut control, &remote_update_command()).await;
++        timeout(Duration::from_secs(1), admission)
++            .await
++            .expect("lifecycle output must be pending before shutdown");
++        assert!(blocked_writer.observer.admitted.load(Ordering::Acquire));
+         let shutdown_id = "00000000-0000-4000-8000-0000000000f4";
+         send_command(&mut control, &shutdown(shutdown_id, TEST_SESSION_EPOCH)).await;
+         timeout(
+@@ -5162,10 +5575,25 @@ mod tests {
+         .await
+         .expect("stalled lifecycle output must not delay shutdown ACK");
+ 
+-        drop(bridge);
++        // The peer half-closes its write side to provide the authenticated
++        // clean bridge EOF that completes the quiescing session. Keep the
++        // read side so the test can observe the server's joined writer close.
++        bridge.shutdown().await.unwrap();
++        let result = timeout(Duration::from_secs(1), server_task)
++            .await
++            .expect("server must finish without task cancellation")
++            .unwrap();
++        assert!(result.is_ok());
++        assert!(blocked_writer.observer.dropped.load(Ordering::Acquire));
++        let mut closed = [0_u8; 1];
++        assert_eq!(
++            timeout(Duration::from_secs(1), bridge.read(&mut closed))
++                .await
++                .expect("bridge peer must close after writer teardown")
++                .unwrap(),
++            0
++        );
+         drop(control);
+-        server_task.abort();
+-        let _ = server_task.await;
+     }
+ 
+     #[tokio::test]
+@@ -5246,6 +5674,58 @@ mod tests {
+         writer.shutdown().await;
+     }
+ 
++    #[tokio::test]
++    async fn active_writer_failure_precedes_simultaneous_control_eof() {
++        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
++            .await
++            .unwrap();
++        let failure_gate = server.install_test_writer_failure_gate();
++        let descriptor = server.session_descriptor();
++        let server_task = tokio::spawn(server.serve());
++        let mut control = TcpStream::connect(descriptor.control_address())
++            .await
++            .unwrap();
++        write_control_handshake(
++            &mut control,
++            &descriptor,
++            descriptor.control_secret(),
++            TEST_SESSION_EPOCH,
++        )
++        .await;
++        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
++        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
++        establish_rom_session(&mut bridge).await;
++
++        timeout(Duration::from_secs(1), async {
++            while !failure_gate.registration_seen.load(Ordering::Acquire) {
++                tokio::task::yield_now().await;
++            }
++        })
++        .await
++        .expect("active loop must register writer failure before waiting");
++
++        // Trigger the durable writer failure and close control without
++        // allowing reconnectable control EOF to revive the retained bridge.
++        failure_gate.trigger.notify_one();
++        drop(control);
++        let result = timeout(Duration::from_secs(1), server_task)
++            .await
++            .expect("writer failure must terminate the active session")
++            .unwrap();
++        assert!(matches!(
++            result,
++            Err(SidecarError::BridgeWriteConnection(_) | SidecarError::BridgeWriteTimeout)
++        ));
++        let mut closed = [0_u8; 1];
++        assert_eq!(
++            timeout(Duration::from_secs(1), bridge.read(&mut closed))
++                .await
++                .expect("bridge socket must close with the failed writer")
++                .unwrap(),
++            0
++        );
++    }
++
+     #[tokio::test]
+     async fn reboot_cutover_discards_queued_old_generation_lifecycle() {
+         let (mut writer, mut peer) = bridge_writer_pair().await;

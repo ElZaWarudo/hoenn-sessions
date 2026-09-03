@@ -1,0 +1,28 @@
+{
+  "patch_sha256": "sha256:12d621dde9b937f8e3ea346402aa4179da8697e273d1de0d99fad81b5fe5c80e",
+  "diff_digest": "sha256:7593ddfaf73a4fd4a789c00d615e8b5bedaa3cf3e74bb5d340d8e790786774ba",
+  "verdict": "fail",
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-launcher/src/lib.rs",
+      "line": 102,
+      "evidence": "The Reqwest client inherited environment or system proxies, allowing an authenticated literal-loopback HTTP request to be routed to an ambient proxy outside the validated connector destination.",
+      "fix": "Disable proxy inheritance for the strict client and prove a configured proxy cannot observe the loopback request or bearer."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-launcher/tests/realtime_http.rs",
+      "line": 258,
+      "evidence": "A 302 without Location did not prove bearer-safe redirect denial.",
+      "fix": "Redirect across authority to a live listener and assert the target is never contacted."
+    },
+    {
+      "severity": "P3",
+      "file": "coop/crates/coop-launcher/tests/realtime_http.rs",
+      "line": 286,
+      "evidence": "The response-bound fixture did not cover cumulative unknown-length or chunked enforcement or exact-bound acceptance.",
+      "fix": "Exercise exact and over-limit chunked bodies."
+    }
+  ]
+}

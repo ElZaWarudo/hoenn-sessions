@@ -1,0 +1,24 @@
+{
+  "status":"done","phase":"closeout","remaining_actions":[],"terminal_ready":true,"acceptance_criteria_resolved":true,
+  "acceptance_evidence":[
+    {"criterion_id":"LRA2-001","status":"satisfied","evidence":"Production main retains additive realtime lifecycle activation; legacy interfaces remain compatible."},
+    {"criterion_id":"LRA2-002","status":"satisfied","evidence":"One-attempt mint admission, canonical fence, freshest state, typed mint-only 401 retry, and no ambiguous retry remain proven."},
+    {"criterion_id":"LRA2-003","status":"satisfied","evidence":"Ready watermark, post-Ready FIFO, exact lifecycle mapping, bounded queues, and terminal precedence remain proven."},
+    {"criterion_id":"LRA2-004","status":"satisfied","evidence":"Reset, realtime/control failure, interaction and lifecycle-output backpressure, and both child exits terminate without remint/reconnect and join coordinator/pumps/children before cleanup."},
+    {"criterion_id":"LRA2-005","status":"satisfied","evidence":"Correlation deadline preempts authenticated input but ends before cloud mutation. Once prepare begins, reset/realtime/shutdown are latched while prepare/upload/finalize reaches definitive revision reconciliation. Post-checkpoint Ready cutover keeps heartbeat and shutdown live with shutdown-first arbitration."},
+    {"criterion_id":"LRA2-006","status":"satisfied","evidence":"Deterministic regressions cover delayed prepare/finalize past correlation deadline, latched reset and caller shutdown, withheld Ready heartbeat/shutdown, repeated all-ready rotations, lifecycle-output overflow, interaction overflow, and both child exits. Focused realtime 24, activation 10, checkpoint 12, shutdown 19 passed; full launcher 158 plus sidecar 106 passed with one real-mGBA ignore; strict Clippy, fmt, and diff check passed. r4 delta only session.rs. contract_hash=sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f"}
+  ],
+  "last_required_command":"rtk git diff --check",
+  "verification":{"attempted":[
+    {"command":"rtk cargo test -p coop-launcher realtime --all-features --locked","attempts":1,"outcome":"passed"},
+    {"command":"rtk cargo test -p coop-launcher realtime_activation --all-features --locked","attempts":1,"outcome":"passed"},
+    {"command":"rtk cargo test -p coop-launcher checkpoint --all-features --locked","attempts":1,"outcome":"passed"},
+    {"command":"rtk cargo test -p coop-launcher shutdown --all-features --locked","attempts":1,"outcome":"passed"},
+    {"command":"rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked","attempts":1,"outcome":"passed"},
+    {"command":"rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings","attempts":1,"outcome":"passed"},
+    {"command":"rtk cargo fmt --all -- --check","attempts":1,"outcome":"passed"},
+    {"command":"rtk git diff --check","attempts":1,"outcome":"passed"}
+  ],"skipped":[]},
+  "verification_commands_run":["rtk cargo test -p coop-launcher realtime --all-features --locked","rtk cargo test -p coop-launcher realtime_activation --all-features --locked","rtk cargo test -p coop-launcher checkpoint --all-features --locked","rtk cargo test -p coop-launcher shutdown --all-features --locked","rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked","rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings","rtk cargo fmt --all -- --check","rtk git diff --check"],
+  "unowned_failures":[],"scope_extension":null
+}

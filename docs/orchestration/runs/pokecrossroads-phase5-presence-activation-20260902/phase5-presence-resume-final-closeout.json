@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "certified-local-checkpoint",
+  "wave_id": "pokecrossroads-phase5-presence-resume-20260903",
+  "completed_at": "2026-09-03T21:09:41Z",
+  "units": [
+    {"unit_id": "phase5-launcher-realtime-http", "integration_commit": "54d5ebf9157154eab94bf4e7a090840cab00d98a", "status": "release-ready"},
+    {"unit_id": "phase5-sidecar-presence-control", "integration_commit": "871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2", "status": "release-ready"},
+    {"unit_id": "phase5-launcher-control-pump", "integration_commit": "f6ce9d7b5416dfb192b256e047854f0b915347ea", "status": "release-ready"},
+    {"unit_id": "phase5-rom-presence-activation", "integration_commit": "da8372b5fdae4a022ef768d016e7e4a3ab571c30", "status": "release-ready"},
+    {"unit_id": "phase5-launcher-realtime-activation", "integration_commit": "83d9acde9748081b5b384ce2a7b680441771810d", "status": "release-ready"}
+  ],
+  "final_activation": {
+    "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+    "candidate_commit": "db0198f622b6efcba41865930ea52452598cafff",
+    "candidate_tree": "213f409049f98c750789c936c3ddc7cd29aa25e5",
+    "diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+    "integration_tree_match": true,
+    "final_review_findings": 0,
+    "historical_findings_fixed": 21,
+    "root_validation": "launcher-realtime-activation-v2-correction-r5-root-validation.json",
+    "integration_reconciliation": "launcher-realtime-activation-v2-final-integration-reconciliation.json"
+  },
+  "aggregate_evidence": [
+    "Launcher and sidecar exact-candidate replay: 264 passed, 1 intentionally ignored real-mGBA artifact test.",
+    "Strict Clippy, Rust formatting, and exact diff checks passed.",
+    "ROM Cloud Coop suites: 94 passed; modern ROM build and bridge-manifest regeneration matched the certified f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574 ROM.",
+    "Independent final correctness and security reviews reported zero P0, P1, or P2 findings."
+  ],
+  "residual_exclusions": [
+    "real-stock-mgba-lua-timing-conformance",
+    "production-postgresql-firebase-adapters",
+    "public-redistribution-provenance",
+    "gameplay-progress-ingestion",
+    "trusted-first-snapshot-enrollment",
+    "strict-job-descendant-emptiness-proof"
+  ],
+  "remote_actions": {
+    "pushed": false,
+    "pull_request_opened": false,
+    "deployed": false
+  }
+}

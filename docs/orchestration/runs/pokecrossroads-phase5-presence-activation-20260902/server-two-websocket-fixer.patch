@@ -1,0 +1,59 @@
+diff --git a/coop/crates/coop-server/tests/phase2_http.rs b/coop/crates/coop-server/tests/phase2_http.rs
+index f24474bbea4320b5a122dd976e2064833b95a772..036d219b7e0c31f2d8b943566f8726693e46c80a 100644
+--- a/coop/crates/coop-server/tests/phase2_http.rs
++++ b/coop/crates/coop-server/tests/phase2_http.rs
+@@ -849,13 +849,31 @@ impl InProcessServer {
+             .map_err(|()| "in-process server stopped before shutdown")?;
+         let task = self
+             .task
+-            .take()
++            .as_mut()
+             .ok_or("in-process server task was already taken")?;
+-        match timeout(SHUTDOWN_TIMEOUT, task).await {
+-            Ok(Ok(Ok(()))) => Ok(()),
++        match timeout(SHUTDOWN_TIMEOUT, &mut *task).await {
++            Ok(Ok(Ok(()))) => {
++                self.task.take();
++                Ok(())
++            }
+             Ok(Ok(Err(error))) => Err(error.into()),
+             Ok(Err(error)) => Err(error.into()),
+-            Err(_) => Err("in-process server did not shut down within the bound".into()),
++            Err(_) => {
++                task.abort();
++                match timeout(SHUTDOWN_TIMEOUT, &mut *task).await {
++                    Ok(Ok(Ok(())) | Err(_)) => {
++                        self.task.take();
++                        Err("in-process server did not shut down within the bound".into())
++                    }
++                    Ok(Ok(Err(error))) => {
++                        self.task.take();
++                        Err(error.into())
++                    }
++                    Err(_) => Err(
++                        "in-process server abort did not complete within the cleanup bound".into(),
++                    ),
++                }
++            }
+         }
+     }
+ }
+@@ -869,7 +887,9 @@ impl Drop for InProcessServer {
+ }
+ 
+ async fn start_in_process_presence_server() -> TestResult<InProcessServer> {
+-    let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
++    let listener = timeout(STARTUP_TIMEOUT, TcpListener::bind(("127.0.0.1", 0)))
++        .await
++        .map_err(|_| "in-process server listener bind timed out")??;
+     let address = listener.local_addr()?;
+     let config = Phase2Config::local(
+         vec![0x07; 32],
+@@ -1074,6 +1094,7 @@ async fn realtime_two_authenticated_clients_flow(address: SocketAddr) -> TestRes
+         }
+         other => return Err(format!("expected Alice movement on Bob, received {other:?}").into()),
+     };
++    assert_no_realtime_frame(&mut socket_b, Duration::from_millis(150)).await?;
+     assert_no_realtime_frame(&mut socket_a, Duration::from_millis(150)).await?;
+ 
+     timeout(HTTP_TIMEOUT, socket_a.close(None)).await??;

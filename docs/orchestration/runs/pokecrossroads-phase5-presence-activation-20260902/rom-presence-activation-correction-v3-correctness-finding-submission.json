@@ -1,0 +1,46 @@
+{
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "review_plan_hash": "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40",
+  "surface_id": "rom-presence-activation-correctness-v3",
+  "reporter_id": "/root/rom_presence_correctness_review_v3b",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "RPAC3-004-field-action-precedence",
+      "observation": "The remote A-button fallback runs before TrySetupDiveDownScript, so an adjacent visible remote can consume A before the dive action is evaluated.",
+      "impact": "A remote can prevent a valid local dive-down field action.",
+      "recommendation": "Move remote interaction after all local A-triggered actions including Dive and add a dive-overlap regression.",
+      "evidence": [
+        "src/field_control_avatar.c:215-229 invokes the remote fallback.",
+        "src/field_control_avatar.c:231-237 reaches TrySetupDiveDownScript only afterward."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "contract",
+      "rule_id": "RPAC3-006-generated-rom-manifest",
+      "observation": "The candidate manifest attests the predecessor ROM rather than the exact built candidate.",
+      "impact": "Launcher compatibility admission fails closed for the candidate ROM.",
+      "recommendation": "Regenerate and include dist/bridge_manifest.json from the exact accepted ELF and ROM, then rerun compatibility validation.",
+      "evidence": [
+        "dist/bridge_manifest.json records ROM SHA c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165.",
+        "The exact candidate ROM SHA is d9009861b8c7f89a3f2788bb0aa34a34e25beb4acedd166becd4771e0501e2fd."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "testing",
+      "rule_id": "RPAC3-005-runtime-coverage-gaps",
+      "observation": "Several tests claim stale, warp, hidden, capacity, and local-link coverage without entering the corresponding production states.",
+      "impact": "Renderer teardown, publication, capacity retry, and local-link regressions can pass the focused suite.",
+      "recommendation": "Create active fixtures for stale and warp paths, visible-to-hidden publication, actual capacity failure/retry, and direct local-link isolation behavior.",
+      "evidence": [
+        "test/coop/presence_runtime.c:438-469 never activates the reducer or renderer before stale and warp assertions.",
+        "test/coop/presence_runtime.c:424-436 never transitions a visible sample to HIDDEN.",
+        "No Cloud Coop test directly executes local-link behavior."
+      ]
+    }
+  ]
+}

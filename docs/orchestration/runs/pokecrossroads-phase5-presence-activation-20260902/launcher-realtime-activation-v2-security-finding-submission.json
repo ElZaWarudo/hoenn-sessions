@@ -1,0 +1,35 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:529f8dd467a174024c3f09d13c31d15b80f3b6550764423b91c98ea1674a106b",
+  "review_plan_hash": "sha256:6fe39d370b3393484ad9cdbcee09fe4ab4ecfb5483ccd6c306b777390c4fe4ef",
+  "surface_id": "launcher-realtime-activation-v2-security",
+  "reporter_id": "/root/launcher_activation_v2_security",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "realtime-terminal-must-preempt-buffered-events",
+      "observation": "RealtimeCoordinator::next_event polls owner.recv_event before the realtime JoinHandle, so a completed OwnerBackpressure task can coexist with queued lifecycle events that are forwarded first.",
+      "impact": "A peer-controlled lifecycle flood can continue driving ROM lifecycle state after the realtime core has already classified the attempt as terminal.",
+      "recommendation": "Give task completion priority over owner events, discard queued owner events once terminal, and add a saturated-owner-queue regression proving no lifecycle forwarding after OwnerBackpressure.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:161-173 polls owner.recv_event first under biased select.",
+        "coop/crates/coop-sidecar/src/realtime.rs:534-543 and 585-595 terminate with OwnerBackpressure when the bounded owner queue fills.",
+        "Focused realtime tests contain no saturated owner-event queue race."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "pre-mint-terminal-paths-must-stop-owned-children",
+      "observation": "The public realtime lifecycle wrapper stops children only when realtime_attempted is true, leaving pre-mint reset, heartbeat, checkpoint, pump, control, and validation failures without fail-closed cleanup.",
+      "impact": "A terminal authenticated-control failure can return while sidecar, emulator, sockets, pump tasks, and owned artifacts remain live.",
+      "recommendation": "Stop and reap supervised children on every terminal error independent of mint status, preserve cleanup failure evidence, and assert cleanup for pre-mint reset and control failures.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:1907-1912 guards stop_in_place with realtime_attempted.",
+        "coop/crates/coop-launcher/src/session.rs:1939-1981 contains pre-mint error returns before realtime_attempted is set.",
+        "coop/crates/coop-launcher/src/session.rs:4314-4335 does not assert child, pump, socket, or artifact teardown."
+      ]
+    }
+  ]
+}

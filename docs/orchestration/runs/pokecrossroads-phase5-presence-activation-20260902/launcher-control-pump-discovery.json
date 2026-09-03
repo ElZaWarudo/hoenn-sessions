@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "mode": "read-only-discovery",
+  "agent": "/root/launcher_control_pump_discovery",
+  "base_revision": "2d1e9114f7f9d599a13a62d7abb71916f779d9dc",
+  "owned_file": "coop/crates/coop-launcher/src/process.rs",
+  "preserved_public_surface": [
+    "ControlChannel connect/send/receive/receive_bounded",
+    "SupervisedChildren::control and SupervisorEvent",
+    "authenticated shutdown evidence, 500 ms ACK bound, and 10 s absolute deadline"
+  ],
+  "architecture": [
+    "Keep the authenticated JSONL handshake synchronous, then split the socket into one persistent reader task and one persistent writer task.",
+    "Route critical events through a lossless backpressured FIFO of 16, interactions through a must-deliver FIFO of 16, and player state through one atomic latest-state watch slot.",
+    "Represent reset, generation, and optional latest state in one slot so reset followed immediately by new state cannot be missed; discard stale-generation interactions.",
+    "Use a capacity-one critical write lane with write-completion acknowledgement and a generation-tagged lifecycle lane of 32. Full lifecycle output is terminal.",
+    "Bias writer scheduling stop, critical, permit/generation change, then lifecycle. A lifecycle record uses writable plus one try_write; partial write is terminal JSONL corruption.",
+    "Factor raw child/control observation from settlement so the activated lifecycle can stop and join realtime before child cleanup while the public next_event preserves existing behavior.",
+    "Explicit teardown joins both pump tasks inside the existing absolute shutdown budget; Drop only signals and aborts as a final safety net."
+  ],
+  "required_capacities": {
+    "critical_write": 1,
+    "lifecycle_write": 32,
+    "critical_event": 16,
+    "interaction": 16,
+    "terminal": 1,
+    "latest_state": 1
+  },
+  "invariants": [
+    "Critical send succeeds only after the complete line is written within one absolute PROCESS_IO_TIMEOUT.",
+    "Checkpoint and authenticated shutdown consume only critical events; presence cannot enter their correlation streams.",
+    "A reset advances generation and atomically clears state and output permission.",
+    "A parsed correlated ACK queued before EOF remains observable.",
+    "Critical output can overtake every lifecycle record that has not begun writing.",
+    "Child exit cannot be starved by sustained control or presence traffic."
+  ],
+  "required_tests": [
+    "player-state coalescing without blocking critical FIFO",
+    "interaction FIFO overflow on the seventeenth item",
+    "atomic reset generation and stale interaction discard",
+    "reset followed by new state before consumer wakeup",
+    "critical write completion and lifecycle priority",
+    "partial lifecycle write fail-closed",
+    "queued old-generation lifecycle discard",
+    "ACK immediately followed by EOF",
+    "child observation fairness",
+    "reader/writer teardown join",
+    "shutdown under sustained presence traffic"
+  ]
+}

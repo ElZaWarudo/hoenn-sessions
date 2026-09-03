@@ -1,0 +1,879 @@
+diff --git a/src/coop/presence_runtime.c b/src/coop/presence_runtime.c
+index 3c71338d9d45028902fb13d244d387b22cbf4c6d..ee7064d563df7c71c999c474741b16a42f609cd5 100644
+--- a/src/coop/presence_runtime.c
++++ b/src/coop/presence_runtime.c
+@@ -11,6 +11,8 @@
+ #include "constants/event_object_movement.h"
+ #include "constants/event_objects.h"
+ 
++extern void MovementType_None(struct Sprite *sprite);
++
+ enum CoopPresencePendingType
+ {
+     COOP_PRESENCE_PENDING_NONE = 0,
+@@ -51,6 +53,8 @@ struct CoopPresenceRuntime
+     u8 rendered_elevation;
+     u8 rendered_direction;
+     u8 rendered_animation;
++    u16 rendered_generation;
++    u16 renderer_generation;
+     u8 rendered_map_group;
+     u8 rendered_map_num;
+     s16 rendered_x;
+@@ -66,6 +70,15 @@ struct CoopPresenceRuntime
+ };
+ 
+ static EWRAM_DATA struct CoopPresenceRuntime sCoopPresenceRuntime = {0};
++static EWRAM_DATA u16 sCoopPresenceRendererGeneration = 0;
++
++static u16 NextRendererGeneration(void)
++{
++    sCoopPresenceRendererGeneration++;
++    if (sCoopPresenceRendererGeneration == 0)
++        sCoopPresenceRendererGeneration++;
++    return sCoopPresenceRendererGeneration;
++}
+ 
+ static bool8 IsNormalOverworld(void)
+ {
+@@ -231,27 +244,49 @@ static u8 FindRemoteObjectEvent(void)
+     return OBJECT_EVENTS_COUNT;
+ }
+ 
+-static bool8 FindOwnedSpriteUnchecked(struct ObjectEvent *object_event,
+-                                      struct Sprite **out)
++/* data[0] is the engine's object-event backlink, but it is not an ownership
++ * token: a reset/reused sprite can coincidentally retain or receive the same
++ * index.  Presence sprites carry a generation marker in data[7], and the
++ * movement callback is checked as a type discriminator. */
++static bool8 IsRendererSpriteProof(u8 object_id, u8 sprite_id, u16 generation,
++                                   u16 graphics_id, bool8 require_backlink)
+ {
++    const struct ObjectEvent *object_event;
+     struct Sprite *sprite;
+ 
+-    if (out == NULL || object_event == NULL || !object_event->active
++    if (object_id >= OBJECT_EVENTS_COUNT || sprite_id >= MAX_SPRITES
++     || generation == 0)
++        return FALSE;
++    object_event = &gObjectEvents[object_id];
++    if ((require_backlink && !object_event->active)
+      || object_event->localId != COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
+      || object_event->movementType != MOVEMENT_TYPE_NONE
+-     || object_event->spriteId >= MAX_SPRITES)
++     || (require_backlink && object_event->graphicsId != graphics_id)
++     || (require_backlink && object_event->spriteId != sprite_id))
+         return FALSE;
+-    sprite = &gSprites[object_event->spriteId];
+-    if (!sprite->inUse || sprite->data[0] != (s16)(object_event - gObjectEvents))
++    sprite = &gSprites[sprite_id];
++    if (!sprite->inUse || sprite->data[0] != (s16)object_id
++     || (u16)sprite->data[7] != generation
++     || sprite->callback != MovementType_None)
+         return FALSE;
+-    *out = sprite;
+     return TRUE;
+ }
+ 
+-static bool8 FindOwnedSprite(struct ObjectEvent *object_event, struct Sprite **out)
++static bool8 FindOwnedSprite(struct ObjectEvent *object_event, u16 generation,
++                             struct Sprite **out)
+ {
+-    return IsCurrentObjectEvent(object_event)
+-        && FindOwnedSpriteUnchecked(object_event, out);
++    u8 object_id;
++
++    if (!IsCurrentObjectEvent(object_event)
++     || object_event->spriteId >= MAX_SPRITES)
++        return FALSE;
++    object_id = (u8)(object_event - gObjectEvents);
++    if (!IsRendererSpriteProof(object_id, object_event->spriteId, generation,
++                               object_event->graphicsId, TRUE))
++        return FALSE;
++    if (out != NULL)
++        *out = &gSprites[object_event->spriteId];
++    return TRUE;
+ }
+ 
+ static void ClearRendererIdentity(void)
+@@ -260,19 +295,29 @@ static void ClearRendererIdentity(void)
+     sCoopPresenceRuntime.rendered_handle = 0;
+     sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
+     sCoopPresenceRuntime.rendered_sprite_id = MAX_SPRITES;
++    sCoopPresenceRuntime.rendered_generation = 0;
++    sCoopPresenceRuntime.renderer_generation = 0;
+     sCoopPresenceRuntime.rendered_direction = DIR_NONE;
+     sCoopPresenceRuntime.rendered_animation = 0xFF;
+     sCoopPresenceRuntime.interpolation_remaining = 0;
+ }
+ 
+-static void DestroyCachedOwnedSprite(u8 object_id, u8 sprite_id)
++static u16 GetRenderedGraphicsId(void)
++{
++    return sCoopPresenceRuntime.rendered_avatar_id == COOP_PRESENCE_AVATAR_MAY
++        ? OBJ_EVENT_GFX_MAY_NORMAL : OBJ_EVENT_GFX_BRENDAN_NORMAL;
++}
++
++static void DestroyCachedOwnedSprite(u8 object_id, u8 sprite_id,
++                                     u16 generation, u16 graphics_id)
+ {
+     struct Sprite *sprite;
+ 
+     if (object_id >= OBJECT_EVENTS_COUNT || sprite_id >= MAX_SPRITES)
+         return;
+     sprite = &gSprites[sprite_id];
+-    if (!sprite->inUse || sprite->data[0] != (s16)object_id)
++    if (!IsRendererSpriteProof(object_id, sprite_id, generation, graphics_id,
++                               FALSE))
+         return;
+ 
+     /* A stale ObjectEvent may have lost its sprite backlink during a field
+@@ -289,31 +334,22 @@ static void DestroyCachedOwnedSprite(u8 object_id, u8 sprite_id)
+  * different backlink belongs to another subsystem and must not be touched. */
+ static void RetireUnownedRemoteObject(struct ObjectEvent *object_event)
+ {
+-    struct Sprite *sprite;
+-
+     if (object_event == NULL || !object_event->active
+      || object_event->localId != COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID)
+         return;
+-    if (object_event->spriteId >= MAX_SPRITES)
+-    {
+-        object_event->active = FALSE;
+-        return;
+-    }
+-    sprite = &gSprites[object_event->spriteId];
+-    if (!sprite->inUse || sprite->data[0] != (s16)(object_event - gObjectEvents))
++    if (!FindOwnedSprite(object_event, sCoopPresenceRuntime.rendered_generation,
++                         NULL))
+     {
+         /* A return-to-field reset can leave the reserved ObjectEvent active
+          * while its sprite slot has already been rebound. Retire only the
+          * stale ObjectEvent; the foreign sprite remains untouched. */
+         object_event->active = FALSE;
+-        return;
+     }
+ }
+ 
+ static void AbandonCreatedRenderer(u8 object_id)
+ {
+     struct ObjectEvent *object_event;
+-    struct Sprite *sprite;
+ 
+     if (object_id >= OBJECT_EVENTS_COUNT)
+         return;
+@@ -330,9 +366,12 @@ static void AbandonCreatedRenderer(u8 object_id)
+         object_event->active = FALSE;
+         return;
+     }
+-    sprite = &gSprites[object_event->spriteId];
+-    if (!sprite->inUse || sprite->data[0] == (s16)object_id)
++    if (IsRendererSpriteProof(object_id, object_event->spriteId,
++                              sCoopPresenceRuntime.renderer_generation,
++                              object_event->graphicsId, TRUE))
+         RemoveObjectEvent(object_event);
++    else
++        object_event->active = FALSE;
+ }
+ 
+ static void RememberRendererIdentity(const struct CoopPresenceRemote *remote,
+@@ -348,6 +387,8 @@ static void RememberRendererIdentity(const struct CoopPresenceRemote *remote,
+     sCoopPresenceRuntime.rendered_map_num = object_event->mapNum;
+     sCoopPresenceRuntime.rendered_object_id = object_id;
+     sCoopPresenceRuntime.rendered_sprite_id = object_event->spriteId;
++    sCoopPresenceRuntime.rendered_generation =
++        sCoopPresenceRuntime.renderer_generation;
+     sCoopPresenceRuntime.rendered_x = object_event->currentCoords.x;
+     sCoopPresenceRuntime.rendered_y = object_event->currentCoords.y;
+     sCoopPresenceRuntime.interpolation_remaining = 0;
+@@ -389,7 +430,8 @@ static void RemoveOwnedRenderer(void)
+ {
+     u8 object_id;
+     struct ObjectEvent *object_event;
+-    struct Sprite *sprite;
++    bool8 object_identity;
++    bool8 sprite_identity;
+ 
+     if (!sCoopPresenceRuntime.renderer_owned)
+     {
+@@ -411,57 +453,41 @@ static void RemoveOwnedRenderer(void)
+     }
+ 
+     object_event = &gObjectEvents[object_id];
+-    if (!object_event->active
+-     || object_event->localId != COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
+-     || object_event->movementType != MOVEMENT_TYPE_NONE
+-     || object_event->mapGroup != sCoopPresenceRuntime.rendered_map_group
+-     || object_event->mapNum != sCoopPresenceRuntime.rendered_map_num)
+-    {
+-        /* A reserved local ID may have been reused by another subsystem or
+-         * its sprite identity may have gone stale. Never mutate it. */
+-        if (!object_event->active
+-         && object_event->localId == COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID)
+-        {
+-            DestroyCachedOwnedSprite(object_id,
+-                                     sCoopPresenceRuntime.rendered_sprite_id);
+-        }
+-        else if (object_event->active
+-         && object_event->localId == COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
+-         && object_event->movementType == MOVEMENT_TYPE_NONE
+-         && object_event->mapGroup == sCoopPresenceRuntime.rendered_map_group
+-         && object_event->mapNum == sCoopPresenceRuntime.rendered_map_num
+-         && object_event->spriteId != sCoopPresenceRuntime.rendered_sprite_id)
++    object_identity = object_event->active
++        && object_event->localId == COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID
++        && object_event->movementType == MOVEMENT_TYPE_NONE
++        && object_event->mapGroup == sCoopPresenceRuntime.rendered_map_group
++        && object_event->mapNum == sCoopPresenceRuntime.rendered_map_num;
++    sprite_identity = IsRendererSpriteProof(
++        object_id, sCoopPresenceRuntime.rendered_sprite_id,
++        sCoopPresenceRuntime.rendered_generation, GetRenderedGraphicsId(),
++        FALSE);
++
++    if (sprite_identity)
++    {
++        if (object_identity
++         && object_event->spriteId == sCoopPresenceRuntime.rendered_sprite_id)
++            RemoveObjectEvent(object_event);
++        else
+         {
++            /* The ObjectEvent backlink can change during return-to-field.
++             * The generation/type marker still proves this cached sprite is
++             * ours, so reclaim only the sprite and retire a still-reserved
++             * stale object.  A foreign sprite is never touched. */
+             DestroyCachedOwnedSprite(object_id,
+-                                     sCoopPresenceRuntime.rendered_sprite_id);
+-            object_event->active = FALSE;
++                                     sCoopPresenceRuntime.rendered_sprite_id,
++                                     sCoopPresenceRuntime.rendered_generation,
++                                     GetRenderedGraphicsId());
++            if (object_identity)
++                object_event->active = FALSE;
+         }
+-        ClearRendererIdentity();
+-        return;
+     }
+-
+-    if (object_event->spriteId != sCoopPresenceRuntime.rendered_sprite_id)
++    else if (object_identity)
+     {
+-        DestroyCachedOwnedSprite(object_id,
+-                                 sCoopPresenceRuntime.rendered_sprite_id);
++        /* The sprite slot was reset or rebound.  Its generation proof is
++         * gone; retire only the reserved ObjectEvent and leave that slot. */
+         object_event->active = FALSE;
+-        ClearRendererIdentity();
+-        return;
+     }
+-
+-    sprite = &gSprites[sCoopPresenceRuntime.rendered_sprite_id];
+-    if (sprite->inUse && sprite->data[0] != (s16)object_id)
+-    {
+-        /* The sprite ID was reused. It is no longer safe to destroy either
+-         * the sprite or the ObjectEvent through the stale cache. */
+-        ClearRendererIdentity();
+-        return;
+-    }
+-
+-    if (sprite->inUse)
+-        RemoveObjectEvent(object_event);
+-    else
+-        object_event->active = FALSE;
+     ClearRendererIdentity();
+ }
+ 
+@@ -570,10 +596,16 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
+         }
+         object_id = created_id;
+         created = TRUE;
++        sCoopPresenceRuntime.renderer_generation = NextRendererGeneration();
++        gSprites[gObjectEvents[object_id].spriteId].data[7] =
++            (s16)sCoopPresenceRuntime.renderer_generation;
+     }
+ 
+     object_event = &gObjectEvents[object_id];
+-    if (!FindOwnedSprite(object_event, &sprite))
++    if (!FindOwnedSprite(object_event,
++                         created ? sCoopPresenceRuntime.renderer_generation
++                                 : sCoopPresenceRuntime.rendered_generation,
++                         &sprite))
+     {
+         if (created)
+             AbandonCreatedRenderer(object_id);
+@@ -616,7 +648,9 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
+     if (object_event->graphicsId != graphics_id)
+     {
+         ObjectEventSetGraphicsId(object_event, graphics_id);
+-        if (!FindOwnedSprite(object_event, &sprite))
++        if (!FindOwnedSprite(object_event,
++                             sCoopPresenceRuntime.rendered_generation,
++                             &sprite))
+         {
+             RemoveOwnedRenderer();
+             return FALSE;
+@@ -736,7 +770,9 @@ static bool8 IsOwnedRendererEffectivelyVisible(const struct CoopPresenceRemote *
+     if (!IsCurrentObjectEvent(object_event)
+      || object_event->spriteId != sCoopPresenceRuntime.rendered_sprite_id
+      || object_event->isPlayer || object_event->invisible || object_event->offScreen
+-     || !FindOwnedSprite(object_event, &sprite) || sprite->invisible)
++     || !FindOwnedSprite(object_event,
++                         sCoopPresenceRuntime.rendered_generation,
++                         &sprite) || sprite->invisible)
+         return FALSE;
+     graphics_id = remote->state.pose.avatar_id == COOP_PRESENCE_AVATAR_MAY
+         ? OBJ_EVENT_GFX_MAY_NORMAL : OBJ_EVENT_GFX_BRENDAN_NORMAL;
+@@ -876,6 +912,17 @@ void CoopPresenceRuntime_Init(void)
+     sCoopPresenceRuntime.transport_ready = FALSE;
+ }
+ 
++bool8 CoopPresenceRuntime_IsOwnedRendererSprite(u8 objectEventId, u8 spriteId)
++{
++    if (!sCoopPresenceRuntime.initialized || !sCoopPresenceRuntime.renderer_owned
++     || objectEventId != sCoopPresenceRuntime.rendered_object_id
++     || spriteId != sCoopPresenceRuntime.rendered_sprite_id)
++        return FALSE;
++    return IsRendererSpriteProof(objectEventId, spriteId,
++                                  sCoopPresenceRuntime.rendered_generation,
++                                  GetRenderedGraphicsId(), TRUE);
++}
++
+ void CoopPresenceRuntime_Reset(void)
+ {
+     if (!sCoopPresenceRuntime.initialized)
+diff --git a/src/event_object_movement.c b/src/event_object_movement.c
+index cf58a717e29e2566089861b4d86a161d62e93e7a..d328dcfa2c29f73fc76a530d2a9dc728f0c5336b 100644
+--- a/src/event_object_movement.c
++++ b/src/event_object_movement.c
+@@ -45,6 +45,9 @@
+ #include "constants/abilities.h"
+ #include "constants/battle.h"
+ #include "constants/event_objects.h"
++
++extern bool8 CoopPresenceRuntime_IsOwnedRendererSprite(u8 objectEventId,
++                                                        u8 spriteId);
+ #include "constants/field_effects.h"
+ #include "constants/items.h"
+ #include "constants/mauville_old_man.h"
+@@ -2973,8 +2976,8 @@ void CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(u8 objectEventId)
+      * remote object without destroying a slot that was rebound to another
+      * ObjectEvent.  The normal presence update recreates it transactionally. */
+     if (gObjectEvents[objectEventId].spriteId >= MAX_SPRITES
+-     || !gSprites[gObjectEvents[objectEventId].spriteId].inUse
+-     || gSprites[gObjectEvents[objectEventId].spriteId].data[0] != (s16)objectEventId)
++     || !CoopPresenceRuntime_IsOwnedRendererSprite(
++            objectEventId, gObjectEvents[objectEventId].spriteId))
+         gObjectEvents[objectEventId].active = FALSE;
+     else
+         RemoveObjectEvent(&gObjectEvents[objectEventId]);
+diff --git a/src/field_control_avatar.c b/src/field_control_avatar.c
+index 2d90f94015b6ccfc7acdb7348f4c8a83c6950e36..def149968d2a249c86130f5c278c8f0ba7553d1d 100644
+--- a/src/field_control_avatar.c
++++ b/src/field_control_avatar.c
+@@ -215,9 +215,18 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
+     if (input->pressedAButton && TryStartInteractionScript(&position, metatileBehavior, playerDirection) == TRUE)
+         return FIELD_INPUT_RESULT_SCRIPT_STARTED;
+ 
+-    /* Vanilla object, background, and metatile actions own the target tile.
+-     * A remote is only the fallback when no local field interaction handled
+-     * the button, so a nonblocking remote can never mask a real object. */
++    if (input->heldDirection2 && input->dpadDirection == playerDirection)
++    {
++        if (TryDoorWarp(&position, metatileBehavior, playerDirection) == TRUE)
++            return TRUE;
++    }
++    if (input->pressedAButton && TrySetupDiveDownScript() == TRUE)
++        return TRUE;
++
++    /* Vanilla object, background, metatile, door, and dive actions own the
++     * target tile.  A remote is only the fallback after every local A action
++     * has declined the input, so a nonblocking remote can never mask a real
++     * field interaction. */
+     if (input->pressedAButton)
+     {
+         enum CoopPresenceInteractionResult interaction =
+@@ -228,13 +237,6 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
+             return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
+     }
+ 
+-    if (input->heldDirection2 && input->dpadDirection == playerDirection)
+-    {
+-        if (TryDoorWarp(&position, metatileBehavior, playerDirection) == TRUE)
+-            return TRUE;
+-    }
+-    if (input->pressedAButton && TrySetupDiveDownScript() == TRUE)
+-        return TRUE;
+     if (input->pressedStartButton)
+     {
+         FlagSet(FLAG_OPENED_START_MENU);
+@@ -679,6 +681,15 @@ static bool32 TrySetupDiveDownScript(void)
+     return FALSE;
+ }
+ 
++#if TESTING
++/* Focused ROM tests use the real Dive prerequisites while keeping the
++ * production input path unchanged. */
++bool8 CoopPresenceRuntime_TestTrySetupDiveDownScript(void)
++{
++    return TrySetupDiveDownScript();
++}
++#endif
++
+ static bool32 TrySetupDiveEmergeScript(void)
+ {
+     if (!CheckFollowerNPCFlag(FOLLOWER_NPC_FLAG_CAN_DIVE))
+diff --git a/test/coop/presence_runtime.c b/test/coop/presence_runtime.c
+index 5734463469daec17908296986c6b5433ef6913a7..b8226bf708c1f6e40827d0a5bd821d47e349acc7 100644
+--- a/test/coop/presence_runtime.c
++++ b/test/coop/presence_runtime.c
+@@ -16,7 +16,11 @@
+ #include "palette.h"
+ #include "script.h"
+ #include "sprite.h"
++#include "constants/flags.h"
+ #include "constants/map_types.h"
++#include "constants/metatile_labels.h"
++#include "constants/metatile_behaviors.h"
++#include "metatile_behavior.h"
+ #include "test/test.h"
+ 
+ _Static_assert(COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL == 6,
+@@ -43,6 +47,7 @@ _Static_assert(COOP_PRESENCE_INTERACTION_SIZE == 20,
+                "presence V1 interactions stay exactly twenty bytes");
+ 
+ extern void CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(u8 objectEventId);
++extern bool8 CoopPresenceRuntime_TestTrySetupDiveDownScript(void);
+ 
+ static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
+ {
+@@ -82,14 +87,19 @@ static EWRAM_DATA struct MapLayout sRuntimeTestMapLayout;
+ static EWRAM_DATA u16 sRuntimeTestMapData[32 * 32];
+ static EWRAM_DATA struct MapEvents sRuntimeTestMapEvents;
+ static EWRAM_DATA struct ObjectEventTemplate sRuntimeTestObjectTemplates[1];
++static EWRAM_DATA struct MapConnection sRuntimeTestDiveConnection;
++static EWRAM_DATA struct MapConnections sRuntimeTestMapConnections;
++
++extern const struct Tileset gTileset_General;
+ 
+ struct RuntimeFixtureBackup
+ {
+     struct MapHeader map_header;
+     struct BackupMapLayout backup_map_layout;
+     struct ObjectEventTemplate object_event_template0;
+-    struct ObjectEvent object_events[3];
++    struct ObjectEvent object_events[OBJECT_EVENTS_COUNT];
+     struct Sprite sprites[3];
++    struct LinkPlayerObjectEvent link_player_object_events[4];
+     struct PlayerAvatar player_avatar;
+     struct SaveBlock1 *save_block1;
+     struct CoopSaveV1 coop_save;
+@@ -115,19 +125,19 @@ static EWRAM_DATA struct RuntimeFixtureBackup sRuntimeFixtureBackup;
+ 
+ static void BeginRuntimeFixture(struct RuntimeFixtureBackup *backup)
+ {
+-    const struct ObjectEventGraphicsInfo *graphics;
+     u32 i;
+ 
+     backup->map_header = gMapHeader;
+     backup->backup_map_layout = gBackupMapLayout;
+     if (gSaveBlock1Ptr != NULL)
+         backup->object_event_template0 = gSaveBlock1Ptr->objectEventTemplates[0];
+-    backup->object_events[0] = gObjectEvents[0];
+-    backup->object_events[1] = gObjectEvents[1];
+-    backup->object_events[2] = gObjectEvents[2];
++    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
++        backup->object_events[i] = gObjectEvents[i];
+     backup->sprites[0] = gSprites[0];
+     backup->sprites[1] = gSprites[1];
+     backup->sprites[2] = gSprites[2];
++    memcpy(backup->link_player_object_events, gLinkPlayerObjectEvents,
++           sizeof(backup->link_player_object_events));
+     backup->player_avatar = gPlayerAvatar;
+     backup->save_block1 = gSaveBlock1Ptr;
+     if (gSaveBlock1Ptr != NULL)
+@@ -194,9 +204,8 @@ static void BeginRuntimeFixture(struct RuntimeFixtureBackup *backup)
+     gMain.callback1 = CB1_Overworld;
+     gMain.callback2 = CB2_Overworld;
+ 
+-    memset(&gObjectEvents[0], 0, sizeof(gObjectEvents[0]));
+-    memset(&gObjectEvents[1], 0, sizeof(gObjectEvents[1]));
+-    memset(&gObjectEvents[2], 0, sizeof(gObjectEvents[2]));
++    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
++        memset(&gObjectEvents[i], 0, sizeof(gObjectEvents[i]));
+     memset(&gSprites[0], 0, sizeof(gSprites[0]));
+     memset(&gSprites[1], 0, sizeof(gSprites[1]));
+     memset(&gSprites[2], 0, sizeof(gSprites[2]));
+@@ -225,26 +234,6 @@ static void BeginRuntimeFixture(struct RuntimeFixtureBackup *backup)
+     gPlayerAvatar.spriteId = 0;
+     gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE;
+ 
+-    gObjectEvents[1].active = TRUE;
+-    gObjectEvents[1].localId = COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID;
+-    gObjectEvents[1].mapGroup = 1;
+-    gObjectEvents[1].mapNum = 3;
+-    gObjectEvents[1].movementType = MOVEMENT_TYPE_NONE;
+-    gObjectEvents[1].currentElevation = ELEVATION_DEFAULT;
+-    gObjectEvents[1].previousElevation = ELEVATION_DEFAULT;
+-    gObjectEvents[1].currentCoords.x = MAP_OFFSET + 4;
+-    gObjectEvents[1].currentCoords.y = MAP_OFFSET + 6;
+-    gObjectEvents[1].previousCoords = gObjectEvents[1].currentCoords;
+-    gObjectEvents[1].initialCoords = gObjectEvents[1].currentCoords;
+-    gObjectEvents[1].graphicsId = OBJ_EVENT_GFX_BRENDAN_NORMAL;
+-    gObjectEvents[1].spriteId = 1;
+-    graphics = GetObjectEventGraphicsInfo(gObjectEvents[1].graphicsId);
+-    gSprites[1].inUse = TRUE;
+-    gSprites[1].data[0] = 1;
+-    gSprites[1].anims = graphics->anims;
+-    gSprites[1].images = graphics->images;
+-    gSprites[1].oam = *graphics->oam;
+-    gSprites[1].coordOffsetEnabled = TRUE;
+ }
+ 
+ static void EndRuntimeFixture(const struct RuntimeFixtureBackup *backup)
+@@ -257,12 +246,13 @@ static void EndRuntimeFixture(const struct RuntimeFixtureBackup *backup)
+     CoopNetBridge_Init();
+     gMapHeader = backup->map_header;
+     gBackupMapLayout = backup->backup_map_layout;
+-    gObjectEvents[0] = backup->object_events[0];
+-    gObjectEvents[1] = backup->object_events[1];
+-    gObjectEvents[2] = backup->object_events[2];
++    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
++        gObjectEvents[i] = backup->object_events[i];
+     gSprites[0] = backup->sprites[0];
+     gSprites[1] = backup->sprites[1];
+     gSprites[2] = backup->sprites[2];
++    memcpy(gLinkPlayerObjectEvents, backup->link_player_object_events,
++           sizeof(backup->link_player_object_events));
+     gPlayerAvatar = backup->player_avatar;
+     if (backup->save_block1 != NULL)
+     {
+@@ -435,37 +425,101 @@ TEST("Cloud Coop presence runtime keeps publication gated by a ready epoch")
+     EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
+ }
+ 
+-TEST("Cloud Coop presence runtime fences hidden, stale, and warp lifecycle paths")
++TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths")
+ {
+     struct CoopPresenceSpawn spawn = RuntimeSpawn(3, 1);
++    struct CoopPresenceUpdate update;
+     struct CoopPresenceLocalState state;
+     u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
++    u8 update_bytes[COOP_PRESENCE_UPDATE_SIZE];
++    u8 local_bytes[COOP_PRESENCE_LOCAL_STATE_SIZE];
+     u32 frame;
+ 
+-    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
+-    CoopPresenceRuntime_Init();
++    BeginRuntimeFixture(&sRuntimeFixtureBackup);
++    CoopSave_InitializeCurrent();
++    CoopNetBridge_Init();
+     CoopPresenceRuntime_SetSessionEpoch(23);
++
++    spawn.state.pose.location.y = 6;
++    spawn.state.pose.warp_sequence = 1;
++    EXPECT(CoopPresenceRuntime_GetLocalState(&state));
++    EXPECT_EQ(state.pose.player_state, COOP_PRESENCE_PLAYER_OVERWORLD);
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
+     EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+         COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
+         spawn_bytes, sizeof(spawn_bytes)));
++    CoopPresenceRuntime_Update();
++    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
++    EXPECT(gObjectEvents[1].active);
++    EXPECT_EQ(CoopPresenceRuntime_TryInteract(),
++              COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK);
+ 
+-    /* No bound on-foot avatar means publication is hidden and the renderer
+-     * cannot become interactable, even while lifecycle traffic is queued. */
++    /* Publication changes to an explicit HIDDEN state when the avatar loses
++     * controllability; the renderer and interaction gate follow that state. */
++    gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT;
++    EXPECT(CoopPresenceRuntime_GetLocalState(&state));
++    EXPECT_EQ(state.pose.player_state, COOP_PRESENCE_PLAYER_HIDDEN);
++    EXPECT(CoopPresenceRuntime_EncodeLocalState(
++        local_bytes, sizeof(local_bytes)));
++    EXPECT(CoopPresence_DecodeLocalState(
++        local_bytes, sizeof(local_bytes), &state));
++    EXPECT_EQ(state.pose.player_state, COOP_PRESENCE_PLAYER_HIDDEN);
+     CoopPresenceRuntime_Update();
+-    EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
++    EXPECT(!gObjectEvents[1].active);
+     EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
++
++    /* A fresh lifecycle update recreates the renderer and resets the stale
++     * clock before the complete ninety-frame expiry window. */
++    gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT
++        | PLAYER_AVATAR_FLAG_CONTROLLABLE;
++    update = (struct CoopPresenceUpdate){
++        .handle = spawn.handle,
++        .server_sequence = 2,
++        .state = spawn.state,
++    };
++    EXPECT(CoopPresence_EncodeUpdate(&update, update_bytes, sizeof(update_bytes)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE,
++        update_bytes, sizeof(update_bytes)));
++    CoopPresenceRuntime_Update();
++    EXPECT(gObjectEvents[1].active);
++    EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
+     for (frame = 0; frame < COOP_PRESENCE_RUNTIME_STALE_FRAMES; frame++)
++    {
+         CoopPresenceRuntime_AdvanceFrame();
+-    CoopPresenceRuntime_Update();
++        CoopPresenceRuntime_Update();
++    }
++    EXPECT(!gObjectEvents[1].active);
+     EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+ 
+-    /* A committed warp fences pending reducer state and advances only the
+-     * presence warp domain; transport remains independently gated. */
++    /* Stale teardown is recoverable on the next accepted lifecycle update. */
++    update.server_sequence = 3;
++    EXPECT(CoopPresence_EncodeUpdate(&update, update_bytes, sizeof(update_bytes)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE,
++        update_bytes, sizeof(update_bytes)));
++    CoopPresenceRuntime_Update();
++    EXPECT(gObjectEvents[1].active);
++    EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
++
++    /* A committed warp tears down the renderer and reducer atomically, then
++     * a spawn in the new warp domain recreates it from scratch. */
+     CoopPresenceRuntime_OnWarpCommit();
++    EXPECT(!gObjectEvents[1].active);
+     EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+     EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+-    CoopPresenceRuntime_TransportLost();
+-    EXPECT(!CoopPresenceRuntime_GetLocalState(&state));
++    spawn.server_sequence = 4;
++    spawn.state.pose.warp_sequence = 2;
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++    CoopPresenceRuntime_Update();
++    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
++    EXPECT(gObjectEvents[1].active);
++    EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
++
++    EndRuntimeFixture(&sRuntimeFixtureBackup);
+ }
+ 
+ TEST("Cloud Coop presence runtime directly covers renderer interpolation animation and return")
+@@ -604,7 +658,9 @@ TEST("Cloud Coop presence runtime directly covers renderer interpolation animati
+     gObjectEvents[2].currentCoords.y = MAP_OFFSET + 5;
+     gObjectEvents[2].spriteId = 2;
+     gSprites[2].inUse = TRUE;
+-    gSprites[2].data[0] = 2;
++    /* Deliberately collide with the remote ObjectEvent index.  The backlink
++     * alone must not authorize presence teardown of this foreign sprite. */
++    gSprites[2].data[0] = 1;
+     gSprites[1].inUse = FALSE;
+     /* Leave the remote ObjectEvent active with an absent sprite, exactly as
+      * ResumeMap does before the return-to-field object pass. */
+@@ -622,7 +678,7 @@ TEST("Cloud Coop presence runtime directly covers renderer interpolation animati
+     EXPECT(gObjectEvents[0].active);
+     EXPECT(gObjectEvents[2].active);
+     EXPECT(gSprites[2].inUse);
+-    EXPECT_EQ(gSprites[2].data[0], 2);
++    EXPECT_EQ(gSprites[2].data[0], 1);
+ 
+     /* Keep the local player adjacent to the remote after the far snap so the
+      * queue-full assertion reaches the transport result rather than the
+@@ -655,7 +711,129 @@ TEST("Cloud Coop presence runtime directly covers renderer interpolation animati
+     EXPECT(!gSprites[recreated_sprite_id].inUse);
+     EXPECT(gObjectEvents[2].active);
+     EXPECT(gSprites[2].inUse);
+-    EXPECT_EQ(gSprites[2].data[0], 2);
++    EXPECT_EQ(gSprites[2].data[0], 1);
++
++    EndRuntimeFixture(&sRuntimeFixtureBackup);
++}
++
++TEST("Cloud Coop presence retries renderer creation after object capacity")
++{
++    struct CoopPresenceSpawn spawn = RuntimeSpawn(6, 1);
++    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
++    u32 i;
++
++    BeginRuntimeFixture(&sRuntimeFixtureBackup);
++    CoopSave_InitializeCurrent();
++    CoopNetBridge_Init();
++    CoopPresenceRuntime_SetSessionEpoch(23);
++    spawn.state.pose.location.y = 6;
++    spawn.state.pose.warp_sequence = 1;
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++
++    /* Occupy every ObjectEvent slot with independent map objects.  The
++     * reducer still accepts the spawn, but the renderer must fail closed. */
++    for (i = 1; i < OBJECT_EVENTS_COUNT; i++)
++    {
++        gObjectEvents[i].active = TRUE;
++        gObjectEvents[i].localId = (u8)i;
++        gObjectEvents[i].mapGroup = 1;
++        gObjectEvents[i].mapNum = 3;
++        gObjectEvents[i].movementType = MOVEMENT_TYPE_NONE;
++        gObjectEvents[i].currentElevation = ELEVATION_DEFAULT;
++        gObjectEvents[i].previousElevation = ELEVATION_DEFAULT;
++    }
++    CoopPresenceRuntime_Update();
++    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
++    EXPECT(!CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[1]));
++
++    /* Releasing exactly one genuine ObjectEvent slot lets the next update
++     * retry the real production spawn path. */
++    gObjectEvents[1].active = FALSE;
++    CoopPresenceRuntime_Update();
++    EXPECT(gObjectEvents[1].active);
++    EXPECT(CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[1]));
++    EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
++
++    EndRuntimeFixture(&sRuntimeFixtureBackup);
++}
++
++TEST("Cloud Coop local-link lookup isolates remote presence collisions")
++{
++    struct CoopPresenceSpawn spawn = RuntimeSpawn(7, 1);
++    struct MapPosition position;
++    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
++
++    BeginRuntimeFixture(&sRuntimeFixtureBackup);
++    CoopSave_InitializeCurrent();
++    CoopNetBridge_Init();
++    CoopPresenceRuntime_SetSessionEpoch(23);
++    spawn.state.pose.location.y = 6;
++    spawn.state.pose.warp_sequence = 1;
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++    CoopPresenceRuntime_Update();
++
++    gObjectEvents[2].active = TRUE;
++    gObjectEvents[2].localId = 1;
++    gObjectEvents[2].mapGroup = 1;
++    gObjectEvents[2].mapNum = 3;
++    gObjectEvents[2].movementType = MOVEMENT_TYPE_NONE;
++    gObjectEvents[2].currentElevation = ELEVATION_DEFAULT;
++    gObjectEvents[2].previousElevation = ELEVATION_DEFAULT;
++    gObjectEvents[2].currentCoords.x = MAP_OFFSET + 4;
++    gObjectEvents[2].currentCoords.y = MAP_OFFSET + 6;
++    gObjectEvents[2].previousCoords = gObjectEvents[2].currentCoords;
++    gObjectEvents[2].initialCoords = gObjectEvents[2].currentCoords;
++    sRuntimeTestObjectTemplates[0] = (struct ObjectEventTemplate){
++        .localId = 1,
++        .graphicsId = OBJ_EVENT_GFX_BRENDAN_NORMAL,
++        .kind = OBJ_KIND_NORMAL,
++        .x = 4,
++        .y = 6,
++        .elevation = ELEVATION_DEFAULT,
++        .movementType = MOVEMENT_TYPE_NONE,
++        .script = EventScript_TestSignpostMsg,
++    };
++    sRuntimeTestMapEvents = (struct MapEvents){
++        .objectEventCount = 1,
++        .objectEvents = sRuntimeTestObjectTemplates,
++    };
++    gMapHeader.events = &sRuntimeTestMapEvents;
++    gSaveBlock1Ptr->objectEventTemplates[0] = sRuntimeTestObjectTemplates[0];
++    gLinkPlayerObjectEvents[0] = (struct LinkPlayerObjectEvent){
++        .active = TRUE,
++        .linkPlayerId = 0,
++        .objEventId = 2,
++        .movementMode = 0,
++    };
++    position = (struct MapPosition){
++        .x = MAP_OFFSET + 4,
++        .y = MAP_OFFSET + 6,
++        .elevation = ELEVATION_DEFAULT,
++    };
++
++    /* A valid link-player ObjectEvent has precedence over its ordinary local
++     * script, while the reserved remote remains excluded from object lookup. */
++    EXPECT_EQ(GetObjectEventIdByPosition(position.x, position.y,
++                                         position.elevation), 2);
++    EXPECT(GetInteractedLinkPlayerScript(&position, 0, DIR_SOUTH) == NULL);
++
++    /* A link record referring only to the remote does not hide the genuine
++     * local object; the local script remains independently addressable. */
++    gLinkPlayerObjectEvents[0].objEventId = 1;
++    EXPECT_EQ(GetObjectEventIdByPosition(position.x, position.y,
++                                         position.elevation), 2);
++    EXPECT(GetInteractedLinkPlayerScript(&position, 0, DIR_SOUTH)
++           == EventScript_TestSignpostMsg);
++    gObjectEvents[2].active = FALSE;
++    EXPECT_EQ(GetObjectEventIdByPosition(position.x, position.y,
++                                         position.elevation),
++              OBJECT_EVENTS_COUNT);
+ 
+     EndRuntimeFixture(&sRuntimeFixtureBackup);
+ }
+@@ -758,3 +936,66 @@ TEST("Cloud Coop field input preserves vanilla interaction precedence")
+ 
+     EndRuntimeFixture(&sRuntimeFixtureBackup);
+ }
++
++TEST("Cloud Coop dive action takes precedence over remote overlap")
++{
++    struct CoopPresenceSpawn spawn = RuntimeSpawn(8, 1);
++    struct FieldInput input;
++    struct CoopBridgeMessage message;
++    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
++    bool8 had_dive_badge;
++
++    BeginRuntimeFixture(&sRuntimeFixtureBackup);
++    CoopSave_InitializeCurrent();
++    CoopNetBridge_Init();
++    CoopPresenceRuntime_SetSessionEpoch(23);
++    spawn.state.pose.location.y = 6;
++    spawn.state.pose.warp_sequence = 1;
++    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
++    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
++        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
++        spawn_bytes, sizeof(spawn_bytes)));
++    CoopPresenceRuntime_Update();
++    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
++
++    /* Use a real diveable tile and map connection so the production
++     * TrySetupDiveDownScript branch returns true at the same tile as remote. */
++    sRuntimeTestMapLayout.primaryTileset = &gTileset_General;
++    sRuntimeTestMapData[(MAP_OFFSET + 4)
++        + (MAP_OFFSET + 5) * 32] = METATILE_General_RoughDeepWater;
++    sRuntimeTestDiveConnection = (struct MapConnection){
++        .direction = CONNECTION_DIVE,
++        .offset = 0,
++        .mapGroup = 1,
++        .mapNum = 3,
++    };
++    sRuntimeTestMapConnections = (struct MapConnections){
++        .count = 1,
++        .connections = &sRuntimeTestDiveConnection,
++    };
++    gMapHeader.connections = &sRuntimeTestMapConnections;
++    had_dive_badge = FlagGet(FLAG_BADGE07_GET);
++    FlagSet(FLAG_BADGE07_GET);
++    EXPECT_EQ(gMapHeader.mapType, MAP_TYPE_TOWN);
++    EXPECT_EQ(gPlayerAvatar.objectEventId, 0);
++    EXPECT_EQ(gObjectEvents[0].currentCoords.y, MAP_OFFSET + 5);
++    EXPECT_EQ(gMapHeader.connections->connections->direction, CONNECTION_DIVE);
++    EXPECT_EQ(MapGridGetMetatileBehaviorAt(MAP_OFFSET + 4, MAP_OFFSET + 5),
++              MB_DEEP_WATER);
++    EXPECT_EQ(TrySetDiveWarp(), 2);
++    ScriptContext_Init();
++    EXPECT(CoopPresenceRuntime_TestTrySetupDiveDownScript());
++    ScriptContext_Init();
++    UnlockPlayerFieldControls();
++    while (!CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network))
++        EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
++    FieldClearPlayerInput(&input);
++    input.pressedAButton = TRUE;
++    EXPECT_EQ(ProcessPlayerFieldInput(&input), FIELD_INPUT_RESULT_SCRIPT_STARTED);
++    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
++    ScriptContext_Stop();
++    if (!had_dive_badge)
++        FlagClear(FLAG_BADGE07_GET);
++
++    EndRuntimeFixture(&sRuntimeFixtureBackup);
++}

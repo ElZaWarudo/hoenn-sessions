@@ -1,0 +1,10 @@
+{
+  "finding_id": "F-3463D690",
+  "resolver_id": "/root",
+  "resolution": "fixed",
+  "evidence": [
+    "Exact candidate bc6dc6f128cd81e4ebe4a1ccfe50099215af29e1 preserves the dequeued critical event across a reset race in both receive APIs.",
+    "Independent correctness and security re-review found no remaining issues, and the separate validator passed 242 tests, Clippy, formatting, and diff checks."
+  ],
+  "resolved_diff_digest": "sha256:25bdd962cde65c380288ac66065aab800b2774f98353bf69353df8122f086c7f"
+}

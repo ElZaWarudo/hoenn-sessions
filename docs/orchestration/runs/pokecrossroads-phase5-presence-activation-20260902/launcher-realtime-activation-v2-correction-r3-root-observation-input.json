@@ -1,0 +1,14 @@
+{
+  "schema_version":1,
+  "workspace_id":"pokecrossroads-phase5-presence-resume-20260903-launcher-realtime-activation-v2-r3-validation",
+  "worker_id":"/root",
+  "unit_id":"phase5-launcher-realtime-activation",
+  "role":"exact-candidate-correction-observation",
+  "candidate_commit":"10b82a496eaf7e01584fe7bb4b6d9d5dfe1f8eb7",
+  "candidate_tree":"54003f3cc3c7b90b436f106b521fc32e329f433d",
+  "contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "initial_patch_hash":"sha256:50df0668af1c0f61f1c16954d7764ae5da5f53692adb7207ea8cd461bfdfe40d",
+  "correction_r1_patch_hash":"sha256:1dace61948b3ef9cce923458777b932ff07c1dccf1d408199c72b66ab7c82e2e",
+  "correction_r2_patch_hash":"sha256:d261e7613aeccbf36ec1f7a40f6373c4fe00a16d191ab1619c3a473ab5a7b573",
+  "correction_r3_patch_hash":"sha256:bc46ba0cbc36ccd397b21da4169e96ebd590259170ac2d3e773387726c689b54"
+}

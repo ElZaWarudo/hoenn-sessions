@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "review_plan_hash": "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40",
+  "reviewer_id": "/root/rom_presence_correctness_review_v3b",
+  "surface_id": "rom-presence-activation-correctness-v3",
+  "risk_boundaries_checked": [
+    "effective-visibility-field-action-precedence-and-interaction-fallback",
+    "renderer-object-sprite-ownership-retirement-and-recreation",
+    "same-epoch-generation-cutover-and-independent-sequence-domains",
+    "six-frame-interpolation-animation-progress-and-discontinuity-snap"
+  ],
+  "candidate_findings": [
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "RPAC3-004-field-action-precedence",
+      "observation": "The remote A-button fallback runs before TrySetupDiveDownScript, so a visible adjacent remote consumes A before the dive field action is evaluated.",
+      "impact": "On a valid dive-down tile, an adjacent remote can prevent the local player from diving, violating the requirement that every field action has precedence over remote interaction.",
+      "recommendation": "Move remote interaction fallback after every A-triggered local field action, including TrySetupDiveDownScript, while preserving CONSUMED_NO_LOCK semantics once all local actions decline; add an overlap regression for the dive-down path.",
+      "evidence": [
+        "src/field_control_avatar.c:215-229 invokes CoopPresenceRuntime_TryInteract and immediately returns FIELD_INPUT_RESULT_CONSUMED_NO_LOCK for an eligible remote.",
+        "src/field_control_avatar.c:231-237 reaches TrySetupDiveDownScript only after the remote fallback has declined, although both paths are triggered by pressedAButton.",
+        "The sealed RPAC3-004 criterion requires every overlapping real object or field action to have precedence over a remote interaction."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "contract",
+      "rule_id": "RPAC3-006-generated-rom-manifest",
+      "observation": "The exact candidate leaves dist/bridge_manifest.json pinned to the predecessor ROM SHA even though the successfully built candidate ROM has a different digest.",
+      "impact": "The launcher validates the ROM against this manifest and will fail closed, so the reviewed ROM candidate cannot be launched through the intended cloud-coop path despite its source and focused tests passing.",
+      "recommendation": "Regenerate dist/bridge_manifest.json from the exact accepted ELF and ROM with an available ARM nm tool, include that generated path in the reviewed candidate, and re-run the manifest and launcher validation before integration.",
+      "evidence": [
+        "dist/bridge_manifest.json records game_build.rom_sha256 as c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165.",
+        "The exact implementation worktree's successfully built pokeemerald.gba hashes to d9009861b8c7f89a3f2788bb0aa34a34e25beb4acedd166becd4771e0501e2fd.",
+        "rom-presence-activation-correction-v3-worker-terminal.candidate.json records both prescribed regeneration attempts as failures, yet marks RPAC3-006 satisfied and the review plan changed_paths omits dist/bridge_manifest.json."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "testing",
+      "rule_id": "RPAC3-005-runtime-coverage-gaps",
+      "observation": "The new runtime tests claim stale, warp, hidden-publication, capacity, and local-link coverage, but several named paths never reach the corresponding production state and local-link isolation is not exercised at all.",
+      "impact": "RPAC3-005 is not actually satisfied: regressions in stale renderer teardown and interaction denial, visible-to-hidden publication, warp teardown/recreation, capacity retry, or local-link behavior can pass the focused suite, weakening the evidence for the reviewed renderer and interaction changes.",
+      "recommendation": "Use the valid runtime fixture to create an active rendered remote before advancing 90 frames and before committing a warp; verify HIDDEN publication after a previously visible sample becomes unsafe; force actual ObjectEvent or sprite capacity failure and retry; and execute local-link collision and lookup behavior explicitly.",
+      "evidence": [
+        "test/coop/presence_runtime.c:438-469 queues a spawn without a bound player, so CoopPresenceRuntime_Update cannot pass CoopPresenceRuntime_GetLocalState and never activates the reducer or renderer before the stale and warp assertions.",
+        "test/coop/presence_runtime.c:424-436 asserts only that no state can be produced without a player; it never first establishes a visible pose and then verifies an encoded COOP_PRESENCE_PLAYER_HIDDEN update.",
+        "test/coop/presence_runtime.c:471-661 exercises adoption, interpolation, return-to-field recreation, and queue-full interaction, but does not force initial ObjectEvent/sprite capacity failure or OnWarpCommit, and no Cloud Coop test references local-link state or link-player behavior."
+      ]
+    }
+  ],
+  "candidate_feedback": [],
+  "stop_reason": "interrupted",
+  "certifies_review": false
+}

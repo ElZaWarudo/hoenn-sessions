@@ -1,0 +1,57 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:7ebae85823625c113af7cea2c825fdfc3048a6484da9eb8531706459cd62b4c5",
+  "findings": [
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:7ebae85823625c113af7cea2c825fdfc3048a6484da9eb8531706459cd62b4c5",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:5703-5732 writes exactly four realtime frames and then withholds only the terminal; the realtime producer is finite rather than continuously ready.",
+        "coop/crates/coop-launcher/src/session.rs:5737-5755 writes one PlayerState plus eight interactions and then stops; the control producer is also finite.",
+        "coop/crates/coop-launcher/src/session.rs:5772-5775 waits for notification that bytes were written to the sockets, not that the coordinator and control pump futures are simultaneously ready at each scheduler poll.",
+        "coop/crates/coop-launcher/src/session.rs:5783-5835 asserts only eventual counts."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:922848538d850e5f1c2b46e87be4ffe41779f12e84ec057f0c8fab07493cd42a",
+      "id": "F-92284853",
+      "impact": "The r4 production scheduler is structurally round-robin, but a future regression to the previously confirmed multi-source starvation behavior could pass this required deterministic regression test.",
+      "observation": "The revised active_round_robin test still does not hold control, realtime, and due heartbeat simultaneously ready or assert their bounded selection order, so F-2FFF4874 is not resolved.",
+      "principle": "testing",
+      "recommendation": "Test the arbitration helper with synchronized readiness sources, or use explicit pump/coordinator readiness barriers plus sustained producers. Make all three branches ready before each of several polls and assert the exact C/R/H rotation and terminal preemption rather than eventual counts after finite queues drain.",
+      "reporters": [
+        "/root/launcher_activation_v2_correctness"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff adds a direct twelve-poll all-ready C/R/H rotation oracle plus terminal and shutdown priority assertions.",
+          "Independent r5 reviews reported zero findings and root replay passed the oracle and full suite."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:c6f3060991fa2c4ecd2de314a10b0838876ac93ad53312d852e59d9708130c74"
+      ],
+      "rule_id": "LRA2-006-simultaneous-all-ready-test-fidelity-r4",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-correctness-r4"
+      ],
+      "validation": {
+        "evidence": [
+          "Both final independent reviewers confirmed the r4 fairness test did not hold all three sources ready at each arbitration point.",
+          "The r5 exact oracle directly exercises the production helper with all sources ready for twelve polls."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    }
+  ],
+  "registry_digest": "sha256:601e4fa6f31dab54d107c83dd77b39c2cd2ee63eaa6215d40b178eb69f2a6b19",
+  "registry_id": "pokecrossroads-phase5-launcher-realtime-activation-v2-correction-r4",
+  "revision": 3,
+  "schema_version": 1
+}

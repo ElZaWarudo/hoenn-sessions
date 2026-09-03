@@ -1,0 +1,29 @@
+{
+  "base_revision": "55685f2746fadfcea44d711da406a659bd7b7aa4",
+  "baseline_digest": "sha256:28168983d095cbb8b7a001abd73fccfc49223deda9156630184456da9396e975",
+  "baseline_tree": "b529eb8ad7834ab83f9741ddfb9c6e5646db373b",
+  "changed_files": [
+    {
+      "digest": "sha256:855acf56d146ca86b9ebdc337e85b5d25869598f8432da663fd9c158800bed7b",
+      "path": "coop/crates/coop-sidecar/src/control.rs"
+    },
+    {
+      "digest": "sha256:d50b8c5c441df8d33a94d927aefb73484ee0ee301941639dfc120ff0d2a39a3c",
+      "path": "coop/crates/coop-sidecar/src/server.rs"
+    }
+  ],
+  "contract_hash": "sha256:2fd90bbe5b75fe1e1884fc4dd74d0ea39ae5f16d2a46c8f4a91be6b1c6eb9174",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:c7a23517182b57a877b4e68cf052ad30f6aa74c3aa4a6a435f67b24d04e0c775",
+  "manifest_hash": "sha256:7198e1ef91c3470b0351ec315bcd8e43fe2c91be663fa952987b0449c0c4b9ff",
+  "owned_paths": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "patch_sha256": "sha256:5cbc08fc7786cbf850dc2450710ec3da4e1861d26b95ea0389daa3cfb816405c",
+  "role": "integration-candidate",
+  "schema_version": 1,
+  "unit_id": "sidecar-presence-control",
+  "worker_id": "/root/sidecar_presence_control_worker",
+  "workspace_id": "pokecrossroads-phase5-sidecar-control-20260903"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "assignment_id": "launcher-control-pump-v2-targeted-validation",
+  "validator_id": "/root/launcher_control_pump_v2_validator",
+  "workspace_root": "C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/launcher-control-pump-v2-validation",
+  "candidate_tree": "c3e6290b10ec5d01989fb6f95be1506f175c6610",
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "diff_digest": "sha256:e88ee08df2cec9254e6507d09a8cdefc075bbb9ff01ed45abf4899d794cec942",
+  "review_plan_hash": "sha256:efe0aedb762247c31ba9795fd9ef7efd595d7b05de4fae8cbe6bf81a57b80e3e",
+  "claims": [
+    {
+      "id": "LCP2-001",
+      "claim": "Authenticated control uses persistent exclusive reader/writer ownership with exhaustive event and command handling and strict JSONL bounds."
+    },
+    {
+      "id": "LCP2-002",
+      "claim": "Exact bounded lanes isolate critical, coalesced state, FIFO interaction, reset, and terminal traffic; reset cannot be hidden or bypass critical correlation."
+    },
+    {
+      "id": "LCP2-003",
+      "claim": "Critical writes complete within one absolute deadline and overtake not-yet-started lifecycle writes; generation/reset/permit fencing prevents replay and partial-write ambiguity is terminal."
+    },
+    {
+      "id": "LCP2-004",
+      "claim": "Raw observation, explicit settlement, child-first fairness, startup compensation, ACK-before-EOF, and bounded joined teardown remain deterministic and source-compatible."
+    },
+    {
+      "id": "LCP2-005",
+      "claim": "The complete deterministic regression matrix executes the real pump paths, including state/FIFO/reset/priority/checkpoint/fairness/sustained-shutdown races."
+    },
+    {
+      "id": "LCP2-006",
+      "claim": "Focused and full launcher/sidecar tests, strict Clippy, formatting, and exact-candidate diff checks pass with only process.rs and session.rs changed."
+    }
+  ],
+  "commands": [
+    "rtk cargo test -p coop-launcher control_pump --all-features --locked",
+    "rtk cargo test -p coop-launcher rom_presence --all-features --locked",
+    "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+    "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+    "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff 871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2..HEAD --check"
+  ],
+  "terminal_path": "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-v2-targeted-validation-evidence.candidate.json"
+}

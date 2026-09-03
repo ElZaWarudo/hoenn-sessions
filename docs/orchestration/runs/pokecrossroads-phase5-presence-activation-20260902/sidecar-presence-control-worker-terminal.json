@@ -1,0 +1,70 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "SPC-001",
+      "status": "satisfied",
+      "evidence": "control.rs bumps only CONTROL_PROTOCOL_VERSION to 2 and adds direct coop-protocol presence records with internally tagged, deny_unknown_fields JSONL variants; bounded event serialization retains the 512-byte line limit and no generic payload variant exists."
+    },
+    {
+      "criterion_id": "SPC-002",
+      "status": "satisfied",
+      "evidence": "server.rs validates current epoch and acknowledged ROM readiness, checks RFC-1982 outer-sequence freshness, decodes exact LocalPresenceStateV1 (28 bytes) or PresenceInteractionV1 (20 bytes), then commits before one bounded event write; malformed frames return fixed protocol violations without sequence commit."
+    },
+    {
+      "criterion_id": "SPC-003",
+      "status": "satisfied",
+      "evidence": "handle_presence_command encodes RemotePlayerSpawn/Update/Despawn directly into their exact 72/40/16-byte payloads, preserves embedded cloud sequences, allocates sidecar sequence_state independently, stamps the authenticated epoch, and writes only via BridgeWriter."
+    },
+    {
+      "criterion_id": "SPC-004",
+      "status": "satisfied",
+      "evidence": "Presence commands use a dedicated bounded capacity-one receiver and fast path before command ledger/deferred handling; restored routine backpressure guards remain in place, while readiness/quiescing checks reject without allocation or bridge write."
+    },
+    {
+      "criterion_id": "SPC-005",
+      "status": "satisfied",
+      "evidence": "ROM reboot rearm retains outgoing sidecar sequence, resets incoming session cursor to sequence 1, writes SESSION_READY before RomPresenceReset, discards stale presence, and retains a pending reset mark for control reconnect delivery; sidecar tests pass with the reset event ordering."
+    },
+    {
+      "criterion_id": "SPC-006",
+      "status": "satisfied",
+      "evidence": "Final coop-sidecar package verification passed 80 tests; strict Clippy passed with -D warnings; cargo fmt --check and git diff --check passed. Final diff status contains only the two owned source files."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {"command": "rtk cargo test -p coop-sidecar control --all-features --locked", "attempts": 3, "outcome": "passed"},
+      {"command": "rtk cargo test -p coop-sidecar server --all-features --locked", "attempts": 2, "outcome": "passed"},
+      {"command": "rtk cargo test -p coop-sidecar --all-features --locked", "attempts": 3, "outcome": "passed"},
+      {"command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings", "attempts": 3, "outcome": "passed"},
+      {"command": "rtk cargo fmt --all -- --check", "attempts": 3, "outcome": "passed"},
+      {"command": "rtk git diff --check", "attempts": 2, "outcome": "passed"}
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-sidecar control --all-features --locked",
+    "rtk cargo test -p coop-sidecar control --all-features --locked",
+    "rtk cargo test -p coop-sidecar control --all-features --locked",
+    "rtk cargo test -p coop-sidecar server --all-features --locked",
+    "rtk cargo test -p coop-sidecar server --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": []
+}

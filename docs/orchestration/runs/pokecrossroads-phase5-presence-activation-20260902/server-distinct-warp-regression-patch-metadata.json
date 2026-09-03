@@ -1,0 +1,13 @@
+{
+  "workspace_id": "pokecrossroads-phase5-server-warp-20260902",
+  "worker_id": "/root/server_distinct_warp_worker",
+  "unit_id": "server-presence-distinct-warp-regression",
+  "role": "integration-candidate",
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_tree": "bb6725ba2e4bcef8fae97c5977ce6cc3c2a51c86",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "coop/crates/coop-server/src/phase2/presence.rs"
+  ],
+  "contract_hash": "sha256:8bad96efb8baf01ffd5a9bfdebf91b8561f664ad7c521573f680c78cbfb2eed8"
+}

@@ -1,0 +1,31 @@
+{
+  "role": "security-sentinel",
+  "actor_id": "/root/rom_presence_activation_discovery",
+  "status": "failed",
+  "contract_hash": "sha256:2fd90bbe5b75fe1e1884fc4dd74d0ea39ae5f16d2a46c8f4a91be6b1c6eb9174",
+  "patch_sha256": "sha256:5cbc08fc7786cbf850dc2450710ec3da4e1861d26b95ea0389daa3cfb816405c",
+  "diff_digest": "sha256:c7a23517182b57a877b4e68cf052ad30f6aa74c3aa4a6a435f67b24d04e0c775",
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "lines": "2048-2144, 2185-2188, 2431-2448",
+      "evidence": "A launcher presence command already buffered in presence_rx is not generation-fenced when a same-socket RomReady reboot is handled. SESSION_READY and RomPresenceReset can therefore be followed by an old lifecycle command with a newly allocated outer sequence.",
+      "required_fix": "Atomically invalidate buffered and in-flight pre-reset presence, with a deterministic preloaded presence-plus-RomReady regression."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-sidecar/src/server.rs",
+      "lines": "774-789, 810-830",
+      "evidence": "The capacity-one lane silently drops spawn, update, and despawn alike on TrySendError::Full. Losing spawn makes later updates unusable; losing despawn leaves stale remote state.",
+      "required_fix": "Use a bounded lifecycle-aware mailbox or fail closed; prove full-lane spawn/despawn behavior and shutdown priority."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-sidecar/src/control.rs; coop/crates/coop-sidecar/src/server.rs",
+      "lines": "control.rs:262-272; server.rs:2380-2389, 2431-2447",
+      "evidence": "Fieldless RomPresenceReset can be resent after an ambiguous write, so a delayed duplicate cannot be distinguished from a later reboot.",
+      "required_fix": "Make reset delivery idempotent/correlatable, or enforce and test a lifecycle in which no new realtime core can start until the ambiguous handoff is conclusively terminated."
+    }
+  ]
+}

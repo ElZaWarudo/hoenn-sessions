@@ -1,0 +1,125 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Every bridge write and completion is deadline-bounded; the sole writer is explicitly owned, poisoned on ambiguity, and demonstrably terminated on all session exits with no buffered lifecycle replay or surviving socket task.",
+      "id": "SPCF3-001"
+    },
+    {
+      "description": "Writer failure is durably and independently observable with no check-then-wait lost-wakeup window, and deterministic race coverage proves an idle serving loop wakes and terminates promptly.",
+      "id": "SPCF3-002"
+    },
+    {
+      "description": "Malformed, oversized, or timed-out authenticated control input preserves one exact non-reconnectable terminal cause even when the deferred critical lane is full; sibling presence EOF cannot become clean shutdown or reconnect evidence.",
+      "id": "SPCF3-003"
+    },
+    {
+      "description": "Writer requests retain class and readiness generation; reboot cutover discards queued old-generation lifecycle frames, and any unsafe in-flight frame retires the bridge before the new generation can be used.",
+      "id": "SPCF3-004"
+    },
+    {
+      "description": "The pre-ready regression synchronizes only after decode, generation stamping, and presence admission, then proves the stale record allocates no outer sequence and never forwards while a fresh post-ready record does.",
+      "id": "SPCF3-005"
+    },
+    {
+      "description": "All four original correction regressions and new blocked-writer, terminal-cause, generation-cutover, teardown, and barrier tests pass on the real serving path without weakening checkpoint or shutdown behavior.",
+      "id": "SPCF3-006"
+    },
+    {
+      "description": "The full sidecar suite, strict Clippy, formatting, and diff checks pass; root observation contains only server.rs and the staged combined dependency tree remains exact.",
+      "id": "SPCF3-007"
+    }
+  ],
+  "closed_decisions": [
+    "Preserve authenticated bounded JSONL control protocol v2 and coop/crates/coop-sidecar/src/control.rs exactly; every production and test change is confined to server.rs.",
+    "Treat the staged combined candidate tree da385949706ef78081fbd0e6145b394bd4b70218 as immutable dependency context; leave the index untouched and produce only one unstaged server.rs correction delta.",
+    "Make the sole bridge writer an explicitly owned session resource. Bound every socket write and completion wait by the existing bridge-frame deadline, poison and close the connection after timeout or partial failure, and join or abort-and-await the writer on every completion, overflow, reconnect, reset, shutdown, and error exit.",
+    "Publish bridge-writer failure through durable stateful terminal signaling with register-then-recheck semantics; notification delivery may not depend on an unstored Notify permit.",
+    "Publish one independently wakeable authoritative control-reader terminal cause shared by critical and presence lanes. Presence-channel closure alone may never authorize reconnect, retained state, clean shutdown, or replacement control before the exact decoder terminal is observed.",
+    "Carry request class and readiness generation through writer admission. A confirmed reboot performs an ordered cutover that discards queued old-generation lifecycle work before SESSION_READY; any in-flight lifecycle write that cannot be fenced poisons and retires the bridge instead of crossing generations.",
+    "Move the pre-ready regression barrier to a server-owned point after full decode, generation stamping, and bounded presence admission; prove stale work consumes no bridge sequence and is not replayed after authentication.",
+    "Preserve the prior fixes for initial active ROM_READY, independently wakeable PresenceQueueFull, readiness-generation stamping, sequence allocation, critical shutdown reservation, and stable redacted failures.",
+    "Do not reconnect, remint, retry lifecycle records, or restart realtime after reset, lifecycle-terminal, writer failure, overflow, or control ambiguity in one authenticated session."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python3 C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+        "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+        "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+        "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+        "rtk cargo test -p coop-sidecar bridge_writer --all-features --locked",
+        "rtk cargo test -p coop-sidecar control_terminal --all-features --locked",
+        "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked"
+      ],
+      "max_retries_per_command": 1,
+      "natural": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:22e30fdaa00b39c93841bc49c317c9fc6ed78e1c069e7af0b9a310703ec76ece",
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-sidecar-control-correction-v3",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "extra_verification": "forbidden",
+    "fix_rounds": 2,
+    "implementation_rounds": 3,
+    "max_elapsed_ms": 2400000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit control.rs, launcher, protocol, realtime-core, cloud, server-service, ROM, Lua, Cargo, documentation, generated artifacts, or orchestration files.",
+    "Do not weaken authentication, the 512-byte LF-inclusive JSONL bound, epoch or sequence validation, checkpoint semantics, shutdown reservation, error redaction, or reconnect cleanup.",
+    "Do not add credentials, endpoint data, generic serde_json::Value, arbitrary bytes, unbounded queues, silent lifecycle loss, cancellable partial-frame reuse, a second bridge writer, or detached tasks.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create or remove worktrees, or revert another worker's edits; preserve the sealed index and all unowned content."
+  ],
+  "lane": "deep",
+  "objective": "Repair the exact rejected sidecar control-v2 candidate so bridge-writer ownership, terminal-cause delivery, generation cutover, and readiness proofs are bounded and fail-closed without changing the public control contract.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-patch.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-correctness-review-terminal.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-security-review-terminal.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v2-findings-registry.json",
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "Every acceptance criterion is resolved and every required command outcome is recorded.",
+      "A safe correction requires changing the frozen public or cross-unit boundary.",
+      "A concrete toolchain failure prevents further progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "phase5-sidecar-presence-control"
+}

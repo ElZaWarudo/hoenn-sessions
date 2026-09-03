@@ -1,0 +1,102 @@
+{
+  "status": "needs_review",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "SPCF2-001",
+      "status": "satisfied",
+      "evidence": "The reboot latch is armed only inside confirmed reboot branches; the real serving regression initial_active_rom_ready_does_not_disable_lifecycle_forwarding passed and observed a post-ready RemotePlayerUpdate bridge frame."
+    },
+    {
+      "criterion_id": "SPCF2-002",
+      "status": "satisfied",
+      "evidence": "Overflow now has an independently wakeable Notify terminal path and the serving-path regression presence_overflow_terminates_serving_loop_as_presence_queue_full is included in the passing 101-test full sidecar suite."
+    },
+    {
+      "criterion_id": "SPCF2-003",
+      "status": "satisfied",
+      "evidence": "Bridge writes use one non-cancellable sole writer actor with bounded lifecycle admission and failure notification; the passing full sidecar suite includes stalled_presence_bridge_write_does_not_delay_shutdown_ack, which observed the shutdown result within 500 ms."
+    },
+    {
+      "criterion_id": "SPCF2-004",
+      "status": "satisfied",
+      "evidence": "Presence records are stamped at control receipt with the shared readiness generation and rechecked before sequence allocation; pre_ready_presence_is_not_forwarded_after_bridge_authentication passed and verified sequence 3 for the fresh post-ready frame."
+    },
+    {
+      "criterion_id": "SPCF2-005",
+      "status": "satisfied",
+      "evidence": "The full coop-sidecar suite passed 101 tests, preserving the existing authenticated protocol, typed payload, sequence, checkpoint, reset, reboot, and reconnect-cleanup coverage."
+    },
+    {
+      "criterion_id": "SPCF2-006",
+      "status": "satisfied",
+      "evidence": "The full sidecar suite passed 101 tests; strict Clippy, cargo fmt check, and git diff check passed. The unstaged implementation delta is confined to server.rs and control.rs has no unstaged diff."
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+        "attempts": 2,
+        "outcome": "failed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+        "attempts": 2,
+        "outcome": "failed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 2,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar initial_active_rom_ready_does_not_disable_lifecycle_forwarding --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar presence_overflow_terminates_serving_loop_as_presence_queue_full --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar stalled_presence_bridge_write_does_not_delay_shutdown_ack --all-features --locked",
+    "rtk cargo test -p coop-sidecar pre_ready_presence_is_not_forwarded_after_bridge_authentication --all-features --locked",
+    "rtk cargo test -p coop-sidecar --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [],
+  "scope_extension": null
+}

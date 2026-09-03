@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "unit_id": "phase5-rom-presence-activation",
+  "candidate_commit": "cc421eb8e1bd9a5357c78c2bb0dc1b26129426e3",
+  "candidate_tree": "49207d93f1d7c83778baf4d45292fbf09c2f4e7a",
+  "diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+  "rom_sha256": "f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574",
+  "commands": [
+    {"command": "make check TESTS=\"Cloud Coop\" on exact candidate", "result": "94 passed"},
+    {"command": "make modern on exact candidate", "result": "passed; EWRAM 240432/262144, IWRAM 28648/32768, ROM 28597020/33554432"},
+    {"command": "root replay of pokeemerald-test-headless.elf with mgba-rom-test-hydra", "result": "94 passed"},
+    {"command": "python3 -m unittest tools.tests.test_generate_bridge_manifest", "result": "15 passed"},
+    {"command": "python3 tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba", "result": "passed; generated manifest unchanged"},
+    {"command": "ROM SHA-256 equals manifest game_build.rom_sha256", "result": "passed"},
+    {"command": "git diff 00a030b2f213e423047115b3f197fe114d06e86e --check", "result": "passed"}
+  ]
+}

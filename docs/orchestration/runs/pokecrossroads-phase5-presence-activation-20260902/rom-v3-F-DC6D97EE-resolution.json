@@ -1,0 +1,1 @@
+{"finding_id":"F-DC6D97EE","resolver_id":"/root","resolution":"fixed","evidence":["Exact ROM/manifest SHA equality is restored, 15 manifest generator tests pass, and final security re-review accepts the attestation."],"resolved_diff_digest":"sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44"}

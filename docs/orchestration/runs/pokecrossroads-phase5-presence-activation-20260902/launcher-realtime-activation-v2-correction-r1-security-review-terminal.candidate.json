@@ -1,0 +1,79 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+  "finding_feedback": [
+    {
+      "finding_id": "F-46C50542",
+      "action": "corroborate",
+      "rationale": "The original pre-mint teardown finding was valid and is resolved in this candidate: every error from the public realtime lifecycle now invokes supervised stop regardless of mint status.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:1907-1912 removes the realtime_attempted cleanup guard.",
+        "The focused realtime suite passes reset-before-mint and heartbeat-error-before-mint regressions that join the control pumps."
+      ]
+    },
+    {
+      "finding_id": "F-BDD4C8DE",
+      "action": "corroborate",
+      "rationale": "The original terminal-priority finding was valid and is resolved inside the coordinator: a finished driver and the JoinHandle branch now preempt queued owner events.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:179-210 checks JoinHandle::is_finished and then polls the JoinHandle first in a biased select.",
+        "coordinator_observes_finished_driver_before_saturated_owner_queue passes with a deliberately saturated owner queue."
+      ]
+    },
+    {
+      "finding_id": "F-2D10E061",
+      "action": "corroborate",
+      "rationale": "The missing live success-path coverage is resolved with a deterministic one-use grant, loopback WebSocket, authenticated control peer, lifecycle mapping, interaction gating, shutdown, and joined teardown.",
+      "evidence": [
+        "realtime_activation_runs_ready_lifecycle_interaction_and_joined_teardown passes in the focused realtime suite.",
+        "coop/crates/coop-launcher/src/session.rs:4403-4570 exercises the successful coordinator path end to end."
+      ]
+    },
+    {
+      "finding_id": "F-30423722",
+      "action": "corroborate",
+      "rationale": "The mint-shutdown checkpoint race is resolved: a latched CheckpointReady is reconciled before authenticated child shutdown and the canceled mint is never retried.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2051-2068 routes both first- and second-mint shutdown through shutdown_during_realtime_mint.",
+        "realtime_mint_shutdown_drains_latched_checkpoint_before_child_teardown passes and proves prepare/finalize plus clean teardown."
+      ]
+    },
+    {
+      "finding_id": "F-58EDE2B0",
+      "action": "corroborate",
+      "rationale": "The checkpoint Ready cutover is resolved by separating server readiness from interaction admission and draining pre-cutover control interactions before opening the interaction gate.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:145-176 maintains a separate interaction_ready gate.",
+        "coop/crates/coop-launcher/src/session.rs:2245-2365 establishes an explicit cutover, and realtime_checkpoint_drops_interaction_queued_before_ready_cutover passes."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "biased-control-input-must-not-starve-heartbeat-or-terminal-observation",
+      "observation": "The corrected active lifecycle uses a biased select with children.observe_raw ahead of both realtime.next_event and the heartbeat tick. A continuously ready PlayerState lane is therefore always selected; update_state uses a coalescing watch and can keep succeeding, so the loop has no per-source budget that forces the overdue heartbeat or realtime terminal branch to run. The checkpoint Ready cutover repeats this pattern with control.receive ahead of realtime.next_event and an always-ready activation branch, and it has no heartbeat branch at all.",
+      "impact": "A high-rate authenticated control producer can starve lease heartbeats, server Ready/terminal observation, and checkpoint-cutover completion. The launcher may keep an active WebSocket past its locally maintained lease cadence or fail to notice a terminal realtime task promptly, violating the contract's heartbeat-liveness and fail-closed teardown boundaries and enabling a local denial of service.",
+      "recommendation": "Replace the unbounded biased control preference with explicit bounded draining or a fair arbitration scheme that still defines the Ready interaction watermark. Ensure overdue heartbeat and completed realtime task checks preempt further control-state work, and add deterministic continuously-ready PlayerState regressions proving heartbeat execution, Ready/terminal observation, and bounded cutover completion.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2112-2193 orders shutdown, children.observe_raw, realtime.next_event, then heartbeat under tokio::select! { biased; ... }.",
+        "coop/crates/coop-launcher/src/session.rs:2314-2335 orders control.receive before realtime.next_event and the ready_seen activation branch with no drain budget or heartbeat path.",
+        "coop/crates/coop-launcher/src/process.rs:1362-1367 exposes coalesced PlayerState snapshots, so repeated producer revisions can keep receive ready without applying bounded queue backpressure.",
+        "cargo test -p coop-launcher realtime --all-features --locked passes 13 tests, but none holds PlayerState continuously ready while asserting heartbeat, realtime terminal, or Ready-cutover progress."
+      ]
+    }
+  ],
+  "review_plan_hash": "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19",
+  "reviewer_id": "/root/launcher_activation_v2_security",
+  "risk_boundaries_checked": [
+    "coordinator-task-child-socket-and-artifact-teardown",
+    "no-remint-replay-reconnect-or-second-endpoint",
+    "reset-generation-backpressure-and-ambiguous-outcome-fail-closed",
+    "resolution-of-all-five-initial-review-findings",
+    "ticket-token-endpoint-and-error-confinement"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "launcher-realtime-activation-v2-security-r1"
+}

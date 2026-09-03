@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:3df5c5cdde02b103cc17f81f5efa1f78d452056bdb87fd0c0037366af16d78e8",
+  "diff_digest": "sha256:e7cbe39c62a1c7baac836c1bcee889723a46125be6476e24aee10e13b96f0fc6",
+  "changed_paths": [
+    "dist/bridge_manifest.json",
+    "include/constants/event_objects.h",
+    "include/coop/net_bridge.h",
+    "include/coop/presence_runtime.h",
+    "include/field_control_avatar.h",
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/coop/region.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "src/overworld.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "test/coop/region.c"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "rom-presence-activation-correctness-v3-r1",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "risk_boundaries": [
+        "field-action-precedence-including-dive-and-remote-fallback",
+        "renderer-object-sprite-generation-ownership-retirement-and-recreation",
+        "executable-hidden-stale-warp-capacity-and-local-link-coverage",
+        "same-epoch-cutover-interpolation-animation-and-sequence-domains"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "rom-presence-activation-security-v3-r1",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "risk_boundaries": [
+        "reused-sprite-false-ownership-and-local-link-isolation",
+        "checksum-length-epoch-type-and-sequence-fail-closed-atomicity",
+        "cross-map-warp-stale-hidden-reset-and-replay-confinement",
+        "exact-rom-manifest-attestation-and-launcher-compatibility"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

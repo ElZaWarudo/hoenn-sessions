@@ -1,0 +1,9 @@
+{
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "findings": [],
+  "registry_digest": "sha256:6adc82c89aa33b4d5a2a29ef140284d8d3f1f61284998f0f443c54e19b9d1c31",
+  "registry_id": "pokecrossroads-phase5-launcher-http-final-v2",
+  "revision": 0,
+  "schema_version": 1
+}

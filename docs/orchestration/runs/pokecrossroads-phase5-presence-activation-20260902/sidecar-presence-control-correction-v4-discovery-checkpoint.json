@@ -1,0 +1,8 @@
+{
+  "event": "discovery_complete",
+  "edit_path_found": true,
+  "planned_files": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "evidence_digest": "edit coop/crates/coop-sidecar/src/server.rs | symbol=process_pre_bridge_control_result, BridgeWriter::failure_receiver, run_checkpoint_session, await_control_or_bridge, recover_control_with_bridge, BridgeWriter::shutdown, BridgeWriter::Drop, BridgeIo::shutdown, accept_initial_bridge_or_shutdown, LocalSidecar::spawn_bridge_io; pattern=async self-await at 2348/2419-2423, subscribe-after-precheck and terminal-first arbitration at 2908-2955, recovery without writer observation at 2770-2855, unjoined Drop aborts at 853-861/1269-1274, pre-active reacquisition ? at 2265-2286, and real serving path lacks gate at 1689-1698/5132-5168; callers=await_control_or_bridge tests at 4927, 6854, 6907; tests=bridge_writer_failure_wakes_idle_session_after_registration_race:5226-5247, stalled_presence_bridge_write_does_not_delay_shutdown_ack:5132-5168; why=all v4 corrections are localized here: remove async recursion, register/recheck writer failure with terminal precedence, observe writer failure during retained-bridge recovery, explicitly abort-and-await owned writers, and add deterministic real-serve gate and cleanup assertions.\ndependency coop/crates/coop-sidecar/src/control.rs | symbol=ControlReader::receive_command, ControlWriter::send_event; pattern=frozen bounded authenticated JSONL APIs at 519-549; why=server.rs can satisfy the correction without changing the frozen control boundary."
+}

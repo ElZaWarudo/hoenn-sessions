@@ -1,0 +1,17 @@
+{
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-fixer-v4",
+  "worker_id": "/root/sidecar_control_fixer_v4",
+  "unit_id": "phase5-sidecar-presence-control",
+  "role": "integration-candidate",
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "baseline_tree": "80daf109a7939972ec2f25d124b7505a10e31164",
+  "dependency_patch_hashes": [
+    "sha256:4d47ac721f5b57a87a454fddc1e8a49c14141d0371a511569bbbc8e121ed3c83",
+    "sha256:2e8e51db093c9e3c24c14c125d586995b947a337a0e12a4a9ebbea78271bafae",
+    "sha256:2d560a65ffd7f6ceb7502c6ffd7a62fef156054a199c3e15925c63f65e476772"
+  ],
+  "owned_paths": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e"
+}

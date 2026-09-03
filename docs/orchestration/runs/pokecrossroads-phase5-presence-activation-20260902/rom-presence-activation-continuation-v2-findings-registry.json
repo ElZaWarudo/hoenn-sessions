@@ -1,0 +1,347 @@
+{
+  "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+  "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+  "findings": [
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/coop/presence_runtime.c:694-700 removes the renderer at the stale threshold but leaves the reducer state intact.",
+        "src/coop/presence_runtime.c:802-825 checks transport, local state, reducer visibility, and logical adjacency, but no stale-age or renderer-ownership predicate before returning CONSUMED_NO_LOCK."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:01552a26778af8afb67a8aa1595df81513f3592e1e551788d1f3d9d1ec1042e2",
+      "id": "F-01552A26",
+      "impact": "After the remote disappears as stale, pressing A toward its old tile still attempts a 20-byte interaction and consumes the input indefinitely even though no remote avatar is visible.",
+      "observation": "The 90-frame stale path removes only the renderer, while TryInteract continues to treat the reducer's unchanged visible remote as interactable without checking lifecycle age or renderer presence.",
+      "principle": "correctness",
+      "recommendation": "Require a non-stale lifecycle and a presently proven remote renderer before consuming A, or clear/deactivate reducer visibility at stale teardown; add a 90-frame stale-interaction regression.",
+      "reporters": [
+        "/root/rom_presence_correctness_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-004-RPA-006-stale-interaction-gating",
+      "severity": "p2",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: Update removes the renderer at the 90-frame boundary without clearing reducer visibility, while TryInteract checks neither lifecycle age nor current renderer ownership before consuming A."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "test/coop/net_bridge.c:467-513 sends same-epoch SESSION_READY sequence 2 after the malformed spawn and expects CoopNetBridge_DequeueGameToNetwork plus ROM_READY.",
+        "src/coop/net_bridge.c:635-641 only updates rx_sequence and returns when SESSION_READY arrives for the already-ready current epoch; it does not enqueue ROM_READY.",
+        "rom-presence-activation-continuation-v2-worker-terminal.candidate.json records the focused Cloud Coop command as failed and RPA-008 as not_satisfied."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:02c6b332c7f985a8c3d3a415e1a3138dbc08307c77adbbc1867ecc0e7eb74a69",
+      "id": "F-02C6B332",
+      "impact": "The required focused Cloud Coop test suite deterministically fails at the dequeue assertion, and the test does not actually prove that a valid lifecycle message can reuse the unconsumed outer sequence.",
+      "observation": "The new malformed-lifecycle regression reuses the rejected sequence with a same-epoch SESSION_READY and then expects a ROM_READY frame that the production same-epoch/already-ready branch never enqueues.",
+      "principle": "testing",
+      "recommendation": "Reuse sequence 2 with a valid lifecycle frame and assert its reducer/pending effect, or change the assertion to the documented same-epoch SESSION_READY behavior; rerun the focused suite to a passing result.",
+      "reporters": [
+        "/root/rom_presence_correctness_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-002-RPA-008-outer-sequence-regression",
+      "severity": "p1",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: the regression sends same-epoch SESSION_READY sequence 2 and expects ROM_READY, but the production already-ready same-epoch branch only advances rx_sequence and returns false."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/coop/presence_runtime.c:695-699 removes the renderer at the 90-frame stale boundary but leaves the reducer's active OVERWORLD state intact.",
+        "src/coop/presence_runtime.c:807-815 checks only normal callbacks, transport, GetLocalState, and CoopPresenceReducer_IsVisible; it does not check IsOverworldPoseAllowed, lifecycle age, renderer_owned, or current ObjectEvent/sprite ownership.",
+        "src/coop/presence_runtime.c:112-145 and 170-187 allow GetLocalState to succeed with a last-valid HIDDEN pose when the current player pose is not eligible for OVERWORLD publication.",
+        "src/field_control_avatar.c:212-226 returns CONSUMED_NO_LOCK for the remote before TryStartInteractionScript is attempted, so an overlapping real local object is never reached."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:0c16154658129fe19f727276ba2960ce206c19fe5b1f9b2f7f9b3d752b2b83fe",
+      "id": "F-0C161546",
+      "impact": "Server-supplied or stale remote presence can redirect an intentional local interaction to an invisible remote handle and suppress an overlapping NPC or field interaction, violating user-intent and no-real-object-masking guarantees and potentially blocking local progression until the remote state is cleared.",
+      "observation": "Remote interaction admission treats the reducer's wire OVERWORLD bit as sufficient visibility. It does not require a fresh, currently owned renderer or a currently allowed local on-foot pose, and it runs before the vanilla interaction lookup. A reducer entry whose sprite was never created, was removed as stale, or overlaps a real local object can therefore consume A and emit a remote interaction even though the user has no visible remote target.",
+      "principle": "security",
+      "recommendation": "Gate remote interaction on the same effective-visibility predicate used by rendering: a currently allowed OVERWORLD local pose, age below the stale threshold, and a re-resolved owned ObjectEvent/sprite matching the active handle and coordinates. Give an overlapping actionable real object or field script precedence, while preserving consumed-without-lock behavior only for a genuinely visible remote. Add regressions for stale removal, palette/sprite-capacity spawn failure, non-on-foot hidden publication, and an overlapping NPC.",
+      "reporters": [
+        "/root/rom_presence_security_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-003-RPA-006/effective-visibility-and-real-object-precedence",
+      "severity": "p2",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-security-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: remote admission runs ahead of vanilla interaction resolution and relies on reducer visibility without checking renderer identity, freshness, or local eligible pose."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/overworld.c:2344-2353 calls ResumeMap(FALSE), whose src/overworld.c:2552-2556 ResetSpriteData clears sprite ownership, and then initializes return-to-field ObjectEvents.",
+        "src/event_object_movement.c:2965-2974 preserves active remote ObjectEvents while skipping SpawnObjectEventOnReturnToField for them.",
+        "src/coop/presence_runtime.c:471-497 finds the preserved remote object, fails FindOwnedSprite, and returns without abandoning it because the object was not newly created.",
+        "src/coop/presence_runtime.c:328-373 responds to stale cached sprite identity by clearing renderer_owned and cached IDs only; it does not deactivate the reserved ObjectEvent.",
+        "src/coop/presence_runtime.c:218-230 will therefore keep returning that active reserved object on every later update, preventing the creation path from running."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:427f7a681b162278387602014dd2f28b37ee4d7251dca04516a5a38922efdbbf",
+      "id": "F-427F7A68",
+      "impact": "A normal menu, battle, or other return-to-field cycle while a remote is active can permanently hide that remote for the rest of the map and strand one of only sixteen ObjectEvent slots. On a full map this stale reserved object can prevent a real NPC or dynamic object from spawning, violating bounded renderer teardown and no-NPC-impact guarantees.",
+      "observation": "Return-to-field resets every sprite and then deliberately skips recreating the active remote ObjectEvent. The runtime subsequently finds that still-active reserved object, fails its sprite ownership check, relinquishes cached ownership without deactivating the object, and on later frames repeatedly rediscovers the same unsprited object instead of spawning a replacement.",
+      "principle": "security",
+      "recommendation": "Add an explicit renderer-reset transition that invalidates or safely retires the reserved ObjectEvent without touching a reused sprite before ResetSpriteData/return-to-field, then let the normal-overworld update recreate it transactionally. Alternatively recreate the remote sprite in a context-specific local return path and re-adopt it only after full identity checks. Add a regression that simulates sprite reset/return, verifies no stale ObjectEvent remains, and proves the remote can be recreated without reducing NPC capacity.",
+      "reporters": [
+        "/root/rom_presence_security_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-003/return-to-field-object-sprite-orphan",
+      "severity": "p2",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-security-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: ResumeMap resets sprites, the return-to-field loop preserves but does not respawn the remote ObjectEvent, and EnsureRemoteRenderer cannot recover the resulting active unsprited reserved object."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "test/coop/presence_runtime.c:62-179 contains four tests and never calls CoopPresenceRuntime_Update, CoopPresenceRuntime_TryInteract, CoopPresenceRuntime_AdvanceFrame, or CoopPresenceRuntime_OnWarpCommit.",
+        "rom-presence-activation-continuation-v2-discovery-checkpoint.json explicitly requires hidden-pose, interpolation/retargeting, discontinuity, staleness, warp-fencing, and queue-full interaction coverage in test/coop/presence_runtime.c.",
+        "rom-presence-activation-continuation-v2-worker-terminal.candidate.json records the modern build, manifest tests/regeneration, and diff check as skipped and acceptance_criteria_resolved as false."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:96cd10b9d348261746e2b9eb051836d2b15e46daae129b8d18a069d6fbbeb8f9",
+      "id": "F-96CD10B9",
+      "impact": "Critical RPA-003 through RPA-007 behavior has no deterministic regression proof, allowing the renderer, animation, and interaction defects in this candidate to pass the worker's source-level acceptance claims; RPA-008 remains unresolved even apart from the failing bridge test.",
+      "observation": "The staged presence runtime tests cover constants, pending admission, strict decode, and no-avatar epoch gating, but never execute the renderer, interpolation, interaction, warp, staleness, or return-to-field paths required by the acceptance contract.",
+      "principle": "testing",
+      "recommendation": "Add deterministic runtime seams and focused tests for spawn/retry/ownership, six-frame interpolation and retargeting, animation progress, discontinuity snap, 90-frame staleness, warp and return-to-field teardown, overlap priority, queue-full interaction semantics, hidden publication, and local-link isolation, then run all contract commands.",
+      "reporters": [
+        "/root/rom_presence_correctness_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-003-through-RPA-008-runtime-coverage",
+      "severity": "p1",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: the four presence runtime tests stop at sequence, bounded admission, strict decode, and no-avatar readiness checks and never execute renderer, interpolation, interaction, warp, staleness, or return-to-field behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/coop/net_bridge.c:635-641 handles a current-epoch SESSION_READY while SESSION_READY is set by only advancing rx_sequence and returning.",
+        "src/coop/net_bridge.c:643-660 performs CoopPresenceRuntime_Reset only in the branch reached after SESSION_READY has already been cleared.",
+        "src/coop/net_bridge.c:763-773 waits COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL (180 frames) before clearing SESSION_READY and resetting presence on heartbeat loss.",
+        "coop/crates/coop-sidecar/src/server.rs:1771-1779 emits a fresh sequenced SESSION_READY when an authenticated bridge connection is initialized, so a reconnect is not inherently delayed until the ROM's heartbeat timeout.",
+        "test/coop/net_bridge.c:303-393 covers same-epoch rearm only after polling through the complete stale interval and has no live-window reconnect case."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:b3295d8552a53e0d450cf78edc5254fb9ef9c4b21824a80e87ea2f935f7e40fb",
+      "id": "F-B3295D85",
+      "impact": "A fast legitimate reconnect can expose and make interactable stale remote identity and position from the retired bridge generation. This defeats the stated session-reset confinement and allows old presence state to survive exactly the reconnect boundary intended to invalidate it.",
+      "observation": "A newer SESSION_READY for the current epoch resets presence only after the ROM has already declared the heartbeat stale. If the replacement authenticated bridge connects within the 180-frame stale window, the active-session branch merely advances rx_sequence and preserves the old pending lifecycle queue, reducer, and rendered avatar across the transport generation change.",
+      "principle": "security",
+      "recommendation": "Treat every strictly newer same-epoch SESSION_READY as a transport-generation cutover even while SESSION_READY is still set: atomically clear presence pending/reducer/renderer state before accepting new lifecycle traffic, while preserving any separately specified critical save semantics. Add a regression that activates a remote, injects a newer same-epoch SESSION_READY before the heartbeat timeout, and proves the remote and pending queue are cleared.",
+      "reporters": [
+        "/root/rom_presence_security_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-007/same-epoch-live-reconnect-generation-fence",
+      "severity": "p2",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-security-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: a newer same-epoch SESSION_READY received before heartbeat staleness only advances the outer receive sequence; presence reset occurs solely in the later disconnected rearm branch."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/field_control_avatar.c:212-226 returns the remote CONSUMED_NO_LOCK result before calling TryStartInteractionScript.",
+        "src/coop/presence_runtime.c:802-825 validates logical remote adjacency but performs no real-object lookup before consuming A.",
+        "src/event_object_movement.c:6627-6645 makes overlap possible by excluding remotes from collision, while src/event_object_movement.c:3504-3519 can find an overlapping real object only if vanilla lookup is reached."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:ce0844630ea4b3a3d124fd1e2075745669999712a12c1586084f443e86e88c69",
+      "id": "F-CE084463",
+      "impact": "Because the nonblocking remote may overlap an NPC, boulder, decoration, or item, pressing A sends the remote interaction and suppresses the real object's script, directly violating the no-mask requirement.",
+      "observation": "The A-button hook consumes an adjacent remote interaction before vanilla object lookup, while TryInteract never checks whether a real interactable ObjectEvent occupies the same target tile.",
+      "principle": "correctness",
+      "recommendation": "Before consuming the remote interaction, resolve the target tile while excluding the remote and yield to any real interactable object; retain the no-fallthrough result only when the remote is the sole eligible target. Add an overlapping-NPC regression.",
+      "reporters": [
+        "/root/rom_presence_correctness_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-005-RPA-006-overlapping-object-precedence",
+      "severity": "p1",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: the remote A-button hook returns consumed before TryStartInteractionScript, while collision explicitly permits remote overlap and TryInteract performs no real-object precedence check."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/overworld.c:2344-2353 runs ResumeMap before InitObjectEventsReturnToField, and src/overworld.c:2552-2561 resets sprite data and frees every sprite palette during ResumeMap.",
+        "src/event_object_movement.c:2965-2975 skips CoopPresenceRuntime_IsRemoteObject entries in SpawnObjectEventsOnReturnToField, so the active remote ObjectEvent is not rebound to a new sprite.",
+        "src/coop/presence_runtime.c:471-495 finds that surviving ObjectEvent, fails FindOwnedSprite, and only abandons newly created objects; src/coop/presence_runtime.c:328-372 then relinquishes cached ownership without removing the orphan."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:d604651b6fe7d4e1628e6962a53f186072b09cf7fb2e3110c41b3e0cbaf67d18",
+      "id": "F-D604651B",
+      "impact": "After an ordinary return from a menu, battle, or similar field transition, the remote remains permanently invisible while its active ObjectEvent slot stays occupied until a later warp or session reset.",
+      "observation": "Return-to-field resets all sprites and palettes but deliberately skips respawning the active remote ObjectEvent, leaving that object attached to a destroyed sprite identity that EnsureRemoteRenderer will neither adopt nor replace.",
+      "principle": "correctness",
+      "recommendation": "Before sprite reset/rebuild, safely deactivate the proven owned remote ObjectEvent, or make the runtime reclaim the reserved orphan and recreate it; add a return-to-field teardown/recreation regression.",
+      "reporters": [
+        "/root/rom_presence_correctness_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-003-return-to-field-recreation",
+      "severity": "p1",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: return-to-field destroys sprite state, skips the remote respawn, and leaves an active ObjectEvent whose missing owned sprite causes repeated EnsureRemoteRenderer failure rather than recreation."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+      "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+      "evidence": [
+        "src/coop/presence_runtime.c:595-601 unconditionally calls StartSpriteAnimInDirection during every EnsureRemoteRenderer update invoked from src/overworld.c:1656-1662.",
+        "src/event_object_movement.c:8325-8329 delegates that call to SetAndStartSpriteAnim, and src/event_object_movement.c:10960-10965 calls SeekSpriteAnim at command index zero.",
+        "src/overworld.c:1810-1815 runs AnimateSprites after the per-frame runtime update, so the next update rewinds multi-frame animations before they can progress normally."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:fa7a4715e4d8e4ade01ae683811813ee3dd8ed0f8a6ccc435549213b7197a4b2",
+      "id": "F-FA7A4715",
+      "impact": "StartSpriteAnimInDirection seeks the sprite animation back to command zero before each frame's AnimateSprites pass, so walking and running remotes remain on their first animation frame instead of animating.",
+      "observation": "The renderer restarts the selected directional animation on every runtime update, even when neither direction nor animation changed.",
+      "principle": "correctness",
+      "recommendation": "Only start or seek the sprite animation when the desired direction or animation actually changes, and add a multi-frame runtime test that proves the animation command advances.",
+      "reporters": [
+        "/root/rom_presence_correctness_reviewer_v2"
+      ],
+      "resolution": null,
+      "review_plan_hashes": [
+        "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91"
+      ],
+      "rule_id": "RPA-004-remote-animation-progress",
+      "severity": "p1",
+      "status": "confirmed",
+      "surface_ids": [
+        "rom-presence-activation-correctness-v2"
+      ],
+      "validation": {
+        "evidence": [
+          "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: every runtime update calls StartSpriteAnimInDirection, whose SetAndStartSpriteAnim path seeks command zero, so multi-frame remote animations are rewound before normal progress."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    }
+  ],
+  "registry_digest": "sha256:9f7b0ccefb16e4f505999e0a809072d58617408ad57450733ce3069b7a35c6dd",
+  "registry_id": "pokecrossroads-phase5-rom-presence-activation-v2",
+  "revision": 11,
+  "schema_version": 1
+}

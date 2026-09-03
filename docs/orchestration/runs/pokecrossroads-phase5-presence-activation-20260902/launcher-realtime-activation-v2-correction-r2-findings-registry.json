@@ -1,0 +1,286 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+  "findings": [
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+      "evidence": [
+        "session activation tests cover pending mint, reset, and peer close",
+        "no active LifecycleOverflow InteractionOverflow MgbaExited or SidecarExited test exists",
+        "LRA2-006 requires backpressure and child-failure cleanup ordering"
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:3bc4c90275e56f7fa077104b0b846f8ecb0134565871680900f2a939a6205fad",
+      "id": "F-3BC4C902",
+      "impact": "Two required production terminal compositions can regress without a failing activation-level test.",
+      "observation": "Activation-level lifecycle or interaction backpressure and active supervised-child exit cleanup remain untested.",
+      "principle": "testing",
+      "recommendation": "Add deterministic active backpressure and child-exit tests asserting one attempt, disabled lifecycle, joined coordinator and pumps, no trailing ROM output, and cleanup evidence.",
+      "reporters": [
+        "/root/launcher_activation_v2_correctness"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0"
+      ],
+      "rule_id": "LRA2-006-active-backpressure-child-failure-coverage-r2",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-correctness-r2"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+      "evidence": [
+        "active service-first orders realtime before heartbeat",
+        "realtime receipt resets control_burst",
+        "cutover realtime precedes Activate and existing tests do not make all sources ready together"
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:4da3b9e2bde46be92f5bcd9adbfb35870824dae991a00fce3f858533eb8f88fe",
+      "id": "F-4DA3B9E2",
+      "impact": "Simultaneously sustained control and realtime traffic can starve heartbeat or Ready activation indefinitely.",
+      "observation": "The r2 burst limiter bounds consecutive control selections but does not provide round-robin or deadline priority across realtime and heartbeat or activation; consuming realtime resets the only fairness counter.",
+      "principle": "correctness",
+      "recommendation": "Track independent service debt or prioritize due heartbeat and activation before resetting the control budget; add all-ready deterministic liveness tests.",
+      "reporters": [
+        "/root/launcher_activation_v2_correctness"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0"
+      ],
+      "rule_id": "LRA2-005-multi-source-arbitration-heartbeat-cutover-fairness-r2",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-correctness-r2"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+      "evidence": [
+        "next_checkpoint_input places Deadline last",
+        "receive_checkpoint_event_before_activation has no other absolute timeout",
+        "focused tests lack a sustained-input missing-response case"
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:65c99a19281edb993d0535526f343f2322c34f9ab6d37abe5915b3cffa0b692b",
+      "id": "F-65C99A19",
+      "impact": "An authenticated local producer can indefinitely delay checkpoint timeout, shutdown, coordinator termination, and cleanup.",
+      "observation": "Checkpoint arbitration places the absolute Deadline after continuously ready authenticated sources in every mode.",
+      "principle": "security",
+      "recommendation": "Give the absolute deadline unconditional priority and test sustained PlayerState with no correlated response reaches CheckpointTimeout and bounded teardown.",
+      "reporters": [
+        "/root/launcher_activation_v2_security"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0"
+      ],
+      "rule_id": "checkpoint-deadline-must-preempt-authenticated-input",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-security-r2"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+      "evidence": [
+        "next_realtime_cutover_input orders Realtime before Activate",
+        "cutover buffers until Activate wins",
+        "buffer overflow terminates at MAX_OWNER_EVENT_QUEUE"
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:991c5777dbcc82f397c4e13ea6536ee82f66f92a65e3b92d211361ea006ac7a6",
+      "id": "F-991C5777",
+      "impact": "A busy valid server stream can reliably terminate checkpoint-overlapped startup rather than complete Ready cutover.",
+      "observation": "Realtime events precede Activate in all cutover modes, so continuous valid lifecycle traffic can prevent activation until bounded-buffer failure.",
+      "principle": "security",
+      "recommendation": "Bound post-Ready draining and then prioritize activation while preserving watermark and FIFO; add continuous-lifecycle cutover regression.",
+      "reporters": [
+        "/root/launcher_activation_v2_security"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0"
+      ],
+      "rule_id": "ready-cutover-must-have-bounded-activation-progress",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-security-r2"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+      "evidence": [
+        "no active SidecarExited MgbaExited or LifecycleOverflow activation test",
+        "r2 added reset and peer-close only",
+        "F-F3308A85 required active backpressure and child-failure coverage"
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:a721b843a298ef24a796c05189d40f8221bc3f7a8cee29877cdfe9cc77a57a9a",
+      "id": "F-A721B843",
+      "impact": "Terminal ordering and cleanup remain unproved for two production classes.",
+      "observation": "The r2 suite lacks production activation-level lifecycle overflow and active child-exit teardown coverage.",
+      "principle": "testing",
+      "recommendation": "Add activation-level overflow and each active child-exit test with no remint, joined cleanup, and no post-terminal ROM output.",
+      "reporters": [
+        "/root/launcher_activation_v2_security"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0"
+      ],
+      "rule_id": "LRA2-006-active-backpressure-and-child-exit-coverage-r2",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-security-r2"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+      "evidence": [
+        "active service-first orders realtime before heartbeat",
+        "each realtime event resets control_burst",
+        "existing test serializes heartbeat before lifecycle frames"
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:eca67938b71d7a836c573d4d49c84446ec4709a9e196a02dd33403dcfffcd7fc",
+      "id": "F-ECA67938",
+      "impact": "Simultaneous authenticated control and realtime streams can starve lease maintenance.",
+      "observation": "After eight control events, realtime always precedes heartbeat, allowing an eight-control-plus-one-realtime cycle forever.",
+      "principle": "security",
+      "recommendation": "Use independent budgets or rotate priority so overdue heartbeat is bounded; test simultaneous continuous control and realtime with due heartbeat.",
+      "reporters": [
+        "/root/launcher_activation_v2_security"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0"
+      ],
+      "rule_id": "service-budget-must-cover-all-ready-sources",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-security-r2"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    }
+  ],
+  "registry_digest": "sha256:63d2d916bdfb1139e3b0507021634222148cf50b40cac86e7196767f3d5120f8",
+  "registry_id": "pokecrossroads-phase5-launcher-realtime-activation-v2-correction-r2",
+  "revision": 14,
+  "schema_version": 1
+}

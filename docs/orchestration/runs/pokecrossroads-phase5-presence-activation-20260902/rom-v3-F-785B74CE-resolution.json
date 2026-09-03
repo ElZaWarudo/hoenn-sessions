@@ -1,0 +1,1 @@
+{"finding_id":"F-785B74CE","resolver_id":"/root","resolution":"fixed","evidence":["The exact candidate ROM and generated manifest both attest f75b91506d06324e34e31df0efc6bd648f2f1e7fcbaf3323393921563ae5c574, and regeneration leaves no manifest diff."],"resolved_diff_digest":"sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44"}

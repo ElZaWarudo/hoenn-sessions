@@ -1,0 +1,463 @@
+{
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "consolidation_invocation": "phase5-integrator-v2",
+  "execution_waves": [
+    [
+      "launcher-http-candidate-v2",
+      "rom-presence-candidate-v2",
+      "sidecar-control-candidate-v2"
+    ],
+    [
+      "launcher-http-correctness-v2",
+      "launcher-http-security-v2",
+      "rom-presence-discovery-v2",
+      "sidecar-control-discovery-v2"
+    ],
+    [
+      "launcher-http-validation-v2",
+      "rom-presence-continuation-v2",
+      "sidecar-control-correction-v2"
+    ],
+    [
+      "rom-presence-correctness-v2",
+      "rom-presence-security-v2",
+      "sidecar-control-correctness-v2",
+      "sidecar-control-security-v2"
+    ],
+    [
+      "rom-presence-validation-v2",
+      "sidecar-control-validation-v2"
+    ],
+    [
+      "phase5-integrator-v2"
+    ]
+  ],
+  "lifecycle": [
+    "create",
+    "seed-index",
+    "seal-baseline",
+    "dispatch",
+    "observe",
+    "export-patch",
+    "reconcile",
+    "cleanup"
+  ],
+  "patch_application_order": [
+    "launcher-http-candidate-v2",
+    "rom-presence-candidate-v2",
+    "sidecar-control-candidate-v2",
+    "rom-presence-continuation-v2",
+    "sidecar-control-correction-v2",
+    "phase5-integrator-v2"
+  ],
+  "run_id": "pokecrossroads-phase5-presence-resume-20260903",
+  "schema_version": 1,
+  "workspace_plan_hash": "sha256:b78a0ceb2e28c96cc3ad4f931a7b9f77cb08611c52b6a2cde25c546289d9c8df",
+  "workspaces": [
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-phase5-presence-resume-20260903/launcher-http-candidate-v2",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": false,
+      "invocation_id": "launcher-http-candidate-v2",
+      "mode": "mutable",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/realtime.rs",
+        "coop/crates/coop-launcher/tests/realtime_http.rs"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/launcher-http-candidate-v2",
+      "role": "implementer",
+      "unit_id": "phase5-launcher-realtime-http",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-http-candidate-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "launcher-http-candidate-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "launcher-http-correctness-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/launcher-http-correctness-v2",
+      "role": "reviewer",
+      "unit_id": "phase5-launcher-realtime-http",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-http-correctness-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "launcher-http-candidate-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "launcher-http-security-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/launcher-http-security-v2",
+      "role": "security-reviewer",
+      "unit_id": "phase5-launcher-realtime-http",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-http-security-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "launcher-http-candidate-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "launcher-http-correctness-v2",
+        "launcher-http-security-v2"
+      ],
+      "detached": true,
+      "invocation_id": "launcher-http-validation-v2",
+      "mode": "disposable-verification",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/launcher-http-validation-v2",
+      "role": "targeted-validator",
+      "unit_id": "phase5-launcher-realtime-http",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-http-validation-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-candidate-v2",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": false,
+      "invocation_id": "sidecar-control-candidate-v2",
+      "mode": "mutable",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-candidate-v2",
+      "role": "implementer",
+      "unit_id": "phase5-sidecar-presence-control",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-candidate-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "sidecar-control-candidate-v2"
+      ],
+      "detached": true,
+      "invocation_id": "sidecar-control-discovery-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-discovery-v2",
+      "role": "discovery",
+      "unit_id": "phase5-sidecar-presence-control",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-discovery-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-correction-v2",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "sidecar-control-candidate-v2",
+        "sidecar-control-discovery-v2"
+      ],
+      "detached": false,
+      "invocation_id": "sidecar-control-correction-v2",
+      "mode": "mutable",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-correction-v2",
+      "role": "implementer",
+      "unit_id": "phase5-sidecar-presence-control",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-correction-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "sidecar-control-correction-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "sidecar-control-correctness-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-correctness-v2",
+      "role": "reviewer",
+      "unit_id": "phase5-sidecar-presence-control",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-correctness-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "sidecar-control-correction-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "sidecar-control-security-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-security-v2",
+      "role": "security-reviewer",
+      "unit_id": "phase5-sidecar-presence-control",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-security-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "sidecar-control-correction-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "sidecar-control-correctness-v2",
+        "sidecar-control-security-v2"
+      ],
+      "detached": true,
+      "invocation_id": "sidecar-control-validation-v2",
+      "mode": "disposable-verification",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/sidecar-control-validation-v2",
+      "role": "targeted-validator",
+      "unit_id": "phase5-sidecar-presence-control",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-sidecar-control-validation-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-phase5-presence-resume-20260903/rom-presence-candidate-v2",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": false,
+      "invocation_id": "rom-presence-candidate-v2",
+      "mode": "mutable",
+      "owned_paths": [
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-candidate-v2",
+      "role": "implementer",
+      "unit_id": "phase5-rom-presence-activation",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-candidate-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "rom-presence-candidate-v2"
+      ],
+      "detached": true,
+      "invocation_id": "rom-presence-discovery-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-discovery-v2",
+      "role": "discovery",
+      "unit_id": "phase5-rom-presence-activation",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-discovery-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-phase5-presence-resume-20260903/rom-presence-continuation-v2",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "rom-presence-candidate-v2",
+        "rom-presence-discovery-v2"
+      ],
+      "detached": false,
+      "invocation_id": "rom-presence-continuation-v2",
+      "mode": "mutable",
+      "owned_paths": [
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-continuation-v2",
+      "role": "implementer",
+      "unit_id": "phase5-rom-presence-activation",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-continuation-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "rom-presence-continuation-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "rom-presence-correctness-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correctness-v2",
+      "role": "reviewer",
+      "unit_id": "phase5-rom-presence-activation",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-correctness-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "rom-presence-continuation-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [],
+      "detached": true,
+      "invocation_id": "rom-presence-security-v2",
+      "mode": "read-only",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-security-v2",
+      "role": "security-reviewer",
+      "unit_id": "phase5-rom-presence-activation",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-security-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "candidate",
+      "baseline_tree": null,
+      "branch": null,
+      "candidate_invocations": [
+        "rom-presence-continuation-v2"
+      ],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "rom-presence-correctness-v2",
+        "rom-presence-security-v2"
+      ],
+      "detached": true,
+      "invocation_id": "rom-presence-validation-v2",
+      "mode": "disposable-verification",
+      "owned_paths": [],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-validation-v2",
+      "role": "targeted-validator",
+      "unit_id": "phase5-rom-presence-activation",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-rom-presence-validation-v2"
+    },
+    {
+      "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+      "baseline_source": "dependency",
+      "baseline_tree": null,
+      "branch": "seneschal/pokecrossroads-phase5-presence-resume-20260903/phase5-integrator-v2",
+      "candidate_invocations": [],
+      "dependency_patch_hashes": [],
+      "depends_on": [
+        "launcher-http-validation-v2",
+        "rom-presence-validation-v2",
+        "sidecar-control-validation-v2"
+      ],
+      "detached": false,
+      "invocation_id": "phase5-integrator-v2",
+      "mode": "mutable-consolidation",
+      "owned_paths": [
+        "coop/crates/coop-launcher",
+        "coop/crates/coop-sidecar/src/control.rs",
+        "coop/crates/coop-sidecar/src/server.rs",
+        "dist/bridge_manifest.json",
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "path": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/phase5-integrator-v2",
+      "role": "integrator",
+      "unit_id": "phase5-presence-integration",
+      "worker_git_mutation": "forbidden",
+      "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-phase5-integrator-v2"
+    }
+  ],
+  "worktree_parent": "/c/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions"
+}

@@ -1,0 +1,62 @@
+{
+  "contract_hash": "sha256:9ed2ca21e9e88fc6bee0e25eedd5036e8ec6b29c6763ad11e54f809f9e210b1d",
+  "diff_digest": "sha256:8238e28a5a94b8bb8c94790aec2290c1c8068c459a914db20696d5afe81df2b6",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "src/coop/presence_runtime.c:695-699 removes the renderer at the 90-frame stale boundary but leaves the reducer's active OVERWORLD state intact.",
+        "src/coop/presence_runtime.c:807-815 checks only normal callbacks, transport, GetLocalState, and CoopPresenceReducer_IsVisible; it does not check IsOverworldPoseAllowed, lifecycle age, renderer_owned, or current ObjectEvent/sprite ownership.",
+        "src/coop/presence_runtime.c:112-145 and 170-187 allow GetLocalState to succeed with a last-valid HIDDEN pose when the current player pose is not eligible for OVERWORLD publication.",
+        "src/field_control_avatar.c:212-226 returns CONSUMED_NO_LOCK for the remote before TryStartInteractionScript is attempted, so an overlapping real local object is never reached."
+      ],
+      "impact": "Server-supplied or stale remote presence can redirect an intentional local interaction to an invisible remote handle and suppress an overlapping NPC or field interaction, violating user-intent and no-real-object-masking guarantees and potentially blocking local progression until the remote state is cleared.",
+      "observation": "Remote interaction admission treats the reducer's wire OVERWORLD bit as sufficient visibility. It does not require a fresh, currently owned renderer or a currently allowed local on-foot pose, and it runs before the vanilla interaction lookup. A reducer entry whose sprite was never created, was removed as stale, or overlaps a real local object can therefore consume A and emit a remote interaction even though the user has no visible remote target.",
+      "principle": "security",
+      "recommendation": "Gate remote interaction on the same effective-visibility predicate used by rendering: a currently allowed OVERWORLD local pose, age below the stale threshold, and a re-resolved owned ObjectEvent/sprite matching the active handle and coordinates. Give an overlapping actionable real object or field script precedence, while preserving consumed-without-lock behavior only for a genuinely visible remote. Add regressions for stale removal, palette/sprite-capacity spawn failure, non-on-foot hidden publication, and an overlapping NPC.",
+      "rule_id": "RPA-003-RPA-006/effective-visibility-and-real-object-precedence",
+      "severity": "p2"
+    },
+    {
+      "evidence": [
+        "src/overworld.c:2344-2353 calls ResumeMap(FALSE), whose src/overworld.c:2552-2556 ResetSpriteData clears sprite ownership, and then initializes return-to-field ObjectEvents.",
+        "src/event_object_movement.c:2965-2974 preserves active remote ObjectEvents while skipping SpawnObjectEventOnReturnToField for them.",
+        "src/coop/presence_runtime.c:471-497 finds the preserved remote object, fails FindOwnedSprite, and returns without abandoning it because the object was not newly created.",
+        "src/coop/presence_runtime.c:328-373 responds to stale cached sprite identity by clearing renderer_owned and cached IDs only; it does not deactivate the reserved ObjectEvent.",
+        "src/coop/presence_runtime.c:218-230 will therefore keep returning that active reserved object on every later update, preventing the creation path from running."
+      ],
+      "impact": "A normal menu, battle, or other return-to-field cycle while a remote is active can permanently hide that remote for the rest of the map and strand one of only sixteen ObjectEvent slots. On a full map this stale reserved object can prevent a real NPC or dynamic object from spawning, violating bounded renderer teardown and no-NPC-impact guarantees.",
+      "observation": "Return-to-field resets every sprite and then deliberately skips recreating the active remote ObjectEvent. The runtime subsequently finds that still-active reserved object, fails its sprite ownership check, relinquishes cached ownership without deactivating the object, and on later frames repeatedly rediscovers the same unsprited object instead of spawning a replacement.",
+      "principle": "security",
+      "recommendation": "Add an explicit renderer-reset transition that invalidates or safely retires the reserved ObjectEvent without touching a reused sprite before ResetSpriteData/return-to-field, then let the normal-overworld update recreate it transactionally. Alternatively recreate the remote sprite in a context-specific local return path and re-adopt it only after full identity checks. Add a regression that simulates sprite reset/return, verifies no stale ObjectEvent remains, and proves the remote can be recreated without reducing NPC capacity.",
+      "rule_id": "RPA-003/return-to-field-object-sprite-orphan",
+      "severity": "p2"
+    },
+    {
+      "evidence": [
+        "src/coop/net_bridge.c:635-641 handles a current-epoch SESSION_READY while SESSION_READY is set by only advancing rx_sequence and returning.",
+        "src/coop/net_bridge.c:643-660 performs CoopPresenceRuntime_Reset only in the branch reached after SESSION_READY has already been cleared.",
+        "src/coop/net_bridge.c:763-773 waits COOP_NET_BRIDGE_SIDECAR_STALE_INTERVAL (180 frames) before clearing SESSION_READY and resetting presence on heartbeat loss.",
+        "coop/crates/coop-sidecar/src/server.rs:1771-1779 emits a fresh sequenced SESSION_READY when an authenticated bridge connection is initialized, so a reconnect is not inherently delayed until the ROM's heartbeat timeout.",
+        "test/coop/net_bridge.c:303-393 covers same-epoch rearm only after polling through the complete stale interval and has no live-window reconnect case."
+      ],
+      "impact": "A fast legitimate reconnect can expose and make interactable stale remote identity and position from the retired bridge generation. This defeats the stated session-reset confinement and allows old presence state to survive exactly the reconnect boundary intended to invalidate it.",
+      "observation": "A newer SESSION_READY for the current epoch resets presence only after the ROM has already declared the heartbeat stale. If the replacement authenticated bridge connects within the 180-frame stale window, the active-session branch merely advances rx_sequence and preserves the old pending lifecycle queue, reducer, and rendered avatar across the transport generation change.",
+      "principle": "security",
+      "recommendation": "Treat every strictly newer same-epoch SESSION_READY as a transport-generation cutover even while SESSION_READY is still set: atomically clear presence pending/reducer/renderer state before accepting new lifecycle traffic, while preserving any separately specified critical save semantics. Add a regression that activates a remote, injects a newer same-epoch SESSION_READY before the heartbeat timeout, and proves the remote and pending queue are cleared.",
+      "rule_id": "RPA-007/same-epoch-live-reconnect-generation-fence",
+      "severity": "p2"
+    }
+  ],
+  "review_plan_hash": "sha256:6e7d464957d2269e9b990102b1859e3bbd08496797e9f099570821ecaa250f91",
+  "reviewer_id": "/root/rom_presence_security_reviewer_v2",
+  "risk_boundaries_checked": [
+    "bounded-queues-reserved-identifiers-and-no-npc-or-local-player-corruption",
+    "checksum-length-epoch-type-and-sequence-fail-closed-atomicity",
+    "cross-map-warp-stale-replay-hidden-context-and-session-reset-confinement",
+    "signed-coordinate-bounds-palette-capacity-and-object-sprite-memory-ownership"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "rom-presence-activation-security-v2"
+}

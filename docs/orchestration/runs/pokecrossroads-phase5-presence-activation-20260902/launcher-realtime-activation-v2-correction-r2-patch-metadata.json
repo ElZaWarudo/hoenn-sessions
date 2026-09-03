@@ -1,0 +1,16 @@
+{
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-realtime-activation-v2-correction-r2",
+  "worker_id": "/root/launcher_activation_v2_impl_retry",
+  "unit_id": "phase5-launcher-realtime-activation",
+  "role": "integration-candidate-correction",
+  "base_revision": "c305e3e67fa41267323e74a6be3e51e5bf1afa73",
+  "baseline_tree": "42852cc2c46977b220ed8849195204ed2188bd6f",
+  "dependency_patch_hashes": [
+    "sha256:1dace61948b3ef9cce923458777b932ff07c1dccf1d408199c72b66ab7c82e2e"
+  ],
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f"
+}

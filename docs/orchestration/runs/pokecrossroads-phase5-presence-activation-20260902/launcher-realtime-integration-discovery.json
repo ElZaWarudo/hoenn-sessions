@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "mode": "read-only-discovery",
+  "agent": "/root/launcher_realtime_integration_discovery",
+  "base_revision": "55685f2746fadfcea44d711da406a659bd7b7aa4",
+  "accepted_architecture": "ROM <-> external sidecar child <-> authenticated nonsecret control <-> launcher-owned coop_sidecar::realtime core <-> cloud",
+  "planned_files": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/tests/realtime_vertical_slice.rs"
+  ],
+  "decisions": [
+    "Add a launcher realtime module that composes RealtimeEndpoint, RealtimeGrant, RealtimeOwner, RealtimeOwnerEvent, and run_realtime; never duplicate the WebSocket transport.",
+    "Use the existing no-redirect ReqwestCloudApi transport for authenticated POST v1/realtime/tickets with a dedicated small response bound.",
+    "Derive exactly ws:// or wss:// plus /v1/realtime from the already validated HTTP(S) base rather than accepting a second arbitrary endpoint.",
+    "Use an additive realtime API trait so existing CloudApi fakes and checkpoint behavior remain source compatible.",
+    "Wait indefinitely for the first validated local presence state before minting a ticket; continue coalescing state while minting and use the freshest state for the initial WebSocket frame.",
+    "Build the RuntimeLeaseFence from the active lease and canonical manifest target, require exact matches_request correlation, then consume into_parts and move the ticket into RealtimeGrant.",
+    "Allow exactly one new mint after an explicit Unauthorized plus successful auth refresh. Never retry an ambiguous transport, protocol, capacity, or cloud failure.",
+    "Run one continuously draining authenticated control I/O owner with critical-priority writes, latest-state coalescing, bounded interactions and transient lifecycle output.",
+    "PRESENCE_READY stays launcher-internal. Only Spawn, Update, and Despawn lifecycle records cross local control to the sidecar.",
+    "Any core terminal, full must-deliver queue, authenticated control loss, sidecar child exit, or RomPresenceReset at any lifecycle point is session-fatal. No in-session mint after reset, remint, or reconnect.",
+    "Checkpoint and shutdown must retain their correlation, reserved capacity, and absolute deadlines under sustained presence traffic; stop the realtime core before authenticated child shutdown.",
+    "Save revision changes alone do not restart presence."
+  ],
+  "first_atomic_unit": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "first_unit_purpose": "Implement canonical endpoint derivation, bounded authenticated mint HTTP, exact response-to-grant correlation, and stable error mapping without depending on the pending control protocol changes.",
+  "second_atomic_unit": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/tests/realtime_vertical_slice.rs"
+  ],
+  "second_unit_purpose": "Own the bounded control pump, realtime coordinator, checkpoint/shutdown coexistence, reset policy, and executable session activation after the sidecar control ABI lands.",
+  "compile_hazards": [
+    "ControlChannel currently owns one unsplit TcpStream and is synchronously borrowed by checkpoint and shutdown flows.",
+    "SessionLifecycle checkpoint waits currently stop ordinary control polling.",
+    "ControlEvent and ControlCommand exhaustive matches in launcher production code and test fakes must be updated with the new typed variants.",
+    "The external sidecar remains the only ROM BridgeWriter; the launcher must never frame or write ROM messages itself.",
+    "The ticket is non-Clone and zeroizing; correlation must occur before the consuming into_parts call.",
+    "Production remains inactive unless main.rs calls the additive realtime lifecycle entry point."
+  ]
+}

@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-rom-presence-correction-v3-implementation",
+  "unit_id": "phase5-rom-presence-activation",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Repair the rejected cumulative ROM presence candidate so transport generation cutover, renderer recreation and animation, effective interaction visibility, real-object precedence, and deterministic runtime coverage satisfy the Phase 5 contract.",
+  "owned_files": [
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-correction-v3-contract.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-correction-v3-discovery-checkpoint.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-continuation-v2-correctness-review-terminal.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-continuation-v2-security-review-terminal.json",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-continuation-v2-findings-registry.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-rom-presence-20260902/rom-presence-core-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-wire-contract.json",
+    "include/coop/presence.h",
+    "include/coop/presence_runtime.h",
+    "src/coop/presence.c",
+    "test/coop/presence.c"
+  ],
+  "closed_decisions": [
+    "Treat staged cumulative candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b as immutable dependency context; leave the index untouched and produce only an unstaged correction in the six discovery-approved owned files.",
+    "Keep game protocol version 1, the 144-byte bridge frame, 128-byte payload, 32-slot queues, existing message IDs, the 9244-byte bridge layout, and the exact 28-byte LocalPresenceStateV1 unchanged.",
+    "A strictly newer same-epoch SESSION_READY is a transport-generation cutover even inside the live heartbeat window: clear old pending presence, reducer, renderer, and interaction eligibility before accepting replacement lifecycle traffic, preserve queued save semantics, and emit the documented ROM_READY without rewinding independent sequence domains.",
+    "Return-to-field sprite reset must not strand the reserved remote ObjectEvent or touch a reused identity. Retire or recreate only the proven remote object in SpawnObjectEventsOnReturnToField, then let the normal update restore it transactionally without evicting an NPC.",
+    "Start or seek remote sprite animation only when desired direction or animation changes. Preserve exact six-frame interpolation, continuous retargeting, zero x2/y2 offsets, and discontinuity snap.",
+    "An interaction is eligible only for a fresh, visible, currently re-resolved owned renderer in an allowed local on-foot overworld pose. Vanilla actionable real-object or field-script interaction has precedence; remote consumed-without-lock is the fallback only when the visible remote is the sole target, including queue-full send failure.",
+    "Remote ObjectEvents remain nonblocking and excluded from collision as source and target, while real overlapping objects remain discoverable and local-link or RFU behavior stays unchanged.",
+    "Repair the malformed-lifecycle outer-sequence regression to prove rejected traffic does not consume the sequence through a valid accepted lifecycle or the repaired documented same-epoch cutover; never encode a test-only behavior.",
+    "Use existing public presence runtime seams and focused engine globals to add deterministic tests for spawn/retry/ownership, palette and capacity failure, interpolation/retargeting/snap, animation progress, 90-frame staleness, stale/hidden/unowned interaction denial, warp and return-to-field teardown/recreation, real-object precedence, queue-full consumption, hidden publication, local-link isolation, and live same-epoch reconnect cutover.",
+    "Preserve exact checksum, length, epoch, type, and sequence fail-closed validation; never manufacture a local pose, serialize engine structs, leak MAP_OFFSET onto the wire, or equate source, warp, server, and outer bridge sequence domains."
+  ],
+  "forbidden_changes": [
+    "Do not edit include headers, src/overworld.c, dist/bridge_manifest.json, src/coop/presence.c, test/coop/presence.c, Rust crates, Lua, build scripts, save layouts, maps, graphics assets, battle code, documentation, orchestration artifacts, or any file outside owned_files.",
+    "Do not bump a protocol or ABI version, change queue or bridge sizes, accept malformed or wrong-epoch lifecycle data, evict ObjectEvents, trust cached sprite ownership, allocate unbounded state, or weaken session-reset confinement.",
+    "Do not make remotes collide, mask a real overlapping object, consume an invisible or stale remote interaction, fall through after a genuine remote send, return a locking result without a script, or use sprite x2/y2 for interpolation.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create or remove worktrees, or revert another worker's edits; preserve the sealed index and all unowned content."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "RPAC3-001",
+      "description": "Every strictly newer live same-epoch SESSION_READY performs an atomic presence-generation cutover before subsequent lifecycle traffic, clears old pending/reducer/renderer state, preserves required save semantics, emits ROM_READY, and has a focused regression."
+    },
+    {
+      "id": "RPAC3-002",
+      "description": "Return-to-field and ownership-loss paths leave no active unsprited reserved ObjectEvent, never mutate reused identities, and deterministically recreate a visible remote without reducing real NPC capacity."
+    },
+    {
+      "id": "RPAC3-003",
+      "description": "Remote animations progress instead of rewinding, while interpolation, continuous retargeting, exact six-frame arrival, zero sprite offsets, and discontinuity snap remain deterministic."
+    },
+    {
+      "id": "RPAC3-004",
+      "description": "Only a fresh, effectively visible, proven owned renderer is interactable; stale, hidden, failed-spawn, and wrong-context remotes cannot consume A, and every overlapping real object or field action has precedence."
+    },
+    {
+      "id": "RPAC3-005",
+      "description": "The outer-sequence regression matches production semantics and deterministic tests directly execute renderer lifecycle, interpolation, animation, staleness, warp, return-to-field, visibility, overlap, queue-full, hidden publication, and local-link isolation paths."
+    },
+    {
+      "id": "RPAC3-006",
+      "description": "Focused Cloud Coop tests, modern ROM build, bridge-manifest unit and regeneration checks, and diff checks pass; root observation contains only the six discovery-approved files and the staged cumulative dependency tree remains exact."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python3 C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make check TESTS=\"Cloud Coop\""
+      ],
+      "natural": [
+        "rtk wsl -d Ubuntu-24.04 --cd C:/Users/User/Documents/personal/.codex-worktrees/hoenn-sessions/pokecrossroads-phase5-presence-resume-20260903/rom-presence-correction-v3 -- bash build/codex-rom-make modern",
+        "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+        "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 1
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "implementation_rounds": 3,
+    "fix_rounds": 2,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 3600000
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "Every acceptance criterion is resolved and every required command outcome is recorded.",
+      "A safe correction requires changing a frozen protocol, reducer, asset, save, or local-link boundary.",
+      "A concrete toolchain failure prevents further progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "self-reported",
+    "changed_files_source": "root-diff"
+  }
+}

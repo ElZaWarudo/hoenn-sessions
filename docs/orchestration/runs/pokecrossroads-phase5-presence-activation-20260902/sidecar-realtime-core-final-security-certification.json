@@ -1,0 +1,8 @@
+{
+  "role": "security-sentinel",
+  "actor_id": "/root/server_two_ws_security_reviewer",
+  "status": "passed",
+  "contract_hash": "sha256:138432b451c3379e1a5bd4c04e3db504094d0a9071b0e729b3cf90f366d8a7fb",
+  "diff_digest": "sha256:4e0aeaf0cace2614b5b1153a4e5528d2948e56f32ebcc7714930cb3ee1f32b35",
+  "findings": []
+}

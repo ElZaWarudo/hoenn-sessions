@@ -1,0 +1,265 @@
+diff --git a/coop/crates/coop-launcher/src/process.rs b/coop/crates/coop-launcher/src/process.rs
+index dcf49a42e4e9a7ffaf0d904eb543e643c0aebf2d..b9a9f507d823a51f4d3ef2f23d5371856154e4ca 100644
+--- a/coop/crates/coop-launcher/src/process.rs
++++ b/coop/crates/coop-launcher/src/process.rs
+@@ -1051,6 +1051,22 @@ struct CriticalAdmission {
+     shared: Arc<PumpShared>,
+ }
+ 
++#[cfg(test)]
++struct CriticalDequeueBarrier {
++    dequeued: tokio::sync::Notify,
++    release: tokio::sync::Notify,
++}
++
++#[cfg(test)]
++impl CriticalDequeueBarrier {
++    fn new() -> Self {
++        Self {
++            dequeued: tokio::sync::Notify::new(),
++            release: tokio::sync::Notify::new(),
++        }
++    }
++}
++
+ impl Drop for CriticalAdmission {
+     fn drop(&mut self) {
+         if let Ok(mut pending) = self.shared.writer_admission.lock() {
+@@ -1127,6 +1143,9 @@ pub struct ControlChannel {
+     writer_task: Option<JoinHandle<()>>,
+     #[cfg(test)]
+     task_exits: Arc<AtomicUsize>,
++    #[cfg(test)]
++    critical_dequeue_barrier: Option<Arc<CriticalDequeueBarrier>>,
++    pending_critical: Option<ControlEvent>,
+     observed_reset_generation: Option<u32>,
+     observed_state: Option<(u32, u32)>,
+ }
+@@ -1365,10 +1384,22 @@ impl ControlChannel {
+     /// bounded event lane fails.
+     pub async fn receive(&mut self) -> Result<ControlEvent, ProcessError> {
+         loop {
++            if self.take_reset_notification().is_some() {
++                return Ok(ControlEvent::RomPresenceReset);
++            }
++            if let Some(event) = self.pending_critical.take() {
++                return Ok(event);
++            }
+             if let Some(event) = self.take_presence_event() {
+                 return Ok(event);
+             }
+             if let Ok(event) = self.critical_rx.try_recv() {
++                #[cfg(test)]
++                self.wait_after_critical_dequeue().await;
++                if self.take_reset_notification().is_some() {
++                    self.pending_critical = Some(event);
++                    return Ok(ControlEvent::RomPresenceReset);
++                }
+                 return Ok(event);
+             }
+             if let Ok((generation, interaction)) = self.interaction_rx.try_recv() {
+@@ -1387,7 +1418,10 @@ impl ControlChannel {
+                 biased;
+                 event = self.critical_rx.recv() => match event {
+                     Some(event) => {
++                        #[cfg(test)]
++                        self.wait_after_critical_dequeue().await;
+                         if self.take_reset_notification().is_some() {
++                            self.pending_critical = Some(event);
+                             return Ok(ControlEvent::RomPresenceReset);
+                         }
+                         return Ok(event);
+@@ -1430,7 +1464,16 @@ impl ControlChannel {
+             if self.take_reset_notification().is_some() {
+                 return Ok(ControlEvent::RomPresenceReset);
+             }
++            if let Some(event) = self.pending_critical.take() {
++                return Ok(event);
++            }
+             if let Ok(event) = self.critical_rx.try_recv() {
++                #[cfg(test)]
++                self.wait_after_critical_dequeue().await;
++                if self.take_reset_notification().is_some() {
++                    self.pending_critical = Some(event);
++                    return Ok(ControlEvent::RomPresenceReset);
++                }
+                 return Ok(event);
+             }
+             if let Ok(cause) = self.terminal_rx.try_recv() {
+@@ -1443,7 +1486,10 @@ impl ControlChannel {
+                 biased;
+                 event = self.critical_rx.recv() => match event {
+                     Some(event) => {
++                        #[cfg(test)]
++                        self.wait_after_critical_dequeue().await;
+                         if self.take_reset_notification().is_some() {
++                            self.pending_critical = Some(event);
+                             return Ok(ControlEvent::RomPresenceReset);
+                         }
+                         return Ok(event);
+@@ -1461,6 +1507,15 @@ impl ControlChannel {
+         }
+     }
+ 
++    #[cfg(test)]
++    async fn wait_after_critical_dequeue(&self) {
++        let Some(barrier) = self.critical_dequeue_barrier.as_ref() else {
++            return;
++        };
++        barrier.dequeued.notify_one();
++        barrier.release.notified().await;
++    }
++
+     fn take_reset_notification(&mut self) -> Option<u32> {
+         let snapshot = self.snapshot_rx.borrow_and_update().clone();
+         let reset_generation = snapshot.reset_generation?;
+@@ -1534,6 +1589,16 @@ impl ControlChannel {
+         Self::from_authenticated_stream(stream)
+     }
+ 
++    #[cfg(test)]
++    fn from_stream_for_test_with_critical_dequeue_barrier(
++        stream: TcpStream,
++        barrier: Arc<CriticalDequeueBarrier>,
++    ) -> Self {
++        let mut control = Self::from_authenticated_stream(stream);
++        control.critical_dequeue_barrier = Some(barrier);
++        control
++    }
++
+     fn from_authenticated_stream(stream: TcpStream) -> Self {
+         let (critical_write_tx, critical_write_rx) = mpsc::channel(CRITICAL_WRITE_CAPACITY);
+         let (lifecycle_tx, lifecycle_rx) = mpsc::channel(LIFECYCLE_WRITE_CAPACITY);
+@@ -1605,6 +1670,9 @@ impl ControlChannel {
+             writer_task: Some(writer_task),
+             #[cfg(test)]
+             task_exits,
++            #[cfg(test)]
++            critical_dequeue_barrier: None,
++            pending_critical: None,
+             observed_reset_generation: None,
+             observed_state: None,
+         }
+@@ -3843,10 +3911,10 @@ const _: Option<ProtocolVersion> = None;
+ mod tests {
+     use super::{
+         CleanupArtifact, CommandSpec, ControlChannel, ControlShutdownEvidence,
+-        ControlTerminalCause, DescendantCompletionEvidence, JobTerminationEvidence,
+-        MgbaShutdownReport, OWNED_MGBA_ROM_ARG_INDEX, PROCESS_IO_TIMEOUT, PresenceSnapshot,
+-        ProcessError, PumpShared, RecoveryDisposition, RootReapEvidence, ScriptedWriter,
+-        ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
++        ControlTerminalCause, CriticalDequeueBarrier, DescendantCompletionEvidence,
++        JobTerminationEvidence, MgbaShutdownReport, OWNED_MGBA_ROM_ARG_INDEX, PROCESS_IO_TIMEOUT,
++        PresenceSnapshot, ProcessError, PumpShared, RecoveryDisposition, RootReapEvidence,
++        ScriptedWriter, ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
+         apply_presence_reset, drop_cleanup_allowed, ensure_absent, new_command_id,
+         scripted_lifecycle_write, terminate_and_reap_sync,
+     };
+@@ -3876,6 +3944,7 @@ mod tests {
+         io::{AsyncReadExt, AsyncWriteExt},
+         net::TcpListener,
+         process::Command,
++        sync::oneshot,
+     };
+ 
+     fn long_running_child() -> tokio::process::Child {
+@@ -4034,6 +4103,36 @@ mod tests {
+         (ControlChannel::from_stream_for_test(stream), server)
+     }
+ 
++    async fn gated_critical_event_pair(
++        event: ControlEvent,
++    ) -> (
++        ControlChannel,
++        std::sync::Arc<CriticalDequeueBarrier>,
++        oneshot::Sender<()>,
++        oneshot::Sender<()>,
++        tokio::task::JoinHandle<()>,
++    ) {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let (start_tx, start_rx) = oneshot::channel();
++        let (close_tx, close_rx) = oneshot::channel();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            start_rx.await.unwrap();
++            let mut bytes = serde_json::to_vec(&event).unwrap();
++            bytes.push(b'\n');
++            stream.write_all(&bytes).await.unwrap();
++            let _ = close_rx.await;
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        let barrier = std::sync::Arc::new(CriticalDequeueBarrier::new());
++        let control = ControlChannel::from_stream_for_test_with_critical_dequeue_barrier(
++            stream,
++            std::sync::Arc::clone(&barrier),
++        );
++        (control, barrier, start_tx, close_tx, server)
++    }
++
+     async fn wait_for_terminal_cause(control: &ControlChannel, expected: ControlTerminalCause) {
+         tokio::time::timeout(PROCESS_IO_TIMEOUT, async {
+             loop {
+@@ -4305,6 +4404,62 @@ mod tests {
+         server.await.unwrap();
+     }
+ 
++    #[tokio::test]
++    async fn control_pump_receive_reset_retains_dequeued_critical_event() {
++        let command_id = new_command_id();
++        let expected = ControlEvent::CommandResult {
++            command_id,
++            status: CommandStatus::Applied,
++            reason: None,
++        };
++        let (mut control, barrier, start_tx, close_tx, server) =
++            gated_critical_event_pair(expected.clone()).await;
++        let shared = std::sync::Arc::clone(&control.shared);
++        let receive_task = tokio::spawn(async move {
++            let result = control.receive().await;
++            (control, result)
++        });
++
++        start_tx.send(()).unwrap();
++        barrier.dequeued.notified().await;
++        assert!(apply_presence_reset(&shared));
++        barrier.release.notify_one();
++
++        let (mut control, first) = receive_task.await.unwrap();
++        assert_eq!(first.unwrap(), ControlEvent::RomPresenceReset);
++        assert_eq!(control.receive().await.unwrap(), expected);
++        close_tx.send(()).unwrap();
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_receive_bounded_reset_retains_dequeued_critical_event() {
++        let command_id = new_command_id();
++        let expected = ControlEvent::CommandResult {
++            command_id,
++            status: CommandStatus::Applied,
++            reason: None,
++        };
++        let (mut control, barrier, start_tx, close_tx, server) =
++            gated_critical_event_pair(expected.clone()).await;
++        let shared = std::sync::Arc::clone(&control.shared);
++        let receive_task = tokio::spawn(async move {
++            let result = control.receive_bounded().await;
++            (control, result)
++        });
++
++        start_tx.send(()).unwrap();
++        barrier.dequeued.notified().await;
++        assert!(apply_presence_reset(&shared));
++        barrier.release.notify_one();
++
++        let (mut control, first) = receive_task.await.unwrap();
++        assert_eq!(first.unwrap(), ControlEvent::RomPresenceReset);
++        assert_eq!(control.receive_bounded().await.unwrap(), expected);
++        close_tx.send(()).unwrap();
++        server.await.unwrap();
++    }
++
+     #[tokio::test]
+     async fn control_pump_sustained_presence_shutdown_joins_both_tasks() {
+         let events = (1..=128)

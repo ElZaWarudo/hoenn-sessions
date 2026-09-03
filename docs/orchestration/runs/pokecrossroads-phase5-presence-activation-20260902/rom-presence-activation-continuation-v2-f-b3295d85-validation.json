@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-B3295D85",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: a newer same-epoch SESSION_READY received before heartbeat staleness only advances the outer receive sequence; presence reset occurs solely in the later disconnected rearm branch."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

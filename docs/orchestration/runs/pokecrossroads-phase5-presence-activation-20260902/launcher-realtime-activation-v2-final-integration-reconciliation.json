@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "status": "release-ready",
+  "unit_id": "phase5-launcher-realtime-activation",
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "initial_patch_hash": "sha256:50df0668af1c0f61f1c16954d7764ae5da5f53692adb7207ea8cd461bfdfe40d",
+  "correction_patch_hashes": [
+    "sha256:1dace61948b3ef9cce923458777b932ff07c1dccf1d408199c72b66ab7c82e2e",
+    "sha256:d261e7613aeccbf36ec1f7a40f6373c4fe00a16d191ab1619c3a473ab5a7b573",
+    "sha256:bc46ba0cbc36ccd397b21da4169e96ebd590259170ac2d3e773387726c689b54",
+    "sha256:843470edc1b49cdba228c38eca0efbf1fe166c5906a6768c4e9a13fba9fce6e2",
+    "sha256:fe11bcb3ceae14ac0a323a49db4b2ef74fa4758238f21efa0ef08baccd3ba282"
+  ],
+  "candidate_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+  "candidate_commit": "db0198f622b6efcba41865930ea52452598cafff",
+  "candidate_tree": "213f409049f98c750789c936c3ddc7cd29aa25e5",
+  "integration_commit": "83d9acde9748081b5b384ce2a7b680441771810d",
+  "integration_tree": "213f409049f98c750789c936c3ddc7cd29aa25e5",
+  "tree_match": true,
+  "changed_paths": [
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "correctness_certification": "launcher-realtime-activation-v2-correction-r5-correctness-certification.json",
+  "security_certification": "launcher-realtime-activation-v2-correction-r5-security-certification.json",
+  "targeted_validation": "launcher-realtime-activation-v2-correction-r5-targeted-validation-evidence.json",
+  "root_validation": "launcher-realtime-activation-v2-correction-r5-root-validation.json",
+  "findings_registries": [
+    {"path": "launcher-realtime-activation-v2-findings-registry.json", "digest": "sha256:c6eaae39a8e2ba95380ef75bb41b8c8ee66810db46f5e2c2b957a2d96451e520", "fixed": 5, "open": 0},
+    {"path": "launcher-realtime-activation-v2-correction-r1-findings-registry.json", "digest": "sha256:24623d575026e0041280d75e66653fe6a120f07bfd4b5eca0e515ae67ffe98b6", "fixed": 4, "open": 0},
+    {"path": "launcher-realtime-activation-v2-correction-r2-findings-registry.json", "digest": "sha256:63d2d916bdfb1139e3b0507021634222148cf50b40cac86e7196767f3d5120f8", "fixed": 6, "open": 0},
+    {"path": "launcher-realtime-activation-v2-correction-r3-findings-registry.json", "digest": "sha256:9122eb8fb3a6d5076186d5b3f7db787ce0ba06866ad2f2de069879c369063a76", "fixed": 5, "open": 0},
+    {"path": "launcher-realtime-activation-v2-correction-r4-findings-registry.json", "digest": "sha256:601e4fa6f31dab54d107c83dd77b39c2cd2ee63eaa6215d40b178eb69f2a6b19", "fixed": 1, "open": 0},
+    {"path": "launcher-realtime-activation-v2-correction-r5-findings-registry.json", "digest": "sha256:a8f3e573a6d4f2dc7dbeecf0c11149e5a1b9d1a28e4597ba9b9d22b6bcb63810", "fixed": 0, "open": 0}
+  ]
+}

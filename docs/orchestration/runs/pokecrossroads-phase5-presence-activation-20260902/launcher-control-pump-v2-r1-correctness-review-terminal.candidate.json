@@ -1,0 +1,17 @@
+{
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "diff_digest": "sha256:25bdd962cde65c380288ac66065aab800b2774f98353bf69353df8122f086c7f",
+  "finding_feedback": [],
+  "findings": [],
+  "review_plan_hash": "sha256:6c79edb6d6475c4eae2bdb7277cf5024ebd61c5953bc0710e3806f76d21c2951",
+  "reviewer_id": "/root/launcher_pump_correctness_review_v2",
+  "risk_boundaries_checked": [
+    "atomic-reset-generation-permit-and-lifecycle-write-linearization",
+    "critical-priority-completion-cancellation-and-absolute-deadlines",
+    "lossless-reset-critical-race-and-critical-fifo-preservation",
+    "raw-observation-child-fairness-startup-and-joined-teardown"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 0,
+  "surface_id": "launcher-control-pump-correctness-v2-r1"
+}

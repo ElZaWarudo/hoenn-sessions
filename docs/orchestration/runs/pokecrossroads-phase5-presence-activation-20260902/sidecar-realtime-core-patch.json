@@ -1,0 +1,44 @@
+{
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_digest": "sha256:53fbd907eef08fc50c7a4a41ca6bb918d0ca45f78a1c78ca1c473f7366765577",
+  "baseline_tree": "bb6725ba2e4bcef8fae97c5977ce6cc3c2a51c86",
+  "changed_files": [
+    {
+      "digest": "sha256:725afe4da0620a2bd30ca40857da719c333c6ecfff2127eacbb65566278ee478",
+      "path": "Cargo.lock"
+    },
+    {
+      "digest": "sha256:56380f2dfefacece443a09f1379c938c813d2f62a21ef2a4d55d6a2b29930440",
+      "path": "coop/crates/coop-sidecar/Cargo.toml"
+    },
+    {
+      "digest": "sha256:0afc7654273266398abff689105817efca704de41fcf982633b3643fb841ce43",
+      "path": "coop/crates/coop-sidecar/src/lib.rs"
+    },
+    {
+      "digest": "sha256:55927499a16ce9a63bfe4b503d247ffafca5b39ccc88dc1a05752eee9c6f6ea4",
+      "path": "coop/crates/coop-sidecar/src/realtime.rs"
+    },
+    {
+      "digest": "sha256:d807a40c875c776ae18b8482b78f6296ffc94dc3e58353834a188d2a2dba5b16",
+      "path": "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+    }
+  ],
+  "contract_hash": "sha256:046e45694f1bb802169ab6b391509db248f7e05e3eba98f025561e52601d9d7b",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:56a804de8e1961f950ad6102c36e07e736641e269b12eaf58f3b7548df006264",
+  "manifest_hash": "sha256:5b9e5b36f8e2ae2b82705e6e85a80837bb81bff38fa93245070a609429d0056b",
+  "owned_paths": [
+    "Cargo.lock",
+    "coop/crates/coop-sidecar/Cargo.toml",
+    "coop/crates/coop-sidecar/src/lib.rs",
+    "coop/crates/coop-sidecar/src/realtime.rs",
+    "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+  ],
+  "patch_sha256": "sha256:ffa45b21fec95da51f8bffdf50b45741094545bb9dea3b9290657a010c3d0f91",
+  "role": "integration-candidate",
+  "schema_version": 1,
+  "unit_id": "sidecar-realtime-core",
+  "worker_id": "/root/sidecar_realtime_core_worker",
+  "workspace_id": "pokecrossroads-phase5-sidecar-realtime-core-20260902"
+}

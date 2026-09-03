@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-CE084463",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: the remote A-button hook returns consumed before TryStartInteractionScript, while collision explicitly permits remote overlap and TryInteract performs no real-object precedence check."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

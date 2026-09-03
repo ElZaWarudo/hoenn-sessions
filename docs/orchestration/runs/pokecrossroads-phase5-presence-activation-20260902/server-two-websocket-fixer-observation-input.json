@@ -1,0 +1,13 @@
+{
+  "workspace_id": "pokecrossroads-phase5-server-two-websocket-fixer-20260902",
+  "worker_id": "/root/server_two_websocket_fixer",
+  "role": "fixer-candidate",
+  "unit_id": "server-two-websocket-presence-fixer",
+  "contract_hash": "sha256:d3dc446b15dca7265f2cdfc6a1f943e71bcef2bc89d88bab1d8ef1159674a1b4",
+  "dependency_patch_hashes": [
+    "sha256:cce9087ec450b2b92b24e9f48397f2adc21a47f70c486c5554d41cd1ba6a528e"
+  ],
+  "owned_paths": [
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ]
+}

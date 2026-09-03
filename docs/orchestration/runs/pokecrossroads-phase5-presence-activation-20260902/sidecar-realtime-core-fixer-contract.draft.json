@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260902-sidecar-realtime-core-fixer-v1",
+  "unit_id": "sidecar-realtime-core-fixer",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Correct the confirmed per-handle sequence, ticket lifetime, authenticated-session expiry, and secret-bearing test assertion findings in the standalone sidecar realtime core.",
+  "owned_files": [
+    "coop/crates/coop-sidecar/src/realtime.rs",
+    "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+  ],
+  "required_context": [
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-realtime-core-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-realtime-core-correctness-review-round1.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-realtime-core-security-review-round1.json",
+    "coop/crates/coop-server/src/phase2/presence.rs",
+    "coop/crates/coop-sidecar/src/realtime.rs",
+    "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+  ],
+  "closed_decisions": [
+    "Server lifecycle sequences are independent per remote PresenceHandle; there is no connection-global server sequence ordering constraint.",
+    "Track and validate sequence order against the affected handle for update, despawn, and hidden-to-visible respawn. A second distinct remote may validly spawn at sequence 1 even after another remote advanced farther.",
+    "Count only visible remotes toward the four-player bound. Retain a bounded hidden-handle sequence tombstone so a later visible spawn must advance; terminal despawn reasons may remove the handle.",
+    "The ticket expiry gates only the one WebSocket upgrade attempt. Construct the owned Authorization request, immediately drop the RealtimeGrant so its ticket is zeroized, and bound upgrade completion by the earlier connect deadline or grant expiry.",
+    "After a successful authenticated upgrade, use the existing fixed readiness deadline and session termination signals; do not terminate a healthy authenticated socket at the consumed ticket's expiry.",
+    "Tests must prove two independent remote handles can both spawn at sequence 1 and advance interleaved, despawn ordering remains per handle, and an authenticated connection remains online beyond its original short ticket expiry.",
+    "Authorization verification in tests must retain exactness without storing or printing the plaintext bearer value in a failing assertion; capture a non-secret match boolean or digest.",
+    "Preserve the original standalone boundary, one-attempt/no-reconnect behavior, strict decoding, bounded queues and frames, stable redacted outcomes, and all original acceptance coverage."
+  ],
+  "forbidden_changes": [
+    "Do not edit Cargo files, lib.rs, sidecar server/control/main, launcher/server/ROM/Lua code, documentation, generated artifacts, or orchestration state.",
+    "Do not introduce global lifecycle ordering, accept stale/equal/half-range events for a handle, weaken four-visible-remote capacity, retain plaintext tickets after request construction, or add any reconnect/retry path.",
+    "Do not stage, commit, branch, fetch, pull, push, contact repository remotes, create or remove worktrees, or revert another worker's edits. Test loopback networking is authorized."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "SRF-001",
+      "description": "Independent remote handles accept valid interleaved lifecycle streams, including two sequence-1 spawns, while each handle still rejects stale, equal, half-range, invalid-lifecycle, and duplicate events."
+    },
+    {
+      "id": "SRF-002",
+      "description": "Hidden-to-visible lifecycle preserves per-handle ordering, terminal removals remain bounded, and only visible remotes count toward the capacity limit."
+    },
+    {
+      "id": "SRF-003",
+      "description": "RealtimeGrant is dropped immediately after an owned bearer request is built; grant expiry bounds upgrade only, and a healthy authenticated connection remains active beyond the consumed ticket expiry."
+    },
+    {
+      "id": "SRF-004",
+      "description": "Loopback authentication is still checked exactly without any failure path printing the bearer ticket."
+    },
+    {
+      "id": "SRF-005",
+      "description": "Focused and full coop-sidecar tests, strict Clippy, formatting, and diff checks pass with changes confined to the two owned files relative to the sealed candidate."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-sidecar realtime --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-sidecar --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "implementation_rounds": 2,
+    "fix_rounds": 2,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 1200000
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "All confirmed findings and acceptance criteria are resolved with verification outcomes recorded.",
+      "A safe fix requires changing a forbidden protocol or integration boundary.",
+      "A concrete toolchain or isolated-worktree failure prevents progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "self-reported",
+    "changed_files_source": "root-diff"
+  }
+}

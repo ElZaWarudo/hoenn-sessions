@@ -1,0 +1,14 @@
+{
+  "workspace_id": "pokecrossroads-phase5-sidecar-control-final-20260903",
+  "worker_id": "/root/sidecar_presence_control_worker",
+  "role": "integration-candidate",
+  "unit_id": "sidecar-presence-control-final",
+  "contract_hash": "sha256:23d1b88d8582b443b3bae3900aafa20f76279f2792c303978628a03ebbeef38c",
+  "dependency_patch_hashes": [
+    "sha256:5cbc08fc7786cbf850dc2450710ec3da4e1861d26b95ea0389daa3cfb816405c"
+  ],
+  "owned_paths": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ]
+}

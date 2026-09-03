@@ -1,0 +1,1 @@
+{"finding_id":"F-A3081409","validator_id":"/root","verdict":"confirmed","evidence":["The centralized lookup and collision changes originally lacked executable proof that legacy local-link collision identity remained intact."],"revised_severity":null,"revised_observation":null,"revised_impact":null,"revised_recommendation":null}

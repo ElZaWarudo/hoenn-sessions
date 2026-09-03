@@ -1,0 +1,15 @@
+{
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-control-pump-v2",
+  "worker_id": "/root/launcher_control_pump_v2",
+  "unit_id": "phase5-launcher-control-pump",
+  "role": "integration-candidate-correction",
+  "base_revision": "9d08840abb411f6e1f4b832a7eaaad1255a00d16",
+  "baseline_tree": "c3e6290b10ec5d01989fb6f95be1506f175c6610",
+  "dependency_patch_hashes": [
+    "sha256:edede47c5acbd9b3d1148a4ba1bdb2088d59913ac431f5f9b08046c72d7b1d7e"
+  ],
+  "owned_paths": [
+    "coop/crates/coop-launcher/src/process.rs"
+  ],
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36"
+}

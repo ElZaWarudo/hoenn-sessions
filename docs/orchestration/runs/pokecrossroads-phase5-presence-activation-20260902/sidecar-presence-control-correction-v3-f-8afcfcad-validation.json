@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-8AFCFCAD",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root independently reproduced compile error E0733 on cumulative tree 80daf109a7939972ec2f25d124b7505a10e31164: the async pre-bridge control-result handler recursively awaits itself in its None branch."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

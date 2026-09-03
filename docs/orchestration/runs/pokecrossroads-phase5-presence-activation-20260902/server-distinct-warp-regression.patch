@@ -1,0 +1,89 @@
+diff --git a/coop/crates/coop-server/src/phase2/presence.rs b/coop/crates/coop-server/src/phase2/presence.rs
+index beaf8de54987fc5c7db15287419d1deae7e27193..cf75abfac1d15063cfae370a49e1eb8957c54859 100644
+--- a/coop/crates/coop-server/src/phase2/presence.rs
++++ b/coop/crates/coop-server/src/phase2/presence.rs
+@@ -1919,6 +1919,84 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn distinct_warp_histories_share_partition_and_validate_target_sequence() {
++        let app = Phase2App::test();
++        let source = account(&app, "alice", "invite-distinct-warp-source");
++        let target = account(&app, "bob", "invite-distinct-warp-target");
++        let source_lease = acquire(&app, source, 66);
++        let target_lease = acquire(&app, target, 67);
++        let service = app.presence();
++        let source_connection = service
++            .connect(
++                source,
++                runtime_fence(&source_lease),
++                pose_with(
++                    WorldLocation::new(RegionId::Hoenn, 0, 9, 1, 1).unwrap(),
++                    0,
++                    Direction::East,
++                    7,
++                    7,
++                    PlayerState::Overworld,
++                ),
++            )
++            .unwrap();
++        let target_connection = service
++            .connect(
++                target,
++                runtime_fence(&target_lease),
++                pose_with(
++                    WorldLocation::new(RegionId::Hoenn, 0, 9, 2, 1).unwrap(),
++                    0,
++                    Direction::West,
++                    41,
++                    41,
++                    PlayerState::Overworld,
++                ),
++            )
++            .unwrap();
++
++        let source_events = service.drain(source_connection).unwrap().events;
++        let target_events = service.drain(target_connection).unwrap().events;
++        let [PresenceOutboundV1::Spawn(target_spawn)] = source_events.as_slice() else {
++            panic!("source must receive the target spawn");
++        };
++        let [PresenceOutboundV1::Spawn(source_spawn)] = target_events.as_slice() else {
++            panic!("target must receive the source spawn");
++        };
++        assert_eq!(target_spawn.handle(), target_connection.handle());
++        assert_eq!(target_spawn.state().pose().warp_sequence(), 41);
++        assert_eq!(source_spawn.handle(), source_connection.handle());
++        assert_eq!(source_spawn.state().pose().warp_sequence(), 7);
++
++        let valid_observation = observed_interaction(
++            target_connection.handle(),
++            target_spawn.server_sequence(),
++            41,
++            2,
++            1,
++        );
++        let validated = service
++            .validate_interaction(source_connection, valid_observation)
++            .unwrap();
++        assert_eq!(validated.target_handle, target_connection.handle());
++
++        let before = liveness(&service, target_connection.handle());
++        let invalid_observation = observed_interaction(
++            target_connection.handle(),
++            target_spawn.server_sequence(),
++            7,
++            2,
++            1,
++        );
++        assert_eq!(
++            service.validate_interaction(source_connection, invalid_observation),
++            Err(PresenceServiceError::InteractionObservationMismatch)
++        );
++        assert_eq!(liveness(&service, target_connection.handle()), before);
++        assert_eq!(service.connection_count(), Ok(2));
++    }
++
+     #[test]
+     fn interaction_observations_are_exact_and_read_only() {
+         let app = Phase2App::test();

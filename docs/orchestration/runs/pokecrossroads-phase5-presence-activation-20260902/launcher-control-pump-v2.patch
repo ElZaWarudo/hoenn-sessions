@@ -1,0 +1,2252 @@
+diff --git a/coop/crates/coop-launcher/src/process.rs b/coop/crates/coop-launcher/src/process.rs
+index 97b7ec95dea4bb79f7bf96e458e160df11c68635..dcf49a42e4e9a7ffaf0d904eb543e643c0aebf2d 100644
+--- a/coop/crates/coop-launcher/src/process.rs
++++ b/coop/crates/coop-launcher/src/process.rs
+@@ -6,13 +6,12 @@ use std::{
+     io::{self, Read, Seek, SeekFrom},
+     path::{Path, PathBuf},
+     process::Stdio,
++    sync::{Arc, Mutex},
+     time::{Duration, Instant},
+ };
+ 
+-#[cfg(windows)]
+-use std::sync::Arc;
+-
+ use coop_cloud::{BridgeAbiVersion, ProtocolVersion};
++use coop_protocol::{LocalPresenceStateV1, sequence_is_newer};
+ use coop_sidecar::{
+     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, GAME_PROTOCOL_VERSION, MAX_DESCRIPTOR_BYTES,
+     SessionDescriptor,
+@@ -26,10 +25,15 @@ use tokio::{
+     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
+     net::TcpStream,
+     process::{Child, Command},
+-    time::timeout,
++    sync::{mpsc, oneshot, watch},
++    task::JoinHandle,
++    time::{timeout, timeout_at},
+ };
+ use uuid::Uuid;
+ 
++#[cfg(test)]
++use std::sync::atomic::{AtomicUsize, Ordering};
++
+ use crate::session::SessionWorkspace;
+ #[cfg(windows)]
+ use crate::windows_mgba_supervisor::MgbaSupervisor;
+@@ -86,6 +90,27 @@ pub enum ProcessError {
+     },
+     #[error("a supervised child exited unsuccessfully")]
+     ChildExited,
++    #[error("sidecar control pump terminated")]
++    ControlTerminal(ControlTerminalCause),
++}
++
++/// The first terminal condition observed by the control pump.  The value is
++/// retained for the lifetime of the channel so a closed lane can never hide a
++/// more useful root cause on a later receive or enqueue.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum ControlTerminalCause {
++    ReaderClosed,
++    ReaderIo,
++    ReaderProtocol,
++    CriticalLaneClosed,
++    CriticalWriteFailed,
++    CriticalWriteAmbiguous,
++    LifecycleLaneClosed,
++    LifecycleOverflow,
++    LifecycleWriteFailed,
++    LifecyclePartialWrite,
++    InteractionOverflow,
++    PumpStopped,
+ }
+ 
+ /// Whether the sidecar accepted the correlated shutdown command before the
+@@ -986,10 +1011,124 @@ pub fn materialize_bridge_session(
+     Ok(())
+ }
+ 
+-/// A control-only connection; the secret is never serialized outside its handshake.
++const CRITICAL_WRITE_CAPACITY: usize = 1;
++const LIFECYCLE_WRITE_CAPACITY: usize = 32;
++const CRITICAL_EVENT_CAPACITY: usize = 16;
++const INTERACTION_EVENT_CAPACITY: usize = 16;
++const TERMINAL_SIGNAL_CAPACITY: usize = 1;
++
++#[derive(Clone, Debug)]
++struct PresenceSnapshot {
++    generation: u32,
++    revision: u32,
++    state: Option<LocalPresenceStateV1>,
++    reset_generation: Option<u32>,
++    lifecycle_permit: bool,
++    reset_latched: bool,
++}
++
++struct CriticalWrite {
++    bytes: Vec<u8>,
++    deadline: tokio::time::Instant,
++    _admission: CriticalAdmission,
++    completion: oneshot::Sender<Result<(), ControlTerminalCause>>,
++}
++
++struct LifecycleWrite {
++    generation: u32,
++    bytes: Vec<u8>,
++}
++
++struct PumpShared {
++    snapshot_tx: watch::Sender<PresenceSnapshot>,
++    terminal: Mutex<Option<ControlTerminalCause>>,
++    writer_admission: Mutex<usize>,
++    terminal_tx: mpsc::Sender<ControlTerminalCause>,
++    stop_tx: watch::Sender<bool>,
++}
++
++struct CriticalAdmission {
++    shared: Arc<PumpShared>,
++}
++
++impl Drop for CriticalAdmission {
++    fn drop(&mut self) {
++        if let Ok(mut pending) = self.shared.writer_admission.lock() {
++            *pending = pending.saturating_sub(1);
++        }
++    }
++}
++
++impl PumpShared {
++    fn terminal(&self) -> Option<ControlTerminalCause> {
++        self.terminal.lock().ok().and_then(|value| *value)
++    }
++
++    fn set_terminal(&self, cause: ControlTerminalCause) {
++        let mut first = false;
++        if let Ok(mut terminal) = self.terminal.lock()
++            && terminal.is_none()
++        {
++            *terminal = Some(cause);
++            first = true;
++        }
++        if first {
++            let _ = self.terminal_tx.try_send(cause);
++            let _ = self.stop_tx.send(true);
++        }
++    }
++
++    fn terminal_error(cause: ControlTerminalCause) -> ProcessError {
++        match cause {
++            // Preserve the pre-pump public error surface while retaining the
++            // precise durable cause in `terminal_cause`.
++            ControlTerminalCause::ReaderClosed | ControlTerminalCause::ReaderProtocol => {
++                ProcessError::Descriptor
++            }
++            ControlTerminalCause::ReaderIo => ProcessError::Control(io::Error::new(
++                io::ErrorKind::ConnectionAborted,
++                "control reader failed",
++            )),
++            _ => ProcessError::ControlTerminal(cause),
++        }
++    }
++
++    fn current_snapshot(&self) -> PresenceSnapshot {
++        self.snapshot_tx.borrow().clone()
++    }
++
++    fn begin_critical(self: &Arc<Self>) -> CriticalAdmission {
++        if let Ok(mut pending) = self.writer_admission.lock() {
++            *pending = pending.saturating_add(1);
++        } else {
++            self.set_terminal(ControlTerminalCause::PumpStopped);
++        }
++        CriticalAdmission {
++            shared: Arc::clone(self),
++        }
++    }
++}
++
++/// A control-only connection; the secret is never serialized outside its
++/// synchronous authenticated handshake.  After authentication, one task
++/// exclusively owns the reader half and one task exclusively owns the writer
++/// half.  Callers communicate with those owners only through bounded queues.
+ pub struct ControlChannel {
+-    stream: TcpStream,
+-    read_buffer: Vec<u8>,
++    critical_tx: mpsc::Sender<CriticalWrite>,
++    critical_rx: mpsc::Receiver<ControlEvent>,
++    #[allow(dead_code)]
++    lifecycle_tx: mpsc::Sender<LifecycleWrite>,
++    interaction_rx: mpsc::Receiver<(u32, coop_protocol::PresenceInteractionV1)>,
++    snapshot_rx: watch::Receiver<PresenceSnapshot>,
++    terminal_rx: mpsc::Receiver<ControlTerminalCause>,
++    stop_tx: watch::Sender<bool>,
++    shared: Arc<PumpShared>,
++    reader_task: Option<JoinHandle<()>>,
++    writer_task: Option<JoinHandle<()>>,
++    #[cfg(test)]
++    task_exits: Arc<AtomicUsize>,
++    observed_reset_generation: Option<u32>,
++    observed_state: Option<(u32, u32)>,
+ }
+ 
+ impl std::fmt::Debug for ControlChannel {
+@@ -998,6 +1137,7 @@ impl std::fmt::Debug for ControlChannel {
+     }
+ }
+ 
++#[allow(dead_code, clippy::needless_pass_by_value)]
+ impl ControlChannel {
+     /// # Errors
+     ///
+@@ -1038,209 +1178,897 @@ impl ControlChannel {
+         if response != b"{\"ok\":true}" {
+             return Err(ProcessError::Descriptor);
+         }
+-        Ok(Self {
+-            stream,
+-            read_buffer: Vec::new(),
+-        })
++        Ok(Self::from_authenticated_stream(stream))
+     }
+ 
+     /// # Errors
+     ///
+-    /// Returns an error when the typed command cannot be serialized or sent.
++    /// Returns an error when the typed critical command cannot be serialized,
++    /// queued, or completely written by the persistent writer.
+     pub async fn send(&mut self, command: &ControlCommand) -> Result<(), ProcessError> {
+-        let mut bytes = serde_json::to_vec(command).map_err(ProcessError::Protocol)?;
+-        bytes.push(b'\n');
+-        if bytes.len() > MAX_CONTROL_LINE_BYTES {
+-            return Err(ProcessError::Descriptor);
++        if matches!(
++            command,
++            ControlCommand::RemotePlayerSpawn(_)
++                | ControlCommand::RemotePlayerUpdate(_)
++                | ControlCommand::RemotePlayerDespawn(_)
++        ) {
++            return Err(ProcessError::InvalidArgument);
++        }
++        let bytes = command_line(command)?;
++        if let Some(cause) = self.shared.terminal() {
++            return Err(PumpShared::terminal_error(cause));
+         }
+-        timeout(PROCESS_IO_TIMEOUT, self.stream.write_all(&bytes))
++        // Mark the critical lane before queue admission. The writer's
++        // synchronous admission fence then prevents a lifecycle frame from
++        // beginning in the gap between the final critical check and
++        // `try_write`.
++        let critical_admission = self.shared.begin_critical();
++        let deadline = tokio::time::Instant::now() + PROCESS_IO_TIMEOUT;
++        let (completion_tx, completion_rx) = oneshot::channel();
++        let request = CriticalWrite {
++            bytes,
++            deadline,
++            _admission: critical_admission,
++            completion: completion_tx,
++        };
++        tokio::time::timeout_at(deadline, self.critical_tx.send(request))
+             .await
+             .map_err(|_| {
+-                ProcessError::Control(io::Error::new(io::ErrorKind::TimedOut, "write timeout"))
++                self.shared
++                    .set_terminal(ControlTerminalCause::CriticalWriteAmbiguous);
++                ProcessError::ControlTerminal(ControlTerminalCause::CriticalWriteAmbiguous)
++            })?
++            .map_err(|_| {
++                self.shared
++                    .set_terminal(ControlTerminalCause::CriticalLaneClosed);
++                self.shared.terminal().map_or(
++                    ProcessError::ControlTerminal(ControlTerminalCause::CriticalLaneClosed),
++                    PumpShared::terminal_error,
++                )
++            })?;
++        let completion = tokio::time::timeout_at(deadline, completion_rx)
++            .await
++            .map_err(|_| {
++                self.shared
++                    .set_terminal(ControlTerminalCause::CriticalWriteAmbiguous);
++                ProcessError::ControlTerminal(ControlTerminalCause::CriticalWriteAmbiguous)
+             })?
+-            .map_err(ProcessError::Control)
++            .map_err(|_| {
++                self.shared
++                    .set_terminal(ControlTerminalCause::CriticalWriteAmbiguous);
++                self.shared.terminal().map_or(
++                    ProcessError::ControlTerminal(ControlTerminalCause::CriticalWriteAmbiguous),
++                    PumpShared::terminal_error,
++                )
++            })?;
++        completion.map_err(PumpShared::terminal_error)
++    }
++
++    /// Enqueues one lifecycle command without waiting for socket I/O.  The
++    /// generation and permit are checked again by the writer immediately
++    /// before its one nonblocking write attempt.
++    pub(crate) fn enqueue_lifecycle(
++        &self,
++        generation: u32,
++        command: ControlCommand,
++    ) -> Result<(), ProcessError> {
++        if !matches!(
++            command,
++            ControlCommand::RemotePlayerSpawn(_)
++                | ControlCommand::RemotePlayerUpdate(_)
++                | ControlCommand::RemotePlayerDespawn(_)
++        ) || generation != self.lifecycle_generation()
++        {
++            return Err(ProcessError::InvalidArgument);
++        }
++        if let Some(cause) = self.shared.terminal() {
++            return Err(PumpShared::terminal_error(cause));
++        }
++        let request = LifecycleWrite {
++            generation,
++            bytes: command_line(&command)?,
++        };
++        match self.lifecycle_tx.try_send(request) {
++            Ok(()) => Ok(()),
++            Err(mpsc::error::TrySendError::Full(_)) => {
++                self.shared
++                    .set_terminal(ControlTerminalCause::LifecycleOverflow);
++                Err(ProcessError::ControlTerminal(
++                    ControlTerminalCause::LifecycleOverflow,
++                ))
++            }
++            Err(mpsc::error::TrySendError::Closed(_)) => {
++                self.shared
++                    .set_terminal(ControlTerminalCause::LifecycleLaneClosed);
++                Err(self.shared.terminal().map_or(
++                    ProcessError::ControlTerminal(ControlTerminalCause::LifecycleLaneClosed),
++                    PumpShared::terminal_error,
++                ))
++            }
++        }
+     }
+ 
+-    /// Receives the next event without imposing an idle timeout.  The
+-    /// supervisor invokes this method in a cancellation-safe `select!`; a
+-    /// healthy sidecar may remain quiet for longer than the I/O bound.
+-    ///
++    /// Borrowing convenience for integrations that retain a typed command.
++    pub(crate) fn send_lifecycle(
++        &self,
++        generation: u32,
++        command: &ControlCommand,
++    ) -> Result<(), ProcessError> {
++        self.enqueue_lifecycle(generation, command.clone())
++    }
++
++    pub(crate) fn lifecycle_generation(&self) -> u32 {
++        self.shared.current_snapshot().generation
++    }
++
++    pub(crate) fn presence_generation(&self) -> u32 {
++        self.lifecycle_generation()
++    }
++
++    pub(crate) fn lifecycle_permitted(&self) -> bool {
++        self.shared.current_snapshot().lifecycle_permit
++    }
++
++    pub(crate) fn enable_lifecycle(&self, generation: u32) -> Result<(), ProcessError> {
++        let Ok(_admission) = self.shared.writer_admission.lock() else {
++            self.shared.set_terminal(ControlTerminalCause::PumpStopped);
++            return Err(ProcessError::ControlTerminal(
++                ControlTerminalCause::PumpStopped,
++            ));
++        };
++        let mut accepted = false;
++        self.shared.snapshot_tx.send_modify(|snapshot| {
++            if !snapshot.reset_latched && snapshot.generation == generation {
++                snapshot.lifecycle_permit = true;
++                accepted = true;
++            }
++        });
++        if accepted {
++            Ok(())
++        } else {
++            Err(ProcessError::InvalidArgument)
++        }
++    }
++
++    pub(crate) fn disable_lifecycle(&self) {
++        let Ok(_admission) = self.shared.writer_admission.lock() else {
++            self.shared.set_terminal(ControlTerminalCause::PumpStopped);
++            return;
++        };
++        self.shared
++            .snapshot_tx
++            .send_modify(|snapshot| snapshot.lifecycle_permit = false);
++    }
++
++    pub(crate) fn latest_presence_state(&self) -> Option<(u32, u32, LocalPresenceStateV1)> {
++        let snapshot = self.shared.current_snapshot();
++        snapshot
++            .state
++            .map(|state| (snapshot.generation, snapshot.revision, state))
++    }
++
++    pub(crate) fn reset_latched(&self) -> bool {
++        self.shared.current_snapshot().reset_latched
++    }
++
++    #[must_use]
++    pub(crate) fn terminal_cause(&self) -> Option<ControlTerminalCause> {
++        self.shared.terminal()
++    }
++
++    /// Receives the next event without imposing an idle timeout.  Presence is
++    /// coalesced or bounded before this seam; checkpoint consumers use
++    /// [`Self::receive_bounded`] to consume only the critical lane.
+     /// # Errors
+     ///
+-    /// Returns an error when the event is incomplete, oversized, or malformed.
++    /// Returns the sticky terminal error when the reader, writer, or any
++    /// bounded event lane fails.
+     pub async fn receive(&mut self) -> Result<ControlEvent, ProcessError> {
+-        let bytes = self.read_line().await?;
+-        serde_json::from_slice(&bytes).map_err(ProcessError::Protocol)
++        loop {
++            if let Some(event) = self.take_presence_event() {
++                return Ok(event);
++            }
++            if let Ok(event) = self.critical_rx.try_recv() {
++                return Ok(event);
++            }
++            if let Ok((generation, interaction)) = self.interaction_rx.try_recv() {
++                if generation == self.lifecycle_generation() && !self.reset_latched() {
++                    return Ok(ControlEvent::InteractRemotePlayer(interaction));
++                }
++                continue;
++            }
++            if let Ok(cause) = self.terminal_rx.try_recv() {
++                return Err(PumpShared::terminal_error(cause));
++            }
++            if let Some(cause) = self.shared.terminal() {
++                return Err(PumpShared::terminal_error(cause));
++            }
++            tokio::select! {
++                biased;
++                event = self.critical_rx.recv() => match event {
++                    Some(event) => {
++                        if self.take_reset_notification().is_some() {
++                            return Ok(ControlEvent::RomPresenceReset);
++                        }
++                        return Ok(event);
++                    }
++                    None => {
++                        self.shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
++                    }
++                },
++                changed = self.snapshot_rx.changed() => {
++                    if changed.is_err() {
++                        self.shared.set_terminal(ControlTerminalCause::ReaderClosed);
++                    }
++                },
++                interaction = self.interaction_rx.recv() => match interaction {
++                    Some((generation, interaction)) => {
++                        if generation == self.lifecycle_generation()
++                            && !self.reset_latched()
++                        {
++                            return Ok(ControlEvent::InteractRemotePlayer(interaction));
++                        }
++                    }
++                    None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
++                },
++                cause = self.terminal_rx.recv() => if let Some(cause) = cause {
++                    return Err(PumpShared::terminal_error(cause));
++                },
++            }
++        }
+     }
+ 
+-    /// Receives one response with the explicit bounded wait required by
+-    /// request/response operations such as checkpoint grant and save update.
+-    /// Partial bytes survive cancellation and can be completed by a later
+-    /// call, which prevents a heartbeat tick from corrupting framing.
+-    ///
++    /// Receives one event from the lossless critical lane with the explicit
++    /// bounded wait required by checkpoint and shutdown request/response work.
+     /// # Errors
+     ///
+-    /// Returns an error when the response is incomplete, oversized, malformed,
+-    /// or does not arrive before [`PROCESS_IO_TIMEOUT`].
++    /// Returns the sticky terminal error or a timeout when no critical event
++    /// arrives before the supplied I/O bound.
+     pub async fn receive_bounded(&mut self) -> Result<ControlEvent, ProcessError> {
+-        let bytes = timeout(PROCESS_IO_TIMEOUT, self.read_line())
+-            .await
+-            .map_err(|_| {
+-                ProcessError::Control(io::Error::new(io::ErrorKind::TimedOut, "read timeout"))
+-            })??;
+-        serde_json::from_slice(&bytes).map_err(ProcessError::Protocol)
+-    }
+-
+-    async fn read_line(&mut self) -> Result<Vec<u8>, ProcessError> {
++        let deadline = tokio::time::Instant::now() + PROCESS_IO_TIMEOUT;
+         loop {
+-            if let Some(newline) = self.read_buffer.iter().position(|byte| *byte == b'\n') {
+-                if newline >= MAX_CONTROL_LINE_BYTES {
+-                    return Err(ProcessError::Descriptor);
+-                }
+-                let mut line = self.read_buffer.drain(..=newline).collect::<Vec<_>>();
+-                debug_assert_eq!(line.pop(), Some(b'\n'));
+-                return Ok(line);
++            if self.take_reset_notification().is_some() {
++                return Ok(ControlEvent::RomPresenceReset);
+             }
+-            if self.read_buffer.len() >= MAX_CONTROL_LINE_BYTES {
+-                return Err(ProcessError::Descriptor);
++            if let Ok(event) = self.critical_rx.try_recv() {
++                return Ok(event);
+             }
+-            let remaining = MAX_CONTROL_LINE_BYTES - self.read_buffer.len();
+-            let mut chunk = [0_u8; 1024];
+-            let read_size = remaining.min(chunk.len());
+-            let count = self
+-                .stream
+-                .read(&mut chunk[..read_size])
+-                .await
+-                .map_err(ProcessError::Control)?;
+-            if count == 0 {
+-                return Err(ProcessError::Descriptor);
++            if let Ok(cause) = self.terminal_rx.try_recv() {
++                return Err(PumpShared::terminal_error(cause));
++            }
++            if let Some(cause) = self.shared.terminal() {
++                return Err(PumpShared::terminal_error(cause));
++            }
++            tokio::select! {
++                biased;
++                event = self.critical_rx.recv() => match event {
++                    Some(event) => {
++                        if self.take_reset_notification().is_some() {
++                            return Ok(ControlEvent::RomPresenceReset);
++                        }
++                        return Ok(event);
++                    }
++                    None => self.shared.set_terminal(ControlTerminalCause::CriticalLaneClosed),
++                },
++                changed = self.snapshot_rx.changed() => {
++                    if changed.is_err() { self.shared.set_terminal(ControlTerminalCause::ReaderClosed); }
++                },
++                cause = self.terminal_rx.recv() => if let Some(cause) = cause {
++                return Err(PumpShared::terminal_error(cause));
++                },
++                () = tokio::time::sleep_until(deadline) => return Err(ProcessError::Control(io::Error::new(io::ErrorKind::TimedOut, "read timeout"))),
+             }
+-            self.read_buffer.extend_from_slice(&chunk[..count]);
+         }
+     }
+ 
+-    #[cfg(test)]
+-    pub(crate) fn from_stream_for_test(stream: TcpStream) -> Self {
+-        Self {
+-            stream,
+-            read_buffer: Vec::new(),
++    fn take_reset_notification(&mut self) -> Option<u32> {
++        let snapshot = self.snapshot_rx.borrow_and_update().clone();
++        let reset_generation = snapshot.reset_generation?;
++        if self.observed_reset_generation == Some(reset_generation) {
++            return None;
+         }
++        self.observed_reset_generation = Some(reset_generation);
++        Some(reset_generation)
+     }
+-}
+ 
+-async fn read_line(
+-    stream: &mut (impl AsyncRead + Unpin),
+-    max: usize,
+-) -> Result<Vec<u8>, ProcessError> {
+-    let mut line = Vec::with_capacity(max.min(128));
+-    let mut byte = [0_u8; 1];
+-    loop {
+-        let count = stream
+-            .read(&mut byte)
+-            .await
+-            .map_err(ProcessError::Control)?;
+-        if count == 0 {
+-            return Err(ProcessError::Descriptor);
++    fn take_presence_event(&mut self) -> Option<ControlEvent> {
++        if self.take_reset_notification().is_some() {
++            return Some(ControlEvent::RomPresenceReset);
+         }
+-        if line.len().saturating_add(1) >= max {
+-            if byte[0] == b'\n' && line.len().saturating_add(1) == max {
+-                return Ok(line);
++        let snapshot = self.snapshot_rx.borrow().clone();
++        let state = snapshot.state?;
++        let current = (snapshot.generation, snapshot.revision);
++        let newer = match self.observed_state {
++            Some((generation, revision)) if generation == snapshot.generation => {
++                sequence_is_newer(snapshot.revision, revision)
+             }
+-            return Err(ProcessError::Descriptor);
+-        }
+-        if byte[0] == b'\n' {
+-            return Ok(line);
++            Some((generation, _)) => snapshot.generation != generation,
++            None => true,
++        };
++        if !newer {
++            return None;
+         }
+-        line.push(byte[0]);
++        self.observed_state = Some(current);
++        Some(ControlEvent::PlayerState(state))
+     }
+-}
+-
+-/// Owns a contained mGBA process together with the executable, ROM, marker,
+-/// and ancestor guards that authenticate its launch and cleanup lifetime.
+-/// Fields are ordered so the supervisor is dropped before the retained spec,
+-/// ensuring the Job is closed before owned artifacts are cleaned up.
+-#[cfg(windows)]
+-pub struct GuardedMgbaChild {
+-    supervisor: MgbaSupervisor,
+-    _spec: CommandSpec,
+-}
+ 
+-#[cfg(windows)]
+-impl GuardedMgbaChild {
+-    /// Waits for the contained root process and requests Job termination.
+-    ///
+-    /// # Errors
+-    ///
+-    /// Returns an I/O error when the supervisor boundary closes or the root
+-    /// process cannot be reaped.
+-    pub async fn wait(&self) -> io::Result<std::process::ExitStatus> {
+-        self.supervisor.wait().await
++    async fn shutdown_until(&mut self, deadline: tokio::time::Instant) -> Result<(), ProcessError> {
++        let _ = self.stop_tx.send(true);
++        let mut first_error = None;
++        for task in [&mut self.reader_task, &mut self.writer_task] {
++            let Some(mut handle) = task.take() else {
++                continue;
++            };
++            match tokio::time::timeout_at(deadline, &mut handle).await {
++                Ok(Ok(())) => {}
++                Ok(Err(_)) => {
++                    if first_error.is_none() {
++                        first_error = Some(ProcessError::ControlTerminal(
++                            ControlTerminalCause::PumpStopped,
++                        ));
++                    }
++                }
++                Err(_) => {
++                    handle.abort();
++                    let _ = handle.await;
++                    if first_error.is_none() {
++                        first_error = Some(ProcessError::ControlTerminal(
++                            ControlTerminalCause::PumpStopped,
++                        ));
++                    }
++                }
++            }
++        }
++        first_error.map_or(Ok(()), Err)
+     }
+ 
+-    /// Requests contained-process termination and root reaping.
+-    ///
+-    /// mGBA's native `TerminateJobObject` request is synchronous and
+-    /// uncancellable through the safe `windows-spawn` API; any returned
+-    /// cleanup error represents termination-initiation or root-reap
+-    /// uncertainty, not proof that descendants are empty.
+-    ///
+-    /// # Errors
+-    ///
+-    /// Returns an I/O error when Job termination or root reaping fails.
+-    pub async fn stop(&mut self) -> io::Result<()> {
+-        self.supervisor.stop().await
++    #[cfg(test)]
++    fn pump_tasks_joined(&self) -> bool {
++        self.reader_task.is_none()
++            && self.writer_task.is_none()
++            && self.task_exits.load(Ordering::SeqCst) == 2
+     }
+ 
+-    /// Returns a nonblocking root-process status snapshot.
+-    ///
+-    /// # Errors
+-    ///
+-    /// Returns an I/O error when the supervisor status lock is poisoned.
+-    pub fn try_wait(&self) -> io::Result<Option<std::process::ExitStatus>> {
+-        self.supervisor.try_wait()
++    #[cfg(test)]
++    pub(crate) fn from_stream_for_test(stream: TcpStream) -> Self {
++        Self::from_authenticated_stream(stream)
++    }
++
++    fn from_authenticated_stream(stream: TcpStream) -> Self {
++        let (critical_write_tx, critical_write_rx) = mpsc::channel(CRITICAL_WRITE_CAPACITY);
++        let (lifecycle_tx, lifecycle_rx) = mpsc::channel(LIFECYCLE_WRITE_CAPACITY);
++        let (critical_event_tx, critical_event_rx) = mpsc::channel(CRITICAL_EVENT_CAPACITY);
++        let (interaction_tx, interaction_rx) = mpsc::channel(INTERACTION_EVENT_CAPACITY);
++        let (terminal_tx, terminal_rx) = mpsc::channel(TERMINAL_SIGNAL_CAPACITY);
++        let (stop_tx, stop_rx) = watch::channel(false);
++        let (snapshot_tx, snapshot_rx) = watch::channel(PresenceSnapshot {
++            generation: 0,
++            revision: 0,
++            state: None,
++            reset_generation: None,
++            // Realtime activation is the sole lifecycle opener. Ordinary
++            // pre-Ready control traffic remains critical-only.
++            lifecycle_permit: false,
++            reset_latched: false,
++        });
++        let shared = Arc::new(PumpShared {
++            snapshot_tx,
++            terminal: Mutex::new(None),
++            writer_admission: Mutex::new(0),
++            terminal_tx,
++            stop_tx: stop_tx.clone(),
++        });
++        #[cfg(test)]
++        let task_exits = Arc::new(AtomicUsize::new(0));
++        let (reader, writer) = stream.into_split();
++        let reader_shared = Arc::clone(&shared);
++        let reader_stop = stop_rx.clone();
++        #[cfg(test)]
++        let reader_exits = Arc::clone(&task_exits);
++        let reader_task = tokio::spawn(async move {
++            run_control_reader(
++                reader,
++                critical_event_tx,
++                interaction_tx,
++                reader_shared,
++                reader_stop,
++            )
++            .await;
++            #[cfg(test)]
++            reader_exits.fetch_add(1, Ordering::SeqCst);
++        });
++        let writer_shared = Arc::clone(&shared);
++        #[cfg(test)]
++        let writer_exits = Arc::clone(&task_exits);
++        let writer_task = tokio::spawn(async move {
++            run_control_writer(
++                writer,
++                critical_write_rx,
++                lifecycle_rx,
++                writer_shared,
++                stop_rx,
++            )
++            .await;
++            #[cfg(test)]
++            writer_exits.fetch_add(1, Ordering::SeqCst);
++        });
++        Self {
++            critical_tx: critical_write_tx,
++            critical_rx: critical_event_rx,
++            lifecycle_tx,
++            interaction_rx,
++            snapshot_rx,
++            terminal_rx,
++            stop_tx,
++            shared,
++            reader_task: Some(reader_task),
++            writer_task: Some(writer_task),
++            #[cfg(test)]
++            task_exits,
++            observed_reset_generation: None,
++            observed_state: None,
++        }
+     }
+ }
+ 
+-enum MgbaChild {
+-    #[cfg(windows)]
+-    Contained(MgbaSupervisor),
+-    #[cfg(any(not(windows), test))]
+-    Tokio(Box<Child>),
+-}
+-
+-impl MgbaChild {
+-    async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+-        match self {
+-            #[cfg(windows)]
+-            Self::Contained(supervisor) => supervisor.wait().await,
+-            #[cfg(any(not(windows), test))]
+-            Self::Tokio(child) => child.wait().await,
++impl Drop for ControlChannel {
++    fn drop(&mut self) {
++        let _ = self.stop_tx.send(true);
++        if let Some(task) = self.reader_task.take() {
++            task.abort();
++        }
++        if let Some(task) = self.writer_task.take() {
++            task.abort();
+         }
+     }
++}
+ 
+-    async fn stop(&mut self) -> Result<(), ProcessError> {
+-        match self {
+-            #[cfg(windows)]
+-            Self::Contained(supervisor) => timeout(PROCESS_IO_TIMEOUT, supervisor.stop())
+-                .await
+-                .map_err(|_| {
+-                    ProcessError::Termination(io::Error::new(
+-                        io::ErrorKind::TimedOut,
+-                        "mGBA supervisor stop timed out",
+-                    ))
+-                })?
+-                .map_err(ProcessError::Termination),
+-            #[cfg(any(not(windows), test))]
+-            Self::Tokio(child) => stop_child(child).await,
+-        }
++fn command_line(command: &ControlCommand) -> Result<Vec<u8>, ProcessError> {
++    let mut bytes = serde_json::to_vec(command).map_err(ProcessError::Protocol)?;
++    bytes.push(b'\n');
++    if bytes.len() > MAX_CONTROL_LINE_BYTES {
++        return Err(ProcessError::Descriptor);
+     }
++    Ok(bytes)
++}
+ 
+-    async fn shutdown(
+-        &mut self,
+-        attempt_soft_close: bool,
+-        deadline: Instant,
+-    ) -> MgbaShutdownReport {
+-        #[cfg(windows)]
++async fn run_control_reader(
++    mut stream: tokio::net::tcp::OwnedReadHalf,
++    critical_tx: mpsc::Sender<ControlEvent>,
++    interaction_tx: mpsc::Sender<(u32, coop_protocol::PresenceInteractionV1)>,
++    shared: Arc<PumpShared>,
++    mut stop_rx: watch::Receiver<bool>,
++) {
++    let mut read_buffer = Vec::new();
++    loop {
++        let line = tokio::select! {
++            biased;
++            _ = stop_rx.changed() => break,
++            result = read_line_buffered(&mut stream, &mut read_buffer) => result,
++        };
++        let line = match line {
++            Ok(line) => line,
++            Err(cause) => {
++                shared.set_terminal(cause);
++                break;
++            }
++        };
++        let Ok(event) = serde_json::from_slice::<ControlEvent>(&line) else {
++            shared.set_terminal(ControlTerminalCause::ReaderProtocol);
++            break;
++        };
++        match event {
++            ControlEvent::CheckpointReady { .. }
++            | ControlEvent::SaveDataUpdated { .. }
++            | ControlEvent::CheckpointExpired { .. }
++            | ControlEvent::CommandResult { .. } => {
++                let sent = tokio::select! {
++                    biased;
++                    _ = stop_rx.changed() => break,
++                    result = critical_tx.send(event) => result,
++                };
++                if sent.is_err() {
++                    shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
++                    break;
++                }
++            }
++            ControlEvent::PlayerState(state) => {
++                if state.validate().is_err() {
++                    shared.set_terminal(ControlTerminalCause::ReaderProtocol);
++                    break;
++                }
++                shared.snapshot_tx.send_modify(|snapshot| {
++                    if !snapshot.reset_latched
++                        && (snapshot.revision == 0
++                            || sequence_is_newer(state.source_sequence(), snapshot.revision))
++                    {
++                        snapshot.revision = state.source_sequence();
++                        snapshot.state = Some(state.clone());
++                    }
++                });
++            }
++            ControlEvent::InteractRemotePlayer(interaction) => {
++                let snapshot = shared.current_snapshot();
++                if snapshot.reset_latched {
++                    continue;
++                }
++                let generation = snapshot.generation;
++                match interaction_tx.try_send((generation, interaction)) {
++                    Ok(()) => {}
++                    Err(mpsc::error::TrySendError::Full(_)) => {
++                        shared.set_terminal(ControlTerminalCause::InteractionOverflow);
++                        break;
++                    }
++                    Err(mpsc::error::TrySendError::Closed(_)) => {
++                        shared.set_terminal(ControlTerminalCause::ReaderClosed);
++                        break;
++                    }
++                }
++            }
++            ControlEvent::RomPresenceReset => {
++                if !apply_presence_reset(&shared) {
++                    break;
++                }
++            }
++        }
++    }
++}
++
++fn apply_presence_reset(shared: &PumpShared) -> bool {
++    let Ok(_admission) = shared.writer_admission.lock() else {
++        shared.set_terminal(ControlTerminalCause::PumpStopped);
++        return false;
++    };
++    let mut exhausted = false;
++    shared.snapshot_tx.send_modify(|snapshot| {
++        if !snapshot.reset_latched {
++            let Some(next) = snapshot.generation.checked_add(1) else {
++                exhausted = true;
++                return;
++            };
++            snapshot.generation = next;
++            snapshot.revision = 0;
++            snapshot.state = None;
++            snapshot.reset_generation = Some(next);
++            snapshot.lifecycle_permit = false;
++            snapshot.reset_latched = true;
++        }
++    });
++    if exhausted {
++        shared.set_terminal(ControlTerminalCause::ReaderProtocol);
++        false
++    } else {
++        true
++    }
++}
++
++async fn read_line_buffered(
++    stream: &mut tokio::net::tcp::OwnedReadHalf,
++    buffer: &mut Vec<u8>,
++) -> Result<Vec<u8>, ControlTerminalCause> {
++    loop {
++        if let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
++            if newline >= MAX_CONTROL_LINE_BYTES {
++                return Err(ControlTerminalCause::ReaderProtocol);
++            }
++            let mut line = buffer.drain(..=newline).collect::<Vec<_>>();
++            let _ = line.pop();
++            return Ok(line);
++        }
++        if buffer.len() >= MAX_CONTROL_LINE_BYTES {
++            return Err(ControlTerminalCause::ReaderProtocol);
++        }
++        let remaining = MAX_CONTROL_LINE_BYTES - buffer.len();
++        let mut chunk = [0_u8; 1024];
++        let read_size = remaining.min(chunk.len());
++        let count = stream
++            .read(&mut chunk[..read_size])
++            .await
++            .map_err(|_| ControlTerminalCause::ReaderIo)?;
++        if count == 0 {
++            return Err(ControlTerminalCause::ReaderClosed);
++        }
++        buffer.extend_from_slice(&chunk[..count]);
++    }
++}
++
++async fn write_critical(
++    stream: &mut tokio::net::tcp::OwnedWriteHalf,
++    request: CriticalWrite,
++    shared: &PumpShared,
++) -> bool {
++    let result = timeout_at(request.deadline, stream.write_all(&request.bytes)).await;
++    match result {
++        Ok(Ok(())) => {
++            let _ = request.completion.send(Ok(()));
++            true
++        }
++        Ok(Err(_)) => {
++            shared.set_terminal(ControlTerminalCause::CriticalWriteFailed);
++            let _ = request
++                .completion
++                .send(Err(ControlTerminalCause::CriticalWriteFailed));
++            false
++        }
++        Err(_) => {
++            shared.set_terminal(ControlTerminalCause::CriticalWriteAmbiguous);
++            let _ = request
++                .completion
++                .send(Err(ControlTerminalCause::CriticalWriteAmbiguous));
++            false
++        }
++    }
++}
++
++#[allow(clippy::needless_pass_by_value)]
++fn apply_lifecycle_write_result(
++    result: io::Result<usize>,
++    expected_len: usize,
++    shared: &PumpShared,
++) -> bool {
++    match result {
++        Ok(written) if written == expected_len => true,
++        Ok(_) => {
++            shared.set_terminal(ControlTerminalCause::LifecyclePartialWrite);
++            false
++        }
++        Err(_) => {
++            shared.set_terminal(ControlTerminalCause::LifecycleWriteFailed);
++            false
++        }
++    }
++}
++
++enum LifecycleAdmissionResult {
++    CriticalPending,
++    Stale,
++    Terminal,
++    Write(io::Result<usize>),
++}
++
++fn lifecycle_write_with_admission(
++    stream: &mut tokio::net::tcp::OwnedWriteHalf,
++    request: &LifecycleWrite,
++    shared: &PumpShared,
++) -> LifecycleAdmissionResult {
++    let Ok(admission) = shared.writer_admission.lock() else {
++        shared.set_terminal(ControlTerminalCause::PumpStopped);
++        return LifecycleAdmissionResult::Terminal;
++    };
++    if *admission != 0 {
++        return LifecycleAdmissionResult::CriticalPending;
++    }
++    if shared.terminal().is_some() {
++        return LifecycleAdmissionResult::Terminal;
++    }
++    let snapshot = shared.current_snapshot();
++    if request.generation != snapshot.generation || !snapshot.lifecycle_permit {
++        return LifecycleAdmissionResult::Stale;
++    }
++    // The admission mutex is intentionally held through the synchronous
++    // write-begin point. Critical admission and reset/permit publication
++    // cannot linearize after these checks but before the first byte.
++    LifecycleAdmissionResult::Write(stream.try_write(&request.bytes))
++}
++
++#[cfg(test)]
++trait ScriptedWriter {
++    fn try_write(&mut self, bytes: &[u8]) -> io::Result<usize>;
++}
++
++#[cfg(test)]
++fn scripted_lifecycle_write<W: ScriptedWriter>(
++    writer: &mut W,
++    bytes: &[u8],
++    shared: &PumpShared,
++) -> bool {
++    if shared.terminal().is_some() {
++        return false;
++    }
++    apply_lifecycle_write_result(writer.try_write(bytes), bytes.len(), shared)
++}
++
++async fn run_control_writer(
++    mut stream: tokio::net::tcp::OwnedWriteHalf,
++    mut critical_rx: mpsc::Receiver<CriticalWrite>,
++    mut lifecycle_rx: mpsc::Receiver<LifecycleWrite>,
++    shared: Arc<PumpShared>,
++    mut stop_rx: watch::Receiver<bool>,
++) {
++    'writer: loop {
++        if *stop_rx.borrow() {
++            break;
++        }
++        tokio::select! {
++            biased;
++            _ = stop_rx.changed() => break,
++            request = critical_rx.recv() => match request {
++                Some(request) => {
++                    if !write_critical(&mut stream, request, &shared).await {
++                        break;
++                    }
++                }
++                None => break,
++            },
++            request = lifecycle_rx.recv() => match request {
++                Some(request) => {
++                    // A critical command that arrived before this lifecycle
++                    // write began always wins. Keep the lifecycle request
++                    // local while critical work drains; it is not dropped.
++                    loop {
++                        let snapshot = shared.current_snapshot();
++                        if request.generation != snapshot.generation
++                            || !snapshot.lifecycle_permit
++                        {
++                            break;
++                        }
++                        if let Ok(queued) = critical_rx.try_recv() {
++                            if !write_critical(&mut stream, queued, &shared).await {
++                                break 'writer;
++                            }
++                            continue;
++                        }
++                        // Lifecycle output is deliberately one-shot and
++                        // nonblocking. A would-block is terminal; retrying
++                        // could duplicate a strict-prefix write after reset.
++                        match lifecycle_write_with_admission(&mut stream, &request, &shared) {
++                            LifecycleAdmissionResult::CriticalPending => {
++                                // A sender may still be waiting for the
++                                // bounded critical slot. Receive that request
++                                // while retaining this lifecycle request.
++                                let queued = tokio::select! {
++                                    biased;
++                                    _ = stop_rx.changed() => break 'writer,
++                                    queued = critical_rx.recv() => queued,
++                                };
++                                let Some(queued) = queued else {
++                                    shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
++                                    break 'writer;
++                                };
++                                if !write_critical(&mut stream, queued, &shared).await {
++                                    break 'writer;
++                                }
++                            }
++                            LifecycleAdmissionResult::Stale
++                            | LifecycleAdmissionResult::Terminal => break,
++                            LifecycleAdmissionResult::Write(result) => {
++                                if !apply_lifecycle_write_result(
++                                    result,
++                                    request.bytes.len(),
++                                    &shared,
++                                ) {
++                                    break 'writer;
++                                }
++                                break;
++                            }
++                        }
++                    }
++                }
++                None => break,
++            },
++        }
++    }
++    while let Ok(request) = critical_rx.try_recv() {
++        let cause = shared
++            .terminal()
++            .unwrap_or(ControlTerminalCause::CriticalWriteFailed);
++        let _ = request.completion.send(Err(cause));
++    }
++}
++
++async fn read_line(
++    stream: &mut (impl AsyncRead + Unpin),
++    max: usize,
++) -> Result<Vec<u8>, ProcessError> {
++    let mut line = Vec::with_capacity(max.min(128));
++    let mut byte = [0_u8; 1];
++    loop {
++        let count = stream
++            .read(&mut byte)
++            .await
++            .map_err(ProcessError::Control)?;
++        if count == 0 {
++            return Err(ProcessError::Descriptor);
++        }
++        if line.len().saturating_add(1) >= max {
++            if byte[0] == b'\n' && line.len().saturating_add(1) == max {
++                return Ok(line);
++            }
++            return Err(ProcessError::Descriptor);
++        }
++        if byte[0] == b'\n' {
++            return Ok(line);
++        }
++        line.push(byte[0]);
++    }
++}
++
++/// Owns a contained mGBA process together with the executable, ROM, marker,
++/// and ancestor guards that authenticate its launch and cleanup lifetime.
++/// Fields are ordered so the supervisor is dropped before the retained spec,
++/// ensuring the Job is closed before owned artifacts are cleaned up.
++#[cfg(windows)]
++pub struct GuardedMgbaChild {
++    supervisor: MgbaSupervisor,
++    _spec: CommandSpec,
++}
++
++#[cfg(windows)]
++impl GuardedMgbaChild {
++    /// Waits for the contained root process and requests Job termination.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when the supervisor boundary closes or the root
++    /// process cannot be reaped.
++    pub async fn wait(&self) -> io::Result<std::process::ExitStatus> {
++        self.supervisor.wait().await
++    }
++
++    /// Requests contained-process termination and root reaping.
++    ///
++    /// mGBA's native `TerminateJobObject` request is synchronous and
++    /// uncancellable through the safe `windows-spawn` API; any returned
++    /// cleanup error represents termination-initiation or root-reap
++    /// uncertainty, not proof that descendants are empty.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when Job termination or root reaping fails.
++    pub async fn stop(&mut self) -> io::Result<()> {
++        self.supervisor.stop().await
++    }
++
++    /// Returns a nonblocking root-process status snapshot.
++    ///
++    /// # Errors
++    ///
++    /// Returns an I/O error when the supervisor status lock is poisoned.
++    pub fn try_wait(&self) -> io::Result<Option<std::process::ExitStatus>> {
++        self.supervisor.try_wait()
++    }
++}
++
++enum MgbaChild {
++    #[cfg(windows)]
++    Contained(MgbaSupervisor),
++    #[cfg(any(not(windows), test))]
++    Tokio(Box<Child>),
++}
++
++impl MgbaChild {
++    async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
++        match self {
++            #[cfg(windows)]
++            Self::Contained(supervisor) => supervisor.wait().await,
++            #[cfg(any(not(windows), test))]
++            Self::Tokio(child) => child.wait().await,
++        }
++    }
++
++    async fn stop(&mut self) -> Result<(), ProcessError> {
++        match self {
++            #[cfg(windows)]
++            Self::Contained(supervisor) => timeout(PROCESS_IO_TIMEOUT, supervisor.stop())
++                .await
++                .map_err(|_| {
++                    ProcessError::Termination(io::Error::new(
++                        io::ErrorKind::TimedOut,
++                        "mGBA supervisor stop timed out",
++                    ))
++                })?
++                .map_err(ProcessError::Termination),
++            #[cfg(any(not(windows), test))]
++            Self::Tokio(child) => stop_child(child).await,
++        }
++    }
++
++    async fn shutdown(
++        &mut self,
++        attempt_soft_close: bool,
++        deadline: Instant,
++    ) -> MgbaShutdownReport {
++        #[cfg(windows)]
+         {
+             match self {
+                 Self::Contained(supervisor) => {
+@@ -1494,6 +2322,16 @@ pub enum SupervisorEvent {
+     ChildExited,
+ }
+ 
++/// Raw supervision observation before peer termination and artifact cleanup.
++/// The realtime coordinator uses this seam to stop and join its own task
++/// before the child/control settlement below tears down the process pair.
++#[derive(Debug)]
++pub(crate) enum RawSupervisorEvent {
++    Control(ControlEvent),
++    SidecarExited(std::process::ExitStatus),
++    MgbaExited(std::process::ExitStatus),
++}
++
+ impl std::fmt::Debug for SupervisedChildren {
+     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+         formatter
+@@ -1620,23 +2458,28 @@ impl SupervisedChildren {
+         if let Err(error) = validate_executable_identity(&mgba) {
+             return Err(startup_cleanup(error, &mut mgba));
+         }
+-        let (mut startup_child, control) =
++        let (mut startup_child, mut control) =
+             Self::start_sidecar(&sidecar, expected_epoch, &mut mgba, bridge).await?;
+         // Revalidate immediately before contained CreateProcessW. The
+         // existing executable guard held by `mgba` closes the substitution
+         // interval between compatibility probing and gameplay startup.
+         if let Err(error) = validate_executable_identity(&mgba) {
+-            return Err(
+-                startup_failure_with_cleanup(error, startup_child.child_mut(), &mut mgba).await,
+-            );
++            return Err(startup_failure_with_control(
++                error,
++                startup_child.child_mut(),
++                &mut mgba,
++                &mut control,
++            )
++            .await);
+         }
+         let mgba_child = match spawn_mgba(&mgba) {
+             Ok(child) => child,
+             Err(error) => {
+-                return Err(startup_failure_with_cleanup(
++                return Err(startup_failure_with_control(
+                     ProcessError::Spawn(error),
+                     startup_child.child_mut(),
+                     &mut mgba,
++                    &mut control,
+                 )
+                 .await);
+             }
+@@ -1728,7 +2571,7 @@ impl SupervisedChildren {
+         if let Err(error) = validate_descriptor(&descriptor, expected_epoch) {
+             return Err(startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await);
+         }
+-        let control = match ControlChannel::connect(&descriptor).await {
++        let mut control = match ControlChannel::connect(&descriptor).await {
+             Ok(control) => control,
+             Err(error) => {
+                 return Err(
+@@ -1740,7 +2583,13 @@ impl SupervisedChildren {
+             && let Err(error) =
+                 materialize_bridge_session(workspace, bridge_source, &descriptor, expected_epoch)
+         {
+-            return Err(startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await);
++            return Err(startup_failure_with_control(
++                error,
++                startup_child.child_mut(),
++                mgba,
++                &mut control,
++            )
++            .await);
+         }
+         Ok((startup_child, control))
+     }
+@@ -1774,9 +2623,29 @@ impl SupervisedChildren {
+                 )))
+             };
+         }
+-        let mgba_result = self.mgba.stop().await;
+-        let sidecar_result = stop_child(&mut self.sidecar).await;
+-        mgba_result.and(sidecar_result)?;
++        let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
++        let mgba_result = tokio::time::timeout_at(deadline, self.mgba.stop())
++            .await
++            .map_err(|_| {
++                ProcessError::Termination(io::Error::new(
++                    io::ErrorKind::TimedOut,
++                    "mGBA stop timed out",
++                ))
++            })
++            .and_then(|result| result);
++        let sidecar_result = tokio::time::timeout_at(deadline, stop_child(&mut self.sidecar))
++            .await
++            .map_err(|_| {
++                ProcessError::Termination(io::Error::new(
++                    io::ErrorKind::TimedOut,
++                    "sidecar stop timed out",
++                ))
++            })
++            .and_then(|result| result);
++        let pump_result = self.control.shutdown_until(deadline).await;
++        mgba_result?;
++        sidecar_result?;
++        pump_result?;
+         self.cleanup_owned_rom()
+     }
+ 
+@@ -1802,6 +2671,11 @@ impl SupervisedChildren {
+             && self
+                 .request_authenticated_shutdown(expected_epoch, deadline)
+                 .await;
++        // Close the owned control halves and join both pump tasks before
++        // reaping either child. This keeps shutdown one idempotent,
++        // absolute-deadline transaction and never leaves a detached reader or
++        // writer task holding a socket half.
++        let _ = self.control.shutdown_until(deadline).await;
+         let std_deadline =
+             Instant::now() + deadline.saturating_duration_since(tokio::time::Instant::now());
+         let (mgba, sidecar_reaped) = tokio::join!(
+@@ -1883,12 +2757,22 @@ impl SupervisedChildren {
+         });
+         if !sent {
+             let written = tokio::time::timeout_at(ack_deadline, self.control.send(&command)).await;
++            if written.is_err() {
++                // Cancelling the outer ACK bound may leave a request already
++                // admitted to the persistent writer queue. Poison the pump so
++                // late transmission cannot be mistaken for a reusable
++                // timeout or a safe retry.
++                self.control
++                    .shared
++                    .set_terminal(ControlTerminalCause::CriticalWriteAmbiguous);
++            }
+             if !matches!(written, Ok(Ok(()))) {
+                 return false;
+             }
+         }
+         loop {
+-            let Ok(Ok(event)) = tokio::time::timeout_at(ack_deadline, self.control.receive()).await
++            let Ok(Ok(event)) =
++                tokio::time::timeout_at(ack_deadline, self.control.receive_bounded()).await
+             else {
+                 return false;
+             };
+@@ -1909,7 +2793,10 @@ impl SupervisedChildren {
+                 // deadline without granting them control over shutdown.
+                 ControlEvent::CheckpointReady { .. }
+                 | ControlEvent::SaveDataUpdated { .. }
+-                | ControlEvent::CheckpointExpired { .. } => {}
++                | ControlEvent::CheckpointExpired { .. }
++                | ControlEvent::PlayerState(_)
++                | ControlEvent::InteractRemotePlayer(_) => {}
++                ControlEvent::RomPresenceReset => return false,
+             }
+         }
+     }
+@@ -1924,28 +2811,49 @@ impl SupervisedChildren {
+     ///
+     /// Returns an error when the first child or its peer cannot be reaped.
+     pub async fn wait(mut self) -> Result<(), ProcessError> {
+-        let (first, peer) = tokio::select! {
++        let (first, sidecar_first) = tokio::select! {
+             result = self.sidecar.wait() => {
+                 let first = result.map_err(ProcessError::Termination).and_then(|status| {
+                     if status.success() { Ok(()) } else { Err(ProcessError::ChildExited) }
+                 });
+-                let peer = self.mgba.stop().await;
+-                (first, peer)
++                (first, true)
+             }
+             result = self.mgba.wait() => {
+                 let first = result.map_err(ProcessError::Termination).and_then(|status| {
+                     if status.success() { Ok(()) } else { Err(ProcessError::ChildExited) }
+                 });
+-                let peer = stop_child(&mut self.sidecar).await;
+-                (first, peer)
++                (first, false)
+             }
+         };
++        let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
++        let peer = if sidecar_first {
++            tokio::time::timeout_at(deadline, self.mgba.stop())
++                .await
++                .map_err(|_| {
++                    ProcessError::Termination(io::Error::new(
++                        io::ErrorKind::TimedOut,
++                        "mGBA stop timed out",
++                    ))
++                })
++                .and_then(|result| result)
++        } else {
++            tokio::time::timeout_at(deadline, stop_child(&mut self.sidecar))
++                .await
++                .map_err(|_| {
++                    ProcessError::Termination(io::Error::new(
++                        io::ErrorKind::TimedOut,
++                        "sidecar stop timed out",
++                    ))
++                })
++                .and_then(|result| result)
++        };
++        let pump = self.control.shutdown_until(deadline).await;
+         match (first, peer) {
+-            (Ok(()), Ok(())) => self.cleanup_owned_rom(),
++            (Ok(()), Ok(())) => pump.and_then(|()| self.cleanup_owned_rom()),
+             // Both children are reaped even when the first one exits with a
+             // failure status. Cleanup must still be explicit in that case;
+             // preserve both failures if the filesystem also refuses removal.
+-            (Err(event), Ok(())) => match self.cleanup_owned_rom() {
++            (Err(event), Ok(())) => match pump.and_then(|()| self.cleanup_owned_rom()) {
+                 Ok(()) => Err(event),
+                 Err(cleanup) => Err(ProcessError::EventCleanup {
+                     event: Box::new(event),
+@@ -1968,40 +2876,74 @@ impl SupervisedChildren {
+     /// [`ProcessError::EventCleanup`] preserves both failures for
+     /// lease-release gating.
+     pub async fn next_event(&mut self) -> Result<SupervisorEvent, ProcessError> {
+-        let result = tokio::select! {
+-            result = self.control.receive() => result.map(SupervisorEvent::Control),
+-            result = self.sidecar.wait() => {
+-                match result {
+-                    Err(error) => Err(ProcessError::Termination(error)),
+-                    Ok(status) => match self.mgba.stop().await {
+-                        Err(error) => Err(error),
+-                        Ok(()) => self.child_exit_after_reap(status.success()),
+-                    },
+-                }
+-            }
+-            result = self.mgba.wait() => {
+-                match result {
+-                    Err(error) => Err(ProcessError::Termination(error)),
+-                    Ok(status) => match stop_child(&mut self.sidecar).await {
+-                        Err(error) => Err(error),
+-                        Ok(()) => self.child_exit_after_reap(status.success()),
+-                    },
+-                }
+-            }
+-        };
+-        match result {
+-            Ok(event) => Ok(event),
+-            // Child-exit branches have already reaped both children and have
+-            // performed the explicit artifact cleanup. Do not run the
+-            // fail-closed stop path a second time: that would obscure the
+-            // original cleanup failure (or wrap it in a duplicate error).
+-            Err(error @ (ProcessError::Cleanup { .. } | ProcessError::EventCleanup { .. })) => {
+-                Err(error)
+-            }
++        match self.observe_raw().await {
++            Ok(observation) => self.settle_raw(observation).await,
+             Err(error) => Err(self.fail_closed(error).await),
+         }
+     }
+ 
++    /// Observes one control or child event without stopping its peer. This is
++    /// intentionally separate from [`Self::settle_raw`] so realtime can close
++    /// and join before child settlement and artifact cleanup.
++    pub(crate) async fn observe_raw(&mut self) -> Result<RawSupervisorEvent, ProcessError> {
++        tokio::select! {
++            // Keep child observation ahead of an always-ready presence lane.
++            biased;
++            result = self.sidecar.wait() => result
++                .map(RawSupervisorEvent::SidecarExited)
++                .map_err(ProcessError::Termination),
++            result = self.mgba.wait() => result
++                .map(RawSupervisorEvent::MgbaExited)
++                .map_err(ProcessError::Termination),
++            result = self.control.receive() => result.map(RawSupervisorEvent::Control),
++        }
++    }
++
++    /// Settles a raw child/control observation by stopping the peer, joining
++    /// both pump tasks, and performing the existing fail-closed cleanup.
++    pub(crate) async fn settle_raw(
++        &mut self,
++        observation: RawSupervisorEvent,
++    ) -> Result<SupervisorEvent, ProcessError> {
++        match observation {
++            RawSupervisorEvent::Control(event) => Ok(SupervisorEvent::Control(event)),
++            RawSupervisorEvent::SidecarExited(status) => {
++                let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
++                let peer = tokio::time::timeout_at(deadline, self.mgba.stop())
++                    .await
++                    .map_err(|_| {
++                        ProcessError::Termination(io::Error::new(
++                            io::ErrorKind::TimedOut,
++                            "mGBA stop timed out",
++                        ))
++                    })
++                    .and_then(|result| result);
++                let pump = self.control.shutdown_until(deadline).await;
++                match (peer, pump) {
++                    (Ok(()), Ok(())) => self.child_exit_after_reap(status.success()),
++                    (Err(error), _) | (_, Err(error)) => Err(error),
++                }
++            }
++            RawSupervisorEvent::MgbaExited(status) => {
++                let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
++                let peer = tokio::time::timeout_at(deadline, stop_child(&mut self.sidecar))
++                    .await
++                    .map_err(|_| {
++                        ProcessError::Termination(io::Error::new(
++                            io::ErrorKind::TimedOut,
++                            "sidecar stop timed out",
++                        ))
++                    })
++                    .and_then(|result| result);
++                let pump = self.control.shutdown_until(deadline).await;
++                match (peer, pump) {
++                    (Ok(()), Ok(())) => self.child_exit_after_reap(status.success()),
++                    (Err(error), _) | (_, Err(error)) => Err(error),
++                }
++            }
++        }
++    }
++
+     fn child_exit_after_reap(&mut self, success: bool) -> Result<SupervisorEvent, ProcessError> {
+         let event = if success {
+             Ok(SupervisorEvent::ChildExited)
+@@ -2734,6 +3676,45 @@ async fn startup_failure_with_cleanup(
+     startup_cleanup(startup, mgba)
+ }
+ 
++async fn startup_failure_with_control(
++    startup: ProcessError,
++    child: &mut Child,
++    mgba: &mut CommandSpec,
++    control: &mut ControlChannel,
++) -> ProcessError {
++    // Pump closure and child reaping share one deadline. In particular, a
++    // failed mGBA launch must not leave the persistent control tasks alive
++    // after this compensation path returns.
++    let deadline = tokio::time::Instant::now() + SHUTDOWN_DEADLINE;
++    let pump = control.shutdown_until(deadline).await;
++    let child = tokio::time::timeout_at(deadline, stop_child(child))
++        .await
++        .map_err(|_| {
++            ProcessError::Termination(io::Error::new(
++                io::ErrorKind::TimedOut,
++                "startup child did not exit",
++            ))
++        })
++        .and_then(|result| result);
++    let startup = match child {
++        Ok(()) => startup,
++        Err(cleanup) => ProcessError::StartupCleanup {
++            startup: Box::new(startup),
++            cleanup: Box::new(cleanup),
++        },
++    };
++    if let Err(cleanup) = pump {
++        return ProcessError::StartupCleanup {
++            startup: Box::new(startup),
++            cleanup: Box::new(cleanup),
++        };
++    }
++    if !startup.cleanup_confirmed() {
++        return startup;
++    }
++    startup_cleanup(startup, mgba)
++}
++
+ async fn stop_child(child: &mut Child) -> Result<(), ProcessError> {
+     // This is the fail-closed fallback for startup failures or shutdown paths
+     // where the authenticated control transaction was unavailable or not
+@@ -2862,10 +3843,12 @@ const _: Option<ProtocolVersion> = None;
+ mod tests {
+     use super::{
+         CleanupArtifact, CommandSpec, ControlChannel, ControlShutdownEvidence,
+-        DescendantCompletionEvidence, JobTerminationEvidence, MgbaShutdownReport,
+-        OWNED_MGBA_ROM_ARG_INDEX, PROCESS_IO_TIMEOUT, ProcessError, RecoveryDisposition,
+-        RootReapEvidence, ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
+-        drop_cleanup_allowed, ensure_absent, new_command_id, terminate_and_reap_sync,
++        ControlTerminalCause, DescendantCompletionEvidence, JobTerminationEvidence,
++        MgbaShutdownReport, OWNED_MGBA_ROM_ARG_INDEX, PROCESS_IO_TIMEOUT, PresenceSnapshot,
++        ProcessError, PumpShared, RecoveryDisposition, RootReapEvidence, ScriptedWriter,
++        ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
++        apply_presence_reset, drop_cleanup_allowed, ensure_absent, new_command_id,
++        scripted_lifecycle_write, terminate_and_reap_sync,
+     };
+     #[cfg(windows)]
+     use super::{
+@@ -2874,10 +3857,15 @@ mod tests {
+     };
+     #[cfg(windows)]
+     use crate::session::SessionWorkspace;
++    use coop_protocol::{
++        AnimationId, AvatarId, DespawnReason, Direction, LocalPresenceStateV1, MovementMode,
++        PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1, RegionId,
++        RemotePlayerDespawnV1, WorldLocation,
++    };
+     #[cfg(windows)]
+     use coop_sidecar::LocalSidecar;
+     use coop_sidecar::control::{
+-        CommandStatus, ControlCommand, ControlEvent, MAX_CONTROL_LINE_BYTES,
++        CheckpointGrant, CommandStatus, ControlCommand, ControlEvent, MAX_CONTROL_LINE_BYTES,
+     };
+     #[cfg(windows)]
+     use std::fs;
+@@ -2911,6 +3899,27 @@ mod tests {
+             .expect("long-running test child")
+     }
+ 
++    fn exiting_child() -> tokio::process::Child {
++        #[cfg(windows)]
++        let mut command = {
++            let mut command = Command::new("cmd.exe");
++            command.args(["/C", "exit", "0"]);
++            command
++        };
++        #[cfg(not(windows))]
++        let mut command = {
++            let mut command = Command::new("sh");
++            command.args(["-c", "exit 0"]);
++            command
++        };
++        command
++            .stdin(Stdio::null())
++            .stdout(Stdio::null())
++            .stderr(Stdio::null())
++            .spawn()
++            .expect("exiting test child")
++    }
++
+     async fn unused_control_channel() -> ControlChannel {
+         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+         let address = listener.local_addr().unwrap();
+@@ -2922,6 +3931,519 @@ mod tests {
+         ControlChannel::from_stream_for_test(stream)
+     }
+ 
++    struct PrefixWriter {
++        prefix_len: usize,
++        attempts: Vec<Vec<u8>>,
++    }
++
++    impl ScriptedWriter for PrefixWriter {
++        fn try_write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
++            self.attempts.push(bytes.to_vec());
++            Ok(self.prefix_len.min(bytes.len()))
++        }
++    }
++
++    fn test_pump_shared() -> std::sync::Arc<PumpShared> {
++        let (snapshot_tx, _) = tokio::sync::watch::channel(PresenceSnapshot {
++            generation: 0,
++            revision: 0,
++            state: None,
++            reset_generation: None,
++            lifecycle_permit: false,
++            reset_latched: false,
++        });
++        let (terminal_tx, _) = tokio::sync::mpsc::channel(1);
++        let (stop_tx, _) = tokio::sync::watch::channel(false);
++        std::sync::Arc::new(PumpShared {
++            snapshot_tx,
++            terminal: std::sync::Mutex::new(None),
++            writer_admission: std::sync::Mutex::new(0),
++            terminal_tx,
++            stop_tx,
++        })
++    }
++
++    #[test]
++    fn control_pump_lifecycle_short_write_is_sticky_and_has_no_suffix_or_retry() {
++        let shared = test_pump_shared();
++        let first = b"{\"type\":\"remote_player_spawn\"}\n";
++        let second = b"{\"type\":\"remote_player_update\"}\n";
++        let mut writer = PrefixWriter {
++            prefix_len: first.len() - 1,
++            attempts: Vec::new(),
++        };
++
++        assert!(!scripted_lifecycle_write(&mut writer, first, &shared));
++        assert_eq!(
++            shared.terminal(),
++            Some(ControlTerminalCause::LifecyclePartialWrite)
++        );
++        assert_eq!(writer.attempts, vec![first.to_vec()]);
++
++        // Once a strict prefix is accepted, no suffix, retry, or later frame
++        // may be emitted by the lifecycle lane.
++        assert!(!scripted_lifecycle_write(&mut writer, second, &shared));
++        assert_eq!(writer.attempts, vec![first.to_vec()]);
++    }
++
++    #[tokio::test]
++    async fn control_pump_shutdown_joins_reader_and_writer_tasks() {
++        let mut control = unused_control_channel().await;
++        let deadline = tokio::time::Instant::now() + PROCESS_IO_TIMEOUT;
++        control.shutdown_until(deadline).await.unwrap();
++        assert!(control.pump_tasks_joined());
++    }
++
++    fn presence_state(source_sequence: u32) -> LocalPresenceStateV1 {
++        let location = WorldLocation::new(RegionId::Hoenn, 1, 0, 4, 5).unwrap();
++        let pose = PresencePoseV1::new(
++            location,
++            0,
++            Direction::South,
++            source_sequence,
++            1,
++            MovementMode::Idle,
++            AnimationId::Idle,
++            AvatarId::Brendan,
++            PlayerState::Overworld,
++        )
++        .unwrap();
++        LocalPresenceStateV1::new(pose, source_sequence).unwrap()
++    }
++
++    fn presence_interaction(sequence: u32) -> PresenceInteractionV1 {
++        PresenceInteractionV1::new(PresenceHandle::new(1).unwrap(), sequence, 1, 4, 5).unwrap()
++    }
++
++    async fn control_event_pair(
++        events: Vec<ControlEvent>,
++    ) -> (ControlChannel, tokio::task::JoinHandle<()>) {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            for event in events {
++                let mut bytes = serde_json::to_vec(&event).unwrap();
++                bytes.push(b'\n');
++                if stream.write_all(&bytes).await.is_err() {
++                    break;
++                }
++            }
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        (ControlChannel::from_stream_for_test(stream), server)
++    }
++
++    async fn wait_for_terminal_cause(control: &ControlChannel, expected: ControlTerminalCause) {
++        tokio::time::timeout(PROCESS_IO_TIMEOUT, async {
++            loop {
++                if control.terminal_cause() == Some(expected) {
++                    return;
++                }
++                tokio::task::yield_now().await;
++            }
++        })
++        .await
++        .unwrap();
++    }
++
++    async fn held_control_event_pair(
++        events: Vec<ControlEvent>,
++    ) -> (
++        ControlChannel,
++        tokio::sync::oneshot::Sender<()>,
++        tokio::task::JoinHandle<()>,
++    ) {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            for event in events {
++                let mut bytes = serde_json::to_vec(&event).unwrap();
++                bytes.push(b'\n');
++                if stream.write_all(&bytes).await.is_err() {
++                    return;
++                }
++            }
++            let _ = release_rx.await;
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        (
++            ControlChannel::from_stream_for_test(stream),
++            release_tx,
++            server,
++        )
++    }
++
++    #[tokio::test]
++    async fn control_pump_coalesces_state_by_generation_and_revision() {
++        let (mut control, server) = control_event_pair(vec![
++            ControlEvent::PlayerState(presence_state(1)),
++            ControlEvent::PlayerState(presence_state(2)),
++            ControlEvent::PlayerState(presence_state(3)),
++        ])
++        .await;
++        wait_for_terminal_cause(&control, ControlTerminalCause::ReaderClosed).await;
++        let event = tokio::time::timeout(PROCESS_IO_TIMEOUT, control.receive())
++            .await
++            .unwrap()
++            .unwrap();
++        assert_eq!(
++            event,
++            ControlEvent::PlayerState(presence_state(3)),
++            "only the newest valid state is exposed"
++        );
++        assert_eq!(
++            control
++                .latest_presence_state()
++                .map(|(_, revision, _)| revision),
++            Some(3)
++        );
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_interaction_fifo_overflows_on_seventeenth_item() {
++        let events = (1..=17)
++            .map(|sequence| ControlEvent::InteractRemotePlayer(presence_interaction(sequence)))
++            .collect();
++        let (mut control, server) = control_event_pair(events).await;
++        wait_for_terminal_cause(&control, ControlTerminalCause::InteractionOverflow).await;
++        for sequence in 1..=16 {
++            let event = tokio::time::timeout(PROCESS_IO_TIMEOUT, control.receive())
++                .await
++                .unwrap()
++                .unwrap();
++            assert_eq!(
++                event,
++                ControlEvent::InteractRemotePlayer(presence_interaction(sequence))
++            );
++        }
++        assert_eq!(
++            control.terminal_cause(),
++            Some(ControlTerminalCause::InteractionOverflow)
++        );
++        assert!(matches!(
++            control.receive().await,
++            Err(ProcessError::ControlTerminal(
++                ControlTerminalCause::InteractionOverflow
++            ))
++        ));
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_rom_presence_reset_latches_before_new_state_and_duplicate_is_idempotent()
++    {
++        let (mut control, server) = control_event_pair(vec![
++            ControlEvent::PlayerState(presence_state(1)),
++            ControlEvent::RomPresenceReset,
++            ControlEvent::PlayerState(presence_state(2)),
++            ControlEvent::RomPresenceReset,
++        ])
++        .await;
++        assert_eq!(
++            tokio::time::timeout(PROCESS_IO_TIMEOUT, control.receive())
++                .await
++                .unwrap()
++                .unwrap(),
++            ControlEvent::RomPresenceReset
++        );
++        assert_eq!(control.lifecycle_generation(), 1);
++        assert!(control.reset_latched());
++        assert!(!control.lifecycle_permitted());
++        assert!(control.latest_presence_state().is_none());
++        wait_for_terminal_cause(&control, ControlTerminalCause::ReaderClosed).await;
++        assert!(matches!(
++            tokio::time::timeout(Duration::from_millis(50), control.receive()).await,
++            Ok(Err(ProcessError::Descriptor)) | Err(_)
++        ));
++        assert_eq!(control.lifecycle_generation(), 1);
++        server.await.unwrap();
++    }
++
++    #[test]
++    fn control_pump_rom_presence_generation_exhaustion_fails_closed() {
++        let shared = test_pump_shared();
++        shared.snapshot_tx.send_modify(|snapshot| {
++            snapshot.generation = u32::MAX;
++        });
++        assert!(!apply_presence_reset(&shared));
++        assert_eq!(
++            shared.terminal(),
++            Some(ControlTerminalCause::ReaderProtocol)
++        );
++    }
++
++    async fn read_test_line(stream: &mut tokio::net::TcpStream) -> Vec<u8> {
++        let mut line = Vec::new();
++        loop {
++            let mut byte = [0_u8; 1];
++            stream.read_exact(&mut byte).await.unwrap();
++            if byte[0] == b'\n' {
++                return line;
++            }
++            line.push(byte[0]);
++        }
++    }
++
++    #[tokio::test]
++    async fn control_pump_critical_completion_overtakes_lifecycle_without_replay() {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            let first = read_test_line(&mut stream).await;
++            let second = read_test_line(&mut stream).await;
++            (first, second)
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        let mut control = ControlChannel::from_stream_for_test(stream);
++        control.enable_lifecycle(0).unwrap();
++        let lifecycle = ControlCommand::RemotePlayerDespawn(
++            RemotePlayerDespawnV1::new(PresenceHandle::new(1).unwrap(), 1, DespawnReason::Hidden)
++                .unwrap(),
++        );
++        control.enqueue_lifecycle(0, lifecycle).unwrap();
++        let critical = ControlCommand::CheckpointGrant(CheckpointGrant {
++            command_id: new_command_id(),
++            session_epoch: 1,
++            ready_sequence: 1,
++        });
++        control.send(&critical).await.unwrap();
++        let (first, second) = server.await.unwrap();
++        assert!(matches!(
++            serde_json::from_slice::<ControlCommand>(&first).unwrap(),
++            ControlCommand::CheckpointGrant(_)
++        ));
++        assert!(matches!(
++            serde_json::from_slice::<ControlCommand>(&second).unwrap(),
++            ControlCommand::RemotePlayerDespawn(_)
++        ));
++    }
++
++    #[tokio::test]
++    async fn control_pump_ack_before_eof_remains_deliverable() {
++        let command_id = new_command_id();
++        let (mut control, server) = control_event_pair(vec![ControlEvent::CommandResult {
++            command_id,
++            status: CommandStatus::Applied,
++            reason: None,
++        }])
++        .await;
++        assert_eq!(
++            tokio::time::timeout(PROCESS_IO_TIMEOUT, control.receive())
++                .await
++                .unwrap()
++                .unwrap(),
++            ControlEvent::CommandResult {
++                command_id,
++                status: CommandStatus::Applied,
++                reason: None,
++            }
++        );
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_checkpoint_lane_excludes_presence_traffic() {
++        let command_id = new_command_id();
++        let (mut control, server) = control_event_pair(vec![
++            ControlEvent::PlayerState(presence_state(1)),
++            ControlEvent::CheckpointReady {
++                session_epoch: 1,
++                ready_sequence: 1,
++            },
++            ControlEvent::PlayerState(presence_state(2)),
++            ControlEvent::SaveDataUpdated {
++                session_epoch: 1,
++                ready_sequence: 1,
++                save_sequence: 2,
++                save_generation: 1,
++            },
++            ControlEvent::CommandResult {
++                command_id,
++                status: CommandStatus::Applied,
++                reason: None,
++            },
++        ])
++        .await;
++        assert!(matches!(
++            control.receive_bounded().await.unwrap(),
++            ControlEvent::CheckpointReady { .. }
++        ));
++        assert!(matches!(
++            control.receive_bounded().await.unwrap(),
++            ControlEvent::SaveDataUpdated { .. }
++        ));
++        assert!(matches!(
++            control.receive_bounded().await.unwrap(),
++            ControlEvent::CommandResult { .. }
++        ));
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_checkpoint_reset_wins_before_queued_critical_event() {
++        let command_id = new_command_id();
++        let (mut control, server) = control_event_pair(vec![
++            ControlEvent::CommandResult {
++                command_id,
++                status: CommandStatus::Applied,
++                reason: None,
++            },
++            ControlEvent::RomPresenceReset,
++        ])
++        .await;
++        wait_for_terminal_cause(&control, ControlTerminalCause::ReaderClosed).await;
++        assert_eq!(
++            control.receive_bounded().await.unwrap(),
++            ControlEvent::RomPresenceReset
++        );
++        assert!(control.reset_latched());
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_sustained_presence_shutdown_joins_both_tasks() {
++        let events = (1..=128)
++            .map(|sequence| ControlEvent::PlayerState(presence_state(sequence)))
++            .collect();
++        let (control, server) = control_event_pair(events).await;
++        let mut children =
++            SupervisedChildren::for_test(long_running_child(), long_running_child(), control);
++        let disposition = children.shutdown(1, false).await;
++        assert_eq!(disposition.path, ShutdownPath::Forced);
++        assert!(children.control.pump_tasks_joined());
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_child_observation_wins_under_presence_flood() {
++        let events = (1..=128)
++            .map(|sequence| ControlEvent::PlayerState(presence_state(sequence)))
++            .collect();
++        let (control, release, server) = held_control_event_pair(events).await;
++        let mut children =
++            SupervisedChildren::for_test(exiting_child(), long_running_child(), control);
++        let mut child_seen = false;
++        for _ in 0..256 {
++            match tokio::time::timeout(PROCESS_IO_TIMEOUT, children.next_event())
++                .await
++                .unwrap()
++                .unwrap()
++            {
++                SupervisorEvent::ChildExited => {
++                    child_seen = true;
++                    break;
++                }
++                SupervisorEvent::Control(_) => {}
++            }
++        }
++        assert!(
++            child_seen,
++            "child exit must remain observable under presence"
++        );
++        assert!(children.mgba.try_wait().unwrap().is_some());
++        let _ = release.send(());
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_invalid_presence_state_fails_closed() {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            stream
++                .write_all(
++                    br#"{"type":"player_state","pose":{"location":{"region":"hoenn","map_group":1,"map_number":0,"x":4,"y":5},"elevation":0,"direction":"south","client_tick":1,"warp_sequence":1,"movement_mode":"idle","animation_id":"idle","avatar_id":"brendan","player_state":"overworld"},"source_sequence":0}
++"#,
++                )
++                .await
++                .unwrap();
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        let mut control = ControlChannel::from_stream_for_test(stream);
++        assert!(matches!(
++            tokio::time::timeout(PROCESS_IO_TIMEOUT, control.receive()).await,
++            Ok(Err(ProcessError::Descriptor))
++        ));
++        assert_eq!(
++            control.terminal_cause(),
++            Some(ControlTerminalCause::ReaderProtocol)
++        );
++        server.await.unwrap();
++    }
++
++    #[tokio::test]
++    async fn control_pump_discards_stale_lifecycle_and_interaction_after_reset() {
++        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
++        let address = listener.local_addr().unwrap();
++        let server = tokio::spawn(async move {
++            let (mut stream, _) = listener.accept().await.unwrap();
++            let mut events = vec![ControlEvent::RomPresenceReset];
++            events.extend((1..=17).map(|sequence| {
++                ControlEvent::InteractRemotePlayer(presence_interaction(sequence))
++            }));
++            for event in events {
++                let mut bytes = serde_json::to_vec(&event).unwrap();
++                bytes.push(b'\n');
++                stream.write_all(&bytes).await.unwrap();
++            }
++            let mut bytes = [0_u8; 512];
++            tokio::time::timeout(Duration::from_millis(50), stream.read(&mut bytes))
++                .await
++                .is_ok()
++        });
++        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
++        let mut control = ControlChannel::from_stream_for_test(stream);
++        let stale = ControlCommand::RemotePlayerDespawn(
++            RemotePlayerDespawnV1::new(PresenceHandle::new(1).unwrap(), 1, DespawnReason::Hidden)
++                .unwrap(),
++        );
++        assert!(control.enqueue_lifecycle(0, stale).is_ok());
++        // Publish the same atomic reset fence used by the reader before the
++        // writer task gets a scheduling turn. The queued generation-zero
++        // record must be discarded without reaching the peer.
++        assert!(apply_presence_reset(&control.shared));
++        assert_eq!(
++            tokio::time::timeout(PROCESS_IO_TIMEOUT, control.receive())
++                .await
++                .unwrap()
++                .unwrap(),
++            ControlEvent::RomPresenceReset
++        );
++        assert!(matches!(
++            tokio::time::timeout(Duration::from_millis(50), control.receive()).await,
++            Ok(Err(ProcessError::Descriptor)) | Err(_)
++        ));
++        assert_ne!(
++            control.terminal_cause(),
++            Some(ControlTerminalCause::InteractionOverflow)
++        );
++        assert!(
++            control
++                .enqueue_lifecycle(
++                    0,
++                    ControlCommand::RemotePlayerDespawn(
++                        RemotePlayerDespawnV1::new(
++                            PresenceHandle::new(1).unwrap(),
++                            1,
++                            DespawnReason::Hidden,
++                        )
++                        .unwrap(),
++                    )
++                )
++                .is_err()
++        );
++        assert!(
++            !server.await.unwrap(),
++            "stale lifecycle must not be emitted"
++        );
++    }
++
+     #[tokio::test]
+     async fn cancellation_termination_reaps_child_within_bound() {
+         let started = std::time::Instant::now();
+@@ -3624,7 +5146,12 @@ mod tests {
+     #[tokio::test]
+     async fn invalid_mgba_identity_is_rejected_before_sidecar_spawn() {
+         let directory = tempdir().unwrap();
+-        let mgba_path = std::env::current_exe().unwrap();
++        // Bind a private copy rather than the test executable itself. The
++        // latter can be deny-delete locked by the Windows test harness before
++        // the identity guard is exercised, which masks the intended digest
++        // mismatch with an unrelated InvalidArgument.
++        let mgba_path = directory.path().join("mgba-test.exe");
++        fs::copy(std::env::current_exe().unwrap(), &mgba_path).unwrap();
+         let rom = directory.path().join("rom.gba");
+         fs::write(&rom, b"trusted rom").unwrap();
+         let mut mgba = CommandSpec::mgba(&mgba_path, &rom).unwrap();
+diff --git a/coop/crates/coop-launcher/src/session.rs b/coop/crates/coop-launcher/src/session.rs
+index cd85bb32f51553017033f7128a2e4c39687c06d3..9c907bd5c889f18bb5061301d8d90cd5c641be27 100644
+--- a/coop/crates/coop-launcher/src/session.rs
++++ b/coop/crates/coop-launcher/src/session.rs
+@@ -1762,6 +1762,9 @@ impl SessionLifecycle {
+                             .await
+                             .map(|_| ())
+                     }
++                    Ok(SupervisorEvent::Control(ControlEvent::RomPresenceReset)) => {
++                        Err(SessionError::CheckpointNotAuthorized)
++                    }
+                     Ok(SupervisorEvent::Control(_)) => Ok(()),
+                     Err(error) => Err(error),
+                 },
+@@ -1802,6 +1805,9 @@ impl SessionLifecycle {
+                         .await
+                         .map(|_| ());
+                 }
++                SupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
++                    return Err(SessionError::CheckpointNotAuthorized);
++                }
+                 SupervisorEvent::Control(_) => {}
+             }
+         }
+@@ -3159,6 +3165,11 @@ mod lifecycle_tests {
+                 coop_sidecar::control::ControlCommand::ShutdownRequest(_) => {
+                     panic!("checkpoint fixture must not receive shutdown")
+                 }
++                coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
++                | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
++                | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_) => {
++                    panic!("checkpoint fixture must not receive presence lifecycle")
++                }
+             };
+             let result = ControlEvent::CommandResult {
+                 command_id,

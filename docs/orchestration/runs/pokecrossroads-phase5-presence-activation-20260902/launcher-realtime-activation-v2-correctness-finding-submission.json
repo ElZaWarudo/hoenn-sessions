@@ -1,0 +1,48 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:529f8dd467a174024c3f09d13c31d15b80f3b6550764423b91c98ea1674a106b",
+  "review_plan_hash": "sha256:6fe39d370b3393484ad9cdbcee09fe4ab4ecfb5483ccd6c306b777390c4fe4ef",
+  "surface_id": "launcher-realtime-activation-v2-correctness",
+  "reporter_id": "/root/launcher_activation_v2_correctness",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "LRA2-003-pre-ready-interaction-checkpoint-cutover",
+      "observation": "Checkpoint draining advances the coordinator's Ready state without concurrently consuming or timestamping the control interaction FIFO, so queued interactions can cross the readiness cutover.",
+      "impact": "If a checkpoint overlaps the server readiness transition, an interaction emitted before Ready can remain queued throughout the checkpoint and then be forwarded as though it were post-Ready, violating the sealed drop-before-Ready boundary.",
+      "recommendation": "Make the Ready cutover and interaction classification explicit across checkpoints: drain and drop every interaction known to precede Ready while checkpoint correlation remains live, then begin forwarding only interactions admitted after the cutover, preserving FIFO. Add a deterministic before/after Ready regression.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:2231-2244 drains coordinator events during checkpoint and marks Ready.",
+        "coop/crates/coop-launcher/src/session.rs:2177-2183 consumes control interactions only after checkpoint_with_realtime returns.",
+        "coop/crates/coop-launcher/src/process.rs:1758-1769 admits interactions regardless of lifecycle permit or coordinator readiness."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "LRA2-005-pending-checkpoint-shutdown-race",
+      "observation": "The mint wait latches CheckpointReady but both shutdown exits discard that latch instead of completing the checkpoint before child shutdown.",
+      "impact": "A shutdown race can discard a known finite checkpoint opportunity and force child termination, risking recent gameplay progress.",
+      "recommendation": "On mint-wait shutdown, reconcile any latched CheckpointReady with the existing finite checkpoint path before stopping children, while treating the canceled mint as terminal and never reminting. Add first- and second-mint race tests.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:130-133 records CheckpointReady while mint is pending.",
+        "coop/crates/coop-launcher/src/session.rs:2051-2059 and 2070-2078 shut down without reconciling pending_checkpoint.",
+        "coop/crates/coop-launcher/src/process.rs:2738-2741 skips graceful authenticated shutdown when checkpoint_drained is false."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "LRA2-006-success-path-integration-coverage",
+      "observation": "The candidate's deterministic tests never exercise a successful mint and live realtime coordinator lifecycle.",
+      "impact": "Ready gating, freshest-state handoff, lifecycle backpressure, checkpoint coexistence, child settlement ordering, and successful task termination can regress while all added tests remain green.",
+      "recommendation": "Add a successful one-use grant and deterministic loopback WebSocket plus authenticated control fixture covering Ready, state, pre/post-Ready interaction, lifecycle mapping, checkpoint overlap, terminal behavior, and joined teardown.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:3429-3445 has a fake RealtimeApi whose mint always errors.",
+        "coop/crates/coop-launcher/src/session.rs:4299-4400 contains only shutdown/reset-before-mint and failed-mint tests.",
+        "coop/crates/coop-launcher/src/realtime.rs:460-536 tests helper mapping or immediate stop, not a successful authenticated exchange."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_digest": "sha256:53fbd907eef08fc50c7a4a41ca6bb918d0ca45f78a1c78ca1c473f7366765577",
+  "baseline_tree": "bb6725ba2e4bcef8fae97c5977ce6cc3c2a51c86",
+  "changed_files": [
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:9ef23ac846d1cb5fe806e15a3873f570ebe66c715f4935a942c9fa51dd544d5c",
+  "dependency_patch_hashes": [],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:1de43e0ab34ece9e0f7495f49e42f91cf4b9ca8796cc483c13ce1e586ee1d482",
+  "owned_paths": [
+    "coop/crates/coop-server/tests/phase2_http.rs"
+  ],
+  "role": "integration-candidate",
+  "unit_id": "server-two-websocket-presence-acceptance",
+  "worker_id": "/root/server_two_websocket_worker",
+  "workspace_id": "pokecrossroads-phase5-server-two-websocket-20260902"
+}

@@ -1,0 +1,44 @@
+{
+  "contract_hash": "sha256:f98be8e90bf3bf0e71f29b3c498380fc5132b57f175929b75c878a80e4535c7c",
+  "diff_digest": "sha256:1d373c5d02ea00e757121e6d1aedf80b450ddb0a41fbf7a72baa7cbb322f6835",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:470-487 discards the tokio::spawn JoinHandle and awaits OwnedWriteHalf::write_all without BRIDGE_FRAME_TIMEOUT.",
+        "coop/crates/coop-sidecar/src/server.rs:504-531 awaits writer enqueue and completion without a deadline; critical SESSION_READY and CheckpointGranted paths await this method at lines 2093 and 3057.",
+        "coop/crates/coop-sidecar/src/server.rs:4533-4570 sends one 144-byte frame to an ordinary loopback socket, never proves the write is pending, and aborts the server task, so the test does not create the contract-required deterministic stall or prove cleanup."
+      ],
+      "impact": "If the authenticated ROM stops reading after lifecycle traffic, a later SESSION_READY or CheckpointGranted send can hold the active-session loop forever, prevent a subsequent shutdown request from receiving Applied within 500 ms, and leave the writer task and socket alive after the owner is dropped.",
+      "observation": "The sole bridge-writer task is detached and performs an unbounded write_all, while BridgeWriter::send waits for that task's completion without any deadline.",
+      "principle": "correctness",
+      "recommendation": "Retain ownership of the writer task, enforce the bridge-write deadline inside the sole writer, close the socket after any timeout or partial failure, and abort and join the writer on every terminal path. Replace the regression with a controllable writer that is provably pending and assert both the shutdown acknowledgement and writer-task termination.",
+      "rule_id": "SPCF2-003-bounded-bridge-writer-cleanup",
+      "severity": "p1"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:481-484 stores write_failed and then calls notify_waiters.",
+        "coop/crates/coop-sidecar/src/server.rs:2357-2365 checks write_failed before constructing failure_notified inside select, with no post-registration state check.",
+        "Tokio 1.53.1 sync/notify.rs:708-714 documents that notify_waiters stores no permit for a later notified().await call."
+      ],
+      "impact": "A failed or partial lifecycle write is not guaranteed to wake an otherwise idle serving loop, so the session can remain alive instead of taking the required stable non-reconnectable terminal path and cleaning up its tasks.",
+      "observation": "Bridge-writer failure signaling has a lost-wakeup window because the actor calls notify_waiters after setting its atomic flag, while the serving loop checks that flag before constructing the Notified future and never rechecks it after registration.",
+      "principle": "correctness",
+      "recommendation": "Use a stateful completion channel or a permit-storing notification with a register-then-recheck pattern, and add a race-controlled regression that forces failure between the precheck and wait registration and asserts prompt terminal cleanup.",
+      "rule_id": "SPCF2-003-writer-failure-wakeup",
+      "severity": "p1"
+    }
+  ],
+  "review_plan_hash": "sha256:d86f23733b0512dc1f5a9b917103d9a4be8eb769b95f78a7b72225ed81211ab8",
+  "reviewer_id": "/root/sidecar_control_correctness_reviewer_v2",
+  "risk_boundaries_checked": [
+    "initial-active-ready-latch-and-post-ready-forwarding",
+    "overflow-terminal-precedence-and-independently-wakeable-failure",
+    "readiness-generation-pre-ready-drop-and-sequence-allocation",
+    "sole-bridge-writer-shutdown-ack-bounds-and-task-cleanup"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 0,
+  "surface_id": "sidecar-control-correction-correctness-v2"
+}

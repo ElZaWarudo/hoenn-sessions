@@ -1,0 +1,8 @@
+{
+  "role": "reviewer",
+  "actor_id": "/root/server_distinct_warp_reviewer",
+  "status": "passed",
+  "contract_hash": "sha256:8bad96efb8baf01ffd5a9bfdebf91b8561f664ad7c521573f680c78cbfb2eed8",
+  "diff_digest": "sha256:33e795459c6d3c71f09199e3f9476dc0085099c415cf045873433eae1b8e3e1e",
+  "findings": []
+}

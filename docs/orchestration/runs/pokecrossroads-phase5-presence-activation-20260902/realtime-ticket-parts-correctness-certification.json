@@ -1,0 +1,8 @@
+{
+  "role": "reviewer",
+  "actor_id": "/root/server_two_ws_correctness_reviewer",
+  "status": "passed",
+  "contract_hash": "sha256:a71d19a8611c171455a5cf08d185b18b5a5166bf0f727e0ca94bbe6557fb0038",
+  "diff_digest": "sha256:9a2a0715073255e197dbf22b49b4b18ebc88b0a00b3b7a1edc4b6e4aedae3fa1",
+  "findings": []
+}

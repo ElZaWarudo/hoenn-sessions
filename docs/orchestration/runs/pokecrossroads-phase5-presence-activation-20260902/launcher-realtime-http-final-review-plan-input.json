@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:8f7ed2b920cbbf910bc008532c371c9fa32e47c05a9467d934b2f7c30a7d0233",
+  "diff_digest": "sha256:8cf491d7377fe448b3f1fd9e2205c3aec6ef22e9b5ccf97cdc176bc366cd2e1b",
+  "changed_paths": [
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "launcher-http-correctness-final",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/realtime.rs",
+        "coop/crates/coop-launcher/tests/realtime_http.rs"
+      ],
+      "risk_boundaries": [
+        "bounded-response-correlation-and-grant-time-validity",
+        "canonical-endpoint-single-post-and-typed-error-contract",
+        "regression-oracle-public-api-and-no-retry-fidelity"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "launcher-http-security-final",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "coop/crates/coop-launcher/src/lib.rs",
+        "coop/crates/coop-launcher/src/realtime.rs",
+        "coop/crates/coop-launcher/tests/realtime_http.rs"
+      ],
+      "risk_boundaries": [
+        "ambient-proxy-and-cross-authority-redirect-confinement",
+        "bearer-and-ticket-channel-confidentiality",
+        "untrusted-response-bounds-and-ticket-validation-fail-closed"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

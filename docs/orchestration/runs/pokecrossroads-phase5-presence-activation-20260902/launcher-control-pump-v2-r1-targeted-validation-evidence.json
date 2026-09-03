@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "unit_id": "phase5-launcher-control-pump",
+  "candidate_commit": "bc6dc6f128cd81e4ebe4a1ccfe50099215af29e1",
+  "candidate_tree": "87e81de81864fe413b4af8a6329cfc4bf3c7e7fe",
+  "diff_digest": "sha256:25bdd962cde65c380288ac66065aab800b2774f98353bf69353df8122f086c7f",
+  "commands": [
+    {"command": "cargo test -p coop-launcher control_pump --all-features --locked", "result": "16 passed"},
+    {"command": "cargo test -p coop-launcher rom_presence --all-features --locked", "result": "2 passed"},
+    {"command": "cargo test -p coop-launcher checkpoint --all-features --locked", "result": "6 passed"},
+    {"command": "cargo test -p coop-launcher shutdown --all-features --locked", "result": "16 passed"},
+    {"command": "cargo test -p coop-sidecar -p coop-launcher --all-features --locked", "result": "242 passed, 1 ignored"},
+    {"command": "cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings", "result": "passed"},
+    {"command": "cargo fmt --all -- --check", "result": "passed"},
+    {"command": "git diff 871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2 HEAD --check", "result": "passed"}
+  ]
+}

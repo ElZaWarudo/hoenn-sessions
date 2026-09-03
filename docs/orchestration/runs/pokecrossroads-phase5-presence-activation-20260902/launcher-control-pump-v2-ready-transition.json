@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "operation": "unit-status",
+  "unit_id": "phase5-launcher-control-pump",
+  "from": "planned",
+  "to": "ready",
+  "expected_authorization_event_digest": "sha256:ba8639b1cb10f7f1e6162713832768c0db70895a0d3cee86b8774f673710625e"
+}

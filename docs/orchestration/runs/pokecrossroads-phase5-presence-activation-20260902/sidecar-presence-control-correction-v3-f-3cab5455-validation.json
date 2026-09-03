@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-3CAB5455",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected the sealed candidate: the serving-path test sends one small lifecycle command to an unread loopback socket and never uses new_blocked, waits for an in-flight barrier, joins the writer, or proves peer EOF."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

@@ -1,0 +1,8 @@
+{
+  "event": "discovery_complete",
+  "edit_path_found": true,
+  "planned_files": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "evidence_digest": "edit coop/crates/coop-sidecar/src/server.rs | symbol=spawn_control_reader, spawn_control_reader_observed, run_checkpoint_session, drive_control_with_bridge_auth, drive_control_with_bridge_listener, process_pre_bridge_control_result, handle_presence_command, handle_rom_reboot; pattern=presence lanes carry raw commands, overflow is only an AtomicBool observed through lane polling, lifecycle BridgeWriter::send awaits the 3s timeout inline, pre-ready records are silently consumed without readiness stamps, and lifecycle_forwarding_disabled is armed before reboot confirmation; why=all four P1 corrections and their required real-serving regressions are contained in this server-only session/transport path, while control.rs is contract-frozen."
+}

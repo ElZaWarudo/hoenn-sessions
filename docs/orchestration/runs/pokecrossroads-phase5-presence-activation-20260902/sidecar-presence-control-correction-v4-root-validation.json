@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "validated_at": "2026-09-03T13:11:40Z",
+  "base_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "baseline_tree": "80daf109a7939972ec2f25d124b7505a10e31164",
+  "candidate_tree": "02cbe614cc7c082c7b1a6727c834c0ccb35602e8",
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "patch_hash": "sha256:730ba1fe087620507a72500175a665dbb30cc9e925eef2c5db8a659c1bb2e69e",
+  "patch_manifest_hash": "sha256:c5e4ee879da2f2cbc37258683b0b415c32a982cfc9a43b05855cfc7b6f6c7c9b",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "review_plan_hash": "sha256:d5b815a6dce51a494b4dd5edaaa9d78073a3b1dc57462ea79db59c36cd06dcf6",
+  "findings_registry_digest": "sha256:6b313c12a5c4010b4e6f19f5e23bb0b04c2b81e65091de6c74ce31abb11d9e4b",
+  "correctness_terminal_digest": "sha256:909a2d5a1086f17e096551e0c0dadc449ac5b0558db8e7ca113479f26e94b498",
+  "security_terminal_digest": "sha256:bbfb01754d522db558371a1489bb599c8fb0c868dfbc99a59e422fb9321ea8ba",
+  "targeted_validation_candidate_digest": "sha256:cd9c76f70a6f6c25a3c9a9044b26f68c4948bf35280ccc52407a2b2d406dacfa",
+  "targeted_validation_digest": "sha256:cd9c76f70a6f6c25a3c9a9044b26f68c4948bf35280ccc52407a2b2d406dacfa",
+  "changed_file_blobs": {
+    "coop/crates/coop-sidecar/src/control.rs": "aabec73f40ae8d70c4cbb5ffb61815e032f4f660",
+    "coop/crates/coop-sidecar/src/server.rs": "800f6937867b93496262c2ef958dda52d27d9ee7"
+  },
+  "commands": [
+    {
+      "command": "rtk cargo test -p coop-sidecar --all-features --locked",
+      "exit_code": 0,
+      "summary": "106 tests passed across four suites in the root replay."
+    },
+    {
+      "command": "rtk cargo clippy -p coop-sidecar --all-targets --all-features --locked -- -D warnings",
+      "exit_code": 0,
+      "summary": "No issues found."
+    },
+    {
+      "command": "rtk cargo fmt --all -- --check",
+      "exit_code": 0,
+      "summary": "Passed."
+    },
+    {
+      "command": "rtk git diff --cached --check",
+      "exit_code": 0,
+      "summary": "Passed on the exact staged candidate tree."
+    }
+  ],
+  "status": "passed"
+}

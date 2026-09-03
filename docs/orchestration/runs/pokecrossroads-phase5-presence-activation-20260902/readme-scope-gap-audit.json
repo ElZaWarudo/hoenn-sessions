@@ -1,0 +1,35 @@
+{
+  "basis_revision": "2d1e9114",
+  "source_precedence": [
+    "The attached README defines MVP product behavior.",
+    "The user's later direction replaces pokeemerald-expansion with Pokecrossroads Beta 1.4/e05c8286.",
+    "The user's later regional rules require qualified identities, battle-region-only minimum tier, one cross-region character/save lineage, and atomic-deny group travel."
+  ],
+  "implemented_committed": [
+    "Pinned Pokecrossroads/mGBA/build/bridge compatibility contract",
+    "Region-qualified protocol, save progress, identity catalog, map catalog, and regional minimum badge tier",
+    "Authentication, exclusive leases, signed revisioned snapshots, resume/fallback, and checkpoint lifecycle",
+    "Authenticated server realtime presence with a real two-WebSocket acceptance test",
+    "Bounded sidecar realtime core",
+    "Symmetric two-member groups and atomic-deny region-aware group travel"
+  ],
+  "active_milestone": "End-to-end visible presence through ROM, authenticated local control, launcher ticket minting, and supervised realtime lifecycle.",
+  "next_ranked_milestones": [
+    "Player-facing symmetric group invite/accept/decline/leave/reconnect through avatar and pause menu",
+    "Authenticated fixed Hoenn trainer reservation, proximity, mutual join confirmation, and deterministic two-ROM battle",
+    "Real party selection and battle-region-only downscaling/restoration with expanded trainer teams",
+    "Region-qualified progress/reward commit and pre/post-commit crash recovery",
+    "Live atomic cross-region movement of both clients and presence repartitioning"
+  ],
+  "parallel_release_track": [
+    "PostgreSQL and Firebase/object-storage production adapters",
+    "Tauri UI",
+    "remote WSS/TLS",
+    "automatic savestate loading/fallback",
+    "real stock-mGBA and Lua conformance"
+  ],
+  "not_mvp": [
+    "PvP, trading, groups above two, voice/free chat, cooperative wild encounters, shared capture, raids, fully shared story, auto-follow, player collision, multiple emulators/builds, offline canonical saves, economy, competitive anticheat",
+    "friends, emotes, matchmaking, headless arbiters, spectator mode, visual replay, multi-region server deployment, mobile companion apps"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "event": "discovery_complete",
+  "edit_path_found": true,
+  "planned_files": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "git_checkpoint": {
+    "head": "871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2",
+    "index_tree": "34e944ac66193e7b09f6df89e452a5625c33ca54",
+    "worktree": "clean",
+    "staged_diff": "clean"
+  },
+  "acceptance_mapping": {
+    "LCP2-001": "Exhaustive control-v2 handling, synchronous authenticated handshake, persistent owned socket halves, and bounded JSONL framing.",
+    "LCP2-002": "Exact bounded lanes, atomic reset generation and latch publication, state coalescing, interaction overflow, stale-generation fencing, and critical-lane isolation.",
+    "LCP2-003": "Critical completion and priority, generation-fenced lifecycle output, one-attempt partial-write handling, stale discard, and sticky terminal classification.",
+    "LCP2-004": "Raw observation plus explicit settlement, ACK-before-EOF delivery, child fairness, startup compensation, and one absolute-deadline joined teardown.",
+    "LCP2-005": "Deterministic state, interaction, reset, writer, EOF, child, checkpoint, and sustained-presence shutdown regressions.",
+    "LCP2-006": "Two-file ownership and prescribed focused, full, lint, format, and diff verification."
+  },
+  "evidence_digest": "edit process.rs | symbols=ControlChannel, control reader and writer tasks, bounded pump lanes, sticky terminal/reset/generation state, SupervisedChildren startup/stop/shutdown/wait/raw observation/settlement/Drop; edit session.rs | symbols=run_until_shutdown, drain_shutdown_checkpoint, checkpoint_until, receive_checkpoint_event and lifecycle tests; tests=state coalescing, 16/17 interaction overflow, reset/new-state and duplicate-reset, stale interaction/lifecycle discard, critical completion/priority, partial or ambiguous lifecycle write, ACK-before-EOF, child fairness, joined teardown, checkpoint interleaving and sustained-presence shutdown; hazards=no active direct socket borrow, no unbounded lanes or detached tasks, terminal causes remain durable, child observation is biased live, and every shutdown phase shares one captured deadline.",
+  "contract_hash_resolution": {
+    "declared_canonical_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+    "raw_file_sha256": "sha256:fec75e0ebb70e59370855c68cbfc56d375c619ac1fe7a91eec343b7bb3240814",
+    "resolution": "No contradiction. The declared value is the canonical Seneschal contract digest with contract_hash excluded by the contract materializer; raw file-byte SHA-256 is a distinct artifact digest.",
+    "checker_result": "valid; 12 commands preflighted"
+  },
+  "ownership_extension_required": false,
+  "safe_interface_blocker": false
+}

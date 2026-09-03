@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "reconciled_at": "2026-09-03T13:14:00Z",
+  "unit_id": "phase5-sidecar-presence-control",
+  "source_revision": "00a030b2f213e423047115b3f197fe114d06e86e",
+  "integration_base_revision": "54d5ebf9157154eab94bf4e7a090840cab00d98a",
+  "integration_commit": "871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2",
+  "certified_candidate_tree": "02cbe614cc7c082c7b1a6727c834c0ccb35602e8",
+  "integration_tree": "34e944ac66193e7b09f6df89e452a5625c33ca54",
+  "contract_hash": "sha256:c54c0bbfe9ec662bce5d26411fa5b97d7bf501ad62ced75df856ee771155472e",
+  "patch_hash": "sha256:730ba1fe087620507a72500175a665dbb30cc9e925eef2c5db8a659c1bb2e69e",
+  "patch_manifest_hash": "sha256:c5e4ee879da2f2cbc37258683b0b415c32a982cfc9a43b05855cfc7b6f6c7c9b",
+  "diff_digest": "sha256:67e8ead46291d5a55c8009d17ad12cc712e904c02b5f5a8c10fd1daf9c7212c3",
+  "dependency_patch_hashes": [
+    "sha256:4d47ac721f5b57a87a454fddc1e8a49c14141d0371a511569bbbc8e121ed3c83",
+    "sha256:2e8e51db093c9e3c24c14c125d586995b947a337a0e12a4a9ebbea78271bafae",
+    "sha256:2d560a65ffd7f6ceb7502c6ffd7a62fef156054a199c3e15925c63f65e476772"
+  ],
+  "cumulative_patch_stream_git_hash": "8f134f43ae78a7b6d3d53e8df247e3a8ed9bdd91",
+  "changed_files": [
+    "coop/crates/coop-sidecar/src/control.rs",
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "correctness_certification": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-correctness-certification.json",
+  "security_certification": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-security-certification.json",
+  "targeted_validation": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-targeted-validation-evidence.json",
+  "root_validation": "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-root-validation.json",
+  "status": "release-ready-local-checkpoint"
+}

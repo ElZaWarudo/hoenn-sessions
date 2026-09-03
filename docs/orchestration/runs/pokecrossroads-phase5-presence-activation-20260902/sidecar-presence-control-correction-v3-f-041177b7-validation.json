@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-041177B7",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root independently ran the bound reboot_cutover test on cumulative tree 80daf109a7939972ec2f25d124b7505a10e31164 and reproduced Rust E0733 at process_pre_bridge_control_result lines 2348 and 2421-2423."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

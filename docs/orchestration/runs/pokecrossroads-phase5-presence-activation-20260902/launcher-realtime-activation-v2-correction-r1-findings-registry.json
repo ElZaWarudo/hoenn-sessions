@@ -1,0 +1,194 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+  "findings": [
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+      "evidence": [
+        "session.rs observes Ready while checkpoint may continue.",
+        "establish_realtime_cutover drains every immediately available control event before activating interactions.",
+        "the r1 regression emits its post-Ready interaction only after checkpoint completion."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:82e32a6b626fee5d43f476099d6d8c6cd09ded42ea77d8bf207e1d6d6b408b72",
+      "id": "F-82E32A6B",
+      "impact": "An interaction produced after server Ready but before an overlapping checkpoint completes is discarded, violating post-Ready FIFO preservation.",
+      "observation": "The corrected checkpoint cutover has no boundary marker between interactions queued before and after Ready, so its drain-to-empty policy drops both classes.",
+      "principle": "correctness",
+      "recommendation": "Establish an explicit ordered interaction cutover when Ready is observed; drop only pre-marker interactions, buffer post-marker interactions FIFO, and submit them after checkpoint reconciliation. Add a synchronized regression.",
+      "reporters": [
+        "/root/launcher_activation_v2_correctness"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19"
+      ],
+      "rule_id": "LRA2-003-post-ready-checkpoint-cutover-drop",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-correctness-r1"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+      "evidence": [
+        "session.rs active lifecycle orders children.observe_raw ahead of realtime and heartbeat under biased select.",
+        "checkpoint cutover orders control.receive ahead of realtime and activation with no heartbeat branch.",
+        "coalesced PlayerState can remain continuously ready without bounded queue backpressure."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:830116ed2ecb6a1bc485780b14bc5abf42f2f25ec5ecf56b0f31b4c4050078ee",
+      "id": "F-830116ED",
+      "impact": "A high-rate authenticated control producer can starve lease maintenance and terminal observation, keep a WebSocket active past local cadence, or prevent bounded cutover completion.",
+      "observation": "Biased active and checkpoint selects give unbounded preference to continuously ready control state over heartbeat, realtime terminal, Ready, and cutover progress.",
+      "principle": "security",
+      "recommendation": "Use bounded draining or fair arbitration while preserving an explicit Ready watermark; add continuously-ready PlayerState regressions for heartbeat, terminal observation, and bounded cutover.",
+      "reporters": [
+        "/root/launcher_activation_v2_security"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19"
+      ],
+      "rule_id": "biased-control-input-must-not-starve-heartbeat-or-terminal-observation",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-security-r1"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+      "evidence": [
+        "realtime.rs checks JoinHandle::is_finished only before select.",
+        "the JoinHandle may first poll Pending and finish before a buffered event returns.",
+        "the saturation test begins only after is_finished is already true."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:a208dc98b6815abbfe559d6ed49d988d47d9287e29f409f93c513dd356518317",
+      "id": "F-A208DC98",
+      "impact": "One stale peer event can reach the ROM after the realtime task becomes terminal.",
+      "observation": "Task completion has polling priority, but terminal state is not rechecked after receiving a buffered owner event, leaving a poll-to-return race.",
+      "principle": "correctness",
+      "recommendation": "Recheck or nonblocking-poll the JoinHandle after owner-event receipt and before mapping/return; add a barrier-controlled regression.",
+      "reporters": [
+        "/root/launcher_activation_v2_correctness"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19"
+      ],
+      "rule_id": "LRA2-004-terminal-preempts-buffered-event-race-r1",
+      "severity": "p1",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-correctness-r1"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    },
+    {
+      "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+      "diff_digest": "sha256:204f99e494f3f2a52f7c82c0600095b4dd2e59488dd4ef4b5982e8596d6429f7",
+      "evidence": [
+        "the successful fake grant is immediately ready and has no delayed mint seam.",
+        "successful and checkpoint tests do not induce active reset, backpressure, or child failure.",
+        "LRA2-006 explicitly requires freshest-state and active cleanup coverage."
+      ],
+      "feedback": [],
+      "fingerprint": "sha256:f3308a85cfff159082d64a4b8ecd0ccbeaee85c644b54cdd48ef586d52f338d4",
+      "id": "F-F3308A85",
+      "impact": "Several required fence and teardown paths can regress without an activation-level failure.",
+      "observation": "The suite adds a successful path but does not execute freshest-state handoff during mint or active reset/backpressure/child-failure cleanup through production lifecycle.",
+      "principle": "testing",
+      "recommendation": "Add deterministic activation-level tests for pending mint with fresher state and active terminal failures, asserting one attempt, freshest initial state, no post-terminal output, and joined cleanup.",
+      "reporters": [
+        "/root/launcher_activation_v2_correctness"
+      ],
+      "resolution": {
+        "evidence": [
+          "Exact candidate db0198f622b6efcba41865930ea52452598cafff addresses the accepted finding and final reviewer feedback records it resolved.",
+          "Independent final reviews reported zero findings and root replay passed 264 tests with one intentional real-mGBA ignore, Clippy, formatting, and diff checks."
+        ],
+        "resolution": "fixed",
+        "resolved_diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+        "resolver_id": "/root"
+      },
+      "review_plan_hashes": [
+        "sha256:6786564151be0c745331c9c3173a1f6584c31b63446cee5be56a6aec7dbdcd19"
+      ],
+      "rule_id": "LRA2-006-active-fence-and-failure-integration-coverage-r1",
+      "severity": "p2",
+      "status": "fixed",
+      "surface_ids": [
+        "launcher-realtime-activation-v2-correctness-r1"
+      ],
+      "validation": {
+        "evidence": [
+          "The final r5 security review explicitly corroborated this accepted finding against exact candidate db0198f622b6efcba41865930ea52452598cafff.",
+          "Independent r5 correctness and security review plus root exact validation confirm the corrected behavior."
+        ],
+        "revised_finding": null,
+        "validator_id": "/root",
+        "verdict": "confirmed"
+      }
+    }
+  ],
+  "registry_digest": "sha256:24623d575026e0041280d75e66653fe6a120f07bfd4b5eca0e515ae67ffe98b6",
+  "registry_id": "pokecrossroads-phase5-launcher-realtime-activation-v2-correction-r1",
+  "revision": 10,
+  "schema_version": 1
+}

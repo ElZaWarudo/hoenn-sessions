@@ -1,0 +1,24 @@
+{
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_digest": "sha256:33c057a5ab504bc070b6a716f4621854d7765a4c200eae8682cb107c2b4d983d",
+  "baseline_tree": "eea3987a45c83a83a5ef8dc2f66ec1f8d9e3f9cc",
+  "changed_files": [
+    "coop/crates/coop-sidecar/src/realtime.rs",
+    "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:138432b451c3379e1a5bd4c04e3db504094d0a9071b0e729b3cf90f366d8a7fb",
+  "dependency_patch_hashes": [
+    "sha256:ffa45b21fec95da51f8bffdf50b45741094545bb9dea3b9290657a010c3d0f91"
+  ],
+  "diff_basis": "worktree-vs-index",
+  "diff_digest": "sha256:1aa38397bd6062db42943c72b9ee546b487d840a23bfae286dccda21d4d6c66e",
+  "owned_paths": [
+    "coop/crates/coop-sidecar/src/realtime.rs",
+    "coop/crates/coop-sidecar/tests/realtime_loopback.rs"
+  ],
+  "role": "fixer",
+  "unit_id": "sidecar-realtime-core-fixer",
+  "worker_id": "/root/sidecar_realtime_core_worker",
+  "workspace_id": "pokecrossroads-phase5-sidecar-realtime-core-20260902"
+}

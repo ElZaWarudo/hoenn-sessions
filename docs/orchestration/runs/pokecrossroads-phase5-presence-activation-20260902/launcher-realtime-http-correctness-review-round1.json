@@ -1,0 +1,42 @@
+{
+  "patch_sha256": "sha256:12d621dde9b937f8e3ea346402aa4179da8697e273d1de0d99fad81b5fe5c80e",
+  "diff_digest": "sha256:7593ddfaf73a4fd4a789c00d615e8b5bedaa3cf3e74bb5d340d8e790786774ba",
+  "verdict": "fail",
+  "findings": [
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-launcher/src/realtime.rs",
+      "line": 154,
+      "evidence": "The adapter sampled local wall time after the response while the original closed decision incorrectly required a caller-supplied timestamp; the contract and safe latency behavior disagree.",
+      "fix": "Supersede the pre-await timestamp wording with an explicit post-response clock policy and keep fixed-time boundary checks in the private consuming seam."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-launcher/tests/realtime_http.rs",
+      "line": 258,
+      "evidence": "The redirect response had no Location header, so a redirect-following client would also pass.",
+      "fix": "Use a live second-listener redirect target and prove it receives no connection."
+    },
+    {
+      "severity": "P1",
+      "file": "coop/crates/coop-launcher/tests/realtime_http.rs",
+      "line": 287,
+      "evidence": "Only oversized Content-Length was exercised; exact 8 KiB acceptance and cumulative chunked overflow were not proved.",
+      "fix": "Add chunked exact-limit acceptance and limit-plus-one rejection."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-launcher/tests/realtime_http.rs",
+      "line": 253,
+      "evidence": "Grant Debug redaction checked the access token but not the distinct minted ticket.",
+      "fix": "Assert the known serialized ticket is absent from grant and error Debug/Display."
+    },
+    {
+      "severity": "P2",
+      "file": "coop/crates/coop-launcher/tests/realtime_http.rs",
+      "line": 221,
+      "evidence": "Authorization verification used a lowercased substring of the complete header block and would accept a misleading header name or duplicate.",
+      "fix": "Parse header names and require exactly one exact bearer value."
+    }
+  ]
+}

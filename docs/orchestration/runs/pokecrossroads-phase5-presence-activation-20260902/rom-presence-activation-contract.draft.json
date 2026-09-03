@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-rom-runtime-v1",
+  "unit_id": "rom-presence-activation",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "objective": "Activate the accepted region-qualified presence protocol in the Pokecrossroads ROM: publish exact local state, consume remote lifecycle frames, render one safe nonblocking remote avatar, interpolate movement, and emit bounded interaction frames.",
+  "owned_files": [
+    "include/coop/presence_runtime.h",
+    "src/coop/presence_runtime.c",
+    "include/coop/net_bridge.h",
+    "src/coop/net_bridge.c",
+    "src/coop/region.c",
+    "test/coop/region.c",
+    "src/overworld.c",
+    "include/field_control_avatar.h",
+    "src/field_control_avatar.c",
+    "include/constants/event_objects.h",
+    "src/event_object_movement.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "dist/bridge_manifest.json"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/plans/pokecrossroads-cloud-coop/initiative-requirements.md",
+    "C:/Users/User/Documents/personal/hoenn-sessions/docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/rom-presence-activation-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-rom-presence-20260902/rom-presence-core-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-presence-20260902/presence-wire-contract.json",
+    "include/coop/presence.h",
+    "src/coop/presence.c",
+    "test/coop/presence.c",
+    "src/coop/net_bridge.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "src/overworld.c"
+  ],
+  "closed_decisions": [
+    "Keep COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION and the bridge ABI at version 1. Replace the dormant 16-byte player-state placeholder with exact 28-byte LocalPresenceStateV1; do not add a fallback payload.",
+    "Wire WorldLocation x/y are signed map-local coordinates. CoopWorldLocation_Export subtracts MAP_OFFSET from valid player currentCoords and removes the stale ObjectEvent map metadata equality guard. Inbound rendering validates map-local coordinates with safe signed arithmetic and adds MAP_OFFSET exactly once.",
+    "Sample at the existing six-frame cadence. Use independent nonzero wrapping source_sequence, warp_sequence, and outer bridge message sequence domains.",
+    "Publish OVERWORLD only in normal CB1_Overworld/CB2_Overworld with inactive fade, unlocked controls, a valid player ObjectEvent/sprite binding, and a controllable on-foot avatar. Otherwise publish HIDDEN using the last valid pose with idle movement and animation.",
+    "Checksum, epoch, outer-sequence, message type, exact payload length, and strict CoopPresence decode all succeed before reducer mutation. A valid stale reducer event may consume the outer sequence; malformed data may not mutate runtime state.",
+    "Apply pending remote state at the start of normal CB1_Overworld before DoCB1_Overworld. Never mutate or render a cloud remote in local-link callbacks.",
+    "Reserve dynamic ObjectEvent local ID 0xFC. Render at most the one remote supported by the accepted ROM reducer; never evict an NPC and retry visual spawn when capacity, palette, or view conditions recover.",
+    "Zero-initialize dynamic ObjectEvent templates, preflight palette availability, validate elevation and map/view bounds, and re-resolve ObjectEvent/sprite ownership before every mutation or removal.",
+    "Move logical ObjectEvent coordinates authoritatively, then interpolate sprite base x/y from the current rendered position to the target over exactly six field frames using s32 arithmetic. Keep x2/y2 zero and snap on spawn, recreation, map/warp/avatar/elevation changes or implausible displacement.",
+    "Hide and safely remove the renderer after 90 field frames without a lifecycle update, on transport loss, on warp commit, and whenever local context no longer matches. Logical state may remain pending for safe visual retry where appropriate.",
+    "Remote objects are skipped as sources and targets by centralized ObjectEvent collision/position lookups, which continue searching so an overlapping NPC, boulder, decoration, or item is still found.",
+    "A facing-adjacent remote interaction is consumed before vanilla script lookup. Use explicit NONE, SCRIPT_STARTED, and CONSUMED_NO_LOCK results so a send-only interaction never locks controls or steps, including queue-full failure.",
+    "SESSION_READY remains only the ROM-side transport/epoch handshake and must not be conflated with cloud PRESENCE_READY.",
+    "ApplyCurrentWarp increments the local nonzero warp sequence after location installation and immediately clears the reducer, pending interpolation, and owned renderer."
+  ],
+  "forbidden_changes": [
+    "Do not edit src/coop/presence.c, test/coop/presence.c, Rust crates, Lua files, build scripts, save layouts, maps, graphics assets, local-link/RFU behavior, battle code, documentation, or orchestration artifacts.",
+    "Do not bump a protocol or ABI version, serialize engine structs, leak MAP_OFFSET onto the wire, equate any sequence domains, accept malformed or wrong-epoch lifecycle data, evict ObjectEvents, trust cached sprite ownership, or allocate unbounded state.",
+    "Do not make the remote collide, mask a real overlapping object, fall through to vanilla script lookup, return a control-locking result without starting a script, or use sprite x2/y2 for interpolation.",
+    "Do not stage, commit, branch, fetch, pull, push, contact repository remotes, create or remove worktrees, or revert another worker's edits."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "RPA-001",
+      "description": "The ROM exports map-local regional location and exact 28-byte LocalPresenceStateV1 at 10 Hz with independent source, warp, and bridge sequence domains and safe HIDDEN gating."
+    },
+    {
+      "id": "RPA-002",
+      "description": "Exact spawn/update/despawn bridge frames are validated atomically and applied through the accepted reducer; wrong epoch, malformed lengths/data, and invalid sequences do not partially mutate presence state."
+    },
+    {
+      "id": "RPA-003",
+      "description": "One remote Brendan/May ObjectEvent is safely spawned, retried, adopted, moved, hidden, and removed without NPC eviction, palette misuse, stale sprite destruction, or local-link behavior changes."
+    },
+    {
+      "id": "RPA-004",
+      "description": "Remote movement reaches exact target base coordinates over six frames, retargets continuously, keeps sprite offsets zero, and snaps on discontinuities; stale remote visuals disappear after 90 frames."
+    },
+    {
+      "id": "RPA-005",
+      "description": "Remote players are nonblocking and do not mask real objects in collision, surfing, or Strength lookups."
+    },
+    {
+      "id": "RPA-006",
+      "description": "Facing A emits one exact 20-byte interaction observation and is consumed without field-control lock, player step, crash, or vanilla fallthrough even when the bounded outbound queue is full."
+    },
+    {
+      "id": "RPA-007",
+      "description": "Every warp commit increments the nonzero local warp sequence and immediately fences all old remote reducer/render state; seamless map transitions do not fail location export or add a seven-tile offset."
+    },
+    {
+      "id": "RPA-008",
+      "description": "Focused Cloud Coop tests, modern ROM build, manifest generator unit tests/regeneration, and diff checks pass with changes confined to owned files."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk wsl -d Ubuntu-24.04 --cd <worker-worktree> -- make check TESTS=\"Cloud Coop\""
+      ],
+      "natural": [
+        "rtk wsl -d Ubuntu-24.04 --cd <worker-worktree> -- make modern",
+        "rtk python -m unittest tools.tests.test_generate_bridge_manifest",
+        "rtk python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "implementation_rounds": 3,
+    "fix_rounds": 3,
+    "review_rounds": 0,
+    "extra_verification": "forbidden",
+    "max_elapsed_ms": 1800000
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "return_when": [
+      "All acceptance criteria are resolved and every required verification outcome is recorded.",
+      "A safe implementation requires changing a forbidden reducer, protocol, asset, save, or local-link boundary.",
+      "A concrete toolchain or isolated-worktree failure prevents further progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "evidence_policy": {
+    "minimum_command_trust": "self-reported",
+    "changed_files_source": "root-diff"
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-launcher-control-pump-v2",
+  "unit_id": "phase5-launcher-control-pump",
+  "objective": "Replace the launcher's cancellation-sensitive direct control socket use with one continuously draining, bounded control pump over the now-certified sidecar protocol, preserving critical checkpoint and shutdown semantics while exposing generation-safe presence and raw-observation seams for the later realtime activation unit.",
+  "lane": "deep",
+  "profile": "luna_xhigh",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-control-pump-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-session-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-http-final-integration-reconciliation.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-final-integration-reconciliation.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-presence-control-correction-v4-root-validation.json",
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs",
+    "coop/crates/coop-sidecar/src/control.rs"
+  ],
+  "closed_decisions": [
+    "Bind the unit to local base commit 871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2 and tree 34e944ac66193e7b09f6df89e452a5625c33ca54. The certified sidecar control implementation is an immutable landed dependency; do not edit sidecar files.",
+    "Restore exhaustive launcher handling for ControlEvent::PlayerState, ControlEvent::InteractRemotePlayer, and ControlEvent::RomPresenceReset; the post-sidecar baseline cargo check failure at process.rs:1895 is expected dependency fallout and must be resolved by this unit.",
+    "Preserve the existing public ControlChannel and SupervisedChildren behavior and source compatibility. Keep the authenticated handshake synchronous, then give one persistent reader task and one persistent writer task exclusive owned socket halves; direct cancellation-sensitive reads or writes may not remain on active paths.",
+    "Use exact bounded capacities: critical write 1, lifecycle write 32, critical event 16, interaction event 16, terminal signal 1, and one atomic latest-state slot. No queue may be unbounded.",
+    "Route CheckpointReady, SaveDataUpdated, CheckpointExpired, and CommandResult through the lossless backpressured critical FIFO; route PlayerState through one generation plus monotonic revision plus optional latest-state snapshot; route InteractRemotePlayer through a generation-tagged FIFO whose seventeenth unconsumed item is terminal; route RomPresenceReset through an atomic generation advance, state clear, sticky reset latch, lifecycle disable, and separately observable notification.",
+    "The sidecar wire DTOs carry no launcher generation. Stamp interaction and outbound lifecycle generations locally from ordered pump observation, and make every checkpoint, shutdown, and session receive path consume the pump's critical lane rather than borrowing the socket directly.",
+    "The first RomPresenceReset advances generation exactly once and permanently latches the session-fatal reset; duplicate or retried resets are idempotent. A reset followed by a newer PlayerState before a consumer wakes must still expose that irreversible latch and advanced generation. Old-generation interactions and lifecycle commands are discarded, and no post-reset lifecycle output may be re-enabled by later state alone.",
+    "CheckpointGrant, CheckpointAbort, and ShutdownRequest are critical. Their send succeeds only after the complete JSONL record is written and acknowledged by the writer actor within one existing absolute PROCESS_IO_TIMEOUT. The public generic send rejects lifecycle variants deterministically; lifecycle commands use only a crate-visible generation-bound, nonblocking, bounded enqueue that is never retried and treats full, closed, partial-write, or ambiguous completion as terminal.",
+    "Bias writer selection in this order: stop, critical command, generation or lifecycle-permit change, then lifecycle. Immediately before emitting the first byte, recheck lifecycle generation and permit. Use one try_write for lifecycle output; a short write is terminal and is never retried. A critical command overtakes every lifecycle record whose write has not begun; checkpoint and authenticated shutdown use only critical lanes.",
+    "Preserve a correlated command result parsed before immediate EOF as deliverable. A durable terminal cause is sticky, exactly classified, and cannot be replaced by a generic closed-lane error.",
+    "Add a crate-visible raw child/control observation seam and a separate explicit settlement seam so the later realtime coordinator can stop and join before peer termination or artifact cleanup. Existing public next_event must delegate through those seams and retain its current fail-closed cleanup behavior.",
+    "Child exit observation must remain live under sustained presence traffic. Explicit ControlChannel and SupervisedChildren teardown uses one idempotent shutdown-at-absolute-deadline path: signal and close, join both pump tasks, then abort-and-await any survivor if the shared existing ten-second budget is exhausted. Drop may abort only as a cancellation fallback, never as the normal proof.",
+    "Cover startup failures after pump creation as owned teardown paths: no connect, spawn, descriptor, or mGBA-launch error may leave a reader or writer task alive.",
+    "Keep launcher realtime HTTP, realtime transport, main, Cargo manifests, cloud/server/ROM/Lua code, sidecar code, product docs, and orchestration state read-only in the worker workspace."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "LCP2-001",
+      "description": "The launcher compiles exhaustively against all certified control-v2 event and command variants, and persistent reader/writer ownership eliminates cancellation-sensitive socket borrowing while preserving authentication and the strict 512-byte LF-inclusive JSONL bound."
+    },
+    {
+      "id": "LCP2-002",
+      "description": "Critical events, one latest PlayerState, interaction FIFO, reset generation, sticky reset and terminal state are isolated with the exact declared bounds; reset cannot be hidden by newer state and presence cannot enter or corrupt checkpoint/shutdown correlation."
+    },
+    {
+      "id": "LCP2-003",
+      "description": "Critical writes complete before send returns and retain priority; lifecycle output is generation-fenced, nonblocking and bounded, and overflow, closed lanes, partial writes, ambiguity, or stale generation fail or drop exactly as contracted without JSONL corruption or replay."
+    },
+    {
+      "id": "LCP2-004",
+      "description": "Raw observation and explicit settlement permit realtime-before-child teardown while public next_event stays source-compatible and fail-closed; child exit cannot starve, ACK-before-EOF remains observable, and explicit teardown joins both pump tasks inside the existing absolute budget."
+    },
+    {
+      "id": "LCP2-005",
+      "description": "Deterministic tests cover state coalescing, interaction FIFO and seventeenth-item overflow, atomic reset/new-state races, stale traffic, critical priority/completion, partial writes, queued stale lifecycle discard, ACK-before-EOF, child fairness, joined teardown, checkpoint interleaving, and shutdown under sustained presence."
+    },
+    {
+      "id": "LCP2-006",
+      "description": "Focused and full launcher plus sidecar tests, strict Clippy, formatting, and diff checks pass with the worker delta confined to process.rs and session.rs and the sealed baseline index untouched."
+    }
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher control_pump --all-features --locked",
+        "rtk cargo test -p coop-launcher rom_presence --all-features --locked",
+        "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+        "rtk cargo test -p coop-launcher shutdown --all-features --locked"
+      ],
+      "natural": [
+        "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ],
+      "max_retries_per_command": 2
+    }
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "implementation_rounds": 4,
+    "fix_rounds": 3,
+    "review_rounds": 0,
+    "max_elapsed_ms": 2700000,
+    "extra_verification": "forbidden"
+  },
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "forbidden_changes": [
+    "Do not edit sidecar dependency files, launcher realtime HTTP or transport, main, Cargo files, cloud/server/ROM/Lua code, product docs, generated artifacts, or orchestration state.",
+    "Do not weaken loopback authentication, JSONL/frame bounds, sequence/epoch validation, checkpoint correlation, shutdown evidence/deadlines, error redaction, reset fencing, or fail-closed child cleanup.",
+    "Do not put credentials or tickets in control IPC, logs, errors, files, argv, environment, query strings, WebSocket subprotocols, or frames.",
+    "Do not add unbounded queues, silent interaction loss, lifecycle retry, detached tasks, sleeps as synchronization, wildcard enum handling, or cancellation-sensitive partial-frame reuse.",
+    "Do not stage, commit, branch, fetch, pull, push, contact remotes, create or remove worktrees, or revert another worker's edits. Preserve the sealed index and all unowned content."
+  ],
+  "terminal_protocol": {
+    "return_when": [
+      "All acceptance criteria and required checks are resolved.",
+      "The certified control-v2 dependency cannot provide the required safe interface without crossing the frozen ownership boundary.",
+      "A concrete toolchain failure prevents progress within the execution budget."
+    ],
+    "grace_actions": 0
+  },
+  "terminal_schema": "worker-terminal-v1"
+}

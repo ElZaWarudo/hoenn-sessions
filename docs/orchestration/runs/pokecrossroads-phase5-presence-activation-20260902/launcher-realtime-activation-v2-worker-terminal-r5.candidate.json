@@ -1,0 +1,97 @@
+{
+  "status": "done",
+  "phase": "closeout",
+  "remaining_actions": [],
+  "terminal_ready": true,
+  "acceptance_criteria_resolved": true,
+  "acceptance_evidence": [
+    {
+      "criterion_id": "LRA2-001",
+      "status": "satisfied",
+      "evidence": "Production main uses the additive realtime lifecycle entry point. The legacy CloudApi trait and run_until_shutdown entry point remain intact, preserving existing fakes and nonrealtime behavior."
+    },
+    {
+      "criterion_id": "LRA2-002",
+      "status": "satisfied",
+      "evidence": "Realtime minting is gated on validated current-generation state and the sticky reset fence; the freshest same-generation snapshot and canonical RuntimeLeaseFence are used. The persistent attempt latch is set before the first POST, and only a typed mint-origin Unauthorized permits the single refresh plus second POST."
+    },
+    {
+      "criterion_id": "LRA2-003",
+      "status": "satisfied",
+      "evidence": "Exactly one launcher coordinator composes realtime_channel with run_realtime. Ready remains internal, current-generation state is coalesced, the explicit Ready watermark drops pre-Ready interactions while preserving post-Ready FIFO, and Spawn, Update, and Despawn map to generation-fenced pump lifecycle commands."
+    },
+    {
+      "criterion_id": "LRA2-004",
+      "status": "satisfied",
+      "evidence": "Reset and pump, core, control, queue, child, reconnect, or ambiguous failures are terminal: lifecycle output is disabled, the coordinator is stopped and joined before settlement and cleanup, and the persistent attempt latch prevents remint, replay, restart, reconnect, or orphaned work."
+    },
+    {
+      "criterion_id": "LRA2-005",
+      "status": "satisfied",
+      "evidence": "Heartbeat and raw observation remain live around activation, checkpoint correlation uses its absolute finite deadline, and an authenticated checkpoint transaction is reconciled noncancellably while terminal inputs are safely latched. Realtime is drained and stopped before settlement and cleanup; save-revision-only changes do not reconnect. The renamed fairness regression, included by the focused realtime filter, holds control, realtime, and due-heartbeat futures simultaneously ready for twelve selections, asserts exact C/R/H rotation four times, then proves realtime-terminal progress and unconditional shutdown priority."
+    },
+    {
+      "criterion_id": "LRA2-006",
+      "status": "satisfied",
+      "evidence": "Deterministic inline coverage exercises gating, retry tagging, freshest-state handoff, Ready watermark behavior, lifecycle mapping and backpressure, checkpoint coexistence, cleanup ordering, supervised child exits, and coordinator termination. The renamed exact scheduler regression resolves F-92284853 / F-2FFF4874 and is captured by the focused realtime command. Focused results were realtime 24 passed, realtime_activation 10 passed, checkpoint 12 passed, and shutdown 19 passed; the combined launcher/sidecar suite reported 265 passed and 1 ignored. Strict Clippy, fmt, and diff checks passed. contract_hash=sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f parent_r4_diff_hash=sha256:7ebae85823625c113af7cea2c825fdfc3048a6484da9eb8531706459cd62b4c5"
+    }
+  ],
+  "last_required_command": "rtk git diff --check",
+  "verification": {
+    "attempted": [
+      {
+        "command": "rtk cargo test -p coop-launcher realtime --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher realtime_activation --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk cargo fmt --all -- --check",
+        "attempts": 1,
+        "outcome": "passed"
+      },
+      {
+        "command": "rtk git diff --check",
+        "attempts": 1,
+        "outcome": "passed"
+      }
+    ],
+    "skipped": []
+  },
+  "verification_commands_run": [
+    "rtk cargo test -p coop-launcher realtime --all-features --locked",
+    "rtk cargo test -p coop-launcher realtime_activation --all-features --locked",
+    "rtk cargo test -p coop-launcher checkpoint --all-features --locked",
+    "rtk cargo test -p coop-launcher shutdown --all-features --locked",
+    "rtk cargo test -p coop-sidecar -p coop-launcher --all-features --locked",
+    "rtk cargo clippy -p coop-sidecar -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+    "rtk cargo fmt --all -- --check",
+    "rtk git diff --check"
+  ],
+  "unowned_failures": [],
+  "scope_extension": null
+}

@@ -1,0 +1,14 @@
+{
+  "workspace_id": "pokecrossroads-phase5-rom-warp-20260902",
+  "worker_id": "/root/rom_warp_semantics_worker",
+  "unit_id": "rom-presence-warp-semantics",
+  "role": "integration-candidate",
+  "base_revision": "07d9c1eeb356199d0986eb6ac4ae0f54d0ca65fb",
+  "baseline_tree": "bb6725ba2e4bcef8fae97c5977ce6cc3c2a51c86",
+  "dependency_patch_hashes": [],
+  "owned_paths": [
+    "src/coop/presence.c",
+    "test/coop/presence.c"
+  ],
+  "contract_hash": "sha256:add6aa69c090e002c6e1862ac2f30ccd8436d8c4a743f42c730699db1a746eb2"
+}

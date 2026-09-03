@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "release-ready",
+  "unit_id": "phase5-launcher-control-pump",
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "initial_patch_hash": "sha256:edede47c5acbd9b3d1148a4ba1bdb2088d59913ac431f5f9b08046c72d7b1d7e",
+  "correction_patch_hash": "sha256:fc127e15b11486dd24f46846e0e0e91b359823582191f01a3b8addf0b5ff07b5",
+  "candidate_diff_digest": "sha256:25bdd962cde65c380288ac66065aab800b2774f98353bf69353df8122f086c7f",
+  "candidate_commit": "bc6dc6f128cd81e4ebe4a1ccfe50099215af29e1",
+  "candidate_tree": "87e81de81864fe413b4af8a6329cfc4bf3c7e7fe",
+  "integration_commit": "f6ce9d7b5416dfb192b256e047854f0b915347ea",
+  "integration_tree": "87e81de81864fe413b4af8a6329cfc4bf3c7e7fe",
+  "tree_match": true,
+  "correctness_certification": "launcher-control-pump-v2-r1-correctness-certification.json",
+  "security_certification": "launcher-control-pump-v2-r1-security-certification.json",
+  "targeted_validation": "launcher-control-pump-v2-r1-targeted-validation-evidence.json",
+  "findings_registry": "launcher-control-pump-v2-findings-registry.json",
+  "findings_registry_digest": "sha256:520137507e1e3f556c8345829e344a4cd5ff2392c33c9e02d2fe2e2014de0119"
+}

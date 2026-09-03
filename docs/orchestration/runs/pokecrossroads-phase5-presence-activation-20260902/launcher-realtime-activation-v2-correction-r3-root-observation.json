@@ -1,0 +1,25 @@
+{
+  "base_revision": "da8372b5fdae4a022ef768d016e7e4a3ab571c30",
+  "baseline_digest": "sha256:5d5150f8f22d70cd2ec7803512d92600cf13459f3cbd6e22a3a2bcdc933dfea5",
+  "baseline_tree": null,
+  "candidate_commit": "10b82a496eaf7e01584fe7bb4b6d9d5dfe1f8eb7",
+  "candidate_tree": "54003f3cc3c7b90b436f106b521fc32e329f433d",
+  "changed_files": [
+    "coop/crates/coop-launcher/src/main.rs",
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "correction_r1_patch_hash": "sha256:1dace61948b3ef9cce923458777b932ff07c1dccf1d408199c72b66ab7c82e2e",
+  "correction_r2_patch_hash": "sha256:d261e7613aeccbf36ec1f7a40f6373c4fe00a16d191ab1619c3a473ab5a7b573",
+  "correction_r3_patch_hash": "sha256:bc46ba0cbc36ccd397b21da4169e96ebd590259170ac2d3e773387726c689b54",
+  "diff_basis": "worktree-vs-revision",
+  "diff_digest": "sha256:ce4e5be1ac68fcb8978ac087dc9f5c40f64d91cd601570bc1ea021df990ddf89",
+  "initial_patch_hash": "sha256:50df0668af1c0f61f1c16954d7764ae5da5f53692adb7207ea8cd461bfdfe40d",
+  "role": "exact-candidate-correction-observation",
+  "schema_version": 1,
+  "unit_id": "phase5-launcher-realtime-activation",
+  "worker_id": "/root",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-realtime-activation-v2-r3-validation"
+}

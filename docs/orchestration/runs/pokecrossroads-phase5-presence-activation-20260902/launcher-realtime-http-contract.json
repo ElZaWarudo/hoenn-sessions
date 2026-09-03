@@ -1,0 +1,119 @@
+{
+  "acceptance_criteria": [
+    {
+      "description": "Validated HTTPS and literal-loopback HTTP bases derive only the canonical wss/ws /v1/realtime endpoint with the exact authority and no second endpoint input.",
+      "id": "LRH-001"
+    },
+    {
+      "description": "Each mint call emits exactly one bounded authenticated POST to /v1/realtime/tickets with strict JSON and no redirect, and returns a typed Unauthorized only for HTTP 401.",
+      "id": "LRH-002"
+    },
+    {
+      "description": "Response Content-Length and streamed bodies are capped at 8 KiB; malformed, oversized, redirected, non-success, and transport responses fail with stable secret-free errors.",
+      "id": "LRH-003"
+    },
+    {
+      "description": "Exact request correlation precedes consuming into_parts, and the ticket moves without cloning into a validated RealtimeGrant; mismatch, expiry, and excessive TTL fail closed.",
+      "id": "LRH-004"
+    },
+    {
+      "description": "Tests prove exact path/method/body/bearer handling, no query or subprotocol ticket channel, endpoint conversion, redirect denial, size boundaries, correlation, and redacted Debug/error behavior.",
+      "id": "LRH-005"
+    },
+    {
+      "description": "Focused and full coop-launcher tests, strict Clippy, formatting, and diff checks pass with changes confined to owned files.",
+      "id": "LRH-006"
+    }
+  ],
+  "closed_decisions": [
+    "Create an additive launcher realtime module/API; do not widen the existing CloudApi trait or break its fakes.",
+    "ReqwestCloudApi mints only with POST v1/realtime/tickets, its existing private no-redirect client, and the active AuthSession access token in the Authorization Bearer header.",
+    "Use an 8 KiB maximum response body with Content-Length preflight and streamed cumulative enforcement before strict MintRealtimeTicketResponse decoding.",
+    "Preserve HTTP 401 as a stable Unauthorized result so the later session coordinator can perform exactly one refresh-and-new-mint attempt. Collapse all other status, transport, parse, oversize, and redirect results without peer text.",
+    "The HTTP adapter performs one request per call and never retries, refreshes, follows redirects, connects WebSocket, or logs request/response/header bodies.",
+    "Derive the WebSocket endpoint exclusively from the already validated ReqwestCloudApi base: https becomes wss, literal-loopback http becomes ws, authority and explicit port are retained, and the exact path is /v1/realtime with no query, fragment, or userinfo.",
+    "Require MintRealtimeTicketResponse::matches_request before consuming it. Then call into_parts and move the non-Clone ticket directly into RealtimeGrant::with_now using the caller-supplied authenticated timestamp.",
+    "Reject mismatched versions/fences and expired or excessive-TTL grants with stable secret-free errors. Never copy, serialize, expose, debug, persist, or transfer the ticket outside the Authorization header used later by the in-process core.",
+    "No new crate dependency or Cargo.lock change is needed. Keep the existing endpoint policy and all auth/session/checkpoint behavior unchanged."
+  ],
+  "commands": {
+    "exact": [],
+    "read_only_prefixes": [
+      "rtk git status --short",
+      "rtk git diff",
+      "rtk rg -n",
+      "rtk python C:/Users/User/.agents/skills/krt-swarm-seneschal/scripts/validate_worker_terminal.py"
+    ],
+    "verification": {
+      "focused": [
+        "rtk cargo test -p coop-launcher realtime --all-features --locked",
+        "rtk cargo test -p coop-launcher --test realtime_http --all-features --locked"
+      ],
+      "max_retries_per_command": 2,
+      "natural": [
+        "rtk cargo test -p coop-launcher --all-features --locked",
+        "rtk cargo clippy -p coop-launcher --all-targets --all-features --locked -- -D warnings",
+        "rtk cargo fmt --all -- --check",
+        "rtk git diff --check"
+      ]
+    }
+  },
+  "contract_hash": "sha256:859ed55342b5b45790888a1e768da1638101e54b334afbe72a32492b54c93851",
+  "contract_id": "pokecrossroads-phase5-presence-activation-20260903-launcher-realtime-http-v1",
+  "evidence_policy": {
+    "changed_files_source": "root-diff",
+    "minimum_command_trust": "self-reported"
+  },
+  "execution_budget": {
+    "discovery_passes": 1,
+    "extra_verification": "forbidden",
+    "fix_rounds": 3,
+    "implementation_rounds": 3,
+    "max_elapsed_ms": 1500000,
+    "review_rounds": 0
+  },
+  "forbidden_changes": [
+    "Do not edit Cargo files, process.rs, session.rs, main.rs, sidecar/cloud/server/ROM/Lua code, documentation, generated artifacts, or orchestration state.",
+    "Do not implement refresh/retry orchestration, control pumps, WebSocket transport, background tasks, or process supervision in this unit.",
+    "Do not accept a caller-provided arbitrary WebSocket endpoint, put tickets in URL/query/frames/IPC/argv/environment/files/logs, clone secret text, or return peer-controlled error bodies.",
+    "Do not stage, commit, branch, fetch, pull, push, contact repository remotes, create or remove worktrees, or revert another worker's edits. You are not alone in the codebase; preserve all edits outside your owned files."
+  ],
+  "lane": "deep",
+  "objective": "Add the launcher-owned, credential-safe HTTP and grant-construction seam for one realtime attempt: canonical endpoint derivation, bounded authenticated ticket minting, exact response correlation, and consuming ticket handoff.",
+  "owned_files": [
+    "coop/crates/coop-launcher/src/realtime.rs",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/tests/realtime_http.rs"
+  ],
+  "profile": "luna_xhigh",
+  "required_certifications": [
+    "reviewer",
+    "security-sentinel"
+  ],
+  "required_context": [
+    "C:/Users/User/Downloads/README_pokeemerald_coop_cloud.md",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/launcher-realtime-integration-discovery.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/realtime-ticket-parts-contract.json",
+    "docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/sidecar-realtime-core-final-root-observation.json",
+    "docs/orchestration/runs/pokecrossroads-phase3-realtime-20260902/realtime-cloud-contract.json",
+    "coop/crates/coop-launcher/src/lib.rs",
+    "coop/crates/coop-launcher/src/auth.rs",
+    "coop/crates/coop-cloud/src/realtime.rs",
+    "coop/crates/coop-sidecar/src/realtime.rs"
+  ],
+  "schema_version": 1,
+  "supervision": {
+    "mode": "discovery-checkpoint",
+    "transition_after_ms": 0
+  },
+  "terminal_protocol": {
+    "grace_actions": 0,
+    "return_when": [
+      "All acceptance criteria are resolved and required verification outcomes are recorded.",
+      "A safe implementation requires changing a forbidden credential, endpoint, core, control, or session boundary.",
+      "A concrete toolchain or isolated-worktree failure prevents further progress within the execution budget."
+    ]
+  },
+  "terminal_schema": "worker-terminal-v1",
+  "unit_id": "launcher-realtime-http"
+}

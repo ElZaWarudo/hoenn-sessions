@@ -1,0 +1,1 @@
+{"finding_id":"F-CBB9B4FE","validator_id":"/root","verdict":"confirmed","evidence":["The original ownership test relied on sprite data equality and could destroy an unrelated reused sprite."],"revised_severity":null,"revised_observation":null,"revised_impact":null,"revised_recommendation":null}

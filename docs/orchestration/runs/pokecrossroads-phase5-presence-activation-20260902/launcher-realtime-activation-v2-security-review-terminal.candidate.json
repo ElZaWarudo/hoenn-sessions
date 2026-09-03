@@ -1,0 +1,44 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:529f8dd467a174024c3f09d13c31d15b80f3b6550764423b91c98ea1674a106b",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "realtime-terminal-must-preempt-buffered-events",
+      "observation": "RealtimeCoordinator::next_event uses a biased select that polls owner.recv_event before the realtime JoinHandle. If the bounded owner queue fills and run_realtime returns OwnerBackpressure, the completed task and queued lifecycle events are simultaneously ready, so the launcher deterministically drains and forwards queued Spawn/Update/Despawn events before it observes the terminal outcome.",
+      "impact": "A peer-controlled lifecycle flood can continue driving ROM lifecycle state after the realtime core has already classified the attempt as terminal. Up to the full bounded owner queue can be forwarded, defeating the required immediate fail-closed behavior for realtime backpressure and protocol ambiguity.",
+      "recommendation": "Give task completion priority over owner events (or explicitly check task completion before accepting another event), discard queued owner events once the task is terminal, and add a deterministic saturated-owner-queue regression proving that no lifecycle command is forwarded after OwnerBackpressure.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/realtime.rs:161-173 polls owner.recv_event first under tokio::select! { biased; ... } and only then polls the JoinHandle.",
+        "coop/crates/coop-sidecar/src/realtime.rs:534-543 and 585-595 use try_send for owner events and terminate with OwnerBackpressure when the bounded queue is full.",
+        "The focused command cargo test -p coop-launcher realtime --all-features --locked passed 8 tests, but none saturates the owner event queue or races queued lifecycle events against a completed terminal task."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "security",
+      "rule_id": "pre-mint-terminal-paths-must-stop-owned-children",
+      "observation": "The public realtime lifecycle wrapper invokes children.stop_in_place only when result.is_err() and realtime_attempted is true. Reset, heartbeat, checkpoint, pump/control, and validation failures that occur while waiting for the first valid state or during proactive refresh return an error with realtime_attempted still false and therefore leave the supervised children and control pump running.",
+      "impact": "A terminal authenticated control failure can return control to a direct caller while the sidecar, emulator, sockets, and owned artifacts remain live. Production main currently performs a later stop, but the additive public lifecycle method does not preserve the fail-closed teardown semantics of the legacy lifecycle and another caller can continue or release against still-active children.",
+      "recommendation": "Stop and reap supervised children on every terminal error from run_until_shutdown_with_realtime, independent of whether mint began, and propagate or preserve cleanup failure evidence. Add deterministic pre-mint reset and control-failure tests that assert both children and pump tasks are joined and owned artifacts are cleaned before the method returns.",
+      "evidence": [
+        "coop/crates/coop-launcher/src/session.rs:1907-1912 guards stop_in_place with self.realtime_attempted.",
+        "coop/crates/coop-launcher/src/session.rs:1939-1981 contains multiple pre-mint error returns for reset, heartbeat, checkpoint, and control failures before realtime_attempted is set at line 2004.",
+        "coop/crates/coop-launcher/src/session.rs:4314-4335 verifies reset-before-mint returns an error and leaves realtime_attempted false, but does not assert child, pump, socket, or artifact teardown."
+      ]
+    }
+  ],
+  "review_plan_hash": "sha256:6fe39d370b3393484ad9cdbcee09fe4ab4ecfb5483ccd6c306b777390c4fe4ef",
+  "reviewer_id": "/root/launcher_activation_v2_security",
+  "risk_boundaries_checked": [
+    "coordinator-task-child-socket-and-artifact-teardown",
+    "no-remint-replay-reconnect-or-second-endpoint",
+    "reset-generation-backpressure-and-ambiguous-outcome-fail-closed",
+    "ticket-token-endpoint-and-error-confinement"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "launcher-realtime-activation-v2-security"
+}

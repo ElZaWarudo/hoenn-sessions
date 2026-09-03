@@ -1,0 +1,23 @@
+{
+  "contract_hash":"sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest":"sha256:d839858af9e21658543e06d75660f1695ee181b7ecc8c9ae51de51de0a288e16",
+  "review_plan_hash":"sha256:bf98f85a4fbccfa258b1efda036e2babf72d21a5ee19bae8cd9421a6b4ddfcb0",
+  "surface_id":"launcher-realtime-activation-v2-correctness-r2",
+  "reporter_id":"/root/launcher_activation_v2_correctness",
+  "findings":[
+    {
+      "severity":"p1","principle":"correctness","rule_id":"LRA2-005-multi-source-arbitration-heartbeat-cutover-fairness-r2",
+      "observation":"The r2 burst limiter bounds consecutive control selections but does not provide round-robin or deadline priority across realtime and heartbeat or activation; consuming realtime resets the only fairness counter.",
+      "impact":"Simultaneously sustained control and realtime traffic can starve heartbeat or Ready activation indefinitely.",
+      "recommendation":"Track independent service debt or prioritize due heartbeat and activation before resetting the control budget; add all-ready deterministic liveness tests.",
+      "evidence":["active service-first orders realtime before heartbeat","realtime receipt resets control_burst","cutover realtime precedes Activate and existing tests do not make all sources ready together"]
+    },
+    {
+      "severity":"p2","principle":"testing","rule_id":"LRA2-006-active-backpressure-child-failure-coverage-r2",
+      "observation":"Activation-level lifecycle or interaction backpressure and active supervised-child exit cleanup remain untested.",
+      "impact":"Two required production terminal compositions can regress without a failing activation-level test.",
+      "recommendation":"Add deterministic active backpressure and child-exit tests asserting one attempt, disabled lifecycle, joined coordinator and pumps, no trailing ROM output, and cleanup evidence.",
+      "evidence":["session activation tests cover pending mint, reset, and peer close","no active LifecycleOverflow InteractionOverflow MgbaExited or SidecarExited test exists","LRA2-006 requires backpressure and child-failure cleanup ordering"]
+    }
+  ]
+}

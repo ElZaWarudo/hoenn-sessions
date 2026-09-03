@@ -1,0 +1,59 @@
+{
+  "contract_hash": "sha256:22e30fdaa00b39c93841bc49c317c9fc6ed78e1c069e7af0b9a310703ec76ece",
+  "diff_digest": "sha256:868d4c1e2f52678566da3c9779846601a1300c9de663b024d33c4a45be74648f",
+  "review_plan_hash": "sha256:284ae7098ffc744048d493ecf200d70ec6a366c4448e262fd88a4bf57e259613",
+  "surface_id": "sidecar-control-correction-correctness-v3",
+  "reporter_id": "/root/sidecar_presence_correctness_reviewer_v3",
+  "findings": [
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "SPCF3-control-terminal-recursion-compile",
+      "observation": "The staged server.rs cannot compile: the async process_pre_bridge_control_result function awaits itself recursively in its None branch without boxing or another indirection.",
+      "impact": "Every focused and full coop-sidecar build/test command fails with Rust E0733 before the control-terminal behavior can run, so the candidate is not buildable or certifiable.",
+      "recommendation": "Replace the self-await with an iterative/local terminal-error dispatch or introduce explicit boxed indirection, then rerun the required sidecar suite and lint checks.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:2348-2353 defines async fn process_pre_bridge_control_result.",
+        "coop/crates/coop-sidecar/src/server.rs:2419-2423 calls process_pre_bridge_control_result(...).await from that same function when result is None and a terminal error exists; cargo test reports error[E0733]."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "SPCF3-writer-failure-register-recheck",
+      "observation": "The active session checks writer failure and only then subscribes a fresh watch receiver, with no state recheck after registration.",
+      "impact": "If the sole writer records failure between the precheck and failure_receiver subscription, the new watch receiver starts at the already-published version and changed() waits for a later update that never comes; an idle serving loop can remain alive without terminating the failed bridge.",
+      "recommendation": "Register the durable failure receiver before the precheck and recheck the state after registration, or use a single retained receiver with an explicit post-registration state check; add a barrier-controlled idle-session regression.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:2911-2917 performs write_failure() before constructing writer_failure_receiver.",
+        "coop/crates/coop-sidecar/src/server.rs:644-646 implements failure_receiver() with watch::Sender::subscribe(), while coop/crates/coop-sidecar/src/server.rs:829-848 publishes failed=true and send_replace(true); a receiver subscribed after that send considers the current version seen and its changed() branch waits for a future send.",
+        "coop/crates/coop-sidecar/src/server.rs:2925-2928 is the only idle-loop wake branch for writer failure, so the missing post-registration recheck leaves no independent wake path."
+      ]
+    },
+    {
+      "severity": "p1",
+      "principle": "correctness",
+      "rule_id": "SPCF3-writer-join-on-error-exit",
+      "observation": "BridgeWriter shutdown joins its task only through the explicit async shutdown path; the BridgeWriter and BridgeIo Drop implementations merely abort handles, and pre-active bridge recovery can propagate errors while a BridgeIo still owns the writer.",
+      "impact": "On an acquisition/recovery error, the function can return before the sole writer task has been awaited. A concurrently running actor may retain the socket or drain a buffered lifecycle request after the session has classified the bridge as terminal, violating the required joined teardown and no-stale-replay guarantee.",
+      "recommendation": "Ensure every error/overflow/recovery exit that still owns BridgeIo awaits an explicit writer shutdown (or an equivalent abort-and-await helper) before returning; retain no writer task in a Drop-only path.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:853-861 BridgeWriter::Drop calls task.abort() but never awaits the JoinHandle.",
+        "coop/crates/coop-sidecar/src/server.rs:1269-1274 BridgeIo::Drop only aborts the bridge reader task and relies on field Drop for BridgeWriter, so it also has no writer join.",
+        "coop/crates/coop-sidecar/src/server.rs:2266-2270 propagates reacquire_control_with_bridge errors with ?, leaving the local bridge Option populated; coop/crates/coop-sidecar/src/server.rs:2839-2855 has error returns that reach this path."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "SPCF3-stalled-serving-path-proof",
+      "observation": "The real serving-path stalled_presence_bridge_write_does_not_delay_shutdown_ack test sends one small lifecycle frame and simply leaves the TCP peer unread; it never proves the sole writer is pending or in_flight, unlike the separate unit-only blocked writer fixture.",
+      "impact": "The test can pass with the operating-system send buffer accepting the frame, so it does not deterministically exercise writer timeout, poison, or shutdown starvation and cannot catch a regression in the required real-path bound.",
+      "recommendation": "Add a server-owned test gate/barrier that proves the lifecycle write is in flight before issuing shutdown, then assert both the bounded ACK and writer-task termination on the real serving path.",
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:5132-5163 sends one remote_update_command, comments that the peer is unread, and waits only for the shutdown ACK; no writer gate, in_flight assertion, or task-termination proof is present.",
+        "coop/crates/coop-sidecar/src/server.rs:4697-4705 shows the deterministic blocked writer fixture exists only for direct BridgeWriter unit tests, not for the serving-loop regression."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "review_plan_hash": "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40",
+  "surface_id": "rom-presence-activation-security-v3",
+  "reporter_id": "/root/rom_presence_security_review_v3b",
+  "findings": [
+    {
+      "severity": "p2",
+      "principle": "testing",
+      "rule_id": "RPAC3-005/local-link-isolation-proof",
+      "observation": "The candidate changes centralized object lookup and collision behavior without directly exercising local-link or RFU paths.",
+      "impact": "A regression could corrupt or mask legacy link-player objects without focused coverage.",
+      "recommendation": "Add a focused regression proving ordinary link-player lookup, collision, and identity remain intact alongside a reserved remote.",
+      "evidence": [
+        "src/event_object_movement.c changes centralized position lookup and collision handling.",
+        "test/coop/presence_runtime.c only checks the reserved local-ID predicate."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "security",
+      "rule_id": "RPAC3-006/rom-manifest-attestation-drift",
+      "observation": "The checked-in manifest attests the predecessor ROM instead of the exact candidate.",
+      "impact": "The launcher safely rejects the mismatch, leaving Cloud Coop unavailable.",
+      "recommendation": "Regenerate the manifest from the final immutable ELF/ROM pair and rerun launcher compatibility validation.",
+      "evidence": [
+        "The manifest ROM SHA is c185a0021faff10cfd1f365eb4e4f17f2a77ec4f2d696f8c2821bf81e0433165.",
+        "The exact candidate ROM SHA is d9009861b8c7f89a3f2788bb0aa34a34e25beb4acedd166becd4771e0501e2fd."
+      ]
+    },
+    {
+      "severity": "p2",
+      "principle": "security",
+      "rule_id": "RPAC3-002/reused-sprite-false-ownership",
+      "observation": "Return-to-field cleanup treats sprite data[0] equality as sufficient remote ownership proof after sprite-table reuse.",
+      "impact": "Cleanup can destroy an unrelated reused sprite and corrupt local or link state.",
+      "recommendation": "Require type-aware bidirectional ownership proof after reset and add a coincidental-data[0] reused-sprite regression.",
+      "evidence": [
+        "src/event_object_movement.c and src/coop/presence_runtime.c destroy sprites using inUse plus data[0] equality.",
+        "Sprite data[0] is reused by link-player and other sprite callbacks and is not a global ownership tag."
+      ]
+    }
+  ]
+}

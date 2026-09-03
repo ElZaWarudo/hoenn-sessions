@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "unit_id": "phase5-rom-presence-activation",
+  "candidate_commit": "cc421eb8e1bd9a5357c78c2bb0dc1b26129426e3",
+  "candidate_tree": "49207d93f1d7c83778baf4d45292fbf09c2f4e7a",
+  "contract_hash": "sha256:3df5c5cdde02b103cc17f81f5efa1f78d452056bdb87fd0c0037366af16d78e8",
+  "diff_digest": "sha256:d42fad34472b712dd1f6e3bd617ce4b62ef1e3ddf4a507b4ac0e450f827fdd44",
+  "review_plan_hash": "sha256:e7e25b9f11dabff8b319fb15e0dfad5270f2a12f180ea2f37b2a0ecc8f301076",
+  "reviewer_id": "/root/rom_presence_correctness_review_v3b",
+  "terminal": "rom-presence-activation-correction-v3-r2-correctness-review-terminal.candidate.json",
+  "finding_count": 0
+}

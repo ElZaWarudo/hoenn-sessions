@@ -1,0 +1,12 @@
+{
+  "finding_id": "F-96CD10B9",
+  "validator_id": "/root",
+  "verdict": "confirmed",
+  "evidence": [
+    "Root inspected sealed candidate tree 0d9be6ee1fffb19cc1e5909d748a6bceb58d3e4b: the four presence runtime tests stop at sequence, bounded admission, strict decode, and no-avatar readiness checks and never execute renderer, interpolation, interaction, warp, staleness, or return-to-field behavior."
+  ],
+  "revised_severity": null,
+  "revised_observation": null,
+  "revised_impact": null,
+  "revised_recommendation": null
+}

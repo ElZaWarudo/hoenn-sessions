@@ -1,0 +1,85 @@
+{
+  "base_revision": "d1e726fb00137c7bb8318e3bed0a96f10db7acbd",
+  "baseline_digest": "sha256:ce84eaec80c0e9c66c6ef4220b823d94da6e8db11f661f39769e653abf23c7ad",
+  "baseline_tree": "3e872d49b51eba889aff2caf34e9e38ee84301e0",
+  "changed_files": [
+    {
+      "digest": "sha256:ba1a311c7e748fa5f3a04c13b94d57522ba53b01b61d4ed8e77e9c44a9e3d338",
+      "path": "include/constants/event_objects.h"
+    },
+    {
+      "digest": "sha256:81db319828e19b1f39f45b579b212ca24117673d8a82dc7dadd9afd5c6db4b62",
+      "path": "include/coop/net_bridge.h"
+    },
+    {
+      "digest": "sha256:94f5b18132ee43d3903b707572fe118bf1b3adea95c03bcd0d867f18772a9e95",
+      "path": "include/coop/presence_runtime.h"
+    },
+    {
+      "digest": "sha256:c90007ff57e9a637b84393e0f2d6450aa5241de6c0c4ae3672bbb6314420d9c2",
+      "path": "include/field_control_avatar.h"
+    },
+    {
+      "digest": "sha256:ad03bb53c39c60d348de95a1a4d188b65ce09f281e1e73f09d58800fbb39d01e",
+      "path": "src/coop/net_bridge.c"
+    },
+    {
+      "digest": "sha256:2538410e5fb212af302ece86518dcad1dcf6b5a0b121e0676ff29888ebd4ff0d",
+      "path": "src/coop/presence_runtime.c"
+    },
+    {
+      "digest": "sha256:dfa9c2d114d4d53fc03f20524809ca0479e2d7c53fa08c471b2918bbe30e0e83",
+      "path": "src/coop/region.c"
+    },
+    {
+      "digest": "sha256:09f93cdd7b702c14cb5975a2677de89a1798eb53d284281885c60e0264d146cd",
+      "path": "src/event_object_movement.c"
+    },
+    {
+      "digest": "sha256:35456e6ed5f8e84684775bfff7cc1601094182d2d17ae2d84163e433d224e3b4",
+      "path": "src/field_control_avatar.c"
+    },
+    {
+      "digest": "sha256:0aaf6e26022e8c5430e86adb426b463cc0d75bc4c088d4c60c78ca32f95918de",
+      "path": "src/overworld.c"
+    },
+    {
+      "digest": "sha256:cd52c2624dc000738f1454239e88acafe53ba417e849f337b71408aedf431b9f",
+      "path": "test/coop/net_bridge.c"
+    },
+    {
+      "digest": "sha256:b860f3bbbe68a0bba24167c65f037eb221b139f48aec6b77ead62230d6fa9996",
+      "path": "test/coop/presence_runtime.c"
+    },
+    {
+      "digest": "sha256:bb79036c8feb83ed2d3137d7ae0c5877daf48a7fa7f3a7d1897eb3da5bd97272",
+      "path": "test/coop/region.c"
+    }
+  ],
+  "contract_hash": "sha256:a1459cfcf1a69e4ee8f5a9ac2d42b30867db522a19e17c848b18554ae0a6338d",
+  "dependency_patch_hashes": [],
+  "diff_digest": "sha256:a5adc740154dab46794c52a1079939966ff5d033a089325c0e7b10a89571b754",
+  "manifest_hash": "sha256:be367079f03e6c703ac02d6262bffc711f3ea976775eb4d5f27321f092c3e3ec",
+  "owned_paths": [
+    "dist/bridge_manifest.json",
+    "include/constants/event_objects.h",
+    "include/coop/net_bridge.h",
+    "include/coop/presence_runtime.h",
+    "include/field_control_avatar.h",
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/coop/region.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "src/overworld.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "test/coop/region.c"
+  ],
+  "patch_sha256": "sha256:d7d4a41157d8856f06c7c225cc245feff5c9c55b3c05d25377c14434e37cadff",
+  "role": "recovered-partial-candidate",
+  "schema_version": 1,
+  "unit_id": "phase5-rom-presence-activation",
+  "worker_id": "/root/rom_presence_partial_recovery",
+  "workspace_id": "pokecrossroads-phase5-rom-presence-activation-interrupted-20260903"
+}

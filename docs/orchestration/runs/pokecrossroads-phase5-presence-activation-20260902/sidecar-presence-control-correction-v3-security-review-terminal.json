@@ -1,0 +1,54 @@
+{
+  "contract_hash": "sha256:22e30fdaa00b39c93841bc49c317c9fc6ed78e1c069e7af0b9a310703ec76ece",
+  "diff_digest": "sha256:868d4c1e2f52678566da3c9779846601a1300c9de663b024d33c4a45be74648f",
+  "finding_feedback": [],
+  "findings": [
+    {
+      "evidence": [
+        "rtk cargo test -p coop-sidecar reboot_cutover --all-features --locked exited with E0733 at coop/crates/coop-sidecar/src/server.rs:2348 and the recursive call at lines 2421-2423."
+      ],
+      "impact": "The sidecar cannot be built or deployed, so the authenticated control and bridge security paths cannot run and the required verification cannot execute.",
+      "observation": "The staged v3 candidate does not compile because process_pre_bridge_control_result is an async function that recursively calls itself from its None branch without indirection.",
+      "principle": "security",
+      "recommendation": "Remove the async recursion by dispatching the stored terminal error through a non-recursive path (or introduce explicit boxing), then rerun the manifest verification.",
+      "rule_id": "SPCF3-build/compile-blocker",
+      "severity": "p1"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:5132-5163 sends one remote_update_command and calls shutdown without a write-pending barrier.",
+        "coop/crates/coop-sidecar/src/server.rs:697-708 and 4697-4704 provide the deterministic gate only to direct BridgeWriter unit fixtures, not to serve()."
+      ],
+      "impact": "A normal loopback socket can accept the frame immediately, so this test does not establish the 500 ms shutdown bound or writer teardown under actual bridge backpressure.",
+      "observation": "The real serving-path regression named stalled_presence_bridge_write_does_not_delay_shutdown_ack only sends one small frame to an unread TcpStream; it does not prove a pending writer or inject the deterministic new_blocked gate used by the isolated writer tests.",
+      "principle": "testing",
+      "recommendation": "Add a deterministic blocked-writer seam to the real serving-path fixture, assert the lifecycle write is pending before sending shutdown, and verify the writer task and socket are terminated after the session exits.",
+      "rule_id": "SPCF3-001/serving-path-blocked-writer-proof",
+      "severity": "p2"
+    },
+    {
+      "evidence": [
+        "coop/crates/coop-sidecar/src/server.rs:2908-2927 checks control_terminal before registering/selecting writer failure.",
+        "coop/crates/coop-sidecar/src/server.rs:2938-2955 again returns the control terminal before BridgeWriterFailed, while serve_authenticated_controlled_client:2713-2725 recovers control for reconnectable control errors without checking writer state.",
+        "coop/crates/coop-sidecar/src/server.rs:2770-2828 shows await_control_or_bridge has no BridgeWriter failure signal while waiting for replacement control."
+      ],
+      "impact": "A simultaneous authenticated control EOF and bridge-writer failure can authorize a control replacement against a retired bridge, violating the no-reconnect-after-writer-failure rule; recover_control_with_bridge has no writer-failure input and can then wait indefinitely for replacement control while the failed bridge remains retained.",
+      "observation": "The active session checks a published control terminal before the independent bridge-writer failure both before and after select, and a reconnectable control LineClosed therefore wins the race and enters recover_control_with_bridge while the bridge writer is already failed.",
+      "principle": "security",
+      "recommendation": "Arbitrate bridge-writer failure as a non-reconnectable terminal before accepting reconnectable control loss, pass a durable writer-failure signal into control reacquisition, and add a deterministic simultaneous-failure regression.",
+      "rule_id": "SPCF3-001/writer-failure-reconnect-hang",
+      "severity": "p1"
+    }
+  ],
+  "review_plan_hash": "sha256:284ae7098ffc744048d493ecf200d70ec6a366c4448e262fd88a4bf57e259613",
+  "reviewer_id": "/root/sidecar_presence_security_reviewer_v3",
+  "risk_boundaries_checked": [
+    "authenticated-control-terminal-error-confinement-and-no-ambiguous-reconnect",
+    "bounded-writer-backpressure-shutdown-availability-and-task-resource-confinement",
+    "post-admission-pre-ready-drop-sequence-preservation-and-test-seam-integrity",
+    "reset-generation-linearization-no-cross-generation-replay-and-retired-socket-safety"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 0,
+  "surface_id": "sidecar-control-correction-security-v3"
+}

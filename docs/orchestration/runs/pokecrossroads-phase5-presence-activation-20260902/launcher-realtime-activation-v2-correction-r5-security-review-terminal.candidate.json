@@ -1,0 +1,186 @@
+{
+  "contract_hash": "sha256:8971423ad0d15aa99c11ffef51d344be1c1ca80fb0371ac18d36984f651bff6f",
+  "diff_digest": "sha256:05ae8954396350a72e40fb098feeb7d689d48890b8cf95d57b4fe34af9524ade",
+  "finding_feedback": [
+    {
+      "finding_id": "F-2D10E061",
+      "action": "corroborate",
+      "rationale": "Successful activation still proves freshest-state handoff, Ready, lifecycle/interaction delivery, shutdown, and joined teardown.",
+      "evidence": [
+        "The realtime successful-path regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-30423722",
+      "action": "corroborate",
+      "rationale": "Mint-time shutdown still drains a latched checkpoint before authenticated child teardown.",
+      "evidence": [
+        "The mint shutdown checkpoint regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-46C50542",
+      "action": "corroborate",
+      "rationale": "All realtime lifecycle errors still invoke supervised child stop, including pre-mint failures.",
+      "evidence": [
+        "Pre-mint reset and heartbeat-error cleanup regressions pass."
+      ]
+    },
+    {
+      "finding_id": "F-58EDE2B0",
+      "action": "corroborate",
+      "rationale": "Ready remains internal and the watermark still confines activation to post-Ready interactions.",
+      "evidence": [
+        "The checkpoint watermark regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-BDD4C8DE",
+      "action": "corroborate",
+      "rationale": "Completed driver state still preempts saturated owner events.",
+      "evidence": [
+        "Coordinator saturation and terminal-race regressions pass."
+      ]
+    },
+    {
+      "finding_id": "F-82E32A6B",
+      "action": "corroborate",
+      "rationale": "Monotonic interaction sequencing still preserves post-Ready FIFO.",
+      "evidence": [
+        "The synchronized watermark regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-830116ED",
+      "action": "corroborate",
+      "rationale": "Production arbitration still rotates Control, Realtime, and Heartbeat with shutdown first.",
+      "evidence": [
+        "session.rs:121-176 delegates the same four futures to the equivalent helper."
+      ]
+    },
+    {
+      "finding_id": "F-A208DC98",
+      "action": "corroborate",
+      "rationale": "The coordinator still rechecks driver completion after owner-event receipt.",
+      "evidence": [
+        "The post-receipt race regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-F3308A85",
+      "action": "corroborate",
+      "rationale": "Activation-level interaction/lifecycle overflow and both child exits remain covered.",
+      "evidence": [
+        "The realtime activation suite passes 10 tests."
+      ]
+    },
+    {
+      "finding_id": "F-3BC4C902",
+      "action": "corroborate",
+      "rationale": "Backpressure and child-failure cleanup remain exercised through production activation.",
+      "evidence": [
+        "Both overflow tests and both child-exit variants pass."
+      ]
+    },
+    {
+      "finding_id": "F-4DA3B9E2",
+      "action": "corroborate",
+      "rationale": "Each serviced active source still rotates to the next priority with shutdown absolute first.",
+      "evidence": [
+        "The exact all-ready helper oracle passes."
+      ]
+    },
+    {
+      "finding_id": "F-65C99A19",
+      "action": "corroborate",
+      "rationale": "Checkpoint correlation deadline remains first and absolute.",
+      "evidence": [
+        "The sustained-input checkpoint deadline regression passes in the realtime suite."
+      ]
+    },
+    {
+      "finding_id": "F-991C5777",
+      "action": "corroborate",
+      "rationale": "Ready still rotates cutover to Activate-first.",
+      "evidence": [
+        "The continuous-lifecycle Ready regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-A721B843",
+      "action": "corroborate",
+      "rationale": "Active failure tests still assert disabled lifecycle, no reconnect, and joined teardown.",
+      "evidence": [
+        "The focused activation suite is green."
+      ]
+    },
+    {
+      "finding_id": "F-ECA67938",
+      "action": "corroborate",
+      "rationale": "Realtime service still rotates directly to heartbeat priority.",
+      "evidence": [
+        "The exact all-ready helper oracle proves repeated C/R/H progress."
+      ]
+    },
+    {
+      "finding_id": "F-0663A373",
+      "action": "corroborate",
+      "rationale": "Post-checkpoint cutover remains shutdown-first and heartbeat-live.",
+      "evidence": [
+        "The withheld-Ready heartbeat/shutdown regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-2FFF4874",
+      "action": "corroborate",
+      "rationale": "Resolved: the extracted generic helper is tested with all service futures immediately ready on every one of twelve polls and exact C/R/H selection is asserted.",
+      "evidence": [
+        "realtime_active_round_robin_exactly_rotates_when_every_source_stays_ready passes."
+      ]
+    },
+    {
+      "finding_id": "F-8F877E3A",
+      "action": "corroborate",
+      "rationale": "The actual launcher lifecycle-output queue overflow path remains covered with fail-closed cleanup.",
+      "evidence": [
+        "The lifecycle-output backpressure activation regression passes."
+      ]
+    },
+    {
+      "finding_id": "F-A9F4163F",
+      "action": "corroborate",
+      "rationale": "Cloud checkpoint work remains noncancellable after correlation while terminal and shutdown are latched.",
+      "evidence": [
+        "Delayed prepare and finalize reconciliation regressions pass."
+      ]
+    },
+    {
+      "finding_id": "F-B7FCE378",
+      "action": "corroborate",
+      "rationale": "Latched terminal state is still handled after definitive revision reconciliation and before cutover/output.",
+      "evidence": [
+        "The delayed-prepare reset and delayed-finalize shutdown regressions pass."
+      ]
+    },
+    {
+      "finding_id": "F-92284853",
+      "action": "corroborate",
+      "rationale": "Resolved: all three service futures stay ready for each direct helper invocation; exact rotation, terminal selection, and shutdown preemption in every priority state are asserted.",
+      "evidence": [
+        "session.rs:5689-5749 directly tests twelve C/R/H rotations, a realtime terminal, and shutdown-first behavior for all three priorities."
+      ]
+    }
+  ],
+  "findings": [],
+  "review_plan_hash": "sha256:3e042c024eb1d894a08f59064f29ef0c386cd351dceedb4346c99c81c5ab96a5",
+  "reviewer_id": "/root/launcher_activation_v2_security",
+  "risk_boundaries_checked": [
+    "no-remint-replay-orphan",
+    "resolution-of-all-recorded-findings",
+    "shutdown-priority-preservation",
+    "ticket-and-endpoint-confinement"
+  ],
+  "stop_reason": "coverage-complete",
+  "suppressed_speculative_count": 1,
+  "surface_id": "launcher-realtime-activation-v2-security-r5"
+}

@@ -1,0 +1,22 @@
+{
+  "base_revision": "871c86c2bcf76f722a62f31bd0aa73e5d5fa23e2",
+  "baseline_digest": "sha256:76bf0458a8f5b7d63bb67c635edc6321158431c89727e3a1b57a1ed047954a4c",
+  "baseline_tree": null,
+  "candidate_commit": "bc6dc6f128cd81e4ebe4a1ccfe50099215af29e1",
+  "candidate_tree": "87e81de81864fe413b4af8a6329cfc4bf3c7e7fe",
+  "changed_files": [
+    "coop/crates/coop-launcher/src/process.rs",
+    "coop/crates/coop-launcher/src/session.rs"
+  ],
+  "changed_files_source": "root-diff",
+  "contract_hash": "sha256:50b5f8420a02371010e61bc0b2bf352522b5e2742eb9c676cb6cc6a5c01e9d36",
+  "correction_patch_hash": "sha256:fc127e15b11486dd24f46846e0e0e91b359823582191f01a3b8addf0b5ff07b5",
+  "diff_basis": "worktree-vs-revision",
+  "diff_digest": "sha256:25bdd962cde65c380288ac66065aab800b2774f98353bf69353df8122f086c7f",
+  "initial_patch_hash": "sha256:edede47c5acbd9b3d1148a4ba1bdb2088d59913ac431f5f9b08046c72d7b1d7e",
+  "role": "exact-candidate-observation",
+  "schema_version": 1,
+  "unit_id": "phase5-launcher-control-pump",
+  "worker_id": "/root",
+  "workspace_id": "pokecrossroads-phase5-presence-resume-20260903-launcher-control-pump-v2-r1-validation"
+}

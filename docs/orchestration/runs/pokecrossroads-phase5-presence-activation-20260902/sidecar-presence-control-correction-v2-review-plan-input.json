@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "assurance_tier": "high",
+  "contract_hash": "sha256:f98be8e90bf3bf0e71f29b3c498380fc5132b57f175929b75c878a80e4535c7c",
+  "diff_digest": "sha256:1d373c5d02ea00e757121e6d1aedf80b450ddb0a41fbf7a72baa7cbb322f6835",
+  "changed_paths": [
+    "coop/crates/coop-sidecar/src/server.rs"
+  ],
+  "reviewer_capacity": 2,
+  "surfaces": [
+    {
+      "id": "sidecar-control-correction-correctness-v2",
+      "reviewer_role": "reviewer",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "risk_boundaries": [
+        "initial-active-ready-latch-and-post-ready-forwarding",
+        "overflow-terminal-precedence-and-independently-wakeable-failure",
+        "sole-bridge-writer-shutdown-ack-bounds-and-task-cleanup",
+        "readiness-generation-pre-ready-drop-and-sequence-allocation"
+      ],
+      "cross_cutting": false,
+      "priority": 0
+    },
+    {
+      "id": "sidecar-control-correction-security-v2",
+      "reviewer_role": "security-sentinel",
+      "owned_paths": [
+        "coop/crates/coop-sidecar/src/server.rs"
+      ],
+      "risk_boundaries": [
+        "authenticated-control-input-and-readiness-gating",
+        "bounded-queues-stable-redacted-failure-and-overflow-confinement",
+        "reset-generation-reconnect-cleanup-and-no-stale-replay",
+        "writer-actor-failure-notification-and-shutdown-starvation-resistance"
+      ],
+      "cross_cutting": true,
+      "priority": 0
+    }
+  ]
+}

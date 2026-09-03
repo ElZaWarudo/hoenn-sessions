@@ -1,0 +1,82 @@
+{
+  "approval_required": false,
+  "assignments": [
+    {
+      "cross_cutting": false,
+      "id": "rom-presence-activation-correctness-v3",
+      "owned_paths": [
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "priority": 0,
+      "reviewer_role": "reviewer",
+      "risk_boundaries": [
+        "effective-visibility-field-action-precedence-and-interaction-fallback",
+        "renderer-object-sprite-ownership-retirement-and-recreation",
+        "same-epoch-generation-cutover-and-independent-sequence-domains",
+        "six-frame-interpolation-animation-progress-and-discontinuity-snap"
+      ]
+    },
+    {
+      "cross_cutting": true,
+      "id": "rom-presence-activation-security-v3",
+      "owned_paths": [
+        "include/constants/event_objects.h",
+        "include/coop/net_bridge.h",
+        "include/coop/presence_runtime.h",
+        "include/field_control_avatar.h",
+        "src/coop/net_bridge.c",
+        "src/coop/presence_runtime.c",
+        "src/coop/region.c",
+        "src/event_object_movement.c",
+        "src/field_control_avatar.c",
+        "src/overworld.c",
+        "test/coop/net_bridge.c",
+        "test/coop/presence_runtime.c",
+        "test/coop/region.c"
+      ],
+      "priority": 0,
+      "reviewer_role": "security-sentinel",
+      "risk_boundaries": [
+        "bounded-queues-real-object-precedence-and-local-link-isolation",
+        "checksum-length-epoch-type-and-sequence-fail-closed-atomicity",
+        "cross-map-warp-stale-hidden-reset-and-replay-confinement",
+        "reserved-object-and-sprite-backlink-memory-ownership"
+      ]
+    }
+  ],
+  "assurance_tier": "high",
+  "changed_paths": [
+    "include/constants/event_objects.h",
+    "include/coop/net_bridge.h",
+    "include/coop/presence_runtime.h",
+    "include/field_control_avatar.h",
+    "src/coop/net_bridge.c",
+    "src/coop/presence_runtime.c",
+    "src/coop/region.c",
+    "src/event_object_movement.c",
+    "src/field_control_avatar.c",
+    "src/overworld.c",
+    "test/coop/net_bridge.c",
+    "test/coop/presence_runtime.c",
+    "test/coop/region.c"
+  ],
+  "contract_hash": "sha256:b40a7c4275621d2e02e109154d5bd8f23d7fa2767940ee1640f7529249b4e695",
+  "coverage_complete": true,
+  "diff_digest": "sha256:70bfb89cabd30bd8cfa771b5c6f0c0c7943589cf903c99975be5362fe2af18db",
+  "queued": [],
+  "review_plan_hash": "sha256:b051a41b5ce077fda363c77aa18973c85d47b07cfc4de2fbedcd7f5acc8cfb40",
+  "schema_version": 2,
+  "validation_wave_required": true
+}
