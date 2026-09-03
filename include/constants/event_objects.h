@@ -488,6 +488,7 @@ enum
 #define LOCALID_PLAYER                     255
 #define OBJ_EVENT_ID_FOLLOWER              0xFE
 #define OBJ_EVENT_ID_NPC_FOLLOWER          0xFD
+#define OBJ_EVENT_ID_COOP_REMOTE_PLAYER   0xFC
 
 // Aliases for old names. "object event id" normally refers to an index into gObjectEvents, which these are not.
 // Used for link player OWs in CreateLinkPlayerSprite

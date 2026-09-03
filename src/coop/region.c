@@ -1,5 +1,6 @@
 #include "global.h"
 #include "coop/region.h"
+#include "fieldmap.h"
 #include "constants/region_map_sections.h"
 #include "field_player_avatar.h"
 #include "regions.h"
@@ -155,17 +156,21 @@ bool8 CoopWorldLocation_Export(struct WorldLocation *out)
     map_number = gSaveBlock1Ptr->location.mapNum;
     if (map_group < 0 || map_group > 0xFFFF || map_number < 0 || map_number > 0xFFFF)
         return FALSE;
-    if (gObjectEvents[gPlayerAvatar.objectEventId].mapGroup != (u16)map_group
-     || gObjectEvents[gPlayerAvatar.objectEventId].mapNum != (u16)map_number)
-        return FALSE;
-
     PlayerGetDestCoords(&x, &y);
+
+    /* PlayerGetDestCoords and ObjectEvent coordinates include the map's
+     * seven-tile collision border.  Presence coordinates are deliberately
+     * map-local so a seamless connection cannot leak the engine offset onto
+     * the wire.  Widen before subtracting to keep the signed boundary safe. */
+    if ((s32)x - MAP_OFFSET < -32768 || (s32)x - MAP_OFFSET > 32767
+     || (s32)y - MAP_OFFSET < -32768 || (s32)y - MAP_OFFSET > 32767)
+        return FALSE;
 
     out->region = (u8)region;
     out->reserved = 0;
     out->map_group = (u16)map_group;
     out->map_number = (u16)map_number;
-    out->x = x;
-    out->y = y;
+    out->x = (s16)((s32)x - MAP_OFFSET);
+    out->y = (s16)((s32)y - MAP_OFFSET);
     return TRUE;
 }

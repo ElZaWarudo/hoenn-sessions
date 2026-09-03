@@ -1,6 +1,8 @@
 #include "global.h"
 #include "coop/region.h"
 #include "constants/region_map_sections.h"
+#include "load_save.h"
+#include "fieldmap.h"
 #include "test/test.h"
 
 _Static_assert(sizeof(struct WorldLocation) == 10, "tested world location ABI size");
@@ -118,4 +120,39 @@ TEST("Cloud Coop active region derives Kanto and Sevii from the current map")
     EXPECT(!CoopRegion_TryGetActive(&region));
     EXPECT_EQ(region, COOP_REGION_SEVII);
     EXPECT(!CoopRegion_TryGetActive(NULL));
+}
+
+TEST("Cloud Coop world export removes the engine border exactly once")
+{
+    struct MapHeader savedHeader = gMapHeader;
+    struct ObjectEvent savedPlayer = gObjectEvents[0];
+    struct PlayerAvatar savedAvatar = gPlayerAvatar;
+    struct SaveBlock1 *savedSave = gSaveBlock1Ptr;
+    struct WarpData savedScratchLocation = gSaveblock1.block.location;
+    struct WorldLocation location;
+
+    gSaveBlock1Ptr = &gSaveblock1.block;
+    gSaveBlock1Ptr->location.mapGroup = 1;
+    gSaveBlock1Ptr->location.mapNum = 3;
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_HOENN;
+    gMapHeader.regionMapSectionId = MAPSEC_LITTLEROOT_TOWN;
+    memset(&gObjectEvents[0], 0, sizeof(gObjectEvents[0]));
+    gObjectEvents[0].active = TRUE;
+    gObjectEvents[0].isPlayer = TRUE;
+    gObjectEvents[0].currentCoords.x = MAP_OFFSET + 4;
+    gObjectEvents[0].currentCoords.y = MAP_OFFSET + 5;
+    gPlayerAvatar.objectEventId = 0;
+
+    EXPECT(CoopWorldLocation_Export(&location));
+    EXPECT_EQ(location.region, COOP_REGION_HOENN);
+    EXPECT_EQ(location.map_group, 1);
+    EXPECT_EQ(location.map_number, 3);
+    EXPECT_EQ(location.x, 4);
+    EXPECT_EQ(location.y, 5);
+
+    gMapHeader = savedHeader;
+    gObjectEvents[0] = savedPlayer;
+    gPlayerAvatar = savedAvatar;
+    gSaveblock1.block.location = savedScratchLocation;
+    gSaveBlock1Ptr = savedSave;
 }

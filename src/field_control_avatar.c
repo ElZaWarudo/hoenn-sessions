@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/presence_runtime.h"
 #include "battle_setup.h"
 #include "bike.h"
 #include "coord_event_weather.h"
@@ -209,10 +210,10 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
     metatileBehavior = MapGridGetMetatileBehaviorAt(position.x, position.y);
 
     if (input->heldDirection && (input->dpadDirection == playerDirection) && (TrySetUpWalkIntoSignpostScript(&position, metatileBehavior, playerDirection) == TRUE))
-        return TRUE;
+        return FIELD_INPUT_RESULT_SCRIPT_STARTED;
 
     if (input->pressedAButton && TryStartInteractionScript(&position, metatileBehavior, playerDirection) == TRUE)
-        return TRUE;
+        return FIELD_INPUT_RESULT_SCRIPT_STARTED;
 
     if (input->heldDirection2 && input->dpadDirection == playerDirection)
     {
@@ -221,6 +222,21 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
     }
     if (input->pressedAButton && TrySetupDiveDownScript() == TRUE)
         return TRUE;
+
+    /* Vanilla object, background, metatile, door, and dive actions own the
+     * target tile.  A remote is only the fallback after every local A action
+     * has declined the input, so a nonblocking remote can never mask a real
+     * field interaction. */
+    if (input->pressedAButton)
+    {
+        enum CoopPresenceInteractionResult interaction =
+            CoopPresenceRuntime_TryInteract();
+        if (interaction == COOP_PRESENCE_INTERACTION_SCRIPT_STARTED)
+            return FIELD_INPUT_RESULT_SCRIPT_STARTED;
+        if (interaction == COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK)
+            return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
+    }
+
     if (input->pressedStartButton)
     {
         FlagSet(FLAG_OPENED_START_MENU);
@@ -253,7 +269,7 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
         return TRUE;
     }
 
-    return FALSE;
+    return FIELD_INPUT_RESULT_NONE;
 }
 
 static void GetPlayerPosition(struct MapPosition *position)
@@ -664,6 +680,15 @@ static bool32 TrySetupDiveDownScript(void)
     }
     return FALSE;
 }
+
+#if TESTING
+/* Focused ROM tests use the real Dive prerequisites while keeping the
+ * production input path unchanged. */
+bool8 CoopPresenceRuntime_TestTrySetupDiveDownScript(void)
+{
+    return TrySetupDiveDownScript();
+}
+#endif
 
 static bool32 TrySetupDiveEmergeScript(void)
 {

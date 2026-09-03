@@ -1,5 +1,6 @@
 #include "global.h"
 #include "coop/net_bridge.h"
+#include "coop/presence_runtime.h"
 #include "coop/progress.h"
 #include "coop/save.h"
 
@@ -579,19 +580,17 @@ bool8 CoopNetBridge_DequeueNetworkToGame(struct CoopBridgeMessage *message)
 
 static bool8 SendPlayerState(void)
 {
-    struct CoopBridgePlayerState state;
+    u8 payload[COOP_PRESENCE_LOCAL_STATE_SIZE];
 
     sCoopNetRuntime.last_player_state_frame = sCoopNetRuntime.frame_counter;
-    memset(&state, 0, sizeof(state));
-    if (!CoopWorldLocation_Export(&state.location))
+    if (!CoopPresenceRuntime_EncodeLocalState(payload, sizeof(payload)))
     {
         gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_WORLD_NOT_READY;
         return TRUE;
     }
     gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_WORLD_NOT_READY;
-    state.frame_counter = sCoopNetRuntime.frame_counter;
     if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_PLAYER_STATE,
-                                            &state, sizeof(state)))
+                                            payload, sizeof(payload)))
         return FALSE;
     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PLAYER_STATE_SENT;
     return TRUE;
@@ -622,7 +621,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
 
     if (message->type == COOP_BRIDGE_MESSAGE_SESSION_READY)
     {
-        if (message->length != 0)
+        if (message->length != 0 || !IsEmptyPayload(message))
         {
             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
             return FALSE;
@@ -635,17 +634,14 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
 
         if (message->session_epoch == sCoopNetRuntime.session_epoch)
         {
-            if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY) != 0)
-            {
-                if (IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
-                    sCoopNetRuntime.rx_sequence = message->sequence;
-                return FALSE;
-            }
             if (!IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
                 return FALSE;
 
-            /* Re-arm a disconnected transport without rewinding either
-             * sequence domain inside the still-current epoch. */
+            /* SESSION_READY is the transport-generation boundary, even when
+             * the previous bridge is still inside its heartbeat window.  Do
+             * not let lifecycle traffic from that generation survive the
+             * replacement authentication.  Preserve a critical queued save,
+             * but reset every presence and interaction generation first. */
             PreserveQueuedSaveDataUpdatedBeforeQueueReset();
             CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
@@ -654,6 +650,11 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
             sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
             sCoopNetRuntime.cloud_epoch_accepted = TRUE;
+            /* A reconnect starts a fresh presence generation even when the
+             * sidecar reuses the current epoch.  Do not let an old reducer,
+             * pending lifecycle frame, or sprite survive the queue rearm. */
+            CoopPresenceRuntime_Reset();
+            CoopPresenceRuntime_SetSessionEpoch(sCoopNetRuntime.session_epoch);
             SetCheckpointStateForAcceptedEpoch();
             gCoopNetBridge.status_flags &= ~(COOP_BRIDGE_STATUS_QUEUE_CONGESTED
                                           | COOP_BRIDGE_STATUS_QUEUE_ERROR
@@ -681,6 +682,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
         sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
         sCoopNetRuntime.cloud_epoch_accepted = TRUE;
+        CoopPresenceRuntime_SetSessionEpoch(sCoopNetRuntime.session_epoch);
         SetCheckpointStateForAcceptedEpoch();
         gCoopNetBridge.status_flags &= ~(COOP_BRIDGE_STATUS_QUEUE_CONGESTED
                                       | COOP_BRIDGE_STATUS_QUEUE_ERROR
@@ -717,6 +719,25 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN
+     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE
+     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN)
+    {
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        if (!CoopPresenceRuntime_QueueBridgeFrame(message->type,
+                                                   message->payload,
+                                                   message->length))
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        return FALSE;
+    }
+
     /* Later milestones add handlers for the remaining documented inbound
      * messages. Until then, do not advance the receive sequence for one. */
     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
@@ -745,6 +766,7 @@ static void ObserveSidecarHeartbeat(void)
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
             gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_SESSION_READY;
             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE;
+            CoopPresenceRuntime_TransportLost();
             CancelCheckpointAuthorization();
         }
     }
@@ -765,6 +787,7 @@ void CoopNetBridge_Init(void)
     sCoopNetRuntime.tx_sequence = 1;
     sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_OFFLINE;
     gCoopNetBridge.status_flags = COOP_BRIDGE_STATUS_INITIALIZED;
+    CoopPresenceRuntime_Init();
 
     TryAnnounceRomReady();
 }
@@ -779,6 +802,7 @@ void CoopNetBridge_Poll(void)
         return;
 
     sCoopNetRuntime.frame_counter++;
+    CoopPresenceRuntime_AdvanceFrame();
     /* AgbMain initializes the bridge before flash is loaded. Do not invite a
      * cloud session until the save layer has classified and validated V1. */
     TryAnnounceRomReady();
@@ -845,4 +869,9 @@ void CoopNetBridge_Poll(void)
         if (!SendPlayerState())
             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_QUEUE_ERROR;
     }
+}
+
+u32 CoopNetBridge_GetSessionEpoch(void)
+{
+    return sCoopNetRuntime.session_epoch;
 }

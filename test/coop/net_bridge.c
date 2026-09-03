@@ -2,9 +2,15 @@
 
 #include "global.h"
 #include "coop/net_bridge.h"
+#include "coop/presence_runtime.h"
+#include "coop/region.h"
 #include "coop/save.h"
 #include "gba/flash_internal.h"
+#include "fieldmap.h"
 #include "load_save.h"
+#include "main.h"
+#include "overworld.h"
+#include "palette.h"
 #include "save.h"
 #include "test/test.h"
 
@@ -22,7 +28,7 @@ _Static_assert(offsetof(struct CoopNetBridge, last_sidecar_heartbeat) == 16, "te
 _Static_assert(offsetof(struct CoopNetBridge, game_to_network) == 20, "tested outbound queue offset");
 _Static_assert(offsetof(struct CoopNetBridge, network_to_game) == 4632, "tested inbound queue offset");
 _Static_assert(sizeof(struct CoopNetBridge) == 9244, "tested bridge ABI size");
-_Static_assert(sizeof(struct CoopBridgePlayerState) == 16, "tested player-state ABI size");
+_Static_assert(sizeof(struct CoopBridgePlayerState) == COOP_PRESENCE_LOCAL_STATE_SIZE, "tested player-state ABI size");
 
 static struct CoopBridgeQueue *GetTestQueue(void)
 {
@@ -66,6 +72,7 @@ static void HostWriteInboundUnchecked(const struct CoopBridgeMessage *message)
 }
 
 static u32 sSaveSectorProgramCalls;
+static EWRAM_DATA u16 sPresenceBridgeMapData[32 * 32];
 
 static u16 CountSaveSectorProgramCalls(u16 sector, u8 *data)
 {
@@ -91,7 +98,7 @@ TEST("Cloud Coop wire ABI matches the documented compact layout")
     EXPECT_EQ(offsetof(struct CoopNetBridge, game_to_network), 20);
     EXPECT_EQ(offsetof(struct CoopNetBridge, network_to_game), 4632);
     EXPECT_EQ(sizeof(struct CoopNetBridge), 9244);
-    EXPECT_EQ(sizeof(struct CoopBridgePlayerState), 16);
+    EXPECT_EQ(sizeof(struct CoopBridgePlayerState), COOP_PRESENCE_LOCAL_STATE_SIZE);
 }
 
 TEST("Cloud Coop CRC32 matches the canonical check vector")
@@ -462,6 +469,226 @@ TEST("Cloud Coop raw unsupported inbound traffic cannot suppress a valid new epo
     EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
     EXPECT_EQ(message.sequence, 1);
     EXPECT_EQ(message.session_epoch, 21);
+}
+
+TEST("Cloud Coop malformed remote lifecycle payload does not consume its outer sequence")
+{
+    struct CoopBridgeMessage message;
+    u8 malformed_spawn[COOP_PRESENCE_SPAWN_SIZE] = {0};
+
+    InitTestBridge();
+    PopInitialRomReady();
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  1,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+
+    /* The outer frame is valid, but a spawn must be exactly 72 bytes.  The
+     * bridge must reject it without advancing rx_sequence or mutating the
+     * runtime's pending lifecycle queue. */
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
+                                  2,
+                                  17,
+                                  malformed_spawn,
+                                  COOP_PRESENCE_SPAWN_SIZE - 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
+
+    /* Reusing the rejected outer sequence as a fresh SESSION_READY proves
+     * that malformed remote data did not partially consume the sequence
+     * domain.  The accepted reconnect also clears pending bridge queues. */
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  2,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    EXPECT_EQ(message.session_epoch, 17);
+}
+
+TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence")
+{
+    struct CoopBridgeMessage message;
+    struct CoopPresenceSpawn spawn = {
+        .handle = 9,
+        .server_sequence = 1,
+        .state = {
+            .pose = {
+                .location = {
+                    .region = COOP_REGION_HOENN,
+                    .reserved = 0,
+                    .map_group = 1,
+                    .map_number = 3,
+                    .x = 4,
+                    .y = 5,
+                },
+                .elevation = ELEVATION_DEFAULT,
+                .direction = COOP_PRESENCE_DIRECTION_SOUTH,
+                .client_tick = 1,
+                .warp_sequence = 1,
+                .movement_mode = COOP_PRESENCE_MOVEMENT_IDLE,
+                .animation_id = COOP_PRESENCE_ANIMATION_IDLE,
+                .avatar_id = COOP_PRESENCE_AVATAR_BRENDAN,
+                .player_state = COOP_PRESENCE_PLAYER_OVERWORLD,
+            },
+            .source_sequence = 1,
+        },
+        .username = {
+            .length = 3,
+            .bytes = "rom",
+        },
+    };
+    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
+    struct MapLayout map_layout = {
+        .width = 20,
+        .height = 20,
+        .map = sPresenceBridgeMapData,
+    };
+    struct MapHeader saved_map_header = gMapHeader;
+    struct BackupMapLayout saved_backup_map_layout = gBackupMapLayout;
+    struct CoopSaveV1 saved_coop_save;
+    struct PlayerAvatar saved_player_avatar = gPlayerAvatar;
+    struct SaveBlock1 *saved_save_block1 = gSaveBlock1Ptr;
+    struct ObjectEvent saved_object_event0 = gObjectEvents[0];
+    struct ObjectEvent saved_object_event1 = gObjectEvents[1];
+    struct Sprite saved_sprite0 = gSprites[0];
+    struct Sprite saved_sprite1 = gSprites[1];
+    struct Coords16 saved_save_position;
+    struct WarpData saved_save_location;
+    MainCallback saved_callback1 = gMain.callback1;
+    MainCallback saved_callback2 = gMain.callback2;
+    bool8 saved_palette_fade_active = gPaletteFade.active;
+    u32 i;
+
+    if (saved_save_block1 != NULL)
+    {
+        saved_save_position = saved_save_block1->pos;
+        saved_save_location = saved_save_block1->location;
+    }
+    if (gSaveBlock3Ptr != NULL)
+        saved_coop_save = gSaveBlock3Ptr->coop;
+    InitTestBridge();
+    PopInitialRomReady();
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  1,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+
+    for (i = 0; i < ARRAY_COUNT(sPresenceBridgeMapData); i++)
+        sPresenceBridgeMapData[i] = PACK_ELEVATION(ELEVATION_DEFAULT);
+    gMapHeader.mapLayout = &map_layout;
+    gMapHeader.events = NULL;
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_HOENN;
+    gMapHeader.regionMapSectionId = MAPSEC_LITTLEROOT_TOWN;
+    gBackupMapLayout.width = 32;
+    gBackupMapLayout.height = 32;
+    gBackupMapLayout.map = sPresenceBridgeMapData;
+    gSaveBlock1Ptr = &gSaveblock1.block;
+    gSaveBlock1Ptr->location.mapGroup = 1;
+    gSaveBlock1Ptr->location.mapNum = 3;
+    gSaveBlock1Ptr->pos.x = MAP_OFFSET + 4;
+    gSaveBlock1Ptr->pos.y = MAP_OFFSET + 5;
+    memset(&gObjectEvents[0], 0, sizeof(gObjectEvents[0]));
+    memset(&gObjectEvents[1], 0, sizeof(gObjectEvents[1]));
+    gObjectEvents[0].active = TRUE;
+    gObjectEvents[0].isPlayer = TRUE;
+    gObjectEvents[0].localId = LOCALID_PLAYER;
+    gObjectEvents[0].mapGroup = 1;
+    gObjectEvents[0].mapNum = 3;
+    gObjectEvents[0].facingDirection = DIR_SOUTH;
+    gObjectEvents[0].currentElevation = ELEVATION_DEFAULT;
+    gObjectEvents[0].previousElevation = ELEVATION_DEFAULT;
+    gObjectEvents[0].currentCoords.x = MAP_OFFSET + 4;
+    gObjectEvents[0].currentCoords.y = MAP_OFFSET + 5;
+    gObjectEvents[0].previousCoords = gObjectEvents[0].currentCoords;
+    gObjectEvents[0].initialCoords = gObjectEvents[0].currentCoords;
+    gObjectEvents[0].spriteId = 0;
+    memset(&gSprites[0], 0, sizeof(gSprites[0]));
+    memset(&gSprites[1], 0, sizeof(gSprites[1]));
+    gSprites[0].inUse = TRUE;
+    gSprites[0].data[0] = 0;
+    gPlayerAvatar.objectEventId = 0;
+    gPlayerAvatar.spriteId = 0;
+    gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE;
+    gMain.callback1 = CB1_Overworld;
+    gMain.callback2 = CB2_Overworld;
+    gPaletteFade.active = FALSE;
+
+    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
+                                  2,
+                                  17,
+                                  spawn_bytes,
+                                  sizeof(spawn_bytes)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+
+    /* This malformed frame is rejected and must not consume sequence 3. */
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
+                                  3,
+                                  17,
+                                  spawn_bytes,
+                                  sizeof(spawn_bytes) - 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  3,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY);
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    EXPECT_EQ(message.session_epoch, 17);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.network_to_game));
+
+    CoopPresenceRuntime_TransportLost();
+    CoopNetBridge_Init();
+    gMapHeader = saved_map_header;
+    gBackupMapLayout = saved_backup_map_layout;
+    gObjectEvents[0] = saved_object_event0;
+    gObjectEvents[1] = saved_object_event1;
+    gSprites[0] = saved_sprite0;
+    gSprites[1] = saved_sprite1;
+    gPlayerAvatar = saved_player_avatar;
+    if (saved_save_block1 != NULL)
+    {
+        saved_save_block1->pos = saved_save_position;
+        saved_save_block1->location = saved_save_location;
+    }
+    if (gSaveBlock3Ptr != NULL)
+        gSaveBlock3Ptr->coop = saved_coop_save;
+    gSaveBlock1Ptr = saved_save_block1;
+    gMain.callback1 = saved_callback1;
+    gMain.callback2 = saved_callback2;
+    gPaletteFade.active = saved_palette_fade_active;
 }
 
 static void EstablishTestCloudSession(void)

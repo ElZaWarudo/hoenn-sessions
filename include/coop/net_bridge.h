@@ -5,6 +5,7 @@
 
 #include "gba/defines.h"
 #include "gba/types.h"
+#include "coop/presence.h"
 #include "coop/region.h"
 
 #define COOP_NET_BRIDGE_MAGIC 0x504B434Fu
@@ -128,9 +129,11 @@ struct CoopNetBridge
 
 struct CoopBridgePlayerState
 {
-    struct WorldLocation location;
-    u8 reserved[2];
-    u32 frame_counter;
+    /* This value is encoded with CoopPresence_EncodeLocalState before it is
+     * put on the wire.  Keep the named bridge value for source compatibility
+     * while making its in-memory shape the exact V1 28-byte state. */
+    struct CoopPresencePose pose;
+    u32 source_sequence;
 };
 
 _Static_assert(sizeof(struct CoopBridgeMessage) == 144, "CoopBridgeMessage ABI size");
@@ -144,7 +147,8 @@ _Static_assert(sizeof(struct CoopBridgeQueue) == 4 + 144 * 32, "CoopBridgeQueue 
 _Static_assert(offsetof(struct CoopBridgeQueue, read_index) == 0, "CoopBridgeQueue read offset");
 _Static_assert(offsetof(struct CoopBridgeQueue, write_index) == 2, "CoopBridgeQueue write offset");
 _Static_assert(offsetof(struct CoopBridgeQueue, entries) == 4, "CoopBridgeQueue entries offset");
-_Static_assert(sizeof(struct CoopBridgePlayerState) == 16, "CoopBridgePlayerState ABI size");
+_Static_assert(sizeof(struct CoopBridgePlayerState) == COOP_PRESENCE_LOCAL_STATE_SIZE,
+               "CoopBridgePlayerState ABI size");
 _Static_assert(offsetof(struct CoopNetBridge, magic) == 0, "CoopNetBridge magic offset");
 _Static_assert(offsetof(struct CoopNetBridge, abi_version) == 4, "CoopNetBridge ABI version offset");
 _Static_assert(offsetof(struct CoopNetBridge, game_protocol_version) == 6, "CoopNetBridge protocol offset");
@@ -172,6 +176,7 @@ bool8 CoopBridgeQueue_Pop(struct CoopBridgeQueue *queue, struct CoopBridgeMessag
 
 void CoopNetBridge_Init(void);
 void CoopNetBridge_Poll(void);
+u32 CoopNetBridge_GetSessionEpoch(void);
 enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);

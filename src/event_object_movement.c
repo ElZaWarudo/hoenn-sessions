@@ -45,6 +45,9 @@
 #include "constants/abilities.h"
 #include "constants/battle.h"
 #include "constants/event_objects.h"
+
+extern bool8 CoopPresenceRuntime_IsOwnedRendererSprite(u8 objectEventId,
+                                                        u8 spriteId);
 #include "constants/field_effects.h"
 #include "constants/items.h"
 #include "constants/mauville_old_man.h"
@@ -57,6 +60,7 @@
 #include "constants/trainer_types.h"
 #include "constants/union_room.h"
 #include "constants/weather.h"
+#include "coop/presence_runtime.h"
 
 #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
                                 min(LOCALID_PLAYER, \
@@ -1424,7 +1428,9 @@ u8 GetObjectEventIdByXY(s16 x, s16 y)
     u8 i;
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
-        if (gObjectEvents[i].active && gObjectEvents[i].currentCoords.x == x && gObjectEvents[i].currentCoords.y == y)
+        if (gObjectEvents[i].active
+         && !CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[i])
+         && gObjectEvents[i].currentCoords.x == x && gObjectEvents[i].currentCoords.y == y)
             break;
     }
 
@@ -1923,7 +1929,7 @@ u8 SpawnSpecialObjectEvent(struct ObjectEventTemplate *objectEventTemplate)
 
 u8 SpawnSpecialObjectEventParameterized(u16 graphicsId, u8 movementBehavior, u8 localId, s16 x, s16 y, u8 elevation)
 {
-    struct ObjectEventTemplate objectEventTemplate;
+    struct ObjectEventTemplate objectEventTemplate = {0};
 
     x -= MAP_OFFSET;
     y -= MAP_OFFSET;
@@ -2959,6 +2965,24 @@ static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
     RemoveObjectEvent(objectEvent);
 }
 
+void CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(u8 objectEventId)
+{
+    if (objectEventId >= OBJECT_EVENTS_COUNT
+     || !gObjectEvents[objectEventId].active
+     || !CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[objectEventId]))
+        return;
+
+    /* ResumeMap has already reset the sprite table.  Retire the reserved
+     * remote object without destroying a slot that was rebound to another
+     * ObjectEvent.  The normal presence update recreates it transactionally. */
+    if (gObjectEvents[objectEventId].spriteId >= MAX_SPRITES
+     || !CoopPresenceRuntime_IsOwnedRendererSprite(
+            objectEventId, gObjectEvents[objectEventId].spriteId))
+        gObjectEvents[objectEventId].active = FALSE;
+    else
+        RemoveObjectEvent(&gObjectEvents[objectEventId]);
+}
+
 void SpawnObjectEventsOnReturnToField(s16 x, s16 y)
 {
     u32 i;
@@ -2966,8 +2990,14 @@ void SpawnObjectEventsOnReturnToField(s16 x, s16 y)
     ClearPlayerAvatarInfo();
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
-        if (gObjectEvents[i].active)
-            SpawnObjectEventOnReturnToField(i, x, y);
+        if (!gObjectEvents[i].active)
+            continue;
+        if (CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[i]))
+        {
+            CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(i);
+            continue;
+        }
+        SpawnObjectEventOnReturnToField(i, x, y);
     }
     CreateReflectionEffectSprites();
     TrySpawnLightSprites(x, y);
@@ -3503,7 +3533,8 @@ u8 GetObjectEventIdByPosition(u16 x, u16 y, u8 elevation)
 
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
-        if (gObjectEvents[i].active)
+        if (gObjectEvents[i].active
+         && !CoopPresenceRuntime_IsRemoteObject(&gObjectEvents[i]))
         {
             if (gObjectEvents[i].currentCoords.x == x
              && gObjectEvents[i].currentCoords.y == y
@@ -3680,9 +3711,12 @@ void SetObjectEventDirection(struct ObjectEvent *objectEvent, enum Direction dir
 
 static const u8 *GetObjectEventScriptPointerByLocalIdAndMap(u8 localId, u8 mapNum, u8 mapGroup)
 {
+    const struct ObjectEventTemplate *objectEventTemplate;
+
     if (localId == OBJ_EVENT_ID_FOLLOWER)
         return EventScript_Follower;
-    return GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup)->script;
+    objectEventTemplate = GetObjectEventTemplateByLocalIdAndMap(localId, mapNum, mapGroup);
+    return objectEventTemplate != NULL ? objectEventTemplate->script : NULL;
 }
 
 const u8 *GetObjectEventScriptPointerByObjectEventId(u8 objectEventId)
@@ -6619,7 +6653,10 @@ u32 GetObjectObjectCollidesWith(struct ObjectEvent *objectEvent, s16 x, s16 y, b
     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
     {
         curObject = &gObjectEvents[i];
-        if (curObject->active && (curObject->movementType != MOVEMENT_TYPE_FOLLOW_PLAYER || objectEvent != &gObjectEvents[gPlayerAvatar.objectEventId]) && curObject != objectEvent
+        if (curObject->active
+         && !CoopPresenceRuntime_IsRemoteObject(curObject)
+         && !CoopPresenceRuntime_IsRemoteObject(objectEvent)
+         && (curObject->movementType != MOVEMENT_TYPE_FOLLOW_PLAYER || objectEvent != &gObjectEvents[gPlayerAvatar.objectEventId]) && curObject != objectEvent
          && !FollowerNPC_IsCollisionExempt(curObject, objectEvent)
          )
         {

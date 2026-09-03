@@ -22,6 +22,10 @@ struct FieldInput
     u8 dpadDirection;
 };
 
+#define FIELD_INPUT_RESULT_NONE 0
+#define FIELD_INPUT_RESULT_SCRIPT_STARTED 1
+#define FIELD_INPUT_RESULT_CONSUMED_NO_LOCK 2
+
 void FieldClearPlayerInput(struct FieldInput *pStruct);
 void FieldGetPlayerInput(struct FieldInput *pStruct, u16 keys, u16 heldKeys);
 int ProcessPlayerFieldInput(struct FieldInput *pStruct);

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/presence_runtime.h"
 #include "overworld.h"
 #include "battle_pyramid.h"
 #include "battle_setup.h"
@@ -619,6 +620,7 @@ void ApplyCurrentWarp(void)
 {
     gLastUsedWarp = gSaveBlock1Ptr->location;
     gSaveBlock1Ptr->location = sWarpDestination;
+    CoopPresenceRuntime_OnWarpCommit();
     sFixedDiveWarp = sDummyWarpData;
     sFixedHoleWarp = sDummyWarpData;
 }
@@ -1633,14 +1635,17 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
     CancelSignPostMessageBox(&inputStruct);
     if (!ArePlayerFieldControlsLocked())
     {
-        if (ProcessPlayerFieldInput(&inputStruct) == 1)
+        switch (ProcessPlayerFieldInput(&inputStruct))
         {
+        case FIELD_INPUT_RESULT_SCRIPT_STARTED:
             LockPlayerFieldControls();
             HideMapNamePopUpWindow();
-        }
-        else
-        {
+            break;
+        case FIELD_INPUT_RESULT_CONSUMED_NO_LOCK:
+            break;
+        default:
             PlayerStep(inputStruct.dpadDirection, newKeys, heldKeys);
+            break;
         }
     }
     // If stop running but keep holding B -> fix follower frame.
@@ -1651,7 +1656,10 @@ static void DoCB1_Overworld(u16 newKeys, u16 heldKeys)
 void CB1_Overworld(void)
 {
     if (gMain.callback2 == CB2_Overworld)
+    {
+        CoopPresenceRuntime_Update();
         DoCB1_Overworld(gMain.newKeys, gMain.heldKeys);
+    }
 }
 
 #define TINT_NIGHT Q_8_8(0.456) | Q_8_8(0.456) << 8 | Q_8_8(0.615) << 16
