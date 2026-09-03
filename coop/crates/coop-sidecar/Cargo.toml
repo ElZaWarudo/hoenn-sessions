@@ -5,12 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+coop-cloud = { path = "../coop-cloud" }
 coop-protocol = { path = "../coop-protocol" }
 crc32fast.workspace = true
+futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite = { workspace = true, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
+url.workspace = true
 uuid.workspace = true
 
 [lints]
