@@ -300,6 +300,25 @@ impl MintRealtimeTicketResponse {
         self.expires_at
     }
 
+    /// Consumes the response and returns its owned fields.
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        RealtimeVersion,
+        RuntimeLeaseFence,
+        RealtimeTicket,
+        UnixTimestampMillis,
+    ) {
+        let Self {
+            realtime_version,
+            runtime,
+            ticket,
+            expires_at,
+        } = self;
+        (realtime_version, runtime, ticket, expires_at)
+    }
+
     /// Correlates only the exact V1 and revision-independent runtime fence.
     #[must_use]
     pub fn matches_request(&self, request: &MintRealtimeTicketRequest) -> bool {
@@ -989,6 +1008,23 @@ mod tests {
             serde_json::to_value(&response).unwrap()["expires_at"],
             json!(30_001)
         );
+    }
+
+    #[test]
+    fn mint_response_into_parts_moves_all_owned_fields() {
+        let ticket = RealtimeTicket::from_bytes([1; 32]).unwrap();
+        let ticket_fingerprint = ticket.fingerprint();
+        let response =
+            MintRealtimeTicketResponse::v1(runtime(), ticket, UnixTimestampMillis::new(30_001))
+                .unwrap();
+
+        let (realtime_version, returned_runtime, returned_ticket, expires_at) =
+            response.into_parts();
+
+        assert_eq!(realtime_version, RealtimeVersion::v1());
+        assert_eq!(returned_runtime, runtime());
+        assert_eq!(returned_ticket.fingerprint(), ticket_fingerprint);
+        assert_eq!(expires_at, UnixTimestampMillis::new(30_001));
     }
 
     #[test]
