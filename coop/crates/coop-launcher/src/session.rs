@@ -1762,6 +1762,9 @@ impl SessionLifecycle {
                             .await
                             .map(|_| ())
                     }
+                    Ok(SupervisorEvent::Control(ControlEvent::RomPresenceReset)) => {
+                        Err(SessionError::CheckpointNotAuthorized)
+                    }
                     Ok(SupervisorEvent::Control(_)) => Ok(()),
                     Err(error) => Err(error),
                 },
@@ -1801,6 +1804,9 @@ impl SessionLifecycle {
                         .checkpoint_with_deadline(api, &mut children.control, ready)
                         .await
                         .map(|_| ());
+                }
+                SupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
+                    return Err(SessionError::CheckpointNotAuthorized);
                 }
                 SupervisorEvent::Control(_) => {}
             }
@@ -3158,6 +3164,11 @@ mod lifecycle_tests {
                 }
                 coop_sidecar::control::ControlCommand::ShutdownRequest(_) => {
                     panic!("checkpoint fixture must not receive shutdown")
+                }
+                coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
+                | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
+                | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_) => {
+                    panic!("checkpoint fixture must not receive presence lifecycle")
                 }
             };
             let result = ControlEvent::CommandResult {
