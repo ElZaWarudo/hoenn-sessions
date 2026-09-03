@@ -448,7 +448,7 @@ async fn run() -> Result<(), CliError> {
         let _ = tokio::signal::ctrl_c().await;
     };
     let lifecycle_result = session
-        .run_until_shutdown(&api, &mut children, shutdown)
+        .run_until_shutdown_with_realtime(&api, &mut children, shutdown)
         .await;
     let child_result = children.stop().await;
     if !should_release_after_children_stop(&child_result) {
