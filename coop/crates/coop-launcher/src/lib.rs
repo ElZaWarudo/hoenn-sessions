@@ -7,6 +7,7 @@ pub mod compat;
 pub mod epoch;
 pub mod keychain;
 pub mod process;
+pub mod realtime;
 pub mod session;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
@@ -20,6 +21,9 @@ pub use process::{
     JobTerminationEvidence, ProcessError, RecoveryDisposition, RootReapEvidence,
     ShutdownDisposition, ShutdownPath, SoftCloseDisposition, SupervisedChildren, SupervisorEvent,
     materialize_bridge_session,
+};
+pub use realtime::{
+    REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES, RealtimeApi, RealtimeFuture, RealtimeHttpError,
 };
 pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};
 
@@ -96,6 +100,7 @@ impl ReqwestCloudApi {
         }
         validate_endpoint(&base)?;
         let client = Client::builder()
+            .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(15))
             .build()
