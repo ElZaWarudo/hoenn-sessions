@@ -127,9 +127,11 @@ pub struct RealtimeEndpoint {
 impl RealtimeEndpoint {
     /// Parses and validates a realtime endpoint.
     ///
-    /// `ws` is deliberately restricted to literal loopback addresses and an
-    /// explicit nonzero port.  `wss` accepts canonical DNS/IP hosts and either
-    /// an explicit nonzero port or its standard TLS port.
+    /// `ws` is deliberately restricted to literal loopback addresses and a
+    /// resolvable nonzero port. The canonical URL form may omit the standard
+    /// port 80 because [`Url`] normalizes an explicit `:80` away. `wss`
+    /// accepts canonical DNS/IP hosts and either an explicit nonzero port or
+    /// its standard TLS port.
     ///
     /// # Errors
     ///
@@ -155,7 +157,7 @@ impl RealtimeEndpoint {
         match url.scheme() {
             "ws" => {
                 let loopback = matches!(url.host_str(), Some("127.0.0.1" | "[::1]"));
-                if !loopback || url.port().is_none_or(|port| port == 0) {
+                if !loopback || url.port_or_known_default().is_none_or(|port| port == 0) {
                     return Err(RealtimeError::InvalidEndpoint);
                 }
             }

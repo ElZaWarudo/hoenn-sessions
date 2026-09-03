@@ -115,10 +115,12 @@ fn realtime_endpoint_boundaries_are_canonical_and_loopback_restricted() {
     assert!(RealtimeEndpoint::new("ws://127.0.0.1:3000/v1/realtime").is_ok());
     assert!(RealtimeEndpoint::new("ws://[::1]:3000/v1/realtime").is_ok());
     assert!(RealtimeEndpoint::new("wss://example.com/v1/realtime").is_ok());
+    let standard_loopback =
+        RealtimeEndpoint::new("ws://127.0.0.1/v1/realtime").expect("standard ws port");
+    assert_eq!(standard_loopback.port(), Some(80));
     for invalid in [
         "http://127.0.0.1:3000/v1/realtime",
         "ws://localhost:3000/v1/realtime",
-        "ws://127.0.0.1/v1/realtime",
         "ws://127.0.0.1:0/v1/realtime",
         "ws://127.0.0.1:3000/v1/realtime/",
         "ws://127.0.0.1:3000/v1/realtime?ticket=secret",
