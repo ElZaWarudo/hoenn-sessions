@@ -1,144 +1,188 @@
-![Pokémon Crossroads Logo](crossroads_logo.png)
+![Pokémon Crossroads logo](crossroads_logo.png)
 
-# Pokémon Crossroads
+# Hoenn Sessions
 
-**Pokémon Crossroads** is a ROM hack of *Pokémon Emerald* developed by the **Crossroads Dev Team**.  
-It combines the regions of **Hoenn**, **Kanto**, and (in development) **Johto** into one seamless, epic adventure — the kind of ultimate Game Boy Advance experience Game Freak might have created if they had merged these regions back in the day.
+**Hoenn Sessions** is an independent development fork of
+[Pokémon Crossroads](https://github.com/eonlynx/pokecrossroads) that explores a
+private, two-player online cooperative mode for the Game Boy Advance game.
+Pokémon Crossroads supplies the multi-region adventure; this fork adds the
+protocol, ROM integration, emulator bridge, launcher, and server foundations
+needed for two players to share that world.
 
-Discussion thread:  
-https://www.pokecommunity.com/threads/pok%C3%A9mon-crossroads-kanto-johto-and-hoenn-joined.536507/
+> **Development status:** this repository contains tested local engineering
+> checkpoints, not a ready-to-install multiplayer release. There is no public
+> Hoenn Sessions server or packaged player launcher yet. To play the original
+> single-player Pokémon Crossroads Beta 1.4, use the
+> [official upstream release](https://github.com/eonlynx/pokecrossroads/releases/tag/Beta-1.4).
 
-## New Discord Link!
-You can join our Discord community with this link: https://discord.gg/ReWmTP86Ap
+## The idea
 
-## Beta 1.4 – Now Available! (April 25, 2026)
+Two players keep separate characters, parties, and saves while appearing in the
+same online world. Neither player is the host or group leader. The service owns
+shared session state, invitations, travel decisions, and save revisions; the
+ROM remains responsible for Pokémon mechanics and the actual game simulation.
 
-The **Beta 1.4** release is live and ready to play.  
-Download the .ups patch file from the [Releases section on GitHub](https://github.com/eonlynx/pokecrossroads/releases).
+Hoenn is the first campaign slice, but identities and progress are designed for
+all four areas represented by the project: Hoenn, Kanto, Johto, and the Sevii
+Islands. Badges, trainers, events, Fly points, and story progress are qualified
+by region so that progress from one region cannot accidentally unlock or alter
+another.
 
-Main devs:
-- eonlynx
-- justgoose
+## Relationship to Pokémon Crossroads
 
-Special thanks to:
-- The pokeemerald-expansion team
+This is a GitHub fork, not the official Pokémon Crossroads repository.
 
-![Pokémon Crossroads Layout](crossroads_layout.jpeg)
+- **Upstream project:** [eonlynx/pokecrossroads](https://github.com/eonlynx/pokecrossroads)
+- **Pinned game base:** Beta 1.4 at commit
+  [`e05c828`](https://github.com/eonlynx/pokecrossroads/commit/e05c82865d38a6638173fd30b2c830d1250aa50d)
+- **Pokémon Crossroads developers:** eonlynx and justgoose
+- **Upstream discussion:** [PokéCommunity thread](https://www.pokecommunity.com/threads/pok%C3%A9mon-crossroads-kanto-johto-and-hoenn-joined.536507/)
+- **Upstream community:** [Pokémon Crossroads Discord](https://discord.gg/ReWmTP86Ap)
 
-### Key Features in Beta 1.4
+Pokémon Crossroads joins Hoenn, Kanto, and the Sevii Islands in one Emerald-based
+adventure, with Johto under development. Its Beta 1.4 includes the Emerald and
+FireRed storylines, cross-region travel, and 16 obtainable Gym Badges. Hoenn
+Sessions preserves that work and its Git history, then layers the co-op systems
+on top.
 
-- Three fully explorable regions: **Hoenn**, **Kanto**, and the **Sevii Islands**.
-- Dual complete storylines: Play through the full stories of *Pokémon Emerald* and *Pokémon FireRed* — in any order you choose.
-- **16 Gym Badges** total (8 from Hoenn + 8 from Kanto), with a major surprise planned for Beta 2.0.
+## What is implemented
 
-### Known Issues
+The following pieces are implemented and covered by repository tests or
+recorded local validation. They should be read as engineering checkpoints, not
+as a claim that the complete product is ready for public play.
 
-- **Trainer Card**: Kanto badges do not currently appear on your Trainer ID card.
-- **Regional Travel**: Travel between Kanto and Hoenn via the Pokémon Centers in **Viridian City** or **Oldale Town**.
-- **Save Compatibility**: Existing *Pokémon Emerald* save files are **not compatible** due to expanded memory allocation. Old saves are unlikely to ever work.
-- Some specific items ported from *FireRed* are currently non-functional.
+- A region-safe Rust protocol shared by the launcher, sidecar, and service.
+- Account registration, login, exclusive character leases, and signed resume
+  packages in the authenticated local service mode.
+- Byte-accurate handling of Pokémon Crossroads' 128 KiB Flash1M saves, including
+  revision checks, lineage checks, regional progress, and optional compatible
+  savestates.
+- Symmetric two-member groups with invitations and atomic group travel across
+  configured Hoenn, Kanto, and Sevii routes.
+- An authenticated realtime presence path using bounded HTTP and WebSocket
+  exchanges, single-use tickets, and explicit session epochs.
+- ROM-side publication of local position and rendering of one safe,
+  nonblocking remote Brendan or May avatar, including interpolation, warps,
+  disappearance, and adjacent interaction observations.
+- A supervised Windows launcher core, local Rust sidecar, and mGBA Lua bridge
+  with strict loopback-only control boundaries and generated ROM address
+  manifests.
 
-### What's Coming in Beta 2.0?
+The latest presence work is recorded in the
+[Phase 5 closeout](docs/orchestration/runs/pokecrossroads-phase5-presence-activation-20260902/phase5-presence-resume-final-closeout.json).
 
-(Clue [here](https://www.pokecommunity.com/threads/pok%C3%A9mon-crossroads-kanto-johto-and-hoenn-joined.536507/) – keeping the mystery as in the original announcement)
+## How the pieces fit together
 
-## Story
+```text
+Pokémon Crossroads ROM
+        ↕ NetBridge memory ABI
+mGBA 0.10.5 + Lua bridge
+        ↕ authenticated loopback connection
+Rust launcher + local sidecar
+        ↕ authenticated HTTP / WebSocket
+Rust co-op service
+```
 
-What if Game Freak had built the ultimate Game Boy Advance Pokémon adventure?
+The launcher validates the selected ROM and supported mGBA executable before a
+session begins. The Lua bridge moves bounded messages between emulated memory
+and the local sidecar. The sidecar translates those messages into authenticated
+service traffic without putting account credentials or service tickets inside
+the ROM.
 
-**Pokémon Crossroads** lets you step into the shoes of a young trainer journeying across not just Hoenn, but also Kanto and (coming soon) Johto — all connected seamlessly into one grand storyline.  
-Built on the powerful **pokeemerald-expansion** engine, we've integrated systems to bring these worlds to life authentically.
+See [the co-op workspace guide](coop/README.md) and
+[the mGBA bridge guide](bridge/README.md) for the detailed boundaries and test
+flows.
 
-## How to Patch the ROM (Play the Beta)
+## What remains before a public release
 
-You will need a legally obtained copy of **Pokémon Emerald (U)** (USA version, .gba file).
+- Production PostgreSQL and object-storage adapters, deployment, backup, and
+  garbage-collection operations.
+- A packaged graphical launcher and a supported player onboarding flow.
+- Full interactive conformance testing with the pinned stock mGBA build, the
+  Lua bridge, two live game sessions, checkpoints, reconnects, and shutdown.
+- Server-authorized gameplay progression and deterministic cooperative battle
+  synchronization.
+- Resolution of the remaining local process-hardening and first-save enrollment
+  risks.
+- Clear upstream permission or licensing terms for redistribution.
 
-1. Go to: https://www.marcrobledo.com/RomPatcher.js/legacy/
-2. Click "ROM file" and upload your **Pokemon - Emerald Version (U).gba**
-3. Click "Patch file" and upload the **pokemon_crossroads_beta1.4.ups** file from our Releases
-4. Wait for the green checkmark to appear
-5. Click "Apply patch"
-6. The patched ROM (**pokemon_crossroads_beta1.4.gba**) will download automatically
+The maintained list of open engineering and distribution constraints is in
+[`docs/swarm/blockers.yaml`](docs/swarm/blockers.yaml).
 
-Play the resulting .gba file on your favorite GBA emulator.
+## Development setup
 
-## Recommended Emulators
+Clone this fork and keep the original project available as `upstream`:
 
-- **PC / Mac / Linux**: [mGBA](https://mgba.io/) (highly recommended — best accuracy and debugging)
-- **Android**: Pizza Boy GBA, Lemuroid, or RetroArch (with mGBA core)
-- **iOS**: Delta, RetroArch (with mGBA core), or Ignited
-- **Handhelds** (Steam Deck, Anbernic, etc.): RetroArch with mGBA core
+```bash
+git clone https://github.com/ElZaWarudo/hoenn-sessions.git
+cd hoenn-sessions
+git remote add upstream https://github.com/eonlynx/pokecrossroads.git
+```
 
-## For Developers – How to Compile
+### Build the ROM
 
-This project is based on **pokeemerald-expansion** with custom multi-region features.
+You need a compatible `arm-none-eabi` toolchain. Follow
+[`INSTALL.md`](INSTALL.md) for the operating-system-specific setup, then build
+the modern target:
 
-### Requirements
-- devkitARM (version 65 or older recommended for compatibility)
-- git, make, python3, and other standard build tools
+```bash
+make modern
+```
 
-### Steps
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/eonlynx/pokecrossroads.git
-   cd pokecrossroads
-   ```
-2. (Optional but recommended) Initialize submodules if any are present:
-   ```bash
-   git submodule update --init --recursive
-   ```
-3. Build using the modern compiler:
-   ```bash
-   make modern
-   ```
-   - This produces `poke_crossroads.gba` in the project root.
-   - Use `make clean` first if you want to rebuild from scratch.
+The build produces `pokeemerald.gba`. ROMs, BIOS files, saves, savestates, and
+generated private session files must not be committed. Use only game material
+you obtained legally.
 
-For full setup details check [INSTALL.md](INSTALL.md).
+### Validate the co-op workspace
 
-**Note**: This project is not yet compatible with the latest Porymap versions. Use **Porymap 5** for mapping work.
+The Rust workspace currently targets Rust 1.93.1. From the repository root:
 
-## Current Progress
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+python -m unittest discover -s tools/tests -p "test_*.py"
+```
 
-Development is moving steadily!
+The bounded Phase 2 integration smoke uses local adapters and publishes no
+service to the network:
 
-Completed core systems:
+```bash
+python tools/smoke_phase2.py --local
+```
 
-- ✅ Region switching: Seamless transitions between Hoenn, Kanto, and Johto with proper flag handling.
-- ✅ Map integration: All major Kanto overworlds ported and functional with *FireRed* layouts and palettes.
-- ✅ Multi-region minimaps: Each region displays its own map in the AreaNav with correct location names.
-- ✅ Updated Fly system: Respects your current region and available landing points without cross-region bugs.
+Running the complete emulator path also requires the pinned official mGBA
+0.10.5 Windows x64 Qt build, a matching locally built ROM, a generated bridge
+manifest, and manual loading of `bridge/main.lua`. The bridge guide documents
+that process and its current limitations.
 
-Current focus: Porting events, scripts, gym logic, dialogues, and cutscenes from Johto and Kanto into the Emerald engine.
+## Credits and project identity
 
-**Actively looking for scripters and event designers** familiar with Gen III decompilation!
+Hoenn Sessions exists because of the work already present in Pokémon
+Crossroads and pokeemerald-expansion. Preserving the upstream commit history is
+intentional: authorship should remain visible at the commit and file level.
 
-## Team & Help Wanted
+- **Pokémon Crossroads:** eonlynx, justgoose, and the Crossroads Dev Team
+- **Game base:** [pokeemerald-expansion](https://github.com/rh-hideout/pokeemerald-expansion)
+- **Engine logic:** cawtds for importing FireRed logic into Emerald
+- **Travel system:** AsparagusEduardo for the Kanto/Hoenn travel work
+- **Sprites:** @h y o for the Gold / Ethan sprites
+- **Hoenn Sessions co-op work:** ElZaWarudo and contributors to this fork
 
-Building a four-region adventure is a massive project.  
-If you're a scripter, mapper, composer, or programmer, we'd love your help.
+The full inherited contributor list is preserved in [`CREDITS.md`](CREDITS.md).
 
-To contribute:
-- Fork / join the repository: [https://github.com/eonlynx/pokecrossroads](https://github.com/eonlynx/pokecrossroads)
-- Join the discussion: [PokeCommunity Thread](https://www.pokecommunity.com/threads/pok%C3%A9mon-crossroads-kanto-johto-and-hoenn-joined.536507/)
-- Join the community: [Discord Server](https://discord.gg/ReWmTP86Ap)
+The pinned Pokémon Crossroads revision does not contain a top-level license.
+This fork's history and credits record provenance, but they do not create new
+redistribution rights. Confirm permission with the relevant upstream
+maintainers before redistributing source, assets, patches, or binaries.
 
-## Credits
+Pokémon and related properties belong to their respective owners. This is an
+unofficial fan project and is not affiliated with Nintendo, Creatures Inc.,
+Game Freak, or The Pokémon Company.
 
-- **Game Base**: pokeemerald-expansion by rh-hideout.
-- **Engine Logic**: cawtds for importing FireRed logic into Emerald.
-- **Travel System**: AsparagusEduardo for fixing Kanto/Hoenn travel.
-- **Sprites**: @h y o for Gold / Ethan sprites.
-- **Community**: Special thanks to the decompilation and ROM hacking communities.
+## Reporting issues
 
-Full and continuously updated credits available on the [GitHub repository](https://github.com/eonlynx/pokecrossroads).
-
-## Reporting Bugs
-
-Please report all issues, glitches, or oddities on the [GitHub Issues page](https://github.com/eonlynx/pokecrossroads/issues).  
-You can also post in the [PokeCommunity thread](https://www.pokecommunity.com/threads/pok%C3%A9mon-crossroads-kanto-johto-and-hoenn-joined.536507/).
-
-Your feedback helps make the project better!
-
-Thanks for playing **Pokémon Crossroads**!  
-Enjoy the journey across the regions!
+Use [this fork's issue tracker](https://github.com/ElZaWarudo/hoenn-sessions/issues)
+for Hoenn Sessions launcher, server, bridge, save, or multiplayer work. Report
+issues that reproduce in the unmodified Pokémon Crossroads release to the
+[upstream issue tracker](https://github.com/eonlynx/pokecrossroads/issues).
