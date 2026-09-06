@@ -13,4 +13,9 @@ void SaveForBattleTowerLink(void);
 void HideStartMenu(void);
 void AppendToList(u8 *list, u8 *pos, u8 newEntry);
 
+#if TESTING
+u8 CoopStartMenu_TestBuildNormal(void);
+u8 CoopStartMenu_TestVisibleCount(void);
+#endif
+
 #endif // GUARD_START_MENU_H

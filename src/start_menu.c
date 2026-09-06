@@ -34,6 +34,7 @@
 #include "safari_zone.h"
 #include "save.h"
 #include "coop/net_bridge.h"
+#include "coop/online.h"
 #include "scanline_effect.h"
 #include "script.h"
 #include "sound.h"
@@ -51,6 +52,9 @@
 #include "constants/battle_frontier.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#include "constants/characters.h"
+
+#define START_MENU_VISIBLE_ACTIONS 8
 
 // Menu actions
 enum
@@ -70,6 +74,7 @@ enum
     MENU_ACTION_PYRAMID_BAG,
     MENU_ACTION_DEBUG,
     MENU_ACTION_DEXNAV,
+    MENU_ACTION_ONLINE,
 };
 
 // Save status
@@ -89,7 +94,8 @@ EWRAM_DATA static u8 sSafariBallsWindowId = 0;
 EWRAM_DATA static u8 sBattlePyramidFloorWindowId = 0;
 EWRAM_DATA static u8 sStartMenuCursorPos = 0;
 EWRAM_DATA static u8 sNumStartMenuActions = 0;
-EWRAM_DATA static u8 sCurrentStartMenuActions[9] = {0};
+EWRAM_DATA static u8 sCurrentStartMenuActions[10] = {0};
+EWRAM_DATA static u8 sStartMenuScroll = 0;
 EWRAM_DATA static s8 sInitStartMenuData[2] = {0};
 
 EWRAM_DATA static u8 (*sSaveDialogCallback)(void) = NULL;
@@ -116,6 +122,7 @@ static bool8 StartMenuBattlePyramidRetireCallback(void);
 static bool8 StartMenuBattlePyramidBagCallback(void);
 static bool8 StartMenuDebugCallback(void);
 static bool8 StartMenuDexNavCallback(void);
+static bool8 StartMenuOnlineCallback(void);
 
 // Menu callbacks
 static bool8 SaveStartCallback(void);
@@ -196,6 +203,7 @@ static const struct WindowTemplate sWindowTemplate_PyramidPeak = {
 };
 
 static const u8 sText_MenuDebug[] = _("DEBUG");
+static const u8 sText_MenuOnline[] = _("ONLINE");
 
 static const struct MenuAction sStartMenuItems[] =
 {
@@ -214,6 +222,7 @@ static const struct MenuAction sStartMenuItems[] =
     [MENU_ACTION_PYRAMID_BAG]     = {gText_MenuBag,     {.u8_void = StartMenuBattlePyramidBagCallback}},
     [MENU_ACTION_DEBUG]           = {sText_MenuDebug,   {.u8_void = StartMenuDebugCallback}},
     [MENU_ACTION_DEXNAV]          = {gText_MenuDexNav,  {.u8_void = StartMenuDexNavCallback}},
+    [MENU_ACTION_ONLINE]          = {sText_MenuOnline,  {.u8_void = StartMenuOnlineCallback}},
 };
 
 static const struct BgTemplate sBgTemplates_LinkBattleSave[] =
@@ -354,6 +363,7 @@ static void BuildNormalStartMenu(void)
         AddStartMenuAction(MENU_ACTION_POKENAV);
 
     AddStartMenuAction(MENU_ACTION_PLAYER);
+    AddStartMenuAction(MENU_ACTION_ONLINE);
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
     AddStartMenuAction(MENU_ACTION_EXIT);
@@ -373,6 +383,28 @@ static void BuildDebugStartMenu(void)
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
 }
+
+#if TESTING
+u8 CoopStartMenu_TestBuildNormal(void)
+{
+    sNumStartMenuActions = 0;
+    BuildNormalStartMenu();
+    return sNumStartMenuActions;
+}
+
+#endif
+
+static u8 StartMenuVisibleCount(void)
+{
+    return min(sNumStartMenuActions, START_MENU_VISIBLE_ACTIONS);
+}
+
+#if TESTING
+u8 CoopStartMenu_TestVisibleCount(void)
+{
+    return StartMenuVisibleCount();
+}
+#endif
 
 static void BuildSafariZoneStartMenu(void)
 {
@@ -501,18 +533,19 @@ static bool32 PrintStartMenuActions(s8 *pIndex, u32 count)
 
     do
     {
-        if (sStartMenuItems[sCurrentStartMenuActions[index]].func.u8_void == StartMenuPlayerNameCallback)
+        u8 action = sCurrentStartMenuActions[index + sStartMenuScroll];
+        if (sStartMenuItems[action].func.u8_void == StartMenuPlayerNameCallback)
         {
-            PrintPlayerNameOnWindow(GetStartMenuWindowId(), sStartMenuItems[sCurrentStartMenuActions[index]].text, 8, (index << 4) + 9);
+            PrintPlayerNameOnWindow(GetStartMenuWindowId(), sStartMenuItems[action].text, 8, (index << 4) + 9);
         }
         else
         {
-            StringExpandPlaceholders(gStringVar4, sStartMenuItems[sCurrentStartMenuActions[index]].text);
+            StringExpandPlaceholders(gStringVar4, sStartMenuItems[action].text);
             AddTextPrinterParameterized(GetStartMenuWindowId(), FONT_NORMAL, gStringVar4, 8, (index << 4) + 9, TEXT_SKIP_DRAW, NULL);
         }
 
         index++;
-        if (index >= sNumStartMenuActions)
+        if (index >= StartMenuVisibleCount())
         {
             *pIndex = index;
             return TRUE;
@@ -526,6 +559,41 @@ static bool32 PrintStartMenuActions(s8 *pIndex, u32 count)
     return FALSE;
 }
 
+static void DrawStartMenuScrollHints(void)
+{
+    static const u8 up[] = {CHAR_UP_ARROW, EOS};
+    static const u8 down[] = {CHAR_DOWN_ARROW, EOS};
+    if (sStartMenuScroll != 0)
+        AddTextPrinterParameterized(GetStartMenuWindowId(), FONT_SMALL_NARROWER, up, 24, 0, TEXT_SKIP_DRAW, NULL);
+    if (sStartMenuScroll + StartMenuVisibleCount() < sNumStartMenuActions)
+        AddTextPrinterParameterized(GetStartMenuWindowId(), FONT_SMALL_NARROWER, down, 40, 0, TEXT_SKIP_DRAW, NULL);
+}
+
+static void MoveStartMenuCursor(s8 delta)
+{
+    u8 oldScroll = sStartMenuScroll;
+    s8 index = 0;
+    if (delta < 0)
+        sStartMenuCursorPos = sStartMenuCursorPos == 0 ? sNumStartMenuActions - 1 : sStartMenuCursorPos - 1;
+    else
+        sStartMenuCursorPos = (sStartMenuCursorPos + 1) % sNumStartMenuActions;
+    if (sStartMenuCursorPos < sStartMenuScroll)
+        sStartMenuScroll = sStartMenuCursorPos;
+    if (sStartMenuCursorPos >= sStartMenuScroll + StartMenuVisibleCount())
+        sStartMenuScroll = sStartMenuCursorPos - StartMenuVisibleCount() + 1;
+    if (oldScroll == sStartMenuScroll)
+        Menu_MoveCursor(delta);
+    else
+    {
+        FillWindowPixelBuffer(GetStartMenuWindowId(), PIXEL_FILL(1));
+        PrintStartMenuActions(&index, StartMenuVisibleCount());
+        DrawStartMenuScrollHints();
+        InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16,
+                       StartMenuVisibleCount(), sStartMenuCursorPos - sStartMenuScroll);
+        CopyWindowToVram(GetStartMenuWindowId(), COPYWIN_GFX);
+    }
+}
+
 static bool32 InitStartMenuStep(void)
 {
     s8 state = sInitStartMenuData[0];
@@ -537,11 +605,15 @@ static bool32 InitStartMenuStep(void)
         break;
     case 1:
         BuildStartMenuActions();
+        if (sStartMenuCursorPos >= sNumStartMenuActions)
+            sStartMenuCursorPos = 0;
+        sStartMenuScroll = sStartMenuCursorPos >= StartMenuVisibleCount()
+                        ? sStartMenuCursorPos - StartMenuVisibleCount() + 1 : 0;
         sInitStartMenuData[0]++;
         break;
     case 2:
         LoadMessageBoxAndBorderGfx();
-        DrawStdWindowFrame(AddStartMenuWindow(sNumStartMenuActions), FALSE);
+        DrawStdWindowFrame(AddStartMenuWindow(StartMenuVisibleCount()), FALSE);
         sInitStartMenuData[1] = 0;
         sInitStartMenuData[0]++;
         break;
@@ -557,7 +629,8 @@ static bool32 InitStartMenuStep(void)
             sInitStartMenuData[0]++;
         break;
     case 5:
-        sStartMenuCursorPos = InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, sNumStartMenuActions, sStartMenuCursorPos);
+        DrawStartMenuScrollHints();
+        InitMenuNormal(GetStartMenuWindowId(), FONT_NORMAL, 0, 9, 16, StartMenuVisibleCount(), sStartMenuCursorPos - sStartMenuScroll);
         CopyWindowToVram(GetStartMenuWindowId(), COPYWIN_MAP);
         return TRUE;
     }
@@ -644,13 +717,13 @@ static bool8 HandleStartMenuInput(void)
     if (JOY_NEW(DPAD_UP))
     {
         PlaySE(SE_SELECT);
-        sStartMenuCursorPos = Menu_MoveCursor(-1);
+        MoveStartMenuCursor(-1);
     }
 
     if (JOY_NEW(DPAD_DOWN))
     {
         PlaySE(SE_SELECT);
-        sStartMenuCursorPos = Menu_MoveCursor(1);
+        MoveStartMenuCursor(1);
     }
 
     if (JOY_NEW(A_BUTTON))
@@ -670,6 +743,7 @@ static bool8 HandleStartMenuInput(void)
         if (gMenuCallback != StartMenuSaveCallback
             && gMenuCallback != StartMenuExitCallback
             && gMenuCallback != StartMenuDebugCallback
+            && gMenuCallback != StartMenuOnlineCallback
             && gMenuCallback != StartMenuSafariZoneRetireCallback
             && gMenuCallback != StartMenuBattlePyramidRetireCallback)
         {
@@ -834,6 +908,13 @@ static void HideStartMenuDebug(void)
     PlaySE(SE_SELECT);
     ClearStdWindowAndFrame(GetStartMenuWindowId(), TRUE);
     RemoveStartMenuWindow();
+}
+
+static bool8 StartMenuOnlineCallback(void)
+{
+    HideStartMenuDebug();
+    CoopOnline_Open();
+    return TRUE;
 }
 
 static bool8 StartMenuLinkModePlayerNameCallback(void)
