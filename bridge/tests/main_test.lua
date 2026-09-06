@@ -25,6 +25,8 @@ local resume_output_path = temporary_base .. ".resume.ss1"
 local use_valid_session = false
 local manifest_schema = 2
 local save_schema = 1
+local initialization_attempts = 0
+local rom_initialized = false
 
 local bridge = {}
 
@@ -54,6 +56,8 @@ end
 
 package.loaded.memory = {
   new = function()
+    initialization_attempts = initialization_attempts + 1
+    if not rom_initialized then return nil, "ROM has not initialized its ABI yet" end
     return bridge
   end,
 }
@@ -67,6 +71,11 @@ function client:add(event, callback)
 end
 
 function client:poll()
+end
+
+local closed = false
+function client:close()
+  closed = true
 end
 
 function client:hasdata()
@@ -216,6 +225,21 @@ assert(not stale_save_ok)
 assert(tostring(stale_save_error):match("compatible co%-op save schema"))
 
 save_schema = 1
+-- A permanently missing/mismatched ABI fails once, closes the socket, and
+-- leaves the ROM queues untouched, rather than retrying forever.
+assert(pcall(original_dofile, "bridge/main.lua"))
+for _ = 1, 299 do frame_callback() end
+local startup_ok, startup_error = pcall(frame_callback)
+assert(not startup_ok)
+assert(tostring(startup_error):match("initialization timed out"))
+assert(closed)
+assert(#send_calls == 0)
+frame_callback()
+assert(initialization_attempts == 300)
+initialization_attempts = 0
+reset_count = 0
+warning_messages = {}
+closed = false
 local loaded, load_error = pcall(original_dofile, "bridge/main.lua")
 dofile = original_dofile
 io.open = original_io_open
@@ -231,6 +255,13 @@ assert(reset_count == 1)
 assert(#warning_messages == 1)
 assert(warning_messages[1]:match("resume state was rejected"))
 
+-- Reset returns before the ROM executes AgbMain. Script load must not reject
+-- that fresh RAM or touch queues before a later frame initializes the ABI.
+assert(initialization_attempts == 0)
+frame_callback()
+assert(initialization_attempts == 1)
+assert(#send_calls == 0)
+rom_initialized = true
 frame_callback()
 frame_callback()
 frame_callback()

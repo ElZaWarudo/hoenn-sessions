@@ -139,4 +139,15 @@ bridge:heartbeat()
 bridge:heartbeat()
 assert(core:read32(heartbeat_address) == 2)
 
+-- Stock mGBA exposes emu as userdata, rather than our table test double.
+local native_core = assert(io.tmpfile())
+local native_metatable = debug.getmetatable(native_core)
+debug.setmetatable(native_core, { __index = function(_, name)
+  return function(_, ...) return core[name](core, ...) end
+end })
+local native_bridge, native_error = memory_module.new(native_core, manifest)
+debug.setmetatable(native_core, native_metatable)
+native_core:close()
+assert(native_bridge, native_error)
+
 print("bridge memory tests passed")

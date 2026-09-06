@@ -2,8 +2,10 @@
 
 This directory contains the host-side local implementation checkpoints: the
 region-safe shared protocol, authenticated in-memory service, supervised
-launcher core, and local ROM sidecar. It is a development boundary, not the
-production public service described by the full product specification.
+launcher core, and local ROM sidecar. Phase 5 adds authenticated realtime
+presence and ROM avatar activation. Validate the complete emulator path with
+the [two-player Littleroot procedure](../docs/testing/littleroot-conformance.md).
+It remains a development boundary, not the production public service.
 
 ## Validate
 
@@ -99,9 +101,10 @@ cargo test -p coop-server --test phase2_migration_contract --all-features --lock
 
 Successful travel fixtures seed canonical regional progress internally because
 the gameplay progress-ingestion boundary is not implemented yet. This is a
-certified backend checkpoint, not a complete player-facing journey: there is no
-live sidecar warp delivery, remote avatar rendering, realtime invitation UI,
-reconnect/leave lifecycle, or production PostgreSQL/Firebase adapter.
+certified backend checkpoint, not a complete player-facing journey. Phase 5
+implements remote avatar rendering, but live group warp delivery, realtime
+invitation UI, reconnect/leave lifecycle, and production PostgreSQL/Firebase
+adapters remain outstanding.
 
 This hardened Phase 2 launcher process-supervision slice is supported on
 Windows; it fails closed before probing or spawning child processes on other
@@ -163,8 +166,8 @@ savestates, and BIOS files must remain uncommitted.
 
 ## Deliberately deferred
 
-PostgreSQL/Firebase persistence, live sidecar presence/warp delivery, remote
-sprites and interpolation, realtime group UI and lifecycle, authoritative
+PostgreSQL/Firebase persistence, live group warp delivery,
+realtime group UI and lifecycle, authoritative
 two-client battle-hash validation, deterministic lockstep, and the Tauri
 launcher belong to later milestones. End-to-end authenticated Littleroot
 presence is the next player-visible milestone. The Phase 2 local smoke is an

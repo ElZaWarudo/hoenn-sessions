@@ -120,8 +120,11 @@ if not restored_state then
   if not reset_called then error("mGBA could not reset for canonical SAV fallback") end
 end
 
-local bridge, bridge_error = memory_module.new(emu, manifest)
-if not bridge then error(bridge_error) end
+-- reset() returns before AgbMain initializes the RAM ABI. Validate on frame
+-- callbacks, before any queue access, with a finite startup allowance.
+local bridge
+local initialization_frames = 0
+local MAX_INITIALIZATION_FRAMES = 300
 
 local function is_newer_u32(candidate, baseline)
   local distance = (candidate - baseline) & 0xFFFFFFFF
@@ -338,6 +341,7 @@ local function process_handshake_response()
   receive_buffer = string.sub(receive_buffer, newline + 1)
   if response ~= '{"ok":true}\n' then error("sidecar rejected the bridge handshake") end
   authenticated = true
+  console:log("PokéCrossroads co-op bridge authenticated with the local sidecar")
 end
 
 local function push_inbound_frames()
@@ -424,6 +428,19 @@ callbacks:add("savedataUpdated", function()
 end)
 
 callbacks:add("frame", function()
+  if initialization_frames >= MAX_INITIALIZATION_FRAMES then return end
+  if not bridge then
+    local bridge_error
+    bridge, bridge_error = memory_module.new(emu, manifest)
+    if not bridge then
+      initialization_frames = initialization_frames + 1
+      if initialization_frames >= MAX_INITIALIZATION_FRAMES then
+        client:close()
+        error("ROM bridge initialization timed out: " .. tostring(bridge_error))
+      end
+      return
+    end
+  end
   frame_counter = (frame_counter + 1) & 0xFFFFFFFF
   client:poll()
   if pending_handshake then
@@ -439,4 +456,4 @@ callbacks:add("frame", function()
   if frame_counter % 60 == 0 then bridge:heartbeat() end
 end)
 
-console:log("PokéCrossroads co-op bridge connected to the local sidecar")
+console:log("PokéCrossroads co-op bridge waiting for ROM initialization and authentication")

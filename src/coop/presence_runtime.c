@@ -110,8 +110,9 @@ static bool8 IsOverworldPoseAllowed(void)
         && !gPaletteFade.active
         && !ArePlayerFieldControlsLocked()
         && IsPlayerBindingValid()
-        && (gPlayerAvatar.flags & (PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE))
-           == (PLAYER_AVATAR_FLAG_ON_FOOT | PLAYER_AVATAR_FLAG_CONTROLLABLE);
+        /* CONTROLLABLE is cleared during ordinary PlayerStep movement; field
+         * control locks above are the authority for whether input is safe. */
+        && (gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_ON_FOOT) != 0;
 }
 
 static bool8 LastPoseMatchesLocation(const struct CoopPresencePose *pose,

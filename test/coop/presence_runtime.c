@@ -454,9 +454,9 @@ TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths
     EXPECT_EQ(CoopPresenceRuntime_TryInteract(),
               COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK);
 
-    /* Publication changes to an explicit HIDDEN state when the avatar loses
-     * controllability; the renderer and interaction gate follow that state. */
-    gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT;
+    /* Script-locked field controls hide presence. The engine's CONTROLLABLE
+     * avatar flag instead tracks forced-movement handling, not input locks. */
+    LockPlayerFieldControls();
     EXPECT(CoopPresenceRuntime_GetLocalState(&state));
     EXPECT_EQ(state.pose.player_state, COOP_PRESENCE_PLAYER_HIDDEN);
     EXPECT(CoopPresenceRuntime_EncodeLocalState(
@@ -470,8 +470,7 @@ TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths
 
     /* A fresh lifecycle update recreates the renderer and resets the stale
      * clock before the complete ninety-frame expiry window. */
-    gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT
-        | PLAYER_AVATAR_FLAG_CONTROLLABLE;
+    UnlockPlayerFieldControls();
     update = (struct CoopPresenceUpdate){
         .handle = spawn.handle,
         .server_sequence = 2,
@@ -518,6 +517,55 @@ TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths
     EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
     EXPECT(gObjectEvents[1].active);
     EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop presence ordinary on-foot walking remains visible")
+{
+    struct CoopPresenceSpawn spawn = RuntimeSpawn(18, 1);
+    struct CoopPresenceLocalState state = {0};
+    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    CoopPresenceRuntime_SetSessionEpoch(23);
+
+    /* Ordinary movement clears CONTROLLABLE in PlayerStep. A fresh visible
+     * pose must still publish, without requiring any earlier cached pose. */
+    gPlayerAvatar.flags = PLAYER_AVATAR_FLAG_ON_FOOT;
+    gPlayerAvatar.runningState = MOVING;
+    EXPECT(CoopPresenceRuntime_GetLocalState(&state));
+    EXPECT_EQ(state.pose.player_state, COOP_PRESENCE_PLAYER_OVERWORLD);
+    EXPECT_EQ(state.pose.movement_mode, COOP_PRESENCE_MOVEMENT_WALK);
+    EXPECT_EQ(state.pose.animation_id, COOP_PRESENCE_ANIMATION_LOCOMOTION);
+
+    spawn.state.pose.location.y = 6;
+    spawn.state.pose.warp_sequence = 1;
+    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
+        spawn_bytes, sizeof(spawn_bytes)));
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(gObjectEvents[1].active);
+    EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
+    EXPECT(!gObjectEvents[1].invisible);
+
+    /* Stopping does not restore CONTROLLABLE: idle publication and the remote
+     * renderer must remain visible under the same normal on-foot flags. */
+    gPlayerAvatar.runningState = NOT_MOVING;
+    CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(CoopPresenceRuntime_GetLocalState(&state));
+    EXPECT_EQ(state.pose.player_state, COOP_PRESENCE_PLAYER_OVERWORLD);
+    EXPECT_EQ(state.pose.movement_mode, COOP_PRESENCE_MOVEMENT_IDLE);
+    EXPECT_EQ(state.pose.animation_id, COOP_PRESENCE_ANIMATION_IDLE);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(gObjectEvents[1].active);
+    EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
+    EXPECT(!gObjectEvents[1].invisible);
 
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }

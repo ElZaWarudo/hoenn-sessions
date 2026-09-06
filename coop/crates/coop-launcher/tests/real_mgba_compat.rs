@@ -11,12 +11,15 @@ use coop_launcher::{
     process::{CommandSpec, GuardedMgbaChild, staged_rom_marker_contents, staged_rom_marker_path},
 };
 
-fn wait_for_ready_save(child: &mut GuardedMgbaChild, implicit_save: &Path) {
+fn wait_for_open_save(child: &mut GuardedMgbaChild, implicit_save: &Path) {
     let save_deadline = Instant::now() + Duration::from_secs(3);
     let mut save_ready = false;
     while Instant::now() < save_deadline {
         if fs::metadata(implicit_save)
-            .map(|metadata| metadata.len() == 131_072)
+            // A fresh title-screen boot opens an empty save. Flash1M is
+            // allocated only when the game writes it; this checks startup,
+            // not the separate canonical-save acceptance contract.
+            .map(|metadata| metadata.is_file() && matches!(metadata.len(), 0 | 131_072))
             .unwrap_or(false)
         {
             save_ready = true;
@@ -31,10 +34,7 @@ fn wait_for_ready_save(child: &mut GuardedMgbaChild, implicit_save: &Path) {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert!(
-        save_ready,
-        "valid ROM must create the exact 128 KiB implicit SRAM file"
-    );
+    assert!(save_ready, "valid ROM must open its implicit save file");
     assert!(
         child
             .try_wait()
@@ -111,7 +111,7 @@ fn validates_and_opens_the_pinned_official_mgba_with_a_guarded_rom() {
         "the live ROM integrity guard must deny replacement/deletion"
     );
     let implicit_save = staged_rom.with_extension("sav");
-    wait_for_ready_save(&mut child, &implicit_save);
+    wait_for_open_save(&mut child, &implicit_save);
     let runtime = tokio::runtime::Runtime::new().expect("runtime starts");
     runtime.block_on(async {
         child

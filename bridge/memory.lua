@@ -12,7 +12,7 @@ local function queue_depth(read_index, write_index)
 end
 
 function memory.new(core, manifest)
-  if type(core) ~= "table" or type(manifest) ~= "table" then
+  if (type(core) ~= "table" and type(core) ~= "userdata") or type(manifest) ~= "table" then
     return nil, "core and generated manifest are required"
   end
   if manifest.address < 0x02000000

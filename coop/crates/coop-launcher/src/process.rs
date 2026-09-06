@@ -3705,6 +3705,12 @@ fn isolate_environment(command: &mut Command) {
     if let Some(path) = path {
         command.env("PATH", path);
     }
+    // Winsock expands provider DLL paths through SystemRoot. Without it the
+    // real sidecar exits with WSAEPROVIDERFAILEDINIT before its descriptor.
+    // Use the kernel-owned alias already trusted by the Windows supervisor,
+    // never a caller-controlled SystemRoot environment value.
+    #[cfg(windows)]
+    command.env("SystemRoot", r"\\?\GLOBALROOT\SystemRoot");
 }
 
 async fn startup_failure(startup: ProcessError, child: &mut Child) -> ProcessError {
@@ -3946,6 +3952,40 @@ mod tests {
         process::Command,
         sync::oneshot,
     };
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn isolated_sidecar_environment_supports_winsock_without_credentials() {
+        const CHILD: &str = "COOP_SIDECAR_ENVIRONMENT_TEST_CHILD";
+        const CREDENTIAL: &str = "COOP_SIDECAR_ENVIRONMENT_TEST_CREDENTIAL";
+        if std::env::var_os(CHILD).is_some() {
+            assert!(std::env::var_os(CREDENTIAL).is_none());
+            assert_eq!(
+                std::env::var("SystemRoot").unwrap(),
+                r"\\?\GLOBALROOT\SystemRoot"
+            );
+            let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            assert_ne!(listener.local_addr().unwrap().port(), 0);
+            return;
+        }
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command.args([
+            "--exact",
+            "process::tests::isolated_sidecar_environment_supports_winsock_without_credentials",
+        ]);
+        command.env(CREDENTIAL, "must-not-reach-child");
+        command.env("SystemRoot", r"C:\untrusted-root");
+        super::isolate_environment(&mut command);
+        command.env(CHILD, "1").kill_on_drop(true);
+        let output = tokio::time::timeout(Duration::from_secs(10), command.output())
+            .await
+            .expect("isolated socket test must finish")
+            .expect("isolated test starts");
+        assert!(
+            output.status.success(),
+            "isolated child must bind a loopback socket"
+        );
+    }
 
     fn long_running_child() -> tokio::process::Child {
         #[cfg(windows)]

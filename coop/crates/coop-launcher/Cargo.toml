@@ -31,6 +31,8 @@ windows-native-keyring-store.workspace = true
 windows-spawn.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
+coop-server = { path = "../coop-server" }
 http-body-util.workspace = true
 tower.workspace = true
 

@@ -34,6 +34,7 @@ const PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 // link. The launcher is the signed Windows x64 build, so the real System32
 // taskkill helper is required here.
 const TRUSTED_SYSTEM32_DIRECTORY: &str = r"\\?\GLOBALROOT\SystemRoot\System32";
+const TRUSTED_SYSTEM_ROOT: &str = r"\\?\GLOBALROOT\SystemRoot";
 
 /// Evidence for the one best-effort Qt-friendly close request.  A helper
 /// success is deliberately not an exit claim: the retained process handle is
@@ -888,6 +889,11 @@ fn exit_result_to_unit(result: &io::Result<ExitStatus>) -> io::Result<()> {
 
 fn configure_command(command: &mut Command, path: &Path, args: &[String]) {
     command.env_clear();
+    // Qt and Lua sockets need Winsock provider DLL expansion even when mGBA
+    // is installed outside System32. Keep this OS-owned value independent
+    // of the caller's environment, just like the sidecar boundary.
+    command.env("SystemRoot", TRUSTED_SYSTEM_ROOT);
+    command.env("WINDIR", TRUSTED_SYSTEM_ROOT);
     // The executable is always absolute and its containing directory is the
     // only working-directory authority needed by mGBA.  No ambient PATH or
     // CWD is inherited across this security boundary.
@@ -895,17 +901,12 @@ fn configure_command(command: &mut Command, path: &Path, args: &[String]) {
         && !parent.as_os_str().is_empty()
     {
         command.current_dir(parent);
-        // A command-shell fixture (and Windows CRT startup in general) needs
-        // the system root, but does not need any ambient user environment.
-        // Derive it only for an executable directly under System32 so a
-        // caller-controlled PATH/CWD can never influence this value.
+        // Command-shell fixtures additionally need their exact executable
+        // as ComSpec; no ambient PATH/CWD participates in its selection.
         if parent
             .file_name()
             .is_some_and(|name| name.eq_ignore_ascii_case("System32"))
-            && let Some(system_root) = parent.parent()
         {
-            command.env("SystemRoot", system_root);
-            command.env("WINDIR", system_root);
             command.env("ComSpec", path);
         }
     }
@@ -1056,6 +1057,8 @@ fn spawn_probe_child(
         .map_err(ProbeFailure::Spawn)?;
     let mut command = Command::new(path);
     command.env_clear();
+    command.env("SystemRoot", TRUSTED_SYSTEM_ROOT);
+    command.env("WINDIR", TRUSTED_SYSTEM_ROOT);
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -1063,10 +1066,7 @@ fn spawn_probe_child(
         if parent
             .file_name()
             .is_some_and(|name| name.eq_ignore_ascii_case("System32"))
-            && let Some(system_root) = parent.parent()
         {
-            command.env("SystemRoot", system_root);
-            command.env("WINDIR", system_root);
             command.env("ComSpec", path);
         }
     }
@@ -1192,6 +1192,62 @@ mod tests {
         PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()))
             .join("System32")
             .join("cmd.exe")
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for the production isolated mGBA environment"]
+    fn isolated_mgba_socket_child() {
+        assert_eq!(
+            std::env::var("SystemRoot").unwrap(),
+            super::TRUSTED_SYSTEM_ROOT
+        );
+        assert!(std::env::var_os("COOP_MGBA_TEST_CREDENTIAL").is_none());
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        assert_ne!(socket.local_addr().unwrap().port(), 0);
+    }
+
+    #[tokio::test]
+    async fn non_system32_gameplay_and_probe_support_isolated_sockets() {
+        let executable = std::env::current_exe().unwrap();
+        assert!(!executable.parent().unwrap().ends_with("System32"));
+        let args = [
+            "--exact".to_owned(),
+            "windows_mgba_supervisor::tests::isolated_mgba_socket_child".to_owned(),
+            "--ignored".to_owned(),
+        ];
+        let mut command = windows_spawn::Command::new(&executable);
+        command.env("SystemRoot", r"C:\untrusted-root");
+        command.env("COOP_MGBA_TEST_CREDENTIAL", "must-not-reach-child");
+        super::configure_command(&mut command, &executable, &args);
+        let job = windows_spawn::Job::create().unwrap();
+        job.set_kill_on_close(true).unwrap();
+        let mut child = command
+            .spawn_with(
+                windows_spawn::SpawnOptions::new()
+                    .job(&job)
+                    .drop_policy(windows_spawn::DropPolicy::KillTree),
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(
+                    status.success(),
+                    "isolated gameplay fixture must bind a socket"
+                );
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "isolated gameplay fixture must finish"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let output = super::probe(&executable, &args, Duration::from_secs(10)).unwrap();
+        assert!(
+            output.status.success(),
+            "isolated version-probe fixture must bind a socket"
+        );
     }
 
     #[test]

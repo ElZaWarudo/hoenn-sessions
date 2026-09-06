@@ -55,6 +55,20 @@ fn valid_resume_bytes(bytes: &[u8]) -> bool {
         && bytes.starts_with(&SAVESTATE_PNG_SIGNATURE)
 }
 
+fn initial_presence_eligible(state: &coop_protocol::LocalPresenceStateV1) -> bool {
+    let location = state.pose().location();
+    // Initial presence currently admits only Littleroot. Intro and house poses
+    // are valid bridge state, but must not spend the one realtime attempt.
+    state.pose().player_state() == coop_protocol::PlayerState::Overworld
+        && location.region == coop_protocol::RegionId::Hoenn
+        && coop_protocol::MapCatalog::resolve_coordinates(
+            location.region,
+            location.map_group,
+            location.map_number,
+        )
+        .is_ok_and(|map| map.map == "LITTLEROOT_TOWN")
+}
+
 /// Compares two u32 serial values using the RFC 1982 half-range rule used by
 /// the sidecar. Zero is never a published save sequence.
 #[must_use]
@@ -2167,6 +2181,7 @@ impl SessionLifecycle {
             }
             if let Some(latest @ (generation, _, _)) = children.control.latest_presence_state()
                 && generation == children.control.lifecycle_generation()
+                && initial_presence_eligible(&latest.2)
             {
                 break (generation, latest);
             }
@@ -5026,8 +5041,17 @@ mod lifecycle_tests {
     }
 
     fn realtime_presence_state(sequence: u32) -> LocalPresenceStateV1 {
+        realtime_presence_state_at(sequence, 0, 9, PlayerState::Overworld)
+    }
+
+    fn realtime_presence_state_at(
+        sequence: u32,
+        map_group: u16,
+        map_number: u16,
+        player_state: PlayerState,
+    ) -> LocalPresenceStateV1 {
         let pose = PresencePoseV1::new(
-            WorldLocation::new(RegionId::Hoenn, 1, 0, 4, 5).unwrap(),
+            WorldLocation::new(RegionId::Hoenn, map_group, map_number, 4, 5).unwrap(),
             0,
             Direction::South,
             sequence,
@@ -5035,7 +5059,7 @@ mod lifecycle_tests {
             MovementMode::Idle,
             AnimationId::Idle,
             AvatarId::Brendan,
-            PlayerState::Overworld,
+            player_state,
         )
         .unwrap();
         LocalPresenceStateV1::new(pose, sequence).unwrap()
@@ -5882,11 +5906,25 @@ mod lifecycle_tests {
             }
             websocket_probe.ready_observed.notified().await;
             ready_sent_tx.send(()).unwrap();
-            let interaction = read_websocket_text_for_test(&mut socket).await;
-            assert_eq!(
-                decode_client_realtime_frame(&interaction).unwrap(),
-                ClientRealtimeFrameV1::interact_remote_player(post_ready)
-            );
+            loop {
+                let frame = read_websocket_text_for_test(&mut socket).await;
+                match decode_client_realtime_frame(&frame).unwrap() {
+                    ClientRealtimeFrameV1::PlayerState(state) => {
+                        // The presence timer and interaction queue are independent;
+                        // the checkpoint flood may publish before interaction cutover.
+                        let sequence = state.source_sequence();
+                        assert!((2..=64).contains(&sequence));
+                        assert_eq!(state, realtime_presence_state(sequence));
+                    }
+                    interaction @ ClientRealtimeFrameV1::InteractRemotePlayer(_) => {
+                        assert_eq!(
+                            interaction,
+                            ClientRealtimeFrameV1::interact_remote_player(post_ready)
+                        );
+                        break;
+                    }
+                }
+            }
             interaction_seen_tx.send(()).unwrap();
             let mut remainder = Vec::new();
             socket.read_to_end(&mut remainder).await.unwrap();
@@ -6485,6 +6523,106 @@ mod lifecycle_tests {
         timeout(Duration::from_secs(1), websocket_server)
             .await
             .expect("cutover shutdown joins realtime")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn realtime_activation_waits_for_littleroot_while_keeping_lease_alive() {
+        assert_initial_presence_wait(
+            realtime_presence_state_at(1, 1, 0, PlayerState::Overworld),
+            true,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn realtime_activation_hidden_initial_pose_allows_shutdown_without_mint() {
+        assert_initial_presence_wait(
+            realtime_presence_state_at(1, 0, 9, PlayerState::Hidden),
+            false,
+        )
+        .await;
+    }
+
+    async fn assert_initial_presence_wait(initial: LocalPresenceStateV1, enter_littleroot: bool) {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let _grant_sender = cloud.push_pending_realtime_grant();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let control_cloud = Arc::clone(&cloud);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            write_control_event(&mut stream, &ControlEvent::PlayerState(initial)).await;
+            // Two lease renewals prove the pending lifecycle remains active;
+            // a cached ineligible pose must not consume the one realtime attempt.
+            loop {
+                let observed = control_cloud.heartbeat_observed.notified();
+                if *control_cloud.heartbeats.lock().unwrap() >= 2 {
+                    break;
+                }
+                observed.await;
+            }
+            assert!(control_cloud.realtime_requests.lock().unwrap().is_empty());
+            if enter_littleroot {
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::PlayerState(realtime_presence_state(2)),
+                )
+                .await;
+                control_cloud.realtime_requested.notified().await;
+            }
+            shutdown_tx.send(()).unwrap();
+            if enter_littleroot {
+                let ControlCommand::ShutdownRequest(request) =
+                    read_control_command(&mut stream).await
+                else {
+                    panic!("pending mint must preserve authenticated shutdown")
+                };
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::CommandResult {
+                        command_id: request.command_id,
+                        status: CommandStatus::Applied,
+                        reason: None,
+                    },
+                )
+                .await;
+            }
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let control = ControlChannel::from_stream_for_test(stream);
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            control,
+        );
+        timeout(Duration::from_secs(1), async {
+            while children.control.latest_presence_state().is_none() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("initial ineligible pose is cached before activation");
+        let result = timeout(
+            Duration::from_secs(3),
+            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
+                shutdown_rx.await.unwrap();
+            }),
+        )
+        .await
+        .expect("pending activation and shutdown remain bounded");
+        assert!(result.is_ok(), "pending activation result: {result:?}");
+        assert_eq!(session.realtime_attempted, enter_littleroot);
+        assert_eq!(
+            cloud.realtime_requests.lock().unwrap().len(),
+            usize::from(enter_littleroot)
+        );
+        timeout(Duration::from_secs(1), server)
+            .await
+            .expect("pending activation joins control pumps")
             .unwrap();
     }
 
