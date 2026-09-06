@@ -92,7 +92,7 @@ fn route_definition(id: &str) -> Result<RouteDefinition, Phase2Error> {
         .ok_or(Phase2Error::Forbidden)
 }
 
-fn request_fingerprint<T: serde::Serialize>(
+pub(super) fn request_fingerprint<T: serde::Serialize>(
     domain: &[u8],
     request: &T,
 ) -> Result<[u8; 32], Phase2Error> {
@@ -119,7 +119,7 @@ fn path_fingerprint<T: serde::Serialize>(
     Ok(hasher.finalize().into())
 }
 
-fn authenticate_caller(
+pub(super) fn authenticate_caller(
     state: &super::storage::State,
     actor: AuthenticatedActor,
     character_id: CharacterId,
@@ -145,7 +145,7 @@ fn authenticate_caller(
     Ok(())
 }
 
-fn validate_member(
+pub(super) fn validate_member(
     state: &super::storage::State,
     character_id: CharacterId,
 ) -> Result<(), Phase2Error> {
@@ -167,7 +167,7 @@ fn validate_member(
     Ok(())
 }
 
-fn lease_matches(
+pub(super) fn lease_matches(
     state: &super::storage::State,
     character_id: CharacterId,
     fence: LeaseFence,
@@ -205,7 +205,7 @@ fn active_member_lease(
     Ok(())
 }
 
-fn prune_group_state(state: &mut super::storage::State, now: u64) {
+pub(super) fn prune_group_state(state: &mut super::storage::State, now: u64) {
     state
         .group_invitations
         .retain(|_, invitation| !invitation.consumed && invitation.expires_at > now);
@@ -222,7 +222,7 @@ fn live_invitation_count(state: &super::storage::State, now: u64) -> usize {
         .count()
 }
 
-fn live_idempotency_count(state: &super::storage::State, now: u64) -> usize {
+pub(super) fn live_idempotency_count(state: &super::storage::State, now: u64) -> usize {
     state
         .group_idempotency
         .values()
@@ -230,7 +230,7 @@ fn live_idempotency_count(state: &super::storage::State, now: u64) -> usize {
         .count()
 }
 
-fn idempotency_lookup(
+pub(super) fn idempotency_lookup(
     state: &super::storage::State,
     actor: CharacterId,
     operation: &str,
@@ -253,7 +253,7 @@ fn idempotency_lookup(
     Ok(Some(record.response.clone()))
 }
 
-fn build_invitation_view(
+pub(super) fn build_invitation_view(
     record: &GroupInvitationRecord,
 ) -> Result<GroupInvitationView, Phase2Error> {
     Ok(GroupInvitationView {
@@ -277,7 +277,10 @@ fn group_candidates(store: &Store) -> Result<Vec<GroupId>, Phase2Error> {
         .collect()
 }
 
-fn group_view(state: &super::storage::State, group_id: GroupId) -> Result<GroupView, Phase2Error> {
+pub(super) fn group_view(
+    state: &super::storage::State,
+    group_id: GroupId,
+) -> Result<GroupView, Phase2Error> {
     let record = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
     if record.status != GroupStatus::Active {
         return Err(Phase2Error::NotFound);
@@ -308,6 +311,16 @@ pub(crate) fn create_invitation(
         .validate()
         .map_err(|_| Phase2Error::InvalidRequest)?;
     let fingerprint = request_fingerprint(OP_CREATE.as_bytes(), request)?;
+    create_invitation_with_fingerprint(store, actor, request, OP_CREATE, fingerprint)
+}
+
+pub(super) fn create_invitation_with_fingerprint(
+    store: &Store,
+    actor: AuthenticatedActor,
+    request: &CreateGroupInvitationRequest,
+    operation: &str,
+    fingerprint: [u8; 32],
+) -> Result<CreateGroupInvitationResponse, Phase2Error> {
     let now = store.now();
     let expires_at = now
         .checked_add(GROUP_INVITATION_TTL_MS)
@@ -321,7 +334,7 @@ pub(crate) fn create_invitation(
         if let Some(replay) = idempotency_lookup(
             state,
             actor.character_id,
-            OP_CREATE,
+            operation,
             request.idempotency_key(),
             fingerprint,
             now,
@@ -382,7 +395,7 @@ pub(crate) fn create_invitation(
         state.group_idempotency.insert(
             (
                 actor.character_id,
-                OP_CREATE.to_owned(),
+                operation.to_owned(),
                 request.idempotency_key(),
             ),
             GroupIdempotencyRecord {

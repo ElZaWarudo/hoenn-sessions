@@ -660,10 +660,6 @@ pub(crate) struct CharacterRecord {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum GroupStatus {
     Active,
-    #[allow(
-        dead_code,
-        reason = "terminal group lifecycle is reserved for the later leave unit"
-    )]
     Closed,
 }
 
@@ -685,6 +681,7 @@ pub(crate) struct GroupInvitationRecord {
 
 #[derive(Clone)]
 pub(crate) enum GroupIdempotencyResponse {
+    Online(coop_cloud::OnlineActionResponse),
     Invitation(coop_cloud::CreateGroupInvitationResponse),
     Accept(coop_cloud::AcceptGroupInvitationResponse),
     Travel(coop_cloud::GroupTravelResponse),

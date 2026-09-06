@@ -80,6 +80,7 @@ use thiserror::Error;
 
 pub mod auth;
 pub(crate) mod group_travel;
+mod online;
 pub mod presence;
 pub(crate) mod realtime;
 pub mod saves;
@@ -304,6 +305,8 @@ impl Phase2App {
             .merge(
                 Router::new()
                     .route("/v1/groups/invitations", post(create_group_invitation))
+                    .route("/v1/online/snapshot", post(online_snapshot))
+                    .route("/v1/online/actions", post(online_action))
                     .route(
                         "/v1/groups/invitations/{invitation_id}/accept",
                         post(accept_group_invitation),
@@ -983,6 +986,30 @@ async fn group_no_store(request: Request, next: Next) -> Response {
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+async fn online_snapshot(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::OnlineSnapshotRequest>,
+) -> Result<Json<coop_cloud::OnlineSnapshotResponse>, Phase2Error> {
+    Ok(Json(online::snapshot(
+        &app,
+        actor(&headers, &app)?,
+        &request,
+    )?))
+}
+
+async fn online_action(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::OnlineActionRequest>,
+) -> Result<Json<coop_cloud::OnlineActionResponse>, Phase2Error> {
+    Ok(Json(online::action(
+        &app,
+        actor(&headers, &app)?,
+        &request,
+    )?))
 }
 
 async fn create_group_invitation(

@@ -9,6 +9,7 @@
 pub mod auth;
 pub mod group;
 pub mod ids;
+pub mod online;
 pub mod presence;
 pub mod realtime;
 pub mod resume;
@@ -32,6 +33,10 @@ pub use ids::{
     GroupInvitationId, IdError, IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId,
     Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp,
     UnixTimestampMillis, UserId,
+};
+pub use online::{
+    ONLINE_PAGE_SIZE, OnlineAction, OnlineActionRequest, OnlineActionResponse, OnlineGroup,
+    OnlineInvitation, OnlinePeer, OnlineSnapshotRequest, OnlineSnapshotResponse,
 };
 pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 pub use realtime::{

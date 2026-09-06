@@ -405,6 +405,82 @@ impl fmt::Debug for PresenceService {
 }
 
 impl PresenceService {
+    /// Caller holds the shared runtime transition gate; this method never reacquires it.
+    pub(super) fn online_peers_locked(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<Vec<(coop_cloud::OnlinePeer, CharacterId)>, super::Phase2Error> {
+        let now = self.inner.store.now();
+        self.inner.store.read_transaction(|repository| {
+            let state = self.lock_state();
+            let Some(source) = state
+                .by_character
+                .get(&actor.character_id)
+                .and_then(|handle| state.entries.get(handle))
+            else {
+                return Ok(Vec::new());
+            };
+            if source.actor != actor
+                || source.stable_session
+                    != coop_cloud::StableRuntimeSession::from_lease_fence(&fence)
+                || source.lease_expires_at_ms <= now
+                || now.saturating_sub(source.last_accepted_at_ms) >= PRESENCE_STALE_MS
+            {
+                return Ok(Vec::new());
+            }
+            let mut peers = Vec::new();
+            let repository_valid = |entry: &PresenceEntry| {
+                matches!(
+                    repository_disposition(
+                        repository,
+                        &PresenceSnapshot {
+                            handle: entry.connection.handle,
+                            generation: entry.connection.generation,
+                            actor: entry.actor,
+                            stable_session: entry.stable_session,
+                            character_id: entry.character_id,
+                            channel: entry.partition.channel,
+                        },
+                        now
+                    ),
+                    RepositoryDisposition::Valid { .. }
+                )
+            };
+            if !repository_valid(source) {
+                return Ok(peers);
+            }
+            for target in state.entries.values() {
+                if target.character_id == source.character_id
+                    || target.partition != source.partition
+                    || !target.advertised
+                    || target.state.pose().player_state() != coop_protocol::PlayerState::Overworld
+                    || target.lease_expires_at_ms <= now
+                    || now.saturating_sub(target.last_accepted_at_ms) >= PRESENCE_STALE_MS
+                    || repository
+                        .active_group_by_member
+                        .contains_key(&target.character_id)
+                {
+                    continue;
+                }
+                if repository_valid(target) {
+                    peers.push((
+                        coop_cloud::OnlinePeer {
+                            handle: target.connection.handle,
+                            generation: target.connection.generation,
+                            username: target.username.clone(),
+                        },
+                        target.character_id,
+                    ));
+                }
+                if peers.len() == PRESENCE_MAX_REMOTES {
+                    break;
+                }
+            }
+            Ok(peers)
+        })
+    }
+
     pub(crate) fn new(store: Store) -> Result<Self, super::Phase2Error> {
         let build = super::saves::current_runtime_build_identity()?;
         Ok(Self {
@@ -1594,6 +1670,337 @@ mod tests {
         assert_eq!(second_spawn.state(), &first_state);
         assert_eq!(first_spawn.server_sequence(), 1);
         assert_eq!(second_spawn.server_sequence(), 1);
+    }
+
+    #[test]
+    fn online_hidden_source_can_invite_visible_peer_but_replaced_handle_cannot_retarget() {
+        use coop_cloud::{
+            ApiVersion, OnlineAction, OnlineActionRequest, OnlineActionResponse,
+            OnlineSnapshotRequest,
+        };
+        let app = app_with_unique_test_entropy();
+        let first = account(&app, "onlinealice", "online-1");
+        let second = account(&app, "onlinebob", "online-2");
+        let first_lease = acquire(&app, first, 61);
+        let second_lease = acquire(&app, second, 62);
+        let service = app.presence();
+        let source = service
+            .connect(
+                first,
+                runtime_fence(&first_lease),
+                pose(1, 1, 1, PlayerState::Hidden),
+            )
+            .unwrap();
+        let target = service
+            .connect(
+                second,
+                runtime_fence(&second_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let snapshot = super::super::online::snapshot(
+            &app,
+            first,
+            &OnlineSnapshotRequest {
+                api_version: ApiVersion::V1,
+                fence: first_lease.fence(),
+                incoming_after: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(snapshot.nearby.len(), 1);
+        let peer = &snapshot.nearby[0];
+        let request = OnlineActionRequest {
+            api_version: ApiVersion::V1,
+            fence: first_lease.fence(),
+            idempotency_key: id(coop_cloud::IdempotencyKey::new, 63),
+            action: OnlineAction::Invite {
+                handle: peer.handle,
+                generation: peer.generation,
+            },
+        };
+        let accepted = super::super::online::action(&app, first, &request).unwrap();
+        assert!(matches!(accepted, OnlineActionResponse::Invited { .. }));
+        service.disconnect(target).unwrap();
+        let replacement = service
+            .connect(
+                second,
+                runtime_fence(&second_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        assert_ne!(replacement.handle(), target.handle());
+        assert_ne!(replacement.generation, target.generation);
+        assert_eq!(
+            super::super::online::action(&app, first, &request).unwrap(),
+            accepted
+        );
+        let mut fresh_operation = request;
+        fresh_operation.idempotency_key = id(coop_cloud::IdempotencyKey::new, 64);
+        assert_eq!(
+            super::super::online::action(&app, first, &fresh_operation),
+            Err(super::super::Phase2Error::NotFound)
+        );
+        fresh_operation.action = OnlineAction::Invite {
+            handle: replacement.handle(),
+            generation: target.generation,
+        };
+        assert_eq!(
+            super::super::online::action(&app, first, &fresh_operation),
+            Err(super::super::Phase2Error::NotFound)
+        );
+        fresh_operation.action = OnlineAction::Invite {
+            handle: replacement.handle(),
+            generation: replacement.generation,
+        };
+        fresh_operation.idempotency_key = id(coop_cloud::IdempotencyKey::new, 63);
+        assert_eq!(
+            super::super::online::action(&app, first, &fresh_operation),
+            Err(super::super::Phase2Error::Conflict)
+        );
+        service
+            .submit_state(replacement, pose(2, 1, 2, PlayerState::Hidden))
+            .unwrap();
+        let snapshot = super::super::online::snapshot(
+            &app,
+            first,
+            &OnlineSnapshotRequest {
+                api_version: ApiVersion::V1,
+                fence: first_lease.fence(),
+                incoming_after: None,
+            },
+        )
+        .unwrap();
+        assert!(snapshot.nearby.is_empty());
+        assert_eq!(service.connection_count().unwrap(), 2);
+        service.disconnect(source).unwrap();
+    }
+
+    #[test]
+    fn online_expiry_fencing_and_accept_decline_race_preserve_membership() {
+        use coop_cloud::{ApiVersion, OnlineAction, OnlineActionRequest, OnlineActionResponse};
+        let app = Phase2App::test();
+        let first = account(&app, "onlinecarol", "online-3");
+        let second = account(&app, "onlinedave", "online-4");
+        let first_lease = acquire(&app, first, 71);
+        let second_lease = acquire(&app, second, 72);
+        let create = || {
+            app.create_group_invitation(
+                first,
+                coop_cloud::CreateGroupInvitationRequest::new(
+                    first_lease.fence(),
+                    second.character_id,
+                    coop_cloud::IdempotencyKey::new(Uuid::new_v4()).unwrap(),
+                ),
+            )
+            .unwrap()
+        };
+        let expired = create();
+        app.store
+            .write_transaction(|state| {
+                state
+                    .group_invitations
+                    .get_mut(&expired.invitation_id)
+                    .unwrap()
+                    .expires_at = 0;
+                Ok::<_, super::super::Phase2Error>(())
+            })
+            .unwrap();
+        let mut request = OnlineActionRequest {
+            api_version: ApiVersion::V1,
+            fence: second_lease.fence(),
+            idempotency_key: id(coop_cloud::IdempotencyKey::new, 73),
+            action: OnlineAction::Accept {
+                invitation_id: expired.invitation_id,
+            },
+        };
+        assert_eq!(
+            super::super::online::action(&app, second, &request),
+            Err(super::super::Phase2Error::Expired)
+        );
+        request.fence.current_revision =
+            coop_cloud::Revision::new(second_lease.current_revision.value() + 1);
+        assert_eq!(
+            super::super::online::action(&app, second, &request),
+            Err(super::super::Phase2Error::Authentication)
+        );
+        let invitation = create();
+        let barrier = Arc::new(Barrier::new(3));
+        let mut joins = Vec::new();
+        for (key, action) in [
+            (
+                74,
+                OnlineAction::Accept {
+                    invitation_id: invitation.invitation_id,
+                },
+            ),
+            (
+                75,
+                OnlineAction::Decline {
+                    invitation_id: invitation.invitation_id,
+                },
+            ),
+        ] {
+            let app = app.clone();
+            let barrier = barrier.clone();
+            let fence = second_lease.fence();
+            joins.push(std::thread::spawn(move || {
+                barrier.wait();
+                super::super::online::action(
+                    &app,
+                    second,
+                    &OnlineActionRequest {
+                        api_version: ApiVersion::V1,
+                        fence,
+                        idempotency_key: id(coop_cloud::IdempotencyKey::new, key),
+                        action,
+                    },
+                )
+            }));
+        }
+        barrier.wait();
+        let results: Vec<_> = joins.into_iter().map(|join| join.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        let grouped = results
+            .iter()
+            .any(|result| matches!(result, Ok(OnlineActionResponse::Accepted { .. })));
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(
+                    state
+                        .active_group_by_member
+                        .contains_key(&first.character_id),
+                    grouped
+                );
+                assert_eq!(
+                    state
+                        .active_group_by_member
+                        .contains_key(&second.character_id),
+                    grouped
+                );
+                Ok::<_, super::super::Phase2Error>(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn online_nearby_rejects_foreign_partition_stale_and_invalid_repository_peers() {
+        let app = app_with_unique_test_entropy();
+        let first = account(&app, "onlineeve", "online-5");
+        let second = account(&app, "onlinefrank", "online-6");
+        let third = account(&app, "onlinegrace", "online-7");
+        let first_lease = acquire(&app, first, 81);
+        let second_lease = acquire(&app, second, 82);
+        let third_lease = acquire(&app, third, 83);
+        app.store
+            .write_transaction(|state| {
+                state
+                    .characters
+                    .get_mut(&third.character_id)
+                    .unwrap()
+                    .state
+                    .world_zone
+                    .channel = 2;
+                Ok::<_, super::super::Phase2Error>(())
+            })
+            .unwrap();
+        let service = app.presence();
+        let source = service
+            .connect(
+                first,
+                runtime_fence(&first_lease),
+                pose(1, 1, 1, PlayerState::Hidden),
+            )
+            .unwrap();
+        let target = service
+            .connect(
+                second,
+                runtime_fence(&second_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let foreign = service
+            .connect(
+                third,
+                runtime_fence(&third_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let snapshot = || {
+            super::super::online::snapshot(
+                &app,
+                first,
+                &coop_cloud::OnlineSnapshotRequest {
+                    api_version: coop_cloud::ApiVersion::V1,
+                    fence: first_lease.fence(),
+                    incoming_after: None,
+                },
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            snapshot()
+                .nearby
+                .iter()
+                .map(|peer| peer.handle)
+                .collect::<Vec<_>>(),
+            vec![target.handle()]
+        );
+        let foreign_invite = coop_cloud::OnlineActionRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: first_lease.fence(),
+            idempotency_key: id(coop_cloud::IdempotencyKey::new, 84),
+            action: coop_cloud::OnlineAction::Invite {
+                handle: foreign.handle(),
+                generation: foreign.generation,
+            },
+        };
+        assert_eq!(
+            super::super::online::action(&app, first, &foreign_invite),
+            Err(super::super::Phase2Error::NotFound)
+        );
+        set_liveness(
+            &service,
+            target.handle(),
+            app.store.now() - PRESENCE_STALE_MS,
+        );
+        assert!(snapshot().nearby.is_empty());
+        set_liveness(&service, target.handle(), app.store.now());
+        assert_eq!(snapshot().nearby.len(), 1);
+        app.store
+            .write_transaction(|state| {
+                state.users_by_id.get_mut(&second.user_id).unwrap().disabled = true;
+                Ok::<_, super::super::Phase2Error>(())
+            })
+            .unwrap();
+        assert!(snapshot().nearby.is_empty());
+        app.store
+            .write_transaction(|state| {
+                state.users_by_id.get_mut(&second.user_id).unwrap().disabled = false;
+                Ok::<_, super::super::Phase2Error>(())
+            })
+            .unwrap();
+        set_liveness(
+            &service,
+            source.handle(),
+            app.store.now() - PRESENCE_STALE_MS,
+        );
+        assert!(snapshot().nearby.is_empty());
+        set_liveness(&service, source.handle(), app.store.now());
+        assert_eq!(snapshot().nearby.len(), 1);
+        app.store
+            .write_transaction(|state| {
+                state
+                    .characters
+                    .get_mut(&first.character_id)
+                    .unwrap()
+                    .state
+                    .world_zone
+                    .channel = 2;
+                Ok::<_, super::super::Phase2Error>(())
+            })
+            .unwrap();
+        assert!(snapshot().nearby.is_empty());
     }
 
     #[test]
