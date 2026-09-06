@@ -6,6 +6,7 @@ pub mod auth;
 pub mod compat;
 pub mod epoch;
 pub mod keychain;
+pub mod online;
 pub mod process;
 pub mod realtime;
 pub mod session;
@@ -287,6 +288,22 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn online_snapshot(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::OnlineSnapshotRequest,
+    ) -> online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
+        self.online_snapshot_http(token, request)
+    }
+
+    fn online_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::OnlineActionRequest,
+    ) -> online::OnlineFuture<'_, coop_cloud::OnlineActionResponse> {
+        self.online_action_http(token, request)
+    }
+
     fn acquire<'a>(
         &'a self,
         auth: &'a AuthSession,

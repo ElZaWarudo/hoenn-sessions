@@ -482,7 +482,7 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
     );
     let (mut socket, _) = match connect.await {
         Ok(Ok(connection)) => connection,
-        Ok(Err(_)) => return RealtimeOutcome::TransportFailed,
+        Ok(Err(error)) => return connect_error_outcome(&error),
         Err(_) => {
             return if expiry <= Instant::now() {
                 RealtimeOutcome::Expired
@@ -612,6 +612,16 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
     }
 }
 
+fn connect_error_outcome(error: &tokio_tungstenite::tungstenite::Error) -> RealtimeOutcome {
+    use tokio_tungstenite::tungstenite::Error;
+    match error {
+        Error::Http(_) | Error::HttpFormat(_) | Error::Protocol(_) | Error::Capacity(_) => {
+            RealtimeOutcome::ProtocolViolation
+        }
+        _ => RealtimeOutcome::TransportFailed,
+    }
+}
+
 fn request_for(grant: &RealtimeGrant) -> Result<Request<()>, ()> {
     let authorization = format!("Bearer {}", grant.ticket.expose_secret());
     let mut request = grant
@@ -658,14 +668,16 @@ where
     let message = match message {
         Some(Ok(message)) => message,
         Some(Err(error)) => {
-            return if matches!(
-                error,
-                tokio_tungstenite::tungstenite::Error::Capacity(_)
-                    | tokio_tungstenite::tungstenite::Error::Protocol(_)
-            ) {
-                Receive::Protocol
-            } else {
-                Receive::Transport
+            use tokio_tungstenite::tungstenite::{Error, error::ProtocolError};
+            return match error {
+                Error::Io(_)
+                | Error::ConnectionClosed
+                | Error::AlreadyClosed
+                | Error::Protocol(ProtocolError::ResetWithoutClosingHandshake) => {
+                    Receive::Transport
+                }
+                // Includes malformed UTF-8, frame/protocol and capacity errors.
+                _ => Receive::Protocol,
             };
         }
         None => return Receive::PeerClosed,
@@ -698,7 +710,15 @@ where
             }
         }
         Message::Pong(_) => Receive::Ignored,
-        Message::Close(_) => Receive::PeerClosed,
+        Message::Close(frame) => {
+            // Only an ordinary departure can restart under the same lease.
+            // Policy/auth and protocol closes must never become retry loops.
+            if frame.is_none_or(|frame| matches!(u16::from(frame.code), 1000 | 1001)) {
+                Receive::PeerClosed
+            } else {
+                Receive::Protocol
+            }
+        }
     }
 }
 
@@ -855,4 +875,39 @@ fn expiry_instant(expires_at: UnixTimestampMillis) -> Option<Instant> {
     let now = unix_now().value();
     let remaining = expires_at.value().checked_sub(now)?;
     Some(Instant::now() + Duration::from_millis(remaining))
+}
+
+#[cfg(test)]
+mod online_recovery_tests {
+    use super::*;
+    use tokio_tungstenite::tungstenite::protocol::{CloseFrame, frame::coding::CloseCode};
+
+    #[tokio::test]
+    async fn online_recovery_never_retries_policy_or_protocol_closes() {
+        for code in [1002, 1003, 1007, 1008, 1009] {
+            let mut sink = futures_util::sink::drain();
+            let frame = Message::Close(Some(CloseFrame {
+                code: CloseCode::from(code),
+                reason: "".into(),
+            }));
+            assert!(matches!(
+                receive_frame(Some(Ok(frame)), &mut sink).await,
+                Receive::Protocol
+            ));
+        }
+    }
+
+    #[test]
+    fn online_recovery_upgrade_authorization_failure_is_terminal() {
+        let denied = tokio_tungstenite::tungstenite::Error::Http(Box::new(
+            tokio_tungstenite::tungstenite::http::Response::builder()
+                .status(401)
+                .body(None)
+                .unwrap(),
+        ));
+        assert_eq!(
+            connect_error_outcome(&denied),
+            RealtimeOutcome::ProtocolViolation
+        );
+    }
 }

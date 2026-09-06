@@ -56,11 +56,15 @@ fn valid_resume_bytes(bytes: &[u8]) -> bool {
 }
 
 fn initial_presence_eligible(state: &coop_protocol::LocalPresenceStateV1) -> bool {
-    let location = state.pose().location();
     // Initial presence currently admits only Littleroot. Intro and house poses
     // are valid bridge state, but must not spend the one realtime attempt.
     state.pose().player_state() == coop_protocol::PlayerState::Overworld
-        && location.region == coop_protocol::RegionId::Hoenn
+        && compatible_presence_map(state)
+}
+
+fn compatible_presence_map(state: &coop_protocol::LocalPresenceStateV1) -> bool {
+    let location = state.pose().location();
+    location.region == coop_protocol::RegionId::Hoenn
         && coop_protocol::MapCatalog::resolve_coordinates(
             location.region,
             location.map_group,
@@ -201,23 +205,23 @@ async fn next_checkpoint_input(
         RealtimeSource::Control => tokio::select! {
             biased;
             () = tokio::time::sleep_until(deadline) => CheckpointInput::Deadline,
-            event = control.receive() => CheckpointInput::Control(event),
-            event = realtime.next_event() => CheckpointInput::Realtime(event),
+            event = control.receive_without_online() => CheckpointInput::Control(event),
+            event = realtime.next_checkpoint_event() => CheckpointInput::Realtime(event),
             _ = heartbeat.tick() => CheckpointInput::Heartbeat,
         },
         RealtimeSource::Realtime => tokio::select! {
             biased;
             () = tokio::time::sleep_until(deadline) => CheckpointInput::Deadline,
-            event = realtime.next_event() => CheckpointInput::Realtime(event),
+            event = realtime.next_checkpoint_event() => CheckpointInput::Realtime(event),
             _ = heartbeat.tick() => CheckpointInput::Heartbeat,
-            event = control.receive() => CheckpointInput::Control(event),
+            event = control.receive_without_online() => CheckpointInput::Control(event),
         },
         RealtimeSource::Heartbeat => tokio::select! {
             biased;
             () = tokio::time::sleep_until(deadline) => CheckpointInput::Deadline,
             _ = heartbeat.tick() => CheckpointInput::Heartbeat,
-            event = control.receive() => CheckpointInput::Control(event),
-            event = realtime.next_event() => CheckpointInput::Realtime(event),
+            event = control.receive_without_online() => CheckpointInput::Control(event),
+            event = realtime.next_checkpoint_event() => CheckpointInput::Realtime(event),
         },
     }
 }
@@ -233,8 +237,8 @@ async fn next_realtime_cutover_input<F: Future<Output = ()>>(
         CutoverSource::Control => tokio::select! {
             biased;
             () = shutdown.as_mut() => RealtimeCutoverInput::Shutdown,
-            observation = control.receive() => RealtimeCutoverInput::Control(observation),
-            event = realtime.next_event() => RealtimeCutoverInput::Realtime(event),
+            observation = control.receive_without_online() => RealtimeCutoverInput::Control(observation),
+            event = realtime.next_checkpoint_event() => RealtimeCutoverInput::Realtime(event),
             _ = heartbeat.tick() => RealtimeCutoverInput::Heartbeat,
             () = std::future::ready(()), if realtime.server_ready() => {
                 RealtimeCutoverInput::Activate
@@ -243,19 +247,19 @@ async fn next_realtime_cutover_input<F: Future<Output = ()>>(
         CutoverSource::Realtime => tokio::select! {
             biased;
             () = shutdown.as_mut() => RealtimeCutoverInput::Shutdown,
-            event = realtime.next_event() => RealtimeCutoverInput::Realtime(event),
+            event = realtime.next_checkpoint_event() => RealtimeCutoverInput::Realtime(event),
             _ = heartbeat.tick() => RealtimeCutoverInput::Heartbeat,
             () = std::future::ready(()), if realtime.server_ready() => {
                 RealtimeCutoverInput::Activate
             }
-            observation = control.receive() => RealtimeCutoverInput::Control(observation),
+            observation = control.receive_without_online() => RealtimeCutoverInput::Control(observation),
         },
         CutoverSource::Heartbeat => tokio::select! {
             biased;
             () = shutdown.as_mut() => RealtimeCutoverInput::Shutdown,
             _ = heartbeat.tick() => RealtimeCutoverInput::Heartbeat,
-            observation = control.receive() => RealtimeCutoverInput::Control(observation),
-            event = realtime.next_event() => RealtimeCutoverInput::Realtime(event),
+            observation = control.receive_without_online() => RealtimeCutoverInput::Control(observation),
+            event = realtime.next_checkpoint_event() => RealtimeCutoverInput::Realtime(event),
             () = std::future::ready(()), if realtime.server_ready() => {
                 RealtimeCutoverInput::Activate
             }
@@ -267,8 +271,8 @@ async fn next_realtime_cutover_input<F: Future<Output = ()>>(
                 RealtimeCutoverInput::Activate
             }
             _ = heartbeat.tick() => RealtimeCutoverInput::Heartbeat,
-            observation = control.receive() => RealtimeCutoverInput::Control(observation),
-            event = realtime.next_event() => RealtimeCutoverInput::Realtime(event),
+            observation = control.receive_without_online() => RealtimeCutoverInput::Control(observation),
+            event = realtime.next_checkpoint_event() => RealtimeCutoverInput::Realtime(event),
         },
     }
 }
@@ -339,6 +343,12 @@ where
                 RawSupervisorEvent::Control(ControlEvent::InteractRemotePlayer(_)) => {
                     // Interactions have no meaning until server readiness.
                 }
+                RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
+                    children.control.send(&ControlCommand::OnlineStatus {
+                        session_epoch: active_lease.session_epoch.value(),
+                        status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
+                    }).await?;
+                }
                 RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                     if pending_checkpoint.replace(ready).is_some() {
                         return Err(SessionError::Realtime);
@@ -358,6 +368,20 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    fn online_snapshot(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _request: coop_cloud::OnlineSnapshotRequest,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
+        Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
+    }
+    fn online_action(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _request: coop_cloud::OnlineActionRequest,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::OnlineActionResponse> {
+        Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
+    }
     fn acquire<'a>(
         &'a self,
         auth: &'a AuthSession,
@@ -452,6 +476,8 @@ pub enum SessionError {
     FinalizeConflict,
     #[error("realtime lifecycle failed")]
     Realtime,
+    #[error("presence transport requires an acknowledged replacement")]
+    PresenceRecovery { transport_failure: bool },
 }
 
 #[derive(Clone)]
@@ -2121,13 +2147,13 @@ impl SessionLifecycle {
         result
     }
 
-    /// Runs one generation-fenced realtime presence attempt while preserving
+    /// Runs generation-fenced realtime presence while preserving
     /// the legacy heartbeat, checkpoint, shutdown, and child-supervision
     /// lifecycle.
     ///
-    /// Exactly one attempt is permitted for this `SessionLifecycle`. The only
-    /// mint retry is one typed mint-origin 401 after a required token refresh.
-    /// Every terminal or ambiguous outcome shuts down the attempt and session.
+    /// Once minting starts, this entry point cannot be entered again. Bounded
+    /// internal transport replacements require an acknowledged new presence
+    /// generation under the same lease; protocol and fence failures terminate.
     ///
     /// # Errors
     ///
@@ -2152,10 +2178,6 @@ impl SessionLifecycle {
         result
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the one-attempt lifecycle keeps every terminal cleanup edge visible"
-    )]
     async fn run_until_shutdown_with_realtime_inner<A, F>(
         &mut self,
         api: &A,
@@ -2169,10 +2191,68 @@ impl SessionLifecycle {
         if self.realtime_attempted {
             return Err(SessionError::Realtime);
         }
-
         let mut heartbeat = tokio::time::interval(self.heartbeat_interval());
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut shutdown = Box::pin(shutdown);
+        let mut online = crate::online::OnlineOwner::default();
+        let mut failures = 0_u8;
+        loop {
+            let started = tokio::time::Instant::now();
+            match self
+                .run_realtime_attempt(api, children, &mut shutdown, &mut heartbeat, &mut online)
+                .await
+            {
+                Err(SessionError::PresenceRecovery { transport_failure }) => {
+                    online.invalidate();
+                    if started.elapsed() >= Duration::from_secs(30) {
+                        failures = 0;
+                    }
+                    if transport_failure {
+                        failures += 1;
+                    }
+                    if !self
+                        .rearm_presence(
+                            api,
+                            children,
+                            &mut shutdown,
+                            &mut heartbeat,
+                            failures.max(1),
+                        )
+                        .await?
+                    {
+                        return Ok(());
+                    }
+                    if failures >= 4 {
+                        if !self
+                            .park_presence(api, children, &mut shutdown, &mut heartbeat)
+                            .await?
+                        {
+                            return Ok(());
+                        }
+                        failures = 0;
+                    }
+                }
+                result => return result,
+            }
+        }
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "each attempt retains explicit checkpoint and cleanup ownership"
+    )]
+    async fn run_realtime_attempt<'a, A, F>(
+        &mut self,
+        api: &'a A,
+        children: &mut SupervisedChildren,
+        shutdown: &mut Pin<Box<F>>,
+        heartbeat: &mut tokio::time::Interval,
+        online: &mut crate::online::OnlineOwner<'a>,
+    ) -> Result<(), SessionError>
+    where
+        A: CloudApi + RealtimeApi,
+        F: Future<Output = ()> + Send,
+    {
         let mut pending_checkpoint = None;
 
         let (generation, mut freshest) = loop {
@@ -2186,7 +2266,12 @@ impl SessionLifecycle {
                 break (generation, latest);
             }
             tokio::select! {
-                () = &mut shutdown => {
+                completion = online.next() => {
+                    if let Some(status) = online.finish(completion, self.lease.fence(), children.control.lifecycle_generation())? {
+                        children.control.send(&ControlCommand::OnlineStatus { session_epoch: self.lease.session_epoch.value(), status }).await?;
+                    }
+                }
+                () = shutdown.as_mut() => {
                     let disposition = children
                         .shutdown(self.lease.session_epoch.value(), false)
                         .await;
@@ -2202,6 +2287,9 @@ impl SessionLifecycle {
                         RawSupervisorEvent::Control(
                             ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_),
                         ) => {}
+                        RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
+                            self.start_online(api, online, &mut children.control, request).await?;
+                        }
                         RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                             self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
                         }
@@ -2250,8 +2338,8 @@ impl SessionLifecycle {
             &mut active_lease,
             self.revision,
             children,
-            &mut shutdown,
-            &mut heartbeat,
+            shutdown,
+            heartbeat,
             generation,
             &mut freshest,
             &mut pending_checkpoint,
@@ -2278,8 +2366,8 @@ impl SessionLifecycle {
                     &mut active_lease,
                     self.revision,
                     children,
-                    &mut shutdown,
-                    &mut heartbeat,
+                    shutdown,
+                    heartbeat,
                     generation,
                     &mut freshest,
                     &mut pending_checkpoint,
@@ -2332,6 +2420,15 @@ impl SessionLifecycle {
             return Err(SessionError::Realtime);
         }
         freshest = latest;
+        if !compatible_presence_map(&freshest.2) {
+            if let Some(ready) = pending_checkpoint.take() {
+                self.checkpoint_with_deadline(api, &mut children.control, ready)
+                    .await?;
+            }
+            return Err(SessionError::PresenceRecovery {
+                transport_failure: false,
+            });
+        }
         let mut coordinator = Some(
             RealtimeCoordinator::start(grant, generation, freshest.2.clone())
                 .map_err(|_| SessionError::Realtime)?,
@@ -2346,8 +2443,8 @@ impl SessionLifecycle {
                     &mut children.control,
                     ready,
                     coordinator.as_mut().unwrap(),
-                    &mut shutdown,
-                    &mut heartbeat,
+                    shutdown,
+                    heartbeat,
                 )
                 .await
             {
@@ -2360,6 +2457,12 @@ impl SessionLifecycle {
         let mut priority = RealtimeSource::Control;
         while result.is_ok() {
             let realtime = coordinator.as_mut().expect("coordinator remains owned");
+            if !checkpoint_shutdown && realtime.recovery_needed() {
+                result = Err(SessionError::PresenceRecovery {
+                    transport_failure: !realtime.map_changed(),
+                });
+                break;
+            }
             if checkpoint_shutdown {
                 let drain = self
                     .drain_shutdown_checkpoint_with_realtime(api, children, realtime)
@@ -2379,14 +2482,27 @@ impl SessionLifecycle {
                 };
                 break;
             }
-            let input = next_realtime_loop_input(
+            let input = tokio::select! {
+                completion = online.next() => {
+                    match online.finish(completion, self.lease.fence(), children.control.lifecycle_generation()) {
+                        Ok(Some(status)) => {
+                            if let Err(error) = children.control.send(&ControlCommand::OnlineStatus {
+                                session_epoch: self.lease.session_epoch.value(), status,
+                            }).await { result = Err(SessionError::Control(error)); }
+                        }
+                        Ok(None) => {}
+                        Err(error) => result = Err(error),
+                    }
+                    continue;
+                }
+                input = next_realtime_loop_input(
                 children,
                 realtime,
-                &mut shutdown,
-                &mut heartbeat,
+                shutdown,
+                heartbeat,
                 priority,
-            )
-            .await;
+                ) => input,
+            };
             match input {
                 RealtimeLoopInput::Shutdown => {
                     checkpoint_shutdown = true;
@@ -2400,9 +2516,24 @@ impl SessionLifecycle {
                             if children.control.reset_latched()
                                 || children.control.lifecycle_generation() != generation
                                 || latest.as_ref().is_none_or(|latest| latest.0 != generation)
-                                || realtime.update_state(latest.unwrap().2).is_err()
                             {
                                 result = Err(SessionError::Realtime);
+                            } else if let Some((_, _, state)) = latest {
+                                if compatible_presence_map(&state) {
+                                    if realtime.update_state(state).is_err() {
+                                        result = Err(SessionError::Realtime);
+                                    }
+                                } else {
+                                    realtime.request_map_recovery();
+                                }
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request))) => {
+                            if let Err(error) = self
+                                .start_online(api, online, &mut children.control, request)
+                                .await
+                            {
+                                result = Err(error);
                             }
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::InteractRemotePlayer(
@@ -2424,8 +2555,8 @@ impl SessionLifecycle {
                                     &mut children.control,
                                     ready,
                                     realtime,
-                                    &mut shutdown,
-                                    &mut heartbeat,
+                                    shutdown,
+                                    heartbeat,
                                 )
                                 .await
                             {
@@ -2495,7 +2626,13 @@ impl SessionLifecycle {
                             }
                         }
                         Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => {
-                            result = Err(SessionError::Realtime);
+                            result = Err(if realtime.recovery_needed() {
+                                SessionError::PresenceRecovery {
+                                    transport_failure: !realtime.map_changed(),
+                                }
+                            } else {
+                                SessionError::Realtime
+                            });
                         }
                     }
                 }
@@ -2510,11 +2647,173 @@ impl SessionLifecycle {
 
         if let Some(coordinator) = coordinator.take() {
             children.control.disable_lifecycle();
-            if coordinator.stop_and_join().await.is_err() && result.is_ok() {
+            if coordinator.stop_and_join().await.is_err() {
                 result = Err(SessionError::Realtime);
             }
         }
         result
+    }
+
+    async fn start_online<'a, A: CloudApi>(
+        &self,
+        api: &'a A,
+        online: &mut crate::online::OnlineOwner<'a>,
+        control: &mut ControlChannel,
+        request: coop_protocol::OnlineRequest,
+    ) -> Result<(), SessionError> {
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        if let Some(status) = online.start(
+            api,
+            token,
+            self.lease.fence(),
+            control.lifecycle_generation(),
+            request,
+        ) {
+            control
+                .send(&ControlCommand::OnlineStatus {
+                    session_epoch: self.lease.session_epoch.value(),
+                    status,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// After automatic transport retries are exhausted, gameplay continues.
+    /// Only an explicit Online Refresh starts a new bounded attempt budget.
+    async fn park_presence<A: CloudApi, F: Future<Output = ()> + Send>(
+        &mut self,
+        api: &A,
+        children: &mut SupervisedChildren,
+        shutdown: &mut Pin<Box<F>>,
+        heartbeat: &mut tokio::time::Interval,
+    ) -> Result<bool, SessionError> {
+        loop {
+            if children.control.reset_latched() {
+                return Err(SessionError::Realtime);
+            }
+            tokio::select! {
+                biased;
+                () = shutdown.as_mut() => {
+                    self.shutdown_during_realtime_mint(api, children, &mut None).await?;
+                    return Ok(false);
+                }
+                _ = heartbeat.tick() => self.heartbeat(api).await?,
+                event = children.observe_raw() => match event? {
+                    RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
+                        children.control.send(&ControlCommand::OnlineStatus {
+                            session_epoch: self.lease.session_epoch.value(),
+                            status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
+                        }).await?;
+                        if request.action == coop_protocol::OnlineAction::Refresh { return Ok(true); }
+                    }
+                    RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
+                        self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
+                    }
+                    RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_)) => {}
+                    RawSupervisorEvent::Control(_) => return Err(SessionError::Realtime),
+                    child @ (RawSupervisorEvent::SidecarExited(_) | RawSupervisorEvent::MgbaExited(_)) => {
+                        children.settle_raw(child).await?;
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+    }
+
+    async fn rearm_presence<A: CloudApi, F: Future<Output = ()> + Send>(
+        &mut self,
+        api: &A,
+        children: &mut SupervisedChildren,
+        shutdown: &mut Pin<Box<F>>,
+        heartbeat: &mut tokio::time::Interval,
+        attempt: u8,
+    ) -> Result<bool, SessionError> {
+        // The caller has already joined the old transport. During finite
+        // backoff, finish any checkpoint that reached the authenticated FIFO.
+        let backoff = tokio::time::Instant::now() + Duration::from_millis(250 * u64::from(attempt));
+        let deadline = backoff + Duration::from_secs(10);
+        let previous_generation = children.control.lifecycle_generation();
+        let mut command_id = new_command_id();
+        let mut sent = false;
+        let mut rejected = false;
+        let mut pending_checkpoint = None;
+        let mut shutdown_requested = false;
+        loop {
+            if children.control.reset_latched() {
+                return Err(SessionError::Realtime);
+            }
+            if rejected && let Some(ready) = pending_checkpoint.take() {
+                // An explicit rejection proves SESSION_READY was not sent.
+                // Complete the queued checkpoint before making another rearm.
+                self.checkpoint_with_deadline(api, &mut children.control, ready)
+                    .await?;
+                if shutdown_requested {
+                    self.shutdown_during_realtime_mint(api, children, &mut None)
+                        .await?;
+                    return Ok(false);
+                }
+                command_id = new_command_id();
+                sent = false;
+                rejected = false;
+            }
+            tokio::select! {
+                biased;
+                () = shutdown.as_mut(), if !shutdown_requested => {
+                    // A sent handshake must resolve or fail closed before
+                    // cleanup can assert the ROM state is known.
+                    if sent { shutdown_requested = true; }
+                    else {
+                        self.shutdown_during_realtime_mint(api, children, &mut None).await?;
+                        return Ok(false);
+                    }
+                }
+                () = tokio::time::sleep_until(deadline) => return Err(SessionError::Realtime),
+                _ = heartbeat.tick() => self.heartbeat(api).await?,
+                observation = children.observe_raw() => match observation? {
+                    RawSupervisorEvent::Control(ControlEvent::PresenceRearmed { command_id: echoed, session_epoch, rom_sequence })
+                        if sent && !rejected && pending_checkpoint.is_none() && echoed == command_id && session_epoch == self.lease.session_epoch.value() && rom_sequence != 0
+                            && children.control.lifecycle_generation() != previous_generation => {
+                                if shutdown_requested {
+                                    self.shutdown_during_realtime_mint(api, children, &mut None).await?;
+                                    return Ok(false);
+                                }
+                                return Ok(true);
+                            },
+                    RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_)) => {},
+                    RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
+                        children.control.send(&ControlCommand::OnlineStatus {
+                            session_epoch: self.lease.session_epoch.value(),
+                            status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
+                        }).await?;
+                    }
+                    RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) if !sent => {
+                        self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
+                    }
+                    RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
+                        if pending_checkpoint.replace(ready).is_some() { return Err(SessionError::Realtime); }
+                    }
+                    RawSupervisorEvent::Control(ControlEvent::CommandResult {
+                        command_id: echoed, status: CommandStatus::Rejected | CommandStatus::Conflict, ..
+                    }) if sent && !rejected && echoed == command_id => { rejected = true; }
+                    RawSupervisorEvent::Control(_) => return Err(SessionError::Realtime),
+                    child @ (RawSupervisorEvent::SidecarExited(_) | RawSupervisorEvent::MgbaExited(_)) => {
+                        children.settle_raw(child).await?;
+                        return Ok(false);
+                    }
+                },
+                () = tokio::time::sleep_until(backoff), if !sent => {
+                    children.control.send(&ControlCommand::PresenceRearm(coop_sidecar::control::PresenceRearm {
+                        command_id, session_epoch: self.lease.session_epoch.value(),
+                    })).await?;
+                    sent = true;
+                }
+            }
+        }
     }
 
     async fn shutdown_during_realtime_mint<A: CloudApi>(
@@ -2587,7 +2886,7 @@ impl SessionLifecycle {
                 tokio::select! {
                     biased;
                     result = &mut checkpoint => break result,
-                    event = realtime.next_event(), if !terminal => match event {
+                    event = realtime.next_checkpoint_event(), if !terminal => match event {
                         Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
                             if buffered.len() == coop_sidecar::MAX_OWNER_EVENT_QUEUE {
                                 terminal = true;
@@ -2602,12 +2901,16 @@ impl SessionLifecycle {
                 }
             }
         }?;
-        if terminal
+        if terminal && !realtime.recovery_needed()
             || control.reset_latched()
             || control.lifecycle_generation() != realtime.generation()
         {
             control.disable_lifecycle();
             return Err(SessionError::Realtime);
+        }
+        if realtime.recovery_needed() {
+            control.disable_lifecycle();
+            return Ok(RealtimeCheckpointOutcome::Completed);
         }
         for command in buffered {
             control
@@ -2620,9 +2923,13 @@ impl SessionLifecycle {
         if generation != realtime.generation() {
             return Err(SessionError::Realtime);
         }
-        realtime
-            .update_state(state)
-            .map_err(|_| SessionError::Realtime)?;
+        if compatible_presence_map(&state) {
+            realtime
+                .update_state(state)
+                .map_err(|_| SessionError::Realtime)?;
+        } else {
+            realtime.request_map_recovery();
+        }
         let _ = revision;
         Ok(RealtimeCheckpointOutcome::Completed)
     }
@@ -2744,10 +3051,10 @@ impl SessionLifecycle {
                         biased;
                         () = shutdown.as_mut() => RealtimeCheckpointWorkInput::Shutdown,
                         result = &mut checkpoint => RealtimeCheckpointWorkInput::Complete(result),
-                        event = realtime.next_event() => {
+                        event = realtime.next_checkpoint_event() => {
                             RealtimeCheckpointWorkInput::Realtime(event)
                         }
-                        observation = control.receive() => {
+                        observation = control.receive_without_online() => {
                             RealtimeCheckpointWorkInput::Control(observation)
                         }
                     }
@@ -2756,10 +3063,10 @@ impl SessionLifecycle {
                         biased;
                         () = shutdown.as_mut() => RealtimeCheckpointWorkInput::Shutdown,
                         result = &mut checkpoint => RealtimeCheckpointWorkInput::Complete(result),
-                        observation = control.receive() => {
+                        observation = control.receive_without_online() => {
                             RealtimeCheckpointWorkInput::Control(observation)
                         }
-                        event = realtime.next_event() => {
+                        event = realtime.next_checkpoint_event() => {
                             RealtimeCheckpointWorkInput::Realtime(event)
                         }
                     }
@@ -2778,9 +3085,11 @@ impl SessionLifecycle {
                         realtime_first = true;
                     }
                     RealtimeCheckpointWorkInput::Realtime(event) => {
-                        if let Err(error) =
-                            Self::buffer_checkpoint_realtime_event(event, &mut buffered)
-                        {
+                        if let Err(error) = Self::buffer_checkpoint_realtime_event(
+                            event,
+                            &mut buffered,
+                            realtime.recovery_needed(),
+                        ) {
                             terminal = Some(error);
                         }
                         realtime_first = false;
@@ -2800,6 +3109,9 @@ impl SessionLifecycle {
         if control.reset_latched() {
             return Err(SessionError::Realtime);
         }
+        if realtime.recovery_needed() {
+            return Ok(RealtimeCheckpointOutcome::Completed);
+        }
 
         match self
             .establish_realtime_cutover(api, control, realtime, &mut buffered, shutdown, heartbeat)
@@ -2809,6 +3121,9 @@ impl SessionLifecycle {
                 return Ok(RealtimeCheckpointOutcome::Shutdown);
             }
             RealtimeCheckpointOutcome::Completed => {}
+        }
+        if realtime.recovery_needed() {
+            return Ok(RealtimeCheckpointOutcome::Completed);
         }
         for command in buffered {
             control
@@ -2821,9 +3136,13 @@ impl SessionLifecycle {
         if generation != realtime.generation() {
             return Err(SessionError::Realtime);
         }
-        realtime
-            .update_state(state)
-            .map_err(|_| SessionError::Realtime)?;
+        if compatible_presence_map(&state) {
+            realtime
+                .update_state(state)
+                .map_err(|_| SessionError::Realtime)?;
+        } else {
+            realtime.request_map_recovery();
+        }
         let _ = revision;
         Ok(RealtimeCheckpointOutcome::Completed)
     }
@@ -2853,7 +3172,11 @@ impl SessionLifecycle {
                     priority = RealtimeSource::Control;
                 }
                 CheckpointInput::Realtime(event) => {
-                    Self::buffer_checkpoint_realtime_event(event, buffered)?;
+                    Self::buffer_checkpoint_realtime_event(
+                        event,
+                        buffered,
+                        realtime.recovery_needed(),
+                    )?;
                     priority = RealtimeSource::Heartbeat;
                 }
                 CheckpointInput::Control(Err(error)) => {
@@ -2875,9 +3198,11 @@ impl SessionLifecycle {
                         .map_err(|_| SessionError::Realtime)?;
                     priority = RealtimeSource::Realtime;
                 }
-                CheckpointInput::Control(Ok(ControlEvent::RomPresenceReset
+                CheckpointInput::Control(Ok(
+                    ControlEvent::RomPresenceReset
                     | ControlEvent::OnlineRequest(_)
-                    | ControlEvent::PresenceRearmed { .. })) => {
+                    | ControlEvent::PresenceRearmed { .. },
+                )) => {
                     return Err(SessionError::Realtime);
                 }
                 CheckpointInput::Deadline => return Err(SessionError::CheckpointTimeout),
@@ -2888,6 +3213,7 @@ impl SessionLifecycle {
     fn buffer_checkpoint_realtime_event(
         event: Result<RealtimeCoordinatorEvent, crate::realtime::RealtimeCoordinatorError>,
         buffered: &mut Vec<ControlCommand>,
+        recovery_needed: bool,
     ) -> Result<(), SessionError> {
         match event {
             Ok(RealtimeCoordinatorEvent::Ready) => Ok(()),
@@ -2898,19 +3224,29 @@ impl SessionLifecycle {
                 buffered.push(command);
                 Ok(())
             }
+            Ok(RealtimeCoordinatorEvent::Terminal) if recovery_needed => {
+                buffered.clear();
+                Ok(())
+            }
             Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => Err(SessionError::Realtime),
         }
     }
 
     fn update_realtime_from_control(
         control: &ControlChannel,
-        realtime: &RealtimeCoordinator,
+        realtime: &mut RealtimeCoordinator,
     ) -> Result<(), SessionError> {
         let Some((generation, _, state)) = control.latest_presence_state() else {
             return Err(SessionError::Realtime);
         };
         if control.reset_latched() || generation != realtime.generation() {
             return Err(SessionError::Realtime);
+        }
+        if !compatible_presence_map(&state) {
+            realtime.request_map_recovery();
+        }
+        if realtime.recovery_needed() {
+            return Ok(());
         }
         realtime
             .update_state(state)
@@ -2928,6 +3264,9 @@ impl SessionLifecycle {
     ) -> Result<RealtimeCheckpointOutcome, SessionError> {
         let mut priority = CutoverSource::Control;
         loop {
+            if realtime.recovery_needed() {
+                return Ok(RealtimeCheckpointOutcome::Completed);
+            }
             match next_realtime_cutover_input(control, realtime, shutdown, heartbeat, priority)
                 .await
             {
@@ -2943,7 +3282,11 @@ impl SessionLifecycle {
                     priority = CutoverSource::Realtime;
                 }
                 RealtimeCutoverInput::Realtime(event) => {
-                    Self::buffer_checkpoint_realtime_event(event, buffered)?;
+                    Self::buffer_checkpoint_realtime_event(
+                        event,
+                        buffered,
+                        realtime.recovery_needed(),
+                    )?;
                     priority = if realtime.server_ready() {
                         CutoverSource::Activate
                     } else {
@@ -3882,6 +4225,8 @@ mod lifecycle_tests {
         finalize_started: tokio::sync::Notify,
         finalize_completed: tokio::sync::Notify,
         heartbeat_observed: tokio::sync::Notify,
+        online_started: tokio::sync::Notify,
+        online_delay: Mutex<Duration>,
     }
 
     impl TestCloud {
@@ -3918,6 +4263,8 @@ mod lifecycle_tests {
                 finalize_started: tokio::sync::Notify::new(),
                 finalize_completed: tokio::sync::Notify::new(),
                 heartbeat_observed: tokio::sync::Notify::new(),
+                online_started: tokio::sync::Notify::new(),
+                online_delay: Mutex::new(Duration::ZERO),
             }
         }
 
@@ -4003,6 +4350,24 @@ mod lifecycle_tests {
     }
 
     impl CloudApi for TestCloud {
+        fn online_snapshot(
+            &self,
+            _token: coop_cloud::AccessToken,
+            _request: coop_cloud::OnlineSnapshotRequest,
+        ) -> crate::online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
+            let delay = *self.online_delay.lock().unwrap();
+            Box::pin(async move {
+                self.online_started.notify_one();
+                tokio::time::sleep(delay).await;
+                Ok(coop_cloud::OnlineSnapshotResponse {
+                    api_version: coop_cloud::ApiVersion::V1,
+                    nearby: vec![],
+                    incoming: vec![],
+                    incoming_next: None,
+                    group: None,
+                })
+            })
+        }
         fn acquire<'a>(
             &'a self,
             _auth: &'a crate::AuthSession,
@@ -6539,6 +6904,629 @@ mod lifecycle_tests {
             true,
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn online_recovery_transport_replacement_waits_for_ack_and_fresh_pose() {
+        assert_online_recovery(false, false).await;
+    }
+
+    #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the exhaustion proof synchronizes four transports, parked gameplay, and explicit retry"
+    )]
+    async fn online_recovery_exhaustion_parks_without_fifth_automatic_mint() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let original_fence = session.lease.fence();
+        let mut websocket_servers = Vec::new();
+        for _ in 0..4 {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            cloud
+                .push_pending_realtime_grant()
+                .send(realtime_grant(port))
+                .unwrap();
+            websocket_servers.push(tokio::spawn(async move {
+                let mut socket = accept_websocket_for_test(listener).await;
+                read_websocket_text_for_test(&mut socket).await;
+                // Ordinary network EOF, with no malformed protocol frame.
+            }));
+        }
+        let _manual_grant = cloud.push_pending_realtime_grant();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let control_cloud = Arc::clone(&cloud);
+        let control_server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PlayerState(realtime_presence_state(1)),
+            )
+            .await;
+            for sequence in [10, 20, 30, 40] {
+                let ControlCommand::PresenceRearm(rearm) = read_control_command(&mut stream).await
+                else {
+                    panic!("each retired transport must clear ROM state");
+                };
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::PresenceRearmed {
+                        command_id: rearm.command_id,
+                        session_epoch: rearm.session_epoch,
+                        rom_sequence: sequence,
+                    },
+                )
+                .await;
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::PlayerState(realtime_presence_state(sequence + 1)),
+                )
+                .await;
+            }
+            let before = *control_cloud.heartbeats.lock().unwrap();
+            while *control_cloud.heartbeats.lock().unwrap() < before + 3 {
+                control_cloud.heartbeat_observed.notified().await;
+            }
+            assert_eq!(
+                control_cloud.realtime_requests.lock().unwrap().len(),
+                4,
+                "parked compatible gameplay does not automatically mint again"
+            );
+            for (request_id, view_id, action) in [
+                (1, 99, coop_protocol::OnlineAction::Invite),
+                (2, 0, coop_protocol::OnlineAction::Refresh),
+            ] {
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::OnlineRequest(coop_protocol::OnlineRequest {
+                        request_id,
+                        view_id,
+                        action,
+                        page: 0,
+                    }),
+                )
+                .await;
+                let ControlCommand::OnlineStatus { status, .. } =
+                    read_control_command(&mut stream).await
+                else {
+                    panic!("parked menu reports unavailable");
+                };
+                assert_eq!(status.request_id, request_id);
+                assert_eq!(status.result, coop_protocol::OnlineResult::Unavailable);
+                if request_id == 1 {
+                    assert_eq!(control_cloud.realtime_requests.lock().unwrap().len(), 4);
+                }
+            }
+            while control_cloud.realtime_requests.lock().unwrap().len() < 5 {
+                control_cloud.realtime_requested.notified().await;
+            }
+            shutdown_tx.send(()).unwrap();
+            let ControlCommand::ShutdownRequest(request) = read_control_command(&mut stream).await
+            else {
+                panic!("explicit retry retains shutdown");
+            };
+            write_control_event(
+                &mut stream,
+                &ControlEvent::CommandResult {
+                    command_id: request.command_id,
+                    status: CommandStatus::Applied,
+                    reason: None,
+                },
+            )
+            .await;
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            ControlChannel::from_stream_for_test(stream),
+        );
+        timeout(
+            Duration::from_secs(8),
+            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
+                shutdown_rx.await.unwrap();
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(session.lease.fence(), original_fence);
+        assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
+        assert!(children.shutdown_disposition().unwrap().clean());
+        for task in websocket_servers {
+            task.await.unwrap();
+        }
+        control_server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn online_recovery_house_return_keeps_lease_and_replaces_transport() {
+        assert_online_recovery(true, false).await;
+    }
+
+    #[tokio::test]
+    async fn online_recovery_waits_for_checkpoint_commit_before_rearm() {
+        assert_online_recovery(false, true).await;
+    }
+
+    #[tokio::test]
+    async fn online_recovery_shutdown_during_rearm_waits_for_ack_then_drains() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let control_cloud = Arc::clone(&cloud);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let ControlCommand::PresenceRearm(rearm) = read_control_command(&mut stream).await
+            else {
+                panic!("rearm");
+            };
+            shutdown_tx.send(()).unwrap();
+            let before = *control_cloud.heartbeats.lock().unwrap();
+            while *control_cloud.heartbeats.lock().unwrap() < before + 2 {
+                control_cloud.heartbeat_observed.notified().await;
+            }
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PresenceRearmed {
+                    command_id: rearm.command_id,
+                    session_epoch: rearm.session_epoch,
+                    rom_sequence: 8,
+                },
+            )
+            .await;
+            let ControlCommand::ShutdownRequest(request) = read_control_command(&mut stream).await
+            else {
+                panic!("acknowledged rearm permits clean authenticated shutdown");
+            };
+            write_control_event(
+                &mut stream,
+                &ControlEvent::CommandResult {
+                    command_id: request.command_id,
+                    status: CommandStatus::Applied,
+                    reason: None,
+                },
+            )
+            .await;
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            ControlChannel::from_stream_for_test(stream),
+        );
+        let mut shutdown = Box::pin(async {
+            shutdown_rx.await.unwrap();
+        });
+        let mut heartbeat = tokio::time::interval(session.heartbeat_interval());
+        assert!(
+            !timeout(
+                Duration::from_secs(3),
+                session.rearm_presence(
+                    cloud.as_ref(),
+                    &mut children,
+                    &mut shutdown,
+                    &mut heartbeat,
+                    1
+                )
+            )
+            .await
+            .unwrap()
+            .unwrap()
+        );
+        assert!(children.shutdown_disposition().unwrap().clean());
+        assert!(cloud.realtime_requests.lock().unwrap().is_empty());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn online_pending_http_preserves_heartbeat_and_shutdown() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        *cloud.online_delay.lock().unwrap() = Duration::from_secs(30);
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let control_cloud = Arc::clone(&cloud);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            write_control_event(
+                &mut stream,
+                &ControlEvent::OnlineRequest(coop_protocol::OnlineRequest {
+                    request_id: 1,
+                    view_id: 0,
+                    action: coop_protocol::OnlineAction::Refresh,
+                    page: 0,
+                }),
+            )
+            .await;
+            control_cloud.online_started.notified().await;
+            let before = *control_cloud.heartbeats.lock().unwrap();
+            while *control_cloud.heartbeats.lock().unwrap() < before + 2 {
+                control_cloud.heartbeat_observed.notified().await;
+            }
+            shutdown_tx.send(()).unwrap();
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+            assert!(
+                remainder.is_empty(),
+                "cancelled Online work cannot publish during shutdown"
+            );
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            ControlChannel::from_stream_for_test(stream),
+        );
+        timeout(
+            Duration::from_secs(3),
+            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
+                shutdown_rx.await.unwrap();
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(cloud.realtime_requests.lock().unwrap().is_empty());
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the queued checkpoint fixture keeps rejection, commit, and second acknowledgement together"
+    )]
+    async fn online_recovery_rejected_rearm_reconciles_queued_checkpoint() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        std::fs::write(
+            session.workspace.path().join("character.sav"),
+            valid_save(1),
+        )
+        .unwrap();
+        cloud.set_finalize_updates_heartbeat();
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let ControlCommand::PresenceRearm(first) = read_control_command(&mut stream).await
+            else {
+                panic!("rearm");
+            };
+            for event in [
+                ControlEvent::CheckpointReady {
+                    session_epoch: 1,
+                    ready_sequence: 1,
+                },
+                ControlEvent::CommandResult {
+                    command_id: first.command_id,
+                    status: CommandStatus::Rejected,
+                    reason: None,
+                },
+            ] {
+                write_control_event(&mut stream, &event).await;
+            }
+            let ControlCommand::CheckpointGrant(grant) = read_control_command(&mut stream).await
+            else {
+                panic!("rejected rearm must defer to checkpoint");
+            };
+            for event in [
+                ControlEvent::CommandResult {
+                    command_id: grant.command_id,
+                    status: CommandStatus::Applied,
+                    reason: None,
+                },
+                ControlEvent::SaveDataUpdated {
+                    session_epoch: 1,
+                    ready_sequence: 1,
+                    save_sequence: 2,
+                    save_generation: 1,
+                },
+            ] {
+                write_control_event(&mut stream, &event).await;
+            }
+            let ControlCommand::PresenceRearm(second) = read_control_command(&mut stream).await
+            else {
+                panic!("checkpoint commit permits a new rearm");
+            };
+            assert_ne!(first.command_id, second.command_id);
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PresenceRearmed {
+                    command_id: second.command_id,
+                    session_epoch: 1,
+                    rom_sequence: 8,
+                },
+            )
+            .await;
+            let ControlCommand::ShutdownRequest(request) = read_control_command(&mut stream).await
+            else {
+                panic!("shutdown");
+            };
+            write_control_event(
+                &mut stream,
+                &ControlEvent::CommandResult {
+                    command_id: request.command_id,
+                    status: CommandStatus::Applied,
+                    reason: None,
+                },
+            )
+            .await;
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            ControlChannel::from_stream_for_test(stream),
+        );
+        let mut shutdown = Box::pin(std::future::pending());
+        let mut heartbeat = tokio::time::interval(session.heartbeat_interval());
+        assert!(
+            timeout(
+                Duration::from_secs(3),
+                session.rearm_presence(
+                    cloud.as_ref(),
+                    &mut children,
+                    &mut shutdown,
+                    &mut heartbeat,
+                    1
+                )
+            )
+            .await
+            .unwrap()
+            .unwrap()
+        );
+        assert_eq!(session.revision, Revision::new(1));
+        assert!(children.shutdown(1, true).await.clean());
+        server.await.unwrap();
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the recovery proof synchronizes two transports and the control acknowledgement"
+    )]
+    async fn assert_online_recovery(house: bool, checkpoint: bool) {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let mut original_fence = session.lease.fence();
+        if checkpoint {
+            std::fs::write(
+                session.workspace.path().join("character.sav"),
+                valid_save(1),
+            )
+            .unwrap();
+            cloud.set_finalize_delay(Duration::from_millis(100));
+            cloud.set_finalize_updates_heartbeat();
+            original_fence.current_revision = Revision::new(1);
+        }
+        let first_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let first_port = first_listener.local_addr().unwrap().port();
+        let second_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let second_port = second_listener.local_addr().unwrap().port();
+        let first_grant = cloud.push_pending_realtime_grant();
+        let second_grant = cloud.push_pending_realtime_grant();
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        let (old_closed_tx, old_closed_rx) = tokio::sync::oneshot::channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let remote = RemotePlayerSpawnV1::new(
+            PresenceHandle::new(7).unwrap(),
+            1,
+            realtime_presence_state(2),
+            CanonicalUsername::new("may").unwrap(),
+        )
+        .unwrap();
+        let first_remote = remote.clone();
+        let first_server = tokio::spawn(async move {
+            let mut socket = accept_websocket_for_test(first_listener).await;
+            read_websocket_text_for_test(&mut socket).await;
+            for frame in [
+                ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap()),
+                ServerRealtimeFrameV1::remote_player_spawn(first_remote),
+            ] {
+                send_websocket_text_for_test(
+                    &mut socket,
+                    &encode_server_realtime_frame(&frame).unwrap(),
+                )
+                .await;
+            }
+            drop_rx.await.unwrap();
+            if house {
+                let mut remainder = Vec::new();
+                socket.read_to_end(&mut remainder).await.unwrap();
+                assert!(
+                    remainder.is_empty(),
+                    "incompatible house pose never reaches the old transport"
+                );
+            }
+            drop(socket);
+            old_closed_tx.send(()).unwrap();
+        });
+        let second_remote = remote.clone();
+        let second_server = tokio::spawn(async move {
+            let mut socket = accept_websocket_for_test(second_listener).await;
+            assert_eq!(
+                decode_client_realtime_frame(&read_websocket_text_for_test(&mut socket).await)
+                    .unwrap(),
+                ClientRealtimeFrameV1::player_state(realtime_presence_state(20))
+            );
+            for frame in [
+                ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(2).unwrap()),
+                ServerRealtimeFrameV1::remote_player_spawn(second_remote),
+            ] {
+                send_websocket_text_for_test(
+                    &mut socket,
+                    &encode_server_realtime_frame(&frame).unwrap(),
+                )
+                .await;
+            }
+            let mut remainder = Vec::new();
+            socket.read_to_end(&mut remainder).await.unwrap();
+        });
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let control_cloud = Arc::clone(&cloud);
+        let control_server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PlayerState(realtime_presence_state(1)),
+            )
+            .await;
+            control_cloud.realtime_requested.notified().await;
+            first_grant.send(realtime_grant(first_port)).unwrap();
+            assert_eq!(
+                read_control_command(&mut stream).await,
+                ControlCommand::RemotePlayerSpawn(remote.clone())
+            );
+            if house {
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::PlayerState(realtime_presence_state_at(
+                        5,
+                        1,
+                        0,
+                        PlayerState::Overworld,
+                    )),
+                )
+                .await;
+            }
+            if checkpoint {
+                write_control_event(
+                    &mut stream,
+                    &ControlEvent::CheckpointReady {
+                        session_epoch: 1,
+                        ready_sequence: 1,
+                    },
+                )
+                .await;
+                let ControlCommand::CheckpointGrant(grant) =
+                    read_control_command(&mut stream).await
+                else {
+                    panic!("checkpoint grant before recovery");
+                };
+                for event in [
+                    ControlEvent::CommandResult {
+                        command_id: grant.command_id,
+                        status: CommandStatus::Applied,
+                        reason: None,
+                    },
+                    ControlEvent::SaveDataUpdated {
+                        session_epoch: 1,
+                        ready_sequence: 1,
+                        save_sequence: 2,
+                        save_generation: 1,
+                    },
+                ] {
+                    write_control_event(&mut stream, &event).await;
+                }
+                control_cloud.finalize_started.notified().await;
+            }
+            drop_tx.send(()).unwrap();
+            let ControlCommand::PresenceRearm(rearm) = read_control_command(&mut stream).await
+            else {
+                panic!("old transport must be replaced by an acknowledged rearm");
+            };
+            if checkpoint {
+                assert_eq!(
+                    *control_cloud.finalizes.lock().unwrap(),
+                    1,
+                    "rearm must wait for definitive commit"
+                );
+            }
+            old_closed_rx.await.unwrap();
+            assert_eq!(
+                control_cloud.realtime_requests.lock().unwrap().len(),
+                1,
+                "no replacement ticket before rearm acknowledgement"
+            );
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PresenceRearmed {
+                    command_id: rearm.command_id,
+                    session_epoch: rearm.session_epoch,
+                    rom_sequence: 10,
+                },
+            )
+            .await;
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PlayerState(realtime_presence_state_at(
+                    11,
+                    1,
+                    0,
+                    PlayerState::Overworld,
+                )),
+            )
+            .await;
+            let before = *control_cloud.heartbeats.lock().unwrap();
+            while *control_cloud.heartbeats.lock().unwrap() < before + 2 {
+                control_cloud.heartbeat_observed.notified().await;
+            }
+            assert_eq!(
+                control_cloud.realtime_requests.lock().unwrap().len(),
+                1,
+                "cached or incompatible poses cannot spend the new ticket"
+            );
+            write_control_event(
+                &mut stream,
+                &ControlEvent::PlayerState(realtime_presence_state(20)),
+            )
+            .await;
+            control_cloud.realtime_requested.notified().await;
+            second_grant.send(realtime_grant(second_port)).unwrap();
+            assert_eq!(
+                read_control_command(&mut stream).await,
+                ControlCommand::RemotePlayerSpawn(remote)
+            );
+            shutdown_tx.send(()).unwrap();
+            let ControlCommand::ShutdownRequest(request) = read_control_command(&mut stream).await
+            else {
+                panic!("recovered session must retain authenticated shutdown");
+            };
+            write_control_event(
+                &mut stream,
+                &ControlEvent::CommandResult {
+                    command_id: request.command_id,
+                    status: CommandStatus::Applied,
+                    reason: None,
+                },
+            )
+            .await;
+            let mut remainder = Vec::new();
+            stream.read_to_end(&mut remainder).await.unwrap();
+        });
+        let stream = tokio::net::TcpStream::connect(address).await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            ControlChannel::from_stream_for_test(stream),
+        );
+        let result = timeout(
+            Duration::from_secs(8),
+            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
+                shutdown_rx.await.unwrap();
+            }),
+        )
+        .await
+        .expect("recovery and cleanup are bounded");
+        assert!(result.is_ok(), "recovery result: {result:?}");
+        assert_eq!(session.lease.fence(), original_fence);
+        assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 2);
+        assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
+        assert!(children.shutdown_disposition().unwrap().clean());
+        for task in [first_server, second_server, control_server] {
+            timeout(Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+        }
     }
 
     #[tokio::test]

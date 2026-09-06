@@ -122,6 +122,8 @@ pub(crate) struct RealtimeCoordinator {
     interaction_sequence: u64,
     ready_interaction_watermark: Option<u64>,
     pending_interactions: VecDeque<(u64, PresenceInteractionV1)>,
+    terminal_outcome: Option<RealtimeOutcome>,
+    map_recovery: bool,
     #[cfg(test)]
     ordering_probe: Option<std::sync::Arc<RealtimeOrderingProbe>>,
     #[cfg(test)]
@@ -160,6 +162,8 @@ impl RealtimeCoordinator {
             interaction_sequence: 0,
             ready_interaction_watermark: None,
             pending_interactions: VecDeque::new(),
+            terminal_outcome: None,
+            map_recovery: false,
             #[cfg(test)]
             ordering_probe: None,
             #[cfg(test)]
@@ -169,6 +173,34 @@ impl RealtimeCoordinator {
 
     pub(crate) const fn generation(&self) -> u32 {
         self.generation
+    }
+
+    pub(crate) fn recovery_needed(&self) -> bool {
+        match self.terminal_outcome {
+            Some(RealtimeOutcome::OwnerStopped) | None => self.map_recovery,
+            Some(outcome) => recoverable_outcome(outcome),
+        }
+    }
+
+    pub(crate) const fn map_changed(&self) -> bool {
+        self.map_recovery
+    }
+
+    pub(crate) fn request_map_recovery(&mut self) {
+        self.map_recovery = true;
+        self.owner.stop();
+    }
+
+    /// During a checkpoint, retain a recoverable terminal outcome without
+    /// spinning on it or abandoning the noncancellable save transaction.
+    pub(crate) async fn next_checkpoint_event(
+        &mut self,
+    ) -> Result<RealtimeCoordinatorEvent, RealtimeCoordinatorError> {
+        if self.recovery_needed() {
+            std::future::pending().await
+        } else {
+            self.next_event().await
+        }
     }
 
     pub(crate) const fn interaction_ready(&self) -> bool {
@@ -263,7 +295,10 @@ impl RealtimeCoordinator {
             outcome = task => {
                 self.task = None;
                 match outcome {
-                    Ok(_) => Ok(RealtimeCoordinatorEvent::Terminal),
+                    Ok(outcome) => {
+                        self.terminal_outcome = Some(outcome);
+                        Ok(RealtimeCoordinatorEvent::Terminal)
+                    },
                     Err(_) => Err(RealtimeCoordinatorError::Task),
                 }
             }
@@ -301,7 +336,10 @@ impl RealtimeCoordinator {
             .expect("completed task remains owned")
             .await;
         match outcome {
-            Ok(_) => Ok(RealtimeCoordinatorEvent::Terminal),
+            Ok(outcome) => {
+                self.terminal_outcome = Some(outcome);
+                Ok(RealtimeCoordinatorEvent::Terminal)
+            }
             Err(_) => Err(RealtimeCoordinatorError::Task),
         }
     }
@@ -316,10 +354,23 @@ impl RealtimeCoordinator {
         };
         match task.await {
             Ok(RealtimeOutcome::OwnerStopped) => Ok(()),
+            Ok(outcome) if recoverable_outcome(outcome) => Ok(()),
             Ok(_) => Err(RealtimeCoordinatorError::Terminated),
             Err(_) => Err(RealtimeCoordinatorError::Task),
         }
     }
+}
+
+fn recoverable_outcome(outcome: RealtimeOutcome) -> bool {
+    matches!(
+        outcome,
+        RealtimeOutcome::Expired
+            | RealtimeOutcome::ConnectTimeout
+            | RealtimeOutcome::ReadyTimeout
+            | RealtimeOutcome::WriteFailed
+            | RealtimeOutcome::PeerClosed
+            | RealtimeOutcome::TransportFailed
+    )
 }
 
 impl Drop for RealtimeCoordinator {
