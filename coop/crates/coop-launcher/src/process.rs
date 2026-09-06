@@ -1040,6 +1040,7 @@ struct LifecycleWrite {
 }
 
 struct PumpShared {
+    pending_rearm: Mutex<Option<(CommandId, u32)>>,
     snapshot_tx: watch::Sender<PresenceSnapshot>,
     terminal: Mutex<Option<ControlTerminalCause>>,
     writer_admission: Mutex<usize>,
@@ -1130,6 +1131,7 @@ impl PumpShared {
 /// exclusively owns the reader half and one task exclusively owns the writer
 /// half.  Callers communicate with those owners only through bounded queues.
 pub struct ControlChannel {
+    online_rx: mpsc::Receiver<(u32, coop_protocol::OnlineRequest)>,
     critical_tx: mpsc::Sender<CriticalWrite>,
     critical_rx: mpsc::Receiver<ControlEvent>,
     #[allow(dead_code)]
@@ -1214,6 +1216,26 @@ impl ControlChannel {
             return Err(ProcessError::InvalidArgument);
         }
         let bytes = command_line(command)?;
+        if let ControlCommand::PresenceRearm(request) = command {
+            let _admission = self
+                .shared
+                .writer_admission
+                .lock()
+                .map_err(|_| ProcessError::InvalidArgument)?;
+            let mut pending = self
+                .shared
+                .pending_rearm
+                .lock()
+                .map_err(|_| ProcessError::InvalidArgument)?;
+            if pending.is_some() || request.session_epoch == 0 || self.reset_latched() {
+                return Err(ProcessError::InvalidArgument);
+            }
+            *pending = Some((request.command_id, request.session_epoch));
+            self.shared.snapshot_tx.send_modify(|snapshot| {
+                snapshot.lifecycle_permit = false;
+                snapshot.state = None;
+            });
+        }
         if let Some(cause) = self.shared.terminal() {
             return Err(PumpShared::terminal_error(cause));
         }
@@ -1336,6 +1358,14 @@ impl ControlChannel {
             ));
         };
         let mut accepted = false;
+        if self
+            .shared
+            .pending_rearm
+            .lock()
+            .map_or(true, |pending| pending.is_some())
+        {
+            return Err(ProcessError::InvalidArgument);
+        }
         self.shared.snapshot_tx.send_modify(|snapshot| {
             if !snapshot.reset_latched && snapshot.generation == generation {
                 snapshot.lifecycle_permit = true;
@@ -1383,6 +1413,17 @@ impl ControlChannel {
     /// Returns the sticky terminal error when the reader, writer, or any
     /// bounded event lane fails.
     pub async fn receive(&mut self) -> Result<ControlEvent, ProcessError> {
+        self.receive_inner(true).await
+    }
+
+    /// Preserves bounded Online requests while a checkpoint owns the caller.
+    /// # Errors
+    /// Returns the same terminal errors as [`Self::receive`].
+    pub async fn receive_without_online(&mut self) -> Result<ControlEvent, ProcessError> {
+        self.receive_inner(false).await
+    }
+
+    async fn receive_inner(&mut self, include_online: bool) -> Result<ControlEvent, ProcessError> {
         loop {
             if self.take_reset_notification().is_some() {
                 return Ok(ControlEvent::RomPresenceReset);
@@ -1405,6 +1446,12 @@ impl ControlChannel {
             if let Ok((generation, interaction)) = self.interaction_rx.try_recv() {
                 if generation == self.lifecycle_generation() && !self.reset_latched() {
                     return Ok(ControlEvent::InteractRemotePlayer(interaction));
+                }
+                continue;
+            }
+            if include_online && let Ok((generation, request)) = self.online_rx.try_recv() {
+                if generation == self.lifecycle_generation() && !self.reset_latched() {
+                    return Ok(ControlEvent::OnlineRequest(request));
                 }
                 continue;
             }
@@ -1443,6 +1490,11 @@ impl ControlChannel {
                             return Ok(ControlEvent::InteractRemotePlayer(interaction));
                         }
                     }
+                    None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
+                },
+                online = self.online_rx.recv(), if include_online => match online {
+                    Some((generation, request)) if generation == self.lifecycle_generation() && !self.reset_latched() => return Ok(ControlEvent::OnlineRequest(request)),
+                    Some(_) => {},
                     None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
                 },
                 cause = self.terminal_rx.recv() => if let Some(cause) = cause {
@@ -1604,6 +1656,7 @@ impl ControlChannel {
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel(LIFECYCLE_WRITE_CAPACITY);
         let (critical_event_tx, critical_event_rx) = mpsc::channel(CRITICAL_EVENT_CAPACITY);
         let (interaction_tx, interaction_rx) = mpsc::channel(INTERACTION_EVENT_CAPACITY);
+        let (online_tx, online_rx) = mpsc::channel(8);
         let (terminal_tx, terminal_rx) = mpsc::channel(TERMINAL_SIGNAL_CAPACITY);
         let (stop_tx, stop_rx) = watch::channel(false);
         let (snapshot_tx, snapshot_rx) = watch::channel(PresenceSnapshot {
@@ -1617,6 +1670,7 @@ impl ControlChannel {
             reset_latched: false,
         });
         let shared = Arc::new(PumpShared {
+            pending_rearm: Mutex::new(None),
             snapshot_tx,
             terminal: Mutex::new(None),
             writer_admission: Mutex::new(0),
@@ -1635,6 +1689,7 @@ impl ControlChannel {
                 reader,
                 critical_event_tx,
                 interaction_tx,
+                online_tx,
                 reader_shared,
                 reader_stop,
             )
@@ -1658,6 +1713,7 @@ impl ControlChannel {
             writer_exits.fetch_add(1, Ordering::SeqCst);
         });
         Self {
+            online_rx,
             critical_tx: critical_write_tx,
             critical_rx: critical_event_rx,
             lifecycle_tx,
@@ -1704,6 +1760,7 @@ async fn run_control_reader(
     mut stream: tokio::net::tcp::OwnedReadHalf,
     critical_tx: mpsc::Sender<ControlEvent>,
     interaction_tx: mpsc::Sender<(u32, coop_protocol::PresenceInteractionV1)>,
+    online_tx: mpsc::Sender<(u32, coop_protocol::OnlineRequest)>,
     shared: Arc<PumpShared>,
     mut stop_rx: watch::Receiver<bool>,
 ) {
@@ -1725,7 +1782,55 @@ async fn run_control_reader(
             shared.set_terminal(ControlTerminalCause::ReaderProtocol);
             break;
         };
+        if let ControlEvent::CommandResult {
+            command_id, status, ..
+        } = &event
+        {
+            let Ok(mut pending) = shared.pending_rearm.lock() else {
+                shared.set_terminal(ControlTerminalCause::PumpStopped);
+                break;
+            };
+            if pending.is_some_and(|(expected, _)| expected == *command_id) {
+                if matches!(status, CommandStatus::Rejected | CommandStatus::Conflict) {
+                    // The launcher may retry after the checkpoint resolves.
+                    // Lifecycle output remains closed until a successful ACK.
+                    *pending = None;
+                } else {
+                    shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+                    break;
+                }
+            }
+        }
         match event {
+            ControlEvent::PresenceRearmed {
+                command_id,
+                session_epoch,
+                rom_sequence,
+            } => {
+                if !apply_presence_rearmed(&shared, command_id, session_epoch, rom_sequence) {
+                    break;
+                }
+                if critical_tx.try_send(event).is_err() {
+                    shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
+                    break;
+                }
+            }
+            ControlEvent::OnlineRequest(request) => {
+                if request.encode().is_err() {
+                    shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+                    break;
+                }
+                if shared.current_snapshot().reset_latched {
+                    continue;
+                }
+                if online_tx
+                    .try_send((shared.current_snapshot().generation, request))
+                    .is_err()
+                {
+                    shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
+                    break;
+                }
+            }
             ControlEvent::CheckpointReady { .. }
             | ControlEvent::SaveDataUpdated { .. }
             | ControlEvent::CheckpointExpired { .. }
@@ -1741,6 +1846,13 @@ async fn run_control_reader(
                 }
             }
             ControlEvent::PlayerState(state) => {
+                if shared
+                    .pending_rearm
+                    .lock()
+                    .map_or(true, |pending| pending.is_some())
+                {
+                    continue;
+                }
                 if state.validate().is_err() {
                     shared.set_terminal(ControlTerminalCause::ReaderProtocol);
                     break;
@@ -1780,6 +1892,45 @@ async fn run_control_reader(
             }
         }
     }
+}
+
+fn apply_presence_rearmed(
+    shared: &PumpShared,
+    command_id: CommandId,
+    session_epoch: u32,
+    rom_sequence: u32,
+) -> bool {
+    let Ok(_admission) = shared.writer_admission.lock() else {
+        shared.set_terminal(ControlTerminalCause::PumpStopped);
+        return false;
+    };
+    let Ok(mut pending) = shared.pending_rearm.lock() else {
+        shared.set_terminal(ControlTerminalCause::PumpStopped);
+        return false;
+    };
+    if *pending != Some((command_id, session_epoch))
+        || rom_sequence <= 1
+        || shared.current_snapshot().reset_latched
+    {
+        shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+        return false;
+    }
+    let mut valid = true;
+    shared.snapshot_tx.send_modify(|snapshot| {
+        if let Some(generation) = snapshot.generation.checked_add(1) {
+            snapshot.generation = generation;
+            snapshot.revision = 0;
+            snapshot.state = None;
+            snapshot.lifecycle_permit = false;
+        } else {
+            valid = false;
+        }
+    });
+    *pending = None;
+    if !valid {
+        shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+    }
+    valid
 }
 
 fn apply_presence_reset(shared: &PumpShared) -> bool {
@@ -2863,7 +3014,9 @@ impl SupervisedChildren {
                 | ControlEvent::SaveDataUpdated { .. }
                 | ControlEvent::CheckpointExpired { .. }
                 | ControlEvent::PlayerState(_)
-                | ControlEvent::InteractRemotePlayer(_) => {}
+                | ControlEvent::InteractRemotePlayer(_)
+                | ControlEvent::OnlineRequest(_)
+                | ControlEvent::PresenceRearmed { .. } => {}
                 ControlEvent::RomPresenceReset => return false,
             }
         }
@@ -4064,12 +4217,61 @@ mod tests {
         let (terminal_tx, _) = tokio::sync::mpsc::channel(1);
         let (stop_tx, _) = tokio::sync::watch::channel(false);
         std::sync::Arc::new(PumpShared {
+            pending_rearm: std::sync::Mutex::new(None),
             snapshot_tx,
             terminal: std::sync::Mutex::new(None),
             writer_admission: std::sync::Mutex::new(0),
             terminal_tx,
             stop_tx,
         })
+    }
+
+    #[test]
+    fn control_pump_correlated_rearm_clears_old_generation_without_reset_latch() {
+        let shared = test_pump_shared();
+        let command_id =
+            coop_sidecar::control::CommandId::parse("00000000-0000-4000-8000-000000000099")
+                .unwrap();
+        *shared.pending_rearm.lock().unwrap() = Some((command_id, 42));
+        shared.snapshot_tx.send_modify(|snapshot| {
+            snapshot.state = Some(presence_state(9));
+            snapshot.revision = 9;
+            snapshot.lifecycle_permit = true;
+        });
+        assert!(super::apply_presence_rearmed(&shared, command_id, 42, 10));
+        let snapshot = shared.current_snapshot();
+        assert_eq!(snapshot.generation, 1);
+        assert_eq!(snapshot.revision, 0);
+        assert!(snapshot.state.is_none());
+        assert!(!snapshot.lifecycle_permit);
+        assert!(!snapshot.reset_latched);
+        assert!(snapshot.reset_generation.is_none());
+        assert!(!super::apply_presence_rearmed(&shared, command_id, 42, 11));
+        assert_eq!(
+            shared.terminal(),
+            Some(super::ControlTerminalCause::ReaderProtocol)
+        );
+    }
+
+    #[test]
+    fn control_pump_rearm_ack_cannot_clear_a_reset_or_wrong_correlation() {
+        for reset in [false, true] {
+            let shared = test_pump_shared();
+            let command_id =
+                coop_sidecar::control::CommandId::parse("00000000-0000-4000-8000-000000000099")
+                    .unwrap();
+            *shared.pending_rearm.lock().unwrap() = Some((command_id, 42));
+            shared
+                .snapshot_tx
+                .send_modify(|snapshot| snapshot.reset_latched = reset);
+            assert!(!super::apply_presence_rearmed(
+                &shared,
+                command_id,
+                if reset { 42 } else { 43 },
+                10
+            ));
+            assert_eq!(shared.current_snapshot().generation, 0);
+        }
     }
 
     #[test]
@@ -4141,6 +4343,49 @@ mod tests {
         });
         let stream = tokio::net::TcpStream::connect(address).await.unwrap();
         (ControlChannel::from_stream_for_test(stream), server)
+    }
+
+    #[tokio::test]
+    async fn control_pump_online_lane_works_without_presence_and_discards_retired_generation() {
+        let request = coop_protocol::OnlineRequest {
+            request_id: 1,
+            view_id: 0,
+            action: coop_protocol::OnlineAction::Refresh,
+            page: 0,
+        };
+        let (mut control, server) =
+            control_event_pair(vec![ControlEvent::OnlineRequest(request)]).await;
+        assert!(!control.lifecycle_permitted());
+        assert_eq!(
+            control.receive().await.unwrap(),
+            ControlEvent::OnlineRequest(request)
+        );
+        server.await.unwrap();
+        control.shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1)).await.unwrap();
+
+        let (mut control, server) =
+            control_event_pair(vec![ControlEvent::OnlineRequest(request)]).await;
+        server.await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while control.online_rx.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let command_id =
+            coop_sidecar::control::CommandId::parse("00000000-0000-4000-8000-000000000099")
+                .unwrap();
+        *control.shared.pending_rearm.lock().unwrap() = Some((command_id, 42));
+        assert!(super::apply_presence_rearmed(
+            &control.shared,
+            command_id,
+            42,
+            10
+        ));
+        assert!(control.receive().await.is_err());
+        assert!(control.online_rx.is_empty());
+        control.shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1)).await.unwrap();
     }
 
     async fn gated_critical_event_pair(

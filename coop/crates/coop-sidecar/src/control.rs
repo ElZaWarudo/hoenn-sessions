@@ -156,6 +156,11 @@ impl<'de> Deserialize<'de> for CommandId {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlCommand {
+    OnlineStatus {
+        session_epoch: u32,
+        status: coop_protocol::OnlineStatus,
+    },
+    PresenceRearm(PresenceRearm),
     #[serde(rename = "checkpoint_grant")]
     CheckpointGrant(CheckpointGrant),
     #[serde(rename = "checkpoint_abort")]
@@ -168,6 +173,13 @@ pub enum ControlCommand {
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     #[serde(rename = "remote_player_despawn")]
     RemotePlayerDespawn(RemotePlayerDespawnV1),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PresenceRearm {
+    pub command_id: CommandId,
+    pub session_epoch: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -241,6 +253,12 @@ pub enum CommandReason {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlEvent {
+    OnlineRequest(coop_protocol::OnlineRequest),
+    PresenceRearmed {
+        command_id: CommandId,
+        session_epoch: u32,
+        rom_sequence: u32,
+    },
     #[serde(rename = "checkpoint_ready")]
     CheckpointReady {
         session_epoch: u32,
@@ -279,6 +297,12 @@ pub enum ControlEvent {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ControlEventWire {
+    OnlineRequest(coop_protocol::OnlineRequest),
+    PresenceRearmed {
+        command_id: CommandId,
+        session_epoch: u32,
+        rom_sequence: u32,
+    },
     #[serde(rename = "checkpoint_ready")]
     CheckpointReady {
         session_epoch: u32,
@@ -316,6 +340,16 @@ impl<'de> Deserialize<'de> for ControlEvent {
         D: serde::Deserializer<'de>,
     {
         Ok(match ControlEventWire::deserialize(deserializer)? {
+            ControlEventWire::OnlineRequest(value) => Self::OnlineRequest(value),
+            ControlEventWire::PresenceRearmed {
+                command_id,
+                session_epoch,
+                rom_sequence,
+            } => Self::PresenceRearmed {
+                command_id,
+                session_epoch,
+                rom_sequence,
+            },
             ControlEventWire::CheckpointReady {
                 session_epoch,
                 ready_sequence,
@@ -700,6 +734,31 @@ mod tests {
         assert!(CommandId::parse("00000000-0000-4000-8000-000000000001").is_ok());
         assert!(CommandId::parse("00000000-0000-4000-8000-00000000000A").is_err());
         assert!(CommandId::parse("not-a-command").is_err());
+    }
+
+    #[test]
+    fn online_status_maximum_escaped_names_fit_control_line() {
+        let command = ControlCommand::OnlineStatus {
+            session_epoch: u32::MAX,
+            status: coop_protocol::OnlineStatus {
+                request_id: u32::MAX,
+                result: coop_protocol::OnlineResult::Unavailable,
+                flags: 7,
+                nearby_count: 32,
+                incoming_count: 32,
+                nearby_page: 31,
+                incoming_page: 31,
+                nearby_name: "\\".repeat(32),
+                incoming_name: "\\".repeat(32),
+                group_name: "\\".repeat(32),
+            },
+        };
+        let bytes = serde_json::to_vec(&command).unwrap();
+        assert!(bytes.len() < MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_slice::<ControlCommand>(&bytes).unwrap(),
+            command
+        );
     }
 
     #[test]

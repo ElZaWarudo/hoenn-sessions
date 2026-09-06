@@ -2875,7 +2875,9 @@ impl SessionLifecycle {
                         .map_err(|_| SessionError::Realtime)?;
                     priority = RealtimeSource::Realtime;
                 }
-                CheckpointInput::Control(Ok(ControlEvent::RomPresenceReset)) => {
+                CheckpointInput::Control(Ok(ControlEvent::RomPresenceReset
+                    | ControlEvent::OnlineRequest(_)
+                    | ControlEvent::PresenceRearmed { .. })) => {
                     return Err(SessionError::Realtime);
                 }
                 CheckpointInput::Deadline => return Err(SessionError::CheckpointTimeout),
@@ -2967,6 +2969,8 @@ impl SessionLifecycle {
                 .interact(interaction)
                 .map_err(|_| SessionError::Realtime),
             ControlEvent::RomPresenceReset
+            | ControlEvent::OnlineRequest(_)
+            | ControlEvent::PresenceRearmed { .. }
             | ControlEvent::CheckpointReady { .. }
             | ControlEvent::SaveDataUpdated { .. }
             | ControlEvent::CheckpointExpired { .. }
@@ -4483,6 +4487,8 @@ mod lifecycle_tests {
                     panic!("checkpoint fixture must not receive shutdown")
                 }
                 coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
+                | coop_sidecar::control::ControlCommand::OnlineStatus { .. }
+                | coop_sidecar::control::ControlCommand::PresenceRearm(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_) => {
                     panic!("checkpoint fixture must not receive presence lifecycle")

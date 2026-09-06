@@ -25,6 +25,9 @@ struct CoopNetRuntime
     bool8 save_data_update_queued;
     bool8 flash_save_started;
     bool8 recovery_required;
+    u32 online_request_id;
+    bool8 online_status_valid;
+    struct CoopOnlineStatus online_status;
 };
 
 static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
@@ -37,13 +40,13 @@ static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
 static bool8 IsOutboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_ROM_READY
-        && type <= COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED;
+        && type <= COOP_BRIDGE_MESSAGE_ONLINE_REQUEST;
 }
 
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_CHECKPOINT_GRANTED;
+        && type <= COOP_BRIDGE_MESSAGE_ONLINE_STATUS;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -463,6 +466,90 @@ enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void)
     return sCoopNetRuntime.checkpoint_state;
 }
 
+bool8 CoopNetBridge_SendOnlineRequest(const struct CoopOnlineRequest *request)
+{
+    u8 payload[COOP_ONLINE_REQUEST_SIZE] = {0};
+    u32 i;
+
+    if (request == NULL || request->request_id == 0
+     || request->action > COOP_ONLINE_LEAVE || request->page > 31
+     || (request->action != COOP_ONLINE_REFRESH && request->view_id == 0)
+     || (request->action == COOP_ONLINE_REFRESH && request->view_id != 0)
+     || !IsCloudSessionActive()
+     || sCoopNetRuntime.checkpoint_state != COOP_CHECKPOINT_STATE_IDLE
+     || !IsSequenceNewer(request->request_id, sCoopNetRuntime.online_request_id))
+        return FALSE;
+    for (i = 0; i < 4; i++)
+    {
+        payload[i] = request->request_id >> (i * 8);
+        payload[4 + i] = request->view_id >> (i * 8);
+    }
+    payload[8] = request->action;
+    payload[9] = request->page;
+    if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ONLINE_REQUEST,
+                                          payload, sizeof(payload)))
+        return FALSE;
+    sCoopNetRuntime.online_request_id = request->request_id;
+    sCoopNetRuntime.online_status_valid = FALSE;
+    return TRUE;
+}
+
+bool8 CoopNetBridge_GetOnlineStatus(struct CoopOnlineStatus *status)
+{
+    if (status == NULL || !IsCloudSessionActive() || !sCoopNetRuntime.online_status_valid)
+        return FALSE;
+    *status = sCoopNetRuntime.online_status;
+    return TRUE;
+}
+
+static bool8 DecodeOnlineName(u8 *out, const u8 *in)
+{
+    u32 i;
+    bool8 terminated = FALSE;
+
+    for (i = 0; i < COOP_ONLINE_NAME_SIZE; i++)
+    {
+        if (in[i] == 0)
+            terminated = TRUE;
+        else if (terminated || in[i] < 0x20 || in[i] > 0x7E)
+            return FALSE;
+        out[i] = in[i];
+    }
+    out[COOP_ONLINE_NAME_SIZE] = 0;
+    return TRUE;
+}
+
+static bool8 DecodeOnlineStatus(struct CoopOnlineStatus *status, const struct CoopBridgeMessage *message)
+{
+    const u8 *payload = message->payload;
+    u32 i;
+
+    if (message->length != COOP_ONLINE_STATUS_SIZE || payload[4] > COOP_ONLINE_FAILED
+     || (payload[5] & ~7) != 0 || payload[6] > 32 || payload[7] > 32
+     || payload[8] > 31 || payload[9] > 31
+     || (payload[6] == 0 ? payload[8] != 0 : payload[8] >= payload[6])
+     || (payload[7] == 0 ? payload[9] != 0 : payload[9] >= payload[7]))
+        return FALSE;
+    for (i = 10; i < 16; i++)
+        if (payload[i] != 0)
+            return FALSE;
+    for (i = COOP_ONLINE_STATUS_SIZE; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+        if (payload[i] != 0)
+            return FALSE;
+    status->request_id = (u32)payload[0] | ((u32)payload[1] << 8)
+                       | ((u32)payload[2] << 16) | ((u32)payload[3] << 24);
+    status->result = payload[4];
+    status->flags = payload[5];
+    status->nearby_count = payload[6];
+    status->incoming_count = payload[7];
+    status->nearby_page = payload[8];
+    status->incoming_page = payload[9];
+    return status->request_id != 0
+        && DecodeOnlineName(status->nearby_name, payload + 16)
+        && DecodeOnlineName(status->incoming_name, payload + 48)
+        && DecodeOnlineName(status->group_name, payload + 80);
+}
+
 bool8 CoopNetBridge_IsCloudMode(void)
 {
     /* Once the sidecar accepts the cloud epoch, the session owns save
@@ -650,6 +737,8 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
             sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
             sCoopNetRuntime.cloud_epoch_accepted = TRUE;
+            sCoopNetRuntime.online_status_valid = FALSE;
+            sCoopNetRuntime.online_request_id = 0;
             /* A reconnect starts a fresh presence generation even when the
              * sidecar reuses the current epoch.  Do not let an old reducer,
              * pending lifecycle frame, or sprite survive the queue rearm. */
@@ -682,6 +771,8 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         sCoopNetRuntime.observed_sidecar_heartbeat = gCoopNetBridge.last_sidecar_heartbeat;
         sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
         sCoopNetRuntime.cloud_epoch_accepted = TRUE;
+        sCoopNetRuntime.online_status_valid = FALSE;
+        sCoopNetRuntime.online_request_id = 0;
         CoopPresenceRuntime_SetSessionEpoch(sCoopNetRuntime.session_epoch);
         SetCheckpointStateForAcceptedEpoch();
         gCoopNetBridge.status_flags &= ~(COOP_BRIDGE_STATUS_QUEUE_CONGESTED
@@ -693,6 +784,28 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0))
             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_ROM_READY_SENT;
         return TRUE;
+    }
+
+    if (message->type == COOP_BRIDGE_MESSAGE_ONLINE_STATUS)
+    {
+        struct CoopOnlineStatus status;
+
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        if (!DecodeOnlineStatus(&status, message))
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        if (status.request_id == sCoopNetRuntime.online_request_id)
+        {
+            sCoopNetRuntime.online_status = status;
+            sCoopNetRuntime.online_status_valid = TRUE;
+        }
+        return FALSE;
     }
 
     if (message->type == COOP_BRIDGE_MESSAGE_CHECKPOINT_GRANTED)

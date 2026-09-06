@@ -110,6 +110,126 @@ TEST("Cloud Coop CRC32 matches the canonical check vector")
     EXPECT_EQ(CoopBridge_Crc32(NULL, 1), 0);
 }
 
+TEST("Cloud Coop Online wire types cross the bridge boundary")
+{
+    struct CoopBridgeMessage message;
+    u8 request[12] = {1};
+    u8 status[112] = {1};
+
+    EXPECT(CoopBridgeMessage_Seal(&message, 14, 2, 1, request, sizeof(request)));
+    EXPECT(CoopBridgeMessage_Validate(&message));
+    EXPECT(CoopBridgeMessage_Seal(&message, 0x010D, 3, 1, status, sizeof(status)));
+    EXPECT(CoopBridgeMessage_Validate(&message));
+}
+
+static void InitOnlineTestBridge(void)
+{
+    struct CoopBridgeMessage message;
+
+    InitTestBridge();
+    PopInitialRomReady();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                 1, 7, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+}
+
+TEST("Cloud Coop Online request binds the displayed view and uses fixed bytes")
+{
+    struct CoopOnlineRequest request = { .request_id = 1, .view_id = 9,
+                                        .action = COOP_ONLINE_INVITE, .page = 2 };
+    struct CoopBridgeMessage message;
+
+    InitOnlineTestBridge();
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ONLINE_REQUEST);
+    EXPECT_EQ(message.length, 12);
+    EXPECT_EQ(message.payload[0], 1);
+    EXPECT_EQ(message.payload[4], 9);
+    EXPECT_EQ(message.payload[8], COOP_ONLINE_INVITE);
+    EXPECT_EQ(message.payload[9], 2);
+    EXPECT_EQ(message.payload[10], 0);
+    EXPECT_EQ(message.payload[11], 0);
+    EXPECT(!CoopNetBridge_SendOnlineRequest(&request));
+    request.request_id = 2;
+    request.view_id = 0;
+    EXPECT(!CoopNetBridge_SendOnlineRequest(&request));
+    request.action = COOP_ONLINE_REFRESH;
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+}
+
+TEST("Cloud Coop Online ignores stale responses and clears status on rearm")
+{
+    struct CoopOnlineRequest request = { .request_id = 1, .action = COOP_ONLINE_REFRESH };
+    struct CoopOnlineStatus status;
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {2};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 2, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_GetOnlineStatus(&status));
+
+    payload[0] = 1;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 3, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_GetOnlineStatus(&status));
+    EXPECT_EQ(status.request_id, 1);
+    EXPECT_EQ(status.result, COOP_ONLINE_READY);
+
+    payload[10] = 1;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 4, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
+    EXPECT(CoopNetBridge_GetOnlineStatus(&status));
+    EXPECT_EQ(status.request_id, 1);
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                 5, 7, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_GetOnlineStatus(&status));
+}
+
+TEST("Cloud Coop Online preserves full names and rejects invalid page indices")
+{
+    struct CoopOnlineRequest request = { .request_id = 1, .action = COOP_ONLINE_REFRESH };
+    struct CoopOnlineStatus status;
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {1};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    memset(payload + 16, 'a', COOP_ONLINE_NAME_SIZE);
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 2, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_GetOnlineStatus(&status));
+    EXPECT_EQ(status.nearby_name[31], 'a');
+    EXPECT_EQ(status.nearby_name[32], 0);
+    request.request_id++;
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    payload[0] = 2;
+    memset(payload + 16, 0, COOP_ONLINE_NAME_SIZE);
+    payload[8] = 1;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 3, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_GetOnlineStatus(&status));
+}
+
 TEST("Cloud Coop bridge messages seal deterministic metadata and reject corruption")
 {
     static const u8 sPayload[] = {0xDE, 0xAD, 0xBE, 0xEF};

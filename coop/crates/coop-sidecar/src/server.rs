@@ -1725,6 +1725,7 @@ pub struct LocalSidecar {
     // state so a control-only or bridge reconnect cannot accidentally revive
     // stale lifecycle forwarding in the same local session.
     lifecycle_forwarding_disabled: bool,
+    pending_presence_rearm: Option<(CommandId, u32, Instant)>,
     presence_generation: Arc<std::sync::atomic::AtomicU64>,
     #[cfg(test)]
     handshake_prefix_observer: Option<mpsc::Sender<()>>,
@@ -1766,6 +1767,7 @@ impl LocalSidecar {
             command_history: HashMap::new(),
             applied_shutdown: None,
             lifecycle_forwarding_disabled: false,
+            pending_presence_rearm: None,
             presence_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             #[cfg(test)]
             handshake_prefix_observer: None,
@@ -2586,6 +2588,9 @@ impl LocalSidecar {
     ) -> Result<bool, SidecarError> {
         match result {
             Some(Ok(command)) => {
+                if matches!(command, ControlCommand::OnlineStatus { .. }) {
+                    return Ok(false);
+                }
                 let command_id = command_parts(&command).0;
                 let can_replay_without_bridge = self.command_history.contains_key(&command_id);
                 let handled = if reconnect.state.checkpoint_state.is_quiescing() {
@@ -2953,6 +2958,13 @@ impl LocalSidecar {
                         bridge_lifecycle,
                     ));
                 }
+                Err(_) if self.pending_presence_rearm.is_some() => {
+                    bridge_writer.shutdown().await;
+                    reader_tasks.shutdown().await;
+                    return Err(SidecarError::ProtocolViolation(
+                        "presence rearm lost acknowledgement transport",
+                    ));
+                }
                 Err(error) if can_reconnect_control_loss(&error, next_state.checkpoint_state) => {
                     // Keep the bridge I/O alive while replacement control
                     // authenticates; its bounded channel retains in-flight frames.
@@ -3293,7 +3305,10 @@ impl LocalSidecar {
                         presence_overflow.load(Ordering::Acquire),
                     ));
                 }
-                let deadline = session.checkpoint_state.deadline();
+                let deadline = match (session.checkpoint_state.deadline(), self.pending_presence_rearm.map(|(_, _, deadline)| deadline)) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                };
                 let event = tokio::select! {
                     biased;
                     changed = control_terminal_receiver.changed() => {
@@ -3440,6 +3455,12 @@ impl LocalSidecar {
         deferred_commands: &mut VecDeque<ControlCommand>,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
+        if self
+            .pending_presence_rearm
+            .is_some_and(|(_, _, deadline)| Instant::now() >= deadline)
+        {
+            return Err(SidecarError::ProtocolViolation("presence rearm timed out"));
+        }
         if session.checkpoint_state.is_quiescing() {
             return Err(SidecarError::ShutdownTimeout);
         }
@@ -3466,6 +3487,29 @@ impl LocalSidecar {
         };
         if is_presence_command(&command) {
             return self.handle_presence_command(command, bridge, session);
+        }
+        if let ControlCommand::OnlineStatus {
+            session_epoch,
+            status,
+        } = command
+        {
+            if session_epoch != self.session_epoch
+                || session.checkpoint_state.is_quiescing()
+                || !session.acknowledged_rom_ready
+                || self.pending_presence_rearm.is_some()
+            {
+                return Ok(());
+            }
+            let payload = status
+                .encode()
+                .map_err(|_| SidecarError::ProtocolViolation("invalid online status"))?;
+            let frame = BridgeFrame::new(
+                MessageType::OnlineStatus,
+                self.sequence_state.take_sidecar_sequence(),
+                self.session_epoch,
+                &payload,
+            )?;
+            return bridge.send(&frame, Direction::SidecarToRom).await;
         }
         let (command_id, _, _, _) = command_parts(&command);
         let can_replay = self.command_history.contains_key(&command_id);
@@ -3735,11 +3779,48 @@ impl LocalSidecar {
         {
             return Ok(());
         }
+        if frame.message_type() == MessageType::RomReady {
+            if let Some((command_id, watermark, _)) = self.pending_presence_rearm {
+                if frame.session_epoch() != self.session_epoch
+                    || !frame.payload().is_empty()
+                    || !coop_protocol::sequence_is_newer(frame.sequence(), watermark)
+                {
+                    return Err(SidecarError::ProtocolViolation(
+                        "invalid presence rearm acknowledgement",
+                    ));
+                }
+                self.sequence_state.commit_rom_frame(&frame);
+                self.pending_presence_rearm = None;
+                session.acknowledged_rom_ready = true;
+                self.lifecycle_forwarding_disabled = false;
+                control
+                    .send_event(&ControlEvent::PresenceRearmed {
+                        command_id,
+                        session_epoch: self.session_epoch,
+                        rom_sequence: frame.sequence(),
+                    })
+                    .await?;
+                return Ok(());
+            }
+            if session.acknowledged_rom_ready && frame.sequence() != 1 {
+                return Err(SidecarError::ProtocolViolation("unsolicited rom ready"));
+            }
+        }
         match frame.message_type() {
-            MessageType::PlayerState | MessageType::InteractRemotePlayer => {
+            MessageType::PlayerState
+            | MessageType::InteractRemotePlayer
+            | MessageType::OnlineRequest => {
+                if self.pending_presence_rearm.is_some() {
+                    return Ok(());
+                }
                 self.handle_presence_frame(frame, control, session).await?;
             }
             MessageType::CheckpointReady => {
+                if self.pending_presence_rearm.is_some() {
+                    return Err(SidecarError::ProtocolViolation(
+                        "checkpoint raced presence rearm",
+                    ));
+                }
                 if frame.session_epoch() != self.session_epoch || !frame.payload().is_empty() {
                     return Err(SidecarError::ProtocolViolation("invalid checkpoint ready"));
                 }
@@ -3864,6 +3945,10 @@ impl LocalSidecar {
                     SidecarError::ProtocolViolation("invalid remote player interaction")
                 })?,
             ),
+            MessageType::OnlineRequest => ControlEvent::OnlineRequest(
+                coop_protocol::OnlineRequest::decode(frame.payload())
+                    .map_err(|_| SidecarError::ProtocolViolation("invalid online request"))?,
+            ),
             _ => return Err(SidecarError::ProtocolViolation("invalid presence frame")),
         };
 
@@ -3882,6 +3967,14 @@ impl LocalSidecar {
         control: &mut ControlWriter,
         session: &mut ActiveSessionState,
     ) -> Result<bool, SidecarError> {
+        if self.pending_presence_rearm.is_some()
+            && frame.message_type() == MessageType::RomReady
+            && (frame.sequence() == 1 || frame.session_epoch() == 0)
+        {
+            return Err(SidecarError::ProtocolViolation(
+                "rom reboot while presence rearm pending",
+            ));
+        }
         let is_boot_epoch_reboot = frame.session_epoch() == 0 && session.acknowledged_rom_ready;
         let is_session_epoch_reboot = frame.session_epoch() == self.session_epoch;
         if frame.message_type() != MessageType::RomReady
@@ -3978,6 +4071,55 @@ impl LocalSidecar {
         // or result event. The independent lifecycle slot is never consumed
         // by routine or rejected commands.
         self.ensure_command_ledger_capacity(false)?;
+
+        if matches!(command_kind, CommandKind::PresenceRearm) {
+            let reason = if command_epoch(&command) != self.session_epoch {
+                Some(CommandReason::WrongEpoch)
+            } else if !matches!(session.checkpoint_state, CheckpointState::Idle)
+                || !session.acknowledged_rom_ready
+                || self.pending_presence_rearm.is_some()
+                || self.lifecycle_forwarding_disabled
+            {
+                Some(CommandReason::WrongState)
+            } else {
+                None
+            };
+            self.command_history.insert(
+                command_id,
+                CommandRecord {
+                    fingerprint,
+                    reason,
+                },
+            );
+            if let Some(reason) = reason {
+                return control
+                    .send_event(&ControlEvent::CommandResult {
+                        command_id,
+                        status: CommandStatus::Rejected,
+                        reason: Some(reason),
+                    })
+                    .await
+                    .map_err(Into::into);
+            }
+            let next = self
+                .presence_generation
+                .load(Ordering::Acquire)
+                .checked_add(1)
+                .ok_or(SidecarError::ProtocolViolation(
+                    "presence generation exhausted",
+                ))?;
+            self.lifecycle_forwarding_disabled = true;
+            self.pending_presence_rearm = Some((
+                command_id,
+                self.sequence_state.last_session_rom,
+                now + HANDSHAKE_TIMEOUT,
+            ));
+            bridge.cutover(next).await?;
+            self.presence_generation.store(next, Ordering::Release);
+            self.send_session_ready_to_stream_at(bridge, next, BridgeWriteClass::Cutover)
+                .await?;
+            return Ok(());
+        }
 
         self.expire_checkpoint_if_due(session, control, now).await?;
 
@@ -4081,6 +4223,9 @@ impl LocalSidecar {
             // transition and ACK. An ambiguous write can therefore replay
             // without applying shutdown twice.
             self.applied_shutdown = Some(command_id);
+            // Shutdown retires presence recovery. Its own bounded grace now
+            // owns cleanup, even if the ROM never acknowledges the rearm.
+            self.pending_presence_rearm = None;
             session.checkpoint_state = CheckpointState::Quiescing {
                 deadline: Instant::now() + SHUTDOWN_GRACE_TIMEOUT,
             };
@@ -4619,6 +4764,9 @@ fn is_bridge_shutdown_eof(error: &SidecarError) -> bool {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CommandFingerprint {
+    PresenceRearm {
+        session_epoch: u32,
+    },
     Grant {
         session_epoch: u32,
         ready_sequence: u32,
@@ -4634,6 +4782,7 @@ enum CommandFingerprint {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CommandKind {
+    PresenceRearm,
     Grant,
     Abort,
     Shutdown,
@@ -4648,6 +4797,15 @@ fn command_parts(
     CommandKind,
 ) {
     match command {
+        ControlCommand::PresenceRearm(value) => (
+            value.command_id,
+            CommandFingerprint::PresenceRearm {
+                session_epoch: value.session_epoch,
+            },
+            None,
+            CommandKind::PresenceRearm,
+        ),
+        ControlCommand::OnlineStatus { .. } => unreachable!("Online status bypasses ledger"),
         ControlCommand::CheckpointGrant(CheckpointGrant {
             command_id,
             session_epoch,
@@ -4695,6 +4853,8 @@ fn command_parts(
 
 fn command_epoch(command: &ControlCommand) -> u32 {
     match command {
+        ControlCommand::PresenceRearm(value) => value.session_epoch,
+        ControlCommand::OnlineStatus { session_epoch, .. } => *session_epoch,
         ControlCommand::CheckpointGrant(command) => command.session_epoch,
         ControlCommand::CheckpointAbort(command) => command.session_epoch,
         ControlCommand::ShutdownRequest(command) => command.session_epoch,
@@ -4728,6 +4888,7 @@ fn deferred_command_waits_for_bridge_state(
     session_epoch: u32,
 ) -> bool {
     let (key, is_grant) = match command {
+        ControlCommand::PresenceRearm(_) | ControlCommand::OnlineStatus { .. } => return false,
         ControlCommand::CheckpointGrant(command) => (Some(command.key()), true),
         ControlCommand::CheckpointAbort(command) => (Some(command.key()), false),
         ControlCommand::ShutdownRequest(_) => (None, false),
@@ -5091,6 +5252,225 @@ mod tests {
                 .message_type(),
             MessageType::SessionReady
         );
+    }
+
+    fn rearm_command() -> ControlCommand {
+        ControlCommand::PresenceRearm(crate::control::PresenceRearm {
+            command_id: CommandId::parse("00000000-0000-4000-8000-000000000099").unwrap(),
+            session_epoch: TEST_SESSION_EPOCH,
+        })
+    }
+
+    #[tokio::test]
+    async fn presence_rearm_requires_newer_same_epoch_ack_and_emits_correlation() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session =
+            super::ActiveSessionState::from_reconnect(super::ReconnectState::default(), false);
+        session.acknowledged_rom_ready = true;
+        server.sequence_state.last_session_rom = 10;
+        let (mut bridge, mut bridge_client) = bridge_writer_pair().await;
+        let (mut control, mut control_client) = control_writer_pair().await;
+        server
+            .handle_control_command(
+                rearm_command(),
+                &mut bridge,
+                &mut control,
+                super::Instant::now(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_client.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&bytes, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::SessionReady
+        );
+        assert!(server.lifecycle_forwarding_disabled);
+        let ack = BridgeFrame::new(MessageType::RomReady, 11, TEST_SESSION_EPOCH, &[]).unwrap();
+        server
+            .handle_bridge_frame(ack, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        let ControlCommand::PresenceRearm(request) = rearm_command() else {
+            unreachable!()
+        };
+        assert_eq!(
+            read_event(&mut control_client).await,
+            ControlEvent::PresenceRearmed {
+                command_id: request.command_id,
+                session_epoch: TEST_SESSION_EPOCH,
+                rom_sequence: 11
+            }
+        );
+        assert!(!server.lifecycle_forwarding_disabled);
+        assert!(server.pending_presence_rearm.is_none());
+        assert_eq!(server.sequence_state.last_session_rom, 11);
+    }
+
+    #[tokio::test]
+    async fn presence_rearm_rejects_stale_wrong_epoch_and_reboot_ack() {
+        for (sequence, epoch) in [
+            (10, TEST_SESSION_EPOCH),
+            (11, TEST_SESSION_EPOCH + 1),
+            (1, TEST_SESSION_EPOCH),
+            (1, 0),
+        ] {
+            let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session =
+                super::ActiveSessionState::from_reconnect(super::ReconnectState::default(), false);
+            session.acknowledged_rom_ready = true;
+            server.sequence_state.last_session_rom = 10;
+            let (mut bridge, _client) = bridge_writer_pair().await;
+            let (mut control, _control_client) = control_writer_pair().await;
+            server
+                .handle_control_command(
+                    rearm_command(),
+                    &mut bridge,
+                    &mut control,
+                    super::Instant::now(),
+                    &mut session,
+                )
+                .await
+                .unwrap();
+            let ack = BridgeFrame::new(MessageType::RomReady, sequence, epoch, &[]).unwrap();
+            assert!(
+                server
+                    .handle_bridge_frame(ack, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert!(server.lifecycle_forwarding_disabled);
+        }
+    }
+
+    #[tokio::test]
+    async fn presence_rearm_rejects_checkpoint_overlap_without_changing_it() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session =
+            super::ActiveSessionState::from_reconnect(super::ReconnectState::default(), false);
+        session.acknowledged_rom_ready = true;
+        let key = CheckpointKey::new(TEST_SESSION_EPOCH, 9).unwrap();
+        session.checkpoint_state = super::CheckpointState::AwaitDecision {
+            key,
+            deadline: super::Instant::now() + Duration::from_secs(5),
+        };
+        let (mut bridge, _client) = bridge_writer_pair().await;
+        let (mut control, mut control_client) = control_writer_pair().await;
+        server
+            .handle_control_command(
+                rearm_command(),
+                &mut bridge,
+                &mut control,
+                super::Instant::now(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            read_event(&mut control_client).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Rejected,
+                reason: Some(CommandReason::WrongState),
+                ..
+            }
+        ));
+        assert!(
+            matches!(session.checkpoint_state, super::CheckpointState::AwaitDecision { key: observed, .. } if observed == key)
+        );
+        assert!(server.pending_presence_rearm.is_none());
+    }
+
+    #[tokio::test]
+    async fn presence_rearm_deadline_is_terminal_without_an_ack() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session =
+            super::ActiveSessionState::from_reconnect(super::ReconnectState::default(), false);
+        session.acknowledged_rom_ready = true;
+        server.sequence_state.last_session_rom = 10;
+        let (mut bridge, _client) = bridge_writer_pair().await;
+        let (mut control, _control_client) = control_writer_pair().await;
+        server
+            .handle_control_command(
+                rearm_command(),
+                &mut bridge,
+                &mut control,
+                super::Instant::now(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        let (id, watermark, _) = server.pending_presence_rearm.unwrap();
+        server.pending_presence_rearm = Some((id, watermark, super::Instant::now()));
+        assert!(
+            server
+                .handle_active_session_deadline(
+                    &mut control,
+                    &mut bridge,
+                    &mut std::collections::VecDeque::new(),
+                    &mut session
+                )
+                .await
+                .is_err()
+        );
+        assert!(server.lifecycle_forwarding_disabled);
+    }
+
+    #[tokio::test]
+    async fn presence_rearm_shutdown_retires_ack_deadline() {
+        let mut server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session =
+            super::ActiveSessionState::from_reconnect(super::ReconnectState::default(), false);
+        session.acknowledged_rom_ready = true;
+        server.sequence_state.last_session_rom = 10;
+        let (mut bridge, _client) = bridge_writer_pair().await;
+        let (mut control, mut control_client) = control_writer_pair().await;
+        server
+            .handle_control_command(
+                rearm_command(),
+                &mut bridge,
+                &mut control,
+                super::Instant::now(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        let (id, watermark, _) = server.pending_presence_rearm.unwrap();
+        server.pending_presence_rearm = Some((id, watermark, super::Instant::now()));
+        server
+            .handle_control_command(
+                shutdown("00000000-0000-4000-8000-000000000100", TEST_SESSION_EPOCH),
+                &mut bridge,
+                &mut control,
+                super::Instant::now(),
+                &mut session,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            read_event(&mut control_client).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                reason: None,
+                ..
+            }
+        ));
+        assert!(server.pending_presence_rearm.is_none());
+        assert!(session.checkpoint_state.is_quiescing());
+        assert!(session.checkpoint_state.deadline().unwrap() > super::Instant::now());
+        assert!(server.lifecycle_forwarding_disabled);
     }
 
     async fn bridge_writer_pair() -> (BridgeWriter, TcpStream) {

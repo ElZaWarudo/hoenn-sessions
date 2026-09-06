@@ -19,6 +19,7 @@ protocol.types = {
   COMMIT_APPLIED = 0x000B,
   CHECKPOINT_READY = 0x000C,
   SAVE_DATA_UPDATED = 0x000D,
+  ONLINE_REQUEST = 0x000E,
   SESSION_READY = 0x0100,
   REMOTE_PLAYER_SPAWN = 0x0101,
   REMOTE_PLAYER_UPDATE = 0x0102,
@@ -32,6 +33,7 @@ protocol.types = {
   BATTLE_COMMIT = 0x010A,
   ABORT_BATTLE = 0x010B,
   CHECKPOINT_GRANTED = 0x010C,
+  ONLINE_STATUS = 0x010D,
 }
 
 local function is_integer(value)
@@ -41,13 +43,13 @@ end
 function protocol.is_outbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.ROM_READY
-    and message_type <= protocol.types.SAVE_DATA_UPDATED
+    and message_type <= protocol.types.ONLINE_REQUEST
 end
 
 function protocol.is_inbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.SESSION_READY
-    and message_type <= protocol.types.CHECKPOINT_GRANTED
+    and message_type <= protocol.types.ONLINE_STATUS
 end
 
 function protocol.is_known(message_type)
