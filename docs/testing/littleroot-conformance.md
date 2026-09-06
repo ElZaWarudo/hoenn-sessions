@@ -3,6 +3,8 @@
 This is a local, operator-observed test of stock mGBA 0.10.5, the Lua bridge,
 two production launcher lifecycles, and the authenticated in-memory server.
 Passing Rust or Lua unit tests alone does not certify visible multiplayer.
+Read the [stock mGBA testing lessons](../solutions/workflow-issues/stock-mgba-testing.md)
+before another operator-driven run, especially for input timing and build pitfalls.
 
 ## Prepare
 
