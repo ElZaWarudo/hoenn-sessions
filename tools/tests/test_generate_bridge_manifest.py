@@ -99,6 +99,67 @@ def valid_symbols() -> dict[str, generator.Symbol]:
 
 
 class BridgeManifestTests(unittest.TestCase):
+    def test_linked_save_slot_lengths_match_rust_and_reject_drift(self) -> None:
+        sizes = (3892, 3968, 3968, 3968, 3968, 264, 3968, 3968,
+                 3968, 3968, 3968, 3968, 3968, 3968, 2400)
+        symbol = generator.Symbol("sSaveSlotLayout", 0x08000100, 60, "r")
+        with tempfile.TemporaryDirectory() as directory:
+            rom = Path(directory) / "fixture.gba"
+            source = Path(directory) / "lib.rs"
+            source.write_text(
+                "pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = ["
+                + ", ".join(map(str, sizes)) + ",];", encoding="utf-8"
+            )
+            payload = b"".join(struct.pack("<HH", 0, size) for size in sizes)
+            rom.write_bytes(b"\xff" * 256 + payload)
+            generator.validate_save_slot_contract(rom, {symbol.name: symbol}, source)
+            for index, stale in ((0, 3884), (4, 3664), (5, 0)):
+                changed = bytearray(payload)
+                struct.pack_into("<H", changed, index * 4 + 2, stale)
+                rom.write_bytes(b"\xff" * 256 + changed)
+                with self.subTest(index=index), self.assertRaisesRegex(
+                    generator.ManifestError, "differ from the Rust validator"
+                ):
+                    generator.validate_save_slot_contract(rom, {symbol.name: symbol}, source)
+
+    def test_save_slot_contract_rejects_missing_unsafe_and_truncated_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            rom = Path(directory) / "fixture.gba"
+            rom.write_bytes(b"\xff" * 315)  # one byte short of the linked layout
+            for symbols in (
+                {},
+                {"sSaveSlotLayout": generator.Symbol("sSaveSlotLayout", 0x08000100, 60, "r")},
+                {"sSaveSlotLayout": generator.Symbol("sSaveSlotLayout", 0x08000100, 59, "r")},
+                {"sSaveSlotLayout": generator.Symbol("sSaveSlotLayout", 0x08000101, 60, "r")},
+                {"sSaveSlotLayout": generator.Symbol("sSaveSlotLayout", 0x02000100, 60, "r")},
+                {"sSaveSlotLayout": generator.Symbol("sSaveSlotLayout", 0x08000100, 60, "B")},
+            ):
+                with self.subTest(symbols=symbols), self.assertRaises(generator.ManifestError):
+                    generator.validate_save_slot_contract(rom, symbols)
+        with self.assertRaises(generator.ManifestError):
+            generator.parse_nm_symbols("sSaveSlotLayout r 08000100 3c\nsSaveSlotLayout r 08000200 3c\n")
+
+    def test_rust_save_slot_contract_requires_exact_numeric_lengths(self) -> None:
+        declaration = "pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = [{}];"
+        valid = ",".join(["3968"] * 15)
+        malformed = ("", "3968", valid + ",0", valid.replace("3968", "3969", 1),
+                     valid.replace("3968", "4000", 1), valid.replace("3968", "-4", 1),
+                     valid.replace("3968", "SIZE", 1), valid.replace("3968", "1+4", 1))
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "lib.rs"
+            with self.assertRaises(generator.ManifestError):
+                generator.load_rust_sector_sizes(source)
+            for contents in [declaration.format(item) for item in malformed] + [
+                declaration.format(valid) * 2, "// no declaration",
+                "/* " + declaration.format(valid) + " */\n"
+                "pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = OTHER_SIZES;",
+                "// " + declaration.format(valid) + "\n"
+                "pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = OTHER_SIZES;",
+            ]:
+                source.write_text(contents, encoding="utf-8")
+                with self.subTest(contents=contents), self.assertRaises(generator.ManifestError):
+                    generator.load_rust_sector_sizes(source)
+
     def test_parses_and_validates_exact_ewram_symbol(self) -> None:
         symbols = generator.parse_nm_symbols(
             "zero_sized t 080000F0\n"

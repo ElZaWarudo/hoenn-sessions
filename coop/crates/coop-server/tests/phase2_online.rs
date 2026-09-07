@@ -326,9 +326,12 @@ async fn incoming_pagination_decline_and_foreign_invitation_are_safe() {
 
 #[test]
 fn online_contract_rejects_unbounded_or_ambiguous_wire_data() {
-    let peer = json!({"handle":1,"generation":1,"username":"alice"});
+    let peer = json!({"handle":"0000000000000001","generation":1,"username":"alice"});
     let base = json!({"api_version":1,"nearby":[],"incoming":[],"incoming_next":null,"group":null});
     assert!(serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(base.clone()).is_ok());
+    let mut bounded = base.clone();
+    bounded["nearby"] = json!([peer, peer, peer, peer]);
+    assert!(serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(bounded).is_ok());
     let mut oversized = base.clone();
     oversized["nearby"] = json!([peer, peer, peer, peer, peer]);
     assert!(serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(oversized).is_err());
@@ -337,13 +340,19 @@ fn online_contract_rejects_unbounded_or_ambiguous_wire_data() {
     assert!(serde_json::from_value::<coop_cloud::OnlineSnapshotResponse>(unknown).is_err());
     assert!(
         serde_json::from_value::<coop_cloud::OnlineAction>(
-            json!({"operation":"invite","handle":1,"generation":0})
+            json!({"operation":"invite","handle":"0000000000000001","generation":1})
+        )
+        .is_ok()
+    );
+    assert!(
+        serde_json::from_value::<coop_cloud::OnlineAction>(
+            json!({"operation":"invite","handle":"0000000000000001","generation":0})
         )
         .is_err()
     );
     assert!(
         serde_json::from_value::<coop_cloud::OnlineAction>(
-            json!({"operation":"invite","handle":1,"generation":1,"character_id":Uuid::new_v4()})
+            json!({"operation":"invite","handle":"0000000000000001","generation":1,"character_id":Uuid::new_v4()})
         )
         .is_err()
     );

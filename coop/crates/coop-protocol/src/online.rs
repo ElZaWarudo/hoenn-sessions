@@ -9,22 +9,22 @@ pub const ONLINE_STATUS_SIZE: usize = 112;
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum OnlineAction {
-    Refresh,
-    Invite,
-    Accept,
-    Decline,
-    Leave,
+    Refresh = 0,
+    Invite = 1,
+    Accept = 2,
+    Decline = 3,
+    Leave = 4,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum OnlineResult {
-    Ready,
-    Unavailable,
-    Success,
-    Stale,
-    Failed,
+    Ready = 0,
+    Unavailable = 1,
+    Success = 2,
+    Stale = 3,
+    Failed = 4,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

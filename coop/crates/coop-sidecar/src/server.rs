@@ -43,7 +43,10 @@ pub const HANDSHAKE_ACCEPTED_LINE: &[u8] = b"{\"ok\":true}\n";
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(3);
 const BOOTSTRAP_SEQUENCE: u32 = 1;
 const DECISION_TIMEOUT: Duration = Duration::from_secs(3);
-const SAVE_DATA_TIMEOUT: Duration = Duration::from_secs(3);
+// Full-slot flash programming is synchronous and exceeds three seconds on
+// stock mGBA. Allow its sector retries and savedata flush, while keeping a
+// finite post-grant deadline distinct from transport/decision timeouts.
+const SAVE_DATA_TIMEOUT: Duration = Duration::from_secs(10);
 const BRIDGE_FRAME_TIMEOUT: Duration = Duration::from_secs(3);
 const SHUTDOWN_GRACE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_DESCRIPTOR_BYTES: usize = 512;
@@ -3764,6 +3767,10 @@ impl LocalSidecar {
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "reset detection must precede correlated rearm and checkpoint frame handling"
+    )]
     async fn handle_bridge_frame(
         &mut self,
         frame: BridgeFrame,
@@ -4039,6 +4046,10 @@ impl LocalSidecar {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "authenticated commands share explicit checkpoint and shutdown ordering"
+    )]
     async fn handle_control_command(
         &mut self,
         command: ControlCommand,
@@ -4888,11 +4899,12 @@ fn deferred_command_waits_for_bridge_state(
     session_epoch: u32,
 ) -> bool {
     let (key, is_grant) = match command {
-        ControlCommand::PresenceRearm(_) | ControlCommand::OnlineStatus { .. } => return false,
         ControlCommand::CheckpointGrant(command) => (Some(command.key()), true),
         ControlCommand::CheckpointAbort(command) => (Some(command.key()), false),
         ControlCommand::ShutdownRequest(_) => (None, false),
-        ControlCommand::RemotePlayerSpawn(_)
+        ControlCommand::PresenceRearm(_)
+        | ControlCommand::OnlineStatus { .. }
+        | ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_) => return false,
     };
@@ -9143,6 +9155,81 @@ mod tests {
         drop(second_control);
         drop(second_bridge);
         server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn flash_save_can_complete_after_the_transport_timeout() {
+        let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let descriptor = server.session_descriptor();
+        let server_task = tokio::spawn(server.serve());
+        let mut control = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut control,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
+        write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
+        establish_rom_session(&mut bridge).await;
+        let ready =
+            BridgeFrame::new(MessageType::CheckpointReady, 1, TEST_SESSION_EPOCH, &[]).unwrap();
+        bridge.write_all(&ready.encode()).await.unwrap();
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CheckpointReady { .. }
+        ));
+        send_command(
+            &mut control,
+            &grant(
+                "00000000-0000-4000-8000-000000000016",
+                TEST_SESSION_EPOCH,
+                1,
+            ),
+        )
+        .await;
+        assert!(matches!(
+            read_event(&mut control).await,
+            ControlEvent::CommandResult {
+                status: CommandStatus::Applied,
+                ..
+            }
+        ));
+        let mut granted = [0; BRIDGE_FRAME_SIZE];
+        bridge.read_exact(&mut granted).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&granted, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::CheckpointGranted
+        );
+
+        // A stock mGBA full-slot save is still programming flash at three
+        // seconds. An idle stream during that work is not a stalled record.
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        assert!(
+            !server_task.is_finished(),
+            "flash work must outlive the transport timeout"
+        );
+        bridge.write_all(&save_update(2, 1).encode()).await.unwrap();
+        assert_eq!(
+            read_event(&mut control).await,
+            ControlEvent::SaveDataUpdated {
+                session_epoch: TEST_SESSION_EPOCH,
+                ready_sequence: 1,
+                save_sequence: 2,
+                save_generation: 1,
+            }
+        );
+        drop(control);
+        drop(bridge);
+        server_task.abort();
+        let _ = server_task.await;
     }
 
     #[tokio::test]

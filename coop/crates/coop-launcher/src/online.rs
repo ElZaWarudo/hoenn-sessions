@@ -52,6 +52,9 @@ impl ReqwestCloudApi {
         let response = request.send().await.map_err(|_| OnlineError::Unavailable)?;
         let status = response.status();
         if !status.is_success() {
+            if status.is_server_error() {
+                return Err(OnlineError::Unavailable);
+            }
             let bytes = crate::bounded_body(response, 1024)
                 .await
                 .map_err(map_http_error)?;
@@ -331,7 +334,7 @@ async fn load_snapshot<A: CloudApi>(
                 },
             )
             .await?;
-        if page.incoming.is_empty()
+        if (page.incoming.is_empty() && page.incoming_next.is_some())
             || page
                 .incoming
                 .iter()
@@ -578,6 +581,59 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn reopened_view_discards_pending_success_and_refresh_recovers() {
+        let (api, requests, task) = server(vec![
+            Some((200, serde_json::to_value(snapshot()).unwrap())),
+            Some((200, serde_json::to_value(snapshot()).unwrap())),
+        ])
+        .await;
+        let token = AccessToken::new("online-test").unwrap();
+        let mut owner = OnlineOwner::default();
+        assert!(
+            owner
+                .start(
+                    &api,
+                    token.clone(),
+                    fence(),
+                    1,
+                    request(1, 0, OnlineAction::Refresh)
+                )
+                .is_none()
+        );
+        let reopened = owner
+            .start(
+                &api,
+                token.clone(),
+                fence(),
+                1,
+                request(2, 0, OnlineAction::Refresh),
+            )
+            .unwrap();
+        assert_eq!(reopened.request_id, 2);
+        assert_eq!(reopened.result, OnlineResult::Unavailable);
+        let old = owner.next().await;
+        assert!(owner.finish(old, fence(), 1).unwrap().is_none());
+        assert!(owner.view.is_none());
+        assert!(
+            owner
+                .start(
+                    &api,
+                    token,
+                    fence(),
+                    1,
+                    request(3, 0, OnlineAction::Refresh)
+                )
+                .is_none()
+        );
+        let fresh = owner.next().await;
+        let status = owner.finish(fresh, fence(), 1).unwrap().unwrap();
+        assert_eq!(status.request_id, 3);
+        assert_eq!(status.result, OnlineResult::Ready);
+        task.await.unwrap();
+        assert_eq!(requests.lock().unwrap().len(), 2);
+    }
+
     #[test]
     fn online_completion_cannot_cross_revision_or_presence_generation() {
         for generation_changed in [false, true] {
@@ -605,6 +661,111 @@ mod tests {
                 assert!(owner.view.is_none());
             }
         }
+    }
+
+    #[tokio::test]
+    async fn online_pagination_accepts_expired_terminal_page_but_rejects_empty_continuation() {
+        for continues in [false, true] {
+            let mut first = serde_json::to_value(snapshot()).unwrap();
+            first["incoming"] = json!([{"invitation":{"api_version":1,"invitation_id":Uuid::from_u128(9),
+                "inviter_character_id":Uuid::from_u128(10),"invitee_character_id":fence().character_id,
+                "expires_at":9_999_999_999_999_u64},"username":"may"}]);
+            first["incoming_next"] = json!(Uuid::from_u128(9));
+            let mut terminal = serde_json::to_value(snapshot()).unwrap();
+            if continues {
+                terminal["incoming_next"] = json!(Uuid::from_u128(10));
+            }
+            let (api, requests, task) =
+                server(vec![Some((200, first)), Some((200, terminal))]).await;
+            let result =
+                load_snapshot(&api, AccessToken::new("online-test").unwrap(), fence()).await;
+            if continues {
+                assert_eq!(result.unwrap_err(), OnlineError::InvalidResponse);
+            } else {
+                let result = result.unwrap();
+                assert_eq!(result.incoming.len(), 1);
+                assert!(result.incoming_next.is_none());
+            }
+            task.await.unwrap();
+            assert_eq!(
+                requests.lock().unwrap()[1]["incoming_after"],
+                json!(Uuid::from_u128(9))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn online_pagination_stops_at_thirty_two_invitations() {
+        let pages = (0_u128..8).map(|page| {
+            let mut body = serde_json::to_value(snapshot()).unwrap();
+            let entries: Vec<_> = (1..=4).map(|offset| json!({"invitation":{
+                "api_version":1,"invitation_id":Uuid::from_u128(page * 4 + offset),
+                "inviter_character_id":Uuid::from_u128(100),"invitee_character_id":fence().character_id,
+                "expires_at":9_999_999_999_999_u64},"username":"may"})).collect();
+            body["incoming"] = json!(entries);
+            body["incoming_next"] = json!(Uuid::from_u128(page * 4 + 4));
+            Some((200,body))
+        }).collect();
+        let (api, requests, task) = server(pages).await;
+        let result = load_snapshot(&api, AccessToken::new("online-test").unwrap(), fence())
+            .await
+            .unwrap();
+        assert_eq!(result.incoming.len(), 32);
+        assert!(result.incoming_next.is_none());
+        task.await.unwrap();
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 8);
+        for (index, request) in requests.iter().enumerate().skip(1) {
+            assert_eq!(
+                request["incoming_after"],
+                json!(Uuid::from_u128(index as u128 * 4))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn online_server_failure_does_not_require_json() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let api =
+            ReqwestCloudApi::new(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let task = tokio::spawn(async move {
+            for body in ["", "<html>Service unavailable</html>"] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    socket.read_exact(&mut byte).await.unwrap();
+                    request.push(byte[0]);
+                }
+                let header = String::from_utf8(request).unwrap();
+                let length: usize = header
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|value| value.trim().parse().unwrap())
+                    })
+                    .unwrap();
+                socket.read_exact(&mut vec![0; length]).await.unwrap();
+                socket.write_all(format!("HTTP/1.1 503 Unavailable\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+            }
+        });
+        for _ in 0..2 {
+            assert_eq!(
+                api.online_snapshot(
+                    AccessToken::new("online-test").unwrap(),
+                    OnlineSnapshotRequest {
+                        api_version: ApiVersion::V1,
+                        fence: fence(),
+                        incoming_after: None,
+                    }
+                )
+                .await
+                .unwrap_err(),
+                OnlineError::Unavailable
+            );
+        }
+        task.await.unwrap();
     }
 
     #[tokio::test]

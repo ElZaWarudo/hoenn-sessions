@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import struct
 import subprocess
@@ -25,7 +26,12 @@ from coop.generate_regional_identities import (
 BRIDGE_SYMBOL = "gCoopNetBridge"
 SAVE_BLOCK3_SYMBOL = "gSaveblock3"
 SAVE_DESCRIPTOR_SYMBOL = "gCoopSaveSchemaDescriptor"
-ABI_SYMBOLS = frozenset((BRIDGE_SYMBOL, SAVE_BLOCK3_SYMBOL, SAVE_DESCRIPTOR_SYMBOL))
+SAVE_SLOT_LAYOUT_SYMBOL = "sSaveSlotLayout"
+SAVE_SLOT_RECORD = struct.Struct("<HH")
+RUST_SAVE_SOURCE = Path(__file__).resolve().parents[1] / "coop/crates/coop-save/src/lib.rs"
+ABI_SYMBOLS = frozenset(
+    (BRIDGE_SYMBOL, SAVE_BLOCK3_SYMBOL, SAVE_DESCRIPTOR_SYMBOL, SAVE_SLOT_LAYOUT_SYMBOL)
+)
 MANIFEST_SCHEMA_VERSION = 3
 EMULATOR_NAME = "mGBA"
 EMULATOR_VERSION = "0.10.5"
@@ -293,6 +299,10 @@ def read_save_descriptor_bytes(rom_path: Path, symbol: Symbol) -> bytes:
     if symbol.name != SAVE_DESCRIPTOR_SYMBOL:
         raise ManifestError(f"ROM symbol must be {SAVE_DESCRIPTOR_SYMBOL}")
     validate_save_descriptor_symbol_layout(symbol)
+    return read_rom_symbol_bytes(rom_path, symbol)
+
+
+def read_rom_symbol_bytes(rom_path: Path, symbol: Symbol) -> bytes:
     offset = symbol.address - ROM_START
     end = offset + symbol.size
     try:
@@ -312,6 +322,57 @@ def read_save_descriptor_bytes(rom_path: Path, symbol: Symbol) -> bytes:
     if len(payload) != symbol.size:
         raise ManifestError(f"short read for {symbol.name} from {rom_path}")
     return payload
+
+
+def load_rust_sector_sizes(path: Path) -> tuple[int, ...]:
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ManifestError("cannot read Rust save-sector contract") from error
+    # Count unsupported and commented declarations too: a numeric decoy must
+    # never hide an active initializer that this deliberately narrow reader
+    # cannot interpret.
+    if len(re.findall(r"\bpub\s+const\s+LOGICAL_SECTOR_DATA_SIZES\b", source)) != 1:
+        raise ManifestError("Rust save-sector contract must have one declaration")
+    declarations = re.findall(
+        r"pub const LOGICAL_SECTOR_DATA_SIZES\s*:\s*\[usize;\s*SECTORS_PER_SLOT\]\s*=\s*\[([^\]]*)\]\s*;",
+        source,
+    )
+    if len(declarations) != 1 or not re.fullmatch(
+        r"\s*[0-9]+(?:\s*,\s*[0-9]+)*\s*,?\s*", declarations[0]
+    ):
+        raise ManifestError("Rust save-sector contract must be one numeric list")
+    sizes = tuple(
+        int(item.strip()) for item in declarations[0].strip().rstrip(",").split(",")
+    )
+    if len(sizes) != SAVE_SECTORS_PER_SLOT or any(
+        size > SAVE_SECTOR_DATA_SIZE or size % 4 for size in sizes
+    ):
+        raise ManifestError("Rust save-sector contract has invalid count or checksum lengths")
+    return sizes
+
+
+def validate_save_slot_contract(
+    rom_path: Path, symbols: dict[str, Symbol], source_path: Path = RUST_SAVE_SOURCE
+) -> None:
+    symbol = symbols.get(SAVE_SLOT_LAYOUT_SYMBOL)
+    if symbol is None:
+        raise ManifestError(f"linked ELF does not define {SAVE_SLOT_LAYOUT_SYMBOL}")
+    if (
+        symbol.name != SAVE_SLOT_LAYOUT_SYMBOL
+        or symbol.kind not in ("r", "R")
+        or symbol.address % 2
+    ):
+        raise ManifestError("save-slot layout must be an aligned read-only ROM symbol")
+    size = SAVE_SECTORS_PER_SLOT * SAVE_SLOT_RECORD.size
+    validate_symbol_range(
+        symbol, start=ROM_START, end=ROM_END, minimum_size=size,
+        maximum_size=size, region="ROM",
+    )
+    payload = read_rom_symbol_bytes(rom_path, symbol)
+    sizes = tuple(size for _, size in SAVE_SLOT_RECORD.iter_unpack(payload))
+    if sizes != load_rust_sector_sizes(source_path):
+        raise ManifestError("linked save-slot checksum lengths differ from the Rust validator")
 
 
 def sha256_file(path: Path) -> str:
@@ -639,6 +700,7 @@ def main() -> int:
     symbols = inspect_elf(args.elf, args.nm)
     bridge = validate_bridge_symbol(symbols)
     block3, descriptor_symbol = validate_save_symbols(symbols)
+    validate_save_slot_contract(args.rom, symbols)
     registry = load_registry_contract(args.registry)
     descriptor = parse_save_descriptor(
         read_save_descriptor_bytes(args.rom, descriptor_symbol)

@@ -86,7 +86,7 @@ const PLAYER_TRAINER_ID_SIZE: usize = 4;
 /// Number of bytes from the normal sector payload covered by the game's
 /// additive checksum for each logical sector.
 pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = [
-    3884, 3968, 3968, 3968, 3664, 0, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2400,
+    3892, 3968, 3968, 3968, 3968, 264, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2400,
 ];
 
 /// Expected identity-registry metadata embedded in `CoopSaveV1`.

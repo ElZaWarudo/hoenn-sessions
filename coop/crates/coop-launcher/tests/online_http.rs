@@ -72,6 +72,10 @@ async fn invite(
 }
 
 #[tokio::test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "two authenticated players exercise the complete invitation and symmetric group transaction chain"
+)]
 async fn online_http_inbox_accept_decline_and_symmetric_leave_use_real_server() {
     let config = Phase2Config::local(
         vec![0x55; 32],

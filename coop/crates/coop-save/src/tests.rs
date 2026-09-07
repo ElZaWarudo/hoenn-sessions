@@ -2,6 +2,25 @@ use super::*;
 
 const TEST_REGISTRY: RegistryContract = RegistryContract::new(7, [0xa5; 16]);
 
+#[test]
+fn stock_mgba_first_save_matches_linked_rom_sector_checksums() {
+    // Genuine first save through the ordinary menu on the Character build,
+    // with stock mGBA 0.10.5. Unlike write_slot, this fixture does not derive
+    // its checksums from the validator's own size table.
+    let bytes = include_bytes!("../tests/fixtures/stock-mgba-first-save.sav");
+    let registry = RegistryContract::new(
+        1,
+        [
+            0x43, 0x91, 0x88, 0x33, 0xde, 0xc6, 0x46, 0xd6, 0xa5, 0x83, 0xd1, 0x24, 0x68, 0x6c,
+            0x85, 0x40,
+        ],
+    );
+    let save = parse(bytes, registry).expect("stock ROM save must validate");
+    assert_eq!(save.coop().save_generation, 1);
+    assert!(save.coop().online_eligible());
+    assert!(save.rtc_trailer().is_some());
+}
+
 fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
     bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
 }

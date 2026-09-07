@@ -480,7 +480,15 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
         connect_deadline,
         connect_async_with_config(request, Some(websocket_config), false),
     );
-    let (mut socket, _) = match connect.await {
+    let connected = tokio::select! {
+        biased;
+        result = connect => result,
+        _ = driver.stop_rx.changed() => {
+            driver.stopped.store(true, Ordering::Release);
+            return RealtimeOutcome::OwnerStopped;
+        }
+    };
+    let (mut socket, _) = match connected {
         Ok(Ok(connection)) => connection,
         Ok(Err(error)) => return connect_error_outcome(&error),
         Err(_) => {
@@ -491,6 +499,10 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
             };
         }
     };
+
+    if driver.stopped.load(Ordering::Acquire) {
+        return RealtimeOutcome::OwnerStopped;
+    }
 
     let cached_state = driver.state_rx.borrow().clone();
     if send_client_frame(

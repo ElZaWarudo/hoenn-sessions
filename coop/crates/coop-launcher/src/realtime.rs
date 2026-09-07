@@ -123,7 +123,7 @@ pub(crate) struct RealtimeCoordinator {
     ready_interaction_watermark: Option<u64>,
     pending_interactions: VecDeque<(u64, PresenceInteractionV1)>,
     terminal_outcome: Option<RealtimeOutcome>,
-    map_recovery: bool,
+    planned_recovery: bool,
     #[cfg(test)]
     ordering_probe: Option<std::sync::Arc<RealtimeOrderingProbe>>,
     #[cfg(test)]
@@ -163,7 +163,7 @@ impl RealtimeCoordinator {
             ready_interaction_watermark: None,
             pending_interactions: VecDeque::new(),
             terminal_outcome: None,
-            map_recovery: false,
+            planned_recovery: false,
             #[cfg(test)]
             ordering_probe: None,
             #[cfg(test)]
@@ -177,17 +177,32 @@ impl RealtimeCoordinator {
 
     pub(crate) fn recovery_needed(&self) -> bool {
         match self.terminal_outcome {
-            Some(RealtimeOutcome::OwnerStopped) | None => self.map_recovery,
+            Some(RealtimeOutcome::OwnerStopped) | None => self.planned_recovery,
             Some(outcome) => recoverable_outcome(outcome),
         }
     }
 
-    pub(crate) const fn map_changed(&self) -> bool {
-        self.map_recovery
+    pub(crate) const fn planned_recovery(&self) -> bool {
+        self.planned_recovery
+    }
+
+    pub(crate) async fn suspend_for_checkpoint(&mut self) -> Result<(), RealtimeCoordinatorError> {
+        self.stop_owner_input();
+        if self.task.is_some() {
+            self.join_driver_task().await?;
+        }
+        match self.terminal_outcome {
+            Some(RealtimeOutcome::OwnerStopped) => {
+                self.planned_recovery = true;
+                Ok(())
+            }
+            Some(outcome) if recoverable_outcome(outcome) => Ok(()),
+            _ => Err(RealtimeCoordinatorError::Terminated),
+        }
     }
 
     pub(crate) fn request_map_recovery(&mut self) {
-        self.map_recovery = true;
+        self.planned_recovery = true;
         self.owner.stop();
     }
 
@@ -203,6 +218,7 @@ impl RealtimeCoordinator {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn interaction_ready(&self) -> bool {
         self.interaction_ready
     }
@@ -224,7 +240,7 @@ impl RealtimeCoordinator {
             if sequence <= watermark {
                 continue;
             }
-            self.owner.interact(interaction).map_err(map_input_error)?;
+            self.classify_input(self.owner.interact(interaction))?;
         }
         self.interaction_ready = true;
         Ok(())
@@ -244,9 +260,7 @@ impl RealtimeCoordinator {
         &self,
         state: LocalPresenceStateV1,
     ) -> Result<(), RealtimeCoordinatorError> {
-        self.owner
-            .update_state(state)
-            .map_err(|_| RealtimeCoordinatorError::Input)
+        self.classify_input(self.owner.update_state(state))
     }
 
     /// Drops pre-readiness interactions and preserves FIFO after readiness.
@@ -273,7 +287,26 @@ impl RealtimeCoordinator {
                 .push_back((self.interaction_sequence, interaction));
             return Ok(());
         }
-        self.owner.interact(interaction).map_err(map_input_error)
+        self.classify_input(self.owner.interact(interaction))
+    }
+
+    fn classify_input(
+        &self,
+        result: Result<(), RealtimeInputError>,
+    ) -> Result<(), RealtimeCoordinatorError> {
+        match result {
+            Ok(()) => Ok(()),
+            // The driver closes its channels before its JoinHandle becomes
+            // ready. Let next_event classify that outcome; a late pose or
+            // interaction must not turn a recoverable disconnect into a fatal
+            // input error. Protocol/capacity failures still fail closed there.
+            Err(RealtimeInputError::Closed | RealtimeInputError::NotReady)
+                if self.task.is_some() =>
+            {
+                Ok(())
+            }
+            Err(_) => Err(RealtimeCoordinatorError::Input),
+        }
     }
 
     pub(crate) async fn next_event(
@@ -287,7 +320,7 @@ impl RealtimeCoordinator {
         // after the driver has already failed closed (for example, because
         // that same queue overflowed).
         if task.is_finished() {
-            return self.reap_completed_task().await;
+            return self.join_driver_task().await;
         }
         let task = self.task.as_mut().expect("unfinished task remains owned");
         tokio::select! {
@@ -304,7 +337,7 @@ impl RealtimeCoordinator {
             }
             event = self.owner.recv_event() => {
                 let Some(event) = event else {
-                    return Err(RealtimeCoordinatorError::Terminated);
+                    return self.join_driver_task().await;
                 };
                 #[cfg(test)]
                 if let Some(barrier) = &self.event_return_barrier {
@@ -312,7 +345,7 @@ impl RealtimeCoordinator {
                     barrier.release.notified().await;
                 }
                 if self.task.as_ref().is_some_and(JoinHandle::is_finished) {
-                    return self.reap_completed_task().await;
+                    return self.join_driver_task().await;
                 }
                 let mapped = map_owner_event(event, &mut self.server_ready);
                 if matches!(mapped, Ok(RealtimeCoordinatorEvent::Ready)) {
@@ -327,14 +360,13 @@ impl RealtimeCoordinator {
         }
     }
 
-    async fn reap_completed_task(
+    async fn join_driver_task(
         &mut self,
     ) -> Result<RealtimeCoordinatorEvent, RealtimeCoordinatorError> {
-        let outcome = self
-            .task
-            .take()
-            .expect("completed task remains owned")
-            .await;
+        let outcome = self.task.as_mut().expect("driver task remains owned").await;
+        // next_event participates in the session select loop. Keep ownership
+        // while waiting so another branch cannot cancel and detach the driver.
+        self.task = None;
         match outcome {
             Ok(outcome) => {
                 self.terminal_outcome = Some(outcome);
@@ -344,11 +376,15 @@ impl RealtimeCoordinator {
         }
     }
 
-    pub(crate) async fn stop_and_join(mut self) -> Result<(), RealtimeCoordinatorError> {
+    fn stop_owner_input(&mut self) {
         self.server_ready = false;
         self.interaction_ready = false;
         self.pending_interactions.clear();
         self.owner.stop();
+    }
+
+    pub(crate) async fn stop_and_join(mut self) -> Result<(), RealtimeCoordinatorError> {
+        self.stop_owner_input();
         let Some(task) = self.task.take() else {
             return Ok(());
         };
@@ -380,10 +416,6 @@ impl Drop for RealtimeCoordinator {
             task.abort();
         }
     }
-}
-
-fn map_input_error(_error: RealtimeInputError) -> RealtimeCoordinatorError {
-    RealtimeCoordinatorError::Input
 }
 
 fn map_owner_event(
@@ -865,6 +897,92 @@ mod tests {
         .await
         .expect("coordinator task must terminate without a synchronization sleep")
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn coordinator_classifies_driver_outcome_before_rejecting_late_inputs() {
+        for protocol_failure in [false, true] {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let (close_tx, close_rx) = tokio::sync::oneshot::channel();
+            let server = tokio::spawn(async move {
+                let mut socket = accept_websocket_for_test(listener).await;
+                let _cached = read_websocket_text_for_test(&mut socket).await;
+                let ready = ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap());
+                send_websocket_text_for_test(
+                    &mut socket,
+                    &encode_server_realtime_frame(&ready).unwrap(),
+                )
+                .await;
+                close_rx.await.unwrap();
+                if protocol_failure {
+                    send_websocket_text_for_test(&mut socket, b"invalid frame").await;
+                    let mut remainder = Vec::new();
+                    let _ = socket.read_to_end(&mut remainder).await;
+                }
+            });
+            let now = unix_now();
+            let grant = RealtimeGrant::with_now(
+                RealtimeTicket::from_bytes([47; 32]).unwrap(),
+                RealtimeEndpoint::new(format!("ws://127.0.0.1:{port}/v1/realtime")).unwrap(),
+                UnixTimestampMillis::new(now.value() + REALTIME_TICKET_TTL_MS),
+                now,
+            )
+            .unwrap();
+            let mut coordinator = RealtimeCoordinator::start(grant, 1, state(1)).unwrap();
+            assert!(matches!(
+                coordinator.next_event().await.unwrap(),
+                RealtimeCoordinatorEvent::Ready
+            ));
+            coordinator.activate_interactions().unwrap();
+
+            // Hold JoinHandle completion after the real driver has dropped its
+            // input/event channels, forcing both sides of the shutdown race.
+            let driver = coordinator.task.take().unwrap();
+            let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            coordinator.task = Some(tokio::spawn(async move {
+                let outcome = driver.await.unwrap();
+                closed_tx.send(()).unwrap();
+                release_rx.await.unwrap();
+                outcome
+            }));
+            close_tx.send(()).unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(2), closed_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(
+                coordinator.update_state(state(2)).is_ok(),
+                "late pose must defer to driver outcome"
+            );
+            let interaction =
+                PresenceInteractionV1::new(PresenceHandle::new(9).unwrap(), 1, 1, 4, 5).unwrap();
+            assert!(
+                coordinator.interact(interaction).is_ok(),
+                "late interaction must defer to driver outcome"
+            );
+            {
+                let event = coordinator.next_event();
+                tokio::pin!(event);
+                tokio::select! {
+                    _ = &mut event => panic!("closed event channel must await driver classification"),
+                    () = tokio::time::sleep(std::time::Duration::from_millis(10)) => {},
+                }
+            }
+            assert!(
+                coordinator.task.is_some(),
+                "cancelling the wait must retain driver ownership"
+            );
+            release_tx.send(()).unwrap();
+            assert!(matches!(
+                coordinator.next_event().await.unwrap(),
+                RealtimeCoordinatorEvent::Terminal
+            ));
+            assert_eq!(coordinator.recovery_needed(), !protocol_failure);
+            coordinator.stop_and_join().await.unwrap();
+            server.await.unwrap();
+        }
     }
 
     #[tokio::test]

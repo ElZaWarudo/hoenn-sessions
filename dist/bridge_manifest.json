@@ -10,11 +10,11 @@
   "game_build": {
     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
     "numeric_id": 65536,
-    "rom_sha256": "6ca606b713ef371cb77ad307db33df76a31069a8cf4002dfad591f2ad59bf765"
+    "rom_sha256": "8d599e9742e14c4418e754f9a105299d99058c584f59a7a1b5ae35eb8b336eb0"
   },
   "net_bridge": {
     "abi_version": 1,
-    "address": 33782960,
+    "address": 33782964,
     "byte_order": "little",
     "checksum": {
       "algorithm": "CRC-32/IEEE",

@@ -1400,8 +1400,9 @@ impl ControlChannel {
         self.shared.current_snapshot().reset_latched
     }
 
+    /// Returns the first control-pump failure without protocol payloads or credentials.
     #[must_use]
-    pub(crate) fn terminal_cause(&self) -> Option<ControlTerminalCause> {
+    pub fn terminal_cause(&self) -> Option<ControlTerminalCause> {
         self.shared.terminal()
     }
 
@@ -1756,6 +1757,10 @@ fn command_line(command: &ControlCommand) -> Result<Vec<u8>, ProcessError> {
     Ok(bytes)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "reader serializes reset, rearm, and bounded queue admission before publishing events"
+)]
 async fn run_control_reader(
     mut stream: tokio::net::tcp::OwnedReadHalf,
     critical_tx: mpsc::Sender<ControlEvent>,
@@ -4361,7 +4366,10 @@ mod tests {
             ControlEvent::OnlineRequest(request)
         );
         server.await.unwrap();
-        control.shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1)).await.unwrap();
+        control
+            .shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1))
+            .await
+            .unwrap();
 
         let (mut control, server) =
             control_event_pair(vec![ControlEvent::OnlineRequest(request)]).await;
@@ -4385,7 +4393,10 @@ mod tests {
         ));
         assert!(control.receive().await.is_err());
         assert!(control.online_rx.is_empty());
-        control.shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1)).await.unwrap();
+        control
+            .shutdown_until(tokio::time::Instant::now() + std::time::Duration::from_secs(1))
+            .await
+            .unwrap();
     }
 
     async fn gated_critical_event_pair(
