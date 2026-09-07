@@ -2,10 +2,27 @@
 #include "event_data.h"
 #include "dexnav.h"
 #include "start_menu.h"
+#include "window.h"
+#include "menu.h"
+#include "text.h"
 #include "coop/online.h"
 #include "coop/net_bridge.h"
 #include "coop/save.h"
 #include "test/test.h"
+
+TEST("Cloud Coop Online window graphics preserve field borders and tilemaps")
+{
+    const struct WindowTemplate *window = CoopOnline_TestWindowTemplate();
+    u32 endTile = window->baseBlock + window->width * window->height;
+
+    // Field BG0 uses character base 2 (0x8000), with 32-byte 4bpp tiles.
+    // Dialogue borders start at tile 0x200; field tilemaps start at 0xE000.
+    // Check the actual allocation: base 0x220 previously overwrote both regions.
+    EXPECT_EQ(window->bg, 0);
+    EXPECT(window->width != 0 && window->height != 0);
+    EXPECT(endTile <= 0x200);
+    EXPECT(0x8000 + endTile * 32 <= 0xE000);
+}
 
 TEST("Cloud Coop Online fully unlocked pause menu fits the screen")
 {
@@ -18,12 +35,29 @@ TEST("Cloud Coop Online fully unlocked pause menu fits the screen")
     FlagSet(FLAG_SYS_POKENAV_GET);
     if (DN_FLAG_DEXNAV_GET != 0)
         FlagSet(DN_FLAG_DEXNAV_GET);
-    EXPECT_EQ(CoopStartMenu_TestBuildNormal(), DN_FLAG_DEXNAV_GET != 0 ? 10 : 9);
+    EXPECT_EQ(CoopStartMenu_TestBuildNormal(), DN_FLAG_DEXNAV_GET != 0 ? 11 : 10);
     EXPECT_EQ(CoopStartMenu_TestVisibleCount(), 8);
     if (!dex) FlagClear(FLAG_SYS_POKEDEX_GET);
     if (!pokemon) FlagClear(FLAG_SYS_POKEMON_GET);
     if (!nav) FlagClear(FLAG_SYS_POKENAV_GET);
     if (DN_FLAG_DEXNAV_GET != 0 && !dexnav) FlagClear(DN_FLAG_DEXNAV_GET);
+}
+
+TEST("Cloud Coop Character pause label fits without overwriting field tiles")
+{
+    u8 window;
+    u32 width, height, base;
+    InitStandardTextBoxWindows();
+    window = AddStartMenuWindow(8);
+    EXPECT_NE(window, WINDOW_NONE);
+    width = GetWindowAttribute(window, WINDOW_WIDTH);
+    height = GetWindowAttribute(window, WINDOW_HEIGHT);
+    base = GetWindowAttribute(window, WINDOW_BASE_BLOCK);
+    EXPECT(8 + GetStringWidth(FONT_NORMAL, COMPOUND_STRING("CHARACTER"), 0) <= width * 8);
+    EXPECT(GetWindowAttribute(window, WINDOW_TILEMAP_LEFT) + width <= 29);
+    EXPECT(base + width * height <= 0x200);
+    RemoveStartMenuWindow();
+    FreeAllWindowBuffers();
 }
 
 static u32 sHostSequence;

@@ -888,7 +888,7 @@ TEST("Cloud Coop presence decoders accept every assigned pose ordinal")
         EXPECT(CoopPresence_DecodePose(bytes, sizeof(bytes), &decoded));
         ExpectPoseEqual(&decoded, &pose);
     }
-    for (i = COOP_PRESENCE_AVATAR_BRENDAN; i <= COOP_PRESENCE_AVATAR_MAY; i++)
+    for (i = COOP_PRESENCE_AVATAR_BRENDAN; i <= COOP_PRESENCE_AVATAR_SAILOR; i++)
     {
         pose.avatar_id = i;
         decoded.avatar_id = 0;
@@ -1357,7 +1357,7 @@ TEST("Cloud Coop presence rejects every invalid ordinal independently")
                     &output, localSnapshot);
     RejectLocalByte(localBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 0,
                     &output, localSnapshot);
-    RejectLocalByte(localBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 3,
+    RejectLocalByte(localBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 13,
                     &output, localSnapshot);
     RejectLocalByte(localBytes, COOP_PRESENCE_POSE_PLAYER_STATE_OFFSET, 2,
                     &output, localSnapshot);
@@ -1372,7 +1372,7 @@ TEST("Cloud Coop presence rejects every invalid ordinal independently")
                    &poseOutput, poseSnapshot);
     RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 0,
                    &poseOutput, poseSnapshot);
-    RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 3,
+    RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 13,
                    &poseOutput, poseSnapshot);
     RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_PLAYER_STATE_OFFSET, 2,
                    &poseOutput, poseSnapshot);
@@ -1443,9 +1443,9 @@ TEST("Cloud Coop presence propagates strict ordinal rejection through spawn and 
     RejectUpdateStateByte(updateBytesLocal, COOP_PRESENCE_POSE_DIRECTION_OFFSET,
                           5, &updateOutput, updateSnapshot);
     RejectSpawnStateByte(spawnBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET,
-                         3, &spawnOutput, spawnSnapshot);
+                         13, &spawnOutput, spawnSnapshot);
     RejectUpdateStateByte(updateBytesLocal, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET,
-                          3, &updateOutput, updateSnapshot);
+                          13, &updateOutput, updateSnapshot);
 }
 
 TEST("Cloud Coop presence update and length rejection preserve output")

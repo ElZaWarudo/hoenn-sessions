@@ -272,7 +272,7 @@
 #define VAR_UNUSED_0x40FC                                0x40FC // Unused Var
 #define VAR_UNUSED_0x40FD                                0x40FD // Unused Var
 #define VAR_UNUSED_0x40FE                                0x40FE // Unused Var
-#define VAR_UNUSED_0x40FF                                0x40FF // Unused Var
+#define VAR_COOP_CHARACTER                               0x40FF // Tagged cosmetic appearance; zero keeps original.
 
 // If nonzero, counts down by one every step.
 // When it hits zero, repel's effect wears off.

@@ -1241,6 +1241,15 @@ static const union AnimCmd *const sAnimTable_Standard[] = {
     [ANIM_STD_GO_FASTEST_NORTH] = sAnim_GoFastestNorth,
     [ANIM_STD_GO_FASTEST_WEST] = sAnim_GoFastestWest,
     [ANIM_STD_GO_FASTEST_EAST] = sAnim_GoFastestEast,
+    // Human NPC appearances use existing walking frames when the player runs.
+    [ANIM_RUN_SOUTH] = sAnim_GoFastSouth,
+    [ANIM_RUN_NORTH] = sAnim_GoFastNorth,
+    [ANIM_RUN_WEST] = sAnim_GoFastWest,
+    [ANIM_RUN_EAST] = sAnim_GoFastEast,
+    [ANIM_SPIN_SOUTH] = sAnim_SpinSouth,
+    [ANIM_SPIN_NORTH] = sAnim_SpinNorth,
+    [ANIM_SPIN_WEST] = sAnim_SpinWest,
+    [ANIM_SPIN_EAST] = sAnim_SpinEast,
 };
 
 const union AnimCmd *const sAnimTable_Following[] = {

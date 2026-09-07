@@ -5,10 +5,38 @@
 #define COOP_ONLINE_REQUEST_SIZE 12
 #define COOP_ONLINE_STATUS_SIZE 112
 #define COOP_ONLINE_NAME_SIZE 32
-enum CoopOnlineAction { COOP_ONLINE_REFRESH, COOP_ONLINE_INVITE, COOP_ONLINE_ACCEPT, COOP_ONLINE_DECLINE, COOP_ONLINE_LEAVE };
-enum CoopOnlineResult { COOP_ONLINE_READY, COOP_ONLINE_UNAVAILABLE, COOP_ONLINE_SUCCESS, COOP_ONLINE_STALE, COOP_ONLINE_FAILED };
-enum CoopOnlineFlags { COOP_ONLINE_GROUPED = 1, COOP_ONLINE_HAS_NEARBY = 2, COOP_ONLINE_HAS_INCOMING = 4 };
-struct CoopOnlineRequest { u32 request_id; u32 view_id; u8 action; u8 page; };
+enum CoopOnlineAction
+{
+    COOP_ONLINE_REFRESH = 0,
+    COOP_ONLINE_INVITE = 1,
+    COOP_ONLINE_ACCEPT = 2,
+    COOP_ONLINE_DECLINE = 3,
+    COOP_ONLINE_LEAVE = 4,
+};
+
+enum CoopOnlineResult
+{
+    COOP_ONLINE_READY = 0,
+    COOP_ONLINE_UNAVAILABLE = 1,
+    COOP_ONLINE_SUCCESS = 2,
+    COOP_ONLINE_STALE = 3,
+    COOP_ONLINE_FAILED = 4,
+};
+
+enum CoopOnlineFlags
+{
+    COOP_ONLINE_GROUPED = 1,
+    COOP_ONLINE_HAS_NEARBY = 2,
+    COOP_ONLINE_HAS_INCOMING = 4,
+};
+
+struct CoopOnlineRequest
+{
+    u32 request_id;
+    u32 view_id;
+    u8 action;
+    u8 page;
+};
 struct CoopOnlineStatus
 {
     u32 request_id;

@@ -29,8 +29,8 @@ static EWRAM_DATA bool8 sPending;
 
 static const struct WindowTemplate sOnlineWindow = {
     .bg = 0, .tilemapLeft = 2, .tilemapTop = 1,
-    // Above the field text and border tiles; ends below BG tile 1024.
-    .width = 26, .height = 18, .paletteNum = 15, .baseBlock = 0x220,
+    // Reuse the removed pause menu's tiles. Higher tiles overlap field tilemaps.
+    .width = 26, .height = 18, .paletteNum = 15, .baseBlock = 8,
 };
 
 static const u8 sOnline[] = _("ONLINE");
@@ -55,7 +55,7 @@ static const u8 sJoined[] = _("Group joined.");
 static const u8 sDeclined[] = _("Invitation declined.");
 static const u8 sLeft[] = _("Group left.");
 static const u8 sNoGroup[] = _("You are not in a group.");
-static const u8 sUnknown[] = _("Group status not available.");
+static const u8 sUnknown[] = _("Status not available.");
 static const u8 sGroupWith[] = _("Grouped with:");
 static const u8 sNobody[] = _("No eligible nearby players.");
 static const u8 sNoInvites[] = _("No pending invitations.");
@@ -143,6 +143,7 @@ static bool8 OptionEnabled(u8 option)
 static void Draw(void)
 {
     u8 i;
+    bool8 known = sStatus.request_id != 0 && (sStatus.result == COOP_ONLINE_READY || sStatus.result == COOP_ONLINE_SUCCESS);
     u8 pageText[8];
     u8 *end;
     const u8 *options[5];
@@ -153,8 +154,8 @@ static void Draw(void)
     Print(ResultText(), 8, 14);
     if (sPage == ONLINE_HOME)
     {
-        Print(sStatus.request_id == 0 ? sUnknown : (sStatus.flags & COOP_ONLINE_GROUPED ? sGroupWith : sNoGroup), 8, 28);
-        if (sStatus.flags & COOP_ONLINE_GROUPED) PrintName(sStatus.group_name, 40);
+        Print(!known ? sUnknown : (sStatus.flags & COOP_ONLINE_GROUPED ? sGroupWith : sNoGroup), 8, 28);
+        if (known && (sStatus.flags & COOP_ONLINE_GROUPED)) PrintName(sStatus.group_name, 40);
         options[0] = sNearby; options[1] = sIncoming;
         if (sStatus.flags & COOP_ONLINE_GROUPED)
         {
@@ -166,7 +167,7 @@ static void Draw(void)
     {
         u8 count = sPage == ONLINE_NEARBY ? sStatus.nearby_count : sStatus.incoming_count;
         u8 page = sPage == ONLINE_NEARBY ? sStatus.nearby_page : sStatus.incoming_page;
-        if (count != 0)
+        if (known && count != 0)
         {
             end = ConvertIntToDecimalStringN(pageText, page + 1, STR_CONV_MODE_LEFT_ALIGN, 2);
             *end++ = CHAR_SLASH;
@@ -175,13 +176,15 @@ static void Draw(void)
         }
         if (sPage == ONLINE_NEARBY)
         {
-            if (sStatus.nearby_count) PrintName(sStatus.nearby_name, 30);
+            if (!known) Print(sUnknown, 8, 30);
+            else if (sStatus.nearby_count) PrintName(sStatus.nearby_name, 30);
             else Print(sNobody, 8, 30);
             options[0] = sInvite; options[1] = sNext; options[2] = sRefresh; options[3] = sBack;
         }
         else
         {
-            if (sStatus.incoming_count) PrintName(sStatus.incoming_name, 30);
+            if (!known) Print(sUnknown, 8, 30);
+            else if (sStatus.incoming_count) PrintName(sStatus.incoming_name, 30);
             else Print(sNoInvites, 8, 30);
             options[0] = sAccept; options[1] = sDecline; options[2] = sNextInvite;
             options[3] = sRefresh; options[4] = sBack;
@@ -274,7 +277,7 @@ static bool8 HandleInput(u16 keys)
     if (!(keys & A_BUTTON)) return FALSE;
     if (sPage == ONLINE_HOME)
     {
-        if (sCursor < 2) { sPage = sCursor == 0 ? ONLINE_NEARBY : ONLINE_INCOMING; sCursor = 0; Send(COOP_ONLINE_REFRESH, 0); Draw(); }
+        if (sCursor < 2) { sPage = sCursor == 0 ? ONLINE_NEARBY : ONLINE_INCOMING; sCursor = 0; Send(COOP_ONLINE_REFRESH, 0); }
         else if (sCursor == 2 && (sStatus.flags & COOP_ONLINE_GROUPED)) Send(COOP_ONLINE_LEAVE, 0);
         else Send(COOP_ONLINE_REFRESH, 0);
     }
@@ -320,11 +323,9 @@ static void Task_Online(u8 taskId)
 
 void CoopOnline_Open(void)
 {
-    u8 taskId, i;
+    u8 taskId;
     // CreateTask returns zero on exhaustion, which may belong to another task.
-    for (i = 0; i < NUM_TASKS && gTasks[i].isActive; i++)
-        ;
-    if (i == NUM_TASKS)
+    if (GetTaskCount() == NUM_TASKS)
     {
         ScriptUnfreezeObjectEvents();
         UnlockPlayerFieldControls();
@@ -348,6 +349,7 @@ void CoopOnline_Open(void)
 }
 
 #if TESTING
+const struct WindowTemplate *CoopOnline_TestWindowTemplate(void) { return &sOnlineWindow; }
 void CoopOnline_TestBegin(void) { sWindowId = WINDOW_NONE; Begin(); }
 bool8 CoopOnline_TestInput(u16 keys) { return HandleInput(keys); }
 void CoopOnline_TestPoll(void) { Poll(); }

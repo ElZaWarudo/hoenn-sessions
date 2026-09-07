@@ -1777,6 +1777,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one fixture verifies invitation expiry, fencing, and racing membership outcomes"
+    )]
     fn online_expiry_fencing_and_accept_decline_race_preserve_membership() {
         use coop_cloud::{ApiVersion, OnlineAction, OnlineActionRequest, OnlineActionResponse};
         let app = Phase2App::test();
@@ -1884,6 +1888,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one presence fixture covers the eligibility rejection matrix"
+    )]
     fn online_nearby_rejects_foreign_partition_stale_and_invalid_repository_peers() {
         let app = app_with_unique_test_entropy();
         let first = account(&app, "onlineeve", "online-5");

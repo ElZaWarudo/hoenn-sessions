@@ -1197,7 +1197,11 @@ async fn realtime_transport_proves_malformed_oversized_and_exact_rate_boundaries
     }
     let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
     let (address, server) = start_server_with_retry().await?;
-    timeout(HTTP_FLOW_TIMEOUT, realtime_transport_boundary_flow(address)).await??;
+    timeout(
+        HTTP_FLOW_TIMEOUT,
+        Box::pin(realtime_transport_boundary_flow(address)),
+    )
+    .await??;
     server.shutdown()?;
     Ok(())
 }
@@ -1320,7 +1324,7 @@ async fn realtime_binary_mint_upgrade_and_ticket_replay_are_bounded() -> TestRes
     }
     let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
     let (address, server) = start_server_with_retry().await?;
-    timeout(HTTP_FLOW_TIMEOUT, realtime_binary_flow(address)).await??;
+    timeout(HTTP_FLOW_TIMEOUT, Box::pin(realtime_binary_flow(address))).await??;
     server.shutdown()?;
     Ok(())
 }

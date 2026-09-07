@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/character.h"
 #include "config/save.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -75,6 +76,7 @@ enum
     MENU_ACTION_DEBUG,
     MENU_ACTION_DEXNAV,
     MENU_ACTION_ONLINE,
+    MENU_ACTION_CHARACTER,
 };
 
 // Save status
@@ -94,7 +96,7 @@ EWRAM_DATA static u8 sSafariBallsWindowId = 0;
 EWRAM_DATA static u8 sBattlePyramidFloorWindowId = 0;
 EWRAM_DATA static u8 sStartMenuCursorPos = 0;
 EWRAM_DATA static u8 sNumStartMenuActions = 0;
-EWRAM_DATA static u8 sCurrentStartMenuActions[10] = {0};
+EWRAM_DATA static u8 sCurrentStartMenuActions[11] = {0};
 EWRAM_DATA static u8 sStartMenuScroll = 0;
 EWRAM_DATA static s8 sInitStartMenuData[2] = {0};
 
@@ -123,6 +125,7 @@ static bool8 StartMenuBattlePyramidBagCallback(void);
 static bool8 StartMenuDebugCallback(void);
 static bool8 StartMenuDexNavCallback(void);
 static bool8 StartMenuOnlineCallback(void);
+static bool8 StartMenuCharacterCallback(void);
 
 // Menu callbacks
 static bool8 SaveStartCallback(void);
@@ -204,6 +207,7 @@ static const struct WindowTemplate sWindowTemplate_PyramidPeak = {
 
 static const u8 sText_MenuDebug[] = _("DEBUG");
 static const u8 sText_MenuOnline[] = _("ONLINE");
+static const u8 sText_MenuCharacter[] = _("CHARACTER");
 
 static const struct MenuAction sStartMenuItems[] =
 {
@@ -223,6 +227,7 @@ static const struct MenuAction sStartMenuItems[] =
     [MENU_ACTION_DEBUG]           = {sText_MenuDebug,   {.u8_void = StartMenuDebugCallback}},
     [MENU_ACTION_DEXNAV]          = {gText_MenuDexNav,  {.u8_void = StartMenuDexNavCallback}},
     [MENU_ACTION_ONLINE]          = {sText_MenuOnline,  {.u8_void = StartMenuOnlineCallback}},
+    [MENU_ACTION_CHARACTER]       = {sText_MenuCharacter, {.u8_void = StartMenuCharacterCallback}},
 };
 
 static const struct BgTemplate sBgTemplates_LinkBattleSave[] =
@@ -364,6 +369,7 @@ static void BuildNormalStartMenu(void)
 
     AddStartMenuAction(MENU_ACTION_PLAYER);
     AddStartMenuAction(MENU_ACTION_ONLINE);
+    AddStartMenuAction(MENU_ACTION_CHARACTER);
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
     AddStartMenuAction(MENU_ACTION_EXIT);
@@ -744,6 +750,7 @@ static bool8 HandleStartMenuInput(void)
             && gMenuCallback != StartMenuExitCallback
             && gMenuCallback != StartMenuDebugCallback
             && gMenuCallback != StartMenuOnlineCallback
+            && gMenuCallback != StartMenuCharacterCallback
             && gMenuCallback != StartMenuSafariZoneRetireCallback
             && gMenuCallback != StartMenuBattlePyramidRetireCallback)
         {
@@ -914,6 +921,13 @@ static bool8 StartMenuOnlineCallback(void)
 {
     HideStartMenuDebug();
     CoopOnline_Open();
+    return TRUE;
+}
+
+static bool8 StartMenuCharacterCallback(void)
+{
+    HideStartMenuDebug();
+    CoopCharacter_Open();
     return TRUE;
 }
 

@@ -314,6 +314,16 @@ wire_enum!(AnimationId, "animation_id", {
 wire_enum!(AvatarId, "avatar_id", {
     1 => Brendan => "BRENDAN",
     2 => May => "MAY",
+    3 => Red => "RED",
+    4 => Leaf => "LEAF",
+    5 => Wally => "WALLY",
+    6 => Steven => "STEVEN",
+    7 => Norman => "NORMAN",
+    8 => Youngster => "YOUNGSTER",
+    9 => Lass => "LASS",
+    10 => Birch => "BIRCH",
+    11 => Hiker => "HIKER",
+    12 => Sailor => "SAILOR",
 });
 wire_enum!(PlayerState, "player_state", {
     0 => Hidden => "HIDDEN",
@@ -1656,6 +1666,14 @@ mod tests {
         assert_eq!(MovementMode::from_wire(2), Ok(MovementMode::Run));
         assert_eq!(AnimationId::from_wire(1), Ok(AnimationId::Locomotion));
         assert_eq!(AvatarId::from_wire(2), Ok(AvatarId::May));
+        for value in 1..=12 {
+            let avatar = AvatarId::from_wire(value).expect("selectable character");
+            assert_eq!(avatar.wire(), value);
+            let json = serde_json::to_string(&avatar).unwrap();
+            assert_eq!(serde_json::from_str::<AvatarId>(&json).unwrap(), avatar);
+        }
+        assert!(AvatarId::from_wire(0).is_err());
+        assert!(AvatarId::from_wire(13).is_err());
         assert_eq!(PlayerState::from_wire(0), Ok(PlayerState::Hidden));
         assert_eq!(
             DespawnReason::from_wire(6),

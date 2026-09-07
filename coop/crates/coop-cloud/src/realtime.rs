@@ -875,7 +875,7 @@ mod tests {
             u32::MAX,
             MovementMode::Idle,
             AnimationId::Locomotion,
-            AvatarId::Brendan,
+            AvatarId::Youngster,
             PlayerState::Overworld,
         )
         .unwrap();
@@ -1445,7 +1445,23 @@ mod tests {
             &AnimationId::Locomotion,
             &[AnimationId::Idle, AnimationId::Locomotion],
         );
-        assert_longest_json_token(&AvatarId::Brendan, &[AvatarId::Brendan, AvatarId::May]);
+        assert_longest_json_token(
+            &AvatarId::Youngster,
+            &[
+                AvatarId::Brendan,
+                AvatarId::May,
+                AvatarId::Red,
+                AvatarId::Leaf,
+                AvatarId::Wally,
+                AvatarId::Steven,
+                AvatarId::Norman,
+                AvatarId::Youngster,
+                AvatarId::Lass,
+                AvatarId::Birch,
+                AvatarId::Hiker,
+                AvatarId::Sailor,
+            ],
+        );
         assert_longest_json_token(
             &PlayerState::Overworld,
             &[PlayerState::Hidden, PlayerState::Overworld],
@@ -1471,7 +1487,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [366, 190]
+            [368, 190]
         );
         for frame in maximum_client_frames {
             let encoded = encode_client_realtime_frame(&frame).unwrap();
@@ -1485,7 +1501,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [163, 486, 441, 148]
+            [163, 488, 443, 148]
         );
         for frame in maximum_server_frames {
             let encoded = encode_server_realtime_frame(&frame).unwrap();

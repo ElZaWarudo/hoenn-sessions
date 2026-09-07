@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/character.h"
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "event_object_movement.h"
@@ -167,8 +168,7 @@ static bool8 BuildPose(struct CoopPresencePose *pose, bool8 visible)
     pose->warp_sequence = sCoopPresenceRuntime.warp_sequence;
     pose->movement_mode = COOP_PRESENCE_MOVEMENT_IDLE;
     pose->animation_id = COOP_PRESENCE_ANIMATION_IDLE;
-    pose->avatar_id = gPlayerAvatar.gender ? COOP_PRESENCE_AVATAR_MAY
-                                           : COOP_PRESENCE_AVATAR_BRENDAN;
+    pose->avatar_id = CoopCharacter_GetAvatarId();
     pose->player_state = visible ? COOP_PRESENCE_PLAYER_OVERWORLD
                                  : COOP_PRESENCE_PLAYER_HIDDEN;
 
@@ -305,8 +305,7 @@ static void ClearRendererIdentity(void)
 
 static u16 GetRenderedGraphicsId(void)
 {
-    return sCoopPresenceRuntime.rendered_avatar_id == COOP_PRESENCE_AVATAR_MAY
-        ? OBJ_EVENT_GFX_MAY_NORMAL : OBJ_EVENT_GFX_BRENDAN_NORMAL;
+    return CoopCharacter_GetGraphicsId(sCoopPresenceRuntime.rendered_avatar_id);
 }
 
 static void DestroyCachedOwnedSprite(u8 object_id, u8 sprite_id,
@@ -571,8 +570,7 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
 
     if (!RemoteCoordinatesValid(remote, &map_x, &map_y))
         return FALSE;
-    graphics_id = remote->state.pose.avatar_id == COOP_PRESENCE_AVATAR_MAY
-        ? OBJ_EVENT_GFX_MAY_NORMAL : OBJ_EVENT_GFX_BRENDAN_NORMAL;
+    graphics_id = CoopCharacter_GetGraphicsId(remote->state.pose.avatar_id);
     graphics = GetObjectEventGraphicsInfo(graphics_id);
     if (graphics == NULL)
         return FALSE;
@@ -775,8 +773,7 @@ static bool8 IsOwnedRendererEffectivelyVisible(const struct CoopPresenceRemote *
                          sCoopPresenceRuntime.rendered_generation,
                          &sprite) || sprite->invisible)
         return FALSE;
-    graphics_id = remote->state.pose.avatar_id == COOP_PRESENCE_AVATAR_MAY
-        ? OBJ_EVENT_GFX_MAY_NORMAL : OBJ_EVENT_GFX_BRENDAN_NORMAL;
+    graphics_id = CoopCharacter_GetGraphicsId(remote->state.pose.avatar_id);
     if (object_event->graphicsId != graphics_id
      || !RemoteCoordinatesValid(remote, &map_x, &map_y)
      || object_event->currentCoords.x != map_x

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/character.h"
 #include "main.h"
 #include "bike.h"
 #include "event_data.h"
@@ -1629,7 +1630,8 @@ u16 GetRSAvatarGraphicsIdByGender(enum Gender gender)
 
 u16 GetPlayerAvatarGraphicsIdByStateId(u8 state)
 {
-    return GetPlayerAvatarGraphicsIdByStateIdAndGender(state, gPlayerAvatar.gender);
+    u16 graphicsId = GetPlayerAvatarGraphicsIdByStateIdAndGender(state, gPlayerAvatar.gender);
+    return state == PLAYER_AVATAR_STATE_NORMAL ? CoopCharacter_OverrideNormalGraphics(graphicsId) : graphicsId;
 }
 
 enum Gender GetPlayerAvatarGenderByGraphicsId(u16 gfxId)
@@ -1741,7 +1743,9 @@ u16 GetPlayerAvatarGraphicsIdByCurrentState(void)
         for (i = 0; i < ARRAY_COUNT(sPlayerAvatarGfxToStateFlag_Frlg[0]); i++)
         {
             if (sPlayerAvatarGfxToStateFlag_Frlg[gPlayerAvatar.gender][i].playerFlag & flags)
-                return sPlayerAvatarGfxToStateFlag_Frlg[gPlayerAvatar.gender][i].graphicsId;
+                return sPlayerAvatarGfxToStateFlag_Frlg[gPlayerAvatar.gender][i].playerFlag == PLAYER_AVATAR_FLAG_ON_FOOT
+                    ? CoopCharacter_OverrideNormalGraphics(sPlayerAvatarGfxToStateFlag_Frlg[gPlayerAvatar.gender][i].graphicsId)
+                    : sPlayerAvatarGfxToStateFlag_Frlg[gPlayerAvatar.gender][i].graphicsId;
         }
     }
     else
@@ -1749,7 +1753,9 @@ u16 GetPlayerAvatarGraphicsIdByCurrentState(void)
         for (i = 0; i < ARRAY_COUNT(sPlayerAvatarGfxToStateFlag[0]); i++)
         {
             if (sPlayerAvatarGfxToStateFlag[gPlayerAvatar.gender][i].playerFlag & flags)
-                return sPlayerAvatarGfxToStateFlag[gPlayerAvatar.gender][i].graphicsId;
+                return sPlayerAvatarGfxToStateFlag[gPlayerAvatar.gender][i].playerFlag == PLAYER_AVATAR_FLAG_ON_FOOT
+                    ? CoopCharacter_OverrideNormalGraphics(sPlayerAvatarGfxToStateFlag[gPlayerAvatar.gender][i].graphicsId)
+                    : sPlayerAvatarGfxToStateFlag[gPlayerAvatar.gender][i].graphicsId;
         }
     }
     return 0;
@@ -1770,7 +1776,7 @@ void InitPlayerAvatar(s16 x, s16 y, enum Direction direction, enum Gender gender
     struct ObjectEvent *objectEvent;
 
     playerObjEventTemplate.localId = LOCALID_PLAYER;
-    playerObjEventTemplate.graphicsId = GetPlayerAvatarGraphicsIdByStateIdAndGender(PLAYER_AVATAR_STATE_NORMAL, gender);
+    playerObjEventTemplate.graphicsId = CoopCharacter_OverrideNormalGraphics(GetPlayerAvatarGraphicsIdByStateIdAndGender(PLAYER_AVATAR_STATE_NORMAL, gender));
     playerObjEventTemplate.x = x - MAP_OFFSET;
     playerObjEventTemplate.y = y - MAP_OFFSET;
     playerObjEventTemplate.elevation = ELEVATION_TRANSITION;
