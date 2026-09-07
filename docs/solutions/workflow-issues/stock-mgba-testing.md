@@ -21,7 +21,8 @@ suggested. Healthy bridge queues did not imply visible avatars, brief UI key
 presses were unreliable, and Windows process isolation and build paths introduced
 failures outside the mocked boundaries. These lessons come from the live runs
 recorded in the [conformance report](../../testing/littleroot-conformance.md),
-completed locally on 2026-09-06. No remote publication is implied.
+completed locally on 2026-09-06 and extended by the accepted Character/Online
+campaign on 2026-09-07. No remote publication is implied.
 
 ## Guidance
 
@@ -48,6 +49,8 @@ navigation, a temporary Lua helper that applies keys in both `frame` and
 two frames before each press, hold for a bounded frame count, then release and
 remove callbacks. Keep this helper outside versioned artifacts and session data.
 It must only provide normal button input, never write poses or save memory.
+The [mGBA scripting API](https://mgba.io/docs/scripting.html) documents `setKeys`,
+the frame/input callbacks, and removal by callback ID.
 
 Observed key indexes were A=0, B=1, Select=2, Start=3, Right=4, Left=5, Up=6,
 Down=7. Twelve frames worked for menu confirmation; approximately sixteen frames
@@ -61,6 +64,22 @@ Large blind input batches can choose a different option or walk against a wall.
 The successful second attempt used bounded batches with screenshots between
 stages, reducing fresh-game navigation substantially.
 
+For Online acceptance/decline, keep the recipient in the field while the sender
+loads a fresh nearby view. Stage the recipient's known navigation before sending,
+confirm the visible "Invitation sent" result, and execute promptly: invitations
+expire after 30 seconds. Screenshot preparation and long input gaps can consume
+that lifetime. An HTTP 200 alone does not prove acceptance; inspect both group
+views. A decline that returns the invitation-domain HTTP 401 expiry result must
+be repeated as a decline case. Test expiry separately from an observed live
+invitation, and refresh the authoritative group afterward.
+
+The final full-menu fixture used the existing debug UI to toggle Pokédex and
+PokéNav and give one basic Pokémon. Ten configured entries then exercised the
+eight-row pause window: scroll to Option, wrap between Pokédex and Exit, and
+open Character/Online before Exit. Do not claim story progression from these
+debug unlocks. Normal Bag exit needs enough fade time before dismissing the
+restored pause menu; inspect field/dialogue rendering afterward.
+
 The scripting console accepted `dofile` for the private per-player bridge script
 and the input helper. Return executed the command while retaining console focus;
 the Run button changed focus. Console `emu:runFrame()` was unavailable in that
@@ -70,6 +89,14 @@ after switching windows, and activate the game before capturing evidence so the
 scripting window does not obscure it.
 
 ### Keep build and runtime evidence aligned
+
+On Windows, do not pass a Bash script containing `$variables` through nested
+`wsl ... bash -lc` quoting without verifying the exact argument. One such call
+expanded its variables before Bash received the assignments, turning both copy
+paths into `/` and the build directory into an empty string. The copies failed;
+the unintended build was stopped. Use literal paths for short calls or a script
+file for commands that need shell variables. Preserve the build command's exit
+status instead of accidentally returning the status of a later `tail` command.
 
 Build the ROM on a native WSL filesystem; asset scans through `/mnt/c` were slow.
 The first test build compiles many fixtures even when the execution filter names
@@ -103,10 +130,33 @@ both tasks; dropping a join handle is not cleanup evidence.
 
 Choose the bounded observation duration before launch. The default 900 seconds
 was short for two manually navigated fresh introductions; the harness supports
-up to 3600. Create `accepted.txt` only after every printed assertion was actually
+up to 7200 for the expanded Character/Online campaign. This is operator
+observation time; game and protocol deadlines are unchanged. Create
+`accepted.txt` only after every printed assertion was actually
 observed. Use the adjacent `abort.txt` to stop without passing. A timeout, early
 exit, or uncertain cleanup remains a failure even if an acceptance file exists.
 Keep scripts, saves, passwords, tickets, and compatible states private.
+
+After confirmed child teardown the harness retains a separate, genuine
+`character.sav` copy and prints its private temporary path before releasing the
+session workspace. This is diagnostic evidence, not a successful checkpoint or
+an accepted run. It contains no bridge script or compatible state. Use it for
+read-only checksum investigation or an offline Continue check; never patch it
+to advance the campaign. Evidence-copy failure must still release the lease.
+
+Exercise a normal Save both before presence starts and after a peer is visible.
+The former active checkpoint path buffered peer lifecycle events while the save
+and cloud transaction finished. A 32-event list overflowed with 33 paced updates
+behind held finalization; coalescing per handle between structural events fixed
+that isolated defect. Native retesting with a hidden peer exposed another cause:
+the ROM intentionally emits no PlayerState during flash, exceeding the server's
+1500 ms stale-presence limit. The save finalized successfully after the driver
+had already reported ProtocolViolation. Cached poses cannot renew freshness.
+Coordinator-backed checkpoints therefore need deliberate transport suspension
+before flash grant and acknowledged rearm with a fresh pose afterward. Test
+active, preactivation, and stalled-connection cases; stopping a pending upgrade
+must not consume the three-second checkpoint decision window. Preserve fatal
+policy-close outcomes instead of treating every 1008 close as recoverable.
 
 ## Why this matters
 
@@ -127,6 +177,89 @@ For each run, record the revision and local diff, ROM and emulator hashes,
 duration, exact test command and exit result, each player's observed behavior,
 and both lifecycle/lease cleanup results. Distinguish failed or aborted runs from
 passes. Link native screenshots and state explicitly which flows were untested.
+
+## Online testing lessons
+
+The first Online run authenticated both bridges, received ticket HTTP 200 and
+WebSocket HTTP 101 for both players, and showed reciprocal movement. Opening
+Online then blanked the display despite a successful snapshot response. The
+run was aborted without acceptance after 1778.35 seconds; both lifecycles
+drained and both leases were released.
+
+Window tile counts alone do not establish safe graphics allocation. With the
+field's character base 2, Online's former base tile `0x220` and 26×18 dimensions
+wrote VRAM `0x0600C400..0x0600FE80`, overlapping background tilemaps. Base tile 8
+reuses the removed pause menu's graphics and ends at `0x0600BB80`, below dialogue
+borders and tilemaps. Check the actual window template against those boundaries.
+After any allocation change, inspect Online, Back, movement, another menu, and
+an NPC/sign dialogue; inactive windows can share graphics that must be redrawn.
+
+Contract rejection tests need valid positive controls. Numeric presence handles
+were malformed and made size/generation tests pass before their intended checks
+ran. Use canonical hexadecimal string handles and prove that four peers and a
+generation-1 invitation decode before rejecting oversized or ambiguous input.
+
+Invitation pages can expire or be consumed between requests. An empty terminal
+page is valid; an empty page claiming another cursor is not. Also exercise the
+launcher's multi-page aggregation and 32-entry cap. Empty or HTML HTTP 5xx bodies
+must remain service-unavailable outcomes rather than JSON protocol failures.
+
+Record machine load with tight timing failures. The existing three-second
+`realtime_activation_runs_ready_lifecycle_interaction_and_joined_teardown` test
+timed out during a busy parallel run, then passed unchanged alone in 2.77 seconds
+and in the complete launcher suite with one test worker (141 passed, one fixture
+ignored). Separate contention from a logic regression before changing deadlines.
+
+For normal-key intro navigation, 45-frame A holds advanced dialogue more reliably
+than 12-frame holds in this run. A completed input batch does not prove dialogue
+completion: inspect the game before the next state-dependent movement. Keep these
+helpers private and never replace native movement with injected poses.
+
+On Windows, do not rebuild a binary while the native harness is running that
+same executable. A final workspace run could not replace `coop-sidecar.exe`
+because Windows held it open. Finish the native lifecycle and confirm cleanup,
+then rerun the workspace checks; this is an executable lock, not a test failure.
+
+## Character testing additions
+
+The native harness launches a standalone sidecar executable. Rebuilding Rust
+test libraries does not refresh that executable: explicitly build
+`coop-sidecar` after changing avatar ordinals, before starting mGBA. A stale
+sidecar was found after a Character run ended with a control-protocol error.
+Keep this distinction in preflight rather than diagnosing only the ROM.
+
+Check label width as well as menu height. `CHARACTER` clipped in the original
+seven-tile pause window even though all rows fitted vertically. The regression
+uses the actual font width, window allocation, right edge, and VRAM end tile;
+the eight-tile window passes those bounds.
+
+Existing sprites are not interchangeable animation tables. Some named NPCs
+have only standing frames. The selected roster has actual walking frames, and
+its standard animation table now covers the player run/spin indexes. Spin
+fallbacks must use spin sequences: substituting short standing sequences can
+leave the player's animation-command index outside the sequence. Keep cosmetic
+graphics separate from saved gender and rival graphics selection.
+
+## Distinguish flash completion from checkpoint completion
+
+A ROM saved-game message proves its flash routine returned successfully. It
+does not prove the launcher validated and uploaded the resulting file. Test
+both milestones and retain the actual lifecycle exit.
+
+The native campaign found two successive failures. First, the sidecar's
+three-second post-grant deadline expired while the ROM was still executing
+flash programming routines. A read-only trace showed generation and save
+counter advancing, with the main loop held by the synchronous write. The
+post-grant budget is now ten seconds, inside a twenty-second launcher budget;
+transport and grant-decision deadlines remain separate.
+
+After that correction, the ROM saved successfully but Rust rejected the file
+because its checksum-length table had drifted from linked `sSaveSlotLayout`.
+Synthetic fixtures constructed with the same stale table could not detect it.
+Keep the genuine disposable-game save regression and run manifest generation's
+linked-layout check before native testing. The optional 16-byte mGBA RTC trailer
+is supported and was not the cause. Obtain structure offsets from the current
+linked build; old header offset comments may also be stale.
 
 ## Related
 

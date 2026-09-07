@@ -12,8 +12,15 @@ on 2026-09-06: reciprocal avatars, movement, nonblocking collision behavior,
 and clean lifecycle/lease shutdown were observed. The
 [conformance procedure and evidence](../testing/littleroot-conformance.md)
 record the pinned artifacts and the limits of that result.
-Realtime invitation UI, reconnect/leave lifecycle, live group warps, and
-production PostgreSQL/Firebase adapters remain subsequent work.
+The Online invitation menu, reconnect/leave lifecycle, and Character appearance
+menu passed the integrated stock-mGBA campaign on 2026-09-07, including
+accept/decline/expiry, each member leaving, injected connection faults, house
+returns, and the fully unlocked scrolling pause menu. Both lifecycles drained
+and released their leases after acceptance.
+Character selection persists through an ordinary Save and offline Continue.
+Native testing exposed and fixed a save/presence liveness conflict; an active
+Save now completes and rejoins with reciprocal movement. Live group warps and production
+PostgreSQL/Firebase adapters remain subsequent work.
 
 ## Milestone 0 — pinned regional foundation (local checkpoint complete)
 
@@ -27,7 +34,10 @@ Implement invite-only registration, password authentication, refresh rotation, o
 
 ## Milestone 2 — Hoenn presence and groups (next player-visible milestone)
 
-The local two-player walking slice is verified. Next, expose the certified symmetric group backend through an Online pause-menu invitation flow and add reconnect/leave lifecycle. Cross-map travel and save/resume still need separate live acceptance scenarios.
+The local walking, Online invitation, both-member leave, reconnect, character
+appearance, and active-save recovery slices are verified. Cross-map group travel
+and full cloud resume still need
+separate live acceptance scenarios.
 
 ## Milestone 3 — cooperative battle laboratory
 

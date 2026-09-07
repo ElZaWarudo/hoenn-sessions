@@ -10,6 +10,14 @@ execution: code
 
 # Online invitations and presence reconnection
 
+Execution update (2026-09-07): the expanded Character/Online native matrix passed
+on the final build, including both lifecycle cleanups (4221.48 seconds). See
+[final evidence](../testing/evidence/character-20260906/final-campaign/README.md)
+and [Final Validation](../testing/littleroot-conformance.md#final-validation).
+Native late-response overlap was not claimed; the specified deterministic
+reopened-view fallback covers ordering. Formal ce-code-review was unavailable;
+manual diff scanning and separate scoped reviews are recorded explicitly.
+
 ## Goal Capsule
 
 Players can form and leave a two-person group from the game and recover nearby presence after a connection interruption.
@@ -162,6 +170,56 @@ Keep the same-epoch ROM transmit sequence monotonic through SESSION_READY. Proce
 **Approach:** Build corrected ROM, regenerate manifest before server compilation, run focused and workspace gates, then observe both games through the new flows. Apply the documented testing lessons. Remove abandoned helpers and experimental code.
 **Test scenarios:** AE1–AE4, both directions, clean shutdown after recovery, and explicit failed/aborted-run handling.
 **Verification:** Native screenshots plus real server/harness results support each claimed flow; independent review finds no unresolved correctness issues.
+
+### U5 execution campaign: test, fix, and retest together
+
+This expands U5 without changing R1–R7 or AE1–AE4. Run one coordinated local campaign through final evidence and cleanup. A campaign can contain several emulator attempts: a product change requires draining the current attempt, rebuilding, and testing the replacement artifacts. Do not promise that an unchanged pair of emulator processes can survive every fix.
+
+**Character selection fixture (extended by the user's subsequent request).** Add an in-game Character menu using existing walking sprites. Select Wally for player one and Leaf for player two through that menu; verify each local sprite and the other player's remote sprite, movement, cancellation, roster cycling, and house return. The tagged saved appearance choice must preserve trainer identity, story progress, and specialized bike/surf/fishing graphics. The launcher still receives one character identity from login (`coop/crates/coop-launcher/src/auth.rs`); account rosters are outside this appearance feature.
+
+**Preparation and testability.** Before launching the final observation attempt:
+
+1. Reconcile any previous harness attempt and record its actual exit and cleanup result. Preserve failed-run evidence and private saves; never interpret an interrupted attempt as accepted.
+2. Finish targeted automated checks and review fixes. Build the ROM, regenerate `dist/bridge_manifest.json`, then compile the launcher/server against that manifest. Record revision, local diff, and ROM/emulator hashes. Do not rebuild a running Windows executable.
+3. Extend the existing local observation proxy in `coop/crates/coop-launcher/tests/real_mgba_presence.rs` with narrowly scoped, bounded Online-response delay and service-unavailable controls. Delay only the selected response so a later snapshot can proceed. They must leave heartbeat, checkpoint, and unrelated HTTP traffic working. Add harness tests proving route isolation, automatic release of delays, and cleanup on abort. These controls are test infrastructure; they do not change production timeouts or invitation expiry.
+4. Keep the existing actual-WebSocket interruption control and its minimum two-disconnection acceptance guard. Give each attempt a fresh marker directory so controls and acceptance cannot leak from an earlier attempt.
+5. Prepare normal-input navigation and screenshot labels before launch. Use the existing bounded observation duration, inspect each scene transition, and leave time for teardown. If the allotted attempt cannot finish, end it honestly and start another within the same campaign.
+
+**Ordered native matrix.** Each row needs an observed outcome, an evidence reference, and the artifact hash in `docs/testing/littleroot-conformance.md`. Logs support screen observations; HTTP success alone cannot pass a player-visible check.
+
+| Order | Scenario | Required result | Trace |
+|---|---|---|---|
+| 1 | Reach Littleroot, select Wally and Leaf in Character, cancel a changed preview, and move both players | Both authenticate; each sees the selected other avatar moving reciprocally; cancellation preserves the applied appearance | R5; character fixture |
+| 2 | Open Online, inspect names and empty lists, Back, move, open Bag, then talk to an NPC/sign | Readable content and names; no blank screen, clipping, or corrupted restored dialogue | R1 |
+| 3 | Send from player one while player two stays in the field; accept on player two | Both independently refresh and see the same group | R2–R4, AE1 |
+| 4 | Leave as player one; form another group and leave as player two | Both independently become ungrouped after each leave; avatars and ordinary movement remain | R3, AE1 |
+| 5 | Send and decline; attempt the stale accept. Send again and wait beyond the real invitation expiry before accepting | Neither declined nor expired invitation forms a group; refresh agrees on both players | R4, AE2 |
+| 6 | Delay one Online snapshot, use Back while loading, reopen before releasing it, then release the old response and Refresh; separately inject Online HTTP 503 and use Back | Gameplay remains usable; the newer view is not replaced by the old reply; Refresh recovers; unavailable text is visible and Back works | R1, R4 |
+| 7 | Close both menus, interrupt both actual presence sockets, then move both players | Old avatars clear; fresh connections recover reciprocal movement under the existing leases | R5–R7, AE3 |
+| 8 | Enter a house and return as each player, then move both again | Correct avatar presence recovers in both directions without emulator restart | R5, AE4 |
+| 9 | Use the normal debug UI to unlock all configured pause entries; scroll and wrap, select Online, and exit | Every entry is reachable without clipping; Online and restored field/menu graphics remain usable | R1 |
+| 10 | End the attempt through the harness | Both lifecycles drain, leases release, children exit, and injected faults are removed | R5–R7 |
+
+For row 3, prepare the recipient navigation before sending, allow snapshot completion before Accept, and inspect the result. The invitation lifetime is 30 seconds; navigation must not accidentally turn the acceptance case into the expiry case. Record the expiry case separately. Debug unlocks in row 9 are a layout fixture, not evidence of earned story progress. Indoor Ready with empty lists is not evidence of Unavailable.
+
+For row 6, the launcher owns one pending Online operation: reopening while it is held can return Unavailable rather than a second successful snapshot. Release the held response before the existing five-second operation timeout to exercise the late-reply case. If ordinary native inputs cannot reliably establish this overlap, prove stale-response ordering in a deterministic launcher regression and record that boundary explicitly; native Loading/Back, HTTP 503/Back, and subsequent recovery still require observation.
+
+**Failure loop.** On failure, capture the screen, relevant redacted log, exact action, expected result, actual result, and artifact hash. Identify the owning layer and reproduce the smallest failing case before changing it. Add a focused regression where it can detect the defect independently, apply the smallest fix, and rerun that check. A UI rendering fix also requires native observation. Review behavior changes independently, then drain and rebuild before any affected native retest. Never reload the live bridge or patch RAM, poses, saves, or acceptance to advance the scenario.
+
+```mermaid
+flowchart TB
+    Prepare[Prepare controls and pinned build] --> Matrix[Run ordered native matrix]
+    Matrix --> Result{All checks observed?}
+    Result -->|Failure| Evidence[Capture failure and drain attempt]
+    Evidence --> Fix[Reproduce, fix, test, and review]
+    Fix --> Prepare
+    Result -->|Yes| Cleanup[Confirm clean shutdown]
+    Cleanup --> Gates[Final automated gates and report]
+```
+
+**Final gates and evidence.** Keep terminal reset, authorization, checkpoint-race, malformed-protocol, stale-generation, retry-parking, and pagination boundary cases in the automated suites; do not deliberately destroy the healthy native attempt to duplicate them. After emulator cleanup, run Rust workspace tests, formatting, Clippy with warnings denied, protocol/manifest checks, the Lua suites, and applicable Cloud Coop ARM tests. Record contention-related timing failures and rerun the unchanged failing case in isolation before diagnosing a logic bug. Fix actual regressions rather than extending deadlines to obtain green output.
+
+All native rows must pass on the final product build; earlier screenshots remain historical evidence. Harness acceptance assertions must match the expanded matrix, including character appearance and fault-state observations. Write acceptance only after its gameplay assertions have been observed; final campaign success additionally requires actual clean teardown and final automated gates. A timeout, partial matrix, failed cleanup, or unresolved defect produces an incomplete result with precise remaining checks. Update the existing testing procedure, testing lessons, and roadmap, then deliver reviewed local commits. No remote publication is included.
 
 ---
 
