@@ -640,3 +640,9 @@ gSpecials::
 	def_special CheckAddCoins
 	def_special Special_FlightCallKanto
 	def_special Special_FlightCallHoenn
+	def_special Johto_CheckHooh, requests_effects=1
+	def_special Johto_CheckAerodactyl, requests_effects=1
+	def_special Johto_CheckKabuto, requests_effects=1
+	def_special Johto_CheckOmanyte, requests_effects=1
+	def_special Johto_CheckTogepi, requests_effects=1
+	def_special Johto_CheckCelebi, requests_effects=1
