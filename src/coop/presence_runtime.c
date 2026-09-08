@@ -60,11 +60,12 @@ struct CoopPresenceRuntime
     u8 rendered_map_num;
     s16 rendered_x;
     s16 rendered_y;
-    s32 sprite_start_x;
-    s32 sprite_start_y;
+    s32 interpolation_start_x;
+    s32 interpolation_start_y;
     s32 sprite_target_x;
     s32 sprite_target_y;
     u8 interpolation_remaining;
+    u8 interpolation_duration;
     bool8 initialized;
     bool8 transport_ready;
     bool8 renderer_owned;
@@ -556,6 +557,28 @@ static bool8 GetRemoteSpriteTarget(struct ObjectEvent *object_event, s16 map_x,
     return TRUE;
 }
 
+static u8 GetRemoteInterpolationFrames(u8 movement_mode, s32 offset_x, s32 offset_y)
+{
+    s32 distance = max(abs(offset_x), abs(offset_y));
+    u8 speed = movement_mode == COOP_PRESENCE_MOVEMENT_RUN ? 2 : 1;
+
+    if (movement_mode == COOP_PRESENCE_MOVEMENT_IDLE)
+        return COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES;
+    /* Match on-foot engine speed; cap catch-up time to two tiles of travel. */
+    return max(1, (min(distance, 32) + speed - 1) / speed);
+}
+
+static s32 GetRemoteInterpolationOffset(s32 start)
+{
+    u8 elapsed;
+
+    if (sCoopPresenceRuntime.interpolation_remaining == 0)
+        return 0;
+    elapsed = sCoopPresenceRuntime.interpolation_duration
+        - sCoopPresenceRuntime.interpolation_remaining;
+    return start - start * elapsed / sCoopPresenceRuntime.interpolation_duration;
+}
+
 static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
 {
     struct ObjectEvent *object_event;
@@ -668,16 +691,16 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
     {
         bool8 coords_differ = object_event->currentCoords.x != map_x
             || object_event->currentCoords.y != map_y;
-        s32 start_x = sprite->x;
-        s32 start_y = sprite->y;
         s32 dx = (s32)map_x - object_event->currentCoords.x;
         s32 dy = (s32)map_y - object_event->currentCoords.y;
+        s32 start_x = GetRemoteInterpolationOffset(sCoopPresenceRuntime.interpolation_start_x) - dx * 16;
+        s32 start_y = GetRemoteInterpolationOffset(sCoopPresenceRuntime.interpolation_start_y) - dy * 16;
         bool8 snap = !coords_differ || dx > 2 || dx < -2 || dy > 2 || dy < -2
             || object_event->currentElevation != remote->state.pose.elevation
             || object_event->previousElevation != remote->state.pose.elevation;
         /* MoveObjectEventToMapCoords updates the complete engine position
-         * state and ground-effect bookkeeping.  Capture the old rendered
-         * base first, then restore it only for a six-frame interpolation. */
+         * state and ground-effect bookkeeping.  Retain the unfinished step
+         * as a pixel offset from the new tile, independent of the camera. */
         MoveObjectEventToMapCoords(object_event, map_x, map_y);
         object_event->initialCoords = object_event->currentCoords;
         object_event->currentElevation = remote->state.pose.elevation;
@@ -688,26 +711,17 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
         sCoopPresenceRuntime.rendered_y = map_y;
         if (!snap)
         {
-            sCoopPresenceRuntime.sprite_start_x = start_x;
-            sCoopPresenceRuntime.sprite_start_y = start_y;
-            sprite->x = (s16)start_x;
-            sprite->y = (s16)start_y;
+            sCoopPresenceRuntime.interpolation_start_x = start_x;
+            sCoopPresenceRuntime.interpolation_start_y = start_y;
+            sCoopPresenceRuntime.interpolation_duration =
+                GetRemoteInterpolationFrames(remote->state.pose.movement_mode, start_x, start_y);
             sCoopPresenceRuntime.interpolation_remaining =
-                COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES;
+                sCoopPresenceRuntime.interpolation_duration;
         }
         else
         {
-            sprite->x = (s16)sCoopPresenceRuntime.sprite_target_x;
-            sprite->y = (s16)sCoopPresenceRuntime.sprite_target_y;
             sCoopPresenceRuntime.interpolation_remaining = 0;
         }
-    }
-    else if (sCoopPresenceRuntime.interpolation_remaining == 0)
-    {
-        /* Spawn and recreation establish the logical tile before this first
-         * update.  Explicitly seed the base sprite position for that case. */
-        sprite->x = (s16)sCoopPresenceRuntime.sprite_target_x;
-        sprite->y = (s16)sCoopPresenceRuntime.sprite_target_y;
     }
 
     {
@@ -729,22 +743,11 @@ static bool8 EnsureRemoteRenderer(const struct CoopPresenceRemote *remote)
     sprite->x2 = 0;
     sprite->y2 = 0;
     if (sCoopPresenceRuntime.interpolation_remaining != 0)
-    {
-        u8 elapsed = (u8)(COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES
-                          - sCoopPresenceRuntime.interpolation_remaining + 1);
-        sprite->x = (s16)(sCoopPresenceRuntime.sprite_start_x
-            + ((sCoopPresenceRuntime.sprite_target_x - sCoopPresenceRuntime.sprite_start_x)
-               * elapsed) / COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES);
-        sprite->y = (s16)(sCoopPresenceRuntime.sprite_start_y
-            + ((sCoopPresenceRuntime.sprite_target_y - sCoopPresenceRuntime.sprite_start_y)
-               * elapsed) / COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES);
         sCoopPresenceRuntime.interpolation_remaining--;
-    }
-    else
-    {
-        sprite->x = (s16)sCoopPresenceRuntime.sprite_target_x;
-        sprite->y = (s16)sCoopPresenceRuntime.sprite_target_y;
-    }
+    sprite->x = (s16)(sCoopPresenceRuntime.sprite_target_x
+        + GetRemoteInterpolationOffset(sCoopPresenceRuntime.interpolation_start_x));
+    sprite->y = (s16)(sCoopPresenceRuntime.sprite_target_y
+        + GetRemoteInterpolationOffset(sCoopPresenceRuntime.interpolation_start_y));
     SetObjectSubpriorityByElevation(remote->state.pose.elevation, sprite, 1);
     return TRUE;
 }

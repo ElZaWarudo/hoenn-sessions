@@ -26,7 +26,7 @@
 _Static_assert(COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL == 6,
                "presence samples use the ten-Hz six-frame cadence");
 _Static_assert(COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES == 6,
-               "presence interpolation is six frames");
+               "idle presence corrections settle in six frames");
 _Static_assert(COOP_PRESENCE_RUNTIME_STALE_FRAMES == 90,
                "presence visuals expire after ninety frames");
 _Static_assert(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID == 0xFC,
@@ -570,6 +570,91 @@ TEST("Cloud Coop presence ordinary on-foot walking remains visible")
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
 
+static void ExpectSmoothRemoteStep(u8 movement_mode, bool8 scroll, s16 dx, s16 dy)
+{
+    struct CoopPresenceSpawn spawn = RuntimeSpawn(4, 1);
+    struct CoopPresenceUpdate update;
+    u8 bytes[COOP_PRESENCE_SPAWN_SIZE];
+    s16 start_x;
+    s16 start_y;
+    u32 frame;
+    u32 duration = movement_mode == COOP_PRESENCE_MOVEMENT_WALK ? 16 : 8;
+    u32 travel_frames;
+
+    if (movement_mode == COOP_PRESENCE_MOVEMENT_IDLE)
+        duration = COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES;
+    travel_frames = movement_mode == COOP_PRESENCE_MOVEMENT_IDLE ? duration : 2 * duration;
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    CoopPresenceRuntime_SetSessionEpoch(23);
+    spawn.state.pose.location.y = 8;
+    spawn.state.pose.warp_sequence = 1;
+    EXPECT(CoopPresence_EncodeSpawn(&spawn, bytes, COOP_PRESENCE_SPAWN_SIZE));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN, bytes, COOP_PRESENCE_SPAWN_SIZE));
+    CoopPresenceRuntime_Update();
+    start_x = gSprites[gObjectEvents[1].spriteId].x;
+    start_y = gSprites[gObjectEvents[1].spriteId].y;
+    update = (struct CoopPresenceUpdate){
+        .handle = spawn.handle, .server_sequence = 2, .state = spawn.state,
+    };
+    update.state.pose.location.x += dx;
+    update.state.pose.location.y += dy;
+    update.state.pose.movement_mode = movement_mode;
+    for (frame = 1; frame <= travel_frames + 2; frame++)
+    {
+        s32 progress = min(frame, travel_frames);
+        s16 camera = scroll ? frame : 0;
+        bool8 retarget = movement_mode != COOP_PRESENCE_MOVEMENT_IDLE
+            && frame == duration / 2 + 1;
+
+        /* Repeated samples of the same destination must not restart motion. */
+        if (frame == 1 || frame == 7 || retarget)
+        {
+            if (retarget)
+            {
+                update.state.pose.location.x += dx;
+                update.state.pose.location.y += dy;
+            }
+            update.server_sequence++;
+            update.state.source_sequence++;
+            update.state.pose.client_tick += 6;
+            EXPECT(CoopPresence_EncodeUpdate(&update, bytes, COOP_PRESENCE_UPDATE_SIZE));
+            EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+                COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE, bytes, COOP_PRESENCE_UPDATE_SIZE));
+        }
+        gTotalCameraPixelOffsetX = camera;
+        gTotalCameraPixelOffsetY = camera;
+        CoopPresenceRuntime_Update();
+        EXPECT_EQ(gSprites[gObjectEvents[1].spriteId].x,
+                  start_x + dx * 16 * progress / (s32)duration - camera);
+        EXPECT_EQ(gSprites[gObjectEvents[1].spriteId].y,
+                  start_y + dy * 16 * progress / (s32)duration - camera);
+    }
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop remote walking and running retain engine speed between tile samples")
+{
+    u8 mode;
+
+    for (mode = COOP_PRESENCE_MOVEMENT_WALK; mode <= COOP_PRESENCE_MOVEMENT_RUN; mode++)
+    {
+        ExpectSmoothRemoteStep(mode, FALSE, 1, 0);
+        ExpectSmoothRemoteStep(mode, FALSE, -1, 0);
+        ExpectSmoothRemoteStep(mode, FALSE, 0, 1);
+        ExpectSmoothRemoteStep(mode, FALSE, 0, -1);
+    }
+}
+
+TEST("Cloud Coop remote interpolation follows camera scrolling on every frame")
+{
+    ExpectSmoothRemoteStep(COOP_PRESENCE_MOVEMENT_IDLE, TRUE, 1, 0);
+    ExpectSmoothRemoteStep(COOP_PRESENCE_MOVEMENT_WALK, TRUE, -1, 0);
+    ExpectSmoothRemoteStep(COOP_PRESENCE_MOVEMENT_RUN, TRUE, 0, 1);
+}
+
 TEST("Cloud Coop presence runtime directly covers renderer interpolation animation and return")
 {
     struct CoopPresenceSpawn spawn = RuntimeSpawn(4, 1);
@@ -640,7 +725,7 @@ TEST("Cloud Coop presence runtime directly covers renderer interpolation animati
     EXPECT_EQ(remote_sprite->y2, 0);
     interpolation_start_x = remote_sprite->x;
 
-    /* A one-tile retarget is interpolated over exactly six runtime updates. */
+    /* An idle one-tile correction settles over exactly six runtime updates. */
     update = (struct CoopPresenceUpdate){
         .handle = spawn.handle,
         .server_sequence = 2,
