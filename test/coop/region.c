@@ -3,6 +3,7 @@
 #include "constants/region_map_sections.h"
 #include "load_save.h"
 #include "fieldmap.h"
+#include "regions.h"
 #include "test/test.h"
 
 _Static_assert(sizeof(struct WorldLocation) == 10, "tested world location ABI size");
@@ -11,6 +12,7 @@ _Static_assert(offsetof(struct MapHeader, engineRegion) == 0x19, "tested engine 
 _Static_assert(offsetof(struct MapHeader, battleType) == 0x1B, "tested battle type offset");
 _Static_assert(COOP_MAP_ENGINE_REGION_HOENN == 0, "Hoenn map header byte");
 _Static_assert(COOP_MAP_ENGINE_REGION_KANTO == 1, "Kanto map header byte");
+_Static_assert(COOP_MAP_ENGINE_REGION_JOHTO == 2, "Johto map header byte");
 _Static_assert(offsetof(struct WorldLocation, region) == 0, "tested location region offset");
 _Static_assert(offsetof(struct WorldLocation, map_group) == 2, "tested location map group offset");
 _Static_assert(offsetof(struct WorldLocation, map_number) == 4, "tested location map number offset");
@@ -40,6 +42,7 @@ TEST("Cloud Coop map-section adapter distinguishes Hoenn Kanto and Sevii")
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_LITTLEROOT_TOWN), COOP_REGION_HOENN);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_PALLET_TOWN), COOP_REGION_KANTO);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_ONE_ISLAND), COOP_REGION_SEVII);
+    EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_NEW_BARK_TOWN), COOP_REGION_JOHTO);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_SPECIAL_AREA), COOP_REGION_HOENN);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_NONE), COOP_REGION_UNSPECIFIED);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_COUNT), COOP_REGION_UNSPECIFIED);
@@ -120,6 +123,42 @@ TEST("Cloud Coop active region derives Kanto and Sevii from the current map")
     EXPECT(!CoopRegion_TryGetActive(&region));
     EXPECT_EQ(region, COOP_REGION_SEVII);
     EXPECT(!CoopRegion_TryGetActive(NULL));
+}
+
+TEST("Cloud Coop Johto accepts only registered New Bark Town headers")
+{
+    struct MapHeader savedHeader = gMapHeader;
+    enum CoopRegion region = COOP_REGION_UNSPECIFIED;
+
+    EXPECT(CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_NEW_BARK_TOWN));
+    EXPECT_EQ(region, COOP_REGION_JOHTO);
+    EXPECT(!CoopRegion_Normalize(&region, REGION_HOENN, MAPSEC_NEW_BARK_TOWN));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_NEW_BARK_TOWN));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_LITTLEROOT_TOWN));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_PALLET_TOWN));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_SPECIAL_AREA));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_NONE));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_COUNT));
+    EXPECT_EQ(region, COOP_REGION_JOHTO);
+
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_JOHTO;
+    gMapHeader.regionMapSectionId = MAPSEC_NEW_BARK_TOWN;
+    EXPECT(CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_JOHTO);
+    EXPECT_EQ(GetCurrentRegion(), REGION_JOHTO);
+    EXPECT_EQ(GetRegionForSectionId(MAPSEC_LITTLEROOT_TOWN), REGION_HOENN);
+    EXPECT_EQ(GetRegionForSectionId(MAPSEC_PALLET_TOWN), REGION_KANTO);
+
+    gMapHeader.regionMapSectionId = MAPSEC_NONE;
+    EXPECT(!CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_JOHTO);
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_HOENN;
+    gMapHeader.regionMapSectionId = MAPSEC_NEW_BARK_TOWN;
+    EXPECT(!CoopRegion_TryGetActive(&region));
+    gMapHeader.engineRegion = COOP_MAP_ENGINE_REGION_KANTO;
+    EXPECT(!CoopRegion_TryGetActive(&region));
+    EXPECT_EQ(region, COOP_REGION_JOHTO);
+    gMapHeader = savedHeader;
 }
 
 TEST("Cloud Coop world export removes the engine border exactly once")

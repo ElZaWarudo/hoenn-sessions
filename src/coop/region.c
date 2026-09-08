@@ -21,6 +21,8 @@ static enum Region EngineRegion_FromMapHeaderValue(u8 value)
         return REGION_HOENN;
     case COOP_MAP_ENGINE_REGION_KANTO:
         return REGION_KANTO;
+    case COOP_MAP_ENGINE_REGION_JOHTO:
+        return REGION_JOHTO;
     default:
         /* Also accept an already-expanded C enum value for callers that
          * construct a MapHeader in tests or tooling. Generated assembly uses
@@ -53,15 +55,14 @@ enum CoopRegion CoopRegion_FromSectionId(u32 section_id)
     if (!IsKnownMapSection(section_id))
         return COOP_REGION_UNSPECIFIED;
 
-    if (section_id >= KANTO_MAPSEC_START && section_id < MAPSEC_SPECIAL_AREA)
+    if (GetRegionForSectionId(section_id) == REGION_KANTO)
     {
         if (GetKantoSubregion(section_id) != KANTO_SUBREGION_KANTO)
             return COOP_REGION_SEVII;
         return COOP_REGION_KANTO;
     }
 
-    /* All remaining generated sections are Hoenn, including special areas. */
-    return COOP_REGION_HOENN;
+    return CoopRegion_FromEngineRegion(GetRegionForSectionId(section_id));
 }
 
 bool8 CoopRegion_Normalize(enum CoopRegion *out, enum Region engine_region, u32 section_id)
@@ -74,9 +75,11 @@ bool8 CoopRegion_Normalize(enum CoopRegion *out, enum Region engine_region, u32 
     switch (engine_region)
     {
     case REGION_JOHTO:
-        /* Johto has an identity ordinal but no playable map registry in the
-         * pinned engine. Do not manufacture a location for an unknown map. */
-        return FALSE;
+        section_region = CoopRegion_FromSectionId(section_id);
+        if (section_region != COOP_REGION_JOHTO)
+            return FALSE;
+        *out = section_region;
+        return TRUE;
     case REGION_HOENN:
         section_region = CoopRegion_FromSectionId(section_id);
         if (section_region != COOP_REGION_HOENN)

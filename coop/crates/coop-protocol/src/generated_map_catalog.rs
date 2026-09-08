@@ -5612,4 +5612,10 @@ pub const GENERATED_MAP_CATALOG: &[MapCatalogEntry] = &[
         map_group: 74,
         map_number: 0,
     },
+    MapCatalogEntry {
+        region: RegionId::Johto,
+        map: "NEW_BARK_TOWN",
+        map_group: 75,
+        map_number: 0,
+    },
 ];

@@ -9323,6 +9323,19 @@
       "border_height": 2,
       "border_width": 2,
       "layout_version": "frlg"
+    },
+    {
+      "id": "LAYOUT_NEW_BARK_TOWN",
+      "name": "NewBarkTown_Layout",
+      "width": 30,
+      "height": 39,
+      "primary_tileset": "gTileset_Johto_General",
+      "secondary_tileset": "gTileset_NewBarkTown",
+      "border_filepath": "data/layouts/NewBarkTown/border.bin",
+      "blockdata_filepath": "data/layouts/NewBarkTown/map.bin",
+      "layout_version": "frlg",
+      "border_width": 2,
+      "border_height": 2
     }
   ]
 }

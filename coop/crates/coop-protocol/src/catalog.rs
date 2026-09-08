@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn generated_catalog_has_complete_unique_coverage() {
-        assert_eq!(MAP_CATALOG.len(), 935);
+        assert_eq!(MAP_CATALOG.len(), 936);
 
         let keys: HashSet<_> = MAP_CATALOG
             .iter()
@@ -233,6 +233,11 @@ mod tests {
 
     #[test]
     fn forward_and_reverse_resolution_are_exact() {
+        let johto = resolve_map(RegionId::Johto, "NEW_BARK_TOWN").unwrap();
+        assert_eq!(
+            map_key_for_coordinates(RegionId::Johto, johto.map_group, johto.map_number).unwrap(),
+            "NEW_BARK_TOWN"
+        );
         let hoenn = resolve_map(RegionId::Hoenn, "LITTLEROOT_TOWN").unwrap();
         assert_eq!(hoenn.coordinates(), (0, 9));
         assert_eq!(

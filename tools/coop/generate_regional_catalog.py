@@ -24,7 +24,7 @@ MAP_SECTIONS_PATH = ROOT / "src" / "data" / "region_map" / "region_map_sections.
 REGIONS_C_PATH = ROOT / "src" / "regions.c"
 OUTPUT_PATH = ROOT / "coop" / "crates" / "coop-protocol" / "src" / "generated_map_catalog.rs"
 
-ENGINE_REGIONS = {"REGION_HOENN", "REGION_KANTO"}
+ENGINE_REGIONS = {"REGION_HOENN", "REGION_KANTO", "REGION_JOHTO"}
 SEVII_SUBREGIONS = ("SEVII123", "SEVII45", "SEVII67")
 
 
@@ -95,6 +95,15 @@ def protocol_region(
 ) -> str:
     if engine_region not in ENGINE_REGIONS:
         raise CatalogError(f"unsupported map engine region {engine_region}")
+    if section_id not in section_numbers or section_id == "MAPSEC_NONE":
+        raise CatalogError(f"unknown map section {section_id}")
+
+    if engine_region == "REGION_JOHTO":
+        if section_id != "MAPSEC_NEW_BARK_TOWN":
+            raise CatalogError(f"Johto map section {section_id} is not registered")
+        return "Johto"
+    if section_id == "MAPSEC_NEW_BARK_TOWN":
+        raise CatalogError(f"Johto map section {section_id} contradicts its engine region")
 
     kanto_start = section_numbers["MAPSEC_PALLET_TOWN"]
     section_number = section_numbers[section_id]
@@ -214,8 +223,8 @@ def build_entries() -> list[tuple[str, str, int, int]]:
             seen_coordinates.add(coordinates)
             entries.append((region, map_id, group_number, map_number))
 
-    if len(entries) != 935:
-        raise CatalogError(f"expected 935 maps from map_groups.json, found {len(entries)}")
+    if len(entries) != 936:
+        raise CatalogError(f"expected 936 maps from map_groups.json, found {len(entries)}")
     return entries
 
 

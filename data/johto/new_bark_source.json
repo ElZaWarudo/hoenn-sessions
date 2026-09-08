@@ -1,0 +1,176 @@
+{
+  "repository": "https://github.com/PokemonHnS-Development/pokemonHnS",
+  "revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "assets": [
+    {
+      "path": "data/layouts/NewBarkTown/map.bin",
+      "source_sha256": "1a469af531ea1acca360b1e0c76faa95651585cbe08bb1e61ce6de3a109ca04d",
+      "import_sha256": "1a469af531ea1acca360b1e0c76faa95651585cbe08bb1e61ce6de3a109ca04d"
+    },
+    {
+      "path": "data/layouts/NewBarkTown/border.bin",
+      "source_sha256": "c34f6d407aaf3e05cc544f968a14f4eca0d5f2ac99c920183ef79b505bc40c6e",
+      "import_sha256": "c34f6d407aaf3e05cc544f968a14f4eca0d5f2ac99c920183ef79b505bc40c6e"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/tiles.png",
+      "source_sha256": "edaec57f44a8525de7d4f1d781e07be738648a0752e3ac70d1cbdf0090065580",
+      "import_sha256": "edaec57f44a8525de7d4f1d781e07be738648a0752e3ac70d1cbdf0090065580"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/metatiles.bin",
+      "source_sha256": "bda53dbd0674000eb5e2d697c5129a05cff61973f4b397c3a2f2fd815b5df0a7",
+      "import_sha256": "bda53dbd0674000eb5e2d697c5129a05cff61973f4b397c3a2f2fd815b5df0a7"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/metatile_attributes.bin",
+      "source_sha256": "7f240711b4aaf4dfcb87a7b8a70a0d36cde0f1612fbef70b75df64d9bab08657",
+      "import_sha256": "d490845f0a6ce34cccdd59ed5cf8217cb1264c4458a4be0e4e61e6c2c37693f4"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/00.pal",
+      "source_sha256": "894d46b4901a4a09fae05841539a1dcd13af78a2923be9a07c3c87a4cfeceb5c",
+      "import_sha256": "894d46b4901a4a09fae05841539a1dcd13af78a2923be9a07c3c87a4cfeceb5c"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/01.pal",
+      "source_sha256": "e5fa084be81a8b081a33de05c13a799778899c4ef750bbb2185f997f9d41dea4",
+      "import_sha256": "e5fa084be81a8b081a33de05c13a799778899c4ef750bbb2185f997f9d41dea4"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/02.pal",
+      "source_sha256": "10717ccf708c454503ba28d90d9ca713fcbd3d4b9b93d986cb6ffcb6517fc940",
+      "import_sha256": "10717ccf708c454503ba28d90d9ca713fcbd3d4b9b93d986cb6ffcb6517fc940"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/03.pal",
+      "source_sha256": "fbe4f81510faa546bfb9c5900e7837a3718066c4e19c66a5efd9fda633ddd868",
+      "import_sha256": "fbe4f81510faa546bfb9c5900e7837a3718066c4e19c66a5efd9fda633ddd868"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/04.pal",
+      "source_sha256": "50925427da2fc947ae3915f2d1b1c63e115418e8ce12f374b31a3ed45e932c65",
+      "import_sha256": "50925427da2fc947ae3915f2d1b1c63e115418e8ce12f374b31a3ed45e932c65"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/05.pal",
+      "source_sha256": "92083da3e53f1eed06dedf598eadd3fdf1b631e0a174f7420d1db2158dbad485",
+      "import_sha256": "92083da3e53f1eed06dedf598eadd3fdf1b631e0a174f7420d1db2158dbad485"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/06.pal",
+      "source_sha256": "46af7d618b34a9f330fb154bb4933f171b1947a6d224f8fe9c8ea2a84f461a0d",
+      "import_sha256": "46af7d618b34a9f330fb154bb4933f171b1947a6d224f8fe9c8ea2a84f461a0d"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/07.pal",
+      "source_sha256": "181d845e44c95173882b270fe51060ac90a386ab6f0629839559ae579b0999c6",
+      "import_sha256": "181d845e44c95173882b270fe51060ac90a386ab6f0629839559ae579b0999c6"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/08.pal",
+      "source_sha256": "a9c1174f1aa1848e58860e06ed7585178d2b2206fecfa71d74e45a5434473dae",
+      "import_sha256": "a9c1174f1aa1848e58860e06ed7585178d2b2206fecfa71d74e45a5434473dae"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/09.pal",
+      "source_sha256": "b51d955ce9b705965b4ebf7f7c8a6897a4e56f83ba7d85871eb74335719b8c2f",
+      "import_sha256": "b51d955ce9b705965b4ebf7f7c8a6897a4e56f83ba7d85871eb74335719b8c2f"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/10.pal",
+      "source_sha256": "45defea8c87233063c68499d3e4734dbeef277073415ff7e87382ae2c3f79ef7",
+      "import_sha256": "45defea8c87233063c68499d3e4734dbeef277073415ff7e87382ae2c3f79ef7"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/11.pal",
+      "source_sha256": "e60bc57674d7391c853779597ca93ee7f8605b9f49af08895402d22f54d7d74f",
+      "import_sha256": "e60bc57674d7391c853779597ca93ee7f8605b9f49af08895402d22f54d7d74f"
+    },
+    {
+      "path": "data/tilesets/primary/johto_general/palettes/12.pal",
+      "source_sha256": "e4c94dfa8b2c957cf4d0ab0a369f6399a85c56ca093ff901042b0dcce540aa61",
+      "import_sha256": "e4c94dfa8b2c957cf4d0ab0a369f6399a85c56ca093ff901042b0dcce540aa61"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/tiles.png",
+      "source_sha256": "90dc2d337a58d03d845d691041419064f67a3a647328848cb3b1f63bb6fb217d",
+      "import_sha256": "90dc2d337a58d03d845d691041419064f67a3a647328848cb3b1f63bb6fb217d"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/metatiles.bin",
+      "source_sha256": "66613d255ea80ef4f7ebd7c9f3bf6fade6da6166e25f27c00a42659341d5a317",
+      "import_sha256": "66613d255ea80ef4f7ebd7c9f3bf6fade6da6166e25f27c00a42659341d5a317"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/metatile_attributes.bin",
+      "source_sha256": "962e3beb716234ae907ed7f9acb9256d1715ed19045f0cb5699f81fa302a77d3",
+      "import_sha256": "c6b66190205a1175d8fd273ad38d5df9e14f8eddf876d8014765ef239bfac40f"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/00.pal",
+      "source_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945",
+      "import_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/01.pal",
+      "source_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945",
+      "import_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/02.pal",
+      "source_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945",
+      "import_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/03.pal",
+      "source_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945",
+      "import_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/04.pal",
+      "source_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945",
+      "import_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/05.pal",
+      "source_sha256": "9e0a2544498165c27ef79bf4b464d072a387a5dd362a954ec2b072b7a68195a5",
+      "import_sha256": "9e0a2544498165c27ef79bf4b464d072a387a5dd362a954ec2b072b7a68195a5"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/06.pal",
+      "source_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945",
+      "import_sha256": "d9bbd9621b476bac554bb808d9f713baf270ac8168f58807bf8f922200360945"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/07.pal",
+      "source_sha256": "397893cf3443d10f47a9f263ec980d3ab3e608a65d32266ebbb2798254071862",
+      "import_sha256": "397893cf3443d10f47a9f263ec980d3ab3e608a65d32266ebbb2798254071862"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/08.pal",
+      "source_sha256": "a9c1174f1aa1848e58860e06ed7585178d2b2206fecfa71d74e45a5434473dae",
+      "import_sha256": "a9c1174f1aa1848e58860e06ed7585178d2b2206fecfa71d74e45a5434473dae"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/09.pal",
+      "source_sha256": "b51d955ce9b705965b4ebf7f7c8a6897a4e56f83ba7d85871eb74335719b8c2f",
+      "import_sha256": "b51d955ce9b705965b4ebf7f7c8a6897a4e56f83ba7d85871eb74335719b8c2f"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/10.pal",
+      "source_sha256": "977cfb0b12054d0884d7674a3306c503136d2eb9033ab0decd701729b60b08bc",
+      "import_sha256": "977cfb0b12054d0884d7674a3306c503136d2eb9033ab0decd701729b60b08bc"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/11.pal",
+      "source_sha256": "469e55e847b4e1dc77564ccb23387842de26ec237f15a6c6bcb372ca0b2db391",
+      "import_sha256": "469e55e847b4e1dc77564ccb23387842de26ec237f15a6c6bcb372ca0b2db391"
+    },
+    {
+      "path": "data/tilesets/secondary/new_bark_town/palettes/12.pal",
+      "source_sha256": "ac6d2c25ecc696c292e89fdb98cbc33b970bf9b6f27f21da7b1b9f69a4e2a348",
+      "import_sha256": "ac6d2c25ecc696c292e89fdb98cbc33b970bf9b6f27f21da7b1b9f69a4e2a348"
+    }
+  ]
+}

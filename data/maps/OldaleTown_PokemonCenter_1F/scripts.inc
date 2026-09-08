@@ -20,6 +20,26 @@ OldaleTown_PokemonCenter_1F_EventScript_Gentleman::
 	msgbox OldaleTown_PokemonCenter_1F_Text_TrainersCanUsePC, MSGBOX_NPC
 	end
 
+OldaleTown_PokemonCenter_1F_EventScript_JohtoGuide::
+	lock
+	faceplayer
+	msgbox OldaleTown_PokemonCenter_1F_Text_VisitJohto, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, NO, OldaleTown_PokemonCenter_1F_EventScript_StayInHoenn
+	warp MAP_NEW_BARK_TOWN, 10, 15
+	waitstate
+	release
+	end
+
+OldaleTown_PokemonCenter_1F_EventScript_StayInHoenn:
+	release
+	end
+
+OldaleTown_PokemonCenter_1F_Text_VisitJohto:
+	.string "Would you like to visit\n"
+	.string "NEW BARK TOWN in JOHTO?\p"
+	.string "Only the town is open for now.\n"
+	.string "My colleague can bring you back.$"
+
 OldaleTown_PokemonCenter_1F_EventScript_Boy::
 	msgbox OldaleTown_PokemonCenter_1F_Text_PokemonCentersAreGreat, MSGBOX_NPC
 	end

@@ -1763,3 +1763,5 @@ EventScript_FlightCall_Hoenn::
 EventScript_FlightCall_Cancel::
     releaseall
     end
+
+	.include "data/maps/NewBarkTown/scripts.inc"

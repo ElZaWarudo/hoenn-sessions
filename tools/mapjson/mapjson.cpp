@@ -40,10 +40,12 @@ enum
 {
     MAP_ENGINE_REGION_HOENN_VALUE = 0,
     MAP_ENGINE_REGION_KANTO_VALUE = 1,
+    MAP_ENGINE_REGION_JOHTO_VALUE = 2,
 };
 
 static_assert(MAP_ENGINE_REGION_HOENN_VALUE == 0, "Hoenn map header byte");
 static_assert(MAP_ENGINE_REGION_KANTO_VALUE == 1, "Kanto map header byte");
+static_assert(MAP_ENGINE_REGION_JOHTO_VALUE == 2, "Johto map header byte");
 
 // expansion headers
 #include "../../include/config/frlg.h"
@@ -116,17 +118,27 @@ string json_to_string(const Json &data, const string &field = "", bool silent = 
 }
 
 int get_map_engine_region_value(const Json &map_data) {
+    string section = json_to_string(map_data, "region_map_section");
+    bool has_region = map_data.object_items().find("region") != map_data.object_items().end();
+    string region = has_region ? json_to_string(map_data, "region") : "REGION_HOENN";
+
+    /* The compatibility import registers only New Bark Town. A missing
+     * region must not silently assign its section to Hoenn. */
+    if ((region == "REGION_JOHTO") != (section == "MAPSEC_NEW_BARK_TOWN"))
+        FATAL_ERROR("Map engine region '%s' contradicts section '%s'.\n", region.c_str(), section.c_str());
+
     /* An absent region is the only form that inherits the original Emerald
      * default. The emitted byte intentionally uses stable assembly values;
      * data/maps.s cannot import the C Region enum header. */
-    if (map_data.object_items().find("region") == map_data.object_items().end())
+    if (!has_region)
         return MAP_ENGINE_REGION_HOENN_VALUE;
 
-    string region = json_to_string(map_data, "region");
     if (region == "REGION_HOENN")
         return MAP_ENGINE_REGION_HOENN_VALUE;
     if (region == "REGION_KANTO")
         return MAP_ENGINE_REGION_KANTO_VALUE;
+    if (region == "REGION_JOHTO")
+        return MAP_ENGINE_REGION_JOHTO_VALUE;
     FATAL_ERROR("Unknown or unsupported map engine region '%s'.\n", region.c_str());
 }
 
