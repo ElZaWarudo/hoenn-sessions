@@ -7,6 +7,7 @@
 #include "constants/pokeball.h"
 #include "difficulty.h"
 #include "debug.h"
+#include "johto/trainers.h"
 
 #define MAX_TRAINER_ITEMS 4
 
@@ -257,6 +258,14 @@ static inline bool32 IsSpecialTrainer(u16 trainerId)
 
 static inline u16 SanitizeTrainerId(u16 trainerId)
 {
+    if (JohtoTrainer_IsPopulated(trainerId))
+        return trainerId;
+
+    /* A reserved Johto ID is a bounded namespace value, but has no legacy
+     * table meaning until its record is imported. */
+    if (JohtoTrainer_IsId(trainerId))
+        return TRAINER_NONE;
+
     assertf(trainerId < TRAINERS_COUNT, "invalid trainer: %d", trainerId)
     {
         return TRAINER_NONE;
@@ -285,6 +294,16 @@ static inline const struct Trainer *GetTrainerStructFromId(u16 trainerId)
     {
         difficulty = GetBattlePartnerDifficultyLevel(trainerId);
         return &gBattlePartners[difficulty][GetPartnerIdFromTrainerId(trainerId)];
+    }
+    else if (JohtoTrainer_IsId(trainerId))
+    {
+        const struct Trainer *trainer;
+
+        difficulty = GetTrainerDifficultyLevel(trainerId);
+        trainer = JohtoTrainer_GetStructAtDifficulty(difficulty, trainerId);
+        if (trainer != NULL)
+            return trainer;
+        return &gTrainers[DIFFICULTY_NORMAL][TRAINER_NONE];
     }
     else
     {
