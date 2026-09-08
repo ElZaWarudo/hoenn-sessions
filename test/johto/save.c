@@ -264,7 +264,8 @@ TEST("Johto save extension has a bounded append-only layout")
     EXPECT_EQ(offsetof(struct JohtoSaveV1, flag_bits), 0x08);
     EXPECT_EQ(offsetof(struct JohtoSaveV1, trainer_bits), 0x68);
     EXPECT_EQ(offsetof(struct JohtoSaveV1, variables), 0xA8);
-    EXPECT_EQ(offsetof(struct JohtoSaveV1, crc32), 0x168);
+    EXPECT_EQ(offsetof(struct JohtoSaveV1, rival_name), 0x168);
+    EXPECT_EQ(offsetof(struct JohtoSaveV1, crc32), 0x170);
 }
 
 TEST("Johto save preserves old zero tails in both rotating slots")

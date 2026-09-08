@@ -5,6 +5,8 @@
 #define JOHTO_SAVE_CRC_INITIAL 0xFFFFFFFFu
 #define JOHTO_SAVE_CRC_POLYNOMIAL 0xEDB88320u
 
+static const u8 sJohtoDefaultRivalName[] = _("SILVER");
+
 static struct JohtoSaveV1 *GetCurrentSave(void)
 {
     return &gSaveblock1.johto;
@@ -91,6 +93,7 @@ void JohtoSave_Initialize(struct JohtoSaveV1 *save)
     save->magic = JOHTO_SAVE_MAGIC;
     save->schema_version = JOHTO_SAVE_SCHEMA_VERSION;
     save->struct_size = sizeof(*save);
+    memcpy(save->rival_name, sJohtoDefaultRivalName, sizeof(sJohtoDefaultRivalName));
     (void)JohtoSave_Seal(save);
 }
 

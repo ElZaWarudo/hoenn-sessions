@@ -6,18 +6,19 @@
 #include "gba/types.h"
 
 #define JOHTO_SAVE_MAGIC 0x31534F4Au /* little-endian ASCII "JOS1" */
-#define JOHTO_SAVE_SCHEMA_VERSION 1
-#define JOHTO_SAVE_V1_SIZE 0x16C
+#define JOHTO_SAVE_SCHEMA_VERSION 2
+#define JOHTO_SAVE_V1_SIZE 0x174
 
 #define JOHTO_SAVE_FLAG_BITS_SIZE 96
 #define JOHTO_SAVE_TRAINER_BITS_SIZE 64
 #define JOHTO_SAVE_VARIABLE_COUNT 96
+#define JOHTO_RIVAL_NAME_SIZE 8
 
 /* The last SaveBlock1 sector contains 0x108 bytes of legacy data followed by
  * this record.  The old sector checksum therefore remains unchanged when its
  * zero-filled tail is checked with the larger size. */
 #define JOHTO_SAVE_LEGACY_TAIL_SIZE 0x108
-#define JOHTO_SAVE_SERIALIZED_TAIL_SIZE 0x274
+#define JOHTO_SAVE_SERIALIZED_TAIL_SIZE 0x27C
 
 struct JohtoSaveV1
 {
@@ -27,7 +28,8 @@ struct JohtoSaveV1
     /* 0x008 */ u8 flag_bits[JOHTO_SAVE_FLAG_BITS_SIZE];
     /* 0x068 */ u8 trainer_bits[JOHTO_SAVE_TRAINER_BITS_SIZE];
     /* 0x0A8 */ u16 variables[JOHTO_SAVE_VARIABLE_COUNT];
-    /* 0x168 */ u32 crc32;
+    /* 0x168 */ u8 rival_name[JOHTO_RIVAL_NAME_SIZE];
+    /* 0x170 */ u32 crc32;
 };
 
 enum JohtoSaveLoadResult
@@ -46,7 +48,9 @@ _Static_assert(offsetof(struct JohtoSaveV1, trainer_bits) == 0x68,
                "Johto trainer bits offset");
 _Static_assert(offsetof(struct JohtoSaveV1, variables) == 0xA8,
                "Johto variables offset");
-_Static_assert(offsetof(struct JohtoSaveV1, crc32) == 0x168,
+_Static_assert(offsetof(struct JohtoSaveV1, rival_name) == 0x168,
+               "Johto rival name offset");
+_Static_assert(offsetof(struct JohtoSaveV1, crc32) == 0x170,
                "Johto CRC offset");
 
 void JohtoSave_Initialize(struct JohtoSaveV1 *save);

@@ -7,6 +7,7 @@
 #include "constants/pokeball.h"
 #include "difficulty.h"
 #include "debug.h"
+#include "johto/rival.h"
 #include "johto/trainers.h"
 
 #define MAX_TRAINER_ITEMS 4
@@ -326,7 +327,8 @@ static inline const u8 *GetTrainerClassNameFromId(u16 trainerId)
 
 static inline const u8 *GetTrainerNameFromId(u16 trainerId)
 {
-    return GetTrainerStructFromId(trainerId)->trainerName;
+    const u8 *name = GetTrainerStructFromId(trainerId)->trainerName;
+    return JohtoTrainer_IsId(trainerId) ? JohtoRival_ResolveTrainerName(name) : name;
 }
 
 static inline const enum TrainerPicID GetTrainerPicFromId(u16 trainerId)

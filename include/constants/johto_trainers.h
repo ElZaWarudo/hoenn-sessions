@@ -11,6 +11,6 @@
  * remains larger so later imports can append without renumbering Joey. */
 #define JOHTO_TRAINER_ORDINAL_JOEY 0
 #define JOHTO_TRAINER_JOEY         (JOHTO_TRAINER_ID_MIN + JOHTO_TRAINER_ORDINAL_JOEY)
-#define JOHTO_TRAINER_RECORD_COUNT 1
+#define JOHTO_TRAINER_RECORD_COUNT 284
 
 #endif /* GUARD_CONSTANTS_JOHTO_TRAINERS_H */

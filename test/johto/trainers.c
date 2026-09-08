@@ -18,6 +18,7 @@
 #include "constants/battle_partner.h"
 #include "constants/flags.h"
 #include "constants/johto_trainers.h"
+#include "constants/johto_content.h"
 #include "constants/moves.h"
 #include "constants/region_map_sections.h"
 #include "constants/species.h"
@@ -62,21 +63,25 @@ static void ExpectOnlineJohtoRejectionPreservesStores(void)
     EXPECT_EQ(FlagGet(TRAINER_FLAGS_START + TRAINER_JOEY), legacyFlagBefore);
 }
 
-TEST("Johto trainer namespace keeps boundaries and leaves unassigned IDs empty")
+TEST("Johto trainer namespace keeps boundaries and imported records dense")
 {
     const struct Trainer *none;
+    const u16 lastId = JOHTO_TRAINER_ID_MIN + JOHTO_TRAINER_RECORD_COUNT - 1;
+    const u16 afterId = JOHTO_TRAINER_ID_MIN + JOHTO_TRAINER_RECORD_COUNT;
 
     EXPECT(!JohtoTrainer_IsId(JOHTO_TRAINER_ID_MIN - 1));
     EXPECT(JohtoTrainer_IsId(JOHTO_TRAINER_ID_MIN));
     EXPECT(JohtoTrainer_IsId(JOHTO_TRAINER_ID_MAX));
     EXPECT(!JohtoTrainer_IsId(JOHTO_TRAINER_ID_MAX + 1));
     EXPECT(JohtoTrainer_IsPopulated(JOHTO_TRAINER_JOEY));
-    EXPECT(!JohtoTrainer_IsPopulated(JOHTO_TRAINER_JOEY + 1));
+    EXPECT(JohtoTrainer_IsPopulated(lastId));
+    EXPECT(!JohtoTrainer_IsPopulated(afterId));
     EXPECT(JohtoTrainer_GetStruct(JOHTO_TRAINER_JOEY) != NULL);
-    EXPECT(JohtoTrainer_GetStruct(JOHTO_TRAINER_JOEY + 1) == NULL);
+    EXPECT(JohtoTrainer_GetStruct(lastId) != NULL);
+    EXPECT(JohtoTrainer_GetStruct(afterId) == NULL);
     EXPECT(JohtoTrainer_GetStruct(JOHTO_TRAINER_ID_MAX) == NULL);
 
-    none = GetTrainerStructFromId(JOHTO_TRAINER_JOEY + 1);
+    none = GetTrainerStructFromId(afterId);
     EXPECT_EQ(none, &gTrainers[DIFFICULTY_NORMAL][TRAINER_NONE]);
 }
 
@@ -129,6 +134,31 @@ TEST("Johto Joey factory creates the configured default move party")
     Free(party);
 }
 
+TEST("Johto imported roster preserves boss, double, custom move, and IV fields")
+{
+    const struct Trainer *falkner = GetTrainerStructFromId(JOHTO_TRAINER_FALKNER_1);
+    const struct Trainer *doubleTrainer = GetTrainerStructFromId(JOHTO_TRAINER_AMY_AND_MAY);
+    const struct TrainerMon *party;
+
+    EXPECT(falkner != NULL);
+    EXPECT_EQ(falkner->trainerClass, TRAINER_CLASS_LEADER);
+    EXPECT_EQ(falkner->trainerPic, TRAINER_PIC_LEADER_FALKNER);
+    EXPECT_EQ((u16)falkner->battleType, TRAINER_BATTLE_TYPE_SINGLES);
+    EXPECT_EQ(falkner->aiFlags, AI_FLAG_CHECK_BAD_MOVE | AI_FLAG_TRY_TO_FAINT | AI_FLAG_CHECK_VIABILITY);
+    EXPECT_EQ((u16)falkner->partySize, 2);
+    party = falkner->party;
+    EXPECT_EQ(party[0].iv, TRAINER_PARTY_IVS(12, 12, 12, 12, 12, 12));
+    EXPECT_EQ(party[0].species, SPECIES_PIDGEY);
+    EXPECT_EQ(party[0].moves[0], MOVE_TACKLE);
+    EXPECT_EQ(party[0].heldItem, ITEM_NONE);
+    EXPECT_EQ(party[1].heldItem, ITEM_SITRUS_BERRY);
+
+    EXPECT(doubleTrainer != NULL);
+    EXPECT_EQ((u16)doubleTrainer->battleType, TRAINER_BATTLE_TYPE_DOUBLES);
+    EXPECT_EQ(doubleTrainer->trainerClass, TRAINER_CLASS_TWINS);
+    EXPECT_EQ((u16)doubleTrainer->partySize, 2);
+}
+
 TEST("Johto difficulty falls back without changing partner lookup")
 {
     enum DifficultyLevel previous = GetCurrentDifficultyLevel();
@@ -136,7 +166,7 @@ TEST("Johto difficulty falls back without changing partner lookup")
 
     SetCurrentDifficultyLevel(DIFFICULTY_HARD);
     EXPECT_EQ(GetTrainerDifficultyLevel(JOHTO_TRAINER_JOEY), DIFFICULTY_NORMAL);
-    EXPECT_EQ(GetTrainerDifficultyLevel(JOHTO_TRAINER_JOEY + 1), DIFFICULTY_NORMAL);
+    EXPECT_EQ(GetTrainerDifficultyLevel(JOHTO_TRAINER_ID_MIN + JOHTO_TRAINER_RECORD_COUNT), DIFFICULTY_NORMAL);
     SetCurrentDifficultyLevel(DIFFICULTY_NORMAL);
 
     partner = GetTrainerStructFromId(TRAINER_PARTNER(PARTNER_STEVEN));
@@ -181,7 +211,7 @@ TEST("Johto offline trainer defeat uses the Johto save bit")
     ToggleTrainerFlag(JOHTO_TRAINER_JOEY);
     EXPECT(JohtoSave_GetTrainerDefeated(JOHTO_TRAINER_ORDINAL_JOEY));
     EXPECT(memcmp(&gSaveBlock3Ptr->coop, &coopBefore, sizeof(coopBefore)) == 0);
-    EXPECT_EQ(CoopIdentity_GetTrainerDefeated(JOHTO_TRAINER_JOEY + 1, &defeated),
+    EXPECT_EQ(CoopIdentity_GetTrainerDefeated(JOHTO_TRAINER_ID_MIN + JOHTO_TRAINER_RECORD_COUNT, &defeated),
               COOP_IDENTITY_ACCESS_REJECTED);
 
     PrepareOfflineCoopSave(FALSE);

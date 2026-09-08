@@ -11,41 +11,7 @@
 _Static_assert(JOHTO_TRAINER_NAMESPACE_SIZE == 512,
                "Johto trainer namespace must fit JohtoSave trainer bits");
 
-static const struct TrainerMon sJoeyParty[] =
-{
-    {
-        .iv = TRAINER_PARTY_IVS(0, 0, 0, 0, 0, 0),
-        .moves = { MOVE_NONE, MOVE_NONE, MOVE_NONE, MOVE_NONE },
-        .species = SPECIES_RATTATA,
-        .heldItem = ITEM_NONE,
-        .ability = ABILITY_NONE,
-        .lvl = 4,
-        .ball = BALL_POKE,
-    },
-};
-
-/* Keep this table dense over imported records.  The reserved ID range is
- * represented by bounds checks in the accessor rather than 0x4000 sparse
- * legacy entries. */
-const struct Trainer gJohtoTrainers[DIFFICULTY_COUNT][JOHTO_TRAINER_RECORD_COUNT] =
-{
-    [DIFFICULTY_NORMAL] =
-    {
-        [JOHTO_TRAINER_ORDINAL_JOEY] =
-        {
-            .aiFlags = AI_FLAG_CHECK_BAD_MOVE,
-            .party = sJoeyParty,
-            .trainerClass = TRAINER_CLASS_YOUNGSTER,
-            .encounterMusic = TRAINER_ENCOUNTER_MUSIC_MALE,
-            .multiTeamSize = MULTI_TEAM_SIZE_FULL,
-            .gender = TRAINER_GENDER_MALE,
-            .battleType = TRAINER_BATTLE_TYPE_SINGLES,
-            .partySize = ARRAY_COUNT(sJoeyParty),
-            .trainerPic = TRAINER_PIC_YOUNGSTER,
-            .trainerName = _("JOEY"),
-        },
-    },
-};
+#include "../data/johto/trainers.h"
 
 bool8 JohtoTrainer_IsId(u16 trainerId)
 {

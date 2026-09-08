@@ -646,3 +646,4 @@ gSpecials::
 	def_special Johto_CheckOmanyte, requests_effects=1
 	def_special Johto_CheckTogepi, requests_effects=1
 	def_special Johto_CheckCelebi, requests_effects=1
+	def_special Johto_NameRival, requests_effects=1
