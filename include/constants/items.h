@@ -821,6 +821,7 @@ enum __attribute__((packed)) Item
     ITEM_HM06 = 687,
     ITEM_HM07 = 688,
     ITEM_HM08 = 689,
+    ITEM_HM09 = 885,
 
 
     /* Expands to:
@@ -1065,7 +1066,7 @@ enum __attribute__((packed)) Item
 	ITEM_TIDAL_BELL = 883,
 	ITEM_EXP_SHARE_SMALL = 884,
 
-    ITEMS_COUNT,
+    ITEMS_COUNT = ITEM_HM09 + 1,
     ITEM_FIELD_ARROW = ITEMS_COUNT,
 };
 
