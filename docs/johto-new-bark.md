@@ -73,7 +73,31 @@ make modern
 The local build is `pokeemerald-johto-preview.gba` (32 MiB padded), SHA-256
 `ce038956729cb026e97e43393f6d346fb9a54778e50a26d333179811b9d1f964`.
 It was built from the current workspace, including the existing gameplay work.
-Manual travel, save/reload, and live multiplayer acceptance remain unverified.
+Real-input travel and save/reload were subsequently verified with this exact
+ROM through libmGBA (see the runtime evidence below). Live multiplayer
+acceptance remains unverified.
+
+### Real-input runtime evidence
+
+On 2026-09-08, a private copy of an existing early Littleroot character save
+was loaded using Ubuntu's libmGBA. All game actions used ordinary GBA buttons;
+no game-memory writes, cheats, or save states were used. The original save
+was left untouched.
+
+The player completed the May introduction and Birch rescue, received Torchic,
+walked Route 101, and entered Oldale's Pokémon Center. Declining the guide
+kept the player at Oldale (group 2, map 2). Accepting reached New Bark
+(group 75, map 0; section 209), where movement and the Torchic follower worked.
+An ordinary in-game Save was performed in New Bark. The emulator was closed,
+the resulting save was copied, and a fresh emulator process loaded it through
+Continue. The player reappeared in New Bark with the party intact. Declining
+the return trip retained group 75/map 0; accepting returned to Oldale's center
+(group 2/map 2). Read-only map-header inspection corroborated the screenshots.
+
+Screenshots are retained in `docs/testing/evidence/johto-preview-20260908/`.
+This proves the preview travel/save loop, not the full Johto campaign, all
+closed-door interactions, or multiplayer admission. The temporary libmGBA
+input driver and private test saves remain outside versioned source.
 
 Focused engine test command:
 
