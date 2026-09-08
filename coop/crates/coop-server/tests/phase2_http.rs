@@ -1796,6 +1796,13 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
         return Err("server-issued lease expiry exceeds the bounded smoke wait".into());
     }
     tokio::time::sleep(Duration::from_millis(wait_millis)).await;
+    // Tokio's monotonic timer and the server's wall clock can drift under WSL.
+    // The enclosing flow deadline bounds this wait for the actual lease expiry.
+    while SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis()
+        <= u128::from(lease.expires_at.value())
+    {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     let reconnect = ReconnectLeaseRequest::new(old_fence, id(IdempotencyKey::new));
     let response = json_request(
         address,

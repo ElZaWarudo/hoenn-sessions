@@ -1,0 +1,140 @@
+name: hoenn-coop
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: coop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/database_admin_password
+      POSTGRES_INITDB_ARGS: --data-checksums
+    secrets: [database_password, database_admin_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-database.sh:/docker-entrypoint-initdb.d/10-coop.sh:ro
+    networks: [database]
+    shm_size: 128mb
+    mem_limit: 768m
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d coop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+
+  server:
+    image: ${COOP_IMAGE:?Set COOP_IMAGE}
+    build:
+      context: ../..
+      dockerfile: deploy/coop/Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      COOP_SERVER_MODE: postgres-firebase
+      COOP_SERVER_BIND_ADDR: 0.0.0.0:3000
+      COOP_DATABASE_URL_FILE: /run/secrets/database_url
+      COOP_FIREBASE_BUCKET: ${COOP_FIREBASE_BUCKET:?Set COOP_FIREBASE_BUCKET}
+      COOP_FIREBASE_SERVICE_ACCOUNT_FILE: /run/secrets/firebase_service_account
+      COOP_SIGNING_KEY_FILE: /run/secrets/signing_key
+      COOP_INVITE_PEPPER_FILE: /run/secrets/invite_pepper
+      COOP_BOOTSTRAP_INVITE_FILE: /run/secrets/bootstrap_invite
+      COOP_UPLOAD_BASE_URL: https://${COOP_DOMAIN:?Set COOP_DOMAIN}
+    secrets:
+      - database_url
+      - firebase_service_account
+      - signing_key
+      - invite_pepper
+      - bootstrap_invite
+    networks: [database, edge]
+    read_only: true
+    tmpfs: [/tmp:size=16m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    stop_grace_period: 45s
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --max-time, "4", http://127.0.0.1:3000/health/ready]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      COOP_DOMAIN: ${COOP_DOMAIN:?Set COOP_DOMAIN}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    mem_limit: 192m
+    logging: *logging
+
+  backup:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: coop
+      PGDATABASE: coop
+    secrets: [database_password]
+    entrypoint: [bash, /backup.sh]
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    networks: [database]
+    read_only: true
+    tmpfs: [/tmp:size=16m,mode=1777]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    healthcheck:
+      test: [CMD-SHELL, "find /backups -maxdepth 1 -name 'coop-*.dump' -mmin -1500 | grep -q ."]
+      interval: 1h
+      timeout: 5s
+      start_period: 5m
+      retries: 1
+    logging: *logging
+
+networks:
+  database:
+    internal: true
+  edge: {}
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  database_admin_password:
+    file: ./secrets/database_admin_password
+  database_password:
+    file: ./secrets/database_password
+  database_url:
+    file: ./secrets/database_url
+  firebase_service_account:
+    file: ./secrets/firebase-service-account.json
+  signing_key:
+    file: ./secrets/signing_key
+  invite_pepper:
+    file: ./secrets/invite_pepper
+  bootstrap_invite:
+    file: ./secrets/bootstrap_invite

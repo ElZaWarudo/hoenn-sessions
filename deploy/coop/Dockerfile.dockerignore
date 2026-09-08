@@ -1,0 +1,10 @@
+**
+!Cargo.toml
+!Cargo.lock
+!coop/
+!coop/crates/
+!coop/crates/**
+!dist/
+!dist/bridge_manifest.json
+coop/crates/**/target/
+coop/crates/**/.env*

@@ -11,6 +11,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ServerMode::Phase2Local => {
             coop_server::serve_phase2_local(address).await?;
         }
+        ServerMode::PostgresFirebase => {
+            coop_server::phase2::production::serve_phase2_production(address).await?;
+        }
     }
     Ok(())
 }
@@ -19,15 +22,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 enum ServerMode {
     Phase1,
     Phase2Local,
+    PostgresFirebase,
 }
 
 fn server_mode(value: &str) -> Result<ServerMode, Box<dyn std::error::Error>> {
     match value.to_ascii_lowercase().as_str() {
         "phase1" => Ok(ServerMode::Phase1),
         "phase2-local" => Ok(ServerMode::Phase2Local),
-        "postgres-firebase" | "production" => {
-            Err("production coop-server adapters are unavailable".into())
-        }
+        "postgres-firebase" | "production" => Ok(ServerMode::PostgresFirebase),
         _ => Err(format!("unknown coop-server mode: {value}").into()),
     }
 }
@@ -60,7 +62,7 @@ fn runtime_config() -> Result<(ServerMode, SocketAddr), Box<dyn std::error::Erro
             "--mode" => {
                 let value = arguments
                     .next()
-                    .ok_or("--mode requires phase1 or phase2-local")?;
+                    .ok_or("--mode requires phase1, phase2-local, or postgres-firebase")?;
                 mode = requested_mode(environment_mode, server_mode(&value)?)?;
             }
             "--bind" => {
@@ -84,7 +86,12 @@ fn runtime_config() -> Result<(ServerMode, SocketAddr), Box<dyn std::error::Erro
             }
         }
     }
-    Ok((mode, bind_address_from(&configured)?))
+    let address = if mode == ServerMode::PostgresFirebase {
+        configured.parse()?
+    } else {
+        bind_address_from(&configured)?
+    };
+    Ok((mode, address))
 }
 
 fn requested_mode(
@@ -128,7 +135,10 @@ mod tests {
             server_mode("phase2-local").expect("phase2 local"),
             ServerMode::Phase2Local
         );
-        assert!(server_mode("postgres-firebase").is_err());
+        assert_eq!(
+            server_mode("postgres-firebase").expect("persistent"),
+            ServerMode::PostgresFirebase
+        );
         assert!(server_mode("unknown").is_err());
         assert_eq!(
             requested_mode(Some(ServerMode::Phase1), ServerMode::Phase1).expect("same mode"),

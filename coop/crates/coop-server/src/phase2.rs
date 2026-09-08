@@ -79,9 +79,12 @@ where
 use thiserror::Error;
 
 pub mod auth;
+mod firebase;
 pub(crate) mod group_travel;
 mod online;
+mod persistent;
 pub mod presence;
+pub mod production;
 pub(crate) mod realtime;
 pub mod saves;
 pub mod sessions;
@@ -227,7 +230,6 @@ impl Phase2App {
 
     /// A deterministic test service.  Production callers must use `new` with
     /// externally supplied secrets and the normal OS entropy adapters.
-    /// Creates a deterministic convenience service for unit tests.
     ///
     /// # Panics
     ///
@@ -253,7 +255,8 @@ impl Phase2App {
     }
 
     pub fn router(&self) -> Router {
-        Router::new()
+        let router = Router::new()
+            .route("/health/ready", get(readiness))
             .merge(
                 Router::new()
                     .route("/v1/auth/register", post(register))
@@ -320,7 +323,12 @@ impl Phase2App {
             )
             .merge(realtime::router())
             .layer(axum::middleware::from_fn(reject_oversized_request_target))
-            .with_state(self.clone())
+            .with_state(self.clone());
+        if self.store.config.mode == StorageMode::PostgresFirebase {
+            router.layer(axum::middleware::from_fn(production::offload_request))
+        } else {
+            router
+        }
     }
 
     /// Registers one invite-gated account and its main character.
@@ -525,12 +533,14 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: &SnapshotRestoreRequest,
     ) -> Result<coop_cloud::SnapshotRestoreResponse, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
-        validate_restore_target(&self.store, actor, request.character_id)?;
+        {
+            let _gate = self
+                .store
+                .runtime_transition_gate
+                .lock()
+                .map_err(|_| Phase2Error::Internal)?;
+            validate_restore_target(&self.store, actor, request.character_id)?;
+        }
         saves::restore(&self.store, actor, request)
     }
 
@@ -546,12 +556,14 @@ impl Phase2App {
         request: &SnapshotRestoreRequest,
         source_revision: u64,
     ) -> Result<coop_cloud::SnapshotRestoreResponse, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
-        validate_restore_target(&self.store, actor, request.character_id)?;
+        {
+            let _gate = self
+                .store
+                .runtime_transition_gate
+                .lock()
+                .map_err(|_| Phase2Error::Internal)?;
+            validate_restore_target(&self.store, actor, request.character_id)?;
+        }
         saves::restore_at(&self.store, actor, request, source_revision)
     }
     /// Adds a one-use invitation during local bootstrap.
@@ -635,6 +647,17 @@ impl Phase2App {
             .lock()
             .map_err(|_| Phase2Error::Internal)?;
         group_travel::travel(&self.store, actor, group_id, &request)
+    }
+}
+
+async fn readiness(State(app): State<Phase2App>) -> StatusCode {
+    match tokio::task::spawn_blocking(move || {
+        app.store.read_transaction(|_| Ok::<(), StorageError>(()))
+    })
+    .await
+    {
+        Ok(Ok(())) => StatusCode::OK,
+        _ => StatusCode::SERVICE_UNAVAILABLE,
     }
 }
 
@@ -1085,6 +1108,8 @@ async fn resume_artifact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    include!("phase2/persistence_tests.rs");
+    include!("phase2/recovery_tests.rs");
     use coop_cloud::{
         ArtifactIdentity, ClientInstanceId, IdempotencyKey, InvitationCode, LeaseFence,
         LoginRequest, LogoutRequest, LogoutResponse, Password, ReconnectLeaseRequest,
@@ -1331,6 +1356,12 @@ mod tests {
     }
 
     impl ObjectStore for FailingObjectStore {
+        fn delete_if_present(&self, key: &str) -> Result<bool, StorageError> {
+            self.inner.delete_if_present(key)
+        }
+        fn retire_if_absent(&self, key: &str) -> Result<bool, StorageError> {
+            self.inner.retire_if_absent(key)
+        }
         fn get(&self, key: &str) -> Result<Option<Vec<u8>>, storage::StorageError> {
             self.inner.get(key)
         }
@@ -1367,6 +1398,9 @@ mod tests {
     }
 
     impl ObjectStore for PartialObjectStore {
+        fn retire_if_absent(&self, key: &str) -> Result<bool, StorageError> {
+            self.inner.retire_if_absent(key)
+        }
         fn get(&self, key: &str) -> Result<Option<Vec<u8>>, storage::StorageError> {
             self.inner.get(key)
         }
@@ -3967,7 +4001,7 @@ mod tests {
     }
 
     #[test]
-    fn production_and_non_loopback_local_adapters_fail_closed() {
+    fn incomplete_production_and_non_loopback_local_adapters_fail_closed() {
         assert!(matches!(
             Phase2App::new(Phase2Config::postgres_firebase()),
             Err(Phase2Error::Internal)

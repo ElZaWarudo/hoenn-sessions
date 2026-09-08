@@ -80,12 +80,14 @@ pub enum StorageError {
     ProductionUnavailable,
     #[error("state lock unavailable")]
     Lock,
-    #[error("invalid local adapter configuration")]
+    #[error("invalid storage configuration")]
     InvalidConfiguration,
     #[error("password engine unavailable")]
     Password,
     #[error("repository transaction failed")]
     Transaction,
+    #[error("persistent repository is fenced")]
+    Persistence,
 }
 
 /// Password hashing and verification boundary. Implementations must use a
@@ -196,9 +198,8 @@ pub trait Entropy: Send + Sync {
 
 /// Atomic state repository boundary used by the Phase 2 service.
 ///
-/// The in-memory implementation is the only available adapter in this
-/// milestone. A persistent adapter must provide the same whole-state
-/// transaction boundary before it can be enabled.
+/// Both the in-memory and pilot `PostgreSQL` adapters preserve this whole-state
+/// boundary, including mutations made before a callback returns an error.
 pub trait Repository: Send + Sync {
     /// Runs a short read-only repository operation atomically. Adapters with
     /// a real transaction engine override this method; the local adapter
@@ -228,6 +229,15 @@ pub trait Repository: Send + Sync {
 
 /// Immutable-artifact object-store boundary used by snapshot operations.
 pub trait ObjectStore: Send + Sync {
+    /// Permanently fences an absent key against later publication. Returns
+    /// true for a newly installed or existing retirement fence, false for a
+    /// live object. Reads/deletes must never expose/remove retirement fences.
+    ///
+    /// # Errors
+    /// Returns an error if atomic retirement is unavailable.
+    fn retire_if_absent(&self, _key: &str) -> Result<bool, StorageError> {
+        Err(StorageError::Transaction)
+    }
     /// Reads an object by its server-derived key.
     ///
     /// # Errors
@@ -305,7 +315,7 @@ impl Repository for InMemoryRepository {
 /// Process-local object-store adapter for fixed snapshot artifacts.
 #[derive(Clone, Default)]
 pub struct InMemoryObjectStore {
-    objects: Arc<RwLock<HashMap<String, Vec<u8>>>>,
+    objects: Arc<RwLock<HashMap<String, Option<Vec<u8>>>>>,
 }
 
 impl InMemoryObjectStore {
@@ -317,23 +327,34 @@ impl InMemoryObjectStore {
 
     #[cfg(test)]
     pub(crate) fn object_count(&self) -> Result<usize, StorageError> {
-        Ok(self.objects.read().map_err(|_| StorageError::Lock)?.len())
+        Ok(self
+            .objects
+            .read()
+            .map_err(|_| StorageError::Lock)?
+            .values()
+            .filter(|value| value.is_some())
+            .count())
     }
 }
 
 impl ObjectStore for InMemoryObjectStore {
+    fn retire_if_absent(&self, key: &str) -> Result<bool, StorageError> {
+        let mut objects = self.objects.write().map_err(|_| StorageError::Lock)?;
+        Ok(objects.entry(key.to_owned()).or_insert(None).is_none())
+    }
     fn get(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         self.objects
             .read()
             .map_err(|_| StorageError::Lock)
-            .map(|objects| objects.get(key).cloned())
+            .map(|objects| objects.get(key).cloned().flatten())
     }
 
     fn put(&self, key: String, bytes: Vec<u8>) -> Result<(), StorageError> {
-        self.objects
-            .write()
-            .map_err(|_| StorageError::Lock)?
-            .insert(key, bytes);
+        let mut objects = self.objects.write().map_err(|_| StorageError::Lock)?;
+        if objects.get(&key).is_some_and(Option::is_none) {
+            return Err(StorageError::Transaction);
+        }
+        objects.insert(key, Some(bytes));
         Ok(())
     }
 
@@ -342,24 +363,24 @@ impl ObjectStore for InMemoryObjectStore {
         if objects.contains_key(&key) {
             return Ok(false);
         }
-        objects.insert(key, bytes);
+        objects.insert(key, Some(bytes));
         Ok(true)
     }
 
     fn delete_if_present(&self, key: &str) -> Result<bool, StorageError> {
-        Ok(self
-            .objects
-            .write()
-            .map_err(|_| StorageError::Lock)?
-            .remove(key)
-            .is_some())
+        let mut objects = self.objects.write().map_err(|_| StorageError::Lock)?;
+        if objects.get(key).is_some_and(Option::is_some) {
+            objects.remove(key);
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn contains(&self, key: &str) -> Result<bool, StorageError> {
         self.objects
             .read()
             .map_err(|_| StorageError::Lock)
-            .map(|objects| objects.contains_key(key))
+            .map(|objects| objects.get(key).is_some_and(Option::is_some))
     }
 }
 
@@ -471,8 +492,7 @@ pub struct Phase2Config {
 }
 
 /// Validated connection identifiers required by the production adapters.
-/// The adapters are intentionally not enabled until their implementations are
-/// available, but configuration must still be validated before startup.
+/// Production startup also requires mounted secrets and concrete adapters.
 #[derive(Clone, Eq, PartialEq)]
 pub struct ProductionConfig {
     pub database_url: String,
@@ -563,7 +583,8 @@ impl Phase2Config {
             production: None,
         })
     }
-    /// Selects the not-yet-implemented PostgreSQL/Firebase adapters.
+    /// Selects persistent mode without secrets or adapters. This incomplete
+    /// configuration fails closed; the production entry point fills it in.
     #[must_use]
     pub fn postgres_firebase() -> Self {
         Self {
@@ -638,7 +659,7 @@ fn valid_key_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct UserRecord {
     pub user_id: UserId,
     pub username: coop_cloud::Username,
@@ -646,7 +667,7 @@ pub(crate) struct UserRecord {
     pub character_id: CharacterId,
     pub disabled: bool,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct CharacterRecord {
     pub owner: UserId,
     pub state: CharacterCloudState,
@@ -657,20 +678,20 @@ pub(crate) struct CharacterRecord {
     pub last_session_epoch: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum GroupStatus {
     Active,
     Closed,
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct GroupRecord {
     pub group: Group,
     pub zone: WorldZone,
     pub status: GroupStatus,
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct GroupInvitationRecord {
     pub invitation_id: GroupInvitationId,
     pub inviter: CharacterId,
@@ -679,7 +700,7 @@ pub(crate) struct GroupInvitationRecord {
     pub consumed: bool,
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) enum GroupIdempotencyResponse {
     Online(coop_cloud::OnlineActionResponse),
     Invitation(coop_cloud::CreateGroupInvitationResponse),
@@ -687,13 +708,13 @@ pub(crate) enum GroupIdempotencyResponse {
     Travel(coop_cloud::GroupTravelResponse),
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct GroupIdempotencyRecord {
     pub fingerprint: [u8; 32],
     pub response: GroupIdempotencyResponse,
     pub expires_at: u64,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct AccessRecord {
     pub user_id: UserId,
     pub character_id: CharacterId,
@@ -701,7 +722,7 @@ pub(crate) struct AccessRecord {
     pub expires_at: u64,
     pub revoked: bool,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct RefreshRecord {
     pub user_id: UserId,
     pub character_id: CharacterId,
@@ -710,14 +731,14 @@ pub(crate) struct RefreshRecord {
     pub expires_at: u64,
     pub consumed: bool,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct FamilyRecord {
     pub user_id: UserId,
     pub character_id: CharacterId,
     pub expires_at: u64,
     pub revoked: bool,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct LeaseRecord {
     pub contract: LeaseContract,
     pub grace_until: u64,
@@ -725,13 +746,13 @@ pub(crate) struct LeaseRecord {
     pub reconnect: Option<(IdempotencyKey, coop_cloud::LeaseFence, LeaseContract)>,
     pub release_keys: Vec<(IdempotencyKey, coop_cloud::LeaseFence)>,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct PreparedSnapshot {
     pub request: SnapshotPrepareRequest,
     pub upload_targets: Vec<UploadTarget>,
     pub expires_at: u64,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct RestoreStage {
     pub request: SnapshotRestoreRequest,
     pub snapshot_id: SnapshotId,
@@ -739,12 +760,12 @@ pub(crate) struct RestoreStage {
     /// Declared bytes reserved by this restore while object copying is in
     /// progress. The reservation is counted against the character quota.
     pub storage_bytes: u64,
-    /// Keys successfully created for this staged restore. Only these keys may
-    /// be removed while recovering an expired stage; a conditional-put loser
-    /// must never delete a pre-existing immutable object.
+    /// Owned copies and verified-absent destination keys reserved for cleanup.
+    /// Recovery seals absent keys before retiring the stage so a delayed
+    /// publisher cannot recreate abandoned copies.
     pub created_objects: Vec<String>,
 }
-#[derive(Clone, Copy)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
 pub(crate) struct UploadObjectRecord {
     /// Capability fingerprint that created this object.
     pub fingerprint: [u8; 32],
@@ -752,7 +773,7 @@ pub(crate) struct UploadObjectRecord {
     /// a claimed object, and failed deletion leaves the claim retryable.
     pub cleanup_claimed: bool,
 }
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct TicketRecord {
     pub actor: UserId,
     pub character_id: CharacterId,
@@ -766,7 +787,7 @@ pub(crate) struct TicketRecord {
 
 /// A one-use realtime capability.  The raw ticket is never retained: only
 /// the domain-separated fingerprint is used as the repository key.
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct RealtimeTicketRecord {
     pub user_id: UserId,
     pub character_id: CharacterId,
@@ -775,7 +796,7 @@ pub(crate) struct RealtimeTicketRecord {
     pub expires_at: u64,
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct AcquireRecord {
     pub character_id: CharacterId,
     pub client_instance_id: ClientInstanceId,
@@ -783,7 +804,7 @@ pub(crate) struct AcquireRecord {
     pub expires_at: u64,
 }
 
-#[derive(Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 pub struct State {
     pub(crate) users_by_name: HashMap<String, UserRecord>,
     pub(crate) users_by_id: HashMap<UserId, UserRecord>,
@@ -832,7 +853,11 @@ pub(crate) struct Store {
 }
 impl Store {
     pub fn new(config: Phase2Config) -> Result<Self, StorageError> {
-        if config.mode != StorageMode::Phase2Local {
+        if config.mode == StorageMode::PostgresFirebase
+            && (config.production.is_none()
+                || config.repository.is_none()
+                || config.object_store.is_none())
+        {
             return Err(StorageError::ProductionUnavailable);
         }
         let upload_url = url::Url::parse(&config.upload_base_url)
@@ -842,8 +867,15 @@ impl Store {
             Some(url::Host::Ipv6(address)) => address == std::net::Ipv6Addr::LOCALHOST,
             None | Some(url::Host::Domain(_)) => false,
         };
-        if upload_url.scheme() != "http"
-            || !loopback
+        let valid_origin = match config.mode {
+            StorageMode::Phase2Local => upload_url.scheme() == "http" && loopback,
+            StorageMode::PostgresFirebase => {
+                upload_url.scheme() == "https" && upload_url.host_str().is_some()
+            }
+        };
+        if !valid_origin
+            || config.invite_pepper.len() < 16
+            || !valid_key_id(&config.signing_key_id)
             || !upload_url.username().is_empty()
             || upload_url.password().is_some()
             || upload_url.query().is_some()
@@ -948,7 +980,13 @@ impl Store {
         };
         self.repository
             .write_transaction(&mut callback)
-            .map_err(|error| failure.take().unwrap_or_else(|| E::from(error)))?;
+            .map_err(|error| {
+                if error == StorageError::Persistence {
+                    E::from(error)
+                } else {
+                    failure.take().unwrap_or_else(|| E::from(error))
+                }
+            })?;
         result.ok_or_else(|| E::from(StorageError::Transaction))
     }
 

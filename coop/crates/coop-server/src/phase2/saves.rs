@@ -588,9 +588,22 @@ pub(crate) fn upload_with_credential(
             .verify_bytes(&existing)
             .map_err(|_| Phase2Error::Conflict)?;
     }
-    if created {
+    {
         let registered = store.write_transaction(|state| {
-            if state.snapshots.contains_key(&ticket.snapshot_id) {
+            // A previous process may have created the exact verified bytes
+            // before committing ownership. Recover that publication only
+            // while its original capability and declaration are still live.
+            if state.snapshots.contains_key(&ticket.snapshot_id)
+                || state
+                    .prepared
+                    .get(&ticket.snapshot_id)
+                    .is_none_or(|prepared| prepared.expires_at <= store.now())
+                || state.tickets.get(&fingerprint).is_none_or(|current| {
+                    current.used
+                        || current.expires_at <= store.now()
+                        || current.expected != ticket.expected
+                })
+            {
                 return Err(Phase2Error::Conflict);
             }
             match state.upload_objects.get(&key) {
@@ -614,10 +627,12 @@ pub(crate) fn upload_with_credential(
             Ok(())
         });
         if let Err(error) = registered {
-            // No repository ownership record was committed, so this attempt
-            // cannot be adopted by finalization. Delete only the object just
-            // conditionally created by this request.
-            store.objects.delete_if_present(&key)?;
+            // A concurrent retry may already have adopted and finalized these
+            // bytes. Deletion must pass the durable ownership/usage fence;
+            // an unrecorded object remains recoverable through its declaration.
+            if created {
+                cleanup_untracked_upload(store, &fingerprint, &ticket, &key)?;
+            }
             return Err(error);
         }
     }
@@ -813,6 +828,7 @@ fn cleanup_prepared_objects(
     keys: &[String],
 ) -> Result<(), Phase2Error> {
     for key in keys {
+        recover_prepared_object(store, character_id, snapshot_id, key)?;
         let claimed = store.write_transaction(|state| {
             if state.snapshots.contains_key(&snapshot_id) {
                 return Ok::<Option<[u8; 32]>, Phase2Error>(None);
@@ -834,7 +850,7 @@ fn cleanup_prepared_objects(
         let Some(fingerprint) = claimed else {
             continue;
         };
-        store.objects.delete_if_present(key)?;
+        seal_object(store, key)?;
         store.write_transaction(|state| {
             if state.snapshots.contains_key(&snapshot_id) {
                 return Ok::<(), Phase2Error>(());
@@ -850,6 +866,54 @@ fn cleanup_prepared_objects(
         })?;
     }
     Ok(())
+}
+
+fn recover_prepared_object(
+    store: &Store,
+    character_id: coop_cloud::CharacterId,
+    snapshot_id: SnapshotId,
+    key: &str,
+) -> Result<(), Phase2Error> {
+    let candidate = store.read_transaction(|state| {
+        if state.snapshots.contains_key(&snapshot_id)
+            || state.upload_objects.contains_key(key)
+            || !state.prepared.contains_key(&snapshot_id)
+        {
+            return Ok::<_, Phase2Error>(None);
+        }
+        Ok(state.tickets.iter().find_map(|(fingerprint, ticket)| {
+            (ticket.character_id == character_id
+                && ticket.snapshot_id == snapshot_id
+                && Store::object_key(character_id, snapshot_id, ticket.artifact) == key)
+                .then(|| (*fingerprint, ticket.expected.clone()))
+        }))
+    })?;
+    let Some((fingerprint, expected)) = candidate else {
+        return Ok(());
+    };
+    if let Some(bytes) = store.objects.get(key)?
+        && expected.verify_bytes(&bytes).is_err()
+    {
+        return Ok(());
+    }
+    store.write_transaction(|state| {
+        if !state.snapshots.contains_key(&snapshot_id)
+            && state.prepared.contains_key(&snapshot_id)
+            && state
+                .tickets
+                .get(&fingerprint)
+                .is_some_and(|ticket| ticket.expected == expected)
+        {
+            state
+                .upload_objects
+                .entry(key.to_owned())
+                .or_insert(UploadObjectRecord {
+                    fingerprint,
+                    cleanup_claimed: false,
+                });
+        }
+        Ok(())
+    })
 }
 
 fn finalized_record(
@@ -1095,9 +1159,20 @@ fn copy_restore_objects(
 
 fn cleanup_restore_objects(store: &Store, keys: &[String]) -> Result<(), Phase2Error> {
     for key in keys {
-        store.objects.delete_if_present(key)?;
+        seal_object(store, key)?;
     }
     Ok(())
+}
+
+fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
+    for _ in 0..8 {
+        store.objects.delete_if_present(key)?;
+        if store.objects.retire_if_absent(key)? {
+            return Ok(());
+        }
+    }
+    // Retain the durable declaration if concurrent publishers keep winning.
+    Err(Phase2Error::Busy)
 }
 
 fn clear_restore_stage(
@@ -1477,6 +1552,11 @@ fn reserve_restore(
     revision: Revision,
     now: u64,
 ) -> Result<RestoreReservation, Phase2Error> {
+    let _gate = store
+        .runtime_transition_gate
+        .lock()
+        .map_err(|_| Phase2Error::Internal)?;
+    super::validate_restore_target(store, actor, request.character_id)?;
     let stage_expires_at = now
         .checked_add(RESTORE_STAGE_TTL_MS)
         .ok_or(Phase2Error::Internal)?;
@@ -1546,13 +1626,80 @@ fn compensate_restore_failure(
     keys: &[String],
     original: Phase2Error,
 ) -> Phase2Error {
-    let cleanup = cleanup_restore_objects(store, keys);
-    let clear = clear_restore_stage(store, request, snapshot_id);
-    if cleanup.is_err() || clear.is_err() {
-        Phase2Error::Internal
-    } else {
-        original
+    // A failed remote response can still have created an object. Preserve
+    // the durable stage until both discovery and compensation succeed.
+    let abandoned = store.write_transaction(|state| {
+        if let Some(stage) = state.restore_staging.get_mut(&request.character_id)
+            && stage.request == *request
+            && stage.snapshot_id == snapshot_id
+        {
+            // The copying attempt has ended. Make failed compensation
+            // immediately recoverable without waiting for the live-stage TTL.
+            stage.expires_at = store.now();
+        }
+        Ok::<(), Phase2Error>(())
+    });
+    let cleanup = abandoned
+        .and_then(|()| recover_restore_objects(store, request, snapshot_id))
+        .and_then(|recovered| cleanup_restore_objects(store, &recovered))
+        .and_then(|()| cleanup_restore_objects(store, keys))
+        .and_then(|()| clear_restore_stage(store, request, snapshot_id));
+    cleanup.map_or(Phase2Error::Internal, |()| original)
+}
+
+/// Recover copies written before their ownership checkpoint. Only exact
+/// source bytes in the server-reserved destination namespace may be adopted.
+fn recover_restore_objects(
+    store: &Store,
+    request: &SnapshotRestoreRequest,
+    snapshot_id: SnapshotId,
+) -> Result<Vec<String>, Phase2Error> {
+    let source = store.read_transaction(|state| {
+        let stage = state
+            .restore_staging
+            .get(&request.character_id)
+            .ok_or(Phase2Error::Conflict)?;
+        if stage.request != *request
+            || stage.snapshot_id != snapshot_id
+            || state.snapshots.contains_key(&snapshot_id)
+        {
+            return Err(Phase2Error::Conflict);
+        }
+        state
+            .snapshots
+            .get(&request.snapshot_id)
+            .cloned()
+            .ok_or(Phase2Error::Conflict)
+    })?;
+    let mut recovered = Vec::new();
+    for file in &source.files {
+        let key = Store::object_key(request.character_id, snapshot_id, file.artifact);
+        if store
+            .objects
+            .get(&key)?
+            .is_none_or(|bytes| file.verify_bytes(&bytes).is_ok())
+        {
+            recovered.push(key);
+        }
     }
+    store.write_transaction(|state| {
+        if state.snapshots.contains_key(&snapshot_id) {
+            return Err(Phase2Error::Conflict);
+        }
+        let stage = state
+            .restore_staging
+            .get_mut(&request.character_id)
+            .ok_or(Phase2Error::Conflict)?;
+        if stage.request != *request || stage.snapshot_id != snapshot_id {
+            return Err(Phase2Error::Conflict);
+        }
+        for key in recovered {
+            if !stage.created_objects.contains(&key) {
+                stage.created_objects.push(key);
+            }
+        }
+        Ok(stage.created_objects.clone())
+    })
 }
 
 fn commit_restore(
@@ -1564,6 +1711,11 @@ fn commit_restore(
     snapshot_id: SnapshotId,
     revision: Revision,
 ) -> Result<SnapshotRestoreResponse, Phase2Error> {
+    let _gate = store
+        .runtime_transition_gate
+        .lock()
+        .map_err(|_| Phase2Error::Internal)?;
+    super::validate_restore_target(store, actor, request.character_id)?;
     store.write_transaction(|state| {
         let lease = active_lease_identity(
             state,
@@ -1690,7 +1842,8 @@ pub(crate) fn restore(
             RestoreReservation::Replay(response) => return Ok(response),
             RestoreReservation::Reserved => break RestoreReservation::Reserved,
             RestoreReservation::Recovered(stage) => {
-                cleanup_restore_objects(store, &stage.created_objects)?;
+                let recovered = recover_restore_objects(store, &stage.request, stage.snapshot_id)?;
+                cleanup_restore_objects(store, &recovered)?;
                 // Keep the expired stage durable until all compensation has
                 // succeeded. A failed clear is therefore retryable too.
                 clear_restore_stage(store, &stage.request, stage.snapshot_id)?;
