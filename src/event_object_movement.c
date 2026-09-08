@@ -23,6 +23,7 @@
 #include "gpu_regs.h"
 #include "graphics.h"
 #include "item.h"
+#include "johto/events.h"
 #include "mauville_old_man.h"
 #include "metatile_behavior.h"
 #include "overworld.h"
@@ -6380,21 +6381,19 @@ void GetDirectionToFaceScript(struct ScriptContext *ctx)
     u32 varId = ScriptReadHalfword(ctx);
     u8 sourceId = GetObjectEventIdByLocalId(ScriptReadByte(ctx));
     u8 targetId = GetObjectEventIdByLocalId(ScriptReadByte(ctx));
+    u16 value;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    u16 *var = GetVarPointer(varId);
-
-    if (var == NULL)
-        return;
     if (sourceId >= OBJECT_EVENTS_COUNT || targetId >= OBJECT_EVENTS_COUNT)
-        *var = DIR_NONE;
+        value = DIR_NONE;
     else
-        *var = GetDirectionToFace(gObjectEvents[sourceId].currentCoords.x,
-                                  gObjectEvents[sourceId].currentCoords.y,
-                                  gObjectEvents[targetId].currentCoords.x,
-                                  gObjectEvents[targetId].currentCoords.y);
+        value = GetDirectionToFace(gObjectEvents[sourceId].currentCoords.x,
+                                   gObjectEvents[sourceId].currentCoords.y,
+                                   gObjectEvents[targetId].currentCoords.x,
+                                   gObjectEvents[targetId].currentCoords.y);
+    (void)VarSet(varId, value);
 }
 
 // Whether following Pokémon is also the user of the field move
@@ -6402,22 +6401,20 @@ void GetDirectionToFaceScript(struct ScriptContext *ctx)
 void IsFollowerFieldMoveUser(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
+    u16 value = FALSE;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    u16 *var = GetVarPointer(varId);
     u16 userIndex = gFieldEffectArguments[0]; // field move user index
     struct Pokemon *follower = GetFirstLiveMon();
     struct ObjectEvent *obj = GetFollowerObject();
-    if (var == NULL)
-        return;
-    *var = FALSE;
     if (follower && obj && !obj->invisible)
     {
         u16 followIndex = ((u32)follower - (u32)gParties[B_TRAINER_0]) / sizeof(struct Pokemon);
-        *var = userIndex == followIndex;
+        value = userIndex == followIndex;
     }
+    (void)VarSet(varId, value);
 }
 
 void SetTrainerMovementType(struct ObjectEvent *objectEvent, u8 movementType)

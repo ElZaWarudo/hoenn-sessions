@@ -159,13 +159,14 @@ bool8 ScrCmd_specialvar(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
     u16 index = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
+    u16 value;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
     Script_CheckEffectInstrumentedSpecial(index);
 
-    *ptr = gSpecials[index]();
+    value = gSpecials[index]();
+    (void)VarSet(varId, value);
     return FALSE;
 }
 
@@ -457,36 +458,37 @@ bool8 ScrCmd_copybyte(struct ScriptContext *ctx)
 bool8 ScrCmd_setvar(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
+    u16 value;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    *ptr = ScriptReadHalfword(ctx);
+    value = ScriptReadHalfword(ctx);
+    (void)VarSet(varId, value);
     return FALSE;
 }
 
 bool8 ScrCmd_copyvar(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
+    u16 sourceId;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    *ptr = *GetVarPointer(ScriptReadHalfword(ctx));
+    sourceId = ScriptReadHalfword(ctx);
+    (void)VarSet(varId, VarGet(sourceId));
     return FALSE;
 }
 
 bool8 ScrCmd_setorcopyvar(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    *ptr = VarGet(ScriptReadHalfword(ctx));
+    (void)VarSet(varId, VarGet(ScriptReadHalfword(ctx)));
     return FALSE;
 }
 
@@ -567,7 +569,7 @@ bool8 ScrCmd_compare_ptr_to_ptr(struct ScriptContext *ctx)
 
 bool8 ScrCmd_compare_var_to_value(struct ScriptContext *ctx)
 {
-    const u16 value1 = *GetVarPointer(ScriptReadHalfword(ctx));
+    const u16 value1 = VarGet(ScriptReadHalfword(ctx));
     const u16 value2 = ScriptReadHalfword(ctx);
 
     Script_RequestEffects(SCREFF_V1);
@@ -578,12 +580,12 @@ bool8 ScrCmd_compare_var_to_value(struct ScriptContext *ctx)
 
 bool8 ScrCmd_compare_var_to_var(struct ScriptContext *ctx)
 {
-    const u16 *ptr1 = GetVarPointer(ScriptReadHalfword(ctx));
-    const u16 *ptr2 = GetVarPointer(ScriptReadHalfword(ctx));
+    const u16 value1 = VarGet(ScriptReadHalfword(ctx));
+    const u16 value2 = VarGet(ScriptReadHalfword(ctx));
 
     Script_RequestEffects(SCREFF_V1);
 
-    ctx->comparisonResult = Compare(*ptr1, *ptr2);
+    ctx->comparisonResult = Compare(value1, value2);
     return FALSE;
 }
 
@@ -593,24 +595,26 @@ bool8 ScrCmd_compare_var_to_var(struct ScriptContext *ctx)
 bool8 ScrCmd_addvar(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
+    u16 value = VarGet(varId);
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    *ptr += ScriptReadHalfword(ctx);
+    value += ScriptReadHalfword(ctx);
+    (void)VarSet(varId, value);
     return FALSE;
 }
 
 bool8 ScrCmd_subvar(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
+    u16 value = VarGet(varId);
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    *ptr -= VarGet(ScriptReadHalfword(ctx));
+    value -= VarGet(ScriptReadHalfword(ctx));
+    (void)VarSet(varId, value);
     return FALSE;
 }
 
@@ -1142,15 +1146,13 @@ bool8 ScrCmd_getplayerxy(struct ScriptContext *ctx)
 {
     u32 varIdX = ScriptReadHalfword(ctx);
     u32 varIdY = ScriptReadHalfword(ctx);
-    u16 *pX = GetVarPointer(varIdX);
-    u16 *pY = GetVarPointer(varIdY);
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varIdX);
     Script_RequestWriteVar(varIdY);
 
-    *pX = gSaveBlock1Ptr->pos.x;
-    *pY = gSaveBlock1Ptr->pos.y;
+    (void)VarSet(varIdX, gSaveBlock1Ptr->pos.x);
+    (void)VarSet(varIdY, gSaveBlock1Ptr->pos.y);
     return FALSE;
 }
 
@@ -2888,12 +2890,11 @@ bool8 ScrCmd_showelevmenu(struct ScriptContext *ctx)
 bool8 ScrCmd_checkcoins(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
-    u16 *ptr = GetVarPointer(varId);
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    *ptr = GetCoins();
+    (void)VarSet(varId, GetCoins());
     return FALSE;
 }
 
@@ -3128,14 +3129,16 @@ bool8 ScrCmd_getobjectxy(struct ScriptContext *ctx)
     u32 useTemplate = VarGet(ScriptReadHalfword(ctx));
     u32 varIdX = ScriptReadHalfword(ctx);
     u32 varIdY = ScriptReadHalfword(ctx);
+    u16 x;
+    u16 y;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varIdX);
     Script_RequestWriteVar(varIdY);
 
-    u16 *pX = GetVarPointer(varIdX);
-    u16 *pY = GetVarPointer(varIdY);
-    GetObjectPosition(pX, pY, localId, useTemplate);
+    GetObjectPosition(&x, &y, localId, useTemplate);
+    (void)VarSet(varIdX, x);
+    (void)VarSet(varIdY, y);
 
     return FALSE;
 }
@@ -3149,9 +3152,7 @@ bool8 ScrCmd_checkobjectat(struct ScriptContext *ctx)
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    u16 *varPointer = GetVarPointer(varId);
-
-    *varPointer = CheckObjectAtXY(x, y);
+    (void)VarSet(varId, CheckObjectAtXY(x, y));
 
     return FALSE;
 }
@@ -3200,13 +3201,13 @@ bool8 Scrcmd_getobjectfacingdirection(struct ScriptContext *ctx)
 {
     u32 objectId = VarGet(ScriptReadHalfword(ctx));
     u32 varId = ScriptReadHalfword(ctx);
+    u16 value;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    u16 *varPointer = GetVarPointer(varId);
-
-    *varPointer = gObjectEvents[GetObjectEventIdByLocalId(objectId)].facingDirection;
+    value = gObjectEvents[GetObjectEventIdByLocalId(objectId)].facingDirection;
+    (void)VarSet(varId, value);
 
     return FALSE;
 }

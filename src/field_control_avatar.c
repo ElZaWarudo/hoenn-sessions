@@ -22,6 +22,7 @@
 #include "fldeff_misc.h"
 #include "follower_npc.h"
 #include "item_menu.h"
+#include "johto/events.h"
 #include "link.h"
 #include "match_call.h"
 #include "metatile_behavior.h"
@@ -1148,6 +1149,13 @@ static s8 GetWarpEventAtPosition(struct MapHeader *mapHeader, u16 x, u16 y, u8 e
 
 static bool32 ShouldTriggerScriptRun(const struct CoordEvent *coordEvent)
 {
+    if (JohtoEvent_IsVariableId(coordEvent->trigger))
+        return VarGet(coordEvent->trigger) == coordEvent->index;
+    if (JohtoEvent_IsFlagId(coordEvent->trigger))
+        return FlagGet(coordEvent->trigger) == coordEvent->index;
+    if (JohtoEvent_IsReservedId(coordEvent->trigger))
+        return FALSE;
+
     u16 *varPtr = GetVarPointer(coordEvent->trigger);
     // Treat non Vars as flags
     if (varPtr == NULL)
@@ -1155,6 +1163,13 @@ static bool32 ShouldTriggerScriptRun(const struct CoordEvent *coordEvent)
     else
         return (*varPtr == coordEvent->index);
 }
+
+#if TESTING
+bool32 FieldControlAvatar_TestShouldTriggerScriptRun(const struct CoordEvent *coordEvent)
+{
+    return ShouldTriggerScriptRun(coordEvent);
+}
+#endif
 
 static const u8 *TryRunCoordEventScript(const struct CoordEvent *coordEvent)
 {
