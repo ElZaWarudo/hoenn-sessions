@@ -15844,6 +15844,169 @@ const struct ItemInfo gItemsInfo[] =
 		.iconPic = gItemIcon_VsSeeker,
 		.iconPalette = gItemIconPalette_VsSeeker,
 	},
+    [ITEM_CLEAR_BELL] =
+    {
+        .name = ITEM_NAME("Clear Bell"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A clear-sounding\n"
+            "bell with a gentle\n"
+            "ring."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoClearBell,
+        .iconPalette = gItemIconPalette_JohtoClearBell,
+    },
+
+    [ITEM_GS_BALL] =
+    {
+        .name = ITEM_NAME("GS Ball"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A strange Ball\n"
+            "with a special\n"
+            "purpose."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoGsBall,
+        .iconPalette = gItemIconPalette_JohtoGsBall,
+    },
+
+    [ITEM_MYSTERY_EGG] =
+    {
+        .name = ITEM_NAME("Mystery Egg"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A mysterious Egg\n"
+            "obtained from a\n"
+            "Pokemon Day Care."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoMysteryEgg,
+        .iconPalette = gItemIconPalette_JohtoMysteryEgg,
+    },
+
+    [ITEM_PASS] =
+    {
+        .name = ITEM_NAME("Pass"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A pass for the\n"
+            "Magnet Train to\n"
+            "Kanto and Johto."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoPass,
+        .iconPalette = gItemIconPalette_JohtoPass,
+    },
+
+    [ITEM_RAINBOW_WING] =
+    {
+        .name = ITEM_NAME("Rainbow Wing"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A shining feather\n"
+            "said to come from a\n"
+            "rainbow bird."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoRainbowWing,
+        .iconPalette = gItemIconPalette_JohtoRainbowWing,
+    },
+
+    [ITEM_RED_SCALE] =
+    {
+        .name = ITEM_NAME("Red Scale"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A large red scale\n"
+            "from the red\n"
+            "Gyarados."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoRedScale,
+        .iconPalette = gItemIconPalette_JohtoRedScale,
+    },
+
+    [ITEM_SECRET_POTION] =
+    {
+        .name = ITEM_NAME("Secret Potion"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A potent medicine\n"
+            "for a Pokemon that\n"
+            "is badly injured."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoSecretPotion,
+        .iconPalette = gItemIconPalette_JohtoSecretPotion,
+    },
+
+    [ITEM_SILVER_WING] =
+    {
+        .name = ITEM_NAME("Silver Wing"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A strange feather\n"
+            "that gleams like\n"
+            "silver."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoSilverWing,
+        .iconPalette = gItemIconPalette_JohtoSilverWing,
+    },
+
+    [ITEM_TIDAL_BELL] =
+    {
+        .name = ITEM_NAME("Tidal Bell"),
+        .price = 0,
+        .description = COMPOUND_STRING(
+            "A bell said to call\n"
+            "Lugia with a gentle\n"
+            "sound."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_JohtoTidalBell,
+        .iconPalette = gItemIconPalette_JohtoTidalBell,
+    },
+
+    [ITEM_EXP_SHARE_SMALL] =
+    {
+        .name = ITEM_NAME("Exp. Share S"),
+        .price = 6000,
+        .holdEffect = HOLD_EFFECT_EXP_SHARE,
+        .description = COMPOUND_STRING(
+            "A hold item that\n"
+            "shares Exp. points\n"
+            "from battles."
+        ),
+        .pocket = POCKET_ITEMS,
+        .sortType = ITEM_TYPE_HELD_ITEM,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .flingPower = 30,
+        .iconPic = gItemIcon_ExpShare,
+        .iconPalette = gItemIconPalette_ExpShare,
+    },
+
 };
 
 #undef ITEM_NAME
