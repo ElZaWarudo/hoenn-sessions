@@ -1,0 +1,30 @@
+{
+  "approval_event_digest": "sha256:cc5c30247cec7f31fa6517b99bca1eeb59c193ad9c1e7e5d1eacde378e7b8b0b",
+  "approved_at": "2026-09-08T12:48:31Z",
+  "approved_by": "user",
+  "artifacts": [
+    {
+      "digest": "sha256:db2e3d5ba0d78a5b81af571ebb0d9ed018490dff18f301ee9218f494c491da7f",
+      "path": "docs/plans/johto-region/composition-review.md"
+    },
+    {
+      "digest": "sha256:3b3158742c159fc789f7d4453b2f20d9af205a64c76dade53af21e7a596f070b",
+      "path": "docs/plans/johto-region/initiative-requirements.md"
+    },
+    {
+      "digest": "sha256:a439040232194736ed1de387413d6ab0e8e6f5c1abf675e4012fa19dce74ee97",
+      "path": "docs/plans/johto-region/jira-seed-plan.md"
+    },
+    {
+      "digest": "sha256:9d0781b71354d22641b7d362a5b64ea22661fdde45355b4527e5c95cfdfb9f08",
+      "path": "docs/plans/johto-region/roadmap.md"
+    },
+    {
+      "digest": "sha256:982cc6a18ffe0bcc9f6aab6a4861a0c7e8971e8b9a5af0dac4578d2542e752f7",
+      "path": "docs/swarm/johto-region/swarm-startup.md"
+    }
+  ],
+  "packet_digest": "sha256:03cf6b1cfa9bf45fd528ba132ef8c8153af76862e8d3fbfdf853a692b1ebd179",
+  "receipt_digest": "sha256:e4c0ea415a4a396e6cde2cede10dcab692a8e67f3c626f878b2d865790cb9d67",
+  "schema_version": 1
+}

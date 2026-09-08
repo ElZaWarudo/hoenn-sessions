@@ -1,0 +1,96 @@
+schema_version: 2
+updated_at: '2026-09-08'
+mode: autonomous-team-flow
+documentation_gate:
+  status: approved
+  approved_by: user
+  approved_at: '2026-09-08T12:48:31Z'
+  initiative_contract: docs/plans/johto-region/initiative-requirements.md
+  source_artifacts:
+  - docs/plans/johto-region/initiative-requirements.md
+  - docs/plans/johto-region/roadmap.md
+  - docs/plans/johto-region/jira-seed-plan.md
+  - docs/plans/johto-region/composition-review.md
+  - docs/swarm/johto-region/swarm-startup.md
+  - docs/swarm/johto-region/queue-state.yaml
+  - docs/swarm/johto-region/blockers.yaml
+  approval_artifacts:
+  - docs/plans/johto-region/initiative-requirements.md
+  - docs/plans/johto-region/roadmap.md
+  - docs/plans/johto-region/jira-seed-plan.md
+  - docs/plans/johto-region/composition-review.md
+  - docs/swarm/johto-region/swarm-startup.md
+  approval_receipt: docs/orchestration/runs/johto-region-20260908/documentation-approval.json
+  approved_packet_digest: sha256:03cf6b1cfa9bf45fd528ba132ef8c8153af76862e8d3fbfdf853a692b1ebd179
+  approval_receipt_digest: sha256:e4c0ea415a4a396e6cde2cede10dcab692a8e67f3c626f878b2d865790cb9d67
+  feedback_log: []
+initiative:
+  contract_path: docs/plans/johto-region/initiative-requirements.md
+  artifact_contract: ce-unified-plan/v1
+  artifact_readiness: requirements-only
+  shared_revision: a5ace3186f38e147b31a9cd3cb4a660ae71f0afa
+compound_runs: {}
+autonomy:
+  mode: local-autonomous
+  ledger_path: null
+  external_mutations: not-authorized
+  local_commits: explicitly-authorized
+  release_phases: 1
+jira:
+  provider: none
+  policy: skip
+units:
+  J1:
+    title: Compatible Johto import and state foundation
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on: []
+    blocked_by: []
+    execution:
+      route: swarm
+      lane: deep
+      contract_protocol: executable
+  J2:
+    title: Connected Johto world
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on:
+    - J1
+    blocked_by: []
+  J3:
+    title: Johto trainers and encounters
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on:
+    - J1
+    blocked_by: []
+  J4:
+    title: Complete Johto campaign
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on:
+    - J2
+    - J3
+    blocked_by: []
+  J5:
+    title: Kanto connections and shared League
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on:
+    - J4
+    blocked_by: []
+  J6:
+    title: Regional navigation and recovery
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on:
+    - J5
+    blocked_by: []
+  J7:
+    title: Co-op integration and full acceptance
+    source: docs/plans/johto-region/roadmap.md
+    status: planned
+    depends_on:
+    - J6
+    blocked_by: []
+waves: []

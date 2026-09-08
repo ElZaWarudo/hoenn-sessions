@@ -1,0 +1,4 @@
+Source: root-observed user message in current task, 2026-09-08.
+Context: direct response to the full Johto packet and existing-Kanto approval question.
+
+work in this using the seneshal as goal. do it full autonomous and subaagentic with one release phase at the end but doing any local commit you need
