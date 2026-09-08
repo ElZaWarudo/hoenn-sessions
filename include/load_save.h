@@ -3,6 +3,7 @@
 
 #include "pokemon_storage_system.h"
 #include "save.h"
+#include "johto/save.h"
 
 #define SAVEBLOCK_MOVE_RANGE    128
 
@@ -18,6 +19,7 @@ struct SaveBlock2ASLR {
 
 struct SaveBlock1ASLR {
     struct SaveBlock1 block;
+    struct JohtoSaveV1 johto;
     u8 aslr[SAVEBLOCK_MOVE_RANGE];
 };
 

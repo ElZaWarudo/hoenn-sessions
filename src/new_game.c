@@ -51,6 +51,7 @@
 #include "difficulty.h"
 #include "follower_npc.h"
 #include "coop/save.h"
+#include "johto/save.h"
 
 extern const u8 EventScript_ResetAllMapFlags[];
 extern const u8 EventScript_ResetAllMapFlagsFrlg[];
@@ -174,6 +175,7 @@ void NewGameInitData(void)
     ClearFrontierRecord();
     ClearSav1();
     ClearSav3();
+    JohtoSave_InitializeCurrent();
     CoopSave_InitializeCurrent();
     ClearAllMail();
     gSaveBlock2Ptr->specialSaveWarpFlags = 0;
