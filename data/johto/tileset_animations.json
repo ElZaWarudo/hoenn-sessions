@@ -1,0 +1,661 @@
+{
+  "schema_version": 1,
+  "region": "johto",
+  "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
+  "frame_format": "4bpp",
+  "streams": [
+    {
+      "name": "general_flower",
+      "frame_count": 5,
+      "destination_tile": 508,
+      "copy_bytes": 128,
+      "period": 16,
+      "phase": 2,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/primary/johto_general/anim/flower/0.png",
+          "target": "graphics/johto/tileset_anims/general_flower/0.png",
+          "sha256": "7196fa1936dea03f7aa0693f3ac7ee63f7caf87c7b6f55133e10cb6e75c893b4",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/flower/1.png",
+          "target": "graphics/johto/tileset_anims/general_flower/1.png",
+          "sha256": "56b7b97e3e05c4d36395e1a75430a9f0bce26f01dcd71a670df022cbb7caf99d",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/flower/2.png",
+          "target": "graphics/johto/tileset_anims/general_flower/2.png",
+          "sha256": "cda8d10a44dff6e0fab7cdc660910d00dcc42ccf46d50244bcb960e3aded10ad",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/flower/3.png",
+          "target": "graphics/johto/tileset_anims/general_flower/3.png",
+          "sha256": "512afc7073b9fba5b926002e9498795fc4178e32c9b62f884b0854fed5fd648f",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/flower/4.png",
+          "target": "graphics/johto/tileset_anims/general_flower/4.png",
+          "sha256": "b81ea7b895fd3ad95f60f075de88e901496c172325121116df8ee83dad1cf8b3",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        }
+      ]
+    },
+    {
+      "name": "general_sand",
+      "frame_count": 8,
+      "destination_tile": 416,
+      "copy_bytes": 576,
+      "period": 8,
+      "phase": 0,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/0.png",
+          "target": "graphics/johto/tileset_anims/general_sand/0.png",
+          "sha256": "de297c7c37a19210cd1558c23c1aa2f64176055954cbea02c61a0e96ada62ccb",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/1.png",
+          "target": "graphics/johto/tileset_anims/general_sand/1.png",
+          "sha256": "40c17d35de6aaf2ceb133bbe3b24cc12f09173a553b793c8a2c90c27d0241c55",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/2.png",
+          "target": "graphics/johto/tileset_anims/general_sand/2.png",
+          "sha256": "cc6f80e0e2dbdde18642d421f4e3800840a5b9e188f8dcee07c06d00276fcffa",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/3.png",
+          "target": "graphics/johto/tileset_anims/general_sand/3.png",
+          "sha256": "f0ce8f52fa3832b6f8614acfdf5ec9adc6b701ba4b97757cafc6d54573318b22",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/4.png",
+          "target": "graphics/johto/tileset_anims/general_sand/4.png",
+          "sha256": "7f8ce7450f6ec754d4c2a49e671935f4368422bcfcfb47cf62df3c2901e5b846",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/5.png",
+          "target": "graphics/johto/tileset_anims/general_sand/5.png",
+          "sha256": "9fb659fa98d3f7ff6cd47b5c9662416aceb616f97254b1a9ea63158ab9a5abc4",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/6.png",
+          "target": "graphics/johto/tileset_anims/general_sand/6.png",
+          "sha256": "8adb5d0ecb63d3722381327ed34c2c5f0263b457cc64f6cf213b702a04156b20",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/sandwatersedge/7.png",
+          "target": "graphics/johto/tileset_anims/general_sand/7.png",
+          "sha256": "69045e6423ba5d7e976f42d9a5c4d9828625f3f0fdd9f5bd24caaed907c466c1",
+          "width": 16,
+          "height": 72,
+          "bytes4bpp": 576
+        }
+      ]
+    },
+    {
+      "name": "general_land",
+      "frame_count": 4,
+      "destination_tile": 480,
+      "copy_bytes": 320,
+      "period": 16,
+      "phase": 1,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/primary/general/anim/land_water_edge/0.png",
+          "target": "graphics/johto/tileset_anims/general_land/0.png",
+          "sha256": "383e42baf2aba145ae459b238d15b3747fbea283accef89fc698d79ed69b0ddc",
+          "width": 80,
+          "height": 8,
+          "bytes4bpp": 320
+        },
+        {
+          "source": "data/tilesets/primary/general/anim/land_water_edge/1.png",
+          "target": "graphics/johto/tileset_anims/general_land/1.png",
+          "sha256": "405241ce8c58ff1a8b9aa4713b071a6c8c7840308bc251ea125b42cc3044c8ba",
+          "width": 80,
+          "height": 8,
+          "bytes4bpp": 320
+        },
+        {
+          "source": "data/tilesets/primary/general/anim/land_water_edge/2.png",
+          "target": "graphics/johto/tileset_anims/general_land/2.png",
+          "sha256": "5e39979a6ea36f95b3821f7e8dc4727146e16567f3403ed4d501c0283e8e1188",
+          "width": 80,
+          "height": 8,
+          "bytes4bpp": 320
+        },
+        {
+          "source": "data/tilesets/primary/general/anim/land_water_edge/3.png",
+          "target": "graphics/johto/tileset_anims/general_land/3.png",
+          "sha256": "e102556af2f57da88e718a94124d19b8d7345c3974152860c743e5404cc6277b",
+          "width": 80,
+          "height": 8,
+          "bytes4bpp": 320
+        }
+      ]
+    },
+    {
+      "name": "general_waterfall",
+      "frame_count": 8,
+      "destination_tile": 450,
+      "copy_bytes": 384,
+      "period": 16,
+      "phase": 3,
+      "source_offset_bytes": 1088,
+      "assets": [
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/0.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/0.png",
+          "sha256": "6d6e97d10cb8a0a8e7c5635c7e641a41ec947696f6ac0d666714f7efaa712927",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/1.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/1.png",
+          "sha256": "7170ba98d59e8e895b2c9d475b8933965b6ddc2c7a8352fc725fbb6ad848921a",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/2.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/2.png",
+          "sha256": "75f1040ab3775c7757fa18fb5130cbd7eb63771bc3c849e34000a3cc386155fc",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/3.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/3.png",
+          "sha256": "44e80621d9b4cd503f2cec23f23c4114855c957ed4667840ecf5f3ef0c670bed",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/4.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/4.png",
+          "sha256": "20b3b45cb97fe75c6c7ad5b3474d595decc54590b2a0b429f3feb057261f408b",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/5.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/5.png",
+          "sha256": "18deff08c810376455ce3f9372313945f678e747071936ef4be95e417bf69631",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/6.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/6.png",
+          "sha256": "cd0937992eed69745357b11356600ebb63abd2f317c6b39160b84158adc62f45",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        },
+        {
+          "source": "data/tilesets/primary/johto_general/anim/water_current_landwatersedge/7.png",
+          "target": "graphics/johto/tileset_anims/general_waterfall/7.png",
+          "sha256": "4c132b2f5d7201dec2269507b19a3b4fea4434523964efc1fca0a956dda20e48",
+          "width": 16,
+          "height": 192,
+          "bytes4bpp": 1536
+        }
+      ]
+    },
+    {
+      "name": "park_large",
+      "frame_count": 4,
+      "destination_tile": 728,
+      "copy_bytes": 256,
+      "period": 10,
+      "phase": 0,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/national_park/anim/large_fountain/0.png",
+          "target": "graphics/johto/tileset_anims/park_large/0.png",
+          "sha256": "990b595aaa59f2bcad16d485d49896d9ddc657656a103fa6fd769f6bcc983b32",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/large_fountain/1.png",
+          "target": "graphics/johto/tileset_anims/park_large/1.png",
+          "sha256": "db1221ac154e088560eaf9d1a298f7dbc23808ebc5b6467033db8af19d91d052",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/large_fountain/2.png",
+          "target": "graphics/johto/tileset_anims/park_large/2.png",
+          "sha256": "753fe0262e9b927127dcbae713f436fc9d3ea1aecac118121e39cb899491978f",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/large_fountain/3.png",
+          "target": "graphics/johto/tileset_anims/park_large/3.png",
+          "sha256": "6b6547ebe63c89705e6f3cea4949b473d801abee84f6d79fe6a431f187849ca4",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        }
+      ]
+    },
+    {
+      "name": "park_small",
+      "frame_count": 5,
+      "destination_tile": 744,
+      "copy_bytes": 256,
+      "period": 12,
+      "phase": 1,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/national_park/anim/small_fountain/0.png",
+          "target": "graphics/johto/tileset_anims/park_small/0.png",
+          "sha256": "27c730e902a3e8cd899793489db0a48b935be124e864e2e1ca4712019763b1cb",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/small_fountain/1.png",
+          "target": "graphics/johto/tileset_anims/park_small/1.png",
+          "sha256": "9f7c40c29dcf5de0394bc5e43ca2f0f83f5e46fc614819191d3606054bff576f",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/small_fountain/2.png",
+          "target": "graphics/johto/tileset_anims/park_small/2.png",
+          "sha256": "357ddf3081c7ffd9a6d53541f97c03030b6993b62ad9741a4d6ef6ca89f0bd9f",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/small_fountain/3.png",
+          "target": "graphics/johto/tileset_anims/park_small/3.png",
+          "sha256": "3377ad313e05d4b8e0477eaf80ad6c6bd583cbe61a329f0ec9510ffe1fe16f24",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/small_fountain/4.png",
+          "target": "graphics/johto/tileset_anims/park_small/4.png",
+          "sha256": "a2cc50d5cf69f7d3ac656797d7a72dd4b0ec5a6d84a7611a6687daabd8f8bf15",
+          "width": 16,
+          "height": 32,
+          "bytes4bpp": 256
+        }
+      ]
+    },
+    {
+      "name": "park_red",
+      "frame_count": 3,
+      "destination_tile": 736,
+      "copy_bytes": 128,
+      "period": 16,
+      "phase": 2,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/national_park/anim/red_flower/0.png",
+          "target": "graphics/johto/tileset_anims/park_red/0.png",
+          "sha256": "64fa956a86cd057bcc95665c78d02d45f1270bdaefb0b6cdf86606a882eb24c2",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/red_flower/1.png",
+          "target": "graphics/johto/tileset_anims/park_red/1.png",
+          "sha256": "b3a90fcb5124ac8a439534cbd0ab8eb73658d2aae86e6e68c29a9906a72ab9fc",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/red_flower/2.png",
+          "target": "graphics/johto/tileset_anims/park_red/2.png",
+          "sha256": "d0ea84530b1560eabf4045f1622c545130ce98f128b3ea615c148cbdb48a0a21",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        }
+      ]
+    },
+    {
+      "name": "park_yellow",
+      "frame_count": 3,
+      "destination_tile": 740,
+      "copy_bytes": 128,
+      "period": 16,
+      "phase": 12,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/national_park/anim/yellow_flower/0.png",
+          "target": "graphics/johto/tileset_anims/park_yellow/0.png",
+          "sha256": "65d2c66b8898c6dd841e55a4e67388609b5e6830608bedd8dab5364dc49956a0",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/yellow_flower/1.png",
+          "target": "graphics/johto/tileset_anims/park_yellow/1.png",
+          "sha256": "424eefd9e305a0ec218db24a2ce246488ea7255f2e2e5dcedbb7900efcc77ab6",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/national_park/anim/yellow_flower/2.png",
+          "target": "graphics/johto/tileset_anims/park_yellow/2.png",
+          "sha256": "d3c7064642aa3056810b321b887e2929ba456cbda129666a0cd6b9803e8ba370",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        }
+      ]
+    },
+    {
+      "name": "theater",
+      "frame_count": 5,
+      "destination_tile": 744,
+      "copy_bytes": 128,
+      "period": 10,
+      "phase": 0,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/ecruteak_theater/anim/flower/0.png",
+          "target": "graphics/johto/tileset_anims/theater/0.png",
+          "sha256": "198e59a6f78fbd243f0957a269647aaad9e1e89cef7eaef5e4b398c53c5b1b6c",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/ecruteak_theater/anim/flower/1.png",
+          "target": "graphics/johto/tileset_anims/theater/1.png",
+          "sha256": "88863c55e24143f7c6ceb9760eac81533125606b80b2b818ac1637afbb98d1e9",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/ecruteak_theater/anim/flower/2.png",
+          "target": "graphics/johto/tileset_anims/theater/2.png",
+          "sha256": "dbb60a15abf23bca3dd2f2d10e1dcb7bc40b3b46b76ffa1111d19984d9b6ca1f",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/ecruteak_theater/anim/flower/3.png",
+          "target": "graphics/johto/tileset_anims/theater/3.png",
+          "sha256": "f64753a41c53da2c6b78997eea962be52af47a52f9f509e37031717137531975",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/ecruteak_theater/anim/flower/4.png",
+          "target": "graphics/johto/tileset_anims/theater/4.png",
+          "sha256": "198e59a6f78fbd243f0957a269647aaad9e1e89cef7eaef5e4b398c53c5b1b6c",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        }
+      ]
+    },
+    {
+      "name": "azalea",
+      "frame_count": 3,
+      "destination_tile": 739,
+      "copy_bytes": 128,
+      "period": 10,
+      "phase": 0,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/azalea_town_gym/anim/yellow_flower/0.png",
+          "target": "graphics/johto/tileset_anims/azalea/0.png",
+          "sha256": "ec08bdd1c7368f76ae74bd950360adc13571d44395b4ab8316427d07de4b30da",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/azalea_town_gym/anim/yellow_flower/1.png",
+          "target": "graphics/johto/tileset_anims/azalea/1.png",
+          "sha256": "380d146150f3e6e4f5118bb0ae1246ddaa9438d2dc3cc801066ac1f384c09059",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/azalea_town_gym/anim/yellow_flower/2.png",
+          "target": "graphics/johto/tileset_anims/azalea/2.png",
+          "sha256": "3eb988cffe4eae3c3c3229fc8cae4fe7e01449c6d9b86ad38ec0e2a79c8326de",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        }
+      ]
+    },
+    {
+      "name": "blackthorn",
+      "frame_count": 8,
+      "destination_tile": 961,
+      "copy_bytes": 128,
+      "period": 16,
+      "phase": 1,
+      "source_offset_bytes": 0,
+      "assets": [
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/0.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/0.png",
+          "sha256": "fafbd53556f9a5b93191e0751deccc7365080f7ddda68fa28553a133a1cf2421",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/1.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/1.png",
+          "sha256": "51bcaf0dc417798dc97c1e67ac8f4863078b5c8ebfcf9c3bd2515fd744be2e53",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/2.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/2.png",
+          "sha256": "8ba98de6ff9778ecce9c370bc08806f7b117c6b930fcfd465039b82e83444111",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/3.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/3.png",
+          "sha256": "9d687a0938a0170305b54f9449b87a92c565562b6d915e7504f676f98ccdca46",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/4.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/4.png",
+          "sha256": "2aa61ef2d6e47fb167d28826434f5957e367ba5b6952d8ba5593796d3fdbdfd4",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/5.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/5.png",
+          "sha256": "6dc444055de37df4b84d61b7e3b2a157d25fa3f1f40035a4df24a4f3158c2ea6",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/6.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/6.png",
+          "sha256": "4a58f4b509de05837cc41967458ebd88fbcb0897ee0c51886791c221bc07686d",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        },
+        {
+          "source": "data/tilesets/secondary/cave/anim/lava/7.png",
+          "target": "graphics/johto/tileset_anims/blackthorn/7.png",
+          "sha256": "d5570d143ec37796cc3258f2850e91c2ecca1b97ee5dec60e708e1682f7dca90",
+          "width": 16,
+          "height": 16,
+          "bytes4bpp": 128
+        }
+      ]
+    }
+  ],
+  "callbacks": {
+    "primary": {
+      "InitTilesetAnim_JohtoGeneral": {
+        "counter": "primary",
+        "counter_max": 256,
+        "streams": [
+          "general_flower",
+          "general_sand",
+          "general_land",
+          "general_waterfall"
+        ]
+      }
+    },
+    "secondary": {
+      "InitTilesetAnim_JohtoNationalPark": {
+        "counter": "secondary",
+        "counter_max": 960,
+        "streams": [
+          "park_large",
+          "park_small",
+          "park_red",
+          "park_yellow"
+        ]
+      },
+      "InitTilesetAnim_JohtoEcruteakTheater": {
+        "counter": "secondary",
+        "counter_max": 960,
+        "streams": [
+          "theater"
+        ]
+      },
+      "InitTilesetAnim_JohtoAzaleaGym": {
+        "counter": "secondary",
+        "counter_max": 960,
+        "streams": [
+          "azalea"
+        ]
+      },
+      "InitTilesetAnim_JohtoBlackthornGym": {
+        "counter": "secondary",
+        "counter_max": 160,
+        "streams": [
+          "blackthorn"
+        ]
+      }
+    }
+  },
+  "tileset_registration": {
+    "primary": {
+      "JohtoGeneral": "InitTilesetAnim_JohtoGeneral",
+      "KantoGeneral": "InitTilesetAnim_JohtoGeneral",
+      "NorthEast": "InitTilesetAnim_JohtoGeneral",
+      "NorthWest": "InitTilesetAnim_JohtoGeneral",
+      "South": "InitTilesetAnim_JohtoGeneral"
+    },
+    "secondary": {
+      "NationalPark": "InitTilesetAnim_JohtoNationalPark",
+      "EcruteakTheater": "InitTilesetAnim_JohtoEcruteakTheater",
+      "AzaleaTown_Gym": "InitTilesetAnim_JohtoAzaleaGym",
+      "BlackthornGym": "InitTilesetAnim_JohtoBlackthornGym",
+      "SootopolisGym": null,
+      "BikeShop": null
+    }
+  },
+  "source_exceptions": [
+    {
+      "tileset": "SootopolisGym",
+      "registration": null,
+      "status": "disabled-source",
+      "reason": "The pinned donor callback assignment is disabled; no active animation is imported."
+    },
+    {
+      "tileset": "BikeShop",
+      "registration": null,
+      "status": "unsupported-source",
+      "reason": "The donor callback writes 9 tiles at absolute tile 1136 (640 + 496), beyond the 10-bit 1024-tile VRAM address range and the 384-tile secondary sheet; j2-animation-geometry-probe.json found no frame-zero tile matches. Preserve static tiles and do not reuse the host 512-base callback."
+    }
+  ],
+  "scope": {
+    "map_registration": false,
+    "palette_changes": false,
+    "full_region_animation_closure": false
+  }
+}
