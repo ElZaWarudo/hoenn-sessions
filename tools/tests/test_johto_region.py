@@ -26,6 +26,8 @@ class JohtoCatalogTests(unittest.TestCase):
             "MAPSEC_ONE_ISLAND": 2,
             "MAPSEC_SPECIAL_AREA": 3,
             "MAPSEC_NEW_BARK_TOWN": 4,
+            "MAPSEC_JOHTO_CHERRYGROVE_CITY": 5,
+            "MAPSEC_JOHTO_SS_AQUA": 44,
         }
 
     def region(self, engine: str, section: str) -> str:
@@ -35,13 +37,14 @@ class JohtoCatalogTests(unittest.TestCase):
 
     def test_new_bark_requires_explicit_johto(self) -> None:
         self.assertEqual(self.region("REGION_JOHTO", "MAPSEC_NEW_BARK_TOWN"), "Johto")
+        self.assertEqual(self.region("REGION_JOHTO", "MAPSEC_JOHTO_CHERRYGROVE_CITY"), "Johto")
         for engine in ("REGION_HOENN", "REGION_KANTO"):
             with self.subTest(engine=engine), self.assertRaises(catalog.CatalogError):
                 self.region(engine, "MAPSEC_NEW_BARK_TOWN")
 
     def test_johto_rejects_unregistered_and_other_region_sections(self) -> None:
         for section in (*self.sections, "MAPSEC_NONE", "MAPSEC_UNKNOWN", ""):
-            if section == "MAPSEC_NEW_BARK_TOWN":
+            if section in {"MAPSEC_NEW_BARK_TOWN", "MAPSEC_JOHTO_CHERRYGROVE_CITY", "MAPSEC_JOHTO_SS_AQUA"}:
                 continue
             with self.subTest(section=section), self.assertRaises(catalog.CatalogError):
                 self.region("REGION_JOHTO", section)

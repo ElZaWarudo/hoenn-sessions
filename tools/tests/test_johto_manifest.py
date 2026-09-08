@@ -48,10 +48,10 @@ class ManifestContractTests(unittest.TestCase):
         self.assertEqual(sections["kanto_count"], 1)
         self.assertEqual(len(sections["entries"]), 57)
         self.assertEqual(len(self.ledger["section_aliases"]), 15)
-        self.assertEqual(self.ledger["host_identity"]["reserved_section_ids"], [210, 253, 254, 255])
+        self.assertEqual(self.ledger["host_identity"]["reserved_section_ids"], [250, 251, 252, 253, 254, 255])
         ids = {entry["target_id"] for entry in sections["entries"]}
-        self.assertNotIn(210, ids)
-        self.assertTrue(all(211 <= value <= 252 for value in ids if value not in (132, 209)))
+        self.assertNotIn(250, ids)
+        self.assertTrue(all(210 <= value <= 249 for value in ids if value not in (132, 209)))
         reception = next(e for e in sections["entries"] if e["source_symbol"] == "MAPSEC_VICTORY_ROAD")
         self.assertEqual((reception["target_symbol"], reception["target_id"]),
                          ("MAPSEC_KANTO_VICTORY_ROAD", 132))

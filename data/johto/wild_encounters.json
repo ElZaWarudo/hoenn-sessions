@@ -10,7 +10,7 @@
     "donor_source_path": "src/data/wild_encounters.json",
     "donor_source_sha256": "0821f52f969d416df44afa596e7a4249e39a85367a21480d1321aa8bba0de5e3",
     "region_manifest_path": "data/johto/region_manifest.json",
-    "region_manifest_sha256": "00a0e86f10f784906af493cb433343976476ba9fb71573a12b5847620ba6b17e"
+    "region_manifest_sha256": "af52f3596252f0ffd0fa14862cb13fafc6fc316a4baeeb5c2f29806b199e91f6"
   },
   "selection": {
     "approved_map_count": 239,

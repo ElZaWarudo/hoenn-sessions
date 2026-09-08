@@ -59,7 +59,9 @@
       "map_id": "MAP_NEW_BARK_TOWN"
     },
     "reserved_section_ids": [
-      210,
+      250,
+      251,
+      252,
       253,
       254,
       255
@@ -74,126 +76,126 @@
       {
         "source_symbol": "MAPSEC_AZALEA_TOWN",
         "target_symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "target_id": 213,
+        "target_id": 212,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_BLACKTHORN_CITY",
         "target_symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "target_id": 220,
+        "target_id": 219,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_BURNED_TOWER",
         "target_symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "target_id": 215,
+        "target_id": 214,
         "classification": "johto_alias",
         "alias_target_suffix": "ECRUTEAK_CITY"
       },
       {
         "source_symbol": "MAPSEC_CHERRYGROVE_CITY",
         "target_symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "target_id": 211,
+        "target_id": 210,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_CIANWOOD_CITY",
         "target_symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "target_id": 217,
+        "target_id": 216,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_CLIFF_CAVE",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "target_id": 239,
+        "target_id": 238,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_47"
       },
       {
         "source_symbol": "MAPSEC_DARK_CAVE",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_31",
-        "target_id": 223,
+        "target_id": 222,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_31"
       },
       {
         "source_symbol": "MAPSEC_DRAGONS_DEN",
         "target_symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "target_id": 220,
+        "target_id": 219,
         "classification": "johto_alias",
         "alias_target_suffix": "BLACKTHORN_CITY"
       },
       {
         "source_symbol": "MAPSEC_ECRUTEAK_CITY",
         "target_symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "target_id": 215,
+        "target_id": 214,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_EMBEDDED_TOWER",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "target_id": 239,
+        "target_id": 238,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_47"
       },
       {
         "source_symbol": "MAPSEC_GOLDENROD_CITY",
         "target_symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "target_id": 214,
+        "target_id": 213,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ICE_PATH",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "target_id": 236,
+        "target_id": 235,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_44"
       },
       {
         "source_symbol": "MAPSEC_ILEX_FOREST",
         "target_symbol": "MAPSEC_JOHTO_ILEX_FOREST",
-        "target_id": 248,
+        "target_id": 247,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_LAKE_OF_RAGE",
         "target_symbol": "MAPSEC_JOHTO_LAKE_OF_RAGE",
-        "target_id": 244,
+        "target_id": 243,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_MAHOGANY_TOWN",
         "target_symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "target_id": 219,
+        "target_id": 218,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_MT_MORTAR",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "target_id": 234,
+        "target_id": 233,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_42"
       },
       {
         "source_symbol": "MAPSEC_MT_SILVER",
         "target_symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "target_id": 247,
+        "target_id": 246,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_NATIONAL_PARK",
         "target_symbol": "MAPSEC_JOHTO_NATIONAL_PARK",
-        "target_id": 245,
+        "target_id": 244,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
@@ -207,245 +209,245 @@
       {
         "source_symbol": "MAPSEC_OLIVINE_CITY",
         "target_symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "target_id": 216,
+        "target_id": 215,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_OLIVINE_LIGHTHOUSE",
         "target_symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "target_id": 216,
+        "target_id": 215,
         "classification": "johto_alias",
         "alias_target_suffix": "OLIVINE_CITY"
       },
       {
         "source_symbol": "MAPSEC_ROCKET_HIDEOUT",
         "target_symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "target_id": 219,
+        "target_id": 218,
         "classification": "johto_alias",
         "alias_target_suffix": "MAHOGANY_TOWN"
       },
       {
         "source_symbol": "MAPSEC_ROUTE_26",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_26",
-        "target_id": 241,
+        "target_id": 240,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_27",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_27",
-        "target_id": 242,
+        "target_id": 241,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_28",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_28",
-        "target_id": 243,
+        "target_id": 242,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_29",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_29",
-        "target_id": 221,
+        "target_id": 220,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_30",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_30",
-        "target_id": 222,
+        "target_id": 221,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_31",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_31",
-        "target_id": 223,
+        "target_id": 222,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_32",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "target_id": 224,
+        "target_id": 223,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_33",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_33",
-        "target_id": 225,
+        "target_id": 224,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_34",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_34",
-        "target_id": 226,
+        "target_id": 225,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_35",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_35",
-        "target_id": 227,
+        "target_id": 226,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_36",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_36",
-        "target_id": 228,
+        "target_id": 227,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_37",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_37",
-        "target_id": 229,
+        "target_id": 228,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_38",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_38",
-        "target_id": 230,
+        "target_id": 229,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_39",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_39",
-        "target_id": 231,
+        "target_id": 230,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_40",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_40",
-        "target_id": 232,
+        "target_id": 231,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_41",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_41",
-        "target_id": 233,
+        "target_id": 232,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_42",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "target_id": 234,
+        "target_id": 233,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_43",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_43",
-        "target_id": 235,
+        "target_id": 234,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_44",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "target_id": 236,
+        "target_id": 235,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_45",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_45",
-        "target_id": 237,
+        "target_id": 236,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_46",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_46",
-        "target_id": 238,
+        "target_id": 237,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_47",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "target_id": 239,
+        "target_id": 238,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_ROUTE_48",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_48",
-        "target_id": 240,
+        "target_id": 239,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_RUINS_OF_ALPH",
         "target_symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "target_id": 246,
+        "target_id": 245,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_SAFARI_ZONE",
         "target_symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "target_id": 218,
+        "target_id": 217,
         "classification": "johto_alias",
         "alias_target_suffix": "SAFARI_ZONE_GATE"
       },
       {
         "source_symbol": "MAPSEC_SAFARI_ZONE_GATE",
         "target_symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "target_id": 218,
+        "target_id": 217,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_SLOWPOKE_WELL",
         "target_symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "target_id": 213,
+        "target_id": 212,
         "classification": "johto_alias",
         "alias_target_suffix": "AZALEA_TOWN"
       },
       {
         "source_symbol": "MAPSEC_SPROUT_TOWER",
         "target_symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "target_id": 212,
+        "target_id": 211,
         "classification": "johto_alias",
         "alias_target_suffix": "VIOLET_CITY"
       },
       {
         "source_symbol": "MAPSEC_SS_AQUA",
         "target_symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "target_id": 250,
+        "target_id": 249,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_TIN_TOWER",
         "target_symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "target_id": 215,
+        "target_id": 214,
         "classification": "johto_alias",
         "alias_target_suffix": "ECRUTEAK_CITY"
       },
       {
         "source_symbol": "MAPSEC_TOHJO_FALLS",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_27",
-        "target_id": 242,
+        "target_id": 241,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_27"
       },
       {
         "source_symbol": "MAPSEC_UNION_CAVE",
         "target_symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "target_id": 224,
+        "target_id": 223,
         "classification": "johto_alias",
         "alias_target_suffix": "ROUTE_32"
       },
@@ -459,14 +461,14 @@
       {
         "source_symbol": "MAPSEC_VIOLET_CITY",
         "target_symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "target_id": 212,
+        "target_id": 211,
         "classification": "new_johto",
         "alias_target_suffix": null
       },
       {
         "source_symbol": "MAPSEC_WHIRL_ISLANDS",
         "target_symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "target_id": 249,
+        "target_id": 248,
         "classification": "new_johto",
         "alias_target_suffix": null
       }
@@ -522,105 +524,105 @@
       "target_suffix": "OLIVINE_CITY",
       "source_symbol": "MAPSEC_OLIVINE_LIGHTHOUSE",
       "target_symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-      "target_id": 216
+      "target_id": 215
     },
     {
       "source_suffix": "SPROUT_TOWER",
       "target_suffix": "VIOLET_CITY",
       "source_symbol": "MAPSEC_SPROUT_TOWER",
       "target_symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-      "target_id": 212
+      "target_id": 211
     },
     {
       "source_suffix": "BURNED_TOWER",
       "target_suffix": "ECRUTEAK_CITY",
       "source_symbol": "MAPSEC_BURNED_TOWER",
       "target_symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-      "target_id": 215
+      "target_id": 214
     },
     {
       "source_suffix": "TIN_TOWER",
       "target_suffix": "ECRUTEAK_CITY",
       "source_symbol": "MAPSEC_TIN_TOWER",
       "target_symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-      "target_id": 215
+      "target_id": 214
     },
     {
       "source_suffix": "DRAGONS_DEN",
       "target_suffix": "BLACKTHORN_CITY",
       "source_symbol": "MAPSEC_DRAGONS_DEN",
       "target_symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-      "target_id": 220
+      "target_id": 219
     },
     {
       "source_suffix": "SLOWPOKE_WELL",
       "target_suffix": "AZALEA_TOWN",
       "source_symbol": "MAPSEC_SLOWPOKE_WELL",
       "target_symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-      "target_id": 213
+      "target_id": 212
     },
     {
       "source_suffix": "ROCKET_HIDEOUT",
       "target_suffix": "MAHOGANY_TOWN",
       "source_symbol": "MAPSEC_ROCKET_HIDEOUT",
       "target_symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-      "target_id": 219
+      "target_id": 218
     },
     {
       "source_suffix": "SAFARI_ZONE",
       "target_suffix": "SAFARI_ZONE_GATE",
       "source_symbol": "MAPSEC_SAFARI_ZONE",
       "target_symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-      "target_id": 218
+      "target_id": 217
     },
     {
       "source_suffix": "CLIFF_CAVE",
       "target_suffix": "ROUTE_47",
       "source_symbol": "MAPSEC_CLIFF_CAVE",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_47",
-      "target_id": 239
+      "target_id": 238
     },
     {
       "source_suffix": "EMBEDDED_TOWER",
       "target_suffix": "ROUTE_47",
       "source_symbol": "MAPSEC_EMBEDDED_TOWER",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_47",
-      "target_id": 239
+      "target_id": 238
     },
     {
       "source_suffix": "TOHJO_FALLS",
       "target_suffix": "ROUTE_27",
       "source_symbol": "MAPSEC_TOHJO_FALLS",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_27",
-      "target_id": 242
+      "target_id": 241
     },
     {
       "source_suffix": "UNION_CAVE",
       "target_suffix": "ROUTE_32",
       "source_symbol": "MAPSEC_UNION_CAVE",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_32",
-      "target_id": 224
+      "target_id": 223
     },
     {
       "source_suffix": "DARK_CAVE",
       "target_suffix": "ROUTE_31",
       "source_symbol": "MAPSEC_DARK_CAVE",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_31",
-      "target_id": 223
+      "target_id": 222
     },
     {
       "source_suffix": "MT_MORTAR",
       "target_suffix": "ROUTE_42",
       "source_symbol": "MAPSEC_MT_MORTAR",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_42",
-      "target_id": 234
+      "target_id": 233
     },
     {
       "source_suffix": "ICE_PATH",
       "target_suffix": "ROUTE_44",
       "source_symbol": "MAPSEC_ICE_PATH",
       "target_symbol": "MAPSEC_JOHTO_ROUTE_44",
-      "target_id": 236
+      "target_id": 235
     }
   ],
   "registrations": [
@@ -8495,7 +8497,7 @@
       "source_section": "MAPSEC_CHERRYGROVE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "id": 211,
+        "id": 210,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -8650,7 +8652,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -8866,7 +8868,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -9040,7 +9042,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -9371,7 +9373,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -9720,7 +9722,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -9936,7 +9938,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10110,7 +10112,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10204,7 +10206,7 @@
       "source_section": "MAPSEC_MAHOGANY_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10372,7 +10374,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10575,7 +10577,7 @@
       "source_section": "MAPSEC_ROUTE_29",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_29",
-        "id": 221,
+        "id": 220,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10695,7 +10697,7 @@
       "source_section": "MAPSEC_ROUTE_30",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_30",
-        "id": 222,
+        "id": 221,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10802,7 +10804,7 @@
       "source_section": "MAPSEC_ROUTE_31",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_31",
-        "id": 223,
+        "id": 222,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -10909,7 +10911,7 @@
       "source_section": "MAPSEC_ROUTE_32",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "id": 224,
+        "id": 223,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11045,7 +11047,7 @@
       "source_section": "MAPSEC_ROUTE_33",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_33",
-        "id": 225,
+        "id": 224,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11136,7 +11138,7 @@
       "source_section": "MAPSEC_ROUTE_34",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_34",
-        "id": 226,
+        "id": 225,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11291,7 +11293,7 @@
       "source_section": "MAPSEC_ROUTE_35",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_35",
-        "id": 227,
+        "id": 226,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11430,7 +11432,7 @@
       "source_section": "MAPSEC_ROUTE_36",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_36",
-        "id": 228,
+        "id": 227,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11595,7 +11597,7 @@
       "source_section": "MAPSEC_ROUTE_37",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_37",
-        "id": 229,
+        "id": 228,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11702,7 +11704,7 @@
       "source_section": "MAPSEC_ROUTE_38",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_38",
-        "id": 230,
+        "id": 229,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11793,7 +11795,7 @@
       "source_section": "MAPSEC_ROUTE_39",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_39",
-        "id": 231,
+        "id": 230,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -11916,7 +11918,7 @@
       "source_section": "MAPSEC_ROUTE_40",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_40",
-        "id": 232,
+        "id": 231,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -12212,7 +12214,7 @@
       "source_section": "MAPSEC_ROUTE_41",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_41",
-        "id": 233,
+        "id": 232,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -12495,7 +12497,7 @@
       "source_section": "MAPSEC_ROUTE_42",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "id": 234,
+        "id": 233,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -12634,7 +12636,7 @@
       "source_section": "MAPSEC_ROUTE_43",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_43",
-        "id": 235,
+        "id": 234,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -12802,7 +12804,7 @@
       "source_section": "MAPSEC_ROUTE_44",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "id": 236,
+        "id": 235,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -12893,7 +12895,7 @@
       "source_section": "MAPSEC_ROUTE_45",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_45",
-        "id": 237,
+        "id": 236,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -12984,7 +12986,7 @@
       "source_section": "MAPSEC_ROUTE_46",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_46",
-        "id": 238,
+        "id": 237,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -13107,7 +13109,7 @@
       "source_section": "MAPSEC_ROUTE_47",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "id": 239,
+        "id": 238,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -13249,7 +13251,7 @@
       "source_section": "MAPSEC_ROUTE_48",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_48",
-        "id": 240,
+        "id": 239,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -13323,7 +13325,7 @@
       "source_section": "MAPSEC_ROUTE_26",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_26",
-        "id": 241,
+        "id": 240,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -13446,7 +13448,7 @@
       "source_section": "MAPSEC_ROUTE_26",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_26",
-        "id": 241,
+        "id": 240,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -13554,7 +13556,7 @@
       "source_section": "MAPSEC_ROUTE_27",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_27",
-        "id": 242,
+        "id": 241,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -13677,7 +13679,7 @@
       "source_section": "MAPSEC_ROUTE_28",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_28",
-        "id": 243,
+        "id": 242,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14152,7 +14154,7 @@
       "source_section": "MAPSEC_CHERRYGROVE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "id": 211,
+        "id": 210,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14216,7 +14218,7 @@
       "source_section": "MAPSEC_CHERRYGROVE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "id": 211,
+        "id": 210,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14280,7 +14282,7 @@
       "source_section": "MAPSEC_CHERRYGROVE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "id": 211,
+        "id": 210,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14344,7 +14346,7 @@
       "source_section": "MAPSEC_CHERRYGROVE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "id": 211,
+        "id": 210,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14408,7 +14410,7 @@
       "source_section": "MAPSEC_CHERRYGROVE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
-        "id": 211,
+        "id": 210,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14472,7 +14474,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14536,7 +14538,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14600,7 +14602,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14664,7 +14666,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14728,7 +14730,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14792,7 +14794,7 @@
       "source_section": "MAPSEC_VIOLET_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14856,7 +14858,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14920,7 +14922,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -14984,7 +14986,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15048,7 +15050,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15112,7 +15114,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15176,7 +15178,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15240,7 +15242,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15352,7 +15354,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15448,7 +15450,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15528,7 +15530,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15608,7 +15610,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15672,7 +15674,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15736,7 +15738,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15800,7 +15802,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15864,7 +15866,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15928,7 +15930,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -15992,7 +15994,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16056,7 +16058,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16120,7 +16122,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16184,7 +16186,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16248,7 +16250,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16328,7 +16330,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16408,7 +16410,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16504,7 +16506,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16616,7 +16618,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16696,7 +16698,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16792,7 +16794,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16888,7 +16890,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -16984,7 +16986,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17080,7 +17082,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17176,7 +17178,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17272,7 +17274,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17336,7 +17338,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17400,7 +17402,7 @@
       "source_section": "MAPSEC_GOLDENROD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_GOLDENROD_CITY",
-        "id": 214,
+        "id": 213,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17472,7 +17474,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17536,7 +17538,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17600,7 +17602,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17664,7 +17666,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17728,7 +17730,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17792,7 +17794,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17872,7 +17874,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -17952,7 +17954,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -18078,7 +18080,7 @@
       "source_section": "MAPSEC_ECRUTEAK_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -19854,7 +19856,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -19918,7 +19920,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -19982,7 +19984,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20046,7 +20048,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20110,7 +20112,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20174,7 +20176,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20238,7 +20240,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20302,7 +20304,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20380,7 +20382,7 @@
       "source_section": "MAPSEC_OLIVINE_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -20444,7 +20446,7 @@
       "source_section": "MAPSEC_OLIVINE_LIGHTHOUSE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_OLIVINE_CITY",
-        "id": 216,
+        "id": 215,
         "classification": "johto_alias",
         "alias_target": "OLIVINE_CITY"
       },
@@ -21116,7 +21118,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21180,7 +21182,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21244,7 +21246,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21308,7 +21310,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21372,7 +21374,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21436,7 +21438,7 @@
       "source_section": "MAPSEC_CIANWOOD_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_CIANWOOD_CITY",
-        "id": 217,
+        "id": 216,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21500,7 +21502,7 @@
       "source_section": "MAPSEC_MAHOGANY_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21564,7 +21566,7 @@
       "source_section": "MAPSEC_MAHOGANY_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21628,7 +21630,7 @@
       "source_section": "MAPSEC_MAHOGANY_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21708,7 +21710,7 @@
       "source_section": "MAPSEC_MAHOGANY_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21772,7 +21774,7 @@
       "source_section": "MAPSEC_LAKE_OF_RAGE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_LAKE_OF_RAGE",
-        "id": 244,
+        "id": 243,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21836,7 +21838,7 @@
       "source_section": "MAPSEC_LAKE_OF_RAGE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_LAKE_OF_RAGE",
-        "id": 244,
+        "id": 243,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21900,7 +21902,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -21964,7 +21966,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22028,7 +22030,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22092,7 +22094,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22156,7 +22158,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22220,7 +22222,7 @@
       "source_section": "MAPSEC_BLACKTHORN_CITY",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22284,7 +22286,7 @@
       "source_section": "MAPSEC_ROUTE_29",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_29",
-        "id": 221,
+        "id": 220,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22364,7 +22366,7 @@
       "source_section": "MAPSEC_ROUTE_31",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_31",
-        "id": 223,
+        "id": 222,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22444,7 +22446,7 @@
       "source_section": "MAPSEC_ROUTE_32",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "id": 224,
+        "id": 223,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22524,7 +22526,7 @@
       "source_section": "MAPSEC_ROUTE_36",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_36",
-        "id": 228,
+        "id": 227,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22604,7 +22606,7 @@
       "source_section": "MAPSEC_AZALEA_TOWN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22684,7 +22686,7 @@
       "source_section": "MAPSEC_ROUTE_34",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_34",
-        "id": 226,
+        "id": 225,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22764,7 +22766,7 @@
       "source_section": "MAPSEC_ROUTE_35",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_35",
-        "id": 227,
+        "id": 226,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22844,7 +22846,7 @@
       "source_section": "MAPSEC_NATIONAL_PARK",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_NATIONAL_PARK",
-        "id": 245,
+        "id": 244,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -22972,7 +22974,7 @@
       "source_section": "MAPSEC_ROUTE_38",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_38",
-        "id": 230,
+        "id": 229,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23052,7 +23054,7 @@
       "source_section": "MAPSEC_ROUTE_42",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "id": 234,
+        "id": 233,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23132,7 +23134,7 @@
       "source_section": "MAPSEC_ROUTE_43",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_43",
-        "id": 235,
+        "id": 234,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23212,7 +23214,7 @@
       "source_section": "MAPSEC_ROUTE_43",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_43",
-        "id": 235,
+        "id": 234,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23428,7 +23430,7 @@
       "source_section": "MAPSEC_ROUTE_39",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_39",
-        "id": 231,
+        "id": 230,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23492,7 +23494,7 @@
       "source_section": "MAPSEC_ROUTE_39",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_39",
-        "id": 231,
+        "id": 230,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23556,7 +23558,7 @@
       "source_section": "MAPSEC_ROUTE_30",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_30",
-        "id": 222,
+        "id": 221,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23620,7 +23622,7 @@
       "source_section": "MAPSEC_ROUTE_30",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_30",
-        "id": 222,
+        "id": 221,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23684,7 +23686,7 @@
       "source_section": "MAPSEC_ROUTE_32",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "id": 224,
+        "id": 223,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23748,7 +23750,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23812,7 +23814,7 @@
       "source_section": "MAPSEC_ROUTE_34",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_34",
-        "id": 226,
+        "id": 225,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23876,7 +23878,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -23940,7 +23942,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -24004,7 +24006,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -24084,7 +24086,7 @@
       "source_section": "MAPSEC_ROUTE_27",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_27",
-        "id": 242,
+        "id": 241,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -24148,7 +24150,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -24212,7 +24214,7 @@
       "source_section": "MAPSEC_ROUTE_26",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_26",
-        "id": 241,
+        "id": 240,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -24276,7 +24278,7 @@
       "source_section": "MAPSEC_ROUTE_26",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_26",
-        "id": 241,
+        "id": 240,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -24340,7 +24342,7 @@
       "source_section": "MAPSEC_DARK_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_31",
-        "id": 223,
+        "id": 222,
         "classification": "johto_alias",
         "alias_target": "ROUTE_31"
       },
@@ -24436,7 +24438,7 @@
       "source_section": "MAPSEC_DARK_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_31",
-        "id": 223,
+        "id": 222,
         "classification": "johto_alias",
         "alias_target": "ROUTE_31"
       },
@@ -24516,7 +24518,7 @@
       "source_section": "MAPSEC_SPROUT_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "johto_alias",
         "alias_target": "VIOLET_CITY"
       },
@@ -24628,7 +24630,7 @@
       "source_section": "MAPSEC_SPROUT_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "johto_alias",
         "alias_target": "VIOLET_CITY"
       },
@@ -24740,7 +24742,7 @@
       "source_section": "MAPSEC_SPROUT_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_VIOLET_CITY",
-        "id": 212,
+        "id": 211,
         "classification": "johto_alias",
         "alias_target": "VIOLET_CITY"
       },
@@ -24804,7 +24806,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -25039,7 +25041,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -25167,7 +25169,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -25663,7 +25665,7 @@
       "source_section": "MAPSEC_UNION_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "id": 224,
+        "id": 223,
         "classification": "johto_alias",
         "alias_target": "ROUTE_32"
       },
@@ -25775,7 +25777,7 @@
       "source_section": "MAPSEC_UNION_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "id": 224,
+        "id": 223,
         "classification": "johto_alias",
         "alias_target": "ROUTE_32"
       },
@@ -25903,7 +25905,7 @@
       "source_section": "MAPSEC_UNION_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_32",
-        "id": 224,
+        "id": 223,
         "classification": "johto_alias",
         "alias_target": "ROUTE_32"
       },
@@ -25967,7 +25969,7 @@
       "source_section": "MAPSEC_SLOWPOKE_WELL",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "johto_alias",
         "alias_target": "AZALEA_TOWN"
       },
@@ -26047,7 +26049,7 @@
       "source_section": "MAPSEC_SLOWPOKE_WELL",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_AZALEA_TOWN",
-        "id": 213,
+        "id": 212,
         "classification": "johto_alias",
         "alias_target": "AZALEA_TOWN"
       },
@@ -26111,7 +26113,7 @@
       "source_section": "MAPSEC_ILEX_FOREST",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ILEX_FOREST",
-        "id": 248,
+        "id": 247,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -26221,7 +26223,7 @@
       "source_section": "MAPSEC_NATIONAL_PARK",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_NATIONAL_PARK",
-        "id": 245,
+        "id": 244,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -26349,7 +26351,7 @@
       "source_section": "MAPSEC_NATIONAL_PARK",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_NATIONAL_PARK",
-        "id": 245,
+        "id": 244,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -26493,7 +26495,7 @@
       "source_section": "MAPSEC_BURNED_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -26589,7 +26591,7 @@
       "source_section": "MAPSEC_BURNED_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -26669,7 +26671,7 @@
       "source_section": "MAPSEC_CLIFF_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "id": 239,
+        "id": 238,
         "classification": "johto_alias",
         "alias_target": "ROUTE_47"
       },
@@ -26749,7 +26751,7 @@
       "source_section": "MAPSEC_MT_MORTAR",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "id": 234,
+        "id": 233,
         "classification": "johto_alias",
         "alias_target": "ROUTE_42"
       },
@@ -26941,7 +26943,7 @@
       "source_section": "MAPSEC_MT_MORTAR",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "id": 234,
+        "id": 233,
         "classification": "johto_alias",
         "alias_target": "ROUTE_42"
       },
@@ -27085,7 +27087,7 @@
       "source_section": "MAPSEC_MT_MORTAR",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "id": 234,
+        "id": 233,
         "classification": "johto_alias",
         "alias_target": "ROUTE_42"
       },
@@ -27165,7 +27167,7 @@
       "source_section": "MAPSEC_MT_MORTAR",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_42",
-        "id": 234,
+        "id": 233,
         "classification": "johto_alias",
         "alias_target": "ROUTE_42"
       },
@@ -27245,7 +27247,7 @@
       "source_section": "MAPSEC_LAKE_OF_RAGE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_LAKE_OF_RAGE",
-        "id": 244,
+        "id": 243,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -27339,7 +27341,7 @@
       "source_section": "MAPSEC_LAKE_OF_RAGE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_LAKE_OF_RAGE",
-        "id": 244,
+        "id": 243,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -27400,7 +27402,7 @@
       "source_section": "MAPSEC_ICE_PATH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "id": 236,
+        "id": 235,
         "classification": "johto_alias",
         "alias_target": "ROUTE_44"
       },
@@ -27512,7 +27514,7 @@
       "source_section": "MAPSEC_ICE_PATH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "id": 236,
+        "id": 235,
         "classification": "johto_alias",
         "alias_target": "ROUTE_44"
       },
@@ -27640,7 +27642,7 @@
       "source_section": "MAPSEC_ICE_PATH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "id": 236,
+        "id": 235,
         "classification": "johto_alias",
         "alias_target": "ROUTE_44"
       },
@@ -27736,7 +27738,7 @@
       "source_section": "MAPSEC_ICE_PATH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "id": 236,
+        "id": 235,
         "classification": "johto_alias",
         "alias_target": "ROUTE_44"
       },
@@ -27816,7 +27818,7 @@
       "source_section": "MAPSEC_ICE_PATH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_44",
-        "id": 236,
+        "id": 235,
         "classification": "johto_alias",
         "alias_target": "ROUTE_44"
       },
@@ -27896,7 +27898,7 @@
       "source_section": "MAPSEC_DRAGONS_DEN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "johto_alias",
         "alias_target": "BLACKTHORN_CITY"
       },
@@ -28008,7 +28010,7 @@
       "source_section": "MAPSEC_DRAGONS_DEN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "johto_alias",
         "alias_target": "BLACKTHORN_CITY"
       },
@@ -28088,7 +28090,7 @@
       "source_section": "MAPSEC_DRAGONS_DEN",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_BLACKTHORN_CITY",
-        "id": 220,
+        "id": 219,
         "classification": "johto_alias",
         "alias_target": "BLACKTHORN_CITY"
       },
@@ -28152,7 +28154,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -28360,7 +28362,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -28616,7 +28618,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -28760,7 +28762,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -28840,7 +28842,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -28920,7 +28922,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -29032,7 +29034,7 @@
       "source_section": "MAPSEC_WHIRL_ISLANDS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_WHIRL_ISLANDS",
-        "id": 249,
+        "id": 248,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -29096,7 +29098,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29176,7 +29178,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29256,7 +29258,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29336,7 +29338,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29448,7 +29450,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29560,7 +29562,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29640,7 +29642,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29768,7 +29770,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -29944,7 +29946,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -30088,7 +30090,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -30152,7 +30154,7 @@
       "source_section": "MAPSEC_TIN_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ECRUTEAK_CITY",
-        "id": 215,
+        "id": 214,
         "classification": "johto_alias",
         "alias_target": "ECRUTEAK_CITY"
       },
@@ -30216,7 +30218,7 @@
       "source_section": "MAPSEC_TOHJO_FALLS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_27",
-        "id": 242,
+        "id": 241,
         "classification": "johto_alias",
         "alias_target": "ROUTE_27"
       },
@@ -30312,7 +30314,7 @@
       "source_section": "MAPSEC_TOHJO_FALLS",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_27",
-        "id": 242,
+        "id": 241,
         "classification": "johto_alias",
         "alias_target": "ROUTE_27"
       },
@@ -30376,7 +30378,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -30470,7 +30472,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -30534,7 +30536,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -30694,7 +30696,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -30758,7 +30760,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -30854,7 +30856,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -31014,7 +31016,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -31094,7 +31096,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -31254,7 +31256,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -31318,7 +31320,7 @@
       "source_section": "MAPSEC_MT_SILVER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MT_SILVER",
-        "id": 247,
+        "id": 246,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -31382,7 +31384,7 @@
       "source_section": "MAPSEC_CLIFF_CAVE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "id": 239,
+        "id": 238,
         "classification": "johto_alias",
         "alias_target": "ROUTE_47"
       },
@@ -31542,7 +31544,7 @@
       "source_section": "MAPSEC_EMBEDDED_TOWER",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_ROUTE_47",
-        "id": 239,
+        "id": 238,
         "classification": "johto_alias",
         "alias_target": "ROUTE_47"
       },
@@ -31606,7 +31608,7 @@
       "source_section": "MAPSEC_ROCKET_HIDEOUT",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "johto_alias",
         "alias_target": "MAHOGANY_TOWN"
       },
@@ -31702,7 +31704,7 @@
       "source_section": "MAPSEC_ROCKET_HIDEOUT",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "johto_alias",
         "alias_target": "MAHOGANY_TOWN"
       },
@@ -31830,7 +31832,7 @@
       "source_section": "MAPSEC_ROCKET_HIDEOUT",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_MAHOGANY_TOWN",
-        "id": 219,
+        "id": 218,
         "classification": "johto_alias",
         "alias_target": "MAHOGANY_TOWN"
       },
@@ -31942,7 +31944,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32022,7 +32024,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32102,7 +32104,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32182,7 +32184,7 @@
       "source_section": "MAPSEC_RUINS_OF_ALPH",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_RUINS_OF_ALPH",
-        "id": 246,
+        "id": 245,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32262,7 +32264,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32502,7 +32504,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32582,7 +32584,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32646,7 +32648,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32710,7 +32712,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32774,7 +32776,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32838,7 +32840,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32902,7 +32904,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -32966,7 +32968,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33030,7 +33032,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33094,7 +33096,7 @@
       "source_section": "MAPSEC_SS_AQUA",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SS_AQUA",
-        "id": 250,
+        "id": 249,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33158,7 +33160,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "johto_alias",
         "alias_target": "SAFARI_ZONE_GATE"
       },
@@ -33232,7 +33234,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33332,7 +33334,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33410,7 +33412,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33484,7 +33486,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33558,7 +33560,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },
@@ -33645,7 +33647,7 @@
       "source_section": "MAPSEC_SAFARI_ZONE_GATE",
       "resolved_section": {
         "symbol": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
-        "id": 218,
+        "id": 217,
         "classification": "new_johto",
         "alias_target": null
       },

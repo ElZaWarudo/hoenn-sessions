@@ -99,10 +99,12 @@ def protocol_region(
         raise CatalogError(f"unknown map section {section_id}")
 
     if engine_region == "REGION_JOHTO":
-        if section_id != "MAPSEC_NEW_BARK_TOWN":
+        johto_start = section_numbers["MAPSEC_NEW_BARK_TOWN"]
+        johto_end = section_numbers["MAPSEC_JOHTO_SS_AQUA"]
+        if not johto_start <= section_numbers[section_id] <= johto_end:
             raise CatalogError(f"Johto map section {section_id} is not registered")
         return "Johto"
-    if section_id == "MAPSEC_NEW_BARK_TOWN":
+    if section_numbers["MAPSEC_NEW_BARK_TOWN"] <= section_numbers[section_id] <= section_numbers["MAPSEC_JOHTO_SS_AQUA"]:
         raise CatalogError(f"Johto map section {section_id} contradicts its engine region")
 
     kanto_start = section_numbers["MAPSEC_PALLET_TOWN"]

@@ -5,7 +5,7 @@
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
     "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
     "region_manifest_path": "data/johto/region_manifest.json",
-    "region_manifest_sha256": "00a0e86f10f784906af493cb433343976476ba9fb71573a12b5847620ba6b17e",
+    "region_manifest_sha256": "af52f3596252f0ffd0fa14862cb13fafc6fc316a4baeeb5c2f29806b199e91f6",
     "region_manifest_source_revision": "21b8c9f918800a07b74a5ee2a882b1374d9ac4f9"
   },
   "selection": {

@@ -122,9 +122,10 @@ int get_map_engine_region_value(const Json &map_data) {
     bool has_region = map_data.object_items().find("region") != map_data.object_items().end();
     string region = has_region ? json_to_string(map_data, "region") : "REGION_HOENN";
 
-    /* The compatibility import registers only New Bark Town. A missing
-     * region must not silently assign its section to Hoenn. */
-    if ((region == "REGION_JOHTO") != (section == "MAPSEC_NEW_BARK_TOWN"))
+    /* A missing region must not silently assign a Johto section to Hoenn. */
+    bool johto_section = section == "MAPSEC_NEW_BARK_TOWN"
+                      || section.rfind("MAPSEC_JOHTO_", 0) == 0;
+    if ((region == "REGION_JOHTO") != johto_section)
         FATAL_ERROR("Map engine region '%s' contradicts section '%s'.\n", region.c_str(), section.c_str());
 
     /* An absent region is the only form that inherits the original Emerald

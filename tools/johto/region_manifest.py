@@ -26,9 +26,9 @@ EXPECTED_CLASSIFIED = 954
 EXPECTED_SECTIONS = 57
 EXPECTED_JOHTO_SECTIONS = 41
 HOST_BASELINE_REVISION = "21b8c9f918800a07b74a5ee2a882b1374d9ac4f9"
-RESERVED_SECTION_IDS = {210, 253, 254, 255}
-SECTION_ID_MIN = 211
-SECTION_ID_MAX = 252
+RESERVED_SECTION_IDS = {250, 251, 252, 253, 254, 255}
+SECTION_ID_MIN = 210
+SECTION_ID_MAX = 249
 
 # These are the reviewed cross-boundary edges in this tooling slice.  A donor
 # symbol is retained in the ledger and resolved by a later runtime adapter.
@@ -100,6 +100,52 @@ SECTION_ALIASES = {
     "MT_MORTAR": "ROUTE_42",
     "ICE_PATH": "ROUTE_44",
 }
+
+# The source JSON may be at its immutable 210-entry bootstrap state or may
+# already contain this exact append-only tail.  Keep the expected tail here so
+# host identity checks reject arbitrary additions and reordering.
+EXPECTED_SECTION_TAIL_IDS = (
+    "MAPSEC_JOHTO_CHERRYGROVE_CITY",
+    "MAPSEC_JOHTO_VIOLET_CITY",
+    "MAPSEC_JOHTO_AZALEA_TOWN",
+    "MAPSEC_JOHTO_GOLDENROD_CITY",
+    "MAPSEC_JOHTO_ECRUTEAK_CITY",
+    "MAPSEC_JOHTO_OLIVINE_CITY",
+    "MAPSEC_JOHTO_CIANWOOD_CITY",
+    "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
+    "MAPSEC_JOHTO_MAHOGANY_TOWN",
+    "MAPSEC_JOHTO_BLACKTHORN_CITY",
+    "MAPSEC_JOHTO_ROUTE_29",
+    "MAPSEC_JOHTO_ROUTE_30",
+    "MAPSEC_JOHTO_ROUTE_31",
+    "MAPSEC_JOHTO_ROUTE_32",
+    "MAPSEC_JOHTO_ROUTE_33",
+    "MAPSEC_JOHTO_ROUTE_34",
+    "MAPSEC_JOHTO_ROUTE_35",
+    "MAPSEC_JOHTO_ROUTE_36",
+    "MAPSEC_JOHTO_ROUTE_37",
+    "MAPSEC_JOHTO_ROUTE_38",
+    "MAPSEC_JOHTO_ROUTE_39",
+    "MAPSEC_JOHTO_ROUTE_40",
+    "MAPSEC_JOHTO_ROUTE_41",
+    "MAPSEC_JOHTO_ROUTE_42",
+    "MAPSEC_JOHTO_ROUTE_43",
+    "MAPSEC_JOHTO_ROUTE_44",
+    "MAPSEC_JOHTO_ROUTE_45",
+    "MAPSEC_JOHTO_ROUTE_46",
+    "MAPSEC_JOHTO_ROUTE_47",
+    "MAPSEC_JOHTO_ROUTE_48",
+    "MAPSEC_JOHTO_ROUTE_26",
+    "MAPSEC_JOHTO_ROUTE_27",
+    "MAPSEC_JOHTO_ROUTE_28",
+    "MAPSEC_JOHTO_LAKE_OF_RAGE",
+    "MAPSEC_JOHTO_NATIONAL_PARK",
+    "MAPSEC_JOHTO_RUINS_OF_ALPH",
+    "MAPSEC_JOHTO_MT_SILVER",
+    "MAPSEC_JOHTO_ILEX_FOREST",
+    "MAPSEC_JOHTO_WHIRL_ISLANDS",
+    "MAPSEC_JOHTO_SS_AQUA",
+)
 
 
 class ManifestError(ValueError):
@@ -195,8 +241,15 @@ def _assert_host_identity(baseline: dict[str, Any]) -> None:
     expected_sections = baseline["section_constants"]
     actual_constants = [{"id": record.get("id"), "value": index}
                         for index, record in enumerate(live_sections or [])]
-    if actual_constants != expected_sections:
+    if actual_constants[:len(expected_sections)] != expected_sections:
         raise ManifestError("host region section constants differ from immutable baseline")
+    tail = actual_constants[len(expected_sections):]
+    if tail not in (
+        [],
+        [{"id": section_id, "value": 210 + offset}
+         for offset, section_id in enumerate(EXPECTED_SECTION_TAIL_IDS)],
+    ):
+        raise ManifestError("host region section tail is not the exact Johto append-only allocation")
 
 
 def _assert_section_allocation(allocation: dict[str, dict[str, Any]]) -> None:
@@ -443,7 +496,7 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             elif target_section == "MAPSEC_KANTO_VICTORY_ROAD":
                 target_id = 132
             else:
-                target_id = 211 + sum(1 for value in allocation.values() if value["kind"] in ("new_johto", "johto_alias"))
+                target_id = 210 + sum(1 for value in allocation.values() if value["kind"] in ("new_johto", "johto_alias"))
             allocation[target_section] = {"target_symbol": target_section, "id": target_id,
                                           "kind": section_kind, "alias_target": alias_target}
         layout_id = data.get("layout")
@@ -555,7 +608,7 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
                       "donor_group_order": order, "proposed_map_groups": {"existing": 75,
                       "first_range": "75:1..127", "second_range": "76:0..110"}},
         "host_identity": {"new_bark": {"group": 75, "index": 0, "map_id": "MAP_NEW_BARK_TOWN"},
-                          "reserved_section_ids": [210, 253, 254, 255],
+                          "reserved_section_ids": [250, 251, 252, 253, 254, 255],
                           "signed_component_max": 127},
         "sections": {"source_count": len(source_sections),
                      "johto_count": len({e["target_symbol"] for e in section_entries
