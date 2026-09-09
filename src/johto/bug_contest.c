@@ -27,6 +27,7 @@ struct JohtoBugContestState
     bool8 judged;
     bool8 transferred;
     bool8 rewardClaimed;
+    bool8 settlementPrepared;
     u16 startingSafariBalls;
     u16 loanedSafariBalls;
     u16 selectedSpecies;
@@ -162,8 +163,11 @@ static void ReturnLoanedSafariBalls(void)
 
 static void FinishAndFree(void)
 {
-    RestoreOriginalParty();
-    ReturnLoanedSafariBalls();
+    if (!sBugContest->settlementPrepared)
+    {
+        RestoreOriginalParty();
+        ReturnLoanedSafariBalls();
+    }
     memset(&sBugContestState, 0, sizeof(sBugContestState));
     sBugContest = NULL;
 }
@@ -223,9 +227,9 @@ bool32 JohtoBugContest_IsEnding(void)
 
 bool32 JohtoBugContest_IsSerializationBlocked(void)
 {
-    /* The snapshot remains authoritative through judging, transfer and
-     * reward retries.  Any save during that lifetime would serialize the
-     * temporary one-mon party instead of the player's original party. */
+    /* The snapshot remains authoritative through judging, settlement, transfer
+     * and reward retries.  Keep saves blocked until the contest context is
+     * freed, even after recovery restores the live party for management. */
     return sBugContest != NULL;
 }
 
@@ -284,6 +288,23 @@ enum JohtoBugContestStatus JohtoBugContest_Judge(u16 slot)
     sBugContest->selectedPlacement = placement;
     sBugContest->reward = JohtoBugContest_GetRewardForPlacement(placement, Random());
     sBugContest->judged = TRUE;
+    return JOHTO_BUG_CONTEST_OK;
+}
+
+enum JohtoBugContestStatus JohtoBugContest_PrepareSettlement(void)
+{
+    if (sBugContest == NULL)
+        return JOHTO_BUG_CONTEST_NO_CONTEST;
+    if (sBugContest->phase != BUG_CONTEST_PHASE_ENDING)
+        return JOHTO_BUG_CONTEST_NOT_ENDING;
+    if (!sBugContest->judged)
+        return JOHTO_BUG_CONTEST_NOT_JUDGED;
+    if (sBugContest->settlementPrepared)
+        return JOHTO_BUG_CONTEST_OK;
+
+    RestoreOriginalParty();
+    ReturnLoanedSafariBalls();
+    sBugContest->settlementPrepared = TRUE;
     return JOHTO_BUG_CONTEST_OK;
 }
 

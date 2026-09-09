@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "unit": "j3-contest-settlement",
+  "contract_hash": "sha256:de5ee2940eeede3083c8b9a6b37f601e1f1c2cd5fc9b27420d640ae63d485104",
+  "campaign_ready": false,
+  "ui_ready": false,
+  "owned_files": [
+    "src/johto/bug_contest.c",
+    "include/johto/bug_contest.h",
+    "test/johto/bug_contest_settlement.c",
+    "tools/tests/test_johto_bug_contest_settlement.py",
+    "data/johto/bug_contest_settlement.json"
+  ],
+  "source_hashes": {
+    "src/johto/bug_contest.c": "8fb500c768ac5952a9c4700a52217be2f10363deb5f46f945b7c6e13f4f3e6e7",
+    "include/johto/bug_contest.h": "1e602bbdc78a0f3c23624f0bfe4593a126323478c142118be0de28210b4452e0",
+    "test/johto/bug_contest_settlement.c": "e1478f1a5929bf3409c00d80c34ce7e443f0231319547bc7a9ed98ec672c3ed8",
+    "tools/tests/test_johto_bug_contest_settlement.py": "a02d397b024a2176c375c1cd74d072d4dc5cde316e98b79082763bcbdd238c04"
+  },
+  "api": "JohtoBugContest_PrepareSettlement",
+  "preconditions": [
+    "live contest context",
+    "ENDING phase",
+    "judged selection"
+  ],
+  "rejected_statuses": [
+    "JOHTO_BUG_CONTEST_NO_CONTEST",
+    "JOHTO_BUG_CONTEST_NOT_ENDING",
+    "JOHTO_BUG_CONTEST_NOT_JUDGED"
+  ],
+  "restored_once": "original six-party records, original party count, full mail, and loaned Safari Balls",
+  "frozen_fields": [
+    "selectedMon",
+    "selectedSpecies",
+    "selectedName",
+    "selectedPlacement",
+    "reward",
+    "judged",
+    "transferred",
+    "rewardClaimed"
+  ],
+  "context_lifetime": "through Exit or allowed Abort",
+  "post_settlement_policy": "PC, party, mail, and bag edits made after preparation survive context cleanup",
+  "serialization_policy": "blocked while the contest context exists, including after preparation and during transfer/reward retries",
+  "campaign_binding": "UI hooks, storage flow, scripts, and Route/park map integration remain subsequent scope"
+}

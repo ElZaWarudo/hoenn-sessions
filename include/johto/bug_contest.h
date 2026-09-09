@@ -41,6 +41,8 @@ bool32 JohtoBugContest_IsSerializationBlocked(void);
 bool32 JohtoBugContest_CheckTime(u32 now);
 enum JohtoBugContestStatus JohtoBugContest_RequestEnd(enum JohtoBugContestEndReason reason);
 enum JohtoBugContestStatus JohtoBugContest_Judge(u16 slot);
+/* Restore the original party/mail for post-judging recovery exactly once. */
+enum JohtoBugContestStatus JohtoBugContest_PrepareSettlement(void);
 enum JohtoBugContestStatus JohtoBugContest_TransferSelected(void);
 enum JohtoBugContestStatus JohtoBugContest_ClaimReward(void);
 enum JohtoBugContestStatus JohtoBugContest_Exit(void);
