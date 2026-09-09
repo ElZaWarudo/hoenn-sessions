@@ -922,6 +922,24 @@ void process_layouts(string layouts_filepath, string output_asm, string output_c
 }
 
 int main(int argc, char *argv[]) {
+    // Large Crossroads map lists exceed Windows' process argument limit.
+    // Response files contain the same ordered, whitespace-separated paths.
+    vector<string> arguments;
+    for (int i = 0; i < argc; ++i) {
+        if (i > 0 && argv[i][0] == '@') {
+            std::istringstream input(read_text_file(string(argv[i] + 1)));
+            string argument;
+            while (input >> argument)
+                arguments.push_back(argument);
+        } else {
+            arguments.push_back(argv[i]);
+        }
+    }
+    vector<char *> expanded;
+    for (auto &argument : arguments)
+        expanded.push_back(&argument[0]);
+    argc = static_cast<int>(expanded.size());
+    argv = expanded.data();
     if (argc < 3)
         FATAL_ERROR("USAGE: mapjson <mode> <game-version> [options]\n");
 
