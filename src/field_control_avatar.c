@@ -23,6 +23,7 @@
 #include "follower_npc.h"
 #include "item_menu.h"
 #include "johto/events.h"
+#include "johto/field_moves.h"
 #include "link.h"
 #include "match_call.h"
 #include "metatile_behavior.h"
@@ -645,7 +646,7 @@ static const u8 *GetInteractedMetatileScript(struct MapPosition *position, u8 me
         return NULL;
     }
 
-    return NULL;
+    return JohtoFieldMoves_GetHeadbuttScript(metatileBehavior);
 }
 
 static const u8 *GetInteractedWaterScript(struct MapPosition *unused1, u8 metatileBehavior, enum Direction direction)
