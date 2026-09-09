@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "campaign_ready": false,
+  "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "source_hash_normalization": "CRLF to LF",
+  "source_hashes": [
+    {
+      "path": "data/scripts/new_game.inc",
+      "sha256": "80efa4bc8326e25f8e2a578256c81bf0ff98ca823c955310f65db58c999dcc28"
+    },
+    {
+      "path": "data/maps/VioletCity/map.json",
+      "sha256": "9a33a7f0baf91ee0b77654ba8f086e0273823d7e875192394d37cd0198e7f9f4"
+    },
+    {
+      "path": "data/maps/AzaleaTown/map.json",
+      "sha256": "0d063afd768f7032978695f3e411fb3de2dbe19a0f939b18256762ede4f912f4"
+    },
+    {
+      "path": "data/maps/Route29/map.json",
+      "sha256": "f791c24d822b609f67b59ea150d89054fcb366f21600fc398db1e2ad567a327b"
+    },
+    {
+      "path": "data/maps/Route30/map.json",
+      "sha256": "074cbff89ac0468eb77368ace41c03f7135b66a6e37340d4bbe01f22d81d9ee4"
+    },
+    {
+      "path": "data/maps/Route31/map.json",
+      "sha256": "84d9b745b322ae1f3a1d3f130c8ba20929ecf5260a17055bbafa121326cd09d4"
+    },
+    {
+      "path": "data/maps/Route33/map.json",
+      "sha256": "e3fed78967fdada4b5e3b08bab151941dd53ba150d7c35f85e6fb66b7c582fd0"
+    },
+    {
+      "path": "data/maps/Route35/map.json",
+      "sha256": "82e2d6912a43b8970220b7362bb75683c6fe4623a2d523dc685fde786377a6ec"
+    },
+    {
+      "path": "data/maps/Route36/map.json",
+      "sha256": "f53b212a97871e5d7fa4f3975fca1f3e0f30147791abbbbd7432cdbe2689eeb2"
+    },
+    {
+      "path": "data/maps/Route37/map.json",
+      "sha256": "763d1b23657907ccf6571c5417a004e831295030caf5a5d0e4e4f56009538244"
+    },
+    {
+      "path": "data/maps/Route38/map.json",
+      "sha256": "da021cbc3c6d4667bd6ad9ee5ed2f38e60e3029d24debb8e8b5d23075d222cb5"
+    },
+    {
+      "path": "data/maps/Route39/map.json",
+      "sha256": "5d333143c1bf306c1890eeab0c352c7651dfadf0767e576dd3543bebcef23557"
+    },
+    {
+      "path": "data/maps/Route42/map.json",
+      "sha256": "01870dc92ea3d23ef482fca517615331ae12d9348329d47c7bd9bc8296a2c50b"
+    },
+    {
+      "path": "data/maps/Route43/map.json",
+      "sha256": "54545785d894e6462e946abfd7ba88db4b8d96d2abfc6e501a39a5d969fdcf53"
+    },
+    {
+      "path": "data/maps/Route44/map.json",
+      "sha256": "e9c9f8fc879f4bcddbce8509c1d89584d5ec1d75efd7eef78d52c4728e7ffc82"
+    },
+    {
+      "path": "data/maps/Route45/map.json",
+      "sha256": "d2df043e66c6e9031045a54bc95fb8e64ea37a04aa693e7865ff3e76748f3c02"
+    },
+    {
+      "path": "data/maps/Route46/map.json",
+      "sha256": "42224ce780ccedc7c8c83c6f9e6824dd8020eeecb09e97ea501e3658a5beae5c"
+    },
+    {
+      "path": "data/maps/Route47/map.json",
+      "sha256": "ecabd222dcdb0e43a099cb16851fffcdb7c20554782017e1c8ad2ce0336df5d8"
+    },
+    {
+      "path": "data/maps/Route26/map.json",
+      "sha256": "1a9fc4d98e4d3339c3b281597e8cdf2655d076896b64706eddfd213e52154467"
+    }
+  ],
+  "plots": [
+    {
+      "map": "VioletCity",
+      "object_index": 26,
+      "source_symbol": "BERRY_TREE_CHERI_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_CHERI_2",
+      "runtime_id": 90,
+      "berry": "BERRY_ID_CHERI",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "AzaleaTown",
+      "object_index": 16,
+      "source_symbol": "BERRY_TREE_PECHA_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_PECHA_2",
+      "runtime_id": 91,
+      "berry": "BERRY_ID_PECHA",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route29",
+      "object_index": 15,
+      "source_symbol": "BERRY_TREE_ORAN_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_ORAN_1",
+      "runtime_id": 92,
+      "berry": "BERRY_ID_ORAN",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route30",
+      "object_index": 20,
+      "source_symbol": "BERRY_TREE_ROUTE_102_ORAN",
+      "runtime_constant": "JOHTO_BERRY_TREE_ROUTE_102_ORAN",
+      "runtime_id": 93,
+      "berry": "BERRY_ID_ORAN",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route30",
+      "object_index": 22,
+      "source_symbol": "BERRY_TREE_ORAN_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_ORAN_2",
+      "runtime_id": 94,
+      "berry": "BERRY_ID_ORAN",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route31",
+      "object_index": 16,
+      "source_symbol": "BERRY_TREE_CHERI_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_CHERI_1",
+      "runtime_id": 95,
+      "berry": "BERRY_ID_CHERI",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route33",
+      "object_index": 10,
+      "source_symbol": "BERRY_TREE_PECHA_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_PECHA_1",
+      "runtime_id": 96,
+      "berry": "BERRY_ID_PECHA",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route35",
+      "object_index": 21,
+      "source_symbol": "BERRY_TREE_PERSIM_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_PERSIM_1",
+      "runtime_id": 97,
+      "berry": "BERRY_ID_PERSIM",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route36",
+      "object_index": 20,
+      "source_symbol": "BERRY_TREE_PERSIM_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_PERSIM_2",
+      "runtime_id": 98,
+      "berry": "BERRY_ID_PERSIM",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route37",
+      "object_index": 13,
+      "source_symbol": "BERRY_TREE_CHESTO_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_CHESTO_1",
+      "runtime_id": 99,
+      "berry": "BERRY_ID_CHESTO",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route38",
+      "object_index": 17,
+      "source_symbol": "BERRY_TREE_RAWST_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_RAWST_1",
+      "runtime_id": 100,
+      "berry": "BERRY_ID_RAWST",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route39",
+      "object_index": 15,
+      "source_symbol": "BERRY_TREE_RAWST_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_RAWST_2",
+      "runtime_id": 101,
+      "berry": "BERRY_ID_RAWST",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route42",
+      "object_index": 15,
+      "source_symbol": "BERRY_TREE_CHESTO_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_CHESTO_2",
+      "runtime_id": 102,
+      "berry": "BERRY_ID_CHESTO",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route43",
+      "object_index": 14,
+      "source_symbol": "BERRY_TREE_LEPPA_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_LEPPA_1",
+      "runtime_id": 103,
+      "berry": "BERRY_ID_LEPPA",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route43",
+      "object_index": 15,
+      "source_symbol": "BERRY_TREE_LEPPA_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_LEPPA_2",
+      "runtime_id": 104,
+      "berry": "BERRY_ID_LEPPA",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route44",
+      "object_index": 25,
+      "source_symbol": "BERRY_TREE_ASPEAR_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_ASPEAR_1",
+      "runtime_id": 105,
+      "berry": "BERRY_ID_ASPEAR",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route45",
+      "object_index": 20,
+      "source_symbol": "BERRY_TREE_ASPEAR_2",
+      "runtime_constant": "JOHTO_BERRY_TREE_ASPEAR_2",
+      "runtime_id": 106,
+      "berry": "BERRY_ID_ASPEAR",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route46",
+      "object_index": 12,
+      "source_symbol": "BERRY_TREE_LUM_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_LUM_1",
+      "runtime_id": 107,
+      "berry": "BERRY_ID_LUM",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route47",
+      "object_index": 31,
+      "source_symbol": "BERRY_TREE_SITRUS_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_SITRUS_1",
+      "runtime_id": 108,
+      "berry": "BERRY_ID_SITRUS",
+      "stage": "BERRY_STAGE_BERRIES"
+    },
+    {
+      "map": "Route26",
+      "object_index": 15,
+      "source_symbol": "BERRY_TREE_ROUTE_118_SITRUS_1",
+      "runtime_constant": "JOHTO_BERRY_TREE_ROUTE_118_SITRUS_1",
+      "runtime_id": 109,
+      "berry": "BERRY_ID_SITRUS",
+      "stage": "BERRY_STAGE_BERRIES"
+    }
+  ],
+  "limitations": [
+    "Map importer must bind each growth object to this ledger; maps and art are not registered by this unit.",
+    "Existing saved berry array and host growth/harvest APIs are used; no old-save migration."
+  ]
+}

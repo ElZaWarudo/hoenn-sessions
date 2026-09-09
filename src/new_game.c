@@ -52,6 +52,7 @@
 #include "follower_npc.h"
 #include "coop/save.h"
 #include "johto/save.h"
+#include "johto/berry_plots.h"
 
 extern const u8 EventScript_ResetAllMapFlags[];
 extern const u8 EventScript_ResetAllMapFlagsFrlg[];
@@ -188,6 +189,7 @@ void NewGameInitData(void)
     ResetGabbyAndTy();
     ClearSecretBases();
     ClearBerryTrees();
+    JohtoBerryPlots_InitializeNewGame();
     SetMoney(&gSaveBlock1Ptr->money, 3000);
     SetCoins(0);
     ResetLinkContestBoolean();
