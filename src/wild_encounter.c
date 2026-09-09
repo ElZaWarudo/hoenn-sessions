@@ -8,6 +8,7 @@
 #include "follower_npc.h"
 #include "random.h"
 #include "field_player_avatar.h"
+#include "johto/wild.h"
 #include "link.h"
 #include "metatile_behavior.h"
 #include "overworld.h"
@@ -410,7 +411,15 @@ u16 GetCurrentMapWildMonHeaderId(void)
 enum TimeOfDay GetTimeOfDayForEncounters(u32 headerId, enum WildPokemonArea area)
 {
     const struct WildPokemonInfo *wildMonInfo;
-    enum TimeOfDay timeOfDay = GetTimeOfDay();
+    enum TimeOfDay timeOfDay;
+
+    if (headerId == HEADER_NONE)
+        return TIME_OF_DAY_DEFAULT;
+
+    if (gWildMonHeaders[headerId].mapGroup == 75 || gWildMonHeaders[headerId].mapGroup == 76)
+        return JohtoWild_CurrentTime();
+
+    timeOfDay = GetTimeOfDay();
 
     if (!OW_TIME_OF_DAY_ENCOUNTERS)
         return TIME_OF_DAY_DEFAULT;
