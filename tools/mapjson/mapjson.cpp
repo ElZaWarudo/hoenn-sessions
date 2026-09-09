@@ -53,7 +53,7 @@ string version;
 string sep;
 
 string read_text_file(string filepath) {
-    ifstream in_file(filepath);
+    ifstream in_file(filepath, std::ifstream::binary);
 
     if (!in_file.is_open())
         FATAL_ERROR("Cannot open file %s for reading.\n", filepath.c_str());
