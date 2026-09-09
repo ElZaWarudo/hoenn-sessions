@@ -2550,10 +2550,77 @@ pub enum SupervisorEvent {
 /// The realtime coordinator uses this seam to stop and join its own task
 /// before the child/control settlement below tears down the process pair.
 #[derive(Debug)]
-pub(crate) enum RawSupervisorEvent {
+pub enum RawSupervisorEvent {
     Control(ControlEvent),
     SidecarExited(std::process::ExitStatus),
     MgbaExited(std::process::ExitStatus),
+}
+
+/// Platform-independent settlement used by the session state machine. An
+/// embedded core must acknowledge a paused/stopped frame before returning clean.
+pub struct SessionSettlement {
+    pub recovery_required: bool,
+}
+
+impl SessionSettlement {
+    #[must_use]
+    pub const fn recovery_required(&self) -> bool {
+        self.recovery_required
+    }
+}
+
+/// The session owns protocol decisions; the platform owns process/task lifetime.
+/// This permits Android to reuse the exact checkpoint and realtime state machine.
+pub trait SessionSupervisor: Send {
+    fn control(&mut self) -> &mut ControlChannel;
+    fn observe_raw(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<RawSupervisorEvent, ProcessError>> + Send;
+    fn settle_raw(
+        &mut self,
+        event: RawSupervisorEvent,
+    ) -> impl std::future::Future<Output = Result<SupervisorEvent, ProcessError>> + Send;
+    fn next_event(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<SupervisorEvent, ProcessError>> + Send;
+    fn stop_in_place(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<(), ProcessError>> + Send;
+    fn shutdown(
+        &mut self,
+        epoch: u32,
+        drained: bool,
+    ) -> impl std::future::Future<Output = SessionSettlement> + Send;
+}
+
+pub mod embedded;
+
+impl SessionSupervisor for SupervisedChildren {
+    fn control(&mut self) -> &mut ControlChannel {
+        &mut self.control
+    }
+    async fn observe_raw(&mut self) -> Result<RawSupervisorEvent, ProcessError> {
+        Self::observe_raw(self).await
+    }
+    async fn settle_raw(
+        &mut self,
+        event: RawSupervisorEvent,
+    ) -> Result<SupervisorEvent, ProcessError> {
+        Self::settle_raw(self, event).await
+    }
+    async fn next_event(&mut self) -> Result<SupervisorEvent, ProcessError> {
+        Self::next_event(self).await
+    }
+    async fn stop_in_place(&mut self) -> Result<(), ProcessError> {
+        Self::stop_in_place(self).await
+    }
+    async fn shutdown(&mut self, epoch: u32, drained: bool) -> SessionSettlement {
+        SessionSettlement {
+            recovery_required: Self::shutdown(self, epoch, drained)
+                .await
+                .recovery_required(),
+        }
+    }
 }
 
 impl std::fmt::Debug for SupervisedChildren {

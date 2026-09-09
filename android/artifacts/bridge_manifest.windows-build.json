@@ -1,0 +1,73 @@
+{
+  "emulator": {
+    "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
+    "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247",
+    "name": "mGBA",
+    "platform": "windows-x64",
+    "variant": "Qt",
+    "version": "0.10.5"
+  },
+  "game_build": {
+    "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
+    "numeric_id": 65536,
+    "rom_sha256": "06764f4afa0d8a9664f28bfbc874dd0b9421c6b932765648034621146ce7893e"
+  },
+  "net_bridge": {
+    "abi_version": 1,
+    "address": 33782960,
+    "byte_order": "little",
+    "checksum": {
+      "algorithm": "CRC-32/IEEE",
+      "covered_bytes": [
+        0,
+        139
+      ],
+      "stored_offset": 140
+    },
+    "game_protocol_version": 1,
+    "magic": 1347109711,
+    "message": {
+      "offsets": {
+        "checksum": 140,
+        "length": 2,
+        "payload": 12,
+        "sequence": 4,
+        "session_epoch": 8,
+        "type": 0
+      },
+      "payload_size": 128,
+      "size": 144
+    },
+    "offsets": {
+      "abi_version": 4,
+      "game_build_id": 8,
+      "game_protocol_version": 6,
+      "game_to_network": 20,
+      "last_sidecar_heartbeat": 16,
+      "magic": 0,
+      "network_to_game": 4632,
+      "status_flags": 12
+    },
+    "queue": {
+      "capacity": 32,
+      "entries_offset": 4,
+      "read_index_offset": 0,
+      "size": 4612,
+      "write_index_offset": 2
+    },
+    "size": 9244,
+    "symbol": "gCoopNetBridge"
+  },
+  "save": {
+    "block3_address": 33639888,
+    "coop_offset": 4,
+    "crc_offset": 668,
+    "generation_address": 33639920,
+    "generation_offset": 28,
+    "registry_digest": "43918833dec646d6a583d124686c8540",
+    "registry_version": 1,
+    "schema_version": 1,
+    "struct_size": 672
+  },
+  "schema_version": 3
+}

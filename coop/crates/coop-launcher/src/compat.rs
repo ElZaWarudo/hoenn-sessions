@@ -248,6 +248,39 @@ pub struct MessageOffsets {
 }
 
 impl BuildCompatibility {
+    /// Validate a release ROM for the separately pinned, statically linked
+    /// Android mGBA core. Windows executable metadata is validated as release
+    /// metadata; it is never claimed as identity evidence for the Android core.
+    #[cfg(target_os = "android")]
+    pub fn load_android(manifest_path: &Path, rom_path: &Path) -> Result<Self, CompatibilityError> {
+        let file = open_bounded_regular_file(manifest_path, MAX_MANIFEST_BYTES)
+            .map_err(CompatibilityError::Read)?;
+        let manifest: BridgeManifest = serde_json::from_reader(file.take(MAX_MANIFEST_BYTES + 1))
+            .map_err(|_| CompatibilityError::Manifest)?;
+        validate_manifest(&manifest)?;
+        let digest = hash_file(rom_path).map_err(CompatibilityError::Rom)?;
+        if digest
+            != Sha256Digest::parse(&manifest.game_build.rom_sha256)
+                .map_err(|_| CompatibilityError::Manifest)?
+        {
+            return Err(CompatibilityError::RomHash);
+        }
+        let target = CompatibilityTarget::new(
+            GameBuildId::new(manifest.game_build.id.clone())
+                .map_err(|_| CompatibilityError::Manifest)?,
+            digest,
+            MgbaVersion::new(EXPECTED_MGBA_VERSION).map_err(|_| CompatibilityError::Manifest)?,
+            BridgeAbiVersion::new(BRIDGE_ABI).map_err(|_| CompatibilityError::Protocol)?,
+            ProtocolVersion::new(GAME_PROTOCOL).map_err(|_| CompatibilityError::Protocol)?,
+            Revision::initial(),
+        );
+        Ok(Self {
+            target,
+            manifest,
+            rom_path: rom_path.to_owned(),
+            mgba_path: PathBuf::new(),
+        })
+    }
     /// Validates every generated bridge constant and hashes the complete ROM.
     ///
     /// # Errors

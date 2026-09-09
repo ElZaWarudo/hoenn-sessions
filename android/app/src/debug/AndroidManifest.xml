@@ -1,0 +1,3 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation android:name="io.hoenn.sessions.DeviceSmoke" android:targetPackage="io.hoenn.sessions" android:label="Private device smoke"/>
+</manifest>

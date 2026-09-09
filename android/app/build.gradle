@@ -1,0 +1,29 @@
+plugins { id 'com.android.application' }
+def releaseManifest = new groovy.json.JsonSlurper().parse(file('src/main/assets/bridge_manifest.json'))
+android {
+    namespace 'io.hoenn.sessions'
+    compileSdk 37
+    ndkVersion '27.2.12479018'
+    defaultConfig {
+        buildConfigField 'String', 'ROM_SHA256', '"' + releaseManifest.game_build.rom_sha256 + '"'
+        buildConfigField 'String', 'GAME_BUILD', '"' + releaseManifest.game_build.id + '"'
+        buildConfigField 'int', 'BRIDGE_ADDRESS', releaseManifest.net_bridge.address.toString()
+        buildConfigField 'int', 'SAVE_GENERATION_ADDRESS', releaseManifest.save.generation_address.toString()
+        applicationId 'io.hoenn.sessions'
+        minSdk 28
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-native-preview'
+        ndk { abiFilters 'x86_64', 'arm64-v8a' }
+        externalNativeBuild { cmake { arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON' } }
+    }
+    buildFeatures { buildConfig true }
+    externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
+    buildTypes { debug { debuggable true } }
+}
+dependencies {
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.83'
+    implementation 'io.github.erdtman:java-json-canonicalization:1.1'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20251224'
+}

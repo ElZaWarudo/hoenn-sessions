@@ -25,7 +25,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 enum CliError {
     #[error(
-        "usage: coop-launcher --api-base <url> --username <name> --manifest <path> --rom <path> --mgba <path> --manifest-key <path>"
+        "usage: coop-launcher --api-base <url> --username <name> --manifest <path> --rom <path> --mgba <path> --manifest-key <path> --manifest-key-id <id> [--password-stdin]"
     )]
     Usage,
     #[error("missing or invalid CLI value")]
@@ -48,6 +48,8 @@ struct Options {
     rom: PathBuf,
     mgba: PathBuf,
     manifest_key: PathBuf,
+    manifest_key_id: String,
+    password_stdin: bool,
     workspace: PathBuf,
     epoch: PathBuf,
     bridge: PathBuf,
@@ -62,12 +64,18 @@ fn parse_options() -> Result<Options, CliError> {
     let mut rom = None;
     let mut mgba = None;
     let mut manifest_key = None;
+    let mut manifest_key_id = None;
+    let mut password_stdin = false;
     let mut workspace = private_root.join("sessions");
     let mut epoch = private_root.join("epoch.json");
     let mut bridge = PathBuf::from("bridge");
     let mut sidecar = PathBuf::from("coop-sidecar");
     let mut args = env::args_os().skip(1);
     while let Some(flag) = args.next() {
+        if flag == "--password-stdin" {
+            password_stdin = true;
+            continue;
+        }
         let value = args.next().ok_or(CliError::Usage)?;
         let value = value.into_string().map_err(|_| CliError::Value)?;
         match flag.to_str() {
@@ -77,6 +85,7 @@ fn parse_options() -> Result<Options, CliError> {
             Some("--rom") => rom = Some(PathBuf::from(value)),
             Some("--mgba") => mgba = Some(PathBuf::from(value)),
             Some("--manifest-key") => manifest_key = Some(PathBuf::from(value)),
+            Some("--manifest-key-id") => manifest_key_id = Some(value),
             Some("--workspace") => workspace = PathBuf::from(value),
             Some("--epoch") => epoch = PathBuf::from(value),
             Some("--bridge") => bridge = PathBuf::from(value),
@@ -91,6 +100,8 @@ fn parse_options() -> Result<Options, CliError> {
         rom: rom.ok_or(CliError::Usage)?,
         mgba: mgba.ok_or(CliError::Usage)?,
         manifest_key: manifest_key.ok_or(CliError::Usage)?,
+        manifest_key_id: manifest_key_id.ok_or(CliError::Usage)?,
+        password_stdin,
         workspace,
         epoch,
         bridge,
@@ -388,11 +399,23 @@ async fn run() -> Result<(), CliError> {
     let compatibility = BuildCompatibility::validate(&options.manifest, &verified_rom, &mgba)
         .map_err(|_| CliError::Runtime)?;
     let key = TrustedManifestKey::new(
-        "configured",
+        options.manifest_key_id,
         parse_public_key(&read_manifest_key(&options.manifest_key)?)?,
     )
     .map_err(|_| CliError::Runtime)?;
-    let password = rpassword::prompt_password("Password: ").map_err(|_| CliError::Runtime)?;
+    let password = if options.password_stdin {
+        let mut input = io::stdin().lock().take(4097);
+        let mut password = String::new();
+        input
+            .read_to_string(&mut password)
+            .map_err(|_| CliError::Runtime)?;
+        if password.len() > 4096 {
+            return Err(CliError::Value);
+        }
+        password
+    } else {
+        rpassword::prompt_password("Password: ").map_err(|_| CliError::Runtime)?
+    };
     let password = AuthSession::password(password).map_err(|_| CliError::Runtime)?;
     let api = ReqwestCloudApi::new(&options.api_base).map_err(|_| CliError::Runtime)?;
     let keychain: Arc<dyn RefreshTokenStore> = Arc::new(OsKeychain);
