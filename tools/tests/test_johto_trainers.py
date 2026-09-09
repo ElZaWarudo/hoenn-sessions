@@ -2,6 +2,7 @@
 from pathlib import Path
 import tempfile
 import json
+import re
 import unittest
 
 from tools.johto import import_trainers
@@ -36,6 +37,40 @@ class JohtoTrainerImporterTests(unittest.TestCase):
         self.assertEqual([import_trainers._scaled_iv(x) for x in (0, 20, 100, 200, 255)], [0, 2, 12, 24, 31])
         values = {mon.iv for trainer in self.roster for mon in trainer.party}
         self.assertTrue(values.issubset({0, 20, 100, 200, 255}))
+
+    def test_lance_opponents_are_the_only_half_teams_and_keep_parties(self):
+        header = import_trainers.generated_path().read_text(encoding="utf-8")
+        blocks = re.findall(
+            r"\[(\d+)\] = /\* (TRAINER_[A-Z0-9_]+) \*/\n        \{(.*?)\n        \},",
+            header, re.S,
+        )
+        self.assertEqual(len(blocks), 284)
+        expected_half = {"TRAINER_ARIANA_1", "TRAINER_GRUNT_23"}
+        actual_half = set()
+        for ordinal, symbol, body in blocks:
+            trainer = self.by_symbol[symbol]
+            self.assertEqual(int(ordinal), trainer.ordinal)
+            team_size = re.search(r"\.multiTeamSize = (\w+),", body).group(1)
+            expected = "MULTI_TEAM_SIZE_HALF" if symbol in expected_half else "MULTI_TEAM_SIZE_FULL"
+            self.assertEqual(team_size, expected, symbol)
+            if team_size == "MULTI_TEAM_SIZE_HALF":
+                actual_half.add(symbol)
+            party_name = f"sJohtoParty_{trainer.ordinal:03d}"
+            self.assertIn(f".party = {party_name},", body)
+            self.assertIn(f".partySize = ARRAY_COUNT({party_name}),", body)
+            party = re.search(
+                rf"static const struct TrainerMon {party_name}\[\] =\n\{{(.*?)\n\}};",
+                header, re.S,
+            ).group(1)
+            self.assertEqual(re.findall(r"\.species = (\w+),", party), [m.species for m in trainer.party])
+            self.assertEqual([int(x) for x in re.findall(r"\.lvl = (\d+),", party)], [m.level for m in trainer.party])
+            self.assertEqual(re.findall(r"\.heldItem = (\w+),", party), [m.held_item for m in trainer.party])
+            self.assertEqual(
+                [tuple(x.strip() for x in moves.split(",")) for moves in re.findall(r"\.moves = \{ (.*?) \},", party)],
+                [m.moves for m in trainer.party],
+            )
+        self.assertEqual(actual_half, expected_half)
+        self.assertEqual(header.count(".multiTeamSize = MULTI_TEAM_SIZE_FULL,"), 282)
 
     def test_all_party_layouts_and_real_fields(self):
         self.assertFalse(self.by_symbol["TRAINER_JOEY"].custom_moves)

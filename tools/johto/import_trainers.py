@@ -23,6 +23,10 @@ DONOR_REPOSITORY = "https://github.com/PokemonHnS-Development/pokemonHnS"
 RECORD_COUNT = 284
 MON_COUNT = 687
 
+# RocketHideout_B2F pairs these opponents against Lance and up to three selected
+# player Pokemon. The host multi-battle policy reads opponent team sizes only.
+HALF_TEAM_OPPONENTS = frozenset({"TRAINER_ARIANA_1", "TRAINER_GRUNT_23"})
+
 
 class ImportErrorStrict(ValueError):
     pass
@@ -412,6 +416,7 @@ def render_header(roster: tuple[Trainer, ...]) -> str:
     ])
     for trainer in roster:
         party_name = f"sJohtoParty_{trainer.ordinal:03d}"
+        team_size = "MULTI_TEAM_SIZE_HALF" if trainer.symbol in HALF_TEAM_OPPONENTS else "MULTI_TEAM_SIZE_FULL"
         out.extend([
             f"        [{trainer.ordinal}] = /* {trainer.symbol} */",
             "        {",
@@ -420,7 +425,7 @@ def render_header(roster: tuple[Trainer, ...]) -> str:
             f"            .items = {{ {', '.join(trainer.items)} }},",
             f"            .trainerClass = {trainer.trainer_class},",
             f"            .encounterMusic = {trainer.music},",
-            "            .multiTeamSize = MULTI_TEAM_SIZE_FULL,",
+            f"            .multiTeamSize = {team_size},",
             f"            .gender = {trainer.gender},",
             f"            .battleType = {'TRAINER_BATTLE_TYPE_DOUBLES' if trainer.double_battle else 'TRAINER_BATTLE_TYPE_SINGLES'},",
             f"            .partySize = ARRAY_COUNT({party_name}),",
