@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "reserved_behaviors": {
+    "MB_JOHTO_HEADBUTT_TREE": 240,
+    "MB_JOHTO_WATER_NORTH_ARROW_WARP": 241,
+    "MB_JOHTO_INERT": 242,
+    "MB_JOHTO_DEOXYS_ATTACK": 243
+  },
+  "host_tail": {
+    "MB_ROCK_CLIMB": 239
+  },
+  "table_length": 244,
+  "invalid_behavior": 255,
+  "semantics": {
+    "MB_JOHTO_HEADBUTT_TREE": {"surfable": false, "encounter": false, "consumer": "future_headbutt_adapter"},
+    "MB_JOHTO_WATER_NORTH_ARROW_WARP": {"surfable": true, "encounter": false, "north_arrow_warp": true},
+    "MB_JOHTO_INERT": {"surfable": false, "encounter": false},
+    "MB_JOHTO_DEOXYS_ATTACK": {"surfable": false, "encounter": false}
+  },
+  "policy": {
+    "host_values": "Preserve existing host numeric identities through MB_ROCK_CLIMB=0xEF.",
+    "bounds": "Indexed predicates return false for every byte at or above table_length.",
+    "headbutt": "Registration only; the interaction, encounter, animation and control release remain a later adapter."
+  },
+  "verification": {
+    "python": "The importer reservation parser and host numeric baseline are checked without mirroring C source text.",
+    "engine_fixture": "test/johto/metatile_behaviors.c",
+    "warp_traversal": "Map registration and emulator traversal remain outside this primitive unit."
+  }
+}

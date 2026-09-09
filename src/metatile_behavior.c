@@ -137,6 +137,10 @@ static const u8 sTileBitAttributes[NUM_METATILE_BEHAVIORS] =
     [MB_CYCLING_ROAD_PULL_DOWN_GRASS]       = TILE_FLAG_UNUSED | TILE_FLAG_HAS_ENCOUNTERS,
     [MB_FAST_WATER]                         = TILE_FLAG_UNUSED | TILE_FLAG_SURFABLE,
     [MB_CYCLING_ROAD_WATER]                 = TILE_FLAG_UNUSED | TILE_FLAG_SURFABLE,
+    // Reserved Johto values are inert until their interaction adapters are
+    // registered.  North-arrow water is surfable, but deliberately has no
+    // encounter bit (the warp consumer owns its traversal semantics).
+    [MB_JOHTO_WATER_NORTH_ARROW_WARP]       = TILE_FLAG_UNUSED | TILE_FLAG_SURFABLE,
 };
 
 bool8 MetatileBehavior_IsATile(u8 metatileBehavior)
@@ -146,6 +150,8 @@ bool8 MetatileBehavior_IsATile(u8 metatileBehavior)
 
 bool8 MetatileBehavior_IsEncounterTile(u8 metatileBehavior)
 {
+    if (metatileBehavior >= ARRAY_COUNT(sTileBitAttributes))
+        return FALSE;
     if ((sTileBitAttributes[metatileBehavior] & TILE_FLAG_HAS_ENCOUNTERS))
         return TRUE;
     else
@@ -291,6 +297,8 @@ bool8 MetatileBehavior_IsDeepSouthWarp(u8 metatileBehavior)
 
 bool8 MetatileBehavior_IsSurfableWaterOrUnderwater(u8 metatileBehavior)
 {
+    if (metatileBehavior >= ARRAY_COUNT(sTileBitAttributes))
+        return FALSE;
     if ((sTileBitAttributes[metatileBehavior] & TILE_FLAG_SURFABLE))
         return TRUE;
     else
@@ -316,6 +324,7 @@ bool8 MetatileBehavior_IsWestArrowWarp(u8 metatileBehavior)
 bool8 MetatileBehavior_IsNorthArrowWarp(u8 metatileBehavior)
 {
     if (metatileBehavior == MB_NORTH_ARROW_WARP
+     || metatileBehavior == MB_JOHTO_WATER_NORTH_ARROW_WARP
      || metatileBehavior == MB_STAIRS_OUTSIDE_ABANDONED_SHIP)
         return TRUE;
     else
