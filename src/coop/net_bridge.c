@@ -3,6 +3,7 @@
 #include "coop/presence_runtime.h"
 #include "coop/progress.h"
 #include "coop/save.h"
+#include "johto/bug_contest.h"
 
 ALIGNED(4) EWRAM_DATA struct CoopNetBridge gCoopNetBridge = {0};
 
@@ -566,6 +567,9 @@ bool8 CoopNetBridge_IsRecoveryRequired(void)
 
 enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void)
 {
+    if (JohtoBugContest_IsSerializationBlocked())
+        return COOP_CHECKPOINT_REQUEST_REJECTED;
+
     if (!sCoopNetRuntime.cloud_epoch_accepted)
         return COOP_CHECKPOINT_REQUEST_OFFLINE;
 

@@ -8,7 +8,7 @@
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
     "donor_source_path": "src/bug_contest.c",
     "donor_source_sha256": "3746ba048588670b7476eeeea14ed92f802a38fa5d2f6af634d0412e6bb4b95d",
-    "target_source_sha256": "7f2bdcedf0fc83e2e1989cc54dff2cae4059accb91877faf74d2511c57b8bfb6",
+    "target_source_sha256": "c628ccdbb5ed99ae34f51e47b15914594d26859eea1a48fa58070ef8f778d0fd",
     "source_header": "include/bug_contest.h",
     "source_scripts": [
       "data/scripts/bug_contest.inc",
@@ -22,6 +22,7 @@
     "Transactional thirty Safari Ball loan preserving pre-existing stock",
     "Validated ten-species judging and source reward tables",
     "Idempotent PC transfer and reward claim with recoverable failures",
+    "Serialization fence rejects saves and cooperative checkpoints while the temporary party snapshot is owned",
     "Engine hook/map script/emulator integration remains subsequent scope"
   ],
   "duration_frames": 28800,

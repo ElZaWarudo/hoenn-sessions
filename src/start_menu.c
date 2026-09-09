@@ -36,6 +36,7 @@
 #include "save.h"
 #include "coop/net_bridge.h"
 #include "coop/online.h"
+#include "johto/bug_contest.h"
 #include "scanline_effect.h"
 #include "script.h"
 #include "sound.h"
@@ -1281,6 +1282,12 @@ static u8 SaveSavingMessageCallback(void)
 
 static u8 SaveDoSaveCallback(void)
 {
+    if (JohtoBugContest_IsSerializationBlocked())
+    {
+        CoopNetBridge_NotifySaveResult(FALSE);
+        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        return SAVE_IN_PROGRESS;
+    }
     switch (CoopNetBridge_RequestCheckpoint())
     {
     case COOP_CHECKPOINT_REQUEST_STARTED:
@@ -1337,6 +1344,13 @@ static u8 SaveCheckpointAbortCallback(void)
 static u8 SaveDoSaveAuthorizedCallback(void)
 {
     u8 saveStatus;
+
+    if (JohtoBugContest_IsSerializationBlocked())
+    {
+        CoopNetBridge_NotifySaveResult(FALSE);
+        sSaveDialogCallback = SaveCheckpointAbortCallback;
+        return SAVE_IN_PROGRESS;
+    }
 
     /* This is the final gate immediately adjacent to TrySavingData. It closes
      * the race where the sidecar disappears between grant delivery and this

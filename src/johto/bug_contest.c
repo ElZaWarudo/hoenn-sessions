@@ -221,6 +221,14 @@ bool32 JohtoBugContest_IsEnding(void)
     return sBugContest != NULL && sBugContest->phase == BUG_CONTEST_PHASE_ENDING;
 }
 
+bool32 JohtoBugContest_IsSerializationBlocked(void)
+{
+    /* The snapshot remains authoritative through judging, transfer and
+     * reward retries.  Any save during that lifetime would serialize the
+     * temporary one-mon party instead of the player's original party. */
+    return sBugContest != NULL;
+}
+
 bool32 JohtoBugContest_CheckTime(u32 now)
 {
     if (!JohtoBugContest_IsActive())

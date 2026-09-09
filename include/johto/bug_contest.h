@@ -35,6 +35,8 @@ enum JohtoBugContestEndReason
 enum JohtoBugContestStatus JohtoBugContest_Begin(u32 now);
 bool32 JohtoBugContest_IsActive(void);
 bool32 JohtoBugContest_IsEnding(void);
+/* TRUE while the contest owns the player's original party and mail. */
+bool32 JohtoBugContest_IsSerializationBlocked(void);
 /* Returns TRUE only when this call changes an active contest to ending. */
 bool32 JohtoBugContest_CheckTime(u32 now);
 enum JohtoBugContestStatus JohtoBugContest_RequestEnd(enum JohtoBugContestEndReason reason);
