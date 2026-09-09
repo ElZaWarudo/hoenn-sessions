@@ -13,22 +13,26 @@ from unittest import mock
 from tools.johto import region_manifest as manifest
 
 
-DONOR = Path(os.environ["JOHTO_DONOR"]) if os.environ.get("JOHTO_DONOR") else None
+DONOR = Path(os.environ["JOHTO_DONOR"]) if os.environ.get("JOHTO_DONOR") else Path(
+    "C:/Users/Mayor/Documents/Caribbean/johto-hns"
+)
 
 
 class ManifestContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if DONOR is None:
-            raise unittest.SkipTest("set JOHTO_DONOR to run pinned corpus checks")
+        if not DONOR.is_dir():
+            raise unittest.SkipTest("pinned donor checkout is unavailable")
         cls.ledger = manifest.build_manifest(DONOR)
 
     def test_deterministic_output_and_counts(self):
         self.assertEqual(self.ledger, manifest.build_manifest(DONOR))
-        self.assertEqual(self.ledger["selection"]["selected_count"], 239)
+        self.assertEqual(self.ledger["selection"]["selected_count"], 407)
+        self.assertEqual(self.ledger["selection"]["original_selected_count"], 239)
+        self.assertEqual(self.ledger["selection"]["later_selected_count"], 168)
         self.assertEqual(self.ledger["selection"]["classified_count"], 954)
-        self.assertEqual(self.ledger["selection"]["excluded_count"], 715)
-        self.assertEqual(len(self.ledger["maps"]), 239)
+        self.assertEqual(self.ledger["selection"]["excluded_count"], 547)
+        self.assertEqual(len(self.ledger["maps"]), 407)
         self.assertEqual(len(self.ledger["registrations"]), 954)
 
     def test_new_bark_and_signed_boundary(self):
@@ -37,21 +41,39 @@ class ManifestContractTests(unittest.TestCase):
         self.assertEqual(maps[0]["proposed_host"], {"group": 75, "index": 0})
         self.assertEqual(maps[127]["proposed_host"], {"group": 75, "index": 127})
         self.assertEqual(maps[128]["proposed_host"], {"group": 76, "index": 0})
-        self.assertEqual(maps[-1]["proposed_host"], {"group": 76, "index": 110})
+        self.assertEqual(maps[238]["proposed_host"], {"group": 76, "index": 110})
+        self.assertEqual(maps[239]["proposed_host"], {"group": 77, "index": 0})
+        self.assertEqual(maps[366]["proposed_host"], {"group": 77, "index": 127})
+        self.assertEqual(maps[367]["proposed_host"], {"group": 78, "index": 0})
+        self.assertEqual(maps[-1]["proposed_host"], {"group": 78, "index": 39})
         self.assertTrue(all(m["proposed_host"]["group"] <= 127 and
                             m["proposed_host"]["index"] <= 127 for m in maps))
+        later = maps[239:]
+        self.assertEqual(len(later), 168)
+        self.assertTrue(all(m["era"] == "KANTO_LATER" and
+                            m["campaign"] == "KANTO_LATER" and
+                            m["proposed_map"]["map_id"].startswith("MAP_KANTO_LATER_")
+                            for m in later))
+        self.assertEqual(len({m["proposed_map"]["map_id"] for m in maps}), 407)
 
     def test_sections_aliases_and_reservations(self):
         sections = self.ledger["sections"]
-        self.assertEqual(sections["source_count"], 57)
+        self.assertEqual(sections["source_count"], 99)
+        self.assertEqual(sections["later_source_count"], 43)
         self.assertEqual(sections["johto_count"], 41)
-        self.assertEqual(sections["kanto_count"], 1)
-        self.assertEqual(len(sections["entries"]), 57)
+        self.assertEqual(sections["kanto_count"], 43)
+        self.assertEqual(len(sections["entries"]), 99)
+        self.assertEqual(len(sections["geographic_aliases"]), 43)
         self.assertEqual(len(self.ledger["section_aliases"]), 15)
         self.assertEqual(self.ledger["host_identity"]["reserved_section_ids"], [250, 251, 252, 253, 254, 255])
         ids = {entry["target_id"] for entry in sections["entries"]}
         self.assertNotIn(250, ids)
-        self.assertTrue(all(210 <= value <= 249 for value in ids if value not in (132, 209)))
+        johto_ids = {entry["target_id"] for entry in sections["entries"]
+                     if entry["classification"] in {"new_johto", "johto_alias", "preserved_host"}}
+        self.assertTrue(all(210 <= value <= 249 for value in johto_ids if value != 209))
+        self.assertTrue(all(entry["target_id"] == manifest.KANTO_GEOGRAPHIC_SECTIONS[entry["source_symbol"]][1]
+                            for entry in sections["entries"]
+                            if entry["source_symbol"] in manifest.KANTO_GEOGRAPHIC_SECTIONS))
         reception = next(e for e in sections["entries"] if e["source_symbol"] == "MAPSEC_VICTORY_ROAD")
         self.assertEqual((reception["target_symbol"], reception["target_id"]),
                          ("MAPSEC_KANTO_VICTORY_ROAD", 132))
@@ -60,11 +82,69 @@ class ManifestContractTests(unittest.TestCase):
         self.assertEqual(reception_map["region"], "REGION_KANTO")
         self.assertEqual(reception_map["resolved_section"]["alias_target"], "RECEPTION_GATE")
 
+    def test_later_identity_ledger_is_explicit_and_pinned(self):
+        extension = self.ledger["era_extension"]
+        self.assertEqual(extension["later"]["selected_count"], 168)
+        self.assertEqual(extension["later"]["sorted_name_sha256"],
+                         "715162f6d55515c1188cf343024d0d293938de42e6208db4b6b6c31f3317a75b")
+        self.assertEqual(len(extension["identities"]), 168)
+        self.assertEqual(len(extension["geographic_aliases"]), 43)
+        self.assertEqual(extension["choice"], ["KANTO_ORIGINAL", "KANTO_LATER", "CANCEL"])
+        victory = next(item for item in extension["geographic_aliases"]
+                       if item["source_symbol"] == "MAPSEC_VICTORY_ROAD")
+        self.assertEqual((victory["target_symbol"], victory["target_id"]),
+                         ("MAPSEC_KANTO_VICTORY_ROAD", 132))
+        routes = {m["source_name"]: m for m in self.ledger["maps"]
+                  if m["source_name"] in {"Route26", "Route26North", "Route27", "Route28"}}
+        self.assertEqual({item["geographic_region"] for item in routes.values()}, {"REGION_KANTO"})
+        self.assertEqual({item["campaign"] for item in routes.values()}, {"JOHTO"})
+
+    def test_original_layout_identities_match_accepted_scenery_prefix(self):
+        scenery = json.loads((manifest.ROOT / "data/johto/scenery_registration.json").read_text(
+            encoding="utf-8"
+        ))
+        expected = {entry["source_map"]: entry["target_layout_id"]
+                    for entry in scenery["layouts"]}
+        original = self.ledger["maps"][:manifest.EXPECTED_ORIGINAL_SELECTED]
+        self.assertEqual(len(expected), manifest.EXPECTED_ORIGINAL_SELECTED)
+        self.assertEqual({item["source_map"] for item in original}, set(expected))
+        self.assertEqual(
+            {item["source_map"]: item["identity_namespace"]["layout"] for item in original},
+            expected,
+        )
+        self.assertTrue(all(item["layout"]["symbol"] != item["identity_namespace"]["layout"]
+                            or item["source_map"] == "MAP_NEW_BARK_TOWN"
+                            for item in original))
+        later = self.ledger["maps"][manifest.EXPECTED_ORIGINAL_SELECTED:]
+        later_layouts = [item["identity_namespace"]["layout"] for item in later]
+        self.assertEqual(len(later_layouts), len(set(later_layouts)))
+        self.assertTrue(all(layout.startswith("LAYOUT_KANTO_LATER_") for layout in later_layouts))
+        self.assertTrue(set(later_layouts).isdisjoint(expected.values()))
+
+    def test_route_26_to_28_geography_uses_resolved_sections(self):
+        route_sections = {
+            "MAPSEC_ROUTE_26", "MAPSEC_ROUTE_27", "MAPSEC_ROUTE_28",
+            "MAPSEC_JOHTO_ROUTE_26", "MAPSEC_JOHTO_ROUTE_27", "MAPSEC_JOHTO_ROUTE_28",
+        }
+        resolved = [item for item in self.ledger["maps"]
+                    if item["resolved_section"]["symbol"] in route_sections]
+        self.assertGreater(len(resolved), 0)
+        self.assertEqual({item["geographic_region"] for item in resolved}, {"REGION_KANTO"})
+        self.assertEqual({item["region"] for item in resolved}, {"REGION_KANTO"})
+        self.assertEqual({item["campaign"] for item in resolved}, {"JOHTO"})
+        self.assertEqual(
+            {item["source_name"] for item in resolved if "TohjoFalls" in item["source_name"]},
+            {"TohjoFalls_Cavern", "TohjoFalls_GiovanniRoom"},
+        )
+        self.assertTrue(all(item["source_section"] == "MAPSEC_TOHJO_FALLS"
+                            for item in resolved if "TohjoFalls" in item["source_name"]))
+
     def test_edges_are_retained_and_classified(self):
         edges = self.ledger["external_edges"]
         self.assertGreater(len(edges), 0)
         self.assertTrue(all(edge["classification"] in
-                            {"required_host_adapter", "excluded_debug_edge"} for edge in edges))
+                            {"required_host_adapter", "excluded_debug_edge", "pending_runtime_policy",
+                             "pending_era_boundary"} for edge in edges))
         self.assertTrue(any(edge["classification"] == "required_host_adapter" for edge in edges))
         self.assertTrue(any(edge["classification"] == "excluded_debug_edge" for edge in edges))
 
