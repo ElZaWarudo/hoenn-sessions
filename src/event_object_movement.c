@@ -263,6 +263,7 @@ static void (*const sCameraObjectFuncs[])(struct Sprite *) = {
 };
 
 #include "data/object_events/object_event_graphics.h"
+#include "data/object_events/johto_assets.h"
 
 // movement type callbacks
 static void (*const sMovementTypeCallbacks[])(struct Sprite *) =
@@ -488,6 +489,7 @@ const u8 gInitialMovementTypeFacingDirections[NUM_MOVEMENT_TYPES] = {
 #include "data/object_events/base_oam.h"
 #include "data/object_events/object_event_subsprites.h"
 #include "data/object_events/object_event_graphics_info.h"
+#include "data/object_events/johto_info.h"
 #include "data/object_events/object_event_graphics_info_followers.h"
 
 static const struct SpritePalette sObjectEventSpritePalettes[] = {
@@ -578,6 +580,7 @@ static const struct SpritePalette sObjectEventSpritePalettes[] = {
     {gObjectEventPaletteLight2,             OBJ_EVENT_PAL_TAG_LIGHT_2},
     {gObjectEventPaletteEmotes,             OBJ_EVENT_PAL_TAG_EMOTES},
     {gObjectEventPaletteNeonLight,          OBJ_EVENT_PAL_TAG_NEON_LIGHT},
+#include "data/object_events/johto_palettes.inc"
 #ifdef BUGFIX
     {NULL,                                  OBJ_EVENT_PAL_TAG_NONE},
 #else

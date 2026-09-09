@@ -5383,3 +5383,76 @@ $(BATINTGFXDIR)/healthbox_singles_opponent.4bpp: %.4bpp: %.png
 
 $(BATINTGFXDIR)/healthbox_singles_player.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -mwidth 8 -mheight 8
+
+# BEGIN JOHTO OBJECT FRAME RULES
+graphics/johto/object_events/pics/people/special/silver.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/super_nerd.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/special/kimono.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/pokemon/wingull_old.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+graphics/johto/object_events/pics/people/special/kurt.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/battle_girl.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/sage.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/attendant_f.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/special/eusine.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/engineer.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/firebreather.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/cameraman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/misc/submarine_shadow.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 11 -mheight 4
+graphics/johto/object_events/pics/misc/whirlpool.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 8 -mheight 8
+graphics/johto/object_events/pics/people/rockets/archer.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/scientist_m.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/special/elm.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/scientist_f.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/pokemon/kirlia_old.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/falkner.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/bugsy.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/burglar.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/whitney.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/attendant_m.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/misc/cable_car.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 8 -mheight 8
+graphics/johto/object_events/pics/people/rockets/proton.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/rockets/ariana.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/rockets/petrel.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/morty.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/jasmine.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/chuck.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/pryce.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/clair.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/people/gym_leaders/janine.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/object_events/pics/pokemon/shiny_gyarados.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+# END JOHTO OBJECT FRAME RULES
