@@ -774,6 +774,7 @@ static const u16 *const sObjectPaletteTagSets[] = {
 };
 
 #include "data/object_events/berry_tree_graphics_tables.h"
+#include "data/object_events/johto_berry_graphics.h"
 #include "data/field_effects/field_effect_objects.h"
 
 static const s16 sMovementDelaysMedium[] = {32, 64,  96, 128};
@@ -3203,10 +3204,15 @@ static void SetBerryTreeGraphicsById(struct ObjectEvent *objectEvent, u8 berryId
     const u16 graphicsId = gBerryTreeObjectEventGraphicsIdTable[berryStage];
     const struct ObjectEventGraphicsInfo *graphicsInfo = GetObjectEventGraphicsInfo(graphicsId);
     struct Sprite *sprite = &gSprites[objectEvent->spriteId];
-    UpdateSpritePalette(&sObjectEventSpritePalettes[gBerries[berryId].berryTreePaletteSlotTable[berryStage] - 2], sprite);
+    const bool8 useJohtoBerryGraphics = JohtoBerryGraphics_Apply(objectEvent, sprite, berryId, berryStage);
+
+    if (!useJohtoBerryGraphics)
+    {
+        UpdateSpritePalette(&sObjectEventSpritePalettes[gBerries[berryId].berryTreePaletteSlotTable[berryStage] - 2], sprite);
+        sprite->images = gBerries[berryId].berryTreePicTable;
+    }
     sprite->oam.shape = graphicsInfo->oam->shape;
     sprite->oam.size = graphicsInfo->oam->size;
-    sprite->images = gBerries[berryId].berryTreePicTable;
     sprite->anims = graphicsInfo->anims;
     sprite->subspriteTables = graphicsInfo->subspriteTables;
     objectEvent->inanimate = graphicsInfo->inanimate;
@@ -3219,6 +3225,30 @@ static void SetBerryTreeGraphicsById(struct ObjectEvent *objectEvent, u8 berryId
     if (objectEvent->trackedByCamera)
         CameraObjectReset();
 }
+
+#if TESTING
+void JohtoBerryGraphics_TestRender(struct ObjectEvent *objectEvent, struct Sprite *sprite, u8 berryId, u8 berryStage)
+{
+    objectEvent->spriteId = (u8)(sprite - gSprites);
+    if (berryStage >= ARRAY_COUNT(sJohtoBerryPaletteTags_CHERI))
+        return;
+    SetBerryTreeGraphicsById(objectEvent, berryId, berryStage);
+}
+
+const struct SpriteFrameImage *JohtoBerryGraphics_TestImages(u8 berryId)
+{
+    if (berryId < BERRY_ID_CHERI || berryId > BERRY_ID_SITRUS)
+        return NULL;
+    return sJohtoBerryPicTables[berryId];
+}
+
+u16 JohtoBerryGraphics_TestPaletteTag(u8 berryId, u8 berryStage)
+{
+    if (!JohtoBerryGraphics_IsSupported(JOHTO_BERRY_PLOTS_FIRST, berryId, berryStage))
+        return OBJ_EVENT_PAL_TAG_NONE;
+    return sJohtoBerryPaletteTags[berryId][berryStage];
+}
+#endif
 
 static void SetBerryTreeGraphics(struct ObjectEvent *objectEvent, struct Sprite *sprite)
 {

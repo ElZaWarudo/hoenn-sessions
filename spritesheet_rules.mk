@@ -5456,6 +5456,34 @@ graphics/johto/object_events/pics/people/gym_leaders/janine.4bpp: %.4bpp: %.png
 graphics/johto/object_events/pics/pokemon/shiny_gyarados.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -mwidth 4 -mheight 4
 # END JOHTO OBJECT FRAME RULES
+
+# BEGIN JOHTO BERRY GRAPHICS RULES
+graphics/johto/berry_trees/cheri.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/chesto.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/pecha.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/rawst.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/aspear.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/leppa.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/oran.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/persim.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/lum.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/sitrus.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/berry_trees/dirt_pile.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 2
+graphics/johto/berry_trees/sprout.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 2
+# END JOHTO BERRY GRAPHICS RULES
+
 # BEGIN JOHTO SHARED OBJECT FRAME RULES
 graphics/johto/shared/object_events/pics/people/beauty.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -mwidth 2 -mheight 4

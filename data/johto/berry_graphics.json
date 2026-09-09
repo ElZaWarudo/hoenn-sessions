@@ -1,0 +1,1738 @@
+{
+  "assets": {
+    "aspear": {
+      "asset": "graphics/johto/berry_trees/aspear.png",
+      "berry_id": "BERRY_ID_ASPEAR",
+      "bytes": 210,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/aspear.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        3,
+        4,
+        4
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE"
+      ],
+      "sha256": "801c031fabded504a032cb5d6b06aadc487a44e74b8a0dfb7091c52770b46d3f"
+    },
+    "cheri": {
+      "asset": "graphics/johto/berry_trees/cheri.png",
+      "berry_id": "BERRY_ID_CHERI",
+      "bytes": 213,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/cheri.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        2,
+        2
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE"
+      ],
+      "sha256": "48b8af32911574d62aa3a5c360e563a093abdf690b952d740aa4cadeea0144d8"
+    },
+    "chesto": {
+      "asset": "graphics/johto/berry_trees/chesto.png",
+      "berry_id": "BERRY_ID_CHESTO",
+      "bytes": 208,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/chesto.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        2,
+        4,
+        4
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE"
+      ],
+      "sha256": "2ef7d0e37d2faf705b3ce59b25781a612da86b1319342ed9421f46a7a2b24c98"
+    },
+    "dirt_pile": {
+      "asset": "graphics/johto/berry_trees/dirt_pile.png",
+      "bytes": 158,
+      "dimensions": [
+        16,
+        16
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/dirt_pile.png",
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        }
+      ],
+      "sha256": "ea11ef4c67fae00f099e91557f449f300927e6d15f5115f19ffe5beb0d77c9b4"
+    },
+    "leppa": {
+      "asset": "graphics/johto/berry_trees/leppa.png",
+      "berry_id": "BERRY_ID_LEPPA",
+      "bytes": 209,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/leppa.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        3,
+        2,
+        2
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE"
+      ],
+      "sha256": "d194abb194414c237b8d46b9454fe1aebf0e84bfdac9ea6cfbf2d732d87c51a2"
+    },
+    "lum": {
+      "asset": "graphics/johto/berry_trees/lum.png",
+      "berry_id": "BERRY_ID_LUM",
+      "bytes": 205,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/lum.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        5,
+        5
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+      ],
+      "sha256": "b5579671453f3bec4534e8ea29f78ccdc1b3494d1f28df3f26c2628a79aab96f"
+    },
+    "oran": {
+      "asset": "graphics/johto/berry_trees/oran.png",
+      "berry_id": "BERRY_ID_ORAN",
+      "bytes": 204,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/oran.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        2,
+        3,
+        3
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK"
+      ],
+      "sha256": "61cabf074d5407da73adaf378ebcbd2f83a92bf55afd950877280f767e6f280b"
+    },
+    "pecha": {
+      "asset": "graphics/johto/berry_trees/pecha.png",
+      "berry_id": "BERRY_ID_PECHA",
+      "bytes": 209,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/pecha.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        5,
+        5
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+      ],
+      "sha256": "3253a35eca1881d26e7fad698265c9cbf8bc24df78c2b540c264cbd9f28fedd0"
+    },
+    "persim": {
+      "asset": "graphics/johto/berry_trees/persim.png",
+      "berry_id": "BERRY_ID_PERSIM",
+      "bytes": 211,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/persim.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        2,
+        3,
+        3
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK"
+      ],
+      "sha256": "c78389593f16bfabc602903d2ff8cfe353d561624e4fde702879430fca0bf801"
+    },
+    "rawst": {
+      "asset": "graphics/johto/berry_trees/rawst.png",
+      "berry_id": "BERRY_ID_RAWST",
+      "bytes": 210,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/rawst.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        3,
+        3
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK"
+      ],
+      "sha256": "3389fd312bc1a450c4e2ae71dcbaf3f314ddafe6d1772e017bb8a6ba2274da28"
+    },
+    "sitrus": {
+      "asset": "graphics/johto/berry_trees/sitrus.png",
+      "berry_id": "BERRY_ID_SITRUS",
+      "bytes": 210,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/sitrus.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        5,
+        5
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+      ],
+      "sha256": "cd92f55b481ac15ee73a47de85b3a124ef9f2500dd45347d767d133f6f97a308"
+    },
+    "sprout": {
+      "asset": "graphics/johto/berry_trees/sprout.png",
+      "bytes": 159,
+      "dimensions": [
+        32,
+        16
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/sprout.png",
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        }
+      ],
+      "sha256": "2499d995d8881df8f7a79ba93cfb570279de18da5d3428c2026e37447300f988"
+    }
+  },
+  "campaign_ready": false,
+  "contract_hash": "sha256:60b66f702080efdf4492e32ae8607adf321340e26e521333e80f376bf1bb74f4",
+  "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "limitations": [
+    "Map importer must bind plot IDs 90..109; this unit preserves host renderer outside the selected Johto plot range.",
+    "Campaign readiness remains false until map wiring and playthrough."
+  ],
+  "palette_slot_tags": {
+    "2": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+    "3": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+    "4": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+    "5": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+  },
+  "plots": {
+    "count": 20,
+    "first": 90,
+    "last": 109
+  },
+  "schema_version": 1,
+  "source_hash_normalization": "raw donor bytes; source text normalization is CRLF to LF",
+  "species": {
+    "aspear": {
+      "asset": "graphics/johto/berry_trees/aspear.png",
+      "berry_id": "BERRY_ID_ASPEAR",
+      "bytes": 210,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/aspear.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        3,
+        4,
+        4
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "aspear",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE"
+      ],
+      "sha256": "801c031fabded504a032cb5d6b06aadc487a44e74b8a0dfb7091c52770b46d3f"
+    },
+    "cheri": {
+      "asset": "graphics/johto/berry_trees/cheri.png",
+      "berry_id": "BERRY_ID_CHERI",
+      "bytes": 213,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/cheri.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        2,
+        2
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "cheri",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE"
+      ],
+      "sha256": "48b8af32911574d62aa3a5c360e563a093abdf690b952d740aa4cadeea0144d8"
+    },
+    "chesto": {
+      "asset": "graphics/johto/berry_trees/chesto.png",
+      "berry_id": "BERRY_ID_CHESTO",
+      "bytes": 208,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/chesto.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        2,
+        4,
+        4
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "chesto",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE"
+      ],
+      "sha256": "2ef7d0e37d2faf705b3ce59b25781a612da86b1319342ed9421f46a7a2b24c98"
+    },
+    "leppa": {
+      "asset": "graphics/johto/berry_trees/leppa.png",
+      "berry_id": "BERRY_ID_LEPPA",
+      "bytes": 209,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/leppa.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        3,
+        2,
+        2
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "leppa",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE"
+      ],
+      "sha256": "d194abb194414c237b8d46b9454fe1aebf0e84bfdac9ea6cfbf2d732d87c51a2"
+    },
+    "lum": {
+      "asset": "graphics/johto/berry_trees/lum.png",
+      "berry_id": "BERRY_ID_LUM",
+      "bytes": 205,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/lum.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        5,
+        5
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "lum",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+      ],
+      "sha256": "b5579671453f3bec4534e8ea29f78ccdc1b3494d1f28df3f26c2628a79aab96f"
+    },
+    "oran": {
+      "asset": "graphics/johto/berry_trees/oran.png",
+      "berry_id": "BERRY_ID_ORAN",
+      "bytes": 204,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/oran.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        2,
+        3,
+        3
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "oran",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK"
+      ],
+      "sha256": "61cabf074d5407da73adaf378ebcbd2f83a92bf55afd950877280f767e6f280b"
+    },
+    "pecha": {
+      "asset": "graphics/johto/berry_trees/pecha.png",
+      "berry_id": "BERRY_ID_PECHA",
+      "bytes": 209,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/pecha.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        5,
+        5
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "pecha",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+      ],
+      "sha256": "3253a35eca1881d26e7fad698265c9cbf8bc24df78c2b540c264cbd9f28fedd0"
+    },
+    "persim": {
+      "asset": "graphics/johto/berry_trees/persim.png",
+      "berry_id": "BERRY_ID_PERSIM",
+      "bytes": 211,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/persim.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        2,
+        3,
+        3
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "persim",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK"
+      ],
+      "sha256": "c78389593f16bfabc602903d2ff8cfe353d561624e4fde702879430fca0bf801"
+    },
+    "rawst": {
+      "asset": "graphics/johto/berry_trees/rawst.png",
+      "berry_id": "BERRY_ID_RAWST",
+      "bytes": 210,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/rawst.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        3,
+        3
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "rawst",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK"
+      ],
+      "sha256": "3389fd312bc1a450c4e2ae71dcbaf3f314ddafe6d1772e017bb8a6ba2274da28"
+    },
+    "sitrus": {
+      "asset": "graphics/johto/berry_trees/sitrus.png",
+      "berry_id": "BERRY_ID_SITRUS",
+      "bytes": 210,
+      "dimensions": [
+        96,
+        32
+      ],
+      "donor_asset": "graphics/object_events/pics/berry_trees/sitrus.png",
+      "donor_palette_slots": [
+        3,
+        4,
+        4,
+        5,
+        5
+      ],
+      "frames": [
+        {
+          "height_tiles": 2,
+          "image": "dirt_pile",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 2,
+          "image": "sprout",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 0,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 1,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 2,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 3,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 4,
+          "width_tiles": 2
+        },
+        {
+          "height_tiles": 4,
+          "image": "sitrus",
+          "index": 5,
+          "width_tiles": 2
+        }
+      ],
+      "host_stage_palette_tags": [
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+        "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN"
+      ],
+      "sha256": "cd92f55b481ac15ee73a47de85b3a124ef9f2500dd45347d767d133f6f97a308"
+    }
+  },
+  "stage_mapping_host_to_donor": [
+    0,
+    1,
+    2,
+    2,
+    2,
+    3,
+    4
+  ],
+  "unit": "j2-berry-graphics"
+}

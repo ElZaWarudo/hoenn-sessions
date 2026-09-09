@@ -16,9 +16,9 @@ DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
 DATA_PATH = Path("data/johto/shared_object_graphics.json")
 HOST_CORE_HASHES = {
     "include/constants/event_objects.h": "1dc568513d5830e57924bb52df99668724bdadef8ced756e8a91acf4320dcada",
-    "src/event_object_movement.c": "77ffefa225d34220c9e956b248ca2b08206c3f28e1cc8e73a4d49ba65c336fd3",
+    "src/event_object_movement.c": "1113de4649066c4f80a5387409fb6b9732b75d6668a97454800869f42557751a",
     "src/data/object_events/object_event_graphics_info_pointers.h": "439b98168e95f369973870ee38f73942462fb6bfd9379c2dd4d680520ade104a",
-    "spritesheet_rules.mk": "0f1aac9bb1d80b09c9f22d46ea36c69e357456ea8df6783f0b4dbe16e81199d9",
+    "spritesheet_rules.mk": "3abe1bf9dc346319a24f380d3c38a6cb4ce72ccdf014568c94dfcf715fca0bee",
 }
 SOURCE_HASHES = {
     "src/data/object_events/object_event_graphics_info.h": "6987761f2f058fcae67a393da7bcd73dd72ff1faeefa60bceae66f52650744c1",
@@ -409,7 +409,7 @@ def render_integrations(root: Path, records: list[dict], unique_palettes: list[s
         target = build_asset_path(source_path, ".4bpp")
         rules.append(f"{target}: %.4bpp: %.png\n\t$(GFX) $< $@ -mwidth {width} -mheight {height}\n")
     rules.append("# END JOHTO SHARED OBJECT FRAME RULES\n")
-    outputs[rules_path] = (rules_core + "".join(rules)).encode()
+    outputs[rules_path] = (rules_core.rstrip() + "\n\n" + "".join(rules)).encode()
     return outputs
 
 
