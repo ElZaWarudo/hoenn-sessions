@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "campaign_ready": false,
+  "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "hash_normalization": "CRLF to LF",
+  "script_alias": {
+    "BerryTreeScript": "Johto_BerryTreeScript"
+  },
+  "plot_ledger": "data/johto/berry_plots.json",
+  "source_hashes": [
+    {
+      "path": "src/berry.c",
+      "sha256": "929c825f72ddfff1d1009ad89b821cf1a6fbe047e299f107915740472db83a5a"
+    },
+    {
+      "path": "data/scripts/berry_tree.inc",
+      "sha256": "7ed05f42e0c6ce6cb0e7c689d76ac3e1c0a4e458c43f099d55d7db429469dc52"
+    }
+  ],
+  "adaptations": [
+    "Atomic exact bag award before reset and same-berry SPROUTED replant; no berry debit.",
+    "Clear old tree before planting to enable regrowth; use actual selected object identity for just-picked state.",
+    "Native captures count/name before replant for linked success dialogue."
+  ],
+  "limitations": [
+    "Twenty map objects must be bound by the campaign importer; actual map interaction remains unproven."
+  ]
+}
