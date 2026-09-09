@@ -5456,3 +5456,103 @@ graphics/johto/object_events/pics/people/gym_leaders/janine.4bpp: %.4bpp: %.png
 graphics/johto/object_events/pics/pokemon/shiny_gyarados.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -mwidth 4 -mheight 4
 # END JOHTO OBJECT FRAME RULES
+# BEGIN JOHTO SHARED OBJECT FRAME RULES
+graphics/johto/shared/object_events/pics/people/beauty.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/dolls/big_wailmer_doll.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+graphics/johto/shared/object_events/pics/people/black_belt.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/misc/breakable_rock.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 2
+graphics/johto/shared/object_events/pics/people/bug_catcher.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/camper.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/girl_2.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/mart_employee.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/misc/cuttable_tree.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 2
+graphics/johto/shared/object_events/pics/people/fat_man.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/fisherman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/misc/fossil.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 2
+graphics/johto/shared/object_events/pics/people/gameboy_kid.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/gentleman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/rockets/giovanni.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/girl_1.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/gym_guy.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/hiker.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/elite_four/lance.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/dolls/big_lapras_doll.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+graphics/johto/shared/object_events/pics/people/lass.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/little_boy.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/mom.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/boy_1.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/mystery_event_deliveryman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/nurse.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/old_man.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/old_man_2.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/old_woman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/picnicker.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/misc/ball_poke.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/policeman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/special/prof_oak.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/psychic_m.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/misc/pushable_boulder.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 2
+graphics/johto/shared/object_events/pics/pokemon/rayquaza_cutscene.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 8 -mheight 8
+graphics/johto/shared/object_events/pics/people/special/red_normal.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/rockets/rocket_f.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/rockets/rocket_m.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/gym_leaders/sabrina.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/sailor.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/swimmer_f.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/swimmer_m.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/twin.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/rooftop_sale_woman.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/woman_2.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/woman_1.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/worker_m.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+graphics/johto/shared/object_events/pics/people/youngster.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+# END JOHTO SHARED OBJECT FRAME RULES
