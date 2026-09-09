@@ -486,6 +486,9 @@ const u16 gTrainerBackPicPalette_Leaf[] = INCBIN_U16("graphics/trainers/back_pic
 const u16 gTrainerBackPicPalette_Pokedude[] = INCBIN_U16("graphics/trainers/back_pics/pokedude.gbapal");
 const u16 gTrainerBackPicPalette_OldMan[] = INCBIN_U16("graphics/trainers/back_pics/old_man.gbapal");
 
+const u8 gJohtoTrainerBackPic_Lance[] = INCBIN_U8("graphics/johto/trainers/back_pics/lance.4bpp");
+const u16 gJohtoTrainerBackPalette_Lance[16] = INCBIN_U16("graphics/johto/trainers/back_pics/lance.gbapal");
+
 
 static const union AnimCmd sAnimCmd_Hoenn[] =
 {
@@ -1340,6 +1343,11 @@ const struct TrainerPicInfo gTrainerPicInfo[TRAINER_PIC_COUNT] =
     [TRAINER_PIC_SILVER] =
     {
         .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_SILVER, gJohtoTrainerPalette_SILVER),
+    },
+    [TRAINER_PIC_JOHTO_PARTNER_LANCE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gTrainerFrontPic_EliteFourLanceFrlg, gTrainerPalette_EliteFourLanceFrlg, -32, 0),
+        .backPic = TRAINER_BACK_PIC(4, gJohtoTrainerBackPic_Lance, gJohtoTrainerBackPalette_Lance, sBackAnims_Hoenn),
     },
 
 };

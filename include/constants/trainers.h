@@ -196,6 +196,7 @@ enum __attribute__((packed)) TrainerPicID
     TRAINER_PIC_PROTON,
     TRAINER_PIC_SAGE,
     TRAINER_PIC_SILVER,
+    TRAINER_PIC_JOHTO_PARTNER_LANCE,
     TRAINER_PIC_COUNT,
 };
 
