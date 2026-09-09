@@ -647,3 +647,4 @@ gSpecials::
 	def_special Johto_CheckTogepi, requests_effects=1
 	def_special Johto_CheckCelebi, requests_effects=1
 	def_special Johto_NameRival, requests_effects=1
+	def_special DoSlidingPuzzle, requests_effects=1

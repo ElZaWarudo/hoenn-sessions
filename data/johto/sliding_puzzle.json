@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "unit": "j3-sliding-puzzle",
+  "campaign_ready": false,
+  "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "source_root": "johto-hns/graphics/sliding_puzzle",
+  "provenance": {
+    "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
+    "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
+    "source_hashes": [
+      {
+        "source": "graphics/sliding_puzzle/bg.pal",
+        "target": "graphics/johto/sliding_puzzle/bg.pal",
+        "sha256": "e4429f78c52721ae4eb29d5c2fd5408fa7c1f88f3f490cc5227b52560ebaa69d",
+        "bytes": 167
+      },
+      {
+        "source": "graphics/sliding_puzzle/bg.png",
+        "target": "graphics/johto/sliding_puzzle/bg.png",
+        "sha256": "d33368f50812c33eb72842f18610fb11f3c8ff230d304c167897f8497811b29c",
+        "bytes": 5349
+      },
+      {
+        "source": "graphics/sliding_puzzle/cursor.png",
+        "target": "graphics/johto/sliding_puzzle/cursor.png",
+        "sha256": "28fef2b6e02b8f61cea49c60a7607fa39cb742dbf7cc468ab8dde5b1acba163b",
+        "bytes": 195
+      },
+      {
+        "source": "graphics/sliding_puzzle/cursor_tiles.pal",
+        "target": "graphics/johto/sliding_puzzle/cursor_tiles.pal",
+        "sha256": "a21ab3a3c8240239e47bc5e4152be08c6f0ba64b506d771c96555086f03c62d1",
+        "bytes": 172
+      },
+      {
+        "source": "graphics/sliding_puzzle/map.bin",
+        "target": "graphics/johto/sliding_puzzle/map.bin",
+        "sha256": "7c765d62b353a15ca31ef8138ec10f5f277ac9ff1654be3fbe850999141bf903",
+        "bytes": 2048
+      },
+      {
+        "source": "graphics/sliding_puzzle/puzzles/aerodactyl/tiles.png",
+        "target": "graphics/johto/sliding_puzzle/puzzles/aerodactyl/tiles.png",
+        "sha256": "ad00811bfa940a1a90fb290065d5e664c4eff95ce27ed9111856b8f6796ae22b",
+        "bytes": 8481
+      },
+      {
+        "source": "graphics/sliding_puzzle/puzzles/ho_oh/tiles.png",
+        "target": "graphics/johto/sliding_puzzle/puzzles/ho_oh/tiles.png",
+        "sha256": "72f205eec997e91dd9beb70499e810a4e1cda32885b263527b3c10093f474d69",
+        "bytes": 8481
+      },
+      {
+        "source": "graphics/sliding_puzzle/puzzles/kabuto/tiles.png",
+        "target": "graphics/johto/sliding_puzzle/puzzles/kabuto/tiles.png",
+        "sha256": "4a582a440050043d3cc0f88fe69ce92031db9a832a6cc7c86cda64442e851af9",
+        "bytes": 8481
+      },
+      {
+        "source": "graphics/sliding_puzzle/puzzles/omanyte/tiles.png",
+        "target": "graphics/johto/sliding_puzzle/puzzles/omanyte/tiles.png",
+        "sha256": "23227983f47c72d947f5ffac5486eabbce80b91e55e7232d02f3b279b107befc",
+        "bytes": 8481
+      }
+    ]
+  },
+  "adaptations": [
+    "Johto namespaced graphics paths",
+    "raw source art preserved",
+    "runtime empty sentinel uses SPRITE_NONE",
+    "input reads gMain.newKeysRaw without changing options",
+    "palette buffers are fixed 16 entries",
+    "tile sheets pack 16 32x32 frames"
+  ],
+  "assets": {
+    "bg.pal": "e4429f78c52721ae4eb29d5c2fd5408fa7c1f88f3f490cc5227b52560ebaa69d",
+    "bg.png": "d33368f50812c33eb72842f18610fb11f3c8ff230d304c167897f8497811b29c",
+    "cursor.png": "28fef2b6e02b8f61cea49c60a7607fa39cb742dbf7cc468ab8dde5b1acba163b",
+    "cursor_tiles.pal": "a21ab3a3c8240239e47bc5e4152be08c6f0ba64b506d771c96555086f03c62d1",
+    "map.bin": "7c765d62b353a15ca31ef8138ec10f5f277ac9ff1654be3fbe850999141bf903",
+    "puzzles/aerodactyl/tiles.png": "ad00811bfa940a1a90fb290065d5e664c4eff95ce27ed9111856b8f6796ae22b",
+    "puzzles/ho_oh/tiles.png": "72f205eec997e91dd9beb70499e810a4e1cda32885b263527b3c10093f474d69",
+    "puzzles/kabuto/tiles.png": "4a582a440050043d3cc0f88fe69ce92031db9a832a6cc7c86cda64442e851af9",
+    "puzzles/omanyte/tiles.png": "23227983f47c72d947f5ffac5486eabbce80b91e55e7232d02f3b279b107befc"
+  },
+  "limitations": [
+    "Chamber map/event linkage remains subsequent importer work",
+    "Root GBA build and real keypad emulator evidence remain external to this unit"
+  ]
+}
