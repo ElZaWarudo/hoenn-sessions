@@ -15,6 +15,7 @@
 #include "text.h"
 #include "constants/event_object_movement.h"
 #include "constants/items.h"
+#include "constants/johto_berry_plots.h"
 
 static u8 BerryTreeGetNumStagesWatered(struct BerryTree *tree);
 static u8 GetNumStagesWateredByBerryTreeId(u8 id);
@@ -2499,11 +2500,16 @@ void BerryTreeTimeUpdate(s32 minutes)
 
     for (i = 0; i < BERRY_TREES_COUNT; i++)
     {
+        bool32 isJohtoPlot = i >= JOHTO_BERRY_PLOTS_FIRST && i <= JOHTO_BERRY_PLOTS_LAST;
         tree = &gSaveBlock1Ptr->berryTrees[i];
+
+        // Johto crops wait for harvesting; elapsed time never expires a ripe crop.
+        if (isJohtoPlot && (minutes <= 0 || tree->stage == BERRY_STAGE_BERRIES))
+            continue;
 
         if (tree->berry && tree->stage && !tree->stopGrowth && (!OW_BERRY_IMMORTAL || tree->stage != BERRY_STAGE_BERRIES))
         {
-            if ((!OW_BERRY_IMMORTAL) && (minutes >= GetStageDurationByBerryType(tree->berry) * 71))
+            if (!isJohtoPlot && (!OW_BERRY_IMMORTAL) && (minutes >= GetStageDurationByBerryType(tree->berry) * 71))
             {
                 *tree = gBlankBerryTree;
             }
@@ -2512,7 +2518,8 @@ void BerryTreeTimeUpdate(s32 minutes)
                 s32 time = minutes;
 
                 // Check moisture gradient, pests and weeds
-                while (time > 0 && tree->stage != BERRY_STAGE_BERRIES)
+                // Johto has no gardening simulation. Process elapsed growth by stages.
+                while (!isJohtoPlot && time > 0 && tree->stage != BERRY_STAGE_BERRIES)
                 {
                     tree->moistureClock += 1;
                     time -= 1;
@@ -2568,7 +2575,11 @@ void BerryTreeTimeUpdate(s32 minutes)
                     if (!BerryTreeGrow(tree))
                         break;
                     if (tree->stage == BERRY_STAGE_BERRIES)
+                    {
                         tree->minutesUntilNextStage = GetStageDurationByBerryType(tree->berry) * ((tree->mulch == ITEM_TO_MULCH(ITEM_STABLE_MULCH)) ? 6 : 4);
+                        if (isJohtoPlot)
+                            break;
+                    }
                 }
             }
         }

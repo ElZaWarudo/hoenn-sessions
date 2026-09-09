@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "donor": {
+    "revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "path": "src/berry.c",
+    "normalized_sha256": "929c825f72ddfff1d1009ad89b821cf1a6fbe047e299f107915740472db83a5a",
+    "policy_lines": [
+      1055,
+      1101
+    ],
+    "normalization": "UTF-8 decoded, CRLF normalized to LF"
+  },
+  "runtime_plot_ids": [
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109
+  ],
+  "policy": {
+    "ripe": "Preserve until explicit harvest/removal, irrespective of elapsed minutes.",
+    "growing": "Advance production growth stages until first ripe stage; no elapsed-time decay or cycling.",
+    "nonpositive_minutes": "No Johto mutation.",
+    "gardening": "No per-minute moisture, weeds or pests simulation for Johto.",
+    "stop_growth": "Existing host stopGrowth gate preserved.",
+    "host": "All other IDs retain host timer, gardening, decay and OW_BERRY_IMMORTAL behavior."
+  },
+  "host_outside_clock_normalized_sha256": "a70eb2da7149753fca982fad638dddb7ca66d01af794df0fc4eef67e3e06b6bf",
+  "adaptations": [
+    "Johto-only range gate preserves host BerryTreeGrow and host crop policies.",
+    "Stop immediately on maturity to bound work to the remaining growth stages.",
+    "No new save fields, old-save migration or harvest API dependency."
+  ],
+  "verification": {
+    "python": "Source/provenance assertions only; not runtime proof.",
+    "engine_fixture": "test/johto/berry_lifetime.c",
+    "engine_execution": "Owned by root; not executed by implementer."
+  }
+}
