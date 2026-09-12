@@ -39,6 +39,17 @@ TRAINER_CAPACITY = 512
 # Frozen initial allocation, independent of future lexical discovery order.
 INITIAL_COUNTS = {"flags": 539, "vars": 63, "trainers": 284}
 INITIAL_BINDINGS_SHA256 = "7f570138eb10da1801d23ef12d950b38f9d65fcb80af533bd83ab147cd3f1dc4"
+SEALED_COUNTS = {"flags": 614, "vars": 69, "trainers": 412}
+SEALED_BINDINGS_SHA256 = "41d3bfc0ab8ea0e5986690f36236fcf6e6451bfcf3ac2eb0f147cfd031a33aff"
+INITIAL_SELECTED_MAP_COUNT = 239
+INITIAL_SELECTED_SOURCE_COUNT = INITIAL_SELECTED_MAP_COUNT * 2
+# This is the manifest fingerprint recorded by the bootstrapped 239-map
+# ledger.  It is deliberately separate from the current expanded manifest:
+# changing the selected source set is accepted only through the explicit
+# predecessor transition below.
+INITIAL_MANIFEST_SHA256 = "af52f3596252f0ffd0fa14862cb13fafc6fc316a4baeeb5c2f29806b199e91f6"
+EXPANDED_SELECTED_MAP_COUNT = 407
+EXPANDED_LATER_MAP_COUNT = EXPANDED_SELECTED_MAP_COUNT - INITIAL_SELECTED_MAP_COUNT
 
 EXCLUDED_TRAINER_TOKENS = (
     "TRAINER_BATTLE_SET_TRAINER_A",
@@ -150,6 +161,27 @@ def _assert_donor_clean(donor: Path) -> None:
         raise ContentSymbolError("donor selected inputs are dirty: " + status)
 
 
+def _assert_donor_stable(
+    donor: Path,
+    revision: str,
+    tree: str,
+    source_hashes: dict[str, str],
+) -> None:
+    """Reauthenticate the donor after every selected input has been read."""
+    final_revision, final_tree = _git_revision(donor)
+    if ((final_revision, final_tree) != (revision, tree)
+            or final_revision != DONOR_REVISION
+            or final_tree != DONOR_TREE):
+        raise ContentSymbolError("donor revision changed while selected inputs were read")
+    _assert_donor_clean(donor)
+    for relative, expected_hash in source_hashes.items():
+        path = donor / relative
+        if not path.is_file() or _sha256(path) != expected_hash:
+            raise ContentSymbolError(
+                f"donor source changed while selected inputs were read: {relative}"
+            )
+
+
 def _read_definitions(path: Path, prefix: str, relative_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     display_path = relative_path or path.as_posix()
@@ -221,8 +253,16 @@ def _manifest_maps() -> list[dict[str, Any]]:
         raise ContentSymbolError("manifest donor tree differs from pinned corpus")
     selection = manifest.get("selection", {})
     maps = manifest.get("maps")
-    if selection.get("selected_count") != 239 or not isinstance(maps, list) or len(maps) != 239:
-        raise ContentSymbolError("manifest does not contain exactly239 selected maps")
+    selected_count = selection.get("selected_count")
+    later_count = selection.get("later_selected_count")
+    if (selected_count != EXPANDED_SELECTED_MAP_COUNT
+            or selection.get("original_selected_count") != INITIAL_SELECTED_MAP_COUNT
+            or later_count != EXPANDED_LATER_MAP_COUNT
+            or not isinstance(maps, list)
+            or len(maps) != EXPANDED_SELECTED_MAP_COUNT):
+        raise ContentSymbolError(
+            "manifest does not contain the approved 239+168 selected maps"
+        )
     return maps
 
 
@@ -269,6 +309,35 @@ def _source_files(donor: Path, maps: list[dict[str, Any]]) -> tuple[list[dict[st
 
 def _source_hashes(files: Iterable[dict[str, Any]]) -> dict[str, str]:
     return {entry["path"]: entry["sha256"] for entry in files}
+
+
+SOURCE_FILE_FIELDS = ("map", "map_name", "kind", "path", "sha256")
+
+
+def _normalized_source_inventory(source_files: Any) -> list[dict[str, Any]]:
+    """Return the exact ordered source inventory in canonical field order."""
+    if not isinstance(source_files, list):
+        raise ContentSymbolError("selected source inventory must be a list")
+    normalized: list[dict[str, Any]] = []
+    for entry in source_files:
+        if not isinstance(entry, dict) or set(entry) != set(SOURCE_FILE_FIELDS):
+            raise ContentSymbolError("selected source inventory entry is malformed")
+        if (not isinstance(entry["map"], str)
+                or not isinstance(entry["map_name"], str)
+                or entry["kind"] not in ("map_json", "script")
+                or not isinstance(entry["path"], str)
+                or not isinstance(entry["sha256"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])):
+            raise ContentSymbolError("selected source inventory entry is malformed")
+        normalized.append({field: entry[field] for field in SOURCE_FILE_FIELDS})
+    return normalized
+
+
+def _source_inventory_digest(source_files: Any) -> str:
+    normalized = _normalized_source_inventory(source_files)
+    return _sha256_bytes(json.dumps(
+        normalized, sort_keys=True, separators=(",", ":")
+    ).encode())
 
 
 def _record_definitions(path: Path, relative_path: str | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -333,6 +402,101 @@ def _identity_entry(symbol: str, kind: str, ordinal: int, definition: dict[str, 
     return entry
 
 
+def _identity_membership(identities: dict[str, list[dict[str, Any]]]) -> dict[str, list[str]]:
+    """Record the donor-backed identity names independently of saved ordinals."""
+    return {
+        kind: sorted(entry["symbol"] for entry in identities[kind])
+        for kind in ("flags", "vars", "trainers")
+    }
+
+
+def _identity_semantics_digest(identities: dict[str, list[dict[str, Any]]]) -> str:
+    """Attest each identity's donor definition, record, and source references."""
+    semantics = {
+        kind: {
+            entry["symbol"]: {
+                "qualified": entry.get("qualified"),
+                "definition": entry.get("definition"),
+                "record_definition": entry.get("record_definition"),
+                "references": entry.get("references"),
+            }
+            for entry in sorted(identities[kind], key=lambda item: item["symbol"])
+        }
+        for kind in ("flags", "vars", "trainers")
+    }
+    return _sha256_bytes(json.dumps(
+        semantics, sort_keys=True, separators=(",", ":")
+    ).encode())
+
+
+def _identity_semantic_record(entry: dict[str, Any]) -> dict[str, Any]:
+    """Return the donor-derived fields that define an identity's meaning."""
+    return {
+        "qualified": entry.get("qualified"),
+        "definition": entry.get("definition"),
+        "record_definition": entry.get("record_definition"),
+        "references": entry.get("references"),
+    }
+
+
+LEXICAL_COUNT_KEYS = ("flags", "vars", "trainers")
+
+
+def _validate_lexical_counts(value: Any) -> None:
+    if not isinstance(value, dict) or set(value) != set(LEXICAL_COUNT_KEYS):
+        raise ContentSymbolError("lexical counts shape drifted")
+    if any(
+        isinstance(value[key], bool)
+        or not isinstance(value[key], int)
+        or value[key] < 0
+        for key in LEXICAL_COUNT_KEYS
+    ):
+        raise ContentSymbolError("lexical counts values are malformed")
+
+
+def _assert_donor_backed_candidate(candidate: dict[str, Any], donor: str | Path) -> None:
+    """Check candidate identities against a fresh scan of the pinned donor.
+
+    Candidate provenance is useful as an integrity attestation, but it is not
+    an authority: a caller could recalculate it after adding an invented
+    identity.  Rebuilding the selected source inventory and identity evidence
+    from the pinned donor gives append_ledger an independent membership set.
+    """
+    authoritative = build_ledger(donor)
+    if (candidate.get("completeness", {}).get("selected_map_count")
+            != authoritative["completeness"]["selected_map_count"]):
+        raise ContentSymbolError("candidate selected map scope is not donor-backed")
+    if (_normalized_source_inventory(candidate.get("source_files"))
+            != _normalized_source_inventory(authoritative["source_files"])):
+        raise ContentSymbolError("candidate source inventory is not donor-backed")
+    if candidate.get("lexical_counts") != authoritative.get("lexical_counts"):
+        raise ContentSymbolError("candidate lexical counts are not donor-backed")
+    for kind in ("flags", "vars", "trainers"):
+        allowed = {
+            entry["symbol"]: _identity_semantic_record(entry)
+            for entry in authoritative["identities"][kind]
+        }
+        candidate_symbols = {entry["symbol"] for entry in candidate["identities"][kind]}
+        allowed_symbols = set(allowed)
+        if candidate_symbols != allowed_symbols:
+            missing = sorted(allowed_symbols - candidate_symbols)
+            extra = sorted(candidate_symbols - allowed_symbols)
+            raise ContentSymbolError(
+                f"{kind} identity membership is incomplete or invented: "
+                f"missing={missing!r} extra={extra!r}"
+            )
+        for entry in candidate["identities"][kind]:
+            expected = allowed.get(entry["symbol"])
+            if expected is None:
+                raise ContentSymbolError(
+                    f"appended {kind} identity lacks pinned donor membership: {entry['symbol']}"
+                )
+            if _identity_semantic_record(entry) != expected:
+                raise ContentSymbolError(
+                    f"{kind} identity lacks pinned donor semantic evidence: {entry['symbol']}"
+                )
+
+
 def build_ledger(donor: str | Path) -> dict[str, Any]:
     donor_path = Path(donor).resolve()
     revision, tree = _git_revision(donor_path)
@@ -349,6 +513,10 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
         "var": "include/constants/vars.h",
         "trainer": "include/constants/opponents.h",
     }
+    definition_hashes = {
+        relative: _sha256(donor_path / relative)
+        for relative in definition_paths.values()
+    }
     definitions = {
         kind: _read_definitions(donor_path / relative, prefix, relative)
         for kind, (relative, prefix) in {
@@ -357,7 +525,9 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
             "trainer": (definition_paths["trainer"], "TRAINER_"),
         }.items()
     }
-    trainer_records = _record_definitions(donor_path / "src/data/trainers.h", "src/data/trainers.h")
+    trainer_record_path = "src/data/trainers.h"
+    trainer_record_hash = _sha256(donor_path / trainer_record_path)
+    trainer_records = _record_definitions(donor_path / trainer_record_path, trainer_record_path)
     selected = {
         kind: sorted(
             symbol for symbol in references if symbol.startswith(prefix)
@@ -392,7 +562,7 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
                 record_definition = _definition_for(symbol, trainer_records, "trainer record")
             entries.append(_identity_entry(
                 symbol, kind, ordinal, definition, references[symbol],
-                _sha256(donor_path / definition_paths[kind]), record_definition
+                definition_hashes[definition_paths[kind]], record_definition
             ))
         identities[kind + "s"] = entries
 
@@ -418,7 +588,10 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
         raise ContentSymbolError("generated names collide with foundation: " + ", ".join(sorted(collisions)))
 
     manifest_bytes = MANIFEST_PATH.read_bytes()
-    return {
+    selected_map_count = len(maps)
+    if selected_map_count != EXPANDED_SELECTED_MAP_COUNT:
+        raise ContentSymbolError("only the approved expanded selected-map manifest may be emitted")
+    ledger = {
         "schema_version": 1,
         "ledger_version": 1,
         "authority": {
@@ -431,7 +604,9 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
         },
         "completeness": {
             "scope": "selected-lexical-only",
-            "selected_map_count": 239,
+            "selected_map_count": selected_map_count,
+            "original_selected_map_count": INITIAL_SELECTED_MAP_COUNT,
+            "later_selected_map_count": EXPANDED_LATER_MAP_COUNT,
             "source_classes": ["map.json", "scripts.inc"],
             "pending_transitive_closure": PENDING_CLOSURE,
         },
@@ -443,6 +618,23 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
             "manifest_sha256": _sha256_bytes(manifest_bytes),
             "manifest_source_revision": MANIFEST_SOURCE_REVISION,
             "selected_source_count": len(source_files),
+            "source_inventory_sha256": _source_inventory_digest(source_files),
+            "identity_membership": _identity_membership(identities),
+            "identity_semantics_sha256": _identity_semantics_digest(identities),
+            "predecessor_transition": {
+                "kind": "validated_append_only_manifest_expansion",
+                "from": {
+                    "selected_map_count": INITIAL_SELECTED_MAP_COUNT,
+                    "selected_source_count": INITIAL_SELECTED_SOURCE_COUNT,
+                    "manifest_sha256": INITIAL_MANIFEST_SHA256,
+                    "initial_bindings_sha256": INITIAL_BINDINGS_SHA256,
+                },
+                "to": {
+                    "selected_map_count": EXPANDED_SELECTED_MAP_COUNT,
+                    "selected_source_count": EXPANDED_SELECTED_MAP_COUNT * 2,
+                    "added_map_count": EXPANDED_LATER_MAP_COUNT,
+                },
+            },
         },
         "capacities": {"flags": FLAG_CAPACITY, "vars": VAR_CAPACITY, "trainers": TRAINER_CAPACITY},
         "lexical_counts": lexical_counts,
@@ -452,6 +644,17 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
         "source_files": source_files,
         "identities": identities,
     }
+    _assert_donor_stable(
+        donor_path,
+        revision,
+        tree,
+        {
+            **source_hashes,
+            **definition_hashes,
+            trainer_record_path: trainer_record_hash,
+        },
+    )
+    return ledger
 
 
 def _canonical_json(value: Any) -> str:
@@ -476,6 +679,56 @@ def _validate_entries(entries: Any, kind: str, capacity: int) -> None:
             raise ContentSymbolError(f"{kind} runtime identity/capacity mismatch: {symbol}")
 
 
+def _validate_scope_metadata(value: dict[str, Any]) -> None:
+    """Validate the selected-source scope without treating it as an ID ledger.
+
+    The first ledger was bootstrapped from 239 maps.  The approved 407-map
+    candidate is a deliberate append-only expansion, so its changed manifest
+    fingerprint is carried in an explicit predecessor transition rather than
+    being silently accepted as ordinary provenance drift.
+    """
+    completeness = value.get("completeness", {})
+    provenance = value.get("provenance", {})
+    selected_map_count = completeness.get("selected_map_count")
+    selected_source_count = provenance.get("selected_source_count")
+    if selected_map_count not in (INITIAL_SELECTED_MAP_COUNT, EXPANDED_SELECTED_MAP_COUNT):
+        raise ContentSymbolError("unsupported selected map scope")
+    if selected_source_count != selected_map_count * 2:
+        raise ContentSymbolError("selected source count does not match map scope")
+    source_files = value.get("source_files")
+    if not isinstance(source_files, list) or len(source_files) != selected_source_count:
+        raise ContentSymbolError("selected source inventory does not match map scope")
+    if provenance.get("source_inventory_sha256") != _source_inventory_digest(source_files):
+        raise ContentSymbolError("selected source inventory attestation drifted")
+    if selected_map_count == INITIAL_SELECTED_MAP_COUNT:
+        if ("original_selected_map_count" in completeness
+                or "later_selected_map_count" in completeness
+                or "predecessor_transition" in provenance):
+            raise ContentSymbolError("initial ledger cannot carry an expansion transition")
+        if provenance.get("manifest_sha256") != INITIAL_MANIFEST_SHA256:
+            raise ContentSymbolError("initial ledger manifest provenance drifted")
+        return
+    if (completeness.get("original_selected_map_count") != INITIAL_SELECTED_MAP_COUNT
+            or completeness.get("later_selected_map_count") != EXPANDED_LATER_MAP_COUNT):
+        raise ContentSymbolError("expanded ledger map transition metadata drifted")
+    expected_transition = {
+        "kind": "validated_append_only_manifest_expansion",
+        "from": {
+            "selected_map_count": INITIAL_SELECTED_MAP_COUNT,
+            "selected_source_count": INITIAL_SELECTED_SOURCE_COUNT,
+            "manifest_sha256": INITIAL_MANIFEST_SHA256,
+            "initial_bindings_sha256": INITIAL_BINDINGS_SHA256,
+        },
+        "to": {
+            "selected_map_count": EXPANDED_SELECTED_MAP_COUNT,
+            "selected_source_count": EXPANDED_SELECTED_MAP_COUNT * 2,
+            "added_map_count": EXPANDED_LATER_MAP_COUNT,
+        },
+    }
+    if provenance.get("predecessor_transition") != expected_transition:
+        raise ContentSymbolError("expanded ledger predecessor transition is not validated")
+
+
 def validate_ledger(value: Any, *, allocated: bool = True) -> None:
     if not isinstance(value, dict) or value.get("schema_version") != 1:
         raise ContentSymbolError("unsupported content ledger schema")
@@ -483,6 +736,8 @@ def validate_ledger(value: Any, *, allocated: bool = True) -> None:
         raise ContentSymbolError("ledger must state selected-lexical-only scope")
     if value.get("completeness", {}).get("pending_transitive_closure") != PENDING_CLOSURE:
         raise ContentSymbolError("mandatory transitive closure metadata drifted")
+    _validate_scope_metadata(value)
+    _validate_lexical_counts(value.get("lexical_counts"))
     provenance = value.get("provenance", {})
     if (provenance.get("repository") != DONOR_REPOSITORY
             or provenance.get("donor_revision") != DONOR_REVISION
@@ -494,6 +749,12 @@ def validate_ledger(value: Any, *, allocated: bool = True) -> None:
     identities = value.get("identities", {})
     for kind, capacity in (("flag", FLAG_CAPACITY), ("var", VAR_CAPACITY), ("trainer", TRAINER_CAPACITY)):
         _validate_entries(identities.get(kind + "s"), kind, capacity)
+    expected_membership = _identity_membership(identities)
+    provenance_membership = value.get("provenance", {}).get("identity_membership")
+    if provenance_membership != expected_membership:
+        raise ContentSymbolError("donor-backed identity membership drifted")
+    if value.get("provenance", {}).get("identity_semantics_sha256") != _identity_semantics_digest(identities):
+        raise ContentSymbolError("donor-backed identity semantics drifted")
     allocated_counts = value.get("allocated_counts")
     expected_counts = {kind: len(identities[kind]) for kind in ("flags", "vars", "trainers")}
     if allocated_counts != expected_counts:
@@ -521,16 +782,127 @@ def validate_ledger(value: Any, *, allocated: bool = True) -> None:
         digest = _sha256_bytes(json.dumps(bindings, sort_keys=True, separators=(",", ":")).encode())
         if digest != INITIAL_BINDINGS_SHA256:
             raise ContentSymbolError("initial allocated identity bindings changed")
+        if value["completeness"]["selected_map_count"] == EXPANDED_SELECTED_MAP_COUNT:
+            sealed_bindings = {
+                kind: [[entry["symbol"], entry["ordinal"], entry["runtime_id"]]
+                       for entry in identities[kind][:count]]
+                for kind, count in SEALED_COUNTS.items()
+            }
+            sealed_digest = _sha256_bytes(json.dumps(
+                sealed_bindings, sort_keys=True, separators=(",", ":")
+            ).encode())
+            if sealed_digest != SEALED_BINDINGS_SHA256:
+                raise ContentSymbolError("sealed allocated identity bindings changed")
 
 
-def append_ledger(existing: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+def append_ledger(
+    existing: dict[str, Any],
+    candidate: dict[str, Any],
+    donor: str | Path | None = None,
+) -> dict[str, Any]:
     """Apply a source candidate while preserving every saved identity."""
     validate_ledger(existing)
     validate_ledger(candidate, allocated=False)
-    for field in ("capacities", "aliases", "completeness", "provenance", "excluded_trainer_tokens"):
+    candidate_symbols = {
+        kind: {entry["symbol"] for entry in candidate["identities"][kind]}
+        for kind in ("flags", "vars", "trainers")
+    }
+    existing_symbols = {
+        kind: {entry["symbol"] for entry in existing["identities"][kind]}
+        for kind in ("flags", "vars", "trainers")
+    }
+    has_appended_identity = any(
+        candidate_symbols[kind] - existing_symbols[kind]
+        for kind in ("flags", "vars", "trainers")
+    )
+    same_scope = (
+        existing.get("completeness", {}).get("selected_map_count")
+        == candidate.get("completeness", {}).get("selected_map_count")
+    )
+    semantic_records_changed = (
+        _identity_semantics_digest(existing["identities"])
+        != _identity_semantics_digest(candidate["identities"])
+    )
+    semantic_attestation_changed = (
+        existing.get("provenance", {}).get("identity_semantics_sha256")
+        != candidate.get("provenance", {}).get("identity_semantics_sha256")
+    )
+    lexical_counts_changed = existing.get("lexical_counts") != candidate.get("lexical_counts")
+    if donor is None and not same_scope:
+        raise ContentSymbolError(
+            "pinned donor authentication is required for selected-map scope transitions"
+        )
+    if donor is None and has_appended_identity:
+        raise ContentSymbolError(
+            "pinned donor is required to validate appended identity membership"
+        )
+    if donor is None and same_scope and (
+        semantic_records_changed or semantic_attestation_changed or lexical_counts_changed
+    ):
+        raise ContentSymbolError(
+            "pinned donor authentication is required for same-scope semantic or lexical changes"
+        )
+    if donor is not None:
+        _assert_donor_backed_candidate(candidate, donor)
+    for field in ("capacities", "aliases", "excluded_trainer_tokens"):
         if existing.get(field) != candidate.get(field):
             raise ContentSymbolError(f"append-only {field} provenance drift")
+    for field in ("repository", "donor_revision", "donor_tree", "manifest_path",
+                  "manifest_source_revision"):
+        if existing.get("provenance", {}).get(field) != candidate.get("provenance", {}).get(field):
+            raise ContentSymbolError(f"append-only provenance drift: {field}")
+    existing_scope = existing["completeness"]["selected_map_count"]
+    candidate_scope = candidate["completeness"]["selected_map_count"]
+    if existing_scope == candidate_scope:
+        if (_normalized_source_inventory(existing.get("source_files"))
+                != _normalized_source_inventory(candidate.get("source_files"))):
+            raise ContentSymbolError("append-only source inventory drift")
+        if existing.get("completeness") != candidate.get("completeness"):
+            raise ContentSymbolError("append-only completeness provenance drift")
+        dynamic_attestations = {"identity_membership", "identity_semantics_sha256"}
+        existing_provenance = {
+            key: value for key, value in existing.get("provenance", {}).items()
+            if key not in dynamic_attestations
+        }
+        candidate_provenance = {
+            key: value for key, value in candidate.get("provenance", {}).items()
+            if key not in dynamic_attestations
+        }
+        if existing_provenance != candidate_provenance:
+            raise ContentSymbolError("append-only provenance drift")
+    elif (existing_scope, candidate_scope) == (
+            INITIAL_SELECTED_MAP_COUNT, EXPANDED_SELECTED_MAP_COUNT):
+        transition = candidate["provenance"]["predecessor_transition"]
+        expected_from = transition["from"]
+        if (existing["provenance"].get("manifest_sha256") != expected_from["manifest_sha256"]
+                or existing["provenance"].get("selected_source_count")
+                != expected_from["selected_source_count"]):
+            raise ContentSymbolError("append-only predecessor manifest does not match")
+        if existing.get("completeness", {}).get("selected_map_count") != expected_from["selected_map_count"]:
+            raise ContentSymbolError("append-only predecessor map scope does not match")
+        if _sha256(MANIFEST_PATH) != candidate["provenance"].get("manifest_sha256"):
+            raise ContentSymbolError("expanded manifest provenance does not match selected source")
+        old_files = existing.get("source_files", [])
+        if (_normalized_source_inventory(candidate.get("source_files", []))[:len(old_files)]
+                != _normalized_source_inventory(old_files)):
+            raise ContentSymbolError("expanded source selection changed the predecessor prefix")
+    else:
+        raise ContentSymbolError("unsupported content ledger scope transition")
     result = json.loads(json.dumps(existing))
+    if existing_scope != candidate_scope:
+        # The identity prefix remains owned by the persisted predecessor, but
+        # the selected-source metadata advances to the validated candidate.
+        result["completeness"] = json.loads(json.dumps(candidate["completeness"]))
+        result["provenance"] = json.loads(json.dumps(candidate["provenance"]))
+    else:
+        # New donor-backed identities may be discovered within an unchanged
+        # source scope; refresh only the attestations that cover that set.
+        result["provenance"]["identity_membership"] = json.loads(json.dumps(
+            candidate["provenance"]["identity_membership"]
+        ))
+        result["provenance"]["identity_semantics_sha256"] = candidate["provenance"][
+            "identity_semantics_sha256"
+        ]
     for kind in ("flags", "vars", "trainers"):
         old_entries = existing["identities"][kind]
         new_entries = {entry["symbol"]: entry for entry in candidate["identities"][kind]}
@@ -549,6 +921,10 @@ def append_ledger(existing: dict[str, Any], candidate: dict[str, Any]) -> dict[s
         for entry in candidate["identities"][kind]:
             if entry["symbol"] in old_symbols:
                 continue
+            if entry["symbol"] not in candidate["provenance"]["identity_membership"][kind]:
+                raise ContentSymbolError(
+                    f"appended {kind} identity lacks donor-backed membership: {entry['symbol']}"
+                )
             appended = json.loads(json.dumps(entry))
             appended["ordinal"] = next_ordinal
             start = {"flags": FLAG_START, "vars": VAR_START, "trainers": TRAINER_START}[kind]
@@ -565,6 +941,9 @@ def append_ledger(existing: dict[str, Any], candidate: dict[str, Any]) -> dict[s
 
 
 def render_header(ledger: dict[str, Any]) -> str:
+    # build_ledger returns a scanner-ordered candidate; append_ledger is the
+    # operation that assigns saved ordinals before a checked-in header is
+    # rendered.
     validate_ledger(ledger)
     lines = [
         "/* Generated by tools/johto/content_symbols.py. */",
@@ -636,14 +1015,14 @@ def main(argv: list[str] | None = None) -> int:
             if not OUTPUT_PATH.exists():
                 raise ContentSymbolError("append-update requires a bootstrapped ledger")
             existing = _load_json(OUTPUT_PATH)
-            updated = append_ledger(existing, candidate)
+            updated = append_ledger(existing, candidate, args.donor)
             _write(OUTPUT_PATH, _canonical_json(updated))
             _write(HEADER_PATH, render_header(updated))
         else:
             if not OUTPUT_PATH.exists() or not HEADER_PATH.exists():
                 raise ContentSymbolError("checked-in ledger or generated header is missing")
             existing = _load_json(OUTPUT_PATH)
-            expected = append_ledger(existing, candidate)
+            expected = append_ledger(existing, candidate, args.donor)
             if (_canonical_json(existing) != _canonical_json(expected)
                     or HEADER_PATH.read_text(encoding="utf-8") != render_header(expected)):
                 raise ContentSymbolError("checked-in content ledger or header is stale")
