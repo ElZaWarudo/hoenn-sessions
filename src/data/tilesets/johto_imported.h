@@ -2244,3 +2244,1057 @@ const struct Tileset gTileset_JohtoImported_ssaqua =
     .metatileAttributes = (const u16 *)gMetatileAttributes_JohtoImported_ssaqua,
     .callback = NULL,
 };
+
+const u32 gTilesetTiles_KantoLaterImported_Cave_Green[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cave_green/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Cave_Green[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Cave_Green[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_green/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Cave_Green[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cave_green/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Cave_Green =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Cave_Green,
+    .palettes = gTilesetPalettes_KantoLaterImported_Cave_Green,
+    .metatiles = gMetatiles_KantoLaterImported_Cave_Green,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Cave_Green,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Cave_MtMoon[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Cave_MtMoon[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Cave_MtMoon[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Cave_MtMoon[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cave_mt_moon/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Cave_MtMoon =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Cave_MtMoon,
+    .palettes = gTilesetPalettes_KantoLaterImported_Cave_MtMoon,
+    .metatiles = gMetatiles_KantoLaterImported_Cave_MtMoon,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Cave_MtMoon,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Cave_Sandy[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cave_sandy/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Cave_Sandy[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Cave_Sandy[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cave_sandy/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Cave_Sandy[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cave_sandy/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Cave_Sandy =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Cave_Sandy,
+    .palettes = gTilesetPalettes_KantoLaterImported_Cave_Sandy,
+    .metatiles = gMetatiles_KantoLaterImported_Cave_Sandy,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Cave_Sandy,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_CeladonApartments[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/celadon_apartments/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_CeladonApartments[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_CeladonApartments[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_apartments/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_CeladonApartments[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/celadon_apartments/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_CeladonApartments =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_CeladonApartments,
+    .palettes = gTilesetPalettes_KantoLaterImported_CeladonApartments,
+    .metatiles = gMetatiles_KantoLaterImported_CeladonApartments,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_CeladonApartments,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_CeladonCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/celadon_city/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_CeladonCity[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_CeladonCity[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/celadon_city/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_CeladonCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/celadon_city/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_CeladonCity =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_CeladonCity,
+    .palettes = gTilesetPalettes_KantoLaterImported_CeladonCity,
+    .metatiles = gMetatiles_KantoLaterImported_CeladonCity,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_CeladonCity,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_CeruleanCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cerulean_city/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_CeruleanCity[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_CeruleanCity[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_CeruleanCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cerulean_city/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_CeruleanCity =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_CeruleanCity,
+    .palettes = gTilesetPalettes_KantoLaterImported_CeruleanCity,
+    .metatiles = gMetatiles_KantoLaterImported_CeruleanCity,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_CeruleanCity,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_CeruleanCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_CeruleanCity_Gym[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_CeruleanCity_Gym[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_CeruleanCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cerulean_city_gym/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_CeruleanCity_Gym =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_CeruleanCity_Gym,
+    .palettes = gTilesetPalettes_KantoLaterImported_CeruleanCity_Gym,
+    .metatiles = gMetatiles_KantoLaterImported_CeruleanCity_Gym,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_CeruleanCity_Gym,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_CyclingRoad[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cycling_road/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_CyclingRoad[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_CyclingRoad[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/cycling_road/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_CyclingRoad[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cycling_road/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_CyclingRoad =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_CyclingRoad,
+    .palettes = gTilesetPalettes_KantoLaterImported_CyclingRoad,
+    .metatiles = gMetatiles_KantoLaterImported_CyclingRoad,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_CyclingRoad,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Fuchsia[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/fuchsia/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Fuchsia[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Fuchsia[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Fuchsia[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/fuchsia/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Fuchsia =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Fuchsia,
+    .palettes = gTilesetPalettes_KantoLaterImported_Fuchsia,
+    .metatiles = gMetatiles_KantoLaterImported_Fuchsia,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Fuchsia,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_FuchsiaCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_FuchsiaCity_Gym[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_FuchsiaCity_Gym[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_FuchsiaCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/fuchsia_city_gym/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_FuchsiaCity_Gym =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_FuchsiaCity_Gym,
+    .palettes = gTilesetPalettes_KantoLaterImported_FuchsiaCity_Gym,
+    .metatiles = gMetatiles_KantoLaterImported_FuchsiaCity_Gym,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_FuchsiaCity_Gym,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_General[] = INCBIN_U32("data/johto/scenery/data/tilesets/primary/general/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_General[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_General[] = INCBIN_U16("data/johto/scenery/data/tilesets/primary/general/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_General[] = INCBIN_U32("data/johto/scenery/data/tilesets/primary/general/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_General =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = FALSE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_General,
+    .palettes = gTilesetPalettes_KantoLaterImported_General,
+    .metatiles = gMetatiles_KantoLaterImported_General,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_General,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_HallOfFame[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/hall_of_fame/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_HallOfFame[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_HallOfFame[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/hall_of_fame/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_HallOfFame[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/hall_of_fame/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_HallOfFame =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_HallOfFame,
+    .palettes = gTilesetPalettes_KantoLaterImported_HallOfFame,
+    .metatiles = gMetatiles_KantoLaterImported_HallOfFame,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_HallOfFame,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_IndigoPlateau[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/indigo_plateau/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_IndigoPlateau[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_IndigoPlateau[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/indigo_plateau/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_IndigoPlateau[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/indigo_plateau/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_IndigoPlateau =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_IndigoPlateau,
+    .palettes = gTilesetPalettes_KantoLaterImported_IndigoPlateau,
+    .metatiles = gMetatiles_KantoLaterImported_IndigoPlateau,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_IndigoPlateau,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_KantoMart[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/kanto_mart/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_KantoMart[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_KantoMart[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/kanto_mart/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_KantoMart[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/kanto_mart/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_KantoMart =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_KantoMart,
+    .palettes = gTilesetPalettes_KantoLaterImported_KantoMart,
+    .metatiles = gMetatiles_KantoLaterImported_KantoMart,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_KantoMart,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Kanto_Building[] = INCBIN_U32("data/johto/scenery/data/tilesets/primary/kanto_building/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Kanto_Building[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Kanto_Building[] = INCBIN_U16("data/johto/scenery/data/tilesets/primary/kanto_building/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Kanto_Building[] = INCBIN_U32("data/johto/scenery/data/tilesets/primary/kanto_building/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Kanto_Building =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = FALSE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Kanto_Building,
+    .palettes = gTilesetPalettes_KantoLaterImported_Kanto_Building,
+    .metatiles = gMetatiles_KantoLaterImported_Kanto_Building,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Kanto_Building,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Lavaridge[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/lavaridge/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Lavaridge[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Lavaridge[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavaridge/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Lavaridge[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/lavaridge/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Lavaridge =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Lavaridge,
+    .palettes = gTilesetPalettes_KantoLaterImported_Lavaridge,
+    .metatiles = gMetatiles_KantoLaterImported_Lavaridge,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Lavaridge,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_LavenderTown[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/lavender_town/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_LavenderTown[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_LavenderTown[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/lavender_town/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_LavenderTown[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/lavender_town/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_LavenderTown =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_LavenderTown,
+    .palettes = gTilesetPalettes_KantoLaterImported_LavenderTown,
+    .metatiles = gMetatiles_KantoLaterImported_LavenderTown,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_LavenderTown,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Museum[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/museum/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Museum[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Museum[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/museum/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Museum[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/museum/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Museum =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Museum,
+    .palettes = gTilesetPalettes_KantoLaterImported_Museum,
+    .metatiles = gMetatiles_KantoLaterImported_Museum,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Museum,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_PalletTown[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/pallet_town/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_PalletTown[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_PalletTown[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pallet_town/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_PalletTown[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/pallet_town/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_PalletTown =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_PalletTown,
+    .palettes = gTilesetPalettes_KantoLaterImported_PalletTown,
+    .metatiles = gMetatiles_KantoLaterImported_PalletTown,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_PalletTown,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_PewterCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/pewter_city/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_PewterCity[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_PewterCity[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pewter_city/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_PewterCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/pewter_city/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_PewterCity =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_PewterCity,
+    .palettes = gTilesetPalettes_KantoLaterImported_PewterCity,
+    .metatiles = gMetatiles_KantoLaterImported_PewterCity,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_PewterCity,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_PokemonLeague[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/pokemon_league/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_PokemonLeague[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_PokemonLeague[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/pokemon_league/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_PokemonLeague[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/pokemon_league/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_PokemonLeague =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_PokemonLeague,
+    .palettes = gTilesetPalettes_KantoLaterImported_PokemonLeague,
+    .metatiles = gMetatiles_KantoLaterImported_PokemonLeague,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_PokemonLeague,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_SaffronCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/saffron_city/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_SaffronCity[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_SaffronCity[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_SaffronCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/saffron_city/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_SaffronCity =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_SaffronCity,
+    .palettes = gTilesetPalettes_KantoLaterImported_SaffronCity,
+    .metatiles = gMetatiles_KantoLaterImported_SaffronCity,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SaffronCity,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_SaffronCity_FightingDojoVIP[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_SaffronCity_FightingDojoVIP[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_SaffronCity_FightingDojoVIP[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_SaffronCity_FightingDojoVIP[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/saffron_city_dojo_vip/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_SaffronCity_FightingDojoVIP =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_SaffronCity_FightingDojoVIP,
+    .palettes = gTilesetPalettes_KantoLaterImported_SaffronCity_FightingDojoVIP,
+    .metatiles = gMetatiles_KantoLaterImported_SaffronCity_FightingDojoVIP,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SaffronCity_FightingDojoVIP,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_SaffronCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_SaffronCity_Gym[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_SaffronCity_Gym[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_SaffronCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/saffron_city_gym/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_SaffronCity_Gym =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_SaffronCity_Gym,
+    .palettes = gTilesetPalettes_KantoLaterImported_SaffronCity_Gym,
+    .metatiles = gMetatiles_KantoLaterImported_SaffronCity_Gym,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SaffronCity_Gym,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_SeaCottage[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/sea_cottage/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_SeaCottage[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_SeaCottage[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/sea_cottage/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_SeaCottage[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/sea_cottage/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_SeaCottage =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_SeaCottage,
+    .palettes = gTilesetPalettes_KantoLaterImported_SeaCottage,
+    .metatiles = gMetatiles_KantoLaterImported_SeaCottage,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SeaCottage,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_SilphCo[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/silph_co/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_SilphCo[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_SilphCo[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/silph_co/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_SilphCo[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/silph_co/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_SilphCo =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_SilphCo,
+    .palettes = gTilesetPalettes_KantoLaterImported_SilphCo,
+    .metatiles = gMetatiles_KantoLaterImported_SilphCo,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SilphCo,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_SoulHouse[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/soul_house/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_SoulHouse[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_SoulHouse[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/soul_house/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_SoulHouse[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/soul_house/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_SoulHouse =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_SoulHouse,
+    .palettes = gTilesetPalettes_KantoLaterImported_SoulHouse,
+    .metatiles = gMetatiles_KantoLaterImported_SoulHouse,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SoulHouse,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_Vermilion[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/vermilion/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_Vermilion[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_Vermilion[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_Vermilion[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/vermilion/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_Vermilion =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_Vermilion,
+    .palettes = gTilesetPalettes_KantoLaterImported_Vermilion,
+    .metatiles = gMetatiles_KantoLaterImported_Vermilion,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Vermilion,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_VermilionCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_VermilionCity_Gym[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_VermilionCity_Gym[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_VermilionCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/vermilion_city_gym/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_VermilionCity_Gym =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_VermilionCity_Gym,
+    .palettes = gTilesetPalettes_KantoLaterImported_VermilionCity_Gym,
+    .metatiles = gMetatiles_KantoLaterImported_VermilionCity_Gym,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_VermilionCity_Gym,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_ViridianCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_ViridianCity_Gym[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_ViridianCity_Gym[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_ViridianCity_Gym[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/viridian_city_gym/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_ViridianCity_Gym =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_ViridianCity_Gym,
+    .palettes = gTilesetPalettes_KantoLaterImported_ViridianCity_Gym,
+    .metatiles = gMetatiles_KantoLaterImported_ViridianCity_Gym,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_ViridianCity_Gym,
+    .callback = NULL,
+};
+
+const u32 gTilesetTiles_KantoLaterImported_ViridianForest[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/viridian_forest/tiles.4bpp.fastSmol");
+const u16 ALIGNED(4) gTilesetPalettes_KantoLaterImported_ViridianForest[][16] =
+{
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/00.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/01.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/02.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/03.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/04.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/05.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/06.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/07.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/08.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/09.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/10.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/11.gbapal"),
+    INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/palettes/12.gbapal"),
+};
+const u16 gMetatiles_KantoLaterImported_ViridianForest[] = INCBIN_U16("data/johto/scenery/data/tilesets/secondary/viridian_forest/metatiles.bin");
+const u32 gMetatileAttributes_KantoLaterImported_ViridianForest[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/viridian_forest/metatile_attributes.bin");
+
+const struct Tileset gTileset_KantoLaterImported_ViridianForest =
+{
+    .isCompressed = TRUE,
+    .swapPalettes = 0,
+    .isSecondary = TRUE,
+    .lightPalettes = 0,
+    .customLightColor = 0,
+    .tiles = gTilesetTiles_KantoLaterImported_ViridianForest,
+    .palettes = gTilesetPalettes_KantoLaterImported_ViridianForest,
+    .metatiles = gMetatiles_KantoLaterImported_ViridianForest,
+    .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_ViridianForest,
+    .callback = NULL,
+};
