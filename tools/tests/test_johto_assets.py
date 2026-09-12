@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import struct
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from tools.johto import import_region_assets as assets
 
 
 DONOR = Path(os.environ["JOHTO_DONOR"]) if os.environ.get("JOHTO_DONOR") else None
+ORIGINAL_PREFIX_SHA256 = "165b842ab4d4a341a549cbac3e89c613c64253b8b528374738f21eb6b3739f10"
 
 
 class AssetFormatTests(unittest.TestCase):
@@ -40,6 +42,19 @@ class AssetFormatTests(unittest.TestCase):
             (root / "border.bin").write_bytes(b"\x00" * 6)
             with self.assertRaisesRegex(assets.AssetError, "border"):
                 assets.validate_layout_assets(root, layout, 640, 1)
+            (root / "border.bin").write_bytes(struct.pack("<HHHH", 0, 641, 0, 0))
+            with self.assertRaisesRegex(assets.AssetError, "secondary tile index"):
+                assets.validate_layout_assets(root, layout, 640, 1)
+            (root / "map.bin").write_bytes(struct.pack("<H", 512))
+            (root / "border.bin").write_bytes(b"\x00" * 8)
+            with self.assertRaisesRegex(assets.AssetError, "primary tile index"):
+                assets.validate_layout_assets(root, layout, 512, 1)
+            (root / "map.bin").write_bytes(struct.pack("<H", 0))
+            with self.assertRaisesRegex(assets.AssetError, "unsupported primary"):
+                assets.validate_layout_assets(root, layout, 640, 1, {0}, set())
+            (root / "border.bin").write_bytes(struct.pack("<HHHH", 640, 0, 0, 0))
+            with self.assertRaisesRegex(assets.AssetError, "unsupported secondary"):
+                assets.validate_layout_assets(root, layout, 640, 1, set(), {0})
             for path in ("../map.bin", str(root / "map.bin")):
                 with self.assertRaises(assets.AssetError):
                     assets.safe_relative(path)
@@ -77,10 +92,77 @@ class AssetCorpusTests(unittest.TestCase):
     def test_full_manifest_matches_selection_and_remains_pending_runtime(self):
         self.assertEqual(self.manifest, assets.build_manifest(DONOR))
         self.assertEqual(self.manifest["selection"],
-                         {"layout_count": 239, "tileset_count": 66, "asset_count": 1534})
+                         {"layout_count": 407, "tileset_count": 97, "asset_count": 2366})
         self.assertEqual(len(self.mismatches), 22)
         self.assertTrue(all(not entry["runtime_ready"] for entry in self.manifest["tilesets"]))
+        self.assertFalse(self.manifest["runtime_ready"])
+        self.assertEqual(len(self.manifest["layouts"]), 407)
+        self.assertEqual(len(self.manifest["tilesets"]), 97)
+        self.assertEqual(sum(len(item["assets"]) for item in self.manifest["layouts"]), 814)
+        self.assertEqual(sum(len(item["assets"]) for item in self.manifest["tilesets"]), 1552)
         self.assertEqual(json.loads(assets.OUTPUT_MANIFEST.read_text()), self.manifest)
+
+    def test_original_prefix_and_later_target_namespaces_are_stable(self):
+        prefix = assets.canonical_json({
+            "layouts": self.manifest["layouts"][:239],
+            "tilesets": self.manifest["tilesets"][:66],
+        })
+        self.assertEqual(assets.sha256(prefix.encode()), ORIGINAL_PREFIX_SHA256)
+        self.assertEqual(
+            [item["symbol"] for item in self.manifest["tilesets"][:66]],
+            sorted(item["symbol"] for item in self.manifest["tilesets"][:66]),
+        )
+        later_layouts = self.manifest["layouts"][239:]
+        self.assertEqual(len(later_layouts), 168)
+        self.assertEqual(
+            [item["target_layout"] for item in later_layouts],
+            [item["identity_namespace"]["layout"]
+             for item in json.loads((assets.REGION_MANIFEST).read_text())["maps"][239:]],
+        )
+        later_tilesets = self.manifest["tilesets"][66:]
+        self.assertEqual(len(later_tilesets), 31)
+        self.assertEqual(
+            [item["symbol"] for item in later_tilesets],
+            sorted(item["symbol"] for item in later_tilesets),
+        )
+        self.assertTrue(all(item["symbol"].startswith("gTileset_KantoLaterImported_")
+                            for item in later_tilesets))
+        self.assertTrue(all(item["source_symbol"].startswith("gTileset_")
+                            for item in later_tilesets))
+        source_to_target = {
+            item.get("source_symbol", item["symbol"]): item["symbol"]
+            for item in self.manifest["tilesets"]
+        }
+        for layout in later_layouts:
+            for source_field, target_field in (
+                ("primary_tileset", "target_primary_tileset"),
+                ("secondary_tileset", "target_secondary_tileset"),
+            ):
+                source = layout[source_field]
+                if source in source_to_target and source in {
+                    item["symbol"] for item in self.manifest["tilesets"][:66]
+                }:
+                    expected_target = "gTileset_JohtoImported_" + source.removeprefix("gTileset_")
+                else:
+                    expected_target = "gTileset_KantoLaterImported_" + source.removeprefix("gTileset_")
+                self.assertEqual(layout[target_field], expected_target)
+
+    def test_general_table_and_readiness_gates_are_explicit(self):
+        general = next(item for item in self.manifest["tilesets"]
+                       if item["symbol"] == "gTileset_KantoLaterImported_General")
+        self.assertEqual(general["kind"], "primary")
+        self.assertEqual(general["assets"][1]["metatile_count"], 512)
+        self.assertEqual(general["assets"][2]["source_size"], 1024)
+        self.assertEqual(self.manifest["conversion"]["primary_metatile_boundary"], 640)
+        self.assertEqual(self.manifest["conversion"]["general_primary_metatile_count"], 512)
+        pending = self.manifest["runtime_readiness"]["pending_general_layouts"]
+        self.assertEqual({item["source_layout"] for item in pending}, {
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+        })
+        self.assertTrue(all(not self.manifest["runtime_readiness"]["ready"]
+                            and item["pending"] for item in pending))
 
     def test_symbolic_behavior_mapping_does_not_reuse_conflicting_host_meanings(self):
         for source, target in ((0xA1, 0xF0), (0xEF, 0xF1), (0xA3, 0xF2),
@@ -119,6 +201,28 @@ class AssetCorpusTests(unittest.TestCase):
                 self.assertEqual(assets.main(["--donor", str(DONOR), "--check"]), 1)
                 self.assertEqual(target.read_bytes(), b"{}\n")
 
+    def test_write_accepts_only_the_exact_predecessor_or_intended_output(self):
+        predecessor = subprocess.check_output(
+            ["git", "show", "HEAD:data/johto/asset_manifest.json"],
+            cwd=assets.ROOT,
+        )
+        expected_manifest = {"selection": {"layout_count": 0, "tileset_count": 0}}
+        expected = assets.canonical_json(expected_manifest).encode()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "asset_manifest.json"
+            with mock.patch.object(assets, "OUTPUT_MANIFEST", target), \
+                 mock.patch.object(assets, "build_manifest", return_value=expected_manifest):
+                target.write_bytes(predecessor)
+                self.assertEqual(assets.main(["--donor", "unused", "--write"]), 0)
+                self.assertEqual(target.read_bytes(), expected)
+                target_before = b"arbitrary existing manifest bytes"
+                target.write_bytes(target_before)
+                self.assertEqual(assets.main(["--donor", "unused", "--write"]), 1)
+                self.assertEqual(target.read_bytes(), target_before)
+                target.write_bytes(expected)
+                self.assertEqual(assets.main(["--donor", "unused", "--write"]), 0)
+                self.assertEqual(target.read_bytes(), expected)
+
     def test_staging_checks_every_output_hash_and_rejects_unrelated_overwrites(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "stage"
@@ -146,6 +250,41 @@ class AssetCorpusTests(unittest.TestCase):
             for relative, digest in expected.items():
                 self.assertEqual(assets.sha256((target / relative).read_bytes()), digest, relative)
             self.assertEqual(set(assets.stage_assets(DONOR, target)), set(expected))
+
+    def test_route7_repair_is_exact_and_source_bound(self):
+        layout = next(item for item in self.manifest["layouts"]
+                      if item["symbol"] == "LAYOUT_ROUTE7")
+        map_asset = layout["assets"][0]
+        raw = (DONOR / assets.ROUTE7_MAP_SOURCE_PATH).read_bytes()
+        converted, repair = assets.convert_source_map(assets.ROUTE7_MAP_SOURCE_PATH, raw)
+        self.assertEqual(map_asset["conversion"], "route7-forest-boundary-repair")
+        self.assertEqual(map_asset["source_sha256"], assets.ROUTE7_MAP_SOURCE_SHA256)
+        self.assertEqual(map_asset["output_sha256"], assets.ROUTE7_MAP_OUTPUT_SHA256)
+        self.assertEqual(repair, map_asset["repair"])
+        self.assertEqual(repair["changed_cell_count"], 12)
+        expected = {
+            170: (0x06E7, 0x0414), 171: (0x06E7, 0x0415),
+            172: (0x06E7, 0x0414), 173: (0x06E7, 0x0415),
+            174: (0x06E7, 0x0414), 175: (0x06E7, 0x0415),
+            192: (0x0786, 0x041C), 193: (0x0786, 0x041D),
+            194: (0x0786, 0x041C), 195: (0x0786, 0x041D),
+            196: (0x0786, 0x041C), 197: (0x0786, 0x041D),
+        }
+        self.assertEqual(
+            {entry["index"]: (int(entry["source_word"], 16), int(entry["output_word"], 16))
+             for entry in repair["changed_cells"]},
+            expected,
+        )
+        for index, (old, new) in expected.items():
+            self.assertEqual(struct.unpack_from("<H", raw, index * 2)[0], old)
+            self.assertEqual(struct.unpack_from("<H", converted, index * 2)[0], new)
+            self.assertEqual(old & assets.ROUTE7_MAP_REPAIR_MASK,
+                             new & assets.ROUTE7_MAP_REPAIR_MASK)
+        changed = {index * 2 + offset for index in expected for offset in (0, 1)}
+        self.assertEqual({i for i, (old, new) in enumerate(zip(raw, converted)) if old != new}, changed)
+        with self.assertRaisesRegex(assets.AssetError, "hash mismatch"):
+            assets.convert_source_map(assets.ROUTE7_MAP_SOURCE_PATH,
+                                      bytes([raw[0] ^ 1]) + raw[1:])
 
 
 if __name__ == "__main__":

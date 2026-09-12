@@ -31,10 +31,37 @@ DONOR_REPOSITORY = "https://github.com/PokemonHnS-Development/pokemonHnS"
 REGION_MANIFEST_SOURCE_REVISION = "21b8c9f918800a07b74a5ee2a882b1374d9ac4f9"
 
 PRIMARY_METATILE_COUNT = 640
+GENERAL_METATILE_COUNT = 512
+GENERAL_TILESET_SYMBOL = "gTileset_General"
 METATILE_BYTES = 16
 ATTRIBUTE_BYTES = 2
 CONVERTED_ATTRIBUTE_BYTES = 4
 PNG_BUDGET_4BPP = 0x20000
+
+# The pinned donor's Route7 map contains a deliberately bounded pair of
+# malformed forest rows.  Keep this conversion source-bound: it is a local
+# repair of the donor bytes, not a general tile rewrite policy.
+ROUTE7_MAP_SOURCE_PATH = "data/layouts/Route7/map.bin"
+ROUTE7_MAP_SOURCE_SHA256 = "558557c41d23981e78967839798c78d31a004174e9d7e14aec0de69c524d4ff9"
+ROUTE7_MAP_OUTPUT_SHA256 = "333f993fa119a62a3e80c6e1135ad107125286bbdac11c572742f043daca88dd"
+ROUTE7_MAP_WIDTH = 22
+ROUTE7_MAP_HEIGHT = 40
+ROUTE7_MAP_REPAIR_MASK = 0x0400
+ROUTE7_MAP_REPAIRS = (
+    (170, 16, 7, 0x06E7, 0x0414),
+    (171, 17, 7, 0x06E7, 0x0415),
+    (172, 18, 7, 0x06E7, 0x0414),
+    (173, 19, 7, 0x06E7, 0x0415),
+    (174, 20, 7, 0x06E7, 0x0414),
+    (175, 21, 7, 0x06E7, 0x0415),
+    (192, 16, 8, 0x0786, 0x041C),
+    (193, 17, 8, 0x0786, 0x041D),
+    (194, 18, 8, 0x0786, 0x041C),
+    (195, 19, 8, 0x0786, 0x041D),
+    (196, 20, 8, 0x0786, 0x041C),
+    (197, 21, 8, 0x0786, 0x041D),
+)
+ACCEPTED_PREDECESSOR_SHA256 = "d119044e87fe3f7289a80bf5ff7f8b4a171727453bf5d7ae8d8fb452162b09ee"
 
 # The pinned donor has a small, source-backed set of attribute exceptions.  A
 # path is eligible only when its complete source hash matches this ledger.  The
@@ -54,6 +81,16 @@ PINNED_ATTRIBUTE_EXCEPTION_SHAS = {
     "data/tilesets/secondary/lighthouse/metatile_attributes.bin": "1055c4982829b2753ffae713ceda6651580973b3655b6a896673240cedb1d382",
     "data/tilesets/secondary/national_park/metatile_attributes.bin": "504e26ba64ee634a1f018ee7733681a8d8b026c87b9aeb1c978bcd47fa997cd8",
     "data/tilesets/secondary/ssaqua/metatile_attributes.bin": "ec8f78f7789ecbcb0c2b0b577b1f862b84fa3b1bbe29e834b657c517f03b7fd4",
+    "data/tilesets/secondary/cave_green/metatile_attributes.bin": "f51df6e3203fd08943bc2cace99d44340591d8ec4fb041fef1aca7a5a67fefb0",
+    "data/tilesets/secondary/cave_mt_moon/metatile_attributes.bin": "497a9937af7d3eae0f37ef87d69aecae46f31fde0a3a2bfcb2fa6487b669d723",
+    "data/tilesets/secondary/cave_sandy/metatile_attributes.bin": "abc0c8bdf052ef9c793c3ee1dc8a7f3c454d0ab3c8aeac4de0de90022d34b0cf",
+    "data/tilesets/secondary/celadon_apartments/metatile_attributes.bin": "c35fa4c91c7bdba04233f8caa3a996768ee1053302c129d3f522294e21e20f06",
+    "data/tilesets/secondary/cerulean_city/metatile_attributes.bin": "c50a3c2d210c70d1e4062d5ad412e2e350fb365857e78480b291f1d65701911d",
+    "data/tilesets/secondary/indigo_plateau/metatile_attributes.bin": "b2a60a81b444a90cd48501a38b700810b99ec8489807d0d616d9aa42791d310f",
+    "data/tilesets/secondary/saffron_city_dojo_vip/metatile_attributes.bin": "2b372b640c9346731d308f510feb3acfa3ebdb64d5c0c6ae74b8d26f7079a72c",
+    "data/tilesets/secondary/silph_co/metatile_attributes.bin": "456e1e4a3832378def0f4c2511b4df5c0df68fdc8a07ae421134781127e2dcb8",
+    "data/tilesets/secondary/soul_house/metatile_attributes.bin": "501892055c0368cb48e48ffb379304c897f64e205d0df5839149b7dfd1ff074e",
+    "data/tilesets/secondary/viridian_city_gym/metatile_attributes.bin": "5c777813d7e6064fc1232d4ca3a1fb5d5bebce4393dc0b05f5381be9c73ff10f",
 }
 
 # Exact unused slots containing bytes with no donor behavior definition.
@@ -64,6 +101,10 @@ PINNED_UNDEFINED_BEHAVIORS = {
     "data/tilesets/secondary/ecruteak_theater/metatile_attributes.bin": {179: 0x10F0, 346: 0x10F0, 349: 0x00FC},
     "data/tilesets/secondary/shop_rooftop/metatile_attributes.bin": {255: 0x00F1},
     "data/tilesets/secondary/ssaqua/metatile_attributes.bin": {368: 0x20FE},
+    "data/tilesets/secondary/celadon_apartments/metatile_attributes.bin": {265: 0x3055, 318: 0x3056},
+    "data/tilesets/secondary/cerulean_city/metatile_attributes.bin": {332: 0x0056},
+    "data/tilesets/secondary/silph_co/metatile_attributes.bin": {64: 0x0056, 66: 0x0055},
+    "data/tilesets/secondary/viridian_city_gym/metatile_attributes.bin": {9: 0x0055, 12: 0x0056},
 }
 
 SPECIAL_BEHAVIORS = {
@@ -241,6 +282,12 @@ def parse_host_behaviors(path: Path) -> dict[str, int]:
 
 def parse_tileset_sources(donor: Path) -> dict[str, dict[str, Any]]:
     graphics = (donor / "src/data/tilesets/graphics.h").read_text(encoding="utf-8")
+    # General is declared in the donor's top-level graphics.c while the
+    # remaining selected source arrays live in the generated graphics header.
+    # Parse both files so the actual 512-entry primary table is source-bound.
+    graphics_extra = donor / "src/graphics.c"
+    if graphics_extra.exists():
+        graphics += "\n" + graphics_extra.read_text(encoding="utf-8")
     metatiles = (donor / "src/data/tilesets/metatiles.h").read_text(encoding="utf-8")
     headers = (donor / "src/data/tilesets/headers.h").read_text(encoding="utf-8")
     def array_paths(pattern: str) -> dict[str, str]:
@@ -444,7 +491,10 @@ def convert_source_attributes(path: str, data: bytes,
             layer = value >> 12
         behavior = value & 0xFF
         resolved = mapping.get(behavior)
-        if resolved is None and PINNED_UNDEFINED_BEHAVIORS.get(path, {}).get(index) == original_value:
+        if resolved is None and (
+            PINNED_UNDEFINED_BEHAVIORS.get(path, {}).get(index) == original_value
+            or (expected_sha is not None and behavior not in mapping)
+        ):
             resolved = {"target_value": INERT_VALUE}
             undefined_entries.append({"index": index, "source_value": f"{original_value:#06x}",
                                       "target_behavior": "MB_JOHTO_INERT",
@@ -468,7 +518,75 @@ def convert_source_attributes(path: str, data: bytes,
     }
 
 
-def validate_layout_assets(donor: Path, layout: dict[str, Any], primary_count: int, secondary_count: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def convert_source_map(path: str, data: bytes) -> tuple[bytes, dict[str, Any] | None]:
+    """Convert a selected map source using only the reviewed source repair.
+
+    The helper is intentionally public so the later scenery importer can use
+    the same source/output hash and repair policy when it stages map assets.
+    Every expected source word is checked before any output bytes are changed.
+    """
+    if path != ROUTE7_MAP_SOURCE_PATH:
+        return data, None
+    actual_sha = sha256(data)
+    if actual_sha != ROUTE7_MAP_SOURCE_SHA256:
+        raise AssetError(f"Route7 map repair hash mismatch: {path}")
+    expected_size = ROUTE7_MAP_WIDTH * ROUTE7_MAP_HEIGHT * 2
+    if len(data) != expected_size:
+        raise AssetError(f"Route7 map repair geometry mismatch: {path}")
+    output = bytearray(data)
+    cells: list[dict[str, Any]] = []
+    for index, x, y, expected_old, replacement in ROUTE7_MAP_REPAIRS:
+        if index != y * ROUTE7_MAP_WIDTH + x:
+            raise AssetError(f"Route7 map repair index drifted: {index}")
+        offset = index * 2
+        (actual_old,) = struct.unpack_from("<H", data, offset)
+        if actual_old != expected_old:
+            raise AssetError(
+                f"Route7 map repair source word mismatch: index {index} "
+                f"expected {expected_old:#06x}, got {actual_old:#06x}"
+            )
+        if (actual_old & ROUTE7_MAP_REPAIR_MASK) != ROUTE7_MAP_REPAIR_MASK:
+            raise AssetError(f"Route7 map repair collision/elevation bit missing: index {index}")
+        if (replacement & ROUTE7_MAP_REPAIR_MASK) != ROUTE7_MAP_REPAIR_MASK:
+            raise AssetError(f"Route7 map repair replacement bit missing: index {index}")
+        struct.pack_into("<H", output, offset, replacement)
+        cells.append({
+            "index": index,
+            "x": x,
+            "y": y,
+            "source_word": f"{expected_old:#06x}",
+            "output_word": f"{replacement:#06x}",
+            "preserved_mask": f"{ROUTE7_MAP_REPAIR_MASK:#06x}",
+        })
+    converted = bytes(output)
+    output_sha = sha256(converted)
+    if output_sha != ROUTE7_MAP_OUTPUT_SHA256:
+        raise AssetError(f"Route7 map repair output drifted: {output_sha}")
+    if sum(left != right for left, right in zip(data, converted)) != len(ROUTE7_MAP_REPAIRS) * 2:
+        raise AssetError("Route7 map repair changed bytes outside the twelve approved cells")
+    return converted, {
+        "operation": "route7_forest_boundary_repair",
+        "source_sha256": actual_sha,
+        "output_sha256": output_sha,
+        "source_size": len(data),
+        "output_size": len(converted),
+        "width": ROUTE7_MAP_WIDTH,
+        "height": ROUTE7_MAP_HEIGHT,
+        "changed_cells": cells,
+        "changed_cell_count": len(cells),
+        "preserved_mask": f"{ROUTE7_MAP_REPAIR_MASK:#06x}",
+        "reason": "replace twelve hash-bound Route7 forest-boundary words; preserve collision/elevation bits",
+    }
+
+
+def validate_layout_assets(
+    donor: Path,
+    layout: dict[str, Any],
+    primary_count: int,
+    secondary_count: int,
+    unsupported_primary: set[int] | None = None,
+    unsupported_secondary: set[int] | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     width = layout.get("width")
     height = layout.get("height")
     if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
@@ -481,15 +599,45 @@ def validate_layout_assets(donor: Path, layout: dict[str, Any], primary_count: i
         raise AssetError(f"layout block geometry mismatch: {layout['id']}")
     if len(border_data) != 8:
         raise AssetError(f"layout border must be 8 bytes: {layout['id']}")
-    limit = primary_count + secondary_count
-    for (word,) in struct.iter_unpack("<H", block_data):
-        tile = word & 0x03FF
-        if tile >= limit:
-            raise AssetError(f"layout tile index exceeds tileset bounds: {layout['id']}={tile}")
+    unsupported_primary = unsupported_primary or set()
+    unsupported_secondary = unsupported_secondary or set()
+
+    def validate_words(data: bytes) -> None:
+        for (word,) in struct.iter_unpack("<H", data):
+            tile = word & 0x03FF
+            if tile < PRIMARY_METATILE_COUNT:
+                if tile >= primary_count:
+                    raise AssetError(
+                        f"layout primary tile index exceeds actual table bounds: {layout['id']}={tile}"
+                    )
+                if tile in unsupported_primary:
+                    raise AssetError(
+                        f"layout references unsupported primary slot: {layout['id']}={tile}"
+                    )
+            else:
+                secondary = tile - PRIMARY_METATILE_COUNT
+                if secondary >= secondary_count:
+                    raise AssetError(
+                        f"layout secondary tile index exceeds actual table bounds: {layout['id']}={secondary}"
+                    )
+                if secondary in unsupported_secondary:
+                    raise AssetError(
+                        f"layout references unsupported secondary slot: {layout['id']}={secondary}"
+                    )
+
+    # Both map.bin and border.bin are selected input channels and must obey
+    # the same split-table bounds/no-use policy.  Route7's source-bound repair
+    # is applied before validating tile IDs so the repaired bytes are what get
+    # staged and checked against the generated manifest.
+    converted_block, repair = convert_source_map(block_path, block_data)
+    validate_words(converted_block)
+    validate_words(border_data)
     assets = [
-        {"path": block_path, "source_sha256": sha256(block_data), "output_sha256": sha256(block_data), "source_size": len(block_data), "output_size": len(block_data), "conversion": "identity"},
+        {"path": block_path, "source_sha256": sha256(block_data), "output_sha256": sha256(converted_block), "source_size": len(block_data), "output_size": len(converted_block), "conversion": "identity" if repair is None else "route7-forest-boundary-repair"},
         {"path": border_path, "source_sha256": sha256(border_data), "output_sha256": sha256(border_data), "source_size": len(border_data), "output_size": len(border_data), "conversion": "identity"},
     ]
+    if repair is not None:
+        assets[0]["repair"] = repair
     return assets, {"width": width, "height": height}
 
 
@@ -500,6 +648,7 @@ def validate_tileset_assets(donor: Path, symbol: str, source: dict[str, Any], ma
     assets: list[dict[str, Any]] = []
     metatile_count = attribute_count = None
     converted_attributes = b""
+    unsupported_indices: set[int] = set()
     for index, raw_path in enumerate(required):
         path = safe_relative(raw_path)
         file_data = (donor / path).read_bytes()
@@ -515,6 +664,15 @@ def validate_tileset_assets(donor: Path, symbol: str, source: dict[str, Any], ma
             if len(file_data) % ATTRIBUTE_BYTES:
                 raise AssetError(f"attribute length is not u16 aligned: {symbol}")
             attribute_count = len(file_data) // ATTRIBUTE_BYTES
+            unsupported_indices = set()
+            for attribute_index, (value,) in enumerate(struct.iter_unpack("<H", file_data)):
+                behavior_value = (value & ~0x0F00) & 0xFF
+                if (
+                    (value >> 12) == 3
+                    or PINNED_UNDEFINED_BEHAVIORS.get(path, {}).get(attribute_index) == value
+                    or (path in PINNED_ATTRIBUTE_EXCEPTION_SHAS and behavior_value not in mapping)
+                ):
+                    unsupported_indices.add(attribute_index)
             converted_attributes, normalization = convert_source_attributes(path, file_data, mapping)
             asset = {"path": path, "source_sha256": sha256(file_data), "output_sha256": sha256(converted_attributes), "source_size": len(file_data), "output_size": len(converted_attributes), "conversion": "u16-attribute-to-u32"}
             if normalization is not None:
@@ -537,7 +695,12 @@ def validate_tileset_assets(donor: Path, symbol: str, source: dict[str, Any], ma
         assets.append(asset)
     if metatile_count != attribute_count:
         raise AssetError(f"metatile/attribute count mismatch: {symbol}")
-    return assets, {"metatile_count": metatile_count, "attribute_count": attribute_count, "callback": source.get("callback")}
+    return assets, {
+        "metatile_count": metatile_count,
+        "attribute_count": attribute_count,
+        "callback": source.get("callback"),
+        "unsupported_indices": unsupported_indices,
+    }
 
 
 def build_manifest(donor: str | Path) -> dict[str, Any]:
@@ -550,14 +713,31 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
     if region.get("provenance", {}).get("donor_revision") != DONOR_REVISION or region.get("provenance", {}).get("donor_tree") != DONOR_TREE:
         raise AssetError("region manifest donor provenance drifted")
     selected_maps = region.get("maps")
-    if not isinstance(selected_maps, list) or len(selected_maps) != 239:
-        raise AssetError("region manifest must contain 239 selected maps")
+    if not isinstance(selected_maps, list) or len(selected_maps) != 407:
+        raise AssetError("region manifest must contain 407 selected maps")
     layouts_source = load_json(donor_path / "data/layouts/layouts.json").get("layouts")
     if not isinstance(layouts_source, list):
         raise AssetError("donor layouts table is missing")
     layouts_by_id = {entry.get("id"): entry for entry in layouts_source if isinstance(entry, dict)}
     tile_sources = parse_tileset_sources(donor_path)
     mapping, mismatches = _behavior_map(donor_path / "include/constants/metatile_behaviors.h", ROOT / "include/constants/metatile_behaviors.h")
+    original_tile_symbols = {
+        tile
+        for selected in selected_maps[:239]
+        for tile in (
+            (selected.get("layout") or {}).get("primary_tileset"),
+            (selected.get("layout") or {}).get("secondary_tileset"),
+        )
+    }
+    if len(original_tile_symbols) != 66:
+        raise AssetError(f"original tileset prefix drifted: {len(original_tile_symbols)}")
+
+    def target_tileset_symbol(source_symbol: str) -> str:
+        suffix = source_symbol.removeprefix("gTileset_")
+        if source_symbol in original_tile_symbols:
+            return f"gTileset_JohtoImported_{suffix}"
+        return f"gTileset_KantoLaterImported_{suffix}"
+
     layouts: list[dict[str, Any]] = []
     seen_layouts: set[str] = set()
     tile_symbols: set[str] = set()
@@ -575,33 +755,70 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             raise AssetError(f"selected layout is not in pinned donor table: {layout_symbol}")
         if layout.get("primary_tileset") != primary_symbol or layout.get("secondary_tileset") != secondary_symbol:
             raise AssetError(f"layout tileset identity drifted: {layout_symbol}")
-        layouts.append({
+        layout_record = {
             "ordinal": len(layouts), "symbol": layout_symbol, "source_map": selected.get("source_map"),
             "name": layout.get("name"), "width": layout.get("width"), "height": layout.get("height"),
             "primary_tileset": primary_symbol, "secondary_tileset": secondary_symbol,
-        })
-    if len(layouts) != 239 or len(tile_symbols) != 66:
+        }
+        # Keep the accepted original prefix byte-for-byte shaped as before;
+        # later layouts carry their explicit target identity and source
+        # namespace separately for the following runtime importer.
+        if selected.get("era") == "KANTO_LATER":
+            target_layout = (selected.get("identity_namespace") or {}).get("layout")
+            if not isinstance(target_layout, str) or not target_layout:
+                raise AssetError(f"later map is missing target layout identity: {selected.get('source_map')}")
+            layout_record.update({
+                "era": "KANTO_LATER",
+                "identity_namespace": dict(selected.get("identity_namespace") or {}),
+                "target_layout": target_layout,
+                "target_primary_tileset": target_tileset_symbol(primary_symbol),
+                "target_secondary_tileset": target_tileset_symbol(secondary_symbol),
+            })
+        layouts.append(layout_record)
+    if len(layouts) != 407 or len(tile_symbols) != 97:
         raise AssetError(f"selected asset counts drifted: {len(layouts)} layouts / {len(tile_symbols)} tilesets")
+    later_tile_symbols = tile_symbols - original_tile_symbols
+    if len(later_tile_symbols) != 31:
+        raise AssetError(f"later tileset tail drifted: {len(later_tile_symbols)}")
+
     tile_records: dict[str, dict[str, Any]] = {}
+    unsupported_by_symbol: dict[str, set[int]] = {}
     for symbol in sorted(tile_symbols):
         source = tile_sources.get(symbol)
         if source is None:
             raise AssetError(f"selected tileset has no generated source mapping: {symbol}")
         source_assets, info = validate_tileset_assets(donor_path, symbol, source, mapping)
         primary = source_assets[0]["path"].startswith("data/tilesets/primary/")
-        if primary and info["metatile_count"] != PRIMARY_METATILE_COUNT:
-            raise AssetError(f"primary tileset must contain 640 metatiles: {symbol}")
-        tile_records[symbol] = {
-            "symbol": symbol, "kind": "primary" if primary else "secondary",
+        if primary:
+            expected_count = GENERAL_METATILE_COUNT if symbol == GENERAL_TILESET_SYMBOL else PRIMARY_METATILE_COUNT
+            if info["metatile_count"] != expected_count:
+                raise AssetError(
+                    f"primary tileset must contain {expected_count} metatiles: {symbol}"
+                )
+        tile_record = {
+            "symbol": symbol if symbol in original_tile_symbols else target_tileset_symbol(symbol),
+            "kind": "primary" if primary else "secondary",
             "callback": info["callback"], "runtime_ready": False,
             "assets": source_assets,
         }
-    primary_count = PRIMARY_METATILE_COUNT
+        if symbol not in original_tile_symbols:
+            tile_record["source_symbol"] = symbol
+        tile_records[symbol] = tile_record
+        unsupported_by_symbol[symbol] = info["unsupported_indices"]
     for layout_record in layouts:
-        primary = tile_records[layout_record["primary_tileset"]]["assets"][1]["metatile_count"]
-        secondary = tile_records[layout_record["secondary_tileset"]]["assets"][1]["metatile_count"]
+        primary_symbol = layout_record["primary_tileset"]
+        secondary_symbol = layout_record["secondary_tileset"]
+        primary = tile_records[primary_symbol]["assets"][1]["metatile_count"]
+        secondary = tile_records[secondary_symbol]["assets"][1]["metatile_count"]
         layout_source = layouts_by_id[layout_record["symbol"]]
-        layout_assets, geometry = validate_layout_assets(donor_path, layout_source, primary_count, secondary)
+        layout_assets, geometry = validate_layout_assets(
+            donor_path,
+            layout_source,
+            primary,
+            secondary,
+            unsupported_by_symbol[primary_symbol],
+            unsupported_by_symbol[secondary_symbol],
+        )
         layout_record["assets"] = layout_assets
         layout_record.update(geometry)
     special_mappings = []
@@ -616,6 +833,29 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
     special_mappings.sort(key=lambda item: (item["source_value"], item["source_symbol"]))
     if len(mismatches) != 22:
         raise AssetError(f"behavior mismatch resolution count drifted: {len(mismatches)}")
+    tile_order = sorted(original_tile_symbols) + sorted(later_tile_symbols)
+    if len(tile_order) != 97 or tile_order[:66] != sorted(original_tile_symbols):
+        raise AssetError("tileset prefix/tail ordering drifted")
+    general_layouts = [
+        {
+            "source_layout": layout["symbol"],
+            "target_layout": layout.get("target_layout", layout["symbol"]),
+            "pending": [
+                "Cut and Hyper Cut dynamic metatile writers",
+                "connected-border updates",
+                "persistent-effect/script tile writers",
+            ],
+            "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json",
+        }
+        for layout in layouts
+        if layout["symbol"] in {
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+        }
+    ]
+    if len(general_layouts) != 3:
+        raise AssetError("General readiness layout set drifted")
     return {
         "schema_version": 1,
         "provenance": {
@@ -629,6 +869,8 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             "source_attribute_format": "little-endian u16 behavior/layer",
             "output_attribute_format": "little-endian u32 behavior | layer << 29",
             "primary_metatile_boundary": PRIMARY_METATILE_COUNT,
+            "general_primary_metatile_count": GENERAL_METATILE_COUNT,
+            "secondary_metatile_id_base": PRIMARY_METATILE_COUNT,
             "map_tile_index_mask": "0x03ff",
             "mismatch_count": len(mismatches),
             "mismatch_resolutions": mismatches,
@@ -642,9 +884,21 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             "MB_JOHTO_INERT no-interaction proof",
             "MB_JOHTO_DEOXYS_ATTACK scoped Deoxys helper decision",
             "source tileset callbacks and animation registrations",
+            "General Safari layouts require Cut/Hyper Cut, connected-border and persistent-effect writer closure",
         ],
+        "runtime_readiness": {
+            "ready": False,
+            "general_primary_table_count": GENERAL_METATILE_COUNT,
+            "secondary_id_base": PRIMARY_METATILE_COUNT,
+            "pending_general_layouts": general_layouts,
+            "global_writer": {
+                "status": "pending",
+                "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json",
+                "reason": "global Cut/connected-border/persistent-effect writers remain outside static asset staging",
+            },
+        },
         "layouts": layouts,
-        "tilesets": [tile_records[symbol] for symbol in sorted(tile_records)],
+        "tilesets": [tile_records[symbol] for symbol in tile_order],
     }
 
 
@@ -684,6 +938,8 @@ def stage_assets(donor: str | Path, output_dir: str | Path, manifest: dict[str, 
                 if asset["conversion"] == "u16-attribute-to-u32":
                     mapping, _ = _behavior_map(donor_path / "include/constants/metatile_behaviors.h", ROOT / "include/constants/metatile_behaviors.h")
                     data, _ = convert_source_attributes(relative, raw, mapping)
+                elif asset["conversion"] == "route7-forest-boundary-repair":
+                    data, _ = convert_source_map(relative, raw)
                 else:
                     data = raw
                 if sha256(raw) != asset["source_sha256"] or sha256(data) != asset["output_sha256"]:
@@ -707,6 +963,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--bootstrap", action="store_true")
+    mode.add_argument("--write", action="store_true")
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--stage", action="store_true")
     args = parser.parse_args(argv)
@@ -718,6 +975,20 @@ def main(argv: list[str] | None = None) -> int:
                 raise AssetError("bootstrap refuses to replace an existing asset manifest")
             OUTPUT_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
             OUTPUT_MANIFEST.write_text(expected, encoding="utf-8", newline="\n")
+        elif args.write:
+            if OUTPUT_MANIFEST.exists():
+                existing = OUTPUT_MANIFEST.read_bytes()
+                expected_bytes = expected.encode("utf-8")
+                normalized_existing = existing.replace(b"\r\n", b"\n")
+                if normalized_existing == expected_bytes:
+                    pass
+                elif sha256(normalized_existing) != ACCEPTED_PREDECESSOR_SHA256:
+                    raise AssetError("--write refuses to replace a manifest outside the accepted predecessor or intended output")
+            else:
+                raise AssetError("--write requires the accepted predecessor or an existing intended output")
+            OUTPUT_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+            if OUTPUT_MANIFEST.read_bytes().replace(b"\r\n", b"\n") != expected_bytes:
+                OUTPUT_MANIFEST.write_text(expected, encoding="utf-8", newline="\n")
         elif args.check:
             if not OUTPUT_MANIFEST.exists() or OUTPUT_MANIFEST.read_text(encoding="utf-8") != expected:
                 raise AssetError("checked-in asset manifest is stale")
