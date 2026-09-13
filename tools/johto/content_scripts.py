@@ -146,6 +146,8 @@ CAMPAIGN_ABI_CONSTANTS = {
     "MUS_HG_RADIO_POKE_FLUTE", "MUS_HG_RADIO_ROCKET", "MUS_HG_RIVAL_EXIT",
     "MUS_HG_ROCKET_TAKEOVER", "MUS_HG_TEAM_ROCKET_HQ", "MUS_HG_VS_HO_OH",
     "MUS_HG_VS_LUGIA", "SPECIAL_BATTLE_LANCE", "TUTOR_MOVE_HEADBUTT",
+    "SCROLL_MULTI_BF_MOVE_TUTOR_3", "FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR",
+    "STR_VAR_2",
 }
 
 STATIC_CAMPAIGN_CLOSURE = """Johto_EventScript_RockSmashHeartscale::
@@ -381,6 +383,29 @@ REVIEWED_DONOR_BLOCKS = {
     "data/maps/Route110_TrickHouseEntrance/scripts.inc": {
         "Route110_TrickHouseEntrance_EventScript_DoHidingSpotSparkle",
     },
+    "data/maps/Route121_SafariZoneGate_SafariZoneEntrance/scripts.inc": {
+        "Route121_SafariZoneGate_SafariZoneEntrance_EventScript_WelcomeAttendant",
+        "Route121_SafariZoneGate_SafariZoneEntrance_EventScript_InfoAttendant",
+    },
+    "data/scripts/safari_zone.inc": {
+        "Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeToSafariZone",
+        "Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeFirstTime",
+        "Route121_SafariZoneGate_SafariZoneEntrance_Text_ComeInAndEnjoy",
+        "Route121_SafariZoneGate_SafariZoneEntrance_Text_FirstTimeInfo",
+    },
+    "data/maps/BattleFrontier_Lounge9/scripts.inc": {
+        "BattleFrontier_Lounge9_Heal",
+    },
+    "data/maps/SSTidalRooms/scripts.inc": {
+        "SSTidalRooms_EventScript_Bed_PokecenterChallenge",
+    },
+    "data/maps/TrainerHill_Courtyard/scripts.inc": {
+        "TrainerHill_Courtyard_EventScript_LeftMoveTutor",
+        "TrainerHill_Courtyard_EventScript_RightMoveTutor",
+        "TrainerHill_Courtyard_EventScript_ElementalMoveTutor",
+        "TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VitaminClerk",
+        "TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HoldItemClerk",
+    },
 }
 
 # The reviewed closure is part of the generated unit's provenance.  Keep a
@@ -391,11 +416,68 @@ REVIEWED_DONOR_SOURCE_HASHES = {
     "data/event_scripts.s": "bdbab93db4933e90c0d4fde68b2e575a5bef60aec3663703e7f890378ce7d504",
     "data/scripts/set_gym_trainers.inc": "70b903633e969664163691f7003dea154bcb1d36a04c40e1d37964b81a8146f4",
     "data/maps/Route110_TrickHouseEntrance/scripts.inc": "1507e49dfba74ff0e2a6822b19fa919003e31bde21d8b88f24e106a52a5bf844",
+    "data/maps/Route121_SafariZoneGate_SafariZoneEntrance/scripts.inc": "12a3c9f273e3533535b6ac670bf962125453b0148993e139dabdcf3fb48e1471",
+    "data/scripts/safari_zone.inc": "29a6075a24117c767480cb026b5774d46b8fdf2e366f51fbd85457b4c7ab4ca8",
+    "data/maps/BattleFrontier_Lounge9/scripts.inc": "8a682abbdea8ddabdcabc6dfb6df046a25a7db2c4fdc7d7e1b594dcbca1109bb",
+    "data/maps/SSTidalRooms/scripts.inc": "2805231afacd6bd915c40facf75ba77df5bad11c8cd3915ca73bae7b2596f640",
+    "data/maps/TrainerHill_Courtyard/scripts.inc": "2b445b02d832a2a1768d95dc71d86d546f53b494dfd5772dbf38c752403e37b1",
 }
 
 REVIEWED_DONOR_BLOCK_HASHES = {
     "Route110_TrickHouseEntrance_EventScript_DoHidingSpotSparkle":
         "29c486b152245d3981a112cd6c36092dbb7c82a9317ff316ee283708b2b6b3d3",
+    "Route121_SafariZoneGate_SafariZoneEntrance_EventScript_WelcomeAttendant":
+        "4fcbcf2740eb0b69229e497dcf0343eedd2281560a837a33bd0e948e3550be1a",
+    "Route121_SafariZoneGate_SafariZoneEntrance_EventScript_InfoAttendant":
+        "52d8e1cd2561c9159be120e8f2e523c16ccdb4ebe8db223159057a558cb520d7",
+    "Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeToSafariZone":
+        "929c04dcfaaa83f1fdb27e9aa6cb00acfcbefec89cee7a9d6795659e4b052a17",
+    "Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeFirstTime":
+        "f4e168dd7005e037127e2b8863af78da81c09883631978101b0f3e83e43d18a4",
+    "Route121_SafariZoneGate_SafariZoneEntrance_Text_ComeInAndEnjoy":
+        "6a822859854f5e18a7bf570dc4a20fcfe0566c62e17679c608eee9d31129986b",
+    "Route121_SafariZoneGate_SafariZoneEntrance_Text_FirstTimeInfo":
+        "c335ba3e7a29531daed409c4a6c232acbf75463ebfe0cb9530eeb40217403527",
+    "BattleFrontier_Lounge9_Heal":
+        "8d878122f416b04e022a26d40daa29409bf2ddbe9061fa76fb5181e6414b06ac",
+    "SSTidalRooms_EventScript_Bed_PokecenterChallenge":
+        "f750aa523229812c8e33a25b603a5e95a1242341b0930370def02f05f461ba51",
+    "TrainerHill_Courtyard_EventScript_LeftMoveTutor":
+        "a3708b9ee8574fb40a45e706e2c4822437c2551cea0796c65b139a0bdcf20b97",
+    "TrainerHill_Courtyard_EventScript_RightMoveTutor":
+        "65c6c94ba214bf0356076b7a2348cf7130c75f7c757089088ee16054a8ce0633",
+    "TrainerHill_Courtyard_EventScript_ElementalMoveTutor":
+        "ca8484f125c75dbb1f615678e55143d3ecd41b9c23fcb5ccc777f220b312e27b",
+    "TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VitaminClerk":
+        "fef994ed47a5b35f6605b077d64601716db20bac94936d9f6cbd572618f4384b",
+    "TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HoldItemClerk":
+        "f56ee6dc89499043b32c4cf4285b74d4d172ffaa814719e3224d92478fd87729",
+}
+
+# Selected maps can intentionally reference a script owned by a donor map that
+# is not itself selected.  Pin every approved consumer as well as the closure
+# source so a similarly named donor label cannot be chosen by suffix alone.
+REVIEWED_EXTERNAL_OBJECT_SCRIPT_SITES = {
+    "Route121_SafariZoneGate_SafariZoneEntrance_EventScript_WelcomeAttendant": (
+        "SafariZoneGate_SafariZoneEntrance",
+    ),
+    "Route121_SafariZoneGate_SafariZoneEntrance_EventScript_InfoAttendant": (
+        "FuchsiaCity_SafariZoneEntrance",
+        "SafariZoneGate_SafariZoneEntrance",
+    ),
+    "BattleFrontier_Lounge9_Heal": (
+        "SaffronCity_FightingDojo",
+        "SaffronCity_FightingDojoVIP",
+    ),
+    "TrainerHill_Courtyard_EventScript_LeftMoveTutor": ("SaffronCity_FightingDojoVIP",),
+    "TrainerHill_Courtyard_EventScript_RightMoveTutor": ("SaffronCity_FightingDojoVIP",),
+    "TrainerHill_Courtyard_EventScript_ElementalMoveTutor": ("SaffronCity_FightingDojoVIP",),
+    "TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VitaminClerk": (
+        "SaffronCity_FightingDojoVIP",
+    ),
+    "TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HoldItemClerk": (
+        "SaffronCity_FightingDojoVIP",
+    ),
 }
 
 # These are the only native callable bindings accepted by this compiler.  A
@@ -429,6 +511,11 @@ PENDING_DEPENDENCIES = {
         "required_symbol": "AzaleaTown_Gym_SetGymTrainers",
         "adapter": "j3-azalea-gym-trainerflags",
         "locations": ["AzaleaTown_Gym"],
+    },
+    "trainer-hill-elemental-tutor": {
+        "required_symbol": "SCROLL_MULTI_BF_MOVE_TUTOR_3/GetBattleFrontierTutorMoveIndex",
+        "adapter": "j8-trainer-hill-elemental-tutor-runtime",
+        "locations": ["SaffronCity_FightingDojoVIP"],
     },
 }
 
@@ -1475,14 +1562,25 @@ class ScriptCompiler:
                         f"reviewed closure command {command} is not present in the tracked host macro ABI"
                     ))
                 if command_key in {"special", "specialvar", "callnative"}:
+                    allowed_targets = {
+                        "IsPokecenterChallengeActivated",
+                        "GetBattleFrontierTutorMoveIndex",
+                    }
                     form_diagnostics, parsed = self._special_form_diagnostics(
                         None, line_number, command_key, body, closure_labels,
                         replacements, known, source_override=source,
+                        allowed_targets=allowed_targets,
                         alias_roles=alias_roles,
                     )
                     self.closure_diagnostics.extend(form_diagnostics)
                     if parsed.get("shape_valid") == "1" and parsed.get("target") in SPECIAL_TRANSLATIONS:
                         raw = _replace_tokens(raw, {parsed["target"]: SPECIAL_TRANSLATIONS[parsed["target"]]})
+                    if (parsed.get("shape_valid") == "1" and command_key == "specialvar"
+                            and parsed.get("target") == "IsPokecenterChallengeActivated"):
+                        body = f"{parsed['destination']}, FALSE"
+                        command = command_key = translated_command = "setvar"
+                        indent = raw[:len(raw) - len(raw.lstrip())]
+                        raw = f"{indent}setvar {body}\n"
                 if translated_command != command:
                     raw = re.sub(r"^(\s*)" + re.escape(command) + r"\b", r"\1" + translated_command, raw, count=1)
                 self.closure_diagnostics.extend(self._reference_diagnostics(
@@ -2284,13 +2382,16 @@ class ScriptCompiler:
                 f"required recoverable contest closure label is not linked: {label}",
             ))
         authenticated_source_count = len(getattr(self, "_expected_source_hashes", {}))
-        if authenticated_source_count != 818:
+        if authenticated_source_count != 823:
             diagnostics.append(Diagnostic(
                 "source-inventory", MANIFEST_REL.as_posix(), 0,
-                f"authenticated source inventory must contain exactly 818 paths, got {authenticated_source_count}",
+                f"authenticated source inventory must contain exactly 823 paths, got {authenticated_source_count}",
             ))
         adaptations: list[str] = []
         translated: dict[str, str] = {}
+        external_object_script_sites: dict[str, list[str]] = {
+            label: [] for label in REVIEWED_EXTERNAL_OBJECT_SCRIPT_SITES
+        }
         for name in self._map_text:
             result, found, notes = self.translate_source(name)
             translated[name] = result
@@ -2304,6 +2405,8 @@ class ScriptCompiler:
                 continue
             if isinstance(map_data, dict):
                 for obj in map_data.get("object_events", []) or []:
+                    if isinstance(obj, dict) and obj.get("script") in external_object_script_sites:
+                        external_object_script_sites[obj["script"]].append(name)
                     if (isinstance(obj, dict) and obj.get("script") == "BerryTreeScript"
                             and not self._runtime_available("berry")):
                         diagnostics.append(Diagnostic("missing-runtime", _portable_path(map_json, self.donor_root), 0,
@@ -2314,6 +2417,26 @@ class ScriptCompiler:
                                 and not self._runtime_available("whirlpool")):
                             diagnostics.append(Diagnostic("missing-runtime", _portable_path(map_json, self.donor_root), index + 1,
                                                            "EventScript_Whirlpool Johto badge/field adapter is required"))
+        for label, expected_sites in REVIEWED_EXTERNAL_OBJECT_SCRIPT_SITES.items():
+            actual_sites = tuple(sorted(external_object_script_sites[label]))
+            if actual_sites != tuple(sorted(expected_sites)):
+                diagnostics.append(Diagnostic(
+                    "external-object-script", MANIFEST_REL.as_posix(), 0,
+                    f"reviewed consumers for {label} changed: expected {tuple(sorted(expected_sites))!r}, "
+                    f"got {actual_sites!r}",
+                ))
+            target = getattr(self, "imported_symbol_map", {}).get(label)
+            if label not in getattr(self, "imported_symbols", set()) or not target or not target.endswith("_" + label):
+                diagnostics.append(Diagnostic(
+                    "external-object-script", MANIFEST_REL.as_posix(), 0,
+                    f"reviewed external object script {label} has no unique suffix-resolvable closure",
+                ))
+            owner = getattr(self, "label_owner", {}).get(label)
+            if owner:
+                diagnostics.append(Diagnostic(
+                    "external-object-script", _portable_path(self._map_path[owner], self.donor_root), 0,
+                    f"reviewed external object script {label} is also defined by selected map {owner}",
+                ))
         if ("AzaleaTown_Gym" in self._map_text
                 and "Common_EventScript_SetGymTrainers" in self._map_text["AzaleaTown_Gym"]
                 and not self._runtime_available("azalea-gym-trainers")):

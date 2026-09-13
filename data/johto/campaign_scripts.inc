@@ -271,6 +271,1505 @@ Johto_Closure_data_maps_Route110_TrickHouseEntrance_scripts_inc_Route110_TrickHo
 
 
 
+@ reviewed donor closure: data/maps/Route121_SafariZoneGate_SafariZoneEntrance/scripts.inc:Route121_SafariZoneGate_SafariZoneEntrance_EventScript_WelcomeAttendant
+Johto_Closure_data_maps_Route121_SafariZoneGate_SafariZoneEntrance_scripts_inc_Route121_SafariZoneGate_SafariZoneEntrance_EventScript_WelcomeAttendant::
+	msgbox Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeToSafariZone, MSGBOX_NPC
+	end
+
+
+
+@ reviewed donor closure: data/maps/Route121_SafariZoneGate_SafariZoneEntrance/scripts.inc:Route121_SafariZoneGate_SafariZoneEntrance_EventScript_InfoAttendant
+Johto_Closure_data_maps_Route121_SafariZoneGate_SafariZoneEntrance_scripts_inc_Route121_SafariZoneGate_SafariZoneEntrance_EventScript_InfoAttendant::
+	lock
+	faceplayer
+	msgbox Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeFirstTime, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, YES, Johto_Closure_data_maps_Route121_SafariZoneGate_SafariZoneEntrance_scripts_inc_Route121_SafariZoneGate_SafariZoneEntrance_EventScript_FirstTimeInfo
+	msgbox Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_ComeInAndEnjoy, MSGBOX_DEFAULT
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/Route121_SafariZoneGate_SafariZoneEntrance/scripts.inc:Route121_SafariZoneGate_SafariZoneEntrance_EventScript_FirstTimeInfo
+Johto_Closure_data_maps_Route121_SafariZoneGate_SafariZoneEntrance_scripts_inc_Route121_SafariZoneGate_SafariZoneEntrance_EventScript_FirstTimeInfo::
+	msgbox Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_FirstTimeInfo, MSGBOX_DEFAULT
+	release
+	end
+
+
+
+@ reviewed donor closure: data/scripts/safari_zone.inc:Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeToSafariZone
+Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeToSafariZone:
+	.string "Welcome to the SAFARI ZONE!\p"
+	.string "Here, you may witness many kinds of\n"
+	.string "POKéMON rarely seen in JOHTO.\p"
+	.string "And, you'll see them in their wild,\n"
+	.string "untamed state in natural habitats.\p"
+	.string "What's more, we've thrown open the\n"
+	.string "gates to POKéMON TRAINERS.\p"
+	.string "You're encouraged to catch POKéMON\n"
+	.string "for keeps!\p"
+	.string "Come in and enjoy the SAFARI ZONE!$"
+
+
+
+@ reviewed donor closure: data/scripts/safari_zone.inc:Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeFirstTime
+Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_WelcomeFirstTime:
+	.string "Welcome to the SAFARI ZONE!\n"
+	.string "Is it your first time here?$"
+
+
+
+@ reviewed donor closure: data/scripts/safari_zone.inc:Route121_SafariZoneGate_SafariZoneEntrance_Text_ComeInAndEnjoy
+Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_ComeInAndEnjoy:
+	.string "Come in and enjoy the SAFARI ZONE!$"
+
+
+
+@ reviewed donor closure: data/scripts/safari_zone.inc:Route121_SafariZoneGate_SafariZoneEntrance_Text_FirstTimeInfo
+Johto_Closure_data_scripts_safari_zone_inc_Route121_SafariZoneGate_SafariZoneEntrance_Text_FirstTimeInfo:
+	.string "When you enter the SAFARI ZONE, you\n"
+	.string "start with 30 SAFARI BALLS for\l"
+	.string "catching POKéMON.\p"
+	.string "The SAFARI Game is over when you run\n"
+	.string "out of SAFARI BALLS, or when you've\l"
+	.string "walked 500 steps.\p"
+	.string "Come in and enjoy the SAFARI ZONE!$"
+
+
+
+@ reviewed donor closure: data/maps/BattleFrontier_Lounge9/scripts.inc:BattleFrontier_Lounge9_Heal
+Johto_Closure_data_maps_BattleFrontier_Lounge9_scripts_inc_BattleFrontier_Lounge9_Heal::
+	setvar JOHTO_VAR_RESULT, FALSE
+	goto_if_eq JOHTO_VAR_RESULT, TRUE, Johto_Closure_data_maps_SSTidalRooms_scripts_inc_SSTidalRooms_EventScript_Bed_PokecenterChallenge
+	msgbox Johto_Closure_data_maps_BattleFrontier_Lounge9_scripts_inc_BattleFrontier_Lounge9_Heal_TEXT, MSGBOX_NPC
+	waitmessage
+	fadescreen 0x1
+	playfanfare MUS_HEAL
+	waitfanfare
+	special HealPlayerParty
+	fadescreen 0x0
+	msgbox Johto_Closure_data_maps_BattleFrontier_Lounge9_scripts_inc_BattleFrontier_Lounge9_Heal_TEXT2, MSGBOX_NPC
+	waitmessage
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/BattleFrontier_Lounge9/scripts.inc:BattleFrontier_Lounge9_Heal_TEXT
+Johto_Closure_data_maps_BattleFrontier_Lounge9_scripts_inc_BattleFrontier_Lounge9_Heal_TEXT:
+	.string "Hi! Welcome to the TRAINING DOJO!\n"
+	.string "I will heal your POKéMON.$"
+
+
+
+@ reviewed donor closure: data/maps/BattleFrontier_Lounge9/scripts.inc:BattleFrontier_Lounge9_Heal_TEXT2
+Johto_Closure_data_maps_BattleFrontier_Lounge9_scripts_inc_BattleFrontier_Lounge9_Heal_TEXT2:
+	.string "We hope to see you again!$"
+
+
+
+@ reviewed donor closure: data/maps/SSTidalRooms/scripts.inc:SSTidalRooms_EventScript_Bed_PokecenterChallenge
+Johto_Closure_data_maps_SSTidalRooms_scripts_inc_SSTidalRooms_EventScript_Bed_PokecenterChallenge::
+	msgbox Johto_Closure_data_maps_SSTidalRooms_scripts_inc_SSTidalRooms_Text_TakeRestOnBed_PokecenterChallenge, MSGBOX_DEFAULT
+	closemessage
+	end
+
+
+
+@ reviewed donor closure: data/maps/SSTidalRooms/scripts.inc:SSTidalRooms_Text_TakeRestOnBed_PokecenterChallenge
+Johto_Closure_data_maps_SSTidalRooms_scripts_inc_SSTidalRooms_Text_TakeRestOnBed_PokecenterChallenge:
+	.string "Sorry, you are playing with\n"
+	.string "the POKéCENTER challenge!$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_LeftMoveTutor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_LeftMoveTutor::
+	lock
+	faceplayer
+	setvar VAR_TEMP_C, SCROLL_MULTI_BF_MOVE_TUTOR_1
+	goto_if_set FLAG_MET_FRONTIER_BEAUTY_MOVE_TUTOR, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_AlreadyMetLeftTutor
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_LeftTutorIntro, MSGBOX_DEFAULT
+	setflag FLAG_MET_FRONTIER_BEAUTY_MOVE_TUTOR
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseLeftTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_AlreadyMetLeftTutor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_AlreadyMetLeftTutor::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_LeftTutorWelcomeBack, MSGBOX_DEFAULT
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseLeftTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseLeftTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseLeftTutorMove::
+	message Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMove
+	waitmessage
+	special ShowBattlePointsWindow
+	setvar VAR_TEMP_FRONTIER_TUTOR_ID, 0
+	setvar VAR_0x8004, SCROLL_MULTI_BF_MOVE_TUTOR_1
+	setvar VAR_0x8006, 0
+	special ShowScrollableMultichoice
+	waitstate
+	copyvar VAR_TEMP_FRONTIER_TUTOR_SELECTION, JOHTO_VAR_RESULT
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Softboiled
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_SeismicToss
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_DreamEater
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MegaPunch
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MegaKick
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_BodySlam
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_RockSlide
+	case 7, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Counter
+	case 8, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ThunderWave
+	case 9, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_SwordsDance
+	case 10, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseNewLeftTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewLeftTutorMove::
+	message Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMove
+	waitmessage
+	setvar VAR_TEMP_FRONTIER_TUTOR_ID, 0
+	setvar VAR_0x8004, SCROLL_MULTI_BF_MOVE_TUTOR_1
+	setvar VAR_0x8006, 1
+	special ShowScrollableMultichoice
+	waitstate
+	copyvar VAR_TEMP_FRONTIER_TUTOR_SELECTION, JOHTO_VAR_RESULT
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Softboiled
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_SeismicToss
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_DreamEater
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MegaPunch
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MegaKick
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_BodySlam
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_RockSlide
+	case 7, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Counter
+	case 8, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ThunderWave
+	case 9, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_SwordsDance
+	case 10, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_Softboiled
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Softboiled::
+	setvar VAR_0x8008, 16
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_SeismicToss
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_SeismicToss::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_DreamEater
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_DreamEater::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_MegaPunch
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MegaPunch::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_MegaKick
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MegaKick::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_BodySlam
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_BodySlam::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_RockSlide
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_RockSlide::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_Counter
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Counter::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ThunderWave
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ThunderWave::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_SwordsDance
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_SwordsDance::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_RightMoveTutor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_RightMoveTutor::
+	lock
+	faceplayer
+	setvar VAR_TEMP_C, SCROLL_MULTI_BF_MOVE_TUTOR_2
+	goto_if_set FLAG_MET_FRONTIER_SWIMMER_MOVE_TUTOR, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_AlreadyMetRightTutor
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_RightTutorIntro, MSGBOX_DEFAULT
+	setflag FLAG_MET_FRONTIER_SWIMMER_MOVE_TUTOR
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseRightTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_AlreadyMetRightTutor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_AlreadyMetRightTutor::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_RightTutorWelcomeBack, MSGBOX_DEFAULT
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseRightTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseRightTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseRightTutorMove::
+	message Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMove
+	waitmessage
+	special ShowBattlePointsWindow
+	setvar VAR_TEMP_FRONTIER_TUTOR_ID, 1
+	setvar VAR_0x8004, SCROLL_MULTI_BF_MOVE_TUTOR_2
+	setvar VAR_0x8006, 0
+	special ShowScrollableMultichoice
+	waitstate
+	copyvar VAR_TEMP_FRONTIER_TUTOR_SELECTION, JOHTO_VAR_RESULT
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_DefenseCurl
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Snore
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MudSlap
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Swift
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_IcyWind
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Endure
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_PsychUp
+	case 7, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_IcePunch
+	case 8, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ThunderPunch
+	case 9, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_FirePunch
+	case 10, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseNewRightTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewRightTutorMove::
+	message Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMove
+	waitmessage
+	setvar VAR_TEMP_FRONTIER_TUTOR_ID, 1
+	setvar VAR_0x8004, SCROLL_MULTI_BF_MOVE_TUTOR_2
+	setvar VAR_0x8006, 1
+	special ShowScrollableMultichoice
+	waitstate
+	copyvar VAR_TEMP_FRONTIER_TUTOR_SELECTION, JOHTO_VAR_RESULT
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_DefenseCurl
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Snore
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MudSlap
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Swift
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_IcyWind
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Endure
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_PsychUp
+	case 7, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_IcePunch
+	case 8, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ThunderPunch
+	case 9, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_FirePunch
+	case 10, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_DefenseCurl
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_DefenseCurl::
+	setvar VAR_0x8008, 16
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_Snore
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Snore::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_MudSlap
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_MudSlap::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_Swift
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Swift::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_IcyWind
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_IcyWind::
+	setvar VAR_0x8008, 24
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_Endure
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_Endure::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_PsychUp
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_PsychUp::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_IcePunch
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_IcePunch::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ThunderPunch
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ThunderPunch::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_FirePunch
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_FirePunch::
+	setvar VAR_0x8008, 48
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ElementalMoveTutor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ElementalMoveTutor::
+	lock
+	faceplayer
+	setvar VAR_TEMP_C, SCROLL_MULTI_BF_MOVE_TUTOR_3
+	goto_if_set FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_AlreadyMetElementalTutor
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_ElementalTutorIntro, MSGBOX_DEFAULT
+	setflag FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseElementalTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_AlreadyMetElementalTutor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_AlreadyMetElementalTutor::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_ElementalTutorWelcomeBack, MSGBOX_DEFAULT
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseElementalTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseElementalTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseElementalTutorMove::
+	message Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMoveElemental
+	waitmessage
+	special ShowBattlePointsWindow
+	setvar VAR_TEMP_FRONTIER_TUTOR_ID, 2
+	setvar VAR_0x8004, SCROLL_MULTI_BF_MOVE_TUTOR_3
+	setvar VAR_0x8006, 0
+	special ShowScrollableMultichoice
+	waitstate
+	copyvar VAR_TEMP_FRONTIER_TUTOR_SELECTION, JOHTO_VAR_RESULT
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_FrenzyPlant
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_BlastBurn
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_HydroCannon
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseNewElementalTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewElementalTutorMove::
+	message Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMoveElemental
+	waitmessage
+	setvar VAR_TEMP_FRONTIER_TUTOR_ID, 2
+	setvar VAR_0x8004, SCROLL_MULTI_BF_MOVE_TUTOR_3
+	setvar VAR_0x8006, 1
+	special ShowScrollableMultichoice
+	waitstate
+	copyvar VAR_TEMP_FRONTIER_TUTOR_SELECTION, JOHTO_VAR_RESULT
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_FrenzyPlant
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_BlastBurn
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_HydroCannon
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_FrenzyPlant
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_FrenzyPlant::
+	setvar VAR_0x8008, 64
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_BlastBurn
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_BlastBurn::
+	setvar VAR_0x8008, 64
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_HydroCannon
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_HydroCannon::
+	setvar VAR_0x8008, 64
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ExitTutorMoveSelect::
+	special CloseBattleFrontierTutorWindow
+	special CloseBattlePointsWindow
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_YouDontWantTo, MSGBOX_DEFAULT
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_CancelChooseMon
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_CancelChooseMon::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_YouDontWantTo, MSGBOX_DEFAULT
+	release
+	end
+
+@ VAR_0x8008 is the price
+@ VAR_TEMP_C is the scroll multichoice ID
+@ VAR_TEMP_FRONTIER_TUTOR_SELECTION is the move selection
+@ VAR_TEMP_FRONTIER_TUTOR_ID is which move tutor was spoken to
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ConfirmMoveSelection
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ConfirmMoveSelection::
+	copyvar VAR_0x8004, VAR_TEMP_FRONTIER_TUTOR_SELECTION
+	copyvar VAR_0x8005, VAR_TEMP_FRONTIER_TUTOR_ID
+	special BufferBattleFrontierTutorMoveName
+	buffernumberstring STR_VAR_2, VAR_0x8008
+	copyvar VAR_0x8004, VAR_TEMP_C
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_MoveWillBeXBattlePoints, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewMove
+	specialvar JOHTO_VAR_TEMP_1, GetFrontierBattlePoints
+	goto_if_ge JOHTO_VAR_TEMP_1, VAR_0x8008, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_TeachTutorMove
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_HaventGotEnoughPoints, MSGBOX_DEFAULT
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_TeachTutorMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_TeachTutorMove::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachMoveToWhichMon, MSGBOX_DEFAULT
+	special GetBattleFrontierTutorMoveIndex
+	fadescreen FADE_TO_BLACK
+	special CloseBattlePointsWindow
+	special CloseBattleFrontierTutorWindow
+	special ChooseMonForMoveTutor
+	waitstate
+	goto_if_eq JOHTO_VAR_RESULT, FALSE, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_CancelChooseMon
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_IllTakeBattlePoints, MSGBOX_DEFAULT
+	copyvar VAR_0x8004, VAR_0x8008
+	special TakeFrontierBattlePoints
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_EventScript_ChooseNewMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewMove::
+	goto_if_eq VAR_TEMP_FRONTIER_TUTOR_ID, 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewLeftTutorMove
+	goto_if_eq VAR_TEMP_FRONTIER_TUTOR_ID, 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewElementalTutorMove
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_EventScript_ChooseNewRightTutorMove
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_LeftTutorIntro
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_LeftTutorIntro:
+	.string "Buhahaha!\p"
+	.string "You couldn't tell it from looking now,\n"
+	.string "but I used to be one tough TRAINER.\p"
+	.string "I had a reputation as the toughest\n"
+	.string "BEAUTY around, I tell you!\p"
+	.string "… … … … … …\p"
+	.string "What is it now?\n"
+	.string "You don't believe me.\p"
+	.string "I'm not like that blowhard woman over\n"
+	.string "there. I'm actually talented!\p"
+	.string "Let me prove it to you.\n"
+	.string "I can teach your POKéMON special and\l"
+	.string "yet cute moves.\p"
+	.string "But my lessons don't come free.\n"
+	.string "How about paying for the moves I teach\l"
+	.string "with a wee bit of Battle Points?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_LeftTutorWelcomeBack
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_LeftTutorWelcomeBack:
+	.string "Buhahaha!\p"
+	.string "Are you back to learn special and\n"
+	.string "yet cute POKéMON moves?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_TeachWhichMove
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMove:
+	.string "Fine, fine, look here!\n"
+	.string "Which move should I teach?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_MoveWillBeXBattlePoints
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_MoveWillBeXBattlePoints:
+	.string "The move {STR_VAR_1}, is it?\n"
+	.string "That will be {STR_VAR_2} Battle Points, okay?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_TeachMoveToWhichMon
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachMoveToWhichMon:
+	.string "Fine, fine, now pick the POKéMON\n"
+	.string "I should teach the move to.$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_HaventGotEnoughPoints
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_HaventGotEnoughPoints:
+	.string "What the…\n"
+	.string "You haven't got enough Battle Points!$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_IllTakeBattlePoints
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_IllTakeBattlePoints:
+	.string "Do you see how skilled I am now?\n"
+	.string "I'll take your Battle Points, thanks!$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_YouDontWantTo
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_YouDontWantTo:
+	.string "What's that?\n"
+	.string "You don't want to…\p"
+	.string "If you want to see how skilled I am,\n"
+	.string "you come see me anytime!$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_RightTutorIntro
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_RightTutorIntro:
+	.string "Ihihihi!\p"
+	.string "I know it's hard to see now, but I used\n"
+	.string "to be one fantastic TRAINER.\p"
+	.string "I had a reputation as the most\n"
+	.string "invincible SWIMMER around, I tell you!\p"
+	.string "… … … … … …\p"
+	.string "What's wrong?\n"
+	.string "You don't believe me.\p"
+	.string "I'm not like that buffoonish woman over\n"
+	.string "there. I'm actually experienced!\p"
+	.string "I can prove it to you.\n"
+	.string "I can teach your POKéMON hard and\l"
+	.string "yet pretty moves.\p"
+	.string "But my lessons don't come free.\n"
+	.string "How about paying for the moves I teach\l"
+	.string "with a wee bit of Battle Points?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_RightTutorWelcomeBack
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_RightTutorWelcomeBack:
+	.string "Ihihihi!\p"
+	.string "Have you come to learn hard and\n"
+	.string "yet pretty POKéMON moves?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_ElementalTutorIntro
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_ElementalTutorIntro::
+	.string "Zzzzzz…\p"
+	.string "What, how, what?\p"
+	.string "Oh, sorry, I was snoozing a bit.\p"
+	.string "I'm the ELEMENTAL TUTOR.\p"
+	.string "I have the power to teach the most\n"
+	.string "powerful moves to GRASS, FIRE and\l"
+	.string "WATER TYPE POKéMON.\p"
+	.string "Did you come to learn such a strong\n"
+	.string "power?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_ElementalTutorWelcomeBack
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_ElementalTutorWelcomeBack:
+	.string "Zzzzzz…\p"
+	.string "What, how, what, who?\p"
+	.string "Oh, did you come to learn the\n"
+	.string "power of my strongest moves?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_Text_TeachWhichMoveElemental
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_Text_TeachWhichMoveElemental::
+	.string "Which move do you think is suitable\n"
+	.string "for your POKéMON?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkWelcome
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkWelcome::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_WelcomePleaseChoosePrize, MSGBOX_DEFAULT
+	special ShowBattlePointsWindow
+	return
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ThankYouVisitWithPoints, MSGBOX_DEFAULT
+	special CloseBattlePointsWindow
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize::
+	specialvar JOHTO_VAR_TEMP_1, GetFrontierBattlePoints
+	goto_if_ge JOHTO_VAR_TEMP_1, VAR_0x8008, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGivePrize
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_DontHaveEnoughPoints, MSGBOX_DEFAULT
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_DECOR1_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_DECOR2_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_VITAMIN_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGivePrize
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGivePrize::
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_DECOR1_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveDecor
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_DECOR2_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveDecor
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveItem
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveDecor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveDecor::
+	checkdecorspace VAR_0x8009
+	goto_if_eq JOHTO_VAR_RESULT, FALSE, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_NoRoomForDecor
+	copyvar VAR_0x8004, VAR_0x8008
+	special TakeFrontierBattlePoints
+	adddecoration VAR_0x8009
+	special UpdateBattlePointsWindow
+	playse SE_SHOP
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_WellSendItToPC, MSGBOX_DEFAULT
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_DECOR1_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_NoRoomForDecor
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_NoRoomForDecor::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_PCIsFull, MSGBOX_DEFAULT
+	special CloseBattlePointsWindow
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveItem
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryGiveItem::
+	checkitemspace VAR_0x8009
+	goto_if_eq JOHTO_VAR_RESULT, FALSE, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_BagFull
+	copyvar VAR_0x8004, VAR_0x8008
+	special TakeFrontierBattlePoints
+	additem VAR_0x8009
+	special UpdateBattlePointsWindow
+	playse SE_SHOP
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_HereIsYourPrize, MSGBOX_DEFAULT
+	goto_if_eq JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_VITAMIN_CLERK, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_BagFull
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_BagFull::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_DontHaveSpaceToHoldIt, MSGBOX_DEFAULT
+	special CloseBattlePointsWindow
+	release
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1::
+	setvar VAR_0x8004, SCROLL_MULTI_BF_EXCHANGE_CORNER_DECOR_VENDOR_1
+	special ShowFrontierExchangeCornerItemIconWindow
+	special ShowScrollableMultichoice
+	waitstate
+	special CloseFrontierExchangeCornerItemIconWindow
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KissPoster
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KissCushion
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_SmoochumDoll
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TogepiDoll
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_MeowthDoll
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClefairyDoll
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_DittoDoll
+	case 7, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_CyndaquilDoll
+	case 8, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChikoritaDoll
+	case 9, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TotodileDoll
+	case 10, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KissPoster
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KissPoster::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKissPoster, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 16
+	setvar VAR_0x8009, DECOR_KISS_POSTER
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KissCushion
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KissCushion::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKissCushion, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 32
+	setvar VAR_0x8009, DECOR_KISS_CUSHION
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_SmoochumDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_SmoochumDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmSmoochumDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 32
+	setvar VAR_0x8009, DECOR_SMOOCHUM_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TogepiDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TogepiDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmTogepiDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, DECOR_TOGEPI_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_MeowthDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_MeowthDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmMeowthDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, DECOR_MEOWTH_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClefairyDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClefairyDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmClefairyDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, DECOR_CLEFAIRY_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_DittoDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_DittoDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmDittoDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, DECOR_DITTO_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_CyndaquilDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_CyndaquilDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCyndaquilDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 80
+	setvar VAR_0x8009, DECOR_CYNDAQUIL_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChikoritaDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChikoritaDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmChikoritaDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 80
+	setvar VAR_0x8009, DECOR_CHIKORITA_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TotodileDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TotodileDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmTotodileDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor1
+	setvar VAR_0x8008, 80
+	setvar VAR_0x8009, DECOR_TOTODILE_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2::
+	setvar VAR_0x8004, SCROLL_MULTI_BF_EXCHANGE_CORNER_DECOR_VENDOR_2
+	special ShowFrontierExchangeCornerItemIconWindow
+	special ShowScrollableMultichoice
+	waitstate
+	special CloseFrontierExchangeCornerItemIconWindow
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_LaprasDoll
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_SnorlaxDoll
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VenusaurDoll
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_CharizardDoll
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_BlastoiseDoll
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_LaprasDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_LaprasDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmLaprasDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	setvar VAR_0x8008, 128
+	setvar VAR_0x8009, DECOR_LAPRAS_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_SnorlaxDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_SnorlaxDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmSnorlaxDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	setvar VAR_0x8008, 128
+	setvar VAR_0x8009, DECOR_SNORLAX_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VenusaurDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VenusaurDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmVenusaurDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	setvar VAR_0x8008, 256
+	setvar VAR_0x8009, DECOR_VENUSAUR_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_CharizardDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_CharizardDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCharizardDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	setvar VAR_0x8008, 256
+	setvar VAR_0x8009, DECOR_CHARIZARD_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_BlastoiseDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_BlastoiseDoll::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmBlastoiseDoll, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseDecor2
+	setvar VAR_0x8008, 256
+	setvar VAR_0x8009, DECOR_BLASTOISE_DOLL
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VitaminClerk
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_VitaminClerk::
+	lock
+	faceplayer
+	setvar JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_VITAMIN_CLERK
+	call Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkWelcome
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin::
+	setvar VAR_0x8004, SCROLL_MULTI_BF_EXCHANGE_CORNER_VITAMIN_VENDOR
+	special ShowFrontierExchangeCornerItemIconWindow
+	special ShowScrollableMultichoice
+	waitstate
+	special CloseFrontierExchangeCornerItemIconWindow
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Protein
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Calcium
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Iron
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Zinc
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Carbos
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HpUp
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Protein
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Protein::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmProtein, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	setvar VAR_0x8008, 1
+	setvar VAR_0x8009, ITEM_PROTEIN
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Calcium
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Calcium::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCalcium, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	setvar VAR_0x8008, 1
+	setvar VAR_0x8009, ITEM_CALCIUM
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Iron
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Iron::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmIron, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	setvar VAR_0x8008, 1
+	setvar VAR_0x8009, ITEM_IRON
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Zinc
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Zinc::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmZinc, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	setvar VAR_0x8008, 1
+	setvar VAR_0x8009, ITEM_ZINC
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Carbos
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Carbos::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCarbos, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	setvar VAR_0x8008, 1
+	setvar VAR_0x8009, ITEM_CARBOS
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HpUp
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HpUp::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmHpUp, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseVitamin
+	setvar VAR_0x8008, 1
+	setvar VAR_0x8009, ITEM_HP_UP
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HoldItemClerk
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_HoldItemClerk::
+	lock
+	faceplayer
+	setvar JOHTO_VAR_TEMP_2, EXCHANGE_CORNER_HOLD_ITEM_CLERK
+	call Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkWelcome
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem::
+	setvar VAR_0x8004, SCROLL_MULTI_BF_EXCHANGE_CORNER_HOLD_ITEM_VENDOR
+	special ShowFrontierExchangeCornerItemIconWindow
+	special ShowScrollableMultichoice
+	waitstate
+	special CloseFrontierExchangeCornerItemIconWindow
+	switch JOHTO_VAR_RESULT
+	case 0, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Leftovers
+	case 1, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_WhiteHerb
+	case 2, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_QuickClaw
+	case 3, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_MentalHerb
+	case 4, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Brightpowder
+	case 5, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChoiceBand
+	case 6, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KingsRock
+	case 7, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_FocusBand
+	case 8, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ScopeLens
+	case 9, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	case MULTI_B_PRESSED, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ClerkGoodbye
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Leftovers
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Leftovers::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmLeftovers, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, ITEM_LEFTOVERS
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_WhiteHerb
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_WhiteHerb::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmWhiteHerb, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, ITEM_WHITE_HERB
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_QuickClaw
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_QuickClaw::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmQuickClaw, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, ITEM_QUICK_CLAW
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_MentalHerb
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_MentalHerb::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmMentalHerb, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 48
+	setvar VAR_0x8009, ITEM_MENTAL_HERB
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Brightpowder
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_Brightpowder::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmBrightpowder, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 64
+	setvar VAR_0x8009, ITEM_BRIGHT_POWDER
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChoiceBand
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChoiceBand::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmChoiceBand, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 64
+	setvar VAR_0x8009, ITEM_CHOICE_BAND
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KingsRock
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_KingsRock::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKingsRock, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 64
+	setvar VAR_0x8009, ITEM_KINGS_ROCK
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_FocusBand
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_FocusBand::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmFocusBand, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 64
+	setvar VAR_0x8009, ITEM_FOCUS_BAND
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ScopeLens
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ScopeLens::
+	msgbox Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmScopeLens, MSGBOX_YESNO
+	goto_if_eq JOHTO_VAR_RESULT, NO, Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_ChooseHoldItem
+	setvar VAR_0x8008, 64
+	setvar VAR_0x8009, ITEM_SCOPE_LENS
+	goto Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_EventScript_TryPurchasePrize
+	end
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_WelcomePleaseChoosePrize
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_WelcomePleaseChoosePrize:
+	.string "Hello, this is the EXCHANGE SERVICE\n"
+	.string "CORNER.\p"
+	.string "We exchange the Battle Points you\n"
+	.string "have collected for lovely prizes.\p"
+	.string "Please choose a prize from this list.$"
+
+@ Unused
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKissPoster
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKissPoster:
+	.string "You've chosen the KISS POSTER.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKissCushion
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKissCushion:
+	.string "You've chosen the KISS CUSHION.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmSmoochumDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmSmoochumDoll:
+	.string "You've chosen the SMOOCHUM DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmTogepiDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmTogepiDoll:
+	.string "You've chosen the TOGEPI DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmMeowthDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmMeowthDoll:
+	.string "You've chosen the MEOWTH DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmClefairyDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmClefairyDoll:
+	.string "You've chosen the CLEFAIRY DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmDittoDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmDittoDoll:
+	.string "You've chosen the DITTO DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCyndaquilDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCyndaquilDoll:
+	.string "You've chosen the CYNDAQUIL DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmChikoritaDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmChikoritaDoll:
+	.string "You've chosen the CHIKORITA DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmTotodileDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmTotodileDoll:
+	.string "You've chosen the TOTODILE DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmLaprasDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmLaprasDoll:
+	.string "You've chosen the LAPRAS DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmSnorlaxDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmSnorlaxDoll:
+	.string "You've chosen the SNORLAX DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmVenusaurDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmVenusaurDoll:
+	.string "You've chosen the VENUSAUR DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCharizardDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCharizardDoll:
+	.string "You've chosen the CHARIZARD DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmBlastoiseDoll
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmBlastoiseDoll:
+	.string "You've chosen the BLASTOISE DOLL.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmProtein
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmProtein:
+	.string "You've chosen the PROTEIN.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCalcium
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCalcium:
+	.string "You've chosen the CALCIUM.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmIron
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmIron:
+	.string "You've chosen the IRON.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmZinc
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmZinc:
+	.string "You've chosen the ZINC.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCarbos
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmCarbos:
+	.string "You've chosen the CARBOS.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmHpUp
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmHpUp:
+	.string "You've chosen the HP UP.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmBrightpowder
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmBrightpowder:
+	.string "You've chosen the BRIGHTPOWDER.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmWhiteHerb
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmWhiteHerb:
+	.string "You've chosen the WHITE HERB.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmQuickClaw
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmQuickClaw:
+	.string "You've chosen the QUICK CLAW.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmMentalHerb
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmMentalHerb:
+	.string "You've chosen the MENTAL HERB.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmChoiceBand
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmChoiceBand:
+	.string "You've chosen the CHOICE BAND.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKingsRock
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmKingsRock:
+	.string "You've chosen the KING'S ROCK.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmFocusBand
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmFocusBand:
+	.string "You've chosen the FOCUS BAND.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmScopeLens
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmScopeLens:
+	.string "You've chosen the SCOPE LENS.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmLeftovers
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ConfirmLeftovers:
+	.string "You've chosen the LEFTOVERS.\n"
+	.string "Is that correct?$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_WellSendItToPC
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_WellSendItToPC:
+	.string "Thank you!\n"
+	.string "We'll send it to your PC at home.$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_HereIsYourPrize
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_HereIsYourPrize:
+	.string "Here is your prize!$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_DontHaveEnoughPoints
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_DontHaveEnoughPoints:
+	.string "I'm so sorry…\n"
+	.string "You don't have enough Battle Points…$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_PCIsFull
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_PCIsFull:
+	.string "I'm so sorry…\n"
+	.string "Your PC appears to be full…$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_DontHaveSpaceToHoldIt
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_DontHaveSpaceToHoldIt:
+	.string "I'm so sorry…\n"
+	.string "You don't have space to hold it…$"
+
+
+
+@ reviewed donor closure: data/maps/TrainerHill_Courtyard/scripts.inc:TrainerHill_Courtyard_ExchangeServiceCorner_Text_ThankYouVisitWithPoints
+Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_ExchangeServiceCorner_Text_ThankYouVisitWithPoints:
+	.string "Thank you very much.\p"
+	.string "Please visit us when you have\n"
+	.string "saved up Battle Points.$"
+
+
+
 @ reviewed campaign-owned runtime closure
 Johto_EventScript_RockSmashHeartscale::
 	giveitem ITEM_HEART_SCALE

@@ -25,6 +25,7 @@ from tools.johto.content_scripts import (
     REVIEWED_DONOR_BLOCKS,
     REVIEWED_DONOR_BLOCK_HASHES,
     REVIEWED_DONOR_SOURCE_HASHES,
+    REVIEWED_EXTERNAL_OBJECT_SCRIPT_SITES,
     MacroContract,
     sha256,
 )
@@ -1166,10 +1167,10 @@ class ContentScriptTests(unittest.TestCase):
         self.assertEqual(report["selected_script_count"], 407)
         self.assertEqual(report["original_selected_map_count"], 239)
         self.assertEqual(report["later_selected_map_count"], 168)
-        self.assertEqual(report["authenticated_source_count"], 818)
-        self.assertEqual(len(report["source_hashes"]), 411)
-        self.assertEqual(len(report["source_hashes_normalized"]), 411)
-        self.assertEqual(len(report["reviewed_donor_source_hashes"]), 4)
+        self.assertEqual(report["authenticated_source_count"], 823)
+        self.assertEqual(len(report["source_hashes"]), 416)
+        self.assertEqual(len(report["source_hashes_normalized"]), 416)
+        self.assertEqual(len(report["reviewed_donor_source_hashes"]), 9)
         for relative in REVIEWED_DONOR_BLOCKS:
             self.assertEqual(report["source_hashes"][relative], sha256(DONOR / relative))
         sparkle = "Route110_TrickHouseEntrance_EventScript_DoHidingSpotSparkle"
@@ -1188,9 +1189,19 @@ class ContentScriptTests(unittest.TestCase):
         # fixer base intentionally has neither; canonical may have both.
         self.assertIn(pending["berry"], {"pending", "resolved"})
         self.assertIn(pending["whirlpool"], {"pending", "resolved"})
+        self.assertEqual(pending["trainer-hill-elemental-tutor"], "pending")
         self.assertTrue(report["complete"])
         rendered = compiler.render(report)
         self.assertTrue(all(line == line.rstrip(" \t") for line in rendered.split("\n")))
+        self.assertEqual(rendered.count("\n@ source map: "), 407)
+        for label in REVIEWED_EXTERNAL_OBJECT_SCRIPT_SITES:
+            qualified = compiler.imported_symbol_map[label]
+            self.assertTrue(qualified.endswith("_" + label))
+            self.assertEqual(rendered.count(qualified + "::"), 1)
+            self.assertNotIn(label + "1::", rendered)
+        self.assertNotIn("Johto_Closure_data_maps_TrainerHill_Courtyard_scripts_inc_TrainerHill_Courtyard_MapScripts", rendered)
+        self.assertNotIn("@ source map: TrainerHill_Courtyard\n", rendered)
+        self.assertNotIn("ToggleShinyColors", rendered)
 
     def test_switch_mon_ability_has_real_registered_runtime(self):
         specials = (ROOT / "data/specials.inc").read_text(encoding="utf-8")
