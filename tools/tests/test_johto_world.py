@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -94,6 +95,37 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         after = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
         self.assertEqual(after, before)
 
+    def _minimal_registration_root(self):
+        """Copy only text/JSON inputs needed before registration materializes maps."""
+        temporary = tempfile.TemporaryDirectory()
+        root = Path(temporary.name)
+        relatives = (
+            world.MANIFEST_PATH,
+            world.SCENERY_PATH,
+            world.CONTENT_PATH,
+            world.ASSET_MANIFEST_PATH,
+            world.CAMPAIGN_SCRIPTS_PATH,
+            world.HOST_IDENTITY_BASELINE_PATH,
+            world.MAP_GROUPS_PATH,
+            world.EVENT_SCRIPTS_PATH,
+        )
+        for relative in relatives:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, target)
+        for directory in (ROOT / "data/scripts", ROOT / "data/text"):
+            for source in directory.rglob("*.inc"):
+                relative = source.relative_to(ROOT)
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+        for source in (ROOT / "data/maps").rglob("scripts.inc"):
+            relative = source.relative_to(ROOT)
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+        return temporary, root
+
     def test_report_matches_independent_donor_and_manifest_counts(self):
         plan = world.build_plan(ROOT, DONOR)
         maps = self.manifest["maps"]
@@ -120,6 +152,7 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         )
         self.assertEqual(dict(event_totals), plan["source_event_totals"])
         self.assertEqual(plan["event_totals"]["warp_events"], 1175)
+        self.assertEqual(plan["event_totals"]["bg_events"], 758)
         self.assertEqual(
             plan["event_totals"]["warp_events"],
             sum(len(item["warp_targets"]) for item in plan["maps"]),
@@ -431,6 +464,92 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             record = records[edge.get("index", edge.get("edge_index"))]
             self.assertEqual(record["dest_map" if edge["kind"] == "warp" else "map"], edge["target"])
 
+    def test_campaign_label_inventory_includes_prelude_outside_source_blocks(self):
+        raw = b"CampaignPreludeOnly::\n" + (ROOT / world.CAMPAIGN_SCRIPTS_PATH).read_bytes()
+        blocks, labels = world._campaign_blocks(raw)
+        self.assertEqual(len(blocks), 407)
+        self.assertIn("CampaignPreludeOnly", labels)
+
+    def test_host_label_inventory_uses_only_committed_reachable_include_closure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
+            subprocess.run(["git", "config", "user.name", "World Planner Test"], cwd=repo, check=True)
+            event_scripts = repo / world.EVENT_SCRIPTS_PATH
+            reachable = repo / "data/scripts/reachable.inc"
+            unreachable = repo / "data/scripts/unreachable.inc"
+            event_scripts.parent.mkdir(parents=True)
+            reachable.parent.mkdir(parents=True)
+            event_scripts.write_text('.include "data/scripts/reachable.inc"\nRootLabel::\n', encoding="utf-8")
+            reachable.write_text("CommittedReachable::\n", encoding="utf-8")
+            unreachable.write_text("CommittedUnreachable::\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
+            reachable.write_text("DirtyReachable::\n", encoding="utf-8")
+            (repo / "data/scripts/untracked.inc").write_text("UntrackedLabel::\n", encoding="utf-8")
+
+            labels = world._assembly_labels(repo)
+            self.assertEqual(labels, {"RootLabel", "CommittedReachable"})
+            for rejected in ("DirtyReachable", "CommittedUnreachable", "UntrackedLabel"):
+                with self.subTest(rejected=rejected), self.assertRaisesRegex(
+                    world.WorldPlanError, "event script label is unresolved"
+                ):
+                    world._rewrite_event_script(rejected, "Fixture", set(), {}, labels, "MAP_FIXTURE")
+
+    def test_event_script_assembly_replaces_legacy_map_include_once(self):
+        rendered = world._render_event_script_assembly(ROOT)
+        self.assertEqual(rendered.count(world.LEGACY_NEW_BARK_INCLUDE), 0)
+        self.assertEqual(rendered.count(world.CAMPAIGN_INCLUDE), 1)
+
+    def test_registration_outputs_use_one_aggregate_campaign_and_remove_debug_events(self):
+        outputs = world._registration_outputs(ROOT, DONOR, world.build_plan(ROOT, DONOR))
+        self.assertEqual(len(outputs), 410)
+        self.assertFalse(any(path.name == "scripts.inc" for path in outputs))
+        event_scripts = outputs[world.EVENT_SCRIPTS_PATH]
+        self.assertEqual(event_scripts.count(world.LEGACY_NEW_BARK_INCLUDE), 0)
+        self.assertEqual(event_scripts.count(world.CAMPAIGN_INCLUDE), 1)
+        goldenrod = json.loads(outputs[Path("data/maps/GoldenrodCity_House1/map.json")])
+        self.assertEqual(len(goldenrod["bg_events"]), 1)
+        self.assertNotIn("ToggleShinies", json.dumps(goldenrod))
+        stored_plan = json.loads(outputs[world.WORLD_PLAN_PATH])
+        self.assertTrue(stored_plan["production_write_ready"])
+        self.assertEqual(stored_plan["blockers"], [])
+
+    def test_stale_world_plan_fails_check_and_write_repairs_it_in_transaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ledger = root / world.WORLD_PLAN_PATH
+            ledger.parent.mkdir(parents=True)
+            stale = world._base_bytes(ROOT, world.WORLD_PLAN_PATH)
+            self.assertIsNotNone(stale)
+            self.assertEqual(world._sha256(stale), world.TRUSTED_BOOTSTRAP_SHA256[world.WORLD_PLAN_PATH.as_posix()])
+            ledger.write_bytes(stale)
+            plan = {"production_write_ready": True, "blockers": []}
+            expected = (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+            with mock.patch.object(world, "build_plan", return_value=plan), mock.patch.object(
+                world, "_registration_outputs", return_value={world.WORLD_PLAN_PATH: expected}
+            ), mock.patch.object(world, "_validate_group_predecessor"), mock.patch("builtins.print"):
+                with self.assertRaisesRegex(world.WorldPlanError, "materialized output is missing or stale"):
+                    world.run(root, DONOR, check=True)
+                self.assertEqual(ledger.read_bytes(), stale)
+                self.assertEqual(world.run(root, DONOR, write=True), 0)
+
+            self.assertEqual(ledger.read_bytes(), expected)
+
+    def test_sealed_goldenrod_debug_events_require_exact_donor_records(self):
+        relative = "data/maps/GoldenrodCity_House1/map.json"
+        source = world._git_json(world._git_blob(DONOR, relative), relative)
+        self.assertEqual(
+            world._sealed_bg_event_removals("MAP_GOLDENROD_CITY_HOUSE1", source["bg_events"]),
+            frozenset({1, 2}),
+        )
+        changed = copy.deepcopy(source["bg_events"])
+        changed[1]["x"] = 99
+        with self.assertRaisesRegex(world.WorldPlanError, "sealed background event 1 drifted"):
+            world._sealed_bg_event_removals("MAP_GOLDENROD_CITY_HOUSE1", changed)
+
     def test_altered_external_edge_category_is_rejected(self):
         def mutate(data):
             data["external_edges"][0]["classification"] = "required_host_adapter"
@@ -444,7 +563,8 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(tuple(plan["pending_general_layouts"]), world.PENDING_GENERAL_LAYOUTS)
         self.assertEqual(tuple(plan["pending_general_maps"]), world.PENDING_GENERAL_MAPS)
         self.assertEqual(plan["general_runtime_ready_map_count"], 407)
-        self.assertFalse(plan["production_write_ready"])
+        self.assertTrue(plan["production_write_ready"])
+        self.assertEqual(plan["blockers"], [])
 
         def regress(data):
             data["runtime_readiness"]["general_pending_layouts"].append("LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH")
@@ -453,15 +573,92 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         with temporary, self.assertRaisesRegex(world.WorldPlanError, "semantics differ"):
             world.build_plan(root, DONOR)
 
-    def test_write_materializes_only_the_generated_world_plan(self):
-        temporary, root = self._temporary_ledgers()
+    def test_write_refuses_when_authenticated_assembly_closure_is_unavailable(self):
+        temporary, root = self._minimal_registration_root()
         with temporary:
             before = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
-            world.run(root, DONOR, write=True)
+            with self.assertRaisesRegex(world.WorldPlanError, "cannot resolve host assembly revision"):
+                world.run(root, DONOR, check=True)
+            with self.assertRaisesRegex(world.WorldPlanError, "cannot resolve host assembly revision"):
+                world.run(root, DONOR, write=True)
             after = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
-            self.assertEqual(set(after) - set(before), {world.WORLD_PLAN_PATH})
-            self.assertEqual(json.loads((root / world.WORLD_PLAN_PATH).read_text()), world.build_plan(root, DONOR))
-            world.run(root, DONOR, check=True)
+            self.assertEqual(after, before)
+
+    def test_write_refuses_mutated_group_predecessor_without_mutation(self):
+        temporary, root = self._minimal_registration_root()
+        with temporary:
+            groups = root / world.MAP_GROUPS_PATH
+            groups.write_bytes(groups.read_bytes().replace(b"gMapGroup_TownsAndRoutes", b"gMapGroup_Altered", 1))
+            before = groups.read_bytes()
+            with self.assertRaisesRegex(world.WorldPlanError, "host map group order prefix drifted"):
+                world.run(root, DONOR, write=True)
+            self.assertEqual(groups.read_bytes(), before)
+
+    def test_install_rolls_back_every_output_after_mid_replace_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "data/existing.bin"
+            existing.parent.mkdir(parents=True)
+            existing.write_bytes(b"before")
+            outputs = {
+                Path("data/existing.bin"): b"after",
+                Path("data/new.bin"): b"new",
+                Path("maps/new/map.json"): b"map",
+            }
+            original_replace = os.replace
+            install_replaces = 0
+
+            def fail_second_install(source, destination):
+                nonlocal install_replaces
+                if str(source).endswith(".new"):
+                    install_replaces += 1
+                    if install_replaces == 2:
+                        raise OSError("injected replace failure")
+                return original_replace(source, destination)
+
+            with mock.patch.object(world.os, "replace", side_effect=fail_second_install):
+                with self.assertRaisesRegex(OSError, "injected replace failure"):
+                    world._install_registration_outputs(root, outputs)
+            self.assertEqual(existing.read_bytes(), b"before")
+            self.assertFalse((root / "data/new.bin").exists())
+            self.assertFalse((root / "maps").exists())
+            self.assertEqual(
+                [path for path in root.rglob("*") if path.is_file() and path.name.startswith(".")],
+                [],
+            )
+
+    def test_staging_io_failures_leave_no_outputs_temps_or_new_directories(self):
+        original_named_temporary_file = world.tempfile.NamedTemporaryFile
+        for operation in ("write", "flush", "fsync"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                existing = root / "data/existing.bin"
+                existing.parent.mkdir(parents=True)
+                existing.write_bytes(b"before")
+                outputs = {
+                    Path("new/nested/output.bin"): b"new",
+                    Path("data/existing.bin"): b"after",
+                }
+
+                def failing_temporary_file(*args, **kwargs):
+                    handle = original_named_temporary_file(*args, **kwargs)
+                    setattr(handle, operation, mock.Mock(side_effect=OSError(f"injected {operation} failure")))
+                    return handle
+
+                patcher = (
+                    mock.patch.object(world.os, "fsync", side_effect=OSError("injected fsync failure"))
+                    if operation == "fsync"
+                    else mock.patch.object(world.tempfile, "NamedTemporaryFile", side_effect=failing_temporary_file)
+                )
+                with patcher, self.assertRaisesRegex(OSError, f"injected {operation} failure"):
+                    world._install_registration_outputs(root, outputs)
+
+                self.assertEqual(existing.read_bytes(), b"before")
+                self.assertFalse((root / "new").exists())
+                self.assertEqual(
+                    [path for path in root.rglob("*") if path.is_file() and path.name.startswith(".")],
+                    [],
+                )
 
     def test_git_blob_reads_pinned_bytes_despite_dirty_file_or_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
