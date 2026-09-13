@@ -40,6 +40,7 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         mutate_asset=None,
         mutate_manifest_bytes=None,
         mutate_asset_bytes=None,
+        mutate_script_bytes=None,
     ):
         temporary = tempfile.TemporaryDirectory()
         root = Path(temporary.name)
@@ -59,7 +60,8 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         scenery_path = root / world.SCENERY_PATH
         content_path = root / world.CONTENT_PATH
         asset_path = root / world.ASSET_MANIFEST_PATH
-        for path in (manifest_path, scenery_path, content_path, asset_path):
+        script_path = root / world.CAMPAIGN_SCRIPTS_PATH
+        for path in (manifest_path, scenery_path, content_path, asset_path, script_path):
             path.parent.mkdir(parents=True, exist_ok=True)
         manifest_raw = (json.dumps(manifest, indent=2) + "\n").replace("\n", "\r\n").encode("utf-8")
         if mutate_manifest_bytes:
@@ -79,6 +81,10 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         if mutate_asset_bytes:
             asset_raw = mutate_asset_bytes(asset_raw)
         asset_path.write_bytes(asset_raw)
+        script_raw = (ROOT / world.CAMPAIGN_SCRIPTS_PATH).read_bytes()
+        if mutate_script_bytes:
+            script_raw = mutate_script_bytes(script_raw)
+        script_path.write_bytes(script_raw)
         return temporary, root
 
     def _assert_refusal_without_mutation(self, root, reason):
@@ -112,10 +118,125 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             for item in maps
             for edge in item["edges"]
         )
-        self.assertEqual(dict(event_totals), plan["event_totals"])
+        self.assertEqual(dict(event_totals), plan["source_event_totals"])
+        self.assertEqual(plan["event_totals"]["warp_events"], 1175)
+        self.assertEqual(
+            plan["event_totals"]["warp_events"],
+            sum(len(item["warp_targets"]) for item in plan["maps"]),
+        )
         self.assertEqual((selected_warps, selected_connections), (1172, 191))
         self.assertEqual(plan["selected_map_count"], 407)
         self.assertEqual((plan["original_map_count"], plan["later_map_count"]), (239, 168))
+
+    def test_normalized_topology_repairs_invalid_warps_and_removes_debug_edges(self):
+        plan = world.build_plan(ROOT, DONOR)
+        by_source = {item["source_map"]: item for item in plan["maps"]}
+
+        def warp(source_map, index):
+            return by_source[source_map]["warp_targets"][index]
+
+        self.assertEqual(warp("MAP_SSAQUA_1F", 0)["dest_warp_id"], "0")
+        self.assertEqual(
+            (warp("MAP_FUCHSIA_ROUTE19GATE", 0)["dest_map"], warp("MAP_FUCHSIA_ROUTE19GATE", 0)["dest_warp_id"]),
+            ("MAP_FUCHSIA_CITY", "2"),
+        )
+        self.assertEqual(warp("MAP_FUCHSIA_ROUTE19GATE", 1)["dest_warp_id"], "0")
+        self.assertEqual(warp("MAP_VIRIDIAN_CITY", 2)["target_map_id"], "MAP_KANTO_LATER_VIRIDIAN_CITY_HOUSE2")
+        self.assertEqual(warp("MAP_VIRIDIAN_CITY", 2)["dest_warp_id"], "0")
+        self.assertEqual(warp("MAP_NEW_BARK_TOWN_LAB", 1)["dest_warp_id"], "5")
+        self.assertEqual(warp("MAP_CINNABAR_ISLAND_POKEMON_CENTER", 0)["dest_warp_id"], "0")
+        self.assertEqual(len(by_source["MAP_NEW_BARK_TOWN"]["warp_targets"]), 6)
+        self.assertEqual(len(by_source["MAP_ECRUTEAK_CITY"]["warp_targets"]), 14)
+        self.assertEqual(len(by_source["MAP_ROUTE40"]["warp_targets"]), 9)
+        self.assertEqual(len(by_source["MAP_CINNABAR_ISLAND"]["warp_targets"]), 1)
+        self.assertEqual(len(by_source["MAP_ROUTE40"]["connections"]), 2)
+        self.assertEqual(len(by_source["MAP_VERMILION_CITY"]["connections"]), 3)
+        self.assertEqual(
+            plan["external_edges"],
+            [{
+                "source_map": "MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR",
+                "kind": "warp",
+                "index": 0,
+                "target": "MAP_DYNAMIC",
+                "classification": "required_host_adapter",
+            }],
+        )
+        elevator = by_source["MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR"]["edges"][0]
+        self.assertEqual(
+            (elevator["target"], elevator["warp_id"], elevator["classification"]),
+            ("MAP_DYNAMIC", "WARP_ID_DYNAMIC", "required_host_adapter"),
+        )
+        self.assertEqual(plan["external_edge_counts"], {"excluded_debug": 0, "host_adapter": 1, "runtime_policy": 0, "era_boundary": 0})
+        self.assertEqual(plan["topology_notes"][0]["status"], "none")
+
+    def test_normalized_topology_keeps_warp_and_edge_views_identical(self):
+        plan = world.build_plan(ROOT, DONOR)
+        for record in plan["maps"]:
+            world._cross_validate_world_representations(record)
+        self.assertEqual(plan["selected_warp_count"], 1174)
+        self.assertEqual(plan["selected_connection_count"], 191)
+
+    def test_reviewed_external_script_destinations_are_preserved_exactly(self):
+        plan = world.build_plan(ROOT, DONOR)
+        expected = world._validate_preserved_external_script_destinations(ROOT)
+        self.assertEqual(len(expected), 8)
+        self.assertEqual(plan["preserved_external_script_destinations"], expected)
+
+        temporary, root = self._temporary_ledgers(
+            mutate_script_bytes=lambda raw: raw.replace(
+                b"MAP_BIRTH_ISLAND_EXTERIOR, 13, 23",
+                b"MAP_DYNAMIC, 13, 23",
+                1,
+            )
+        )
+        with temporary:
+            self._assert_refusal_without_mutation(root, "preserved external script destination drift")
+
+    def test_duplicate_topology_representations_fail_closed(self):
+        record = copy.deepcopy(next(item for item in self.manifest["maps"] if item["source_map"] == "MAP_ROUTE40"))
+        source_path = f"data/maps/{record['source_name']}/map.json"
+        source = world._git_json(world._git_blob(DONOR, source_path), source_path)
+        mutations = {
+            "warp-target": lambda data: data["warp_targets"][0].__setitem__("dest_map", "MAP_DYNAMIC"),
+            "warp-edge": lambda data: next(e for e in data["edges"] if e["kind"] == "warp" and e["index"] == 0).__setitem__("target", "MAP_DYNAMIC"),
+            "connection-edge": lambda data: next(e for e in data["edges"] if e["kind"] == "connection" and e["edge_index"] == 2).__setitem__("offset", 999),
+            "connection-classification": lambda data: next(e for e in data["edges"] if e["kind"] == "connection" and e["edge_index"] == 0).__setitem__("classification", "excluded_debug_edge"),
+            "connection-target-map-id": lambda data: next(e for e in data["edges"] if e["kind"] == "connection" and e["edge_index"] == 0).__setitem__("target_map_id", "MAP_DYNAMIC"),
+            "duplicate-edge": lambda data: data["edges"].append(copy.deepcopy(data["edges"][0])),
+        }
+        reasons = {
+            "warp-target": "warp_targets\\[0\\] differs from donor",
+            "warp-edge": "warp edge 0 differs from warp_targets",
+            "connection-edge": "connection edge 2 differs from connections",
+            "connection-classification": "connection edge 0 classification differs from selected-map identity",
+            "connection-target-map-id": "connection edge 0 target_map_id differs from selected-map identity",
+            "duplicate-edge": "edges do not cover warp_targets and connections exactly",
+        }
+        target_map_ids = {
+            item["source_map"]: item["identity_namespace"]["map"]
+            for item in self.manifest["maps"]
+        }
+        for label, mutation in mutations.items():
+            with self.subTest(label=label):
+                mutated = copy.deepcopy(record)
+                mutation(mutated)
+                with self.assertRaisesRegex(world.WorldPlanError, reasons[label]):
+                    world._cross_validate_world_representations(mutated, source, target_map_ids)
+
+    def test_companion_ledgers_seal_all_semantic_fields(self):
+        mutations = {
+            "scenery-layout": {
+                "mutate_scenery": lambda data: data["layouts"][0].__setitem__("target_layout_id", "LAYOUT_ALTERED")
+            },
+            "content-source": {
+                "mutate_content": lambda data: data["source_files"][0].__setitem__("sha256", "0" * 64)
+            },
+        }
+        for label, arguments in mutations.items():
+            with self.subTest(label=label):
+                temporary, root = self._temporary_ledgers(**arguments)
+                with temporary:
+                    self._assert_refusal_without_mutation(root, "semantics differ from the sealed digest")
 
     def test_reordered_and_wrong_era_identities_fail_with_targeted_reasons(self):
         mutations = {
@@ -170,20 +291,9 @@ class JohtoWorldPlannerTest(unittest.TestCase):
 
         temporary, root = self._temporary_ledgers(
             mutate_manifest=alternate_target_alias,
-            mutate_scenery=lambda data: (
-                data["layouts"][0].__setitem__("target_layout_id", "LAYOUT_JOHTO_NEW_BARK_TOWN"),
-                data["layouts"][0].__setitem__(
-                    "identity_namespace",
-                    {
-                        "map": "MAP_JOHTO_NEW_BARK_TOWN",
-                        "layout": "LAYOUT_JOHTO_NEW_BARK_TOWN",
-                        "script": "Johto_NewBarkTown",
-                    },
-                ),
-            ),
         )
         with temporary:
-            self._assert_refusal_without_mutation(root, "sealed asset-manifest anchor")
+            self._assert_refusal_without_mutation(root, "scenery identity mismatch")
 
     def test_complete_asset_manifest_semantics_are_sealed_before_fields_are_trusted(self):
         mutations = {
@@ -233,12 +343,12 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             (
                 "scenery",
                 {"mutate_scenery": lambda data: data["provenance"].__setitem__("region_manifest_sha256", "0" * 64)},
-                "scenery ledger recorded region-manifest digest drift",
+                "scenery ledger semantics differ from the sealed digest",
             ),
             (
                 "content",
                 {"mutate_content": lambda data: data["provenance"].__setitem__("manifest_sha256", "0" * 64)},
-                "content-symbol ledger recorded region-manifest digest drift",
+                "content-symbol ledger semantics differ from the sealed digest",
             ),
         )
         for label, arguments, reason in mutations:
@@ -309,7 +419,7 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(plan["external_edges"], expected)
         self.assertEqual(
             plan["external_edge_counts"],
-            {"excluded_debug": 7, "host_adapter": 2, "runtime_policy": 2, "era_boundary": 2},
+            {"excluded_debug": 0, "host_adapter": 1, "runtime_policy": 0, "era_boundary": 0},
         )
         for edge in self.manifest["external_edges"]:
             source_name = next(
@@ -340,17 +450,18 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             data["runtime_readiness"]["general_pending_layouts"].append("LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH")
 
         temporary, root = self._temporary_ledgers(mutate_scenery=regress)
-        with temporary, self.assertRaisesRegex(world.WorldPlanError, "readiness drift"):
+        with temporary, self.assertRaisesRegex(world.WorldPlanError, "semantics differ"):
             world.build_plan(root, DONOR)
 
-    def test_write_is_refused_without_mutating_any_ledger(self):
+    def test_write_materializes_only_the_generated_world_plan(self):
         temporary, root = self._temporary_ledgers()
         with temporary:
             before = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
-            with self.assertRaisesRegex(world.WorldPlanError, "read-only"):
-                world.run(root, DONOR, write=True)
+            world.run(root, DONOR, write=True)
             after = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
-            self.assertEqual(after, before)
+            self.assertEqual(set(after) - set(before), {world.WORLD_PLAN_PATH})
+            self.assertEqual(json.loads((root / world.WORLD_PLAN_PATH).read_text()), world.build_plan(root, DONOR))
+            world.run(root, DONOR, check=True)
 
     def test_git_blob_reads_pinned_bytes_despite_dirty_file_or_symlink(self):
         with tempfile.TemporaryDirectory() as directory:

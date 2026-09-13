@@ -1,15 +1,17 @@
-"""Validate and report the sealed 407-map Johto/Kanto-Later world plan.
+"""Validate and materialize the sealed 407-map Johto/Kanto-Later world plan.
 
-This is deliberately a read-only planning gate. Production map registration is
-blocked until the script compiler and external-edge adapters are complete.
+The source ledgers remain donor-authenticated while the generated world plan
+contains the reviewed, runtime-safe topology normalization.
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import io
 import json
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -23,10 +25,14 @@ MANIFEST_PATH = Path("data/johto/region_manifest.json")
 SCENERY_PATH = Path("data/johto/scenery_registration.json")
 CONTENT_PATH = Path("data/johto/content_symbols.json")
 ASSET_MANIFEST_PATH = Path("data/johto/asset_manifest.json")
+WORLD_PLAN_PATH = Path("data/johto/world_plan.json")
+CAMPAIGN_SCRIPTS_PATH = Path("data/johto/campaign_scripts.inc")
 DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
 DONOR_TREE = "33661709e5368edc01c37ed9bb5e0a7a0cb192c8"
 EXPECTED_REGION_MANIFEST_SHA256 = "cdbcbca025c9635dea5f5e02da19290817c3ead298ab6dd73d7b16d7aaa70e3e"
 EXPECTED_ASSET_MANIFEST_SHA256 = "db91344abd45f1c1cd012d82db356ec35651fa92dfc79d332b72856ce011a72d"
+EXPECTED_SCENERY_REGISTRATION_SHA256 = "38fc1957b77ed2230140b31018eeb08b5e081fe202114a5918f6d27128bd1eba"
+EXPECTED_CONTENT_SYMBOLS_SHA256 = "06e0290f183f26f5150ea34ae39b2fe2758417c7eb741a756b5cd397bd9a5b70"
 # JSON provenance uses the same canonical semantic identity as the live
 # document anchors, independent of line endings and object-key order.
 ASSET_RECORDED_REGION_MANIFEST_SHA256 = EXPECTED_REGION_MANIFEST_SHA256
@@ -41,7 +47,7 @@ EXPECTED_EVENT_TOTALS = {
 EVENT_FIELDS = tuple(EXPECTED_EVENT_TOTALS)
 PENDING_GENERAL_LAYOUTS: tuple[str, ...] = ()
 PENDING_GENERAL_MAPS: tuple[str, ...] = ()
-EXPECTED_EXTERNAL_EDGES = (
+EXPECTED_SOURCE_EXTERNAL_EDGES = (
     ("MAP_NEW_BARK_TOWN", "warp", 4, "MAP_WORLD_HUB", "excluded_debug_edge"),
     ("MAP_NEW_BARK_TOWN", "warp", 7, "MAP_WORLD_HUB", "excluded_debug_edge"),
     ("MAP_ECRUTEAK_CITY", "warp", 14, "MAP_BATTLE_FRONTIER_BATTLE_TOWER_LOBBY", "required_host_adapter"),
@@ -56,6 +62,57 @@ EXPECTED_EXTERNAL_EDGES = (
     ("MAP_FUCHSIA_CITY", "warp", 2, "MAP_NEW_BARK_TOWN", "pending_era_boundary"),
     ("MAP_CINNABAR_ISLAND", "warp", 0, "MAP_NEW_BARK_TOWN", "pending_era_boundary"),
 )
+# The source manifest deliberately remains donor-authenticated.  This is the
+# normalized topology consumed by the world plan after removing known debug
+# adapters and resolving the reviewed internal transitions.
+EXPECTED_EXTERNAL_EDGES = (
+    ("MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR", "warp", 0, "MAP_DYNAMIC", "required_host_adapter"),
+)
+PRESERVED_EXTERNAL_SCRIPT_DESTINATIONS = (
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseSouthernIsland", "MAP_SOUTHERN_ISLAND_EXTERIOR", 13, 22),
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseBirthIsland", "MAP_BIRTH_ISLAND_EXTERIOR", 13, 23),
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseFarawayIsland", "MAP_FARAWAY_ISLAND_ENTRANCE", 13, 38),
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseBattleFrontier", "MAP_BATTLE_FRONTIER_OUTSIDE_WEST", 20, 67),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseSouthernIsland", "MAP_SOUTHERN_ISLAND_EXTERIOR", 13, 22),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseBirthIsland", "MAP_BIRTH_ISLAND_EXTERIOR", 13, 23),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseFarawayIsland", "MAP_FARAWAY_ISLAND_ENTRANCE", 13, 38),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseBattleFrontier", "MAP_BATTLE_FRONTIER_OUTSIDE_WEST", 20, 67),
+)
+
+WARP_REMOVALS = {
+    "MAP_NEW_BARK_TOWN": frozenset({4, 7}),
+    "MAP_ECRUTEAK_CITY": frozenset({14}),
+    "MAP_ROUTE40": frozenset({9, 10, 11, 12}),
+    "MAP_CINNABAR_ISLAND": frozenset({0}),
+}
+CONNECTION_REMOVALS = {
+    "MAP_ROUTE40": frozenset({2}),
+    "MAP_VERMILION_CITY": frozenset({3}),
+}
+WARP_REWRITES = {
+    ("MAP_SSAQUA_1F", 0): {"dest_warp_id": "0"},
+    ("MAP_FUCHSIA_ROUTE19GATE", 0): {
+        "dest_map": "MAP_FUCHSIA_CITY",
+        "dest_warp_id": "2",
+        "classification": "selected",
+        "target_map_id": "MAP_KANTO_LATER_FUCHSIA_CITY",
+    },
+    ("MAP_FUCHSIA_ROUTE19GATE", 1): {"dest_warp_id": "0"},
+    ("MAP_FUCHSIA_CITY", 2): {
+        "dest_map": "MAP_FUCHSIA_ROUTE19GATE",
+        "dest_warp_id": "0",
+        "classification": "selected",
+        "target_map_id": "MAP_KANTO_LATER_FUCHSIA_ROUTE19GATE",
+    },
+    ("MAP_NEW_BARK_TOWN_LAB", 1): {"dest_warp_id": "5"},
+    ("MAP_CINNABAR_ISLAND_POKEMON_CENTER", 0): {"dest_warp_id": "0"},
+    ("MAP_VIRIDIAN_CITY", 2): {
+        "dest_map": "MAP_VIRIDIAN_CITY_HOUSE2",
+        "dest_warp_id": "0",
+        "classification": "selected",
+        "target_map_id": "MAP_KANTO_LATER_VIRIDIAN_CITY_HOUSE2",
+    },
+}
 
 
 class WorldPlanError(ValueError):
@@ -236,6 +293,200 @@ def _edge_identity(edge: dict[str, Any]) -> tuple[str, str, int, str, str]:
     )
 
 
+def _cross_validate_world_representations(
+    record: dict[str, Any],
+    source: dict[str, Any] | None = None,
+    target_map_ids: dict[str, str] | None = None,
+) -> None:
+    """Require the manifest's three topology views to describe one graph.
+
+    When ``source`` is supplied, the donor map is the fourth view and every
+    source-backed field is compared before any reviewed normalization occurs.
+    The optional form is used for the generated plan, where the normalized
+    topology no longer has to equal the donor byte-for-byte.
+    """
+    source_map = record.get("source_map", "<unknown>")
+    connections = record.get("connections")
+    warp_targets = record.get("warp_targets")
+    edges = record.get("edges")
+    if not isinstance(connections, list) or not isinstance(warp_targets, list) or not isinstance(edges, list):
+        raise WorldPlanError(f"{source_map} topology representations must be arrays")
+    donor_connections = (source or {}).get("connections") or []
+    donor_warps = (source or {}).get("warp_events") or []
+    if source is not None and connections != donor_connections:
+        raise WorldPlanError(f"{source_map} connections differ from donor topology")
+    if source is not None and len(warp_targets) != len(donor_warps):
+        raise WorldPlanError(f"{source_map} warp_targets differ from donor warp count")
+    if source is not None:
+        for index, (target, donor_warp) in enumerate(zip(warp_targets, donor_warps, strict=True)):
+            if not isinstance(target, dict) or not isinstance(donor_warp, dict):
+                raise WorldPlanError(f"{source_map} warp representation is malformed at index {index}")
+            for field in ("x", "y", "elevation", "dest_map", "dest_warp_id"):
+                if target.get(field) != donor_warp.get(field):
+                    raise WorldPlanError(f"{source_map} warp_targets[{index}] differs from donor {field}")
+    for index, target in enumerate(warp_targets):
+        if not isinstance(target, dict) or target.get("index") != index:
+            raise WorldPlanError(f"{source_map} warp_targets indices are not contiguous")
+    for index, connection in enumerate(connections):
+        if not isinstance(connection, dict):
+            raise WorldPlanError(f"{source_map} connection representation is malformed at index {index}")
+    if len(edges) != len(warp_targets) + len(connections):
+        raise WorldPlanError(f"{source_map} edges do not cover warp_targets and connections exactly")
+    warp_edges: dict[int, dict[str, Any]] = {}
+    connection_edges: dict[int, dict[str, Any]] = {}
+    for edge in edges:
+        if not isinstance(edge, dict) or edge.get("kind") not in {"warp", "connection"}:
+            raise WorldPlanError(f"{source_map} has malformed topology edge")
+        kind = edge["kind"]
+        key = edge.get("index") if kind == "warp" else edge.get("edge_index")
+        if type(key) is not int or key < 0:
+            raise WorldPlanError(f"{source_map} {kind} edge index is malformed")
+        destination = warp_edges if kind == "warp" else connection_edges
+        if key in destination:
+            raise WorldPlanError(f"{source_map} has duplicate {kind} edge index {key}")
+        destination[key] = edge
+    if set(warp_edges) != set(range(len(warp_targets))):
+        raise WorldPlanError(f"{source_map} edges do not cover warp_targets exactly")
+    if set(connection_edges) != set(range(len(connections))):
+        raise WorldPlanError(f"{source_map} edges do not cover connections exactly")
+    for index, target in enumerate(warp_targets):
+        edge = warp_edges[index]
+        for edge_field, target_field in (
+            ("target", "dest_map"),
+            ("warp_id", "dest_warp_id"),
+            ("classification", "classification"),
+            ("target_map_id", "target_map_id"),
+        ):
+            if edge.get(edge_field) != target.get(target_field):
+                raise WorldPlanError(f"{source_map} warp edge {index} differs from warp_targets")
+    for index, connection in enumerate(connections):
+        edge = connection_edges[index]
+        for edge_field, connection_field in (("target", "map"), ("offset", "offset"), ("direction", "direction")):
+            if edge.get(edge_field) != connection.get(connection_field):
+                raise WorldPlanError(f"{source_map} connection edge {index} differs from connections")
+        if target_map_ids is not None:
+            expected_target_map_id = target_map_ids.get(connection.get("map"))
+            if expected_target_map_id is None:
+                if edge.get("classification") == "selected":
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} classification differs from selected-map identity"
+                    )
+                if edge.get("target_map_id") is not None:
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} target_map_id differs from selected-map identity"
+                    )
+            else:
+                if edge.get("classification") != "selected":
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} classification differs from selected-map identity"
+                    )
+                if edge.get("target_map_id") != expected_target_map_id:
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} target_map_id differs from selected-map identity"
+                    )
+    if source is not None:
+        for index, (connection, donor_connection) in enumerate(zip(connections, donor_connections, strict=True)):
+            if connection != donor_connection:
+                raise WorldPlanError(f"{source_map} connections[{index}] differs from donor topology")
+
+
+def _apply_topology_corrections(maps: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    corrected: list[dict[str, Any]] = []
+    corrections: list[dict[str, Any]] = []
+    for record in maps:
+        source_map = record["source_map"]
+        item = copy.deepcopy(record)
+        original_warps = item["warp_targets"]
+        removed_warps = WARP_REMOVALS.get(source_map, frozenset())
+        kept_warps: list[dict[str, Any]] = []
+        old_to_new: dict[int, int] = {}
+        for old_index, warp in enumerate(original_warps):
+            if old_index in removed_warps:
+                corrections.append({
+                    "source_map": source_map,
+                    "kind": "warp",
+                    "index": old_index,
+                    "action": "remove",
+                    "reason": "reviewed debug or adapter edge",
+                })
+                continue
+            old_to_new[old_index] = len(kept_warps)
+            kept_warps.append(warp)
+        for old_index, warp in enumerate(kept_warps):
+            original_index = next(index for index, new_index in old_to_new.items() if new_index == old_index)
+            warp["index"] = old_index
+            rewrite = WARP_REWRITES.get((source_map, original_index), {})
+            if rewrite:
+                before = {field: warp.get(field) for field in rewrite}
+                warp.update(copy.deepcopy(rewrite))
+                corrections.append({
+                    "source_map": source_map,
+                    "kind": "warp",
+                    "index": original_index,
+                    "action": "rewrite",
+                    "before": before,
+                    "after": {field: warp.get(field) for field in rewrite},
+                })
+            warp["index"] = old_index
+        item["warp_targets"] = kept_warps
+
+        original_connections = item["connections"]
+        removed_connections = CONNECTION_REMOVALS.get(source_map, frozenset())
+        item["connections"] = []
+        for index, connection in enumerate(original_connections):
+            if index in removed_connections:
+                corrections.append({
+                    "source_map": source_map,
+                    "kind": "connection",
+                    "index": index,
+                    "action": "remove",
+                    "reason": "reviewed debug edge",
+                })
+                continue
+            item["connections"].append(connection)
+
+        warp_edges = {
+            edge["index"]: edge for edge in item["edges"] if edge.get("kind") == "warp"
+        }
+        connection_edges = {
+            edge["edge_index"]: edge for edge in item["edges"] if edge.get("kind") == "connection"
+        }
+        item["edges"] = []
+        for old_index, warp in enumerate(original_warps):
+            if old_index not in old_to_new:
+                continue
+            edge = copy.deepcopy(warp_edges[old_index])
+            edge["index"] = old_to_new[old_index]
+            for edge_field, warp_field in (
+                ("target", "dest_map"),
+                ("warp_id", "dest_warp_id"),
+                ("classification", "classification"),
+                ("target_map_id", "target_map_id"),
+            ):
+                if warp_field in warp:
+                    edge[edge_field] = warp[warp_field]
+                elif edge_field in edge:
+                    edge.pop(edge_field)
+            if warp.get("classification") == "selected":
+                edge.pop("adapter", None)
+            item["edges"].append(edge)
+        for old_index, connection in enumerate(original_connections):
+            if old_index in removed_connections:
+                continue
+            edge = copy.deepcopy(connection_edges[old_index])
+            edge["edge_index"] = len([candidate for candidate in item["edges"] if candidate.get("kind") == "connection"])
+            for edge_field, connection_field in (("target", "map"), ("offset", "offset"), ("direction", "direction")):
+                edge[edge_field] = connection[connection_field]
+            item["edges"].append(edge)
+        item["edges"] = [
+            *[edge for edge in item["edges"] if edge.get("kind") == "connection"],
+            *[edge for edge in item["edges"] if edge.get("kind") == "warp"],
+        ]
+        _cross_validate_world_representations(item)
+        corrected.append(item)
+    return corrected, corrections
+
+
 def _validate_external_source(edge: dict[str, Any], source: dict[str, Any]) -> None:
     kind = edge["kind"]
     field = "warp_events" if kind == "warp" else "connections"
@@ -257,11 +508,60 @@ def _validate_external_source(edge: dict[str, Any], source: dict[str, Any]) -> N
         raise WorldPlanError(f"external connection geometry differs from donor {field}[{index}]")
 
 
+def _validate_preserved_external_script_destinations(root: Path) -> list[dict[str, Any]]:
+    """Parse the campaign script labels that intentionally retain host exits.
+
+    The script is the independent source of truth for these eight destinations;
+    the expected tuple list only defines which labels are reviewed and what
+    their materialized plan entries must be called.
+    """
+    script_path = root / CAMPAIGN_SCRIPTS_PATH
+    try:
+        script = script_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise WorldPlanError(f"cannot read preserved external script oracle {script_path}: {exc}") from exc
+    parsed: list[dict[str, Any]] = []
+    for source_map, label, target_map, expected_x, expected_y in PRESERVED_EXTERNAL_SCRIPT_DESTINATIONS:
+        block_match = re.search(
+            rf"(?ms)^{re.escape(label)}::(.*?)(?=^\S+::|\Z)",
+            script,
+        )
+        if block_match is None:
+            raise WorldPlanError(f"preserved external script label is missing: {label}")
+        destinations = re.findall(
+            r"(?m)^\s*warpsilent\s+([^,\s]+),\s*(\d+),\s*(\d+)",
+            block_match.group(1),
+        )
+        if len(destinations) != 1:
+            raise WorldPlanError(f"preserved external script label must have one warpsilent destination: {label}")
+        actual_target, actual_x, actual_y = destinations[0]
+        actual = (actual_target, int(actual_x), int(actual_y))
+        expected = (target_map, expected_x, expected_y)
+        if actual != expected:
+            raise WorldPlanError(
+                f"preserved external script destination drift for {label}: {actual!r} != {expected!r}"
+            )
+        parsed.append(
+            {
+                "source_map": source_map,
+                "script": label,
+                "target_map": actual_target,
+                "x": int(actual_x),
+                "y": int(actual_y),
+            }
+        )
+    return parsed
+
+
 def _validate_companion_ledgers(
     root: Path, donor: Path, maps: list[dict[str, Any]]
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, bytes]]:
     scenery = _load(root / SCENERY_PATH)
     content = _load(root / CONTENT_PATH)
+    if _canonical_json_sha256(scenery) != EXPECTED_SCENERY_REGISTRATION_SHA256:
+        raise WorldPlanError("scenery ledger semantics differ from the sealed digest")
+    if _canonical_json_sha256(content) != EXPECTED_CONTENT_SYMBOLS_SHA256:
+        raise WorldPlanError("content-symbol ledger semantics differ from the sealed digest")
     if (
         scenery.get("provenance", {}).get("region_manifest_sha256")
         != ASSET_RECORDED_REGION_MANIFEST_SHA256
@@ -438,6 +738,14 @@ def build_plan(repo_root: Path = ROOT, donor_root: Path = DEFAULT_DONOR) -> dict
     }:
         raise WorldPlanError("section classification totals drifted")
     _validate_source_inventory(maps)
+    target_map_ids = {
+        record["source_map"]: record["identity_namespace"]["map"]
+        for record in maps
+        if isinstance(record, dict)
+        and isinstance(record.get("source_map"), str)
+        and isinstance(record.get("identity_namespace"), dict)
+        and isinstance(record["identity_namespace"].get("map"), str)
+    }
     _, _, donor_blobs = _validate_companion_ledgers(root, donor, maps)
 
     groups: Counter[int] = Counter()
@@ -525,6 +833,7 @@ def build_plan(repo_root: Path = ROOT, donor_root: Path = DEFAULT_DONOR) -> dict
             source.get("id"), source.get("name"), source.get("layout"), source.get("region_map_section")
         ) != (source_map, source_name, record["layout"]["symbol"], record["source_section"]):
             raise WorldPlanError(f"donor map identity drift at ordinal {ordinal}")
+        _cross_validate_world_representations(record, source, target_map_ids)
         donor_sources[source_map] = source
         for field, count in _validate_event_arrays(source, source_name).items():
             event_totals[field] += count
@@ -546,7 +855,7 @@ def build_plan(repo_root: Path = ROOT, donor_root: Path = DEFAULT_DONOR) -> dict
         raise WorldPlanError("selected edge totals must be 1172 warps and 191 connections")
 
     external = manifest.get("external_edges")
-    if not isinstance(external, list) or tuple(_edge_identity(edge) for edge in external) != EXPECTED_EXTERNAL_EDGES:
+    if not isinstance(external, list) or tuple(_edge_identity(edge) for edge in external) != EXPECTED_SOURCE_EXTERNAL_EDGES:
         raise WorldPlanError("external edge identity or classification drift")
     categories = Counter(edge["classification"] for edge in external)
     if categories != {
@@ -563,33 +872,114 @@ def build_plan(repo_root: Path = ROOT, donor_root: Path = DEFAULT_DONOR) -> dict
     _validate_asset_manifest_anchor(root, manifest_raw, maps)
     _verify_donor(donor)
 
+    corrected_maps, topology_corrections = _apply_topology_corrections(maps)
+    corrected_by_id = {
+        item["identity_namespace"]["map"]: item for item in corrected_maps
+    }
+    for item in corrected_maps:
+        for warp in item["warp_targets"]:
+            target_map_id = warp.get("target_map_id")
+            destination = warp.get("dest_warp_id")
+            if target_map_id in corrected_by_id and isinstance(destination, str) and destination.isdigit():
+                target = corrected_by_id[target_map_id]
+                if int(destination) >= len(target["warp_targets"]):
+                    raise WorldPlanError(
+                        f"{item['source_map']} warp {warp['index']} has invalid destination warp id {destination}"
+                    )
+        _cross_validate_world_representations(item, target_map_ids=target_map_ids)
+    corrected_selected_warps = sum(
+        warp.get("classification") == "selected"
+        for item in corrected_maps
+        for warp in item["warp_targets"]
+    )
+    corrected_selected_connections = sum(
+        edge.get("kind") == "connection" and edge.get("classification") == "selected"
+        for item in corrected_maps
+        for edge in item["edges"]
+    )
+    if (corrected_selected_warps, corrected_selected_connections) != (1174, 191):
+        raise WorldPlanError("corrected selected edge totals must be 1174 warps and 191 connections")
+    normalized_external = []
+    for item in corrected_maps:
+        for edge in item["edges"]:
+            if edge.get("classification") != "selected":
+                external_edge = copy.deepcopy(edge)
+                external_edge["source_map"] = item["source_map"]
+                normalized_external.append(external_edge)
+    if tuple(_edge_identity(edge) for edge in normalized_external) != EXPECTED_EXTERNAL_EDGES:
+        raise WorldPlanError("corrected external edge identity or classification drift")
+    normalized_categories = Counter(edge["classification"] for edge in normalized_external)
+    source_event_totals = {key: event_totals[key] for key in EVENT_FIELDS}
+    corrected_event_totals = {
+        "object_events": source_event_totals["object_events"],
+        "warp_events": sum(len(item["warp_targets"]) for item in corrected_maps),
+        "coord_events": source_event_totals["coord_events"],
+        "bg_events": source_event_totals["bg_events"],
+    }
+    if corrected_event_totals["warp_events"] != 1175:
+        raise WorldPlanError(
+            "corrected warp event total must be 1175, "
+            f"got {corrected_event_totals['warp_events']}"
+        )
+    preserved_external_script_destinations = _validate_preserved_external_script_destinations(root)
+    route40_events = donor_sources["MAP_ROUTE40"].get("object_events", [])
+    route40_closure_payload = [
+        event
+        for event in route40_events
+        if isinstance(event, dict)
+        and any(
+            marker in json.dumps(event, sort_keys=True).upper()
+            for marker in ("ENGINEER", "TRAINER_HILL")
+        )
+    ]
+    if route40_closure_payload:
+        raise WorldPlanError(
+            "Route40 Trainer Hill closure payload remains in the donor object events; "
+            "its ownership must be reviewed before removing the entrance"
+        )
+    topology_notes = [
+        {
+            "subject": "Route40 Trainer Hill closure payload",
+            "status": "none",
+            "evidence": (
+                "Pinned donor Route40 object_events contains no OBJ_EVENT_GFX_ENGINEER "
+                "or TrainerHill-specific script, so the removed Trainer Hill entrance "
+                "has no selected Route40 closure NPC to remove."
+            ),
+        }
+    ]
+
     return {
         "schema": "johto-world-plan-v1",
-        "mode": "read-only",
+        "mode": "materialized",
         "selected_map_count": 407,
         "original_map_count": 239,
         "later_map_count": 168,
         "group_counts": {str(key): groups[key] for key in sorted(groups)},
-        "event_totals": {key: event_totals[key] for key in EVENT_FIELDS},
-        "selected_warp_count": selected_warps,
-        "selected_connection_count": selected_connections,
+        "event_totals": corrected_event_totals,
+        "source_event_totals": source_event_totals,
+        "selected_warp_count": corrected_selected_warps,
+        "selected_connection_count": corrected_selected_connections,
         "external_edge_counts": {
-            "excluded_debug": categories["excluded_debug_edge"],
-            "host_adapter": categories["required_host_adapter"],
-            "runtime_policy": categories["pending_runtime_policy"],
-            "era_boundary": categories["pending_era_boundary"],
+            "excluded_debug": normalized_categories["excluded_debug_edge"],
+            "host_adapter": normalized_categories["required_host_adapter"],
+            "runtime_policy": normalized_categories["pending_runtime_policy"],
+            "era_boundary": normalized_categories["pending_era_boundary"],
         },
         "external_edges": [
             {"source_map": item[0], "kind": item[1], "index": item[2], "target": item[3], "classification": item[4]}
             for item in EXPECTED_EXTERNAL_EDGES
         ],
+        "preserved_external_script_destinations": preserved_external_script_destinations,
+        "topology_notes": topology_notes,
+        "topology_corrections": topology_corrections,
+        "maps": corrected_maps,
         "pending_general_layouts": list(PENDING_GENERAL_LAYOUTS),
         "pending_general_maps": pending_maps,
         "general_runtime_ready_map_count": 407,
         "production_write_ready": False,
         "blockers": [
             "complete 407-map campaign script compiler",
-            "resolve 13 external edges",
             "register production map headers, groups, and events",
         ],
     }
@@ -610,9 +1000,17 @@ def run(
         raise WorldPlanError("select exactly one of --check or --write")
     plan = build_plan(repo_root, donor_root)
     if write:
-        raise WorldPlanError(
-            "read-only planner refuses production world writes: compiler, external-edge, and dynamic-scenery dependencies are incomplete"
-        )
+        output = Path(repo_root).resolve() / WORLD_PLAN_PATH
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(render(plan).encode("utf-8"))
+    else:
+        output = Path(repo_root).resolve() / WORLD_PLAN_PATH
+        try:
+            existing = _parse_json_document(output.read_bytes(), str(output))
+        except OSError as exc:
+            raise WorldPlanError(f"cannot read {output}: {exc}") from exc
+        if existing != plan:
+            raise WorldPlanError("generated world plan is stale")
     print(render(plan), end="")
     return 0
 
