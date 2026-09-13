@@ -2553,6 +2553,16 @@ void ShowScrollableMultichoice(void)
         task->tKeepOpenAfterSelect = FALSE;
         task->tTaskId = taskId;
         break;
+    case SCROLL_MULTI_BF_MOVE_TUTOR_3:
+        task->tMaxItemsOnScreen = 4;
+        task->tNumItems = 4;
+        task->tLeft = 15;
+        task->tTop = 1;
+        task->tWidth = 14;
+        task->tHeight = 8;
+        task->tKeepOpenAfterSelect = FALSE;
+        task->tTaskId = taskId;
+        break;
     case SCROLL_MULTI_SS_TIDAL_DESTINATION:
         task->tMaxItemsOnScreen = MAX_SCROLL_MULTI_ON_SCREEN;
         task->tNumItems = 7;
@@ -2782,7 +2792,14 @@ static const u8 *const sScrollableMultichoiceOptions[][MAX_SCROLL_MULTI_LENGTH] 
         gText_2F,
         gText_1F,
         gText_Exit,
-    }
+    },
+    [SCROLL_MULTI_BF_MOVE_TUTOR_3] =
+    {
+        COMPOUND_STRING("FRENZY PLANT{CLEAR_TO 0x4E}64BP"),
+        COMPOUND_STRING("BLAST BURN{CLEAR_TO 0x4E}64BP"),
+        COMPOUND_STRING("HYDRO CANNON{CLEAR_TO 0x4E}64BP"),
+        gText_Exit,
+    },
 };
 
 static void Task_ShowScrollableMultichoice(u8 taskId)
@@ -3278,8 +3295,59 @@ static void HideFrontierExchangeCornerItemIcon(enum ScrollMulti menu, u16 unused
     }
 }
 
+static enum Move GetBattleFrontierTutorMove(u16 tutorId, u16 selection)
+{
+    static const enum Move sBattleFrontierTutorMoves[][10] =
+    {
+        {
+            MOVE_SOFT_BOILED,
+            MOVE_SEISMIC_TOSS,
+            MOVE_DREAM_EATER,
+            MOVE_MEGA_PUNCH,
+            MOVE_MEGA_KICK,
+            MOVE_BODY_SLAM,
+            MOVE_ROCK_SLIDE,
+            MOVE_COUNTER,
+            MOVE_THUNDER_WAVE,
+            MOVE_SWORDS_DANCE,
+        },
+        {
+            MOVE_DEFENSE_CURL,
+            MOVE_SNORE,
+            MOVE_MUD_SLAP,
+            MOVE_SWIFT,
+            MOVE_ICY_WIND,
+            MOVE_ENDURE,
+            MOVE_PSYCH_UP,
+            MOVE_ICE_PUNCH,
+            MOVE_THUNDER_PUNCH,
+            MOVE_FIRE_PUNCH,
+        },
+        {
+            MOVE_FRENZY_PLANT,
+            MOVE_BLAST_BURN,
+            MOVE_HYDRO_CANNON,
+        },
+    };
+    static const u8 sBattleFrontierTutorMoveCounts[] = {10, 10, 3};
+
+    if (tutorId >= ARRAY_COUNT(sBattleFrontierTutorMoves)
+     || selection >= sBattleFrontierTutorMoveCounts[tutorId])
+        return MOVE_NONE;
+
+    return sBattleFrontierTutorMoves[tutorId][selection];
+}
+
+void GetBattleFrontierTutorMoveIndex(void)
+{
+    gSpecialVar_0x8005 = GetBattleFrontierTutorMove(
+        VarGet(VAR_TEMP_FRONTIER_TUTOR_ID),
+        VarGet(VAR_TEMP_FRONTIER_TUTOR_SELECTION));
+}
+
 void BufferBattleFrontierTutorMoveName(void)
 {
+    GetBattleFrontierTutorMoveIndex();
     StringCopy(gStringVar1, GetMoveName(gSpecialVar_0x8005));
 }
 
@@ -3296,7 +3364,9 @@ static void ShowBattleFrontierTutorWindow(enum ScrollMulti menu, u16 selection)
         .baseBlock = 28,
     };
 
-    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1 || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
+    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_3)
     {
         if (gSpecialVar_0x8006 == 0)
         {
@@ -3339,13 +3409,41 @@ static void ShowBattleFrontierTutorMoveDescription(enum ScrollMulti menu, u16 se
         gText_Exit,
     };
 
-    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1 || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
+    static const u8 *const sBattleFrontier_TutorMoveDescriptions3[] =
     {
-        FillWindowPixelRect(sTutorMoveAndElevatorWindowId, PIXEL_FILL(1), 0, 0, 96, 48);
-        if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
-            AddTextPrinterParameterized(sTutorMoveAndElevatorWindowId, FONT_NORMAL, sBattleFrontier_TutorMoveDescriptions2[selection], 0, 1, 0, NULL);
+        COMPOUND_STRING("A powerful GRASS move.\nThe user rests next turn."),
+        COMPOUND_STRING("A powerful FIRE move.\nThe user rests next turn."),
+        COMPOUND_STRING("A powerful WATER move.\nThe user rests next turn."),
+        gText_Exit,
+    };
+
+    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_3)
+    {
+        const u8 *description;
+
+        if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_3)
+        {
+            if (selection >= ARRAY_COUNT(sBattleFrontier_TutorMoveDescriptions3))
+                return;
+            description = sBattleFrontier_TutorMoveDescriptions3[selection];
+        }
+        else if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
+        {
+            if (selection >= ARRAY_COUNT(sBattleFrontier_TutorMoveDescriptions2))
+                return;
+            description = sBattleFrontier_TutorMoveDescriptions2[selection];
+        }
         else
-            AddTextPrinterParameterized(sTutorMoveAndElevatorWindowId, FONT_NORMAL, sBattleFrontier_TutorMoveDescriptions1[selection], 0, 1, 0, NULL);
+        {
+            if (selection >= ARRAY_COUNT(sBattleFrontier_TutorMoveDescriptions1))
+                return;
+            description = sBattleFrontier_TutorMoveDescriptions1[selection];
+        }
+
+        FillWindowPixelRect(sTutorMoveAndElevatorWindowId, PIXEL_FILL(1), 0, 0, 96, 48);
+        AddTextPrinterParameterized(sTutorMoveAndElevatorWindowId, FONT_NORMAL, description, 0, 1, 0, NULL);
     }
 }
 
