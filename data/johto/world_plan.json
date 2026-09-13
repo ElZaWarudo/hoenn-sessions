@@ -1,10 +1,7 @@
 {
-  "blockers": [
-    "complete 407-map campaign script compiler",
-    "register production map headers, groups, and events"
-  ],
+  "blockers": [],
   "event_totals": {
-    "bg_events": 760,
+    "bg_events": 758,
     "coord_events": 407,
     "object_events": 3357,
     "warp_events": 1175
@@ -47199,7 +47196,7 @@
       "y": 67
     }
   ],
-  "production_write_ready": false,
+  "production_write_ready": true,
   "schema": "johto-world-plan-v1",
   "selected_connection_count": 191,
   "selected_map_count": 407,

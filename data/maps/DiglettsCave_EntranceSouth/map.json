@@ -1,0 +1,37 @@
+{
+  "id": "MAP_KANTO_LATER_DIGLETTS_CAVE_ENTRANCE_SOUTH",
+  "name": "DiglettsCave_EntranceSouth",
+  "layout": "LAYOUT_KANTO_LATER_DIGLETTS_CAVE_ENTRANCE_SOUTH",
+  "music": "MUS_HG_ROCK_TUNNEL",
+  "region_map_section": "MAPSEC_DIGLETTS_CAVE",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERGROUND",
+  "allow_cycling": true,
+  "allow_escaping": true,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [],
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 4,
+      "y": 3,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_LATER_DIGLETTS_CAVE_TUNNEL",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_LATER_VERMILION_CITY",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [],
+  "region": "REGION_KANTO",
+  "shared_scripts_map": "KantoLater_DiglettsCave_EntranceSouth_DiglettsCave_EntranceSouth"
+}
