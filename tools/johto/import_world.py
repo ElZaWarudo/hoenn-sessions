@@ -1,8 +1,7 @@
 """Validate and report the sealed 407-map Johto/Kanto-Later world plan.
 
-This is deliberately a read-only planning gate.  Production map registration is
-blocked until the script compiler, external-edge adapters, and dynamic General
-Safari scenery are complete.
+This is deliberately a read-only planning gate. Production map registration is
+blocked until the script compiler and external-edge adapters are complete.
 """
 
 from __future__ import annotations
@@ -27,11 +26,11 @@ ASSET_MANIFEST_PATH = Path("data/johto/asset_manifest.json")
 DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
 DONOR_TREE = "33661709e5368edc01c37ed9bb5e0a7a0cb192c8"
 EXPECTED_REGION_MANIFEST_SHA256 = "cdbcbca025c9635dea5f5e02da19290817c3ead298ab6dd73d7b16d7aaa70e3e"
-EXPECTED_ASSET_MANIFEST_SHA256 = "c85cb17e2fa47106e89ff71583fca385f3288ac9e5bacd2247e043f217a1c5ec"
-# This value is recorded inside the accepted asset ledger.  It identifies the
-# original region-manifest artifact; the complete live document is sealed by
-# EXPECTED_REGION_MANIFEST_SHA256 after canonical JSON serialization below.
-ASSET_RECORDED_REGION_MANIFEST_SHA256 = "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
+EXPECTED_ASSET_MANIFEST_SHA256 = "db91344abd45f1c1cd012d82db356ec35651fa92dfc79d332b72856ce011a72d"
+# JSON provenance uses the same canonical semantic identity as the live
+# document anchors, independent of line endings and object-key order.
+ASSET_RECORDED_REGION_MANIFEST_SHA256 = EXPECTED_REGION_MANIFEST_SHA256
+CONTENT_RECORDED_REGION_MANIFEST_SHA256 = EXPECTED_REGION_MANIFEST_SHA256
 EXPECTED_GROUP_COUNTS = {75: 128, 76: 111, 77: 128, 78: 40}
 EXPECTED_EVENT_TOTALS = {
     "object_events": 3357,
@@ -40,16 +39,8 @@ EXPECTED_EVENT_TOTALS = {
     "bg_events": 760,
 }
 EVENT_FIELDS = tuple(EXPECTED_EVENT_TOTALS)
-PENDING_GENERAL_LAYOUTS = (
-    "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
-    "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
-    "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
-)
-PENDING_GENERAL_MAPS = (
-    "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
-    "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
-    "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
-)
+PENDING_GENERAL_LAYOUTS: tuple[str, ...] = ()
+PENDING_GENERAL_MAPS: tuple[str, ...] = ()
 EXPECTED_EXTERNAL_EDGES = (
     ("MAP_NEW_BARK_TOWN", "warp", 4, "MAP_WORLD_HUB", "excluded_debug_edge"),
     ("MAP_NEW_BARK_TOWN", "warp", 7, "MAP_WORLD_HUB", "excluded_debug_edge"),
@@ -276,7 +267,7 @@ def _validate_companion_ledgers(
         != ASSET_RECORDED_REGION_MANIFEST_SHA256
     ):
         raise WorldPlanError("scenery ledger recorded region-manifest digest drift")
-    if content.get("provenance", {}).get("manifest_sha256") != ASSET_RECORDED_REGION_MANIFEST_SHA256:
+    if content.get("provenance", {}).get("manifest_sha256") != CONTENT_RECORDED_REGION_MANIFEST_SHA256:
         raise WorldPlanError("content-symbol ledger recorded region-manifest digest drift")
     layouts = scenery.get("layouts")
     if not isinstance(layouts, list) or len(layouts) != 407:
@@ -343,7 +334,7 @@ def _validate_companion_ledgers(
                 raise WorldPlanError(f"content source hash drift at ordinal {ordinal}: {relative}")
     pending = scenery.get("runtime_readiness", {}).get("general_pending_layouts")
     if tuple(pending or ()) != PENDING_GENERAL_LAYOUTS:
-        raise WorldPlanError("the three dynamic General Safari layouts must remain pending")
+        raise WorldPlanError("General Safari runtime readiness drift")
     if scenery.get("runtime_readiness", {}).get("ready") is not False:
         raise WorldPlanError("scenery ledger prematurely claims runtime readiness")
     return scenery, content, donor_blobs
@@ -594,12 +585,11 @@ def build_plan(repo_root: Path = ROOT, donor_root: Path = DEFAULT_DONOR) -> dict
         ],
         "pending_general_layouts": list(PENDING_GENERAL_LAYOUTS),
         "pending_general_maps": pending_maps,
-        "playable_map_count": 404,
+        "general_runtime_ready_map_count": 407,
         "production_write_ready": False,
         "blockers": [
             "complete 407-map campaign script compiler",
             "resolve 13 external edges",
-            "implement three dynamic General Safari layouts",
             "register production map headers, groups, and events",
         ],
     }

@@ -624,6 +624,7 @@
   },
   "tileset_registration": {
     "primary": {
+      "General": "InitTilesetAnim_General",
       "JohtoGeneral": "InitTilesetAnim_JohtoGeneral",
       "KantoGeneral": "InitTilesetAnim_JohtoGeneral",
       "NorthEast": "InitTilesetAnim_JohtoGeneral",

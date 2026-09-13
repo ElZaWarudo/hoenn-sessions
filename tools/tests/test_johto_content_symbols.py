@@ -71,6 +71,39 @@ class ContentSymbolLedgerTests(unittest.TestCase):
         self.assertEqual(self.ledger["provenance"]["predecessor_transition"]["from"]["selected_map_count"], 239)
         self.assertEqual(self.ledger["provenance"]["predecessor_transition"]["to"]["added_map_count"], 168)
 
+    def test_manifest_provenance_is_format_independent_and_semantic(self) -> None:
+        manifest = symbols._load_json(symbols.MANIFEST_PATH)
+        expected = symbols._json_identity(manifest)
+        self.assertEqual(self.candidate["provenance"]["manifest_sha256"], expected)
+        for formatted in (
+            json.dumps(manifest, indent=4, sort_keys=True),
+            json.dumps(manifest, separators=(",", ":")) + "\r\n",
+        ):
+            self.assertEqual(symbols._json_identity(json.loads(formatted)), expected)
+        changed = copy.deepcopy(manifest)
+        changed["maps"][0]["map"] = "MAP_SEMANTIC_DRIFT"
+        self.assertNotEqual(symbols._json_identity(changed), expected)
+
+    def test_exact_raw_manifest_provenance_predecessor_upgrades_only(self) -> None:
+        predecessor = copy.deepcopy(self.ledger)
+        predecessor["provenance"]["manifest_sha256"] = (
+            "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
+        )
+        self.assertEqual(
+            symbols._json_identity(predecessor),
+            symbols.RAW_MANIFEST_PROVENANCE_LEDGER_SHA256,
+        )
+        before = copy.deepcopy(predecessor)
+        self.assertEqual(symbols.append_ledger(predecessor, self.ledger), self.ledger)
+        self.assertEqual(predecessor, before)
+
+        changed = copy.deepcopy(predecessor)
+        changed["provenance"]["manifest_sha256"] = "0" * 64
+        before = copy.deepcopy(changed)
+        with self.assertRaisesRegex(symbols.ContentSymbolError, "append-only provenance drift"):
+            symbols.append_ledger(changed, self.ledger)
+        self.assertEqual(changed, before)
+
     def test_ordinals_are_qualified_and_joey_is_foundation_identity(self) -> None:
         for kind in ("flags", "vars", "trainers"):
             entries = self.ledger["identities"][kind]

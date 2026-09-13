@@ -89,12 +89,16 @@ class AssetCorpusTests(unittest.TestCase):
             DONOR / "include/constants/metatile_behaviors.h",
             assets.ROOT / "include/constants/metatile_behaviors.h")
 
-    def test_full_manifest_matches_selection_and_remains_pending_runtime(self):
+    def test_full_manifest_matches_selection_and_keeps_global_runtime_gate(self):
         self.assertEqual(self.manifest, assets.build_manifest(DONOR))
         self.assertEqual(self.manifest["selection"],
                          {"layout_count": 407, "tileset_count": 97, "asset_count": 2366})
         self.assertEqual(len(self.mismatches), 22)
-        self.assertTrue(all(not entry["runtime_ready"] for entry in self.manifest["tilesets"]))
+        ready_tilesets = {
+            entry["symbol"] for entry in self.manifest["tilesets"]
+            if entry["runtime_ready"]
+        }
+        self.assertEqual(ready_tilesets, {"gTileset_KantoLaterImported_General"})
         self.assertFalse(self.manifest["runtime_ready"])
         self.assertEqual(len(self.manifest["layouts"]), 407)
         self.assertEqual(len(self.manifest["tilesets"]), 97)
@@ -151,18 +155,65 @@ class AssetCorpusTests(unittest.TestCase):
         general = next(item for item in self.manifest["tilesets"]
                        if item["symbol"] == "gTileset_KantoLaterImported_General")
         self.assertEqual(general["kind"], "primary")
+        self.assertEqual(general["callback"], "InitTilesetAnim_HoennGeneral")
+        self.assertTrue(general["runtime_ready"])
         self.assertEqual(general["assets"][1]["metatile_count"], 512)
         self.assertEqual(general["assets"][2]["source_size"], 1024)
         self.assertEqual(self.manifest["conversion"]["primary_metatile_boundary"], 640)
         self.assertEqual(self.manifest["conversion"]["general_primary_metatile_count"], 512)
         pending = self.manifest["runtime_readiness"]["pending_general_layouts"]
-        self.assertEqual({item["source_layout"] for item in pending}, {
+        self.assertEqual(pending, [])
+        safari_layouts = {
+            item["symbol"]: item for item in self.manifest["layouts"]
+            if item["symbol"] in {
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+            "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+            }
+        }
+        self.assertEqual(set(safari_layouts), {
             "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
             "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
             "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
         })
-        self.assertTrue(all(not self.manifest["runtime_readiness"]["ready"]
-                            and item["pending"] for item in pending))
+        for source, item in safari_layouts.items():
+            self.assertEqual(item["primary_tileset"], "gTileset_General", source)
+            self.assertEqual(item["target_primary_tileset"],
+                             "gTileset_KantoLaterImported_General", source)
+            self.assertEqual(item["target_layout"], source.replace(
+                "LAYOUT_FUCHSIA_", "LAYOUT_KANTO_LATER_FUCHSIA_"), source)
+
+    def test_general_runtime_readiness_drift_is_rejected_exactly(self):
+        mutations = {}
+        forged = copy.deepcopy(self.manifest)
+        general = next(item for item in forged["tilesets"]
+                       if item["symbol"] == "gTileset_KantoLaterImported_General")
+        general["runtime_ready"] = False
+        mutations["runtime readiness"] = forged
+        forged = copy.deepcopy(self.manifest)
+        general = next(item for item in forged["tilesets"]
+                       if item["symbol"] == "gTileset_KantoLaterImported_General")
+        general["callback"] = "InitTilesetAnim_General"
+        mutations["callback identity"] = forged
+        forged = copy.deepcopy(self.manifest)
+        forged["runtime_readiness"]["pending_general_layouts"].append({
+            "source_layout": "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+            "pending": "drift",
+        })
+        mutations["pending identity"] = forged
+        forged = copy.deepcopy(self.manifest)
+        beach = next(item for item in forged["layouts"]
+                     if item["symbol"] == "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH")
+        beach["target_layout"] = "LAYOUT_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BRUSH"
+        mutations["target identity"] = forged
+
+        with tempfile.TemporaryDirectory() as directory, \
+             mock.patch.object(assets, "build_manifest", return_value=self.manifest):
+            for label, forged in mutations.items():
+                with self.subTest(label=label), self.assertRaisesRegex(
+                    assets.AssetError, "supplied asset manifest"
+                ):
+                    assets.stage_assets(DONOR, Path(directory) / label, forged)
 
     def test_symbolic_behavior_mapping_does_not_reuse_conflicting_host_meanings(self):
         for source, target in ((0xA1, 0xF0), (0xEF, 0xF1), (0xA3, 0xF2),

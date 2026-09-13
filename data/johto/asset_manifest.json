@@ -5,7 +5,7 @@
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
     "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
     "region_manifest_path": "data/johto/region_manifest.json",
-    "region_manifest_sha256": "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6",
+    "region_manifest_sha256": "cdbcbca025c9635dea5f5e02da19290817c3ead298ab6dd73d7b16d7aaa70e3e",
     "region_manifest_source_revision": "21b8c9f918800a07b74a5ee2a882b1374d9ac4f9"
   },
   "selection": {
@@ -364,49 +364,17 @@
     "MB_JOHTO_WATER_NORTH_ARROW_WARP surfable table and IsNorthArrowWarp consumer",
     "MB_JOHTO_INERT no-interaction proof",
     "MB_JOHTO_DEOXYS_ATTACK scoped Deoxys helper decision",
-    "source tileset callbacks and animation registrations",
-    "General Safari layouts require Cut/Hyper Cut, connected-border and persistent-effect writer closure"
+    "source tileset callbacks and animation registrations"
   ],
   "runtime_readiness": {
     "ready": false,
     "general_primary_table_count": 512,
     "secondary_id_base": 640,
-    "pending_general_layouts": [
-      {
-        "source_layout": "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
-        "target_layout": "LAYOUT_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
-        "pending": [
-          "Cut and Hyper Cut dynamic metatile writers",
-          "connected-border updates",
-          "persistent-effect/script tile writers"
-        ],
-        "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json"
-      },
-      {
-        "source_layout": "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
-        "target_layout": "LAYOUT_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
-        "pending": [
-          "Cut and Hyper Cut dynamic metatile writers",
-          "connected-border updates",
-          "persistent-effect/script tile writers"
-        ],
-        "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json"
-      },
-      {
-        "source_layout": "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
-        "target_layout": "LAYOUT_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
-        "pending": [
-          "Cut and Hyper Cut dynamic metatile writers",
-          "connected-border updates",
-          "persistent-effect/script tile writers"
-        ],
-        "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json"
-      }
-    ],
+    "pending_general_layouts": [],
     "global_writer": {
-      "status": "pending",
+      "status": "closed",
       "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json",
-      "reason": "global Cut/connected-border/persistent-effect writers remain outside static asset staging"
+      "reason": "runtime validates actual primary length and suppresses Fortree-only long-grass writes on imported General layouts"
     }
   },
   "layouts": [
@@ -26451,7 +26419,7 @@
       "symbol": "gTileset_KantoLaterImported_General",
       "kind": "primary",
       "callback": "InitTilesetAnim_HoennGeneral",
-      "runtime_ready": false,
+      "runtime_ready": true,
       "assets": [
         {
           "path": "data/tilesets/primary/general/tiles.png",

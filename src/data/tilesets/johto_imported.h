@@ -2616,7 +2616,7 @@ const struct Tileset gTileset_KantoLaterImported_General =
     .palettes = gTilesetPalettes_KantoLaterImported_General,
     .metatiles = gMetatiles_KantoLaterImported_General,
     .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_General,
-    .callback = NULL,
+    .callback = InitTilesetAnim_General,
 };
 
 const u32 gTilesetTiles_KantoLaterImported_HallOfFame[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/hall_of_fame/tiles.4bpp.fastSmol");

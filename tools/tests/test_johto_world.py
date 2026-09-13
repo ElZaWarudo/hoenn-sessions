@@ -329,18 +329,18 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         with temporary, self.assertRaisesRegex(world.WorldPlanError, "external edge"):
             world.build_plan(root, DONOR)
 
-    def test_general_safari_layouts_remain_pending_and_nonplayable(self):
+    def test_general_safari_layouts_are_runtime_closed_and_reported(self):
         plan = world.build_plan(ROOT, DONOR)
         self.assertEqual(tuple(plan["pending_general_layouts"]), world.PENDING_GENERAL_LAYOUTS)
         self.assertEqual(tuple(plan["pending_general_maps"]), world.PENDING_GENERAL_MAPS)
-        self.assertEqual(plan["playable_map_count"], 404)
+        self.assertEqual(plan["general_runtime_ready_map_count"], 407)
         self.assertFalse(plan["production_write_ready"])
 
-        def promote(data):
-            data["runtime_readiness"]["general_pending_layouts"].pop()
+        def regress(data):
+            data["runtime_readiness"]["general_pending_layouts"].append("LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH")
 
-        temporary, root = self._temporary_ledgers(mutate_scenery=promote)
-        with temporary, self.assertRaisesRegex(world.WorldPlanError, "must remain pending"):
+        temporary, root = self._temporary_ledgers(mutate_scenery=regress)
+        with temporary, self.assertRaisesRegex(world.WorldPlanError, "readiness drift"):
             world.build_plan(root, DONOR)
 
     def test_write_is_refused_without_mutating_any_ledger(self):

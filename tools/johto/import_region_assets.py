@@ -61,7 +61,7 @@ ROUTE7_MAP_REPAIRS = (
     (196, 20, 8, 0x0786, 0x041C),
     (197, 21, 8, 0x0786, 0x041D),
 )
-ACCEPTED_PREDECESSOR_SHA256 = "d119044e87fe3f7289a80bf5ff7f8b4a171727453bf5d7ae8d8fb452162b09ee"
+ACCEPTED_PREDECESSOR_SHA256 = "c6dbb8d0b8aecbbe3acc473cff39c62988e211bed8bf664220a7972cd045ce73"
 
 # The pinned donor has a small, source-backed set of attribute exceptions.  A
 # path is eligible only when its complete source hash matches this ledger.  The
@@ -157,6 +157,10 @@ class AssetError(ValueError):
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def json_identity(value: Any) -> str:
+    return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
 
 
 def load_json(path: Path) -> Any:
@@ -798,7 +802,7 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
         tile_record = {
             "symbol": symbol if symbol in original_tile_symbols else target_tileset_symbol(symbol),
             "kind": "primary" if primary else "secondary",
-            "callback": info["callback"], "runtime_ready": False,
+            "callback": info["callback"], "runtime_ready": symbol == GENERAL_TILESET_SYMBOL,
             "assets": source_assets,
         }
         if symbol not in original_tile_symbols:
@@ -836,32 +840,22 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
     tile_order = sorted(original_tile_symbols) + sorted(later_tile_symbols)
     if len(tile_order) != 97 or tile_order[:66] != sorted(original_tile_symbols):
         raise AssetError("tileset prefix/tail ordering drifted")
-    general_layouts = [
-        {
-            "source_layout": layout["symbol"],
-            "target_layout": layout.get("target_layout", layout["symbol"]),
-            "pending": [
-                "Cut and Hyper Cut dynamic metatile writers",
-                "connected-border updates",
-                "persistent-effect/script tile writers",
-            ],
-            "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json",
-        }
-        for layout in layouts
-        if layout["symbol"] in {
+    general_layout_count = sum(
+        layout["symbol"] in {
             "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
             "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
             "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
         }
-    ]
-    if len(general_layouts) != 3:
+        for layout in layouts
+    )
+    if general_layout_count != 3:
         raise AssetError("General readiness layout set drifted")
     return {
         "schema_version": 1,
         "provenance": {
             "repository": DONOR_REPOSITORY, "donor_revision": revision, "donor_tree": tree,
             "region_manifest_path": "data/johto/region_manifest.json",
-            "region_manifest_sha256": sha256(REGION_MANIFEST.read_bytes()),
+            "region_manifest_sha256": json_identity(region),
             "region_manifest_source_revision": REGION_MANIFEST_SOURCE_REVISION,
         },
         "selection": {"layout_count": len(layouts), "tileset_count": len(tile_records), "asset_count": sum(len(item["assets"]) for item in layouts) + sum(len(item["assets"]) for item in tile_records.values())},
@@ -884,17 +878,16 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             "MB_JOHTO_INERT no-interaction proof",
             "MB_JOHTO_DEOXYS_ATTACK scoped Deoxys helper decision",
             "source tileset callbacks and animation registrations",
-            "General Safari layouts require Cut/Hyper Cut, connected-border and persistent-effect writer closure",
         ],
         "runtime_readiness": {
             "ready": False,
             "general_primary_table_count": GENERAL_METATILE_COUNT,
             "secondary_id_base": PRIMARY_METATILE_COUNT,
-            "pending_general_layouts": general_layouts,
+            "pending_general_layouts": [],
             "global_writer": {
-                "status": "pending",
+                "status": "closed",
                 "source_evidence": "docs/orchestration/runs/johto-region-20260908/later-general-script-tile-audit.json",
-                "reason": "global Cut/connected-border/persistent-effect writers remain outside static asset staging",
+                "reason": "runtime validates actual primary length and suppresses Fortree-only long-grass writes on imported General layouts",
             },
         },
         "layouts": layouts,

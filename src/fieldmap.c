@@ -19,6 +19,10 @@
 #include "constants/metatile_behaviors_frlg.h"
 #include "wild_encounter.h"
 
+extern const struct Tileset gTileset_KantoLaterImported_General;
+
+#define KANTO_LATER_GENERAL_METATILE_COUNT 512
+
 struct ConnectionFlags
 {
     u8 south:1;
@@ -440,14 +444,30 @@ u32 GetNumPalsInPrimary(struct MapLayout const *mapLayout)
     return mapLayout->isFrlg ? NUM_PALS_IN_PRIMARY_FRLG : NUM_PALS_IN_PRIMARY;
 }
 
+bool32 IsMetatileIdValidForMapLayout(const struct MapLayout *mapLayout, u16 metatileId)
+{
+    if (mapLayout == NULL || mapLayout->primaryTileset == NULL || mapLayout->secondaryTileset == NULL)
+        return FALSE;
+    if (metatileId >= NUM_METATILES_TOTAL)
+        return FALSE;
+    if (mapLayout->primaryTileset == &gTileset_KantoLaterImported_General
+     && metatileId >= KANTO_LATER_GENERAL_METATILE_COUNT
+     && metatileId < GetNumMetatilesInPrimary(mapLayout))
+        return FALSE;
+    return TRUE;
+}
+
 u32 MapGridGetMetatileIdAt(int x, int y)
 {
     u16 block = GetMapGridBlockAt(x, y);
+    u16 metatileId;
 
     if (block == MAPGRID_UNDEFINED)
-        return GetBorderBlockAt(x, y) & MAPGRID_METATILE_ID_MASK;
+        metatileId = GetBorderBlockAt(x, y) & MAPGRID_METATILE_ID_MASK;
+    else
+        metatileId = UNPACK_METATILE(block);
 
-    return UNPACK_METATILE(block);
+    return IsMetatileIdValidForMapLayout(gMapHeader.mapLayout, metatileId) ? metatileId : 0;
 }
 
 u32 MapGridGetMetatileAttributeAt(s16 x, s16 y, u8 attributeType)
@@ -469,7 +489,8 @@ u8 MapGridGetMetatileLayerTypeAt(int x, int y)
 void MapGridSetMetatileIdAt(int x, int y, u16 metatile)
 {
     int i;
-    if (AreCoordsWithinMapGridBounds(x, y))
+    if (AreCoordsWithinMapGridBounds(x, y)
+     && IsMetatileIdValidForMapLayout(gMapHeader.mapLayout, metatile & MAPGRID_METATILE_ID_MASK))
     {
         i = x + y * gBackupMapLayout.width;
 
@@ -481,7 +502,8 @@ void MapGridSetMetatileIdAt(int x, int y, u16 metatile)
 void MapGridSetMetatileEntryAt(int x, int y, u16 metatile)
 {
     int i;
-    if (AreCoordsWithinMapGridBounds(x, y))
+    if (AreCoordsWithinMapGridBounds(x, y)
+     && IsMetatileIdValidForMapLayout(gMapHeader.mapLayout, metatile & MAPGRID_METATILE_ID_MASK))
     {
         i = x + gBackupMapLayout.width * y;
         gBackupMapLayout.map[i] = metatile;
@@ -502,6 +524,8 @@ u32 ExtractMetatileAttribute(u32 attributes, u8 attributeType, bool32 isFrlg)
 static u32 GetAttributeByMetatileIdAndMapLayoutFrlg(u16 metatile, u8 attributeType)
 {
     u32 attribute;
+    if (!IsMetatileIdValidForMapLayout(gMapHeader.mapLayout, metatile))
+        return MB_INVALID;
     if (metatile < GetNumMetatilesInPrimary(gMapHeader.mapLayout))
     {
         const u32 *attributes = (const u32*)gMapHeader.mapLayout->primaryTileset->metatileAttributes;
@@ -527,6 +551,9 @@ u32 GetAttributeByMetatileIdAndMapLayout(u16 metatile, u8 attributeType, bool32 
 
     if (isFrlg)
         return GetAttributeByMetatileIdAndMapLayoutFrlg(metatile, attributeType);
+
+    if (!IsMetatileIdValidForMapLayout(gMapHeader.mapLayout, metatile))
+        return MB_INVALID;
 
     if (metatile < GetNumMetatilesInPrimary(gMapHeader.mapLayout))
     {

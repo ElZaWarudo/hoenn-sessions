@@ -50,6 +50,7 @@ INITIAL_SELECTED_SOURCE_COUNT = INITIAL_SELECTED_MAP_COUNT * 2
 INITIAL_MANIFEST_SHA256 = "af52f3596252f0ffd0fa14862cb13fafc6fc316a4baeeb5c2f29806b199e91f6"
 EXPANDED_SELECTED_MAP_COUNT = 407
 EXPANDED_LATER_MAP_COUNT = EXPANDED_SELECTED_MAP_COUNT - INITIAL_SELECTED_MAP_COUNT
+RAW_MANIFEST_PROVENANCE_LEDGER_SHA256 = "aee15b84889439e32cded76391ec829e72a3257ffa761942b0e2ff3846e7bad6"
 
 EXCLUDED_TRAINER_TOKENS = (
     "TRAINER_BATTLE_SET_TRAINER_A",
@@ -119,6 +120,10 @@ def _sha256_bytes(value: bytes) -> str:
 
 def _sha256(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
+
+
+def _json_identity(value: Any) -> str:
+    return _sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
 
 
 def _load_json(path: Path) -> Any:
@@ -587,7 +592,7 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
     if collisions:
         raise ContentSymbolError("generated names collide with foundation: " + ", ".join(sorted(collisions)))
 
-    manifest_bytes = MANIFEST_PATH.read_bytes()
+    manifest_identity = _json_identity(_load_json(MANIFEST_PATH))
     selected_map_count = len(maps)
     if selected_map_count != EXPANDED_SELECTED_MAP_COUNT:
         raise ContentSymbolError("only the approved expanded selected-map manifest may be emitted")
@@ -615,7 +620,7 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
             "donor_revision": revision,
             "donor_tree": tree,
             "manifest_path": "data/johto/region_manifest.json",
-            "manifest_sha256": _sha256_bytes(manifest_bytes),
+            "manifest_sha256": manifest_identity,
             "manifest_source_revision": MANIFEST_SOURCE_REVISION,
             "selected_source_count": len(source_files),
             "source_inventory_sha256": _source_inventory_digest(source_files),
@@ -803,6 +808,9 @@ def append_ledger(
     """Apply a source candidate while preserving every saved identity."""
     validate_ledger(existing)
     validate_ledger(candidate, allocated=False)
+    raw_manifest_provenance_predecessor = (
+        _json_identity(existing) == RAW_MANIFEST_PROVENANCE_LEDGER_SHA256
+    )
     candidate_symbols = {
         kind: {entry["symbol"] for entry in candidate["identities"][kind]}
         for kind in ("flags", "vars", "trainers")
@@ -860,6 +868,8 @@ def append_ledger(
         if existing.get("completeness") != candidate.get("completeness"):
             raise ContentSymbolError("append-only completeness provenance drift")
         dynamic_attestations = {"identity_membership", "identity_semantics_sha256"}
+        if raw_manifest_provenance_predecessor:
+            dynamic_attestations.add("manifest_sha256")
         existing_provenance = {
             key: value for key, value in existing.get("provenance", {}).items()
             if key not in dynamic_attestations
@@ -880,7 +890,7 @@ def append_ledger(
             raise ContentSymbolError("append-only predecessor manifest does not match")
         if existing.get("completeness", {}).get("selected_map_count") != expected_from["selected_map_count"]:
             raise ContentSymbolError("append-only predecessor map scope does not match")
-        if _sha256(MANIFEST_PATH) != candidate["provenance"].get("manifest_sha256"):
+        if _json_identity(_load_json(MANIFEST_PATH)) != candidate["provenance"].get("manifest_sha256"):
             raise ContentSymbolError("expanded manifest provenance does not match selected source")
         old_files = existing.get("source_files", [])
         if (_normalized_source_inventory(candidate.get("source_files", []))[:len(old_files)]
@@ -903,6 +913,8 @@ def append_ledger(
         result["provenance"]["identity_semantics_sha256"] = candidate["provenance"][
             "identity_semantics_sha256"
         ]
+        if raw_manifest_provenance_predecessor:
+            result["provenance"]["manifest_sha256"] = candidate["provenance"]["manifest_sha256"]
     for kind in ("flags", "vars", "trainers"):
         old_entries = existing["identities"][kind]
         new_entries = {entry["symbol"]: entry for entry in candidate["identities"][kind]}

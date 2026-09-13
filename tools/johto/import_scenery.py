@@ -51,13 +51,18 @@ HOST_LAYOUT_PREFIX_SHA256 = "1cce6340b79e53391d21e2845f4325ba444e66787dbc20898da
 HOST_REGISTRATION_LAYOUT_PREFIX_SHA256 = "5d7f4645fb507a6874e70baf62069679331a21e490ff1fe4c779f0a7bc86ba02"
 HOST_REGISTRATION_TILE_PREFIX_SHA256 = "c3afe942d5046cbdefb9e8b6bca45e3784339df9bcda453908546aed27b83a79"
 HOST_REGISTRATION_SHA256 = "92e651adaa02e75b3983c8b50b3ae95ec3577143aeff3d23c73fe57d1efe3e1f"
+PREDECESSOR_COMPLETE_REGISTRATION_SHA256 = "206aa035b3aacb69e9f339e460965e71cad48e9c33e2147c24c113a86e863352"
+PREDECESSOR_RAW_PROVENANCE_REGISTRATION_SHA256 = "79062b8c72f0434caa7acd9d61cf3ea073597d2c67da55fdf3917389c7016b63"
 HOST_HEADER_SHA256 = "1b6e60315a3d51c5e799a69ec5b1089ce4687f4532e2303c19b84826d1f20db7"
+PREDECESSOR_COMPLETE_HEADER_SHA256 = "db5bb3d9377631035856c6d2aaffa7465951fb3673a2f962bf5f0974c9936bc5"
 
-PENDING_GENERAL_LAYOUTS = (
+PENDING_GENERAL_LAYOUTS: tuple[str, ...] = ()
+PREDECESSOR_GENERAL_LAYOUTS = (
     "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
     "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
     "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
 )
+PREDECESSOR_ASSET_MANIFEST_SHA256 = "1cbb94d8aeeb0cd4d491d21c0f6fe724b3107d45657a4de21d5f6e7d398fcd2e"
 
 REGISTRATION_KEYS = {
     "schema_version",
@@ -89,7 +94,6 @@ SCOPE = {
 }
 PENDING_RUNTIME = [
     "source-faithful later tileset animation frames and callback registration",
-    "General map/border dynamic writer and connected-border safety",
     "map headers, groups, scripts, warps, transport and campaign registration",
 ]
 RUNTIME_REGISTRATION_KEYS = {"ready", "static_scenery", "pending", "general_pending_layouts"}
@@ -116,6 +120,10 @@ def _canonical(value: Any) -> str:
 
 def _identity(value: Any) -> str:
     return _sha(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
+
+
+def _json_identity(path: Path) -> str:
+    return _identity(_load(path))
 
 
 def _safe(path: str) -> str:
@@ -384,12 +392,11 @@ def _render_tileset(tile: dict[str, Any], donor: Path, animation: dict[str, Any]
     attrs = next(x["path"] for x in tile["assets"] if x["path"].endswith("/metatile_attributes.bin"))
     palettes = [x["path"] for x in tile["assets"] if "/palettes/" in x["path"]]
     callback, metadata = _tileset_metadata(donor, source_symbol, tile, animation, allow_unregistered_callback=True)
-    # Animation callbacks and frame bytes are a separate runtime package. Keep
-    # the accepted source callback in registration metadata while leaving the
-    # generated static scenery declaration disabled until that package lands.
     metadata["callback_source"] = tile.get("callback")
-    metadata["callback_rule"] = "runtime_pending" if tile.get("callback") not in (None, "NULL") else metadata["callback_rule"]
-    callback = None
+    if source_symbol != "gTileset_General":
+        # The remaining animation callbacks belong to a separate runtime package.
+        metadata["callback_rule"] = "runtime_pending" if tile.get("callback") not in (None, "NULL") else metadata["callback_rule"]
+        callback = None
     lines = [
         f"const u32 gTilesetTiles_{suffix}[] = INCBIN_U32(\"{_target_path(tiles, ('.png', '.4bpp.fastSmol'))}\");",
         f"const u16 ALIGNED(4) gTilesetPalettes_{suffix}[][16] =",
@@ -459,7 +466,7 @@ def _tileset_header(manifest: dict[str, Any], donor: Path, animation: dict[str, 
         blocks.append(block)
         registrations.append(registration)
     output = base.rstrip() + "\n\n" + "\n".join(blocks)
-    if marker_index >= 0 and current != output:
+    if marker_index >= 0 and current != output and _sha(current.encode()) != PREDECESSOR_COMPLETE_HEADER_SHA256:
         raise ImportError("existing complete tileset header drifted")
     return output, registrations
 
@@ -544,6 +551,7 @@ def _registration(manifest: dict[str, Any], later_layout_registration: list[dict
         and type(current.get("schema_version")) is int
         and current["schema_version"] == 1
     )
+    accepted_general_predecessor = False
     if predecessor:
         if _identity(current) != HOST_REGISTRATION_SHA256:
             raise ImportError("existing scenery registration predecessor drifted")
@@ -557,18 +565,31 @@ def _registration(manifest: dict[str, Any], later_layout_registration: list[dict
             raise ImportError("host scenery registration provenance schema drifted")
         if provenance.get("donor_revision") != DONOR_REVISION or provenance.get("donor_tree") != DONOR_TREE:
             raise ImportError("host scenery registration donor provenance drifted")
-        if provenance.get("region_manifest_sha256") != _sha(REGION_MANIFEST.read_bytes()) or provenance.get("asset_manifest_sha256") != _sha(ASSET_MANIFEST.read_bytes()):
+        runtime_readiness = current.get("runtime_readiness")
+        accepted_general_predecessor = (
+            isinstance(runtime_readiness, dict)
+            and tuple(runtime_readiness.get("general_pending_layouts", ())) == PREDECESSOR_GENERAL_LAYOUTS
+            and provenance.get("asset_manifest_sha256") == PREDECESSOR_ASSET_MANIFEST_SHA256
+            and _identity(current) == PREDECESSOR_COMPLETE_REGISTRATION_SHA256
+        )
+        accepted_raw_provenance_predecessor = (
+            _identity(current) == PREDECESSOR_RAW_PROVENANCE_REGISTRATION_SHA256
+        )
+        accepted_manifest_predecessor = accepted_general_predecessor or accepted_raw_provenance_predecessor
+        if not accepted_manifest_predecessor and (
+            provenance.get("region_manifest_sha256") != _json_identity(REGION_MANIFEST)
+            or provenance.get("asset_manifest_sha256") != _json_identity(ASSET_MANIFEST)
+        ):
             raise ImportError("host scenery registration manifest provenance drifted")
         if provenance.get("selection") != {"layout_count": TOTAL_LAYOUT_COUNT, "tileset_count": TOTAL_TILESET_COUNT, "asset_count": TOTAL_ASSET_COUNT}:
             raise ImportError("host scenery registration selection drifted")
         if current.get("scope") != SCOPE:
             raise ImportError("host scenery registration scope drifted")
-        runtime_readiness = current.get("runtime_readiness")
         if not isinstance(runtime_readiness, dict) or set(runtime_readiness) != RUNTIME_REGISTRATION_KEYS:
             raise ImportError("host scenery runtime-readiness schema drifted")
         if runtime_readiness.get("ready") is not False or runtime_readiness.get("static_scenery") is not True:
             raise ImportError("host scenery runtime-readiness gate drifted")
-        if runtime_readiness.get("pending") != PENDING_RUNTIME or runtime_readiness.get("general_pending_layouts") != list(PENDING_GENERAL_LAYOUTS):
+        if not accepted_general_predecessor and (runtime_readiness.get("pending") != PENDING_RUNTIME or runtime_readiness.get("general_pending_layouts") != list(PENDING_GENERAL_LAYOUTS)):
             raise ImportError("host scenery runtime-readiness dependencies drifted")
     layouts = current.get("layouts")
     tilesets = current.get("tilesets")
@@ -586,14 +607,14 @@ def _registration(manifest: dict[str, Any], later_layout_registration: list[dict
     if _identity(tilesets[:OLD_TILESET_COUNT]) != HOST_REGISTRATION_TILE_PREFIX_SHA256:
         raise ImportError("existing scenery tileset registration prefix drifted")
     if len(layouts) == TOTAL_LAYOUT_COUNT and len(tilesets) == TOTAL_TILESET_COUNT:
-        if layouts[OLD_LAYOUT_COUNT:] != later_layout_registration or tilesets[OLD_TILESET_COUNT:] != later_tile_registration:
+        if not accepted_general_predecessor and (layouts[OLD_LAYOUT_COUNT:] != later_layout_registration or tilesets[OLD_TILESET_COUNT:] != later_tile_registration):
             raise ImportError("existing later scenery registration tail drifted")
     output = dict(current)
     output["provenance"] = dict(current["provenance"])
     output["provenance"]["donor_revision"] = DONOR_REVISION
     output["provenance"]["donor_tree"] = DONOR_TREE
-    output["provenance"]["region_manifest_sha256"] = _sha(REGION_MANIFEST.read_bytes())
-    output["provenance"]["asset_manifest_sha256"] = _sha(ASSET_MANIFEST.read_bytes())
+    output["provenance"]["region_manifest_sha256"] = _json_identity(REGION_MANIFEST)
+    output["provenance"]["asset_manifest_sha256"] = _json_identity(ASSET_MANIFEST)
     output["provenance"]["selection"] = {"layout_count": TOTAL_LAYOUT_COUNT, "tileset_count": TOTAL_TILESET_COUNT, "asset_count": TOTAL_ASSET_COUNT}
     output["layouts"] = layouts[:OLD_LAYOUT_COUNT] + later_layout_registration
     output["tilesets"] = tilesets[:OLD_TILESET_COUNT] + later_tile_registration
@@ -603,7 +624,7 @@ def _registration(manifest: dict[str, Any], later_layout_registration: list[dict
         "pending": list(PENDING_RUNTIME),
         "general_pending_layouts": list(PENDING_GENERAL_LAYOUTS),
     }
-    if len(layouts) == TOTAL_LAYOUT_COUNT and len(tilesets) == TOTAL_TILESET_COUNT and current != output:
+    if len(layouts) == TOTAL_LAYOUT_COUNT and len(tilesets) == TOTAL_TILESET_COUNT and current != output and not accepted_manifest_predecessor:
         raise ImportError("existing complete scenery registration drifted")
     return output
 
@@ -636,7 +657,7 @@ def _trusted_predecessor(path: Path, existing: bytes) -> bool:
     """Return whether a generated text output is the exact accepted input."""
     normalized = existing.replace(b"\r\n", b"\n")
     if path == HEADER:
-        return _sha(normalized) == HOST_HEADER_SHA256
+        return _sha(normalized) in (HOST_HEADER_SHA256, PREDECESSOR_COMPLETE_HEADER_SHA256)
     if path == LAYOUTS_JSON:
         try:
             document = json.loads(normalized.decode("utf-8"))
@@ -645,7 +666,11 @@ def _trusted_predecessor(path: Path, existing: bytes) -> bool:
             return False
     if path == REGISTRATION_JSON:
         try:
-            return _identity(json.loads(normalized.decode("utf-8"))) == HOST_REGISTRATION_SHA256
+            return _identity(json.loads(normalized.decode("utf-8"))) in (
+                HOST_REGISTRATION_SHA256,
+                PREDECESSOR_COMPLETE_REGISTRATION_SHA256,
+                PREDECESSOR_RAW_PROVENANCE_REGISTRATION_SHA256,
+            )
         except (UnicodeDecodeError, json.JSONDecodeError):
             return False
     return False

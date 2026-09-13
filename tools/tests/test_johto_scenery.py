@@ -330,7 +330,7 @@ class JohtoSceneryTest(unittest.TestCase):
             "29b1ce056dda88625869bbebe83e84851a53d7cdef7d6871158ca2d9cb9d7a0d",
         )
 
-    def _isolated_registration_run(self, document, mode):
+    def _isolated_registration_run(self, document, mode, *, asset_manifest_bytes=None, region_manifest_bytes=None):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             registration_path = root / "scenery_registration.json"
@@ -338,8 +338,16 @@ class JohtoSceneryTest(unittest.TestCase):
             region_manifest_path = root / "region_manifest.json"
             original = scenery._canonical(document).encode()
             registration_path.write_bytes(original)
-            asset_manifest_path.write_bytes(head_bytes("data/johto/asset_manifest.json"))
-            region_manifest_path.write_bytes(head_bytes("data/johto/region_manifest.json"))
+            asset_manifest_path.write_bytes(
+                asset_manifest_bytes
+                if asset_manifest_bytes is not None
+                else (ROOT / "data/johto/asset_manifest.json").read_bytes()
+            )
+            region_manifest_path.write_bytes(
+                region_manifest_bytes
+                if region_manifest_bytes is not None
+                else (ROOT / "data/johto/region_manifest.json").read_bytes()
+            )
             manifest = json.loads(asset_manifest_path.read_bytes())
             complete = load("data/johto/scenery_registration.json")
 
@@ -366,13 +374,17 @@ class JohtoSceneryTest(unittest.TestCase):
         result, original, written, _ = self._isolated_registration_run(document, "--write")
         return result, original, written
 
-    def test_write_upgrades_the_exact_head_registration_in_isolation(self):
+    def test_write_upgrades_the_exact_complete_predecessor_in_isolation(self):
         predecessor = json.loads(head_bytes("data/johto/scenery_registration.json"))
-        self.assertEqual(scenery._identity(predecessor), scenery.HOST_REGISTRATION_SHA256)
+        self.assertEqual(
+            scenery._identity(predecessor),
+            scenery.PREDECESSOR_COMPLETE_REGISTRATION_SHA256,
+        )
         result, original, written = self._isolated_registration_write(predecessor)
         self.assertEqual(result, 0)
         self.assertNotEqual(written, original)
         registration = json.loads(written)
+        self.assertEqual(registration, load("data/johto/scenery_registration.json"))
         self.assertEqual(len(registration["layouts"]), 407)
         self.assertEqual(len(registration["tilesets"]), 97)
         self.assertEqual(registration["provenance"]["selection"], {
@@ -381,7 +393,30 @@ class JohtoSceneryTest(unittest.TestCase):
             "asset_count": 2366,
         })
 
-    def test_write_rejects_adversarial_head_registration_drift_without_mutation(self):
+    def test_write_upgrades_raw_provenance_predecessor_and_rejects_mutation(self):
+        predecessor = load("data/johto/scenery_registration.json")
+        predecessor["provenance"]["region_manifest_sha256"] = (
+            "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
+        )
+        predecessor["provenance"]["asset_manifest_sha256"] = (
+            "0e2ed2a12f19f93fa0be68ee825b4ab45ed71410b0c06599614361f0d28904d5"
+        )
+        self.assertEqual(
+            scenery._identity(predecessor),
+            scenery.PREDECESSOR_RAW_PROVENANCE_REGISTRATION_SHA256,
+        )
+        result, original, written = self._isolated_registration_write(predecessor)
+        self.assertEqual(result, 0)
+        self.assertNotEqual(written, original)
+        self.assertEqual(json.loads(written), load("data/johto/scenery_registration.json"))
+
+        changed = copy.deepcopy(predecessor)
+        changed["provenance"]["asset_manifest_sha256"] = "0" * 64
+        result, original, written = self._isolated_registration_write(changed)
+        self.assertEqual(result, 1)
+        self.assertEqual(written, original)
+
+    def test_write_rejects_adversarial_complete_predecessor_drift_without_mutation(self):
         predecessor = json.loads(head_bytes("data/johto/scenery_registration.json"))
         mutations = {}
         changed = copy.deepcopy(predecessor)
@@ -396,11 +431,54 @@ class JohtoSceneryTest(unittest.TestCase):
         changed = copy.deepcopy(predecessor)
         changed["layouts"].append(copy.deepcopy(changed["layouts"][-1]))
         mutations["count"] = changed
+        changed = copy.deepcopy(predecessor)
+        changed["runtime_readiness"]["general_pending_layouts"].reverse()
+        mutations["pending identity order"] = changed
+        changed = copy.deepcopy(predecessor)
+        general = next(
+            entry for entry in changed["tilesets"]
+            if entry["target_symbol"] == "gTileset_KantoLaterImported_General"
+        )
+        general["callback"] = "InitTilesetAnim_General"
+        mutations["General callback"] = changed
+        changed = copy.deepcopy(predecessor)
+        changed["provenance"]["asset_manifest_sha256"] = "0" * 64
+        mutations["asset provenance"] = changed
         for label, document in mutations.items():
             with self.subTest(label=label):
                 result, original, written = self._isolated_registration_write(document)
                 self.assertEqual(result, 1)
                 self.assertEqual(written, original)
+
+    def test_json_manifest_provenance_is_format_independent_and_semantic(self):
+        registration = load("data/johto/scenery_registration.json")
+        asset = load("data/johto/asset_manifest.json")
+        region = load("data/johto/region_manifest.json")
+        formats = (
+            json.dumps(asset, indent=4, sort_keys=True).encode(),
+            (json.dumps(asset, separators=(",", ":")) + "\r\n").encode(),
+        )
+        for index, formatted_asset in enumerate(formats):
+            with self.subTest(format=index):
+                result, original, written, stderr = self._isolated_registration_run(
+                    registration,
+                    "--check",
+                    asset_manifest_bytes=formatted_asset,
+                    region_manifest_bytes=(json.dumps(region, sort_keys=True) + "\r\n").encode(),
+                )
+                self.assertEqual(result, 0, stderr)
+                self.assertEqual(written, original)
+
+        changed_asset = copy.deepcopy(asset)
+        changed_asset["selection"]["asset_count"] += 1
+        result, original, written, stderr = self._isolated_registration_run(
+            registration,
+            "--check",
+            asset_manifest_bytes=json.dumps(changed_asset, sort_keys=True).encode(),
+        )
+        self.assertEqual(result, 1)
+        self.assertEqual(written, original)
+        self.assertIn("manifest provenance drifted", stderr)
 
     def test_check_and_write_reject_boolean_registration_schema_without_mutation(self):
         registration = load("data/johto/scenery_registration.json")
@@ -432,24 +510,36 @@ class JohtoSceneryTest(unittest.TestCase):
             asset_manifest.write_bytes(head_bytes("data/johto/asset_manifest.json"))
             region_manifest.write_bytes(head_bytes("data/johto/region_manifest.json"))
             for document in (changed_registration, changed_count):
-                document["provenance"]["asset_manifest_sha256"] = hashlib.sha256(
-                    asset_manifest.read_bytes()
-                ).hexdigest()
-                document["provenance"]["region_manifest_sha256"] = hashlib.sha256(
-                    region_manifest.read_bytes()
-                ).hexdigest()
+                document["provenance"]["asset_manifest_sha256"] = scenery._identity(
+                    json.loads(asset_manifest.read_bytes())
+                )
+                document["provenance"]["region_manifest_sha256"] = scenery._identity(
+                    json.loads(region_manifest.read_bytes())
+                )
             with patch.multiple(
                 scenery,
                 ASSET_MANIFEST=asset_manifest,
                 REGION_MANIFEST=region_manifest,
-            ), patch.object(scenery, "_load", return_value=changed_registration):
+            ), patch.object(
+                scenery,
+                "_load",
+                side_effect=lambda path: changed_registration
+                if path == scenery.REGISTRATION_JSON
+                else json.loads(path.read_text(encoding="utf-8")),
+            ):
                 with self.assertRaises(scenery.ImportError):
                     scenery._registration(manifest, [], [])
             with patch.multiple(
                 scenery,
                 ASSET_MANIFEST=asset_manifest,
                 REGION_MANIFEST=region_manifest,
-            ), patch.object(scenery, "_load", return_value=changed_count):
+            ), patch.object(
+                scenery,
+                "_load",
+                side_effect=lambda path: changed_count
+                if path == scenery.REGISTRATION_JSON
+                else json.loads(path.read_text(encoding="utf-8")),
+            ):
                 with self.assertRaisesRegex(scenery.ImportError, "counts drifted"):
                     scenery._registration(manifest, [], [])
 
