@@ -36,6 +36,21 @@ FLAG_CAPACITY = 768
 VAR_CAPACITY = 96
 TRAINER_CAPACITY = 512
 
+# Engine-owned persisted identities occupy the top of each reserved window.
+# They are ledgered separately because the pinned donor does not reference
+# them, while still receiving generated-header freshness and collision checks.
+RUNTIME_ALLOCATIONS = {
+    "flags": [{"symbol": "FLAG_KANTO_LATER_INITIALIZED", "qualified": "JOHTO_FLAG_KANTO_LATER_INITIALIZED", "ordinal": 767, "runtime_id": FLAG_START + 767, "purpose": "marks completion of the real Later Kanto initializer"}],
+    "vars": [
+        {"symbol": "VAR_PENDING_KANTO_DESTINATION", "qualified": "JOHTO_VAR_PENDING_KANTO_DESTINATION", "ordinal": 92, "runtime_id": VAR_START + 92, "purpose": "selected world for an in-progress cross-region transition"},
+        {"symbol": "VAR_LAST_HEAL_JOHTO", "qualified": "JOHTO_VAR_LAST_HEAL_JOHTO", "ordinal": 93, "runtime_id": VAR_START + 93, "purpose": "last validated Johto heal location"},
+        {"symbol": "VAR_LAST_HEAL_KANTO_ORIGINAL", "qualified": "JOHTO_VAR_LAST_HEAL_KANTO_ORIGINAL", "ordinal": 94, "runtime_id": VAR_START + 94, "purpose": "last validated original Kanto heal location"},
+        {"symbol": "VAR_LAST_HEAL_KANTO_LATER", "qualified": "JOHTO_VAR_LAST_HEAL_KANTO_LATER", "ordinal": 95, "runtime_id": VAR_START + 95, "purpose": "last validated Later Kanto heal location"},
+    ],
+    "trainers": [],
+}
+RUNTIME_ALLOCATION_BINDINGS_SHA256 = "f88ba36dd2675a28930a0e241193f4d4e264613cab4db3c888ba65580f96c4d2"
+
 # Frozen initial allocation, independent of future lexical discovery order.
 INITIAL_COUNTS = {"flags": 539, "vars": 63, "trainers": 284}
 INITIAL_BINDINGS_SHA256 = "7f570138eb10da1801d23ef12d950b38f9d65fcb80af533bd83ab147cd3f1dc4"
@@ -50,7 +65,7 @@ INITIAL_SELECTED_SOURCE_COUNT = INITIAL_SELECTED_MAP_COUNT * 2
 INITIAL_MANIFEST_SHA256 = "af52f3596252f0ffd0fa14862cb13fafc6fc316a4baeeb5c2f29806b199e91f6"
 EXPANDED_SELECTED_MAP_COUNT = 407
 EXPANDED_LATER_MAP_COUNT = EXPANDED_SELECTED_MAP_COUNT - INITIAL_SELECTED_MAP_COUNT
-RAW_MANIFEST_PROVENANCE_LEDGER_SHA256 = "aee15b84889439e32cded76391ec829e72a3257ffa761942b0e2ff3846e7bad6"
+RAW_MANIFEST_PROVENANCE_LEDGER_SHA256 = "2ab74da0f90bab1ff0fc7234368f93f0e88272c71342e0457f161608083a04ea"
 
 EXCLUDED_TRAINER_TOKENS = (
     "TRAINER_BATTLE_SET_TRAINER_A",
@@ -586,6 +601,10 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
         entry["qualified"] for entries in identities.values() for entry in entries
     } | {
         alias["qualified"] for entries in aliases.values() for alias in entries
+    } | {
+        entry["qualified"]
+        for entries in RUNTIME_ALLOCATIONS.values()
+        for entry in entries
     }
     collisions = generated_names & _foundation_macros()
     collisions.discard("JOHTO_TRAINER_JOEY")
@@ -646,6 +665,7 @@ def build_ledger(donor: str | Path) -> dict[str, Any]:
         "allocated_counts": {kind: len(entries) for kind, entries in identities.items()},
         "excluded_trainer_tokens": list(EXCLUDED_TRAINER_TOKENS),
         "aliases": aliases,
+        "runtime_allocations": json.loads(json.dumps(RUNTIME_ALLOCATIONS)),
         "source_files": source_files,
         "identities": identities,
     }
@@ -682,6 +702,34 @@ def _validate_entries(entries: Any, kind: str, capacity: int) -> None:
             raise ContentSymbolError(f"qualified {kind} identity mismatch: {symbol}")
         if entry.get("runtime_id") != expected_start + ordinal or ordinal >= capacity:
             raise ContentSymbolError(f"{kind} runtime identity/capacity mismatch: {symbol}")
+
+
+def _validate_runtime_allocations(value: Any, identities: dict[str, Any]) -> None:
+    if not isinstance(value, dict) or set(value) != {"flags", "vars", "trainers"}:
+        raise ContentSymbolError("runtime allocation classes drifted")
+    digest = _sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
+    if digest != RUNTIME_ALLOCATION_BINDINGS_SHA256:
+        raise ContentSymbolError("sealed runtime allocation bindings changed")
+    starts = {"flags": FLAG_START, "vars": VAR_START, "trainers": TRAINER_START}
+    capacities = {"flags": FLAG_CAPACITY, "vars": VAR_CAPACITY, "trainers": TRAINER_CAPACITY}
+    for kind in ("flags", "vars", "trainers"):
+        donor_ordinals = {entry["ordinal"] for entry in identities[kind]}
+        donor_names = {entry["qualified"] for entry in identities[kind]}
+        local_ordinals: set[int] = set()
+        local_names: set[str] = set()
+        for entry in value[kind]:
+            ordinal = entry.get("ordinal")
+            qualified = entry.get("qualified")
+            if (not isinstance(ordinal, int) or ordinal < 0
+                    or ordinal >= capacities[kind]
+                    or entry.get("runtime_id") != starts[kind] + ordinal):
+                raise ContentSymbolError(f"{kind} runtime allocation exceeds capacity")
+            if ordinal in donor_ordinals or ordinal in local_ordinals:
+                raise ContentSymbolError(f"{kind} runtime allocation ordinal collision")
+            if qualified in donor_names or qualified in local_names:
+                raise ContentSymbolError(f"{kind} runtime allocation name collision")
+            local_ordinals.add(ordinal)
+            local_names.add(qualified)
 
 
 def _validate_scope_metadata(value: dict[str, Any]) -> None:
@@ -754,6 +802,7 @@ def validate_ledger(value: Any, *, allocated: bool = True) -> None:
     identities = value.get("identities", {})
     for kind, capacity in (("flag", FLAG_CAPACITY), ("var", VAR_CAPACITY), ("trainer", TRAINER_CAPACITY)):
         _validate_entries(identities.get(kind + "s"), kind, capacity)
+    _validate_runtime_allocations(value.get("runtime_allocations"), identities)
     expected_membership = _identity_membership(identities)
     provenance_membership = value.get("provenance", {}).get("identity_membership")
     if provenance_membership != expected_membership:
@@ -852,7 +901,7 @@ def append_ledger(
         )
     if donor is not None:
         _assert_donor_backed_candidate(candidate, donor)
-    for field in ("capacities", "aliases", "excluded_trainer_tokens"):
+    for field in ("capacities", "aliases", "excluded_trainer_tokens", "runtime_allocations"):
         if existing.get(field) != candidate.get(field):
             raise ContentSymbolError(f"append-only {field} provenance drift")
     for field in ("repository", "donor_revision", "donor_tree", "manifest_path",
@@ -943,7 +992,9 @@ def append_ledger(
             appended["runtime_id"] = start + next_ordinal
             result["identities"][kind].append(appended)
             next_ordinal += 1
-        if next_ordinal > result["capacities"][kind]:
+        local_ordinals = [entry["ordinal"] for entry in result["runtime_allocations"][kind]]
+        donor_capacity = min(local_ordinals, default=result["capacities"][kind])
+        if next_ordinal > donor_capacity:
             raise ContentSymbolError(f"{kind} append exceeds capacity")
     result["allocated_counts"] = {kind: len(result["identities"][kind]) for kind in ("flags", "vars", "trainers")}
     result["lexical_counts"] = candidate.get("lexical_counts", result.get("lexical_counts"))
@@ -984,6 +1035,14 @@ def render_header(ledger: dict[str, Any]) -> str:
         "#endif",
         "",
     ]
+    starts = {"flags": "JOHTO_FLAG_START", "vars": "JOHTO_VAR_START",
+              "trainers": "JOHTO_TRAINER_ID_MIN"}
+    for kind in ("flags", "vars", "trainers"):
+        for entry in ledger["runtime_allocations"][kind]:
+            lines.append(
+                f"#define {entry['qualified']} ({starts[kind]} + {entry['ordinal']}u)"
+            )
+    lines.append("")
     for alias in ledger["aliases"]["flags"] + ledger["aliases"]["vars"]:
         lines.append(f"#define {alias['qualified']} {alias['target']}")
     lines.append("")

@@ -432,6 +432,42 @@ class ContentSymbolLedgerTests(unittest.TestCase):
 
 
 class ContentSymbolSyntheticTests(unittest.TestCase):
+    def test_checked_in_runtime_allocations_render_fresh_header(self) -> None:
+        ledger = json.loads(symbols.OUTPUT_PATH.read_text(encoding="utf-8"))
+        symbols.validate_ledger(ledger)
+        self.assertEqual(
+            symbols.HEADER_PATH.read_text(encoding="utf-8"),
+            symbols.render_header(ledger),
+        )
+        self.assertEqual(
+            [entry["ordinal"] for entry in ledger["runtime_allocations"]["vars"]],
+            [92, 93, 94, 95],
+        )
+
+    def test_runtime_allocation_collision_is_rejected(self) -> None:
+        ledger = json.loads(symbols.OUTPUT_PATH.read_text(encoding="utf-8"))
+        ledger["runtime_allocations"]["vars"][0]["ordinal"] = 68
+        ledger["runtime_allocations"]["vars"][0]["runtime_id"] = symbols.VAR_START + 68
+        digest = symbols._sha256_bytes(json.dumps(
+            ledger["runtime_allocations"], sort_keys=True, separators=(",", ":")
+        ).encode())
+        with mock.patch.object(symbols, "RUNTIME_ALLOCATION_BINDINGS_SHA256", digest):
+            with self.assertRaisesRegex(symbols.ContentSymbolError, "ordinal collision"):
+                symbols.validate_ledger(ledger)
+
+    def test_runtime_allocation_capacity_is_rejected(self) -> None:
+        ledger = json.loads(symbols.OUTPUT_PATH.read_text(encoding="utf-8"))
+        ledger["runtime_allocations"]["vars"][0]["ordinal"] = symbols.VAR_CAPACITY
+        ledger["runtime_allocations"]["vars"][0]["runtime_id"] = (
+            symbols.VAR_START + symbols.VAR_CAPACITY
+        )
+        digest = symbols._sha256_bytes(json.dumps(
+            ledger["runtime_allocations"], sort_keys=True, separators=(",", ":")
+        ).encode())
+        with mock.patch.object(symbols, "RUNTIME_ALLOCATION_BINDINGS_SHA256", digest):
+            with self.assertRaisesRegex(symbols.ContentSymbolError, "exceeds capacity"):
+                symbols.validate_ledger(ledger)
+
     def test_donor_pin_is_fail_closed(self) -> None:
         with mock.patch.object(symbols, "_git_revision", return_value=("wrong", "tree")):
             with self.assertRaisesRegex(symbols.ContentSymbolError, "pin mismatch"):

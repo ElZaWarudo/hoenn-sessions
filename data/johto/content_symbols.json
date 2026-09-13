@@ -47660,5 +47660,47 @@
         }
       }
     ]
+  },
+  "runtime_allocations": {
+    "flags": [
+      {
+        "symbol": "FLAG_KANTO_LATER_INITIALIZED",
+        "qualified": "JOHTO_FLAG_KANTO_LATER_INITIALIZED",
+        "ordinal": 767,
+        "runtime_id": 25343,
+        "purpose": "marks completion of the real Later Kanto initializer"
+      }
+    ],
+    "vars": [
+      {
+        "symbol": "VAR_PENDING_KANTO_DESTINATION",
+        "qualified": "JOHTO_VAR_PENDING_KANTO_DESTINATION",
+        "ordinal": 92,
+        "runtime_id": 28764,
+        "purpose": "selected world for an in-progress cross-region transition"
+      },
+      {
+        "symbol": "VAR_LAST_HEAL_JOHTO",
+        "qualified": "JOHTO_VAR_LAST_HEAL_JOHTO",
+        "ordinal": 93,
+        "runtime_id": 28765,
+        "purpose": "last validated Johto heal location"
+      },
+      {
+        "symbol": "VAR_LAST_HEAL_KANTO_ORIGINAL",
+        "qualified": "JOHTO_VAR_LAST_HEAL_KANTO_ORIGINAL",
+        "ordinal": 94,
+        "runtime_id": 28766,
+        "purpose": "last validated original Kanto heal location"
+      },
+      {
+        "symbol": "VAR_LAST_HEAL_KANTO_LATER",
+        "qualified": "JOHTO_VAR_LAST_HEAL_KANTO_LATER",
+        "ordinal": 95,
+        "runtime_id": 28767,
+        "purpose": "last validated Later Kanto heal location"
+      }
+    ],
+    "trainers": []
   }
 }
