@@ -976,7 +976,8 @@
     "VermilionCity_House2_Frlg",
     "VermilionCity_Mart_Frlg",
     "VermilionCity_Gym_Frlg",
-    "VermilionCity_House3_Frlg"
+    "VermilionCity_House3_Frlg",
+    "KantoOriginal_VermilionCity_PortInside"
   ],
   "gMapGroup_IndoorCeladon_Frlg": [
     "CeladonCity_DepartmentStore_1F_Frlg",
@@ -1036,7 +1037,8 @@
     "SaffronCity_PokemonCenter_1F_Frlg",
     "SaffronCity_PokemonCenter_2F_Frlg",
     "SaffronCity_MrPsychicsHouse_Frlg",
-    "SaffronCity_PokemonTrainerFanClub_Frlg"
+    "SaffronCity_PokemonTrainerFanClub_Frlg",
+    "KantoOriginal_SaffronCity_TrainStation"
   ],
   "gMapGroup_IndoorRoute2_Frlg": [
     "Route2_ViridianForest_SouthEntrance_Frlg",

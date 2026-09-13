@@ -1,0 +1,64 @@
+{
+  "id": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION",
+  "name": "KantoOriginal_SaffronCity_TrainStation",
+  "layout": "LAYOUT_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION",
+  "music": "MUS_RG_PEWTER",
+  "region_map_section": "MAPSEC_SAFFRON_CITY",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_INDOOR",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [],
+  "coord_events": [],
+  "bg_events": [],
+  "region": "REGION_KANTO",
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "x": 137,
+      "y": 20,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "KantoOriginal_SaffronCity_TrainStation_EventScript_Attendant",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_TRAIN_BACK",
+      "x": 152,
+      "y": 5,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "0"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 137,
+      "y": 26,
+      "elevation": 0,
+      "dest_map": "MAP_SAFFRON_CITY",
+      "dest_warp_id": "15"
+    },
+    {
+      "x": 140,
+      "y": 16,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION",
+      "dest_warp_id": "0"
+    }
+  ],
+  "shared_scripts_map": "KantoOriginal_SaffronCity_TrainStation"
+}

@@ -28,6 +28,31 @@
     "77": 128,
     "78": 40
   },
+  "host_adapter_map_count": 2,
+  "host_adapters": [
+    {
+      "arrival": [
+        8,
+        9
+      ],
+      "group": "gMapGroup_IndoorVermilion_Frlg",
+      "id": "MAP_KANTO_ORIGINAL_VERMILION_CITY_PORT_INSIDE",
+      "index": 8,
+      "layout": "LAYOUT_KANTO_LATER_VERMILION_CITY_PORT_INSIDE",
+      "name": "KantoOriginal_VermilionCity_PortInside"
+    },
+    {
+      "arrival": [
+        140,
+        16
+      ],
+      "group": "gMapGroup_IndoorSaffron_Frlg",
+      "id": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION",
+      "index": 10,
+      "layout": "LAYOUT_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION",
+      "name": "KantoOriginal_SaffronCity_TrainStation"
+    }
+  ],
   "later_map_count": 168,
   "maps": [
     {
@@ -47196,6 +47221,7 @@
       "y": 67
     }
   ],
+  "production_map_count": 409,
   "production_write_ready": true,
   "schema": "johto-world-plan-v1",
   "selected_connection_count": 191,
