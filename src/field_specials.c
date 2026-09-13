@@ -23,6 +23,7 @@
 #include "item.h"
 #include "item_icon.h"
 #include "item_menu.h"
+#include "johto/bug_contest.h"
 #include "link.h"
 #include "list_menu.h"
 #include "load_save.h"
@@ -90,6 +91,96 @@
 #define ELEVATOR_LIGHT_STAGES  3
 
 void SetForcedFlightRegion(s8 region);
+
+void Johto_BeginBugContestAdmission(void)
+{
+    enum JohtoBugContestStatus status = JohtoBugContest_Begin(gMain.vblankCounter1);
+
+    gSpecialVar_Result = status == JOHTO_BUG_CONTEST_OK ? MON_GIVEN_TO_PARTY : MON_CANT_GIVE;
+}
+
+void Johto_ShowBugContestChosenMon(void)
+{
+    StringCopy(gStringVar1, JohtoBugContest_GetSelectedName());
+    gSpecialVar_Result = JohtoBugContest_GetSelectedDisplayIndex();
+}
+
+void Johto_AbortBugContestAdmission(void)
+{
+    gSpecialVar_Result = JohtoBugContest_Abort();
+}
+
+void Johto_RequestBugContestTimeout(void)
+{
+    gSpecialVar_Result = JohtoBugContest_RequestEnd(JOHTO_BUG_CONTEST_END_TIMEOUT) == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_JudgeBugContestSelectedMon(void)
+{
+    enum JohtoBugContestStatus status = JohtoBugContest_Judge(gSpecialVar_0x8004);
+
+    gSpecialVar_Result = status == JOHTO_BUG_CONTEST_OK
+        ? JohtoBugContest_GetSelectedPlacement()
+        : 0;
+}
+
+void Johto_PrepareBugContestSettlement(void)
+{
+    gSpecialVar_Result = JohtoBugContest_PrepareSettlement() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ShowBugContestResult(void)
+{
+    StringCopy(gStringVar1, JohtoBugContest_GetSelectedName());
+    gSpecialVar_Result = JohtoBugContest_GetSelectedPlacement();
+}
+
+void Johto_TransferBugContestSelectedMon(void)
+{
+    gSpecialVar_Result = JohtoBugContest_TransferSelected() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ClaimBugContestReward(void)
+{
+    gSpecialVar_Result = JohtoBugContest_ClaimReward() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ForfeitBugContestReward(void)
+{
+    gSpecialVar_Result = JohtoBugContest_ForfeitReward() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ExitBugContest(void)
+{
+    gSpecialVar_Result = JohtoBugContest_Exit() == JOHTO_BUG_CONTEST_OK;
+}
+
+void SwitchMonAbility(void)
+{
+    u16 partyIndex = gSpecialVar_0x8004;
+    u8 currentAbilityNum;
+    u8 newAbilityNum;
+    enum Species species;
+    enum Ability currentAbility;
+    enum Ability newAbility;
+
+    gSpecialVar_Result = FALSE;
+    if (partyIndex == 0xFF || partyIndex >= gPlayerPartyCount)
+        return;
+
+    species = GetMonData(&gPlayerParty[partyIndex], MON_DATA_SPECIES);
+    currentAbilityNum = GetMonData(&gPlayerParty[partyIndex], MON_DATA_ABILITY_NUM);
+    if (currentAbilityNum > 2)
+        return;
+    newAbilityNum = !currentAbilityNum;
+    currentAbility = GetSpeciesAbility(species, currentAbilityNum);
+    newAbility = GetSpeciesAbility(species, newAbilityNum);
+    if (newAbility == ABILITY_NONE || newAbility == currentAbility)
+        return;
+
+    SetMonData(&gPlayerParty[partyIndex], MON_DATA_ABILITY_NUM, &newAbilityNum);
+    gSpecialVar_Result = TRUE;
+}
 
 EWRAM_DATA bool8 gBikeCyclingChallenge = FALSE;
 EWRAM_DATA u8 gBikeCollisions = 0;

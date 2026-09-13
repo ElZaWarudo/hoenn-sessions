@@ -1,32 +1,39 @@
 {
   "schema_version": 1,
-  "unit": "j3-contest-settlement",
-  "contract_hash": "sha256:de5ee2940eeede3083c8b9a6b37f601e1f1c2cd5fc9b27420d640ae63d485104",
-  "campaign_ready": false,
-  "ui_ready": false,
+  "unit": "j5-bug-contest-recovery",
+  "contract_hash": "sha256:7f07de4ea3c528133997c0e6d84d7d26e7d3f98870ff46a57793baaa61e14cc8",
+  "campaign_ready": true,
+  "ui_ready": true,
   "owned_files": [
     "src/johto/bug_contest.c",
     "include/johto/bug_contest.h",
+    "test/johto/bug_contest.c",
     "test/johto/bug_contest_settlement.c",
     "tools/tests/test_johto_bug_contest_settlement.py",
+    "data/johto/bug_contest.json",
     "data/johto/bug_contest_settlement.json"
   ],
   "source_hashes": {
-    "src/johto/bug_contest.c": "8fb500c768ac5952a9c4700a52217be2f10363deb5f46f945b7c6e13f4f3e6e7",
-    "include/johto/bug_contest.h": "1e602bbdc78a0f3c23624f0bfe4593a126323478c142118be0de28210b4452e0",
+    "src/johto/bug_contest.c": "82e8f68a002d0c287ececd946734b8e5866657656246d8be35e0fb443ea017ba",
+    "include/johto/bug_contest.h": "8a71b9be2200ce868656e627ec0c5bc60c421a3ee5078b2ffb7c473c4d92247b",
+    "test/johto/bug_contest.c": "c45289175484497e7a0855f1795f96bcdf8385798f4f9f73b100bee1bf9d79b7",
     "test/johto/bug_contest_settlement.c": "e1478f1a5929bf3409c00d80c34ce7e443f0231319547bc7a9ed98ec672c3ed8",
-    "tools/tests/test_johto_bug_contest_settlement.py": "a02d397b024a2176c375c1cd74d072d4dc5cde316e98b79082763bcbdd238c04"
+    "tools/tests/test_johto_bug_contest_settlement.py": "11a682444a9a55352b209c9c4b9b2bc6299ac9ab1603517f4ed5df90c106d89d",
+    "data/johto/bug_contest.json": "f9567b29afd2f9ea1d4bef54599020e6a22d94d7b86909c02df8f8bcf657043b"
   },
-  "api": "JohtoBugContest_PrepareSettlement",
+  "api": "JohtoBugContest_PrepareSettlement, TransferSelected, ClaimReward, ForfeitReward, Exit",
   "preconditions": [
     "live contest context",
     "ENDING phase",
-    "judged selection"
+    "judged selection",
+    "prepared settlement before transfer"
   ],
   "rejected_statuses": [
     "JOHTO_BUG_CONTEST_NO_CONTEST",
     "JOHTO_BUG_CONTEST_NOT_ENDING",
-    "JOHTO_BUG_CONTEST_NOT_JUDGED"
+    "JOHTO_BUG_CONTEST_NOT_JUDGED",
+    "JOHTO_BUG_CONTEST_NOT_PREPARED",
+    "JOHTO_BUG_CONTEST_REWARD_FORFEITED"
   ],
   "restored_once": "original six-party records, original party count, full mail, and loaned Safari Balls",
   "frozen_fields": [
@@ -37,10 +44,13 @@
     "reward",
     "judged",
     "transferred",
-    "rewardClaimed"
+    "rewardClaimed",
+    "rewardForfeited"
   ],
-  "context_lifetime": "through Exit or allowed Abort",
+  "context_lifetime": "through Exit; Abort remains allowed only before transfer",
   "post_settlement_policy": "PC, party, mail, and bag edits made after preparation survive context cleanup",
-  "serialization_policy": "blocked while the contest context exists, including after preparation and during transfer/reward retries",
-  "campaign_binding": "UI hooks, storage flow, scripts, and Route/park map integration remain subsequent scope"
+  "serialization_policy": "blocked while the contest context exists, through successful claim or explicit forfeit and until Exit",
+  "campaign_binding": "Generated campaign scripts bind judging and timeout to strict preparation, retry PC transfer and bag-full reward claims, require explicit reward forfeit, and gate Exit",
+  "reward_policy": "Claim retries after bag-full failure; only explicit ForfeitReward waives an unclaimed reward; forfeited claims do not mutate the bag",
+  "transfer_policy": "requires ending, judged and prepared settlement; successful PC transfer is idempotent and preserves the selected Pokemon record"
 }

@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "unit": "j3-bug-contest-core",
-  "campaign_ready": false,
-  "engine_hooks_ready": false,
+  "campaign_ready": true,
+  "engine_hooks_ready": true,
   "provenance": {
     "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
     "donor_source_path": "src/bug_contest.c",
     "donor_source_sha256": "3746ba048588670b7476eeeea14ed92f802a38fa5d2f6af634d0412e6bb4b95d",
-    "target_source_sha256": "c628ccdbb5ed99ae34f51e47b15914594d26859eea1a48fa58070ef8f778d0fd",
+    "target_source_sha256": "82e8f68a002d0c287ececd946734b8e5866657656246d8be35e0fb443ea017ba",
     "source_header": "include/bug_contest.h",
     "source_scripts": [
       "data/scripts/bug_contest.inc",
@@ -23,7 +23,7 @@
     "Validated ten-species judging and source reward tables",
     "Idempotent PC transfer and reward claim with recoverable failures",
     "Serialization fence rejects saves and cooperative checkpoints while the temporary party snapshot is owned",
-    "Engine hook/map script/emulator integration remains subsequent scope"
+    "Engine save fences and generated campaign UI scripts bind timeout, judging, recoverable settlement, explicit reward forfeit, and gated exit"
   ],
   "duration_frames": 28800,
   "contest_species": [

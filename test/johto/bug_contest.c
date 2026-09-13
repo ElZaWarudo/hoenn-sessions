@@ -151,6 +151,8 @@ TEST("Contest judgement freezes placement and selection and grants each catch an
     EXPECT_EQ(JohtoBugContest_GetSelectedPlacement(), 1);
     EXPECT_EQ(JohtoBugContest_Judge(2), JOHTO_BUG_CONTEST_SELECTION_LOCKED);
     EXPECT_EQ(JohtoBugContest_Exit(), JOHTO_BUG_CONTEST_EXIT_BLOCKED);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_NOT_PREPARED);
+    EXPECT_EQ(JohtoBugContest_PrepareSettlement(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(CountMonsInBox(0), 1);
@@ -159,6 +161,7 @@ TEST("Contest judgement freezes placement and selection and grants each catch an
     EXPECT_EQ(JohtoBugContest_ClaimReward(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(JohtoBugContest_ClaimReward(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(CountTotalItemQuantityInBag(reward), 1);
+    EXPECT(JohtoBugContest_IsSerializationBlocked());
     EXPECT_EQ(JohtoBugContest_Exit(), JOHTO_BUG_CONTEST_OK);
     ExpectOriginalParty();
     EXPECT_EQ(JohtoBugContest_Exit(), JOHTO_BUG_CONTEST_NO_CONTEST);
@@ -174,6 +177,7 @@ TEST("Contest full PC and reward bag failures retain recoverable state")
     EXPECT_EQ(JohtoBugContest_RequestEnd(JOHTO_BUG_CONTEST_END_FULL_PARTY), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(JohtoBugContest_Judge(1), JOHTO_BUG_CONTEST_OK);
     reward = JohtoBugContest_GetReward();
+    EXPECT_EQ(JohtoBugContest_PrepareSettlement(), JOHTO_BUG_CONTEST_OK);
     FillContestPC();
     EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_TRANSFER_FAILED);
     EXPECT_EQ(JohtoBugContest_ClaimReward(), JOHTO_BUG_CONTEST_TRANSFER_FAILED);
@@ -188,6 +192,77 @@ TEST("Contest full PC and reward bag failures retain recoverable state")
     BagPocket_SetSlotItemIdAndCount(&gBagPockets[POCKET_ITEMS], 0, ITEM_NONE, 0);
     EXPECT_EQ(JohtoBugContest_ClaimReward(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(CountTotalItemQuantityInBag(reward), 1);
+    EXPECT_EQ(JohtoBugContest_Exit(), JOHTO_BUG_CONTEST_OK);
+    ExpectOriginalParty();
+}
+
+TEST("Contest settlement rejects wrong order without mutation")
+{
+    struct Pokemon party[PARTY_SIZE];
+    struct Mail mail[MAIL_COUNT];
+    u16 balls;
+
+    MakeContestParty();
+    EXPECT_EQ(JohtoBugContest_Begin(0), JOHTO_BUG_CONTEST_OK);
+    AddContestCatch();
+    memcpy(party, gPlayerParty, sizeof(party));
+    memcpy(mail, gSaveBlock1Ptr->mail, sizeof(mail));
+    balls = CountTotalItemQuantityInBag(ITEM_SAFARI_BALL);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_NOT_ENDING);
+    EXPECT_EQ(JohtoBugContest_RequestEnd(JOHTO_BUG_CONTEST_END_RETIRE), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_NOT_JUDGED);
+    EXPECT_EQ(JohtoBugContest_Judge(1), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_NOT_PREPARED);
+    EXPECT_EQ(memcmp(party, gPlayerParty, sizeof(party)), 0);
+    EXPECT_EQ(memcmp(mail, gSaveBlock1Ptr->mail, sizeof(mail)), 0);
+    EXPECT_EQ(CountTotalItemQuantityInBag(ITEM_SAFARI_BALL), balls);
+    EXPECT_EQ(CountMonsInBox(0), 0);
+    EXPECT(JohtoBugContest_IsSerializationBlocked());
+    EXPECT_EQ(JohtoBugContest_Abort(), JOHTO_BUG_CONTEST_OK);
+}
+
+TEST("Contest reward can be explicitly forfeited without implicit bag mutation")
+{
+    u16 reward;
+    u16 rewardCount;
+
+    MakeContestParty();
+    EXPECT_EQ(JohtoBugContest_Begin(0), JOHTO_BUG_CONTEST_OK);
+    AddContestCatch();
+    EXPECT_EQ(JohtoBugContest_RequestEnd(JOHTO_BUG_CONTEST_END_RETIRE), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_Judge(1), JOHTO_BUG_CONTEST_OK);
+    reward = JohtoBugContest_GetReward();
+    rewardCount = CountTotalItemQuantityInBag(reward);
+    EXPECT_EQ(JohtoBugContest_PrepareSettlement(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_ForfeitReward(), JOHTO_BUG_CONTEST_TRANSFER_FAILED);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_ForfeitReward(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_ForfeitReward(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_ClaimReward(), JOHTO_BUG_CONTEST_REWARD_FORFEITED);
+    EXPECT_EQ(CountTotalItemQuantityInBag(reward), rewardCount);
+    EXPECT(JohtoBugContest_IsSerializationBlocked());
+    EXPECT_EQ(JohtoBugContest_Exit(), JOHTO_BUG_CONTEST_OK);
+    EXPECT(!JohtoBugContest_IsSerializationBlocked());
+}
+
+TEST("Contest transfer is exactly once and preserves held item and checksum")
+{
+    u32 checksum;
+
+    MakeContestParty();
+    EXPECT_EQ(JohtoBugContest_Begin(0), JOHTO_BUG_CONTEST_OK);
+    AddContestCatch();
+    SetMonData(&gPlayerParty[1], MON_DATA_HELD_ITEM, &(u16){ITEM_ORAN_BERRY});
+    checksum = GetMonData(&gPlayerParty[1], MON_DATA_CHECKSUM);
+    EXPECT_EQ(JohtoBugContest_RequestEnd(JOHTO_BUG_CONTEST_END_RETIRE), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_Judge(1), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_PrepareSettlement(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(JohtoBugContest_TransferSelected(), JOHTO_BUG_CONTEST_OK);
+    EXPECT_EQ(CountMonsInBox(0), 1);
+    EXPECT_EQ(GetBoxMonDataAt(0, 0, MON_DATA_HELD_ITEM), ITEM_ORAN_BERRY);
+    EXPECT_EQ(GetBoxMonDataAt(0, 0, MON_DATA_CHECKSUM), checksum);
+    EXPECT_EQ(JohtoBugContest_ForfeitReward(), JOHTO_BUG_CONTEST_OK);
     EXPECT_EQ(JohtoBugContest_Exit(), JOHTO_BUG_CONTEST_OK);
     ExpectOriginalParty();
 }

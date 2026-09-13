@@ -21,6 +21,8 @@ enum JohtoBugContestStatus
     JOHTO_BUG_CONTEST_TRANSFER_FAILED,
     JOHTO_BUG_CONTEST_REWARD_FAILED,
     JOHTO_BUG_CONTEST_EXIT_BLOCKED,
+    JOHTO_BUG_CONTEST_NOT_PREPARED,
+    JOHTO_BUG_CONTEST_REWARD_FORFEITED,
 };
 
 enum JohtoBugContestEndReason
@@ -45,6 +47,7 @@ enum JohtoBugContestStatus JohtoBugContest_Judge(u16 slot);
 enum JohtoBugContestStatus JohtoBugContest_PrepareSettlement(void);
 enum JohtoBugContestStatus JohtoBugContest_TransferSelected(void);
 enum JohtoBugContestStatus JohtoBugContest_ClaimReward(void);
+enum JohtoBugContestStatus JohtoBugContest_ForfeitReward(void);
 enum JohtoBugContestStatus JohtoBugContest_Exit(void);
 enum JohtoBugContestStatus JohtoBugContest_Abort(void);
 

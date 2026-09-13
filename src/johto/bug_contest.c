@@ -27,6 +27,7 @@ struct JohtoBugContestState
     bool8 judged;
     bool8 transferred;
     bool8 rewardClaimed;
+    bool8 rewardForfeited;
     bool8 settlementPrepared;
     u16 startingSafariBalls;
     u16 loanedSafariBalls;
@@ -312,10 +313,14 @@ enum JohtoBugContestStatus JohtoBugContest_TransferSelected(void)
 {
     if (sBugContest == NULL)
         return JOHTO_BUG_CONTEST_NO_CONTEST;
+    if (sBugContest->phase != BUG_CONTEST_PHASE_ENDING)
+        return JOHTO_BUG_CONTEST_NOT_ENDING;
     if (!sBugContest->judged)
         return JOHTO_BUG_CONTEST_NOT_JUDGED;
     if (sBugContest->transferred)
         return JOHTO_BUG_CONTEST_OK;
+    if (!sBugContest->settlementPrepared)
+        return JOHTO_BUG_CONTEST_NOT_PREPARED;
     if (CopyMonToPC(&sBugContest->selectedMon) != MON_GIVEN_TO_PC)
         return JOHTO_BUG_CONTEST_TRANSFER_FAILED;
     sBugContest->transferred = TRUE;
@@ -328,6 +333,8 @@ enum JohtoBugContestStatus JohtoBugContest_ClaimReward(void)
         return JOHTO_BUG_CONTEST_NO_CONTEST;
     if (!sBugContest->transferred)
         return JOHTO_BUG_CONTEST_TRANSFER_FAILED;
+    if (sBugContest->rewardForfeited)
+        return JOHTO_BUG_CONTEST_REWARD_FORFEITED;
     if (sBugContest->rewardClaimed)
         return JOHTO_BUG_CONTEST_OK;
     if (sBugContest->reward == ITEM_NONE || !AddBagItem(sBugContest->reward, 1))
@@ -336,11 +343,23 @@ enum JohtoBugContestStatus JohtoBugContest_ClaimReward(void)
     return JOHTO_BUG_CONTEST_OK;
 }
 
+enum JohtoBugContestStatus JohtoBugContest_ForfeitReward(void)
+{
+    if (sBugContest == NULL)
+        return JOHTO_BUG_CONTEST_NO_CONTEST;
+    if (!sBugContest->transferred)
+        return JOHTO_BUG_CONTEST_TRANSFER_FAILED;
+    if (sBugContest->rewardClaimed || sBugContest->rewardForfeited)
+        return JOHTO_BUG_CONTEST_OK;
+    sBugContest->rewardForfeited = TRUE;
+    return JOHTO_BUG_CONTEST_OK;
+}
+
 enum JohtoBugContestStatus JohtoBugContest_Exit(void)
 {
     if (sBugContest == NULL)
         return JOHTO_BUG_CONTEST_NO_CONTEST;
-    if (!sBugContest->transferred || !sBugContest->rewardClaimed)
+    if (!sBugContest->transferred || (!sBugContest->rewardClaimed && !sBugContest->rewardForfeited))
         return JOHTO_BUG_CONTEST_EXIT_BLOCKED;
     FinishAndFree();
     return JOHTO_BUG_CONTEST_OK;

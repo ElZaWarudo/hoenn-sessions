@@ -564,6 +564,18 @@ gSpecials::
 	def_special GetCodeFeedback
 	def_special SetHiddenNature
 	def_special SetAbility
+	def_special SwitchMonAbility
+	def_special Johto_BeginBugContestAdmission
+	def_special Johto_ShowBugContestChosenMon
+	def_special Johto_AbortBugContestAdmission
+	def_special Johto_RequestBugContestTimeout
+	def_special Johto_JudgeBugContestSelectedMon
+	def_special Johto_PrepareBugContestSettlement
+	def_special Johto_ShowBugContestResult
+	def_special Johto_TransferBugContestSelectedMon
+	def_special Johto_ClaimBugContestReward
+	def_special Johto_ForfeitBugContestReward
+	def_special Johto_ExitBugContest
 	def_special CanTeachMoveBoxMon
 	def_special ObjectEventInteractionGetApricornTreeData
 	def_special ObjectEventInteractionPickApricornTree
