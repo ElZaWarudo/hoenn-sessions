@@ -159,6 +159,8 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         )
         self.assertEqual((selected_warps, selected_connections), (1172, 191))
         self.assertEqual(plan["selected_map_count"], 407)
+        self.assertEqual(plan["host_adapter_map_count"], 2)
+        self.assertEqual(plan["production_map_count"], 409)
         self.assertEqual((plan["original_map_count"], plan["later_map_count"]), (239, 168))
 
     def test_normalized_topology_repairs_invalid_warps_and_removes_debug_edges(self):
@@ -504,7 +506,7 @@ class JohtoWorldPlannerTest(unittest.TestCase):
 
     def test_registration_outputs_use_one_aggregate_campaign_and_remove_debug_events(self):
         outputs = world._registration_outputs(ROOT, DONOR, world.build_plan(ROOT, DONOR))
-        self.assertEqual(len(outputs), 410)
+        self.assertEqual(len(outputs), 413)
         self.assertFalse(any(path.name == "scripts.inc" for path in outputs))
         event_scripts = outputs[world.EVENT_SCRIPTS_PATH]
         self.assertEqual(event_scripts.count(world.LEGACY_NEW_BARK_INCLUDE), 0)
@@ -515,6 +517,106 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         stored_plan = json.loads(outputs[world.WORLD_PLAN_PATH])
         self.assertTrue(stored_plan["production_write_ready"])
         self.assertEqual(stored_plan["blockers"], [])
+
+    def test_original_kanto_transport_adapters_are_append_only_and_reachable(self):
+        plan = world.build_plan(ROOT, DONOR)
+        outputs = world._registration_outputs(ROOT, DONOR, plan)
+        groups = json.loads(outputs[world.MAP_GROUPS_PATH])
+        vermilion_adapter, saffron_adapter = world.HOST_ADAPTER_MAPS
+
+        self.assertEqual(plan["selected_map_count"], 407)
+        self.assertEqual(plan["host_adapter_map_count"], 2)
+        self.assertEqual(len(plan["maps"]), 407)
+        self.assertEqual(groups[vermilion_adapter["group"]][vermilion_adapter["index"]], vermilion_adapter["name"])
+        self.assertEqual(groups[saffron_adapter["group"]][saffron_adapter["index"]], saffron_adapter["name"])
+        baseline = json.loads((ROOT / world.HOST_IDENTITY_BASELINE_PATH).read_text(encoding="utf-8"))
+        for adapter in world.HOST_ADAPTER_MAPS:
+            self.assertEqual(
+                groups[adapter["group"]][:-1],
+                [record["name"] for record in baseline["groups"][adapter["group"]]],
+            )
+
+        vermilion = json.loads(outputs[Path("data/maps/KantoOriginal_VermilionCity_PortInside/map.json")])
+        self.assertEqual(vermilion["id"], "MAP_KANTO_ORIGINAL_VERMILION_CITY_PORT_INSIDE")
+        self.assertEqual(vermilion["layout"], "LAYOUT_KANTO_LATER_VERMILION_CITY_PORT_INSIDE")
+        self.assertEqual(
+            [(event["x"], event["y"], event["graphics_id"]) for event in vermilion["object_events"]],
+            [(8, 10, "OBJ_EVENT_GFX_SAILOR"), (8, 13, "OBJ_EVENT_GFX_SS_TIDAL")],
+        )
+        self.assertEqual(
+            vermilion["warp_events"],
+            [{"x": 8, "y": 2, "elevation": 0, "dest_map": "MAP_VERMILION_CITY", "dest_warp_id": "0"}],
+        )
+
+        station = json.loads(outputs[Path("data/maps/KantoOriginal_SaffronCity_TrainStation/map.json")])
+        self.assertEqual(station["id"], "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION")
+        self.assertEqual(station["layout"], "LAYOUT_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION")
+        self.assertEqual(
+            [(event["x"], event["y"], event["graphics_id"]) for event in station["object_events"]],
+            [(137, 20, "OBJ_EVENT_GFX_POLICEMAN"), (152, 5, "OBJ_EVENT_GFX_TRAIN_BACK")],
+        )
+        self.assertEqual((station["warp_events"][0]["dest_map"], station["warp_events"][0]["dest_warp_id"]), ("MAP_SAFFRON_CITY", "15"))
+        self.assertEqual((station["warp_events"][1]["x"], station["warp_events"][1]["y"]), (140, 16))
+
+        predecessor = json.loads(world._base_bytes(ROOT, world.SAFFRON_KIOSK["path"]))
+        saffron = json.loads(outputs[world.SAFFRON_KIOSK["path"]])
+        self.assertEqual(saffron["warp_events"][:-1], predecessor["warp_events"])
+        self.assertEqual(
+            saffron["warp_events"][-1],
+            {
+                "x": 36,
+                "y": 41,
+                "elevation": 0,
+                "dest_map": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION",
+                "dest_warp_id": "0",
+            },
+        )
+        self.assertEqual(saffron["object_events"][:-1], predecessor["object_events"])
+        self.assertEqual(saffron["object_events"][-1]["script"], world.SAFFRON_KIOSK["script"])
+
+        assembly = outputs[world.EVENT_SCRIPTS_PATH]
+        for label in (
+            b"KantoOriginal_VermilionCity_PortInside_MapScripts::",
+            b"KantoOriginal_VermilionCity_PortInside_EventScript_Sailor::",
+            b"KantoOriginal_SaffronCity_TrainStation_MapScripts::",
+            b"KantoOriginal_SaffronCity_TrainStation_EventScript_Attendant::",
+            b"KantoOriginal_SaffronCity_EventScript_TrainKiosk::",
+        ):
+            self.assertEqual(assembly.count(label), 1)
+        self.assertIn(b"warpsilent MAP_OLIVINE_CITY_PORT_INSIDE, 8, 16", assembly)
+        self.assertIn(b"warp MAP_GOLDENROD_CITY_TRAIN_STATION, 19, 16", assembly)
+        self.assertIn(b"warp MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION, 140, 16", assembly)
+        self.assertNotIn(b"MAP_SSANNE", world.ADAPTER_EVENT_SCRIPTS)
+
+        # Trace the complete return path: kiosk interaction enters the station,
+        # whose exit resolves to the appended outdoor warp beside that kiosk.
+        self.assertEqual((world.SAFFRON_KIOSK["x"], world.SAFFRON_KIOSK["y"]), (36, 40))
+        self.assertEqual(
+            (saffron["warp_events"][15]["x"], saffron["warp_events"][15]["y"]),
+            (world.SAFFRON_KIOSK["return_x"], world.SAFFRON_KIOSK["return_y"]),
+        )
+
+    def test_consistent_host_baseline_and_group_mutation_is_rejected(self):
+        temporary, root = self._minimal_registration_root()
+        with temporary:
+            baseline_path = root / world.HOST_IDENTITY_BASELINE_PATH
+            groups_path = root / world.MAP_GROUPS_PATH
+            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+            groups = json.loads(groups_path.read_text(encoding="utf-8"))
+            group_name = "gMapGroup_IndoorVermilion_Frlg"
+            baseline["groups"][group_name][-1]["name"] = "MutatedVermilionHouse"
+            groups[group_name][7] = "MutatedVermilionHouse"
+            baseline_path.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+            groups_path.write_text(json.dumps(groups, indent=2) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(world.WorldPlanError, "host identity baseline semantics drifted"):
+                world._validate_group_predecessor(root)
+
+    def test_original_kanto_adapter_outputs_are_deterministic(self):
+        plan = world.build_plan(ROOT, DONOR)
+        first = world._registration_outputs(ROOT, DONOR, plan)
+        second = world._registration_outputs(ROOT, DONOR, world.build_plan(ROOT, DONOR))
+        self.assertEqual(first, second)
 
     def test_stale_world_plan_fails_check_and_write_repairs_it_in_transaction(self):
         with tempfile.TemporaryDirectory() as directory:
