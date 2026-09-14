@@ -14,7 +14,11 @@ public final class DeviceSmoke extends Instrumentation {
         Bundle result=new Bundle();StringBuilder report=new StringBuilder();CloudApi api=new CloudApi();
         File input=new File(getTargetContext().getFilesDir(),"device-smoke.json");
         try {
+            if(NativeSession.isActive())throw new AssertionError("Close the active game before the smoke test");
             NativeCore.close();report.append("native_load=PASS\n");
+            if(!"0.10.5|26b7884bc25a5933960f3cdcd98bac1ae14d42e2".equals(NativeCore.identity()))throw new AssertionError("Unexpected native identity");
+            report.append("native_identity=PASS\n");
+            report.append("rust_jni_load=PASS\n");
             if(NativeCore.readBridge(0x01000000)!=null)throw new AssertionError("Invalid bridge accepted");
             report.append("bridge_out_of_bounds=REJECTED\n");
             api.health();report.append("https_readiness=PASS\n");
@@ -28,7 +32,7 @@ public final class DeviceSmoke extends Instrumentation {
             catch(CloudApi.HttpError e){if(e.status!=404 || revision!=0)throw e;report.append("pinned_server_signature=UNTESTED no snapshot (HTTP 404, revision 0)\n");}
             api.release();report.append("lease_release=PASS\n");
             api.logout();report.append("logout=PASS\n");
-            report.append("game_presence_cloud_save=UNTESTED matching ROM unavailable\n");
+            report.append("game_presence_cloud_save=UNTESTED requires approved interactive gameplay\n");
             result.putString("stream",report.toString());finish(Activity.RESULT_OK,result);
         } catch(Throwable e) {
             // Only controlled exception type/status is returned; do not print bodies or credentials.

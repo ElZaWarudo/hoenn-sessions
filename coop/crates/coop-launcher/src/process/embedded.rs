@@ -159,3 +159,45 @@ impl Drop for EmbeddedSupervisor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stopped_requires_host_acknowledgement_and_is_repeatable() {
+        let (send, mut receive) = mpsc::channel::<oneshot::Sender<()>>(1);
+        let host = tokio::spawn(async move {
+            receive
+                .recv()
+                .await
+                .expect("stop request")
+                .send(())
+                .expect("ack receiver");
+        });
+        let (mut supervisor, _) = EmbeddedSupervisor::start(7, send).await.expect("sidecar");
+        assert!(!supervisor.stopped());
+        supervisor
+            .stop_in_place()
+            .await
+            .expect("confirmed shutdown");
+        assert!(supervisor.stopped());
+        supervisor
+            .stop_in_place()
+            .await
+            .expect("idempotent shutdown");
+        host.await.expect("host task");
+    }
+
+    #[tokio::test]
+    async fn missing_host_ack_never_claims_a_confirmed_stop() {
+        let (send, mut receive) = mpsc::channel::<oneshot::Sender<()>>(1);
+        let host = tokio::spawn(async move {
+            drop(receive.recv().await.expect("stop request"));
+        });
+        let (mut supervisor, _) = EmbeddedSupervisor::start(9, send).await.expect("sidecar");
+        assert!(supervisor.stop_in_place().await.is_err());
+        assert!(!supervisor.stopped());
+        host.await.expect("host task");
+    }
+}

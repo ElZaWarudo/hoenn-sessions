@@ -1,5 +1,9 @@
 plugins { id 'com.android.application' }
 def releaseManifest = new groovy.json.JsonSlurper().parse(file('src/main/assets/bridge_manifest.json'))
+def sdkProperties = new Properties()
+def sdkFile = new File(rootProject.projectDir, 'local.properties')
+if (sdkFile.exists()) { sdkFile.withInputStream { sdkProperties.load(it) } }
+def sdkPath = sdkProperties.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: (System.getenv('LOCALAPPDATA') + '/Android/Sdk')
 android {
     namespace 'io.hoenn.sessions'
     compileSdk 37
@@ -12,15 +16,23 @@ android {
         applicationId 'io.hoenn.sessions'
         minSdk 28
         targetSdk 36
-        versionCode 1
-        versionName '0.1-native-preview'
+        versionCode 2
+        versionName '0.2-coop-validation'
         ndk { abiFilters 'x86_64', 'arm64-v8a' }
         externalNativeBuild { cmake { arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON' } }
     }
     buildFeatures { buildConfig true }
+    sourceSets { main { jniLibs.srcDir layout.buildDirectory.dir('generated/rustJniLibs').get().asFile } }
     externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
     buildTypes { debug { debuggable true } }
 }
+def compileCoopRust = tasks.register('compileCoopRust', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        new File(rootProject.projectDir, 'build-rust.ps1').absolutePath,
+        '-Sdk', sdkPath
+}
+tasks.named('preBuild').configure { dependsOn compileCoopRust }
 dependencies {
     implementation 'org.bouncycastle:bcprov-jdk18on:1.83'
     implementation 'io.github.erdtman:java-json-canonicalization:1.1'

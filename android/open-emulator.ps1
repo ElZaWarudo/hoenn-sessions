@@ -22,7 +22,7 @@ foreach ($line in (& $adb devices)) {
 if (-not $serial) {
     $serial = 'emulator-5554'
     if ((& $adb devices) -match '^emulator-5554\s') { throw 'Port 5554 belongs to another/offline emulator. Wait or close it before retrying.' }
-    Start-Process -FilePath $emulator -ArgumentList '-avd',$Avd,'-port','5554','-gpu','software','-no-snapshot','-memory','2048','-cores','2','-dns-server','1.1.1.1,8.8.8.8' -WindowStyle Normal
+    Start-Process -FilePath $emulator -ArgumentList '-avd',$Avd,'-port','5554','-gpu','software','-no-snapshot','-no-boot-anim','-memory','3072','-cores','4','-dns-server','1.1.1.1,8.8.8.8' -WindowStyle Normal
 }
 $deadline = (Get-Date).AddMinutes(8)
 do {
@@ -34,6 +34,12 @@ do {
 # This emulator's Wi-Fi DNS failed for application UIDs. Use its validated
 # cellular network, retaining normal DNS/TLS verification in Android.
 & $adb -s $serial shell svc wifi disable
+# Boot completion can precede telephony registration on a cold API 36 AVD.
+$phoneDeadline = (Get-Date).AddSeconds(45)
+while ((& $adb -s $serial shell service check phone) -notmatch ': found$') {
+    if ((Get-Date) -gt $phoneDeadline) { throw 'Android telephony service did not become ready.' }
+    Start-Sleep -Seconds 2
+}
 & $adb -s $serial shell svc data enable
 & $adb -s $serial install -r "$PSScriptRoot/app/build/outputs/apk/debug/app-debug.apk"
 if ($LASTEXITCODE) { throw 'APK installation failed' }

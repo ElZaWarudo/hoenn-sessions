@@ -2,6 +2,7 @@ package io.hoenn.sessions;
 
 final class NativeCore {
     static { System.loadLibrary("hoenn"); }
+    static synchronized native String identity();
     static synchronized native boolean open(String rom, String save);
     static synchronized native void close();
     static synchronized native int frame(int keys, int[] pixels, short[] audio);

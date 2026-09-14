@@ -1,14 +1,35 @@
-# Estado del borrador — 9 de septiembre de 2026
+# Estado de Android — 14 de septiembre de 2026
 
-Este borrador conserva el cliente Android y la integración cooperativa en curso.
-No certifica un flujo multijugador completo ni está listo para distribuirse.
+Se prepara una PR en borrador con todo el trabajo pendiente, solicitada el
+14 de septiembre. La primera tanda local autorizada está documentada en
+[VALIDACION-LOCAL-09.md](VALIDACION-LOCAL-09.md).
+No se certifica todavía el flujo multijugador completo.
+
+## Cambios posteriores a la validación histórica
+
+- Gradle compila y empaqueta la biblioteca Rust para x86_64 y arm64-v8a junto
+  al núcleo mGBA/JNI. Las fuentes mGBA deben corresponder al commit fijado.
+- El asset Android usa el manifiesto generado de la ROM compilada. Las
+  direcciones y hash de BuildConfig se derivan del asset, sin overrides.
+- JNI informa la versión y commit del núcleo, comprobados antes del juego.
+- El cierre espera confirmación del núcleo y de las tareas del sidecar;
+  no libera la lease si la parada no se puede confirmar. La pantalla sigue
+  atendiendo el cierre al salir de primer plano.
+- Reconexión explícita desde el guardado cloud: después de parar la ejecución
+  anterior, el servidor emite un nuevo epoch y se verifica de nuevo el paquete.
+- El juego produce el SAV. El callback, el grant y la generación deben
+  correlacionar antes de subirlo mediante el parser/lifecycle compartido.
+  La UI solo anuncia revisión cloud después de finalize aceptado.
+- Se añadieron dos pruebas de confirmación de parada del supervisor embebido;
+  pasaron dentro de la primera tanda autorizada (149 pruebas Rust, 6 Java).
 
 ## Evidencia actual
 
-- Validación de este borrador: `cargo test -p coop-launcher --lib --locked`
+- Validación histórica del commit `1e68460cb2`, no de los cambios posteriores:
+  `cargo test -p coop-launcher --lib --locked`
   pasó con 147 pruebas correctas y una ignorada; `cargo fmt --all -- --check`
   pasó. `assembleDebug testDebugUnitTest` pasó con seis pruebas Java correctas.
-  Compilar el APK no verifica la carga de la biblioteca Rust pendiente.
+  Compilar el APK no verifica su comportamiento en ejecución.
 
 - Se compiló una ROM de 32 MiB y su ELF desde el commit
   `333a5f3991607298e66f66e68ada6ad20867c0a9`, con GCC ARM 16.1.0
@@ -26,13 +47,10 @@ No certifica un flujo multijugador completo ni está listo para distribuirse.
 - `VALIDACION.md` conserva resultados del APK anterior; no valida los cambios
   posteriores de `NativeSession` y `BridgeConnection`.
 
-## Pendiente antes de aprobar
+## Pendiente de autorización y ejecución
 
-- Integrar la compilación y empaquetado de `libcoop_android.so` para ambas ABI
-  en el flujo Gradle/PowerShell. El script de compilación actual solo prepara
-  el núcleo C de mGBA: no garantiza un APK ejecutable con NativeSession.
-- El asset Android todavía corresponde al manifiesto anterior. Actualizarlo
-  de forma coherente con la ROM y el despliegue; nunca cambiar solo el hash.
+- Ejecución real de esta ROM. Las pruebas unitarias, inspección del APK e
+  instalación/arranque ya se realizaron; el emulador tuvo un ANR de System UI.
 - Verificar cierre de Activity, limpieza de errores tempranos, desconexión y
   reconexión completa, además de las comprobaciones de identidad nativa.
 - Producir un primer guardado desde el juego y comprobar subida, firma real

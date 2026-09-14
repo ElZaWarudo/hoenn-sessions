@@ -1,12 +1,14 @@
 #include <jni.h>
 #include <mgba/core/core.h>
 #include <mgba/gba/core.h>
+#include <mgba/core/version.h>
 #include <mgba-util/vfs.h>
 #include <mgba/core/blip_buf.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdio.h>
 
 // All access is serialized by NativeCore's Java monitor, including frame boundaries.
 static struct mCore* core;
@@ -20,6 +22,12 @@ static void savedata_updated(void* context) {
     if(core && generation_address) callback_generation=core->busRead32(core,generation_address);
 }
 static struct mCoreCallbacks callbacks={.savedataUpdated=savedata_updated};
+JNIEXPORT jstring JNICALL Java_io_hoenn_sessions_NativeCore_identity(JNIEnv* env, jclass cls) {
+    (void)cls;
+    char identity[160];
+    snprintf(identity,sizeof(identity),"%s|%s",projectVersion,gitCommit);
+    return (*env)->NewStringUTF(env,identity);
+}
 static void close_core(void) {
     if (core) { mCoreConfigDeinit(&core->config); core->deinit(core); core = NULL; }
     free(save_path);save_path=NULL;callback_serial=0;callback_generation=0;

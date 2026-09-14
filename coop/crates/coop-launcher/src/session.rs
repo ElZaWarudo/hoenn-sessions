@@ -1113,7 +1113,8 @@ pub struct SessionLifecycle {
     checkpoint_authorized: bool,
     checkpoint_key: Option<(u32, u32)>,
     /// Sticky one-attempt latch. A typed mint-origin 401 retry remains part
-    /// of this same attempt and this flag is never cleared.
+    /// of this same attempt. Only confirmed Android teardown followed by a
+    /// new server epoch permits another lifecycle through reconnect_embedded.
     realtime_attempted: bool,
     #[cfg(test)]
     realtime_mint_state_probe: Option<Arc<tokio::sync::Notify>>,
@@ -1126,6 +1127,7 @@ pub struct SessionLifecycle {
     /// this separate from the cloud revision makes wrap-safe ROM generation
     /// correlation explicit at the launcher boundary.
     save_generation: Option<u32>,
+    revision_updates: Option<tokio::sync::watch::Sender<u64>>,
 }
 
 impl std::fmt::Debug for SessionLifecycle {
@@ -1602,6 +1604,7 @@ impl SessionLifecycle {
             realtime_lifecycle_enqueue_burst: 1,
             fresh_resume_save_digest: None,
             save_generation: None,
+            revision_updates: None,
         };
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
         if let Err(error) = lifecycle.restore_or_bootstrap(api).await {
@@ -2054,6 +2057,39 @@ impl SessionLifecycle {
         self.auth.set_active_fence(self.lease.fence());
         self.reconnect_key = random_idempotency_key()?;
         Ok(())
+    }
+
+    /// Observes revisions only after the server has accepted a canonical save.
+    pub fn observe_revisions(&mut self) -> tokio::sync::watch::Receiver<u64> {
+        let (send, receive) = tokio::sync::watch::channel(self.revision.value());
+        self.revision_updates = Some(send);
+        receive
+    }
+
+    /// Re-enters the Android lifecycle only after the old native core and
+    /// sidecar have stopped and no authorized checkpoint remains unresolved.
+    /// The previous realtime owner has already been joined by the run method.
+    ///
+    /// # Errors
+    /// Rejects unresolved saves, incomplete shutdown, or an unverified resume.
+    #[cfg(target_os = "android")]
+    pub async fn reconnect_embedded<A: CloudApi>(
+        &mut self,
+        api: &A,
+        previous: &crate::process::embedded::EmbeddedSupervisor,
+    ) -> Result<(), SessionError> {
+        if !previous.stopped() || self.checkpoint_authorized || self.revision.is_initial() {
+            return Err(SessionError::CheckpointNotAuthorized);
+        }
+        let attempted = self.realtime_attempted;
+        self.realtime_attempted = false;
+        if let Err(error) = self.reconnect(api).await {
+            self.realtime_attempted = attempted;
+            return Err(error);
+        }
+        self.checkpoint_key = None;
+        self.fresh_resume_save_digest = None;
+        self.restore_or_bootstrap(api).await
     }
 
     /// Runs the online session until a child exits or a lease/checkpoint
@@ -3655,6 +3691,9 @@ impl SessionLifecycle {
         }
         self.revision = record.revision;
         self.lease.current_revision = record.revision;
+        if let Some(updates) = &self.revision_updates {
+            updates.send_replace(record.revision.value());
+        }
         self.auth.set_active_fence(self.lease.fence());
         self.workspace.discard_recovery_shadow();
         Ok(record.revision)

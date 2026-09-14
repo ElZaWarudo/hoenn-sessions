@@ -30,6 +30,9 @@ zeroize.workspace = true
 windows-native-keyring-store.workspace = true
 windows-spawn.workspace = true
 
+[target.'cfg(target_os = "android")'.dependencies]
+rustix = { version = "1.1.4", features = ["fs"] }
+
 [dev-dependencies]
 axum.workspace = true
 coop-server = { path = "../coop-server" }

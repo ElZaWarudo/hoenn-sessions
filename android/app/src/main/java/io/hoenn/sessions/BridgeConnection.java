@@ -12,6 +12,9 @@ final class BridgeConnection implements AutoCloseable {
     private final ArrayBlockingQueue<byte[]> inbound=new ArrayBlockingQueue<>(32);
     private final ArrayBlockingQueue<Send> outbound=new ArrayBlockingQueue<>(2);
     private volatile Socket socket;
+    private final Thread reader;
+    private volatile Thread writer;
+    private final Object networkLock=new Object();
     private volatile boolean authenticated,closed;
     private volatile String failure;
     private Send pending;
@@ -23,21 +26,23 @@ final class BridgeConnection implements AutoCloseable {
         if(epoch<=0 || epoch>0xffffffffL || !descriptor.getString("host").equals("127.0.0.1") || !descriptor.getString("transport").equals("tcp"))throw new SecurityException("Descriptor inválido");
         this.epoch=epoch;int port=descriptor.getInt("port");String secret=descriptor.getString("secret");
         if(port<1 || port>65535 || !secret.matches("[0-9a-f]{32}"))throw new SecurityException("Descriptor inválido");
-        new Thread(()->connect(port,secret),"bridge-connect").start();
+        reader=new Thread(()->connect(port,secret),"bridge-connect");reader.start();
     }
     private void connect(int port,String secret){
         try {
-            Socket s=new Socket();socket=s;s.connect(new InetSocketAddress("127.0.0.1",port),3000);s.setSoTimeout(3000);s.setTcpNoDelay(true);
+            Socket s=new Socket();synchronized(networkLock){if(closed){s.close();return;}socket=s;}
+            s.connect(new InetSocketAddress("127.0.0.1",port),3000);s.setSoTimeout(3000);s.setTcpNoDelay(true);
             OutputStream output=s.getOutputStream();InputStream input=s.getInputStream();
             output.write(("{\"secret\":\""+secret+"\",\"bridge_abi\":1,\"protocol_version\":1}\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
             ByteArrayOutputStream line=new ByteArrayOutputStream();int c;
             while((c=input.read())!=-1){line.write(c);if(line.size()>256)throw new IOException();if(c==10)break;}
             if(!line.toString("US-ASCII").equals("{\"ok\":true}\n"))throw new SecurityException();
             s.setSoTimeout(0);authenticated=true;
-            new Thread(()->write(output),"bridge-write").start();
+            synchronized(networkLock){if(closed)return;writer=new Thread(()->write(output),"bridge-write");writer.start();}
             DataInputStream data=new DataInputStream(input);
             while(!closed){byte[] frame=new byte[144];data.readFully(frame);BridgeFrame.decode(frame,true);if(!inbound.offer(frame))throw new IOException("Cola inbound llena");}
         }catch(Exception e){if(!closed)failure="Conexión local del bridge perdida";}
+        finally{Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
     }
     private void write(OutputStream out){try{while(!closed){Send send=outbound.poll(200,TimeUnit.MILLISECONDS);if(send!=null){out.write(send.bytes);send.sent=true;}}}catch(Exception e){if(!closed)failure="Escritura del bridge fallida";}}
     void step() throws Exception {
@@ -78,5 +83,11 @@ final class BridgeConnection implements AutoCloseable {
         if(++frames%60==0)NativeCore.bridgeHeartbeat();
     }
     private long generation(BridgeFrame f){if(f.payload.length!=4)throw new SecurityException("Payload SAV inválido");return Integer.toUnsignedLong(ByteBuffer.wrap(f.payload).order(ByteOrder.LITTLE_ENDIAN).getInt());}
-    @Override public void close(){closed=true;Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}inbound.clear();outbound.clear();}
+    @Override public void close(){
+        synchronized(networkLock){closed=true;Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
+        reader.interrupt();Thread w=writer;if(w!=null)w.interrupt();
+        try{reader.join(1500);if(w!=null)w.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException("Cierre del bridge interrumpido");}
+        inbound.clear();outbound.clear();
+        if(reader.isAlive() || (w!=null && w.isAlive()))throw new IllegalStateException("El bridge no confirmó su cierre");
+    }
 }

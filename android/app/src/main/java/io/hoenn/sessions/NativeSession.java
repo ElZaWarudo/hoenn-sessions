@@ -5,4 +5,6 @@ final class NativeSession {
     static native String poll();
     static native void stop();
     static native void acknowledgeStopped();
+    static native boolean isActive();
+    static native boolean reconnect();
 }
