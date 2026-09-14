@@ -447,7 +447,7 @@ impl FileLock {
             options.read(true).write(true).create(true);
             for _ in 0..LOCK_ATTEMPTS {
                 let file = options.open(path).map_err(EpochError::Io)?;
-                match file.try_lock() {
+                match try_lock_file(&file) {
                     Ok(()) => return Ok(Self { file: Some(file) }),
                     Err(std::fs::TryLockError::WouldBlock) => {
                         drop(file);
@@ -461,6 +461,24 @@ impl FileLock {
             Err(EpochError::Busy)
         }
     }
+}
+
+// std::fs::File::try_lock is unsupported on Android. Keep the same kernel-owned
+// nonblocking advisory lock, which is released when the owning descriptor closes.
+fn try_lock_file(file: &File) -> Result<(), std::fs::TryLockError> {
+    #[cfg(target_os = "android")]
+    {
+        rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
+            .map_err(|error| {
+                if error == rustix::io::Errno::WOULDBLOCK {
+                    std::fs::TryLockError::WouldBlock
+                } else {
+                    std::fs::TryLockError::Error(error.into())
+                }
+            })
+    }
+    #[cfg(not(target_os = "android"))]
+    file.try_lock()
 }
 
 #[cfg(windows)]

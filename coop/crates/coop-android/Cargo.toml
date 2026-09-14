@@ -1,0 +1,18 @@
+[package]
+name = "coop-android"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+coop-cloud = { path = "../coop-cloud" }
+coop-launcher = { path = "../coop-launcher" }
+coop-sidecar = { path = "../coop-sidecar" }
+jni = "0.21.1"
+serde_json.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+zeroize.workspace = true

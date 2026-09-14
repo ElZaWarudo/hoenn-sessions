@@ -77,3 +77,10 @@ tools/aif2pcm/aif2pcm
 *.smolTM
 __pycache__
 .map_version
+/.local/
+/android/.gradle/
+/android/.cxx/
+/android/app/.cxx/
+/android/local.properties
+/android/app/src/main/jniLibs/
+!/android/gradlew.bat

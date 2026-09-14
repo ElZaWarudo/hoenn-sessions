@@ -41,7 +41,7 @@ use crate::{
     epoch::{EpochError, EpochStore},
     keychain::{KeychainError, RefreshTokenStore},
     process::{
-        ControlChannel, ProcessError, RawSupervisorEvent, SupervisedChildren, SupervisorEvent,
+        ControlChannel, ProcessError, RawSupervisorEvent, SessionSupervisor, SupervisorEvent,
         new_command_id,
     },
     realtime::{RealtimeApi, RealtimeCoordinator, RealtimeCoordinatorEvent, RealtimeHttpError},
@@ -138,7 +138,7 @@ enum RealtimeCheckpointOutcome {
 }
 
 async fn next_realtime_loop_input<F: Future<Output = ()>>(
-    children: &mut SupervisedChildren,
+    children: &mut impl SessionSupervisor,
     realtime: &mut RealtimeCoordinator,
     shutdown: &mut Pin<Box<F>>,
     heartbeat: &mut tokio::time::Interval,
@@ -288,7 +288,7 @@ async fn await_realtime_mint<A, F>(
     request: MintRealtimeTicketRequest,
     active_lease: &mut LeaseContract,
     expected_revision: Revision,
-    children: &mut SupervisedChildren,
+    children: &mut impl SessionSupervisor,
     shutdown: &mut Pin<Box<F>>,
     heartbeat: &mut tokio::time::Interval,
     generation: u32,
@@ -327,11 +327,11 @@ where
             }
             observation = children.observe_raw() => match observation.map_err(SessionError::Control)? {
                 RawSupervisorEvent::Control(ControlEvent::PlayerState(_)) => {
-                    let Some(latest) = children.control.latest_presence_state() else {
+                    let Some(latest) = children.control().latest_presence_state() else {
                         return Err(SessionError::Realtime);
                     };
-                    if children.control.reset_latched()
-                        || children.control.lifecycle_generation() != generation
+                    if children.control().reset_latched()
+                        || children.control().lifecycle_generation() != generation
                         || latest.0 != generation
                     {
                         return Err(SessionError::Realtime);
@@ -346,7 +346,7 @@ where
                     // Interactions have no meaning until server readiness.
                 }
                 RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
-                    children.control.send(&ControlCommand::OnlineStatus {
+                    children.control().send(&ControlCommand::OnlineStatus {
                         session_epoch: active_lease.session_epoch.value(),
                         status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
                     }).await?;
@@ -1113,7 +1113,8 @@ pub struct SessionLifecycle {
     checkpoint_authorized: bool,
     checkpoint_key: Option<(u32, u32)>,
     /// Sticky one-attempt latch. A typed mint-origin 401 retry remains part
-    /// of this same attempt and this flag is never cleared.
+    /// of this same attempt. Only confirmed Android teardown followed by a
+    /// new server epoch permits another lifecycle through reconnect_embedded.
     realtime_attempted: bool,
     #[cfg(test)]
     realtime_mint_state_probe: Option<Arc<tokio::sync::Notify>>,
@@ -1126,6 +1127,7 @@ pub struct SessionLifecycle {
     /// this separate from the cloud revision makes wrap-safe ROM generation
     /// correlation explicit at the launcher boundary.
     save_generation: Option<u32>,
+    revision_updates: Option<tokio::sync::watch::Sender<u64>>,
 }
 
 impl std::fmt::Debug for SessionLifecycle {
@@ -1602,6 +1604,7 @@ impl SessionLifecycle {
             realtime_lifecycle_enqueue_burst: 1,
             fresh_resume_save_digest: None,
             save_generation: None,
+            revision_updates: None,
         };
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
         if let Err(error) = lifecycle.restore_or_bootstrap(api).await {
@@ -2056,6 +2059,39 @@ impl SessionLifecycle {
         Ok(())
     }
 
+    /// Observes revisions only after the server has accepted a canonical save.
+    pub fn observe_revisions(&mut self) -> tokio::sync::watch::Receiver<u64> {
+        let (send, receive) = tokio::sync::watch::channel(self.revision.value());
+        self.revision_updates = Some(send);
+        receive
+    }
+
+    /// Re-enters the Android lifecycle only after the old native core and
+    /// sidecar have stopped and no authorized checkpoint remains unresolved.
+    /// The previous realtime owner has already been joined by the run method.
+    ///
+    /// # Errors
+    /// Rejects unresolved saves, incomplete shutdown, or an unverified resume.
+    #[cfg(target_os = "android")]
+    pub async fn reconnect_embedded<A: CloudApi>(
+        &mut self,
+        api: &A,
+        previous: &crate::process::embedded::EmbeddedSupervisor,
+    ) -> Result<(), SessionError> {
+        if !previous.stopped() || self.checkpoint_authorized || self.revision.is_initial() {
+            return Err(SessionError::CheckpointNotAuthorized);
+        }
+        let attempted = self.realtime_attempted;
+        self.realtime_attempted = false;
+        if let Err(error) = self.reconnect(api).await {
+            self.realtime_attempted = attempted;
+            return Err(error);
+        }
+        self.checkpoint_key = None;
+        self.fresh_resume_save_digest = None;
+        self.restore_or_bootstrap(api).await
+    }
+
     /// Runs the online session until a child exits or a lease/checkpoint
     /// failure occurs.  Heartbeats are scheduled from the server-provided
     /// cadence; all authenticated requests pass through the proactive/401
@@ -2069,7 +2105,7 @@ impl SessionLifecycle {
     pub async fn run_until_exit<A: CloudApi>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
     ) -> Result<(), SessionError> {
         self.run_until_shutdown(api, children, std::future::pending())
             .await
@@ -2089,7 +2125,7 @@ impl SessionLifecycle {
     pub async fn run_until_shutdown<A, F>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         shutdown: F,
     ) -> Result<(), SessionError>
     where
@@ -2124,7 +2160,7 @@ impl SessionLifecycle {
                 event = children.next_event() => match event.map_err(SessionError::Control) {
                     Ok(SupervisorEvent::ChildExited) => break Ok(()),
                     Ok(SupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. })) => {
-                        self.checkpoint_with_deadline(api, &mut children.control, ready)
+                        self.checkpoint_with_deadline(api, &mut children.control(), ready)
                             .await
                             .map(|_| ())
                     }
@@ -2164,7 +2200,7 @@ impl SessionLifecycle {
     pub async fn run_until_shutdown_with_realtime<A, F>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         shutdown: F,
     ) -> Result<(), SessionError>
     where
@@ -2183,7 +2219,7 @@ impl SessionLifecycle {
     async fn run_until_shutdown_with_realtime_inner<A, F>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         shutdown: F,
     ) -> Result<(), SessionError>
     where
@@ -2246,7 +2282,7 @@ impl SessionLifecycle {
     async fn run_realtime_attempt<'a, A, F>(
         &mut self,
         api: &'a A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         shutdown: &mut Pin<Box<F>>,
         heartbeat: &mut tokio::time::Interval,
         online: &mut crate::online::OnlineOwner<'a>,
@@ -2258,19 +2294,19 @@ impl SessionLifecycle {
         let mut pending_checkpoint = None;
 
         let (generation, mut freshest) = loop {
-            if children.control.reset_latched() {
+            if children.control().reset_latched() {
                 return Err(SessionError::Realtime);
             }
-            if let Some(latest @ (generation, _, _)) = children.control.latest_presence_state()
-                && generation == children.control.lifecycle_generation()
+            if let Some(latest @ (generation, _, _)) = children.control().latest_presence_state()
+                && generation == children.control().lifecycle_generation()
                 && initial_presence_eligible(&latest.2)
             {
                 break (generation, latest);
             }
             tokio::select! {
                 completion = online.next() => {
-                    if let Some(status) = online.finish(completion, self.lease.fence(), children.control.lifecycle_generation())? {
-                        children.control.send(&ControlCommand::OnlineStatus { session_epoch: self.lease.session_epoch.value(), status }).await?;
+                    if let Some(status) = online.finish(completion, self.lease.fence(), children.control().lifecycle_generation())? {
+                        children.control().send(&ControlCommand::OnlineStatus { session_epoch: self.lease.session_epoch.value(), status }).await?;
                     }
                 }
                 () = shutdown.as_mut() => {
@@ -2290,10 +2326,10 @@ impl SessionLifecycle {
                             ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_),
                         ) => {}
                         RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
-                            self.start_online(api, online, &mut children.control, request).await?;
+                            self.start_online(api, online, &mut children.control(), request).await?;
                         }
                         RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
-                            self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
+                            self.checkpoint_with_deadline(api, &mut children.control(), ready).await?;
                         }
                         RawSupervisorEvent::Control(ControlEvent::RomPresenceReset) => {
                             return Err(SessionError::Realtime);
@@ -2312,11 +2348,12 @@ impl SessionLifecycle {
         };
 
         self.refresh_if_needed(api).await?;
-        if children.control.reset_latched() || children.control.lifecycle_generation() != generation
+        if children.control().reset_latched()
+            || children.control().lifecycle_generation() != generation
         {
             return Err(SessionError::Realtime);
         }
-        if let Some(latest) = children.control.latest_presence_state() {
+        if let Some(latest) = children.control().latest_presence_state() {
             if latest.0 != generation {
                 return Err(SessionError::Realtime);
             }
@@ -2355,8 +2392,8 @@ impl SessionLifecycle {
             Ok(MintWait::Grant(grant)) => grant,
             Ok(MintWait::Unauthorized) => {
                 self.refresh_required(api).await?;
-                if children.control.reset_latched()
-                    || children.control.lifecycle_generation() != generation
+                if children.control().reset_latched()
+                    || children.control().lifecycle_generation() != generation
                 {
                     return Err(SessionError::Realtime);
                 }
@@ -2384,7 +2421,7 @@ impl SessionLifecycle {
                     MintWait::Unauthorized => return Err(SessionError::Realtime),
                     MintWait::Unavailable => {
                         if let Some(ready) = pending_checkpoint.take() {
-                            self.checkpoint_with_deadline(api, &mut children.control, ready)
+                            self.checkpoint_with_deadline(api, &mut children.control(), ready)
                                 .await?;
                         }
                         return Err(SessionError::PresenceRecovery {
@@ -2407,7 +2444,7 @@ impl SessionLifecycle {
             }
             Ok(MintWait::Unavailable) => {
                 if let Some(ready) = pending_checkpoint.take() {
-                    self.checkpoint_with_deadline(api, &mut children.control, ready)
+                    self.checkpoint_with_deadline(api, &mut children.control(), ready)
                         .await?;
                 }
                 return Err(SessionError::PresenceRecovery {
@@ -2429,11 +2466,12 @@ impl SessionLifecycle {
             Err(error) => return Err(error),
         };
 
-        if children.control.reset_latched() || children.control.lifecycle_generation() != generation
+        if children.control().reset_latched()
+            || children.control().lifecycle_generation() != generation
         {
             return Err(SessionError::Realtime);
         }
-        let Some(latest) = children.control.latest_presence_state() else {
+        let Some(latest) = children.control().latest_presence_state() else {
             return Err(SessionError::Realtime);
         };
         if latest.0 != generation {
@@ -2442,7 +2480,7 @@ impl SessionLifecycle {
         freshest = latest;
         if !compatible_presence_map(&freshest.2) {
             if let Some(ready) = pending_checkpoint.take() {
-                self.checkpoint_with_deadline(api, &mut children.control, ready)
+                self.checkpoint_with_deadline(api, &mut children.control(), ready)
                     .await?;
             }
             return Err(SessionError::PresenceRecovery {
@@ -2460,7 +2498,7 @@ impl SessionLifecycle {
             match self
                 .checkpoint_with_realtime(
                     api,
-                    &mut children.control,
+                    &mut children.control(),
                     ready,
                     coordinator.as_mut().unwrap(),
                     shutdown,
@@ -2487,7 +2525,7 @@ impl SessionLifecycle {
                 let drain = self
                     .drain_shutdown_checkpoint_with_realtime(api, children, realtime)
                     .await;
-                children.control.disable_lifecycle();
+                children.control().disable_lifecycle();
                 let stopped = coordinator.take().unwrap().stop_and_join().await;
                 let disposition = children
                     .shutdown(
@@ -2504,9 +2542,9 @@ impl SessionLifecycle {
             }
             let input = tokio::select! {
                 completion = online.next() => {
-                    match online.finish(completion, self.lease.fence(), children.control.lifecycle_generation()) {
+                    match online.finish(completion, self.lease.fence(), children.control().lifecycle_generation()) {
                         Ok(Some(status)) => {
-                            if let Err(error) = children.control.send(&ControlCommand::OnlineStatus {
+                            if let Err(error) = children.control().send(&ControlCommand::OnlineStatus {
                                 session_epoch: self.lease.session_epoch.value(), status,
                             }).await { result = Err(SessionError::Control(error)); }
                         }
@@ -2532,9 +2570,9 @@ impl SessionLifecycle {
                     match observation {
                         Err(error) => result = Err(SessionError::Control(error)),
                         Ok(RawSupervisorEvent::Control(ControlEvent::PlayerState(_))) => {
-                            let latest = children.control.latest_presence_state();
-                            if children.control.reset_latched()
-                                || children.control.lifecycle_generation() != generation
+                            let latest = children.control().latest_presence_state();
+                            if children.control().reset_latched()
+                                || children.control().lifecycle_generation() != generation
                                 || latest.as_ref().is_none_or(|latest| latest.0 != generation)
                             {
                                 result = Err(SessionError::Realtime);
@@ -2550,7 +2588,7 @@ impl SessionLifecycle {
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request))) => {
                             if let Err(error) = self
-                                .start_online(api, online, &mut children.control, request)
+                                .start_online(api, online, &mut children.control(), request)
                                 .await
                             {
                                 result = Err(error);
@@ -2559,8 +2597,8 @@ impl SessionLifecycle {
                         Ok(RawSupervisorEvent::Control(ControlEvent::InteractRemotePlayer(
                             interaction,
                         ))) => {
-                            if children.control.reset_latched()
-                                || children.control.lifecycle_generation() != generation
+                            if children.control().reset_latched()
+                                || children.control().lifecycle_generation() != generation
                                 || realtime.interact(interaction).is_err()
                             {
                                 result = Err(SessionError::Realtime);
@@ -2572,7 +2610,7 @@ impl SessionLifecycle {
                             match self
                                 .checkpoint_with_realtime(
                                     api,
-                                    &mut children.control,
+                                    &mut children.control(),
                                     ready,
                                     realtime,
                                     shutdown,
@@ -2592,7 +2630,7 @@ impl SessionLifecycle {
                             child @ (RawSupervisorEvent::SidecarExited(_)
                             | RawSupervisorEvent::MgbaExited(_)),
                         ) => {
-                            children.control.disable_lifecycle();
+                            children.control().disable_lifecycle();
                             let stopped = coordinator.take().unwrap().stop_and_join().await;
                             result = if stopped.is_err() {
                                 Err(SessionError::Realtime)
@@ -2611,13 +2649,13 @@ impl SessionLifecycle {
                     priority = RealtimeSource::Heartbeat;
                     match event {
                         Ok(RealtimeCoordinatorEvent::Ready) => {
-                            if Self::activate_realtime(&children.control, realtime).is_err() {
+                            if Self::activate_realtime(&children.control(), realtime).is_err() {
                                 result = Err(SessionError::Realtime);
                             }
                         }
                         Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
-                            let invalid_fence = children.control.reset_latched()
-                                || children.control.lifecycle_generation() != generation;
+                            let invalid_fence = children.control().reset_latched()
+                                || children.control().lifecycle_generation() != generation;
                             #[cfg(test)]
                             let enqueue_count = self.realtime_lifecycle_enqueue_burst;
                             #[cfg(not(test))]
@@ -2626,7 +2664,7 @@ impl SessionLifecycle {
                             if !invalid_fence {
                                 for _ in 0..enqueue_count {
                                     if children
-                                        .control
+                                        .control()
                                         .enqueue_lifecycle(generation, command.clone())
                                         .is_err()
                                     {
@@ -2666,7 +2704,7 @@ impl SessionLifecycle {
         }
 
         if let Some(coordinator) = coordinator.take() {
-            children.control.disable_lifecycle();
+            children.control().disable_lifecycle();
             if coordinator.stop_and_join().await.is_err()
                 && matches!(&result, Ok(()) | Err(SessionError::PresenceRecovery { .. }))
             {
@@ -2710,12 +2748,12 @@ impl SessionLifecycle {
     async fn park_presence<A: CloudApi, F: Future<Output = ()> + Send>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         shutdown: &mut Pin<Box<F>>,
         heartbeat: &mut tokio::time::Interval,
     ) -> Result<bool, SessionError> {
         loop {
-            if children.control.reset_latched() {
+            if children.control().reset_latched() {
                 return Err(SessionError::Realtime);
             }
             tokio::select! {
@@ -2727,14 +2765,14 @@ impl SessionLifecycle {
                 _ = heartbeat.tick() => self.heartbeat(api).await?,
                 event = children.observe_raw() => match event? {
                     RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
-                        children.control.send(&ControlCommand::OnlineStatus {
+                        children.control().send(&ControlCommand::OnlineStatus {
                             session_epoch: self.lease.session_epoch.value(),
                             status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
                         }).await?;
                         if request.action == coop_protocol::OnlineAction::Refresh { return Ok(true); }
                     }
                     RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
-                        self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
+                        self.checkpoint_with_deadline(api, &mut children.control(), ready).await?;
                     }
                     RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_)) => {}
                     RawSupervisorEvent::Control(_) => return Err(SessionError::Realtime),
@@ -2750,7 +2788,7 @@ impl SessionLifecycle {
     async fn rearm_presence<A: CloudApi, F: Future<Output = ()> + Send>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         shutdown: &mut Pin<Box<F>>,
         heartbeat: &mut tokio::time::Interval,
         attempt: u8,
@@ -2759,20 +2797,20 @@ impl SessionLifecycle {
         // backoff, finish any checkpoint that reached the authenticated FIFO.
         let backoff = tokio::time::Instant::now() + Duration::from_millis(250 * u64::from(attempt));
         let deadline = backoff + Duration::from_secs(10);
-        let previous_generation = children.control.lifecycle_generation();
+        let previous_generation = children.control().lifecycle_generation();
         let mut command_id = new_command_id();
         let mut sent = false;
         let mut rejected = false;
         let mut pending_checkpoint = None;
         let mut shutdown_requested = false;
         loop {
-            if children.control.reset_latched() {
+            if children.control().reset_latched() {
                 return Err(SessionError::Realtime);
             }
             if rejected && let Some(ready) = pending_checkpoint.take() {
                 // An explicit rejection proves SESSION_READY was not sent.
                 // Complete the queued checkpoint before making another rearm.
-                self.checkpoint_with_deadline(api, &mut children.control, ready)
+                self.checkpoint_with_deadline(api, &mut children.control(), ready)
                     .await?;
                 if shutdown_requested {
                     self.shutdown_during_realtime_mint(api, children, &mut None)
@@ -2799,7 +2837,7 @@ impl SessionLifecycle {
                 observation = children.observe_raw() => match observation? {
                     RawSupervisorEvent::Control(ControlEvent::PresenceRearmed { command_id: echoed, session_epoch, rom_sequence })
                         if sent && !rejected && pending_checkpoint.is_none() && echoed == command_id && session_epoch == self.lease.session_epoch.value() && rom_sequence != 0
-                            && children.control.lifecycle_generation() != previous_generation => {
+                            && children.control().lifecycle_generation() != previous_generation => {
                                 if shutdown_requested {
                                     self.shutdown_during_realtime_mint(api, children, &mut None).await?;
                                     return Ok(false);
@@ -2808,13 +2846,13 @@ impl SessionLifecycle {
                             },
                     RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_)) => {},
                     RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
-                        children.control.send(&ControlCommand::OnlineStatus {
+                        children.control().send(&ControlCommand::OnlineStatus {
                             session_epoch: self.lease.session_epoch.value(),
                             status: crate::online::empty_status(request.request_id, coop_protocol::OnlineResult::Unavailable),
                         }).await?;
                     }
                     RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) if !sent => {
-                        self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
+                        self.checkpoint_with_deadline(api, &mut children.control(), ready).await?;
                     }
                     RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                         if pending_checkpoint.replace(ready).is_some() { return Err(SessionError::Realtime); }
@@ -2829,7 +2867,7 @@ impl SessionLifecycle {
                     }
                 },
                 () = tokio::time::sleep_until(backoff), if !sent => {
-                    children.control.send(&ControlCommand::PresenceRearm(coop_sidecar::control::PresenceRearm {
+                    children.control().send(&ControlCommand::PresenceRearm(coop_sidecar::control::PresenceRearm {
                         command_id, session_epoch: self.lease.session_epoch.value(),
                     })).await?;
                     sent = true;
@@ -2841,12 +2879,12 @@ impl SessionLifecycle {
     async fn shutdown_during_realtime_mint<A: CloudApi>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         pending_checkpoint: &mut Option<ControlEvent>,
     ) -> Result<(), SessionError> {
         let drain = match pending_checkpoint.take() {
             Some(ready) => self
-                .checkpoint_with_deadline(api, &mut children.control, ready)
+                .checkpoint_with_deadline(api, &mut children.control(), ready)
                 .await
                 .map(|_| ()),
             None => self.drain_shutdown_checkpoint(api, children).await,
@@ -3319,10 +3357,10 @@ impl SessionLifecycle {
     async fn drain_shutdown_checkpoint_with_realtime<A: CloudApi>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
         realtime: &mut RealtimeCoordinator,
     ) -> Result<(), SessionError> {
-        children.control.disable_lifecycle();
+        children.control().disable_lifecycle();
         let suspended = realtime.suspend_for_checkpoint().await;
         // Any already admitted checkpoint must still finish even when an old
         // transport failure was discovered while stopping it.
@@ -3336,7 +3374,7 @@ impl SessionLifecycle {
     async fn drain_shutdown_checkpoint<A: CloudApi>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
     ) -> Result<(), SessionError> {
         // A ready event already in the authenticated FIFO is safe to complete;
         // one absolute deadline prevents an immediately-ready untrusted stream
@@ -3351,7 +3389,7 @@ impl SessionLifecycle {
                 SupervisorEvent::ChildExited => return Ok(()),
                 SupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                     return self
-                        .checkpoint_with_deadline(api, &mut children.control, ready)
+                        .checkpoint_with_deadline(api, &mut children.control(), ready)
                         .await
                         .map(|_| ());
                 }
@@ -3373,7 +3411,7 @@ impl SessionLifecycle {
     pub async fn run<A: CloudApi>(
         &mut self,
         api: &A,
-        children: &mut SupervisedChildren,
+        children: &mut impl SessionSupervisor,
     ) -> Result<(), SessionError> {
         self.run_until_exit(api, children).await
     }
@@ -3653,6 +3691,9 @@ impl SessionLifecycle {
         }
         self.revision = record.revision;
         self.lease.current_revision = record.revision;
+        if let Some(updates) = &self.revision_updates {
+            updates.send_replace(record.revision.value());
+        }
         self.auth.set_active_fence(self.lease.fence());
         self.workspace.discard_recovery_shadow();
         Ok(record.revision)
@@ -4131,6 +4172,7 @@ mod lifecycle_tests {
     use super::{CloudFuture, RealtimeCheckpointOutcome};
     #[cfg(windows)]
     use crate::SessionWorkspace;
+    use crate::process::SessionSupervisor;
     use crate::{
         AuthApi, AuthError, AuthSession, BuildCompatibility, CloudApi, ControlChannel, EpochStore,
         KeychainError, RealtimeApi, RealtimeFuture, RealtimeHttpError, RefreshTokenStore,
@@ -5751,7 +5793,7 @@ mod lifecycle_tests {
         .expect("active reset teardown remains bounded");
         assert!(matches!(result, Err(SessionError::Realtime)));
         assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         timeout(Duration::from_secs(1), control_server)
             .await
             .expect("control pumps joined after reset")
@@ -5871,7 +5913,7 @@ mod lifecycle_tests {
         assert!(result.is_err());
         assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
         assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         timeout(Duration::from_secs(1), control_server)
             .await
             .expect("control pump joined after backpressure")
@@ -5988,7 +6030,7 @@ mod lifecycle_tests {
         );
         assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
         assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         timeout(Duration::from_secs(3), control_server)
             .await
             .expect("control pumps joined after lifecycle backpressure")
@@ -6075,7 +6117,7 @@ mod lifecycle_tests {
         assert!(result.is_ok(), "clean child exit settlement: {result:?}");
         assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
         assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         timeout(Duration::from_secs(1), control_server)
             .await
             .expect("control pump joined after child exit")
@@ -6316,7 +6358,7 @@ mod lifecycle_tests {
             long_running_test_child(),
             ControlChannel::from_stream_for_test(stream),
         );
-        let generation = children.control.lifecycle_generation();
+        let generation = children.control().lifecycle_generation();
         let mut realtime = RealtimeCoordinator::start(
             realtime_grant(port),
             generation,
@@ -6332,7 +6374,7 @@ mod lifecycle_tests {
         connected_rx.await.unwrap();
         if active {
             realtime.activate_interactions().unwrap();
-            children.control.enable_lifecycle(generation).unwrap();
+            children.control().enable_lifecycle(generation).unwrap();
         }
         let mut shutdown = Box::pin(std::future::pending::<()>());
         let mut heartbeat = tokio::time::interval(Duration::from_secs(60));
@@ -6340,7 +6382,7 @@ mod lifecycle_tests {
             Duration::from_secs(2),
             session.checkpoint_with_realtime(
                 cloud.as_ref(),
-                &mut children.control,
+                &mut children.control(),
                 ControlEvent::CheckpointReady {
                     session_epoch: 1,
                     ready_sequence: 1,
@@ -6365,7 +6407,7 @@ mod lifecycle_tests {
             realtime.planned_recovery(),
             "saving is not a transport fault"
         );
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         assert_eq!(session.revision, Revision::new(1));
         realtime.stop_and_join().await.unwrap();
         children.stop_in_place().await.unwrap();
@@ -6414,7 +6456,7 @@ mod lifecycle_tests {
         );
         let mut realtime = RealtimeCoordinator::start(
             realtime_grant(websocket_port),
-            children.control.lifecycle_generation(),
+            children.control().lifecycle_generation(),
             realtime_presence_state(1),
         )
         .unwrap();
@@ -6425,7 +6467,7 @@ mod lifecycle_tests {
             Duration::from_secs(2),
             session.checkpoint_with_realtime(
                 cloud.as_ref(),
-                &mut children.control,
+                &mut children.control(),
                 ControlEvent::CheckpointReady {
                     session_epoch: 1,
                     ready_sequence: 1,
@@ -6534,7 +6576,7 @@ mod lifecycle_tests {
         );
         let mut realtime = RealtimeCoordinator::start(
             realtime_grant(websocket_port),
-            children.control.lifecycle_generation(),
+            children.control().lifecycle_generation(),
             realtime_presence_state(1),
         )
         .unwrap();
@@ -6547,7 +6589,7 @@ mod lifecycle_tests {
             Duration::from_secs(1),
             session.establish_realtime_cutover(
                 cloud.as_ref(),
-                &mut children.control,
+                &mut children.control(),
                 &mut realtime,
                 &mut buffered,
                 &mut shutdown,
@@ -6867,7 +6909,7 @@ mod lifecycle_tests {
         assert_eq!(*cloud.finalizes.lock().unwrap(), 1);
         assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
         assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         timeout(Duration::from_secs(1), control_server)
             .await
             .expect("control pumps joined after definitive reconciliation")
@@ -6988,7 +7030,7 @@ mod lifecycle_tests {
         assert!(result.is_ok(), "cutover shutdown result: {result:?}");
         assert_eq!(session.revision, Revision::new(1));
         assert_eq!(cloud.realtime_requests.lock().unwrap().len(), 1);
-        assert!(!children.control.lifecycle_permitted());
+        assert!(!children.control().lifecycle_permitted());
         timeout(Duration::from_secs(1), control_server)
             .await
             .expect("cutover shutdown joins control pumps")
@@ -7706,7 +7748,7 @@ mod lifecycle_tests {
             control,
         );
         timeout(Duration::from_secs(1), async {
-            while children.control.latest_presence_state().is_none() {
+            while children.control().latest_presence_state().is_none() {
                 tokio::task::yield_now().await;
             }
         })
