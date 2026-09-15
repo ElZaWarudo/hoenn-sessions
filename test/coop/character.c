@@ -2,7 +2,9 @@
 #include "coop/character.h"
 #include "event_data.h"
 #include "event_object_movement.h"
+#include "field_effect.h"
 #include "field_player_avatar.h"
+#include "sprite.h"
 #include "constants/event_objects.h"
 #include "constants/event_object_movement.h"
 #include "constants/regions.h"
@@ -73,4 +75,27 @@ TEST("Cloud Coop Character roster provides all player direction and run animatio
         for (u32 previous = 1; previous < i; previous++)
             EXPECT_NE(CoopCharacter_GetGraphicsId(i), CoopCharacter_GetGraphicsId(previous));
     }
+}
+
+TEST("Cloud Coop Character can preview the complete roster without exhausting graphics memory")
+{
+    u32 i;
+
+    ResetSpriteData();
+    FreeAllSpritePalettes();
+    for (i = 1; i <= COOP_CHARACTER_COUNT; i++)
+    {
+        u8 spriteId = CreateObjectGraphicsSprite(
+            CoopCharacter_GetGraphicsId(i),
+            SpriteCallbackDummy,
+            120,
+            66,
+            0);
+        EXPECT_NE(spriteId, MAX_SPRITES);
+        if (spriteId == MAX_SPRITES)
+            break;
+        StartSpriteAnim(&gSprites[spriteId], ANIM_STD_GO_SOUTH);
+        FieldEffectFreeGraphicsResources(&gSprites[spriteId]);
+    }
+    EXPECT_EQ(i, COOP_CHARACTER_COUNT + 1);
 }
