@@ -22,8 +22,8 @@ use coop_protocol::{
 };
 use thiserror::Error;
 
-use super::AuthenticatedActor;
 use super::storage::{State, StorageError, Store};
+use super::AuthenticatedActor;
 
 /// The fixed runtime shard used by the first online presence slice.
 pub const PRESENCE_SHARD_ID: u16 = 1;
@@ -41,13 +41,12 @@ pub const PRESENCE_MAX_GLOBAL_CONNECTIONS: usize = 1_024;
 pub const PRESENCE_OUTBOUND_QUEUE_CAPACITY: usize = 32;
 /// Number of entropy candidates attempted for an opaque handle.
 pub const PRESENCE_HANDLE_CANDIDATES: usize = 16;
-/// The only map used by this initial presence implementation.
+/// Legacy initial-spawn map group retained for API compatibility.
 pub const PRESENCE_MAP_GROUP: u16 = 0;
-/// The only map used by this initial presence implementation.
+/// Legacy initial-spawn map number retained for API compatibility.
 pub const PRESENCE_MAP_NUMBER: u16 = 9;
-/// The only map key used by this initial presence implementation.
+/// Legacy initial-spawn map key retained for API compatibility.
 pub const PRESENCE_MAP: &str = "LITTLEROOT_TOWN";
-
 /// Precise internal failure taxonomy.  A later network adapter should collapse
 /// these into a deliberately smaller public error surface.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -208,6 +207,8 @@ struct PresenceEntry {
     dropped_updates: u32,
 }
 
+type VisiblePeer = (PresenceHandle, LocalPresenceStateV1, CanonicalUsername, u32);
+
 #[derive(Default)]
 struct PresenceState {
     entries: BTreeMap<PresenceHandle, PresenceEntry>,
@@ -254,6 +255,38 @@ impl PresenceState {
 
     fn partition_count(&self, partition: &PartitionKey) -> usize {
         self.partitions.get(partition).map_or(0, BTreeSet::len)
+    }
+
+    fn visible_peers(
+        &self,
+        partition: &PartitionKey,
+        excluded: Option<PresenceHandle>,
+    ) -> Vec<VisiblePeer> {
+        self.entries
+            .values()
+            .filter(|entry| {
+                entry.advertised
+                    && entry.partition == *partition
+                    && excluded != Some(entry.connection.handle)
+            })
+            .map(|entry| {
+                (
+                    entry.connection.handle,
+                    entry.published_state.clone(),
+                    entry.username.clone(),
+                    entry.server_sequence,
+                )
+            })
+            .collect()
+    }
+
+    fn remove_from_partition(&mut self, partition: &PartitionKey, handle: PresenceHandle) {
+        if let Some(handles) = self.partitions.get_mut(partition) {
+            handles.remove(&handle);
+            if handles.is_empty() {
+                self.partitions.remove(partition);
+            }
+        }
     }
 
     fn add_entry(&mut self, entry: PresenceEntry) {
@@ -363,12 +396,7 @@ impl PresenceState {
             return false;
         };
         self.by_character.remove(&removed.character_id);
-        if let Some(handles) = self.partitions.get_mut(&removed.partition) {
-            handles.remove(&handle);
-            if handles.is_empty() {
-                self.partitions.remove(&removed.partition);
-            }
-        }
+        self.remove_from_partition(&removed.partition, handle);
         if removed.advertised {
             removed.server_sequence = coop_protocol::next_sequence(removed.server_sequence);
             let Ok(event) = RemotePlayerDespawnV1::new(handle, removed.server_sequence, reason)
@@ -440,6 +468,7 @@ impl PresenceService {
                             actor: entry.actor,
                             stable_session: entry.stable_session,
                             character_id: entry.character_id,
+                            region: entry.partition.region,
                             channel: entry.partition.channel,
                         },
                         now
@@ -516,23 +545,26 @@ impl PresenceService {
     }
 
     fn map_location(location: WorldLocation) -> Result<(), PresenceServiceError> {
-        if location.region != RegionId::Hoenn
-            || location.map_group != PRESENCE_MAP_GROUP
-            || location.map_number != PRESENCE_MAP_NUMBER
-        {
-            Err(PresenceServiceError::UnsupportedZone)
-        } else {
-            Ok(())
-        }
+        coop_protocol::catalog::resolve_map_coordinates(
+            location.region,
+            location.map_group,
+            location.map_number,
+        )
+        .map(|_| ())
+        .map_err(|_| PresenceServiceError::UnsupportedZone)
     }
 
-    fn partition(build: RuntimeBuildIdentity, channel: u16) -> PartitionKey {
+    fn partition(
+        build: RuntimeBuildIdentity,
+        channel: u16,
+        location: WorldLocation,
+    ) -> PartitionKey {
         PartitionKey {
             build,
             shard: PRESENCE_SHARD_ID,
-            region: RegionId::Hoenn,
-            map_group: PRESENCE_MAP_GROUP,
-            map_number: PRESENCE_MAP_NUMBER,
+            region: location.region,
+            map_group: location.map_group,
+            map_number: location.map_number,
             channel,
         }
     }
@@ -600,26 +632,18 @@ impl PresenceService {
                     .state
                     .validate()
                     .map_err(|_| PresenceServiceError::Internal)?;
-                if character.state.world_zone.region != RegionId::Hoenn
-                    || character.state.world_zone.map != PRESENCE_MAP
+                if character.state.world_zone.region != location.region
                     || character.state.world_zone.channel == 0
                 {
                     return Err(PresenceServiceError::UnsupportedZone.into());
                 }
-                let map = character
+                character
                     .state
                     .world_zone
                     .map_entry()
                     .map_err(|_| PresenceServiceError::UnsupportedZone)?;
-                if map.map_group != PRESENCE_MAP_GROUP || map.map_number != PRESENCE_MAP_NUMBER {
-                    return Err(PresenceServiceError::UnsupportedZone.into());
-                }
-                if location.region != character.state.world_zone.region
-                    || location.map_group != map.map_group
-                    || location.map_number != map.map_number
-                {
-                    return Err(PresenceServiceError::UnsupportedZone.into());
-                }
+                // The durable zone authorizes the presence region and channel.
+                // The live ROM map is ephemeral and may change without a travel commit.
                 let lease = state
                     .leases
                     .get(&actor.character_id)
@@ -635,7 +659,7 @@ impl PresenceService {
                 }
                 Ok((
                     username,
-                    Self::partition(build.clone(), character.state.world_zone.channel),
+                    Self::partition(build.clone(), character.state.world_zone.channel, location),
                     lease.contract.expires_at.value(),
                 ))
             })
@@ -661,7 +685,7 @@ impl PresenceService {
             .ok_or(PresenceServiceError::HandleAllocation)
     }
 
-    /// Connects an authenticated active lease to the single supported map.
+    /// Connects an authenticated active lease to a cataloged map in its active region.
     ///
     /// Entropy is consumed before the runtime transition gate.  The gate is
     /// held from repository validation through presence insertion, so a
@@ -727,19 +751,7 @@ impl PresenceService {
             queue: VecDeque::new(),
             dropped_updates: 0,
         };
-        let existing_visible = state
-            .entries
-            .values()
-            .filter(|other| other.advertised && other.partition == partition)
-            .map(|other| {
-                (
-                    other.connection.handle,
-                    other.published_state.clone(),
-                    other.username.clone(),
-                    other.server_sequence,
-                )
-            })
-            .collect::<Vec<_>>();
+        let existing_visible = state.visible_peers(&partition, None);
         if advertised {
             entry.server_sequence = 1;
         }
@@ -837,6 +849,92 @@ impl PresenceService {
         })
     }
 
+    fn move_between_contexts(
+        state: &mut PresenceState,
+        connection: PresenceConnection,
+        submitted: LocalPresenceStateV1,
+        old_partition: &PartitionKey,
+        new_partition: &PartitionKey,
+        now_ms: u64,
+    ) -> Result<PresenceSubmitOutcome, PresenceServiceError> {
+        if old_partition != new_partition
+            && state.partition_count(new_partition) >= PRESENCE_MAX_PARTITION_CONNECTIONS
+        {
+            state.remove_entry(connection.handle, DespawnReason::PartitionLeft);
+            return Err(PresenceServiceError::PartitionCapacity);
+        }
+
+        let entry = state
+            .entries
+            .get(&connection.handle)
+            .ok_or(PresenceServiceError::NotConnected)?;
+        let was_advertised = entry.advertised;
+        let is_advertised =
+            submitted.pose().player_state() == coop_protocol::PlayerState::Overworld;
+        let server_sequence = if was_advertised || is_advertised {
+            coop_protocol::next_sequence(entry.server_sequence)
+        } else {
+            entry.server_sequence
+        };
+        if was_advertised {
+            let despawn = RemotePlayerDespawnV1::new(
+                connection.handle,
+                server_sequence,
+                DespawnReason::PartitionLeft,
+            )
+            .map_err(|_| PresenceServiceError::Internal)?;
+            state.fanout_critical(
+                old_partition,
+                connection.handle,
+                &PresenceOutboundV1::Despawn(despawn),
+            );
+        }
+
+        let existing_visible = state.visible_peers(new_partition, Some(connection.handle));
+        state.remove_from_partition(old_partition, connection.handle);
+        let username = {
+            let entry = state
+                .entries
+                .get_mut(&connection.handle)
+                .ok_or(PresenceServiceError::NotConnected)?;
+            entry.partition = new_partition.clone();
+            entry.state = submitted.clone();
+            entry.published_state = submitted.clone();
+            entry.pending_state = None;
+            entry.last_accepted_at_ms = now_ms;
+            entry.server_sequence = server_sequence;
+            entry.advertised = is_advertised;
+            entry.queue.clear();
+            entry.username.clone()
+        };
+        state
+            .partitions
+            .entry(new_partition.clone())
+            .or_default()
+            .insert(connection.handle);
+        for (other_handle, other_state, other_username, other_sequence) in existing_visible {
+            let spawn =
+                RemotePlayerSpawnV1::new(other_handle, other_sequence, other_state, other_username)
+                    .map_err(|_| PresenceServiceError::Internal)?;
+            if !state.enqueue(connection.handle, PresenceOutboundV1::Spawn(spawn)) {
+                state.remove_entry(connection.handle, DespawnReason::Disconnected);
+                return Err(PresenceServiceError::Internal);
+            }
+        }
+        if is_advertised {
+            let spawn =
+                RemotePlayerSpawnV1::new(connection.handle, server_sequence, submitted, username)
+                    .map_err(|_| PresenceServiceError::Internal)?;
+            state.fanout_critical(
+                new_partition,
+                connection.handle,
+                &PresenceOutboundV1::Spawn(spawn),
+            );
+        }
+        state.schedule(now_ms);
+        Ok(PresenceSubmitOutcome::Accepted)
+    }
+
     /// Submits a newer source state.  Publication remains globally gated at
     /// the next ten-Hz tick.
     ///
@@ -868,13 +966,28 @@ impl PresenceService {
         }
         let old_location = entry.state.pose().location();
         let new_location = submitted.pose().location();
-        if old_location.region != new_location.region
-            || old_location.map_group != new_location.map_group
-            || old_location.map_number != new_location.map_number
-            || submitted.pose().warp_sequence() != entry.state.pose().warp_sequence()
-        {
+        Self::map_location(new_location)?;
+        if old_location.region != new_location.region {
             state.remove_entry(connection.handle, DespawnReason::PartitionLeft);
             return Ok(PresenceSubmitOutcome::DisconnectedUnsupportedTravel);
+        }
+        let old_partition = entry.partition.clone();
+        let new_partition = Self::partition(
+            self.inner.build.clone(),
+            old_partition.channel,
+            new_location,
+        );
+        let context_changed = old_partition != new_partition
+            || submitted.pose().warp_sequence() != entry.state.pose().warp_sequence();
+        if context_changed {
+            return Self::move_between_contexts(
+                &mut state,
+                connection,
+                submitted,
+                &old_partition,
+                &new_partition,
+                now_ms,
+            );
         }
         let entry = state
             .entries
@@ -1009,6 +1122,7 @@ impl PresenceService {
                     actor: entry.actor,
                     stable_session: entry.stable_session,
                     character_id: entry.character_id,
+                    region: entry.partition.region,
                     channel: entry.partition.channel,
                 })
                 .collect::<Vec<_>>()
@@ -1242,6 +1356,7 @@ struct PresenceSnapshot {
     actor: AuthenticatedActor,
     stable_session: StableRuntimeSession,
     character_id: CharacterId,
+    region: RegionId,
     channel: u16,
 }
 
@@ -1275,8 +1390,8 @@ fn repository_disposition(
         return RepositoryDisposition::LeaseInvalid;
     }
     let zone = &character.state.world_zone;
-    if zone.region != RegionId::Hoenn
-        || zone.map != PRESENCE_MAP
+    // Same-region map changes are ephemeral presence movement, not durable travel.
+    if zone.region != snapshot.region
         || zone.channel == 0
         || zone.channel != snapshot.channel
         || zone.map_entry().is_err()
@@ -1322,8 +1437,8 @@ mod tests {
         PresenceInteractionV1, PresencePoseV1, RegionId, WorldLocation,
     };
     use std::sync::{
-        Arc, Barrier,
         atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Barrier,
     };
     use std::thread;
     use uuid::Uuid;
@@ -2771,7 +2886,7 @@ mod tests {
     }
 
     #[test]
-    fn travel_is_partition_left_and_staleness_is_exactly_1500_ms() {
+    fn travel_repartitions_and_staleness_is_exactly_1500_ms() {
         let app = Phase2App::test();
         let first = account(&app, "alice", "invite-h");
         let second = account(&app, "bob", "invite-i");
@@ -2801,7 +2916,7 @@ mod tests {
         );
         assert_eq!(
             service.submit_state(one, travel),
-            Ok(PresenceSubmitOutcome::DisconnectedUnsupportedTravel)
+            Ok(PresenceSubmitOutcome::Accepted)
         );
         let events = service.drain(two).unwrap().events;
         assert!(matches!(
@@ -2809,25 +2924,170 @@ mod tests {
             [PresenceOutboundV1::Despawn(event)]
                 if event.reason() == DespawnReason::PartitionLeft
         ));
-        assert_eq!(service.connection_count().unwrap(), 1);
+        assert_eq!(service.connection_count().unwrap(), 2);
 
         let now = app.store.now();
         let not_yet_stale = service.tick_at(now + PRESENCE_TICK_MS).unwrap();
         assert_eq!(not_yet_stale.removed_connections, 0);
         let stale = service.tick_at(now + PRESENCE_STALE_MS).unwrap();
-        assert_eq!(stale.removed_connections, 1);
+        assert_eq!(stale.removed_connections, 2);
         assert_eq!(service.connection_count().unwrap(), 0);
         assert_eq!(service.next_tick_at_ms().unwrap(), None);
     }
 
     #[test]
-    fn admission_rejects_wrong_map_without_mutating_presence() {
+    fn catalog_map_travel_moves_presence_between_partitions() {
+        let app = Phase2App::test();
+        let traveler = account(&app, "traveler", "invite-map-traveler");
+        let root_peer = account(&app, "rootpeer", "invite-map-root-peer");
+        let oldale_peer = account(&app, "oldalepeer", "invite-map-oldale-peer");
+        let traveler_lease = acquire(&app, traveler, 80);
+        let root_lease = acquire(&app, root_peer, 81);
+        let oldale_lease = acquire(&app, oldale_peer, 82);
+        let service = app.presence();
+        let traveler_connection = service
+            .connect(
+                traveler,
+                runtime_fence(&traveler_lease),
+                pose(1, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let root_connection = service
+            .connect(
+                root_peer,
+                runtime_fence(&root_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let _ = service.drain(traveler_connection).unwrap();
+        let _ = service.drain(root_connection).unwrap();
+
+        let oldale = pose_with(
+            WorldLocation::new(RegionId::Hoenn, 0, 10, 4, 5).unwrap(),
+            0,
+            Direction::South,
+            2,
+            2,
+            PlayerState::Overworld,
+        );
+        assert_eq!(
+            service.submit_state(traveler_connection, oldale.clone()),
+            Ok(PresenceSubmitOutcome::Accepted)
+        );
+        assert!(matches!(
+            service.drain(root_connection).unwrap().events.as_slice(),
+            [PresenceOutboundV1::Despawn(event)]
+                if event.handle() == traveler_connection.handle()
+                    && event.reason() == DespawnReason::PartitionLeft
+        ));
+
+        let oldale_connection = service
+            .connect(
+                oldale_peer,
+                runtime_fence(&oldale_lease),
+                pose_with(
+                    WorldLocation::new(RegionId::Hoenn, 0, 10, 5, 5).unwrap(),
+                    0,
+                    Direction::West,
+                    1,
+                    1,
+                    PlayerState::Overworld,
+                ),
+            )
+            .unwrap();
+        assert!(matches!(
+            service.drain(traveler_connection).unwrap().events.as_slice(),
+            [PresenceOutboundV1::Spawn(event)]
+                if event.handle() == oldale_connection.handle()
+        ));
+        assert!(matches!(
+            service.drain(oldale_connection).unwrap().events.as_slice(),
+            [PresenceOutboundV1::Spawn(event)]
+                if event.handle() == traveler_connection.handle()
+                    && event.state() == &oldale
+        ));
+    }
+
+    #[test]
+    fn travel_to_a_full_map_fails_closed_without_overfilling_it() {
+        let app = app_with_unique_test_entropy();
+        let traveler = account(&app, "traveler", "invite-full-map-traveler");
+        let traveler_lease = acquire(&app, traveler, 90);
+        let service = app.presence();
+        let connection = service
+            .connect(
+                traveler,
+                runtime_fence(&traveler_lease),
+                pose(1, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+
+        for index in 0..PRESENCE_MAX_PARTITION_CONNECTIONS {
+            let actor = account(
+                &app,
+                &format!("oldale{index}"),
+                &format!("invite-full-map-{index}"),
+            );
+            let lease = acquire(
+                &app,
+                actor,
+                91 + u128::try_from(index).expect("bounded test index"),
+            );
+            service
+                .connect(
+                    actor,
+                    runtime_fence(&lease),
+                    pose_with(
+                        WorldLocation::new(
+                            RegionId::Hoenn,
+                            0,
+                            10,
+                            i16::try_from(index).expect("bounded test index"),
+                            1,
+                        )
+                        .unwrap(),
+                        0,
+                        Direction::South,
+                        1,
+                        1,
+                        PlayerState::Overworld,
+                    ),
+                )
+                .unwrap();
+        }
+
+        let travel = pose_with(
+            WorldLocation::new(RegionId::Hoenn, 0, 10, 8, 8).unwrap(),
+            0,
+            Direction::South,
+            2,
+            2,
+            PlayerState::Overworld,
+        );
+        assert_eq!(
+            service.submit_state(connection, travel),
+            Err(PresenceServiceError::PartitionCapacity)
+        );
+        assert_eq!(
+            service.drain(connection),
+            Err(PresenceServiceError::NotConnected)
+        );
+        assert_eq!(
+            service.connection_count(),
+            Ok(PRESENCE_MAX_PARTITION_CONNECTIONS)
+        );
+    }
+
+    #[test]
+    fn admission_rejects_cross_region_map_without_mutating_presence() {
         let app = Phase2App::test();
         let actor = account(&app, "alice", "invite-p");
         let lease = acquire(&app, actor, 16);
         let service = app.presence();
+        let pallet = coop_protocol::catalog::resolve_map(RegionId::Kanto, "PALLET_TOWN")
+            .expect("Pallet Town must remain in the shared map catalog");
         let wrong_map = pose_at(
-            WorldLocation::new(RegionId::Hoenn, 0, 10, 1, 1).unwrap(),
+            WorldLocation::new(RegionId::Kanto, pallet.map_group, pallet.map_number, 1, 1).unwrap(),
             1,
             PlayerState::Overworld,
         );
@@ -3131,12 +3391,10 @@ mod tests {
             .join()
             .expect("connect thread must not panic")
             .expect("connect should linearize before lease release");
-        assert!(
-            release_thread
-                .join()
-                .expect("release thread must not panic")
-                .is_ok()
-        );
+        assert!(release_thread
+            .join()
+            .expect("release thread must not panic")
+            .is_ok());
         assert_eq!(service.connection_count(), Ok(0));
         assert_eq!(
             service.drain(connected),
@@ -3534,15 +3792,13 @@ mod tests {
             })
             .unwrap();
         let service = app.presence();
-        assert!(
-            service
-                .connect(
-                    actor,
-                    runtime_fence(&lease),
-                    pose(1, 1, 1, PlayerState::Overworld)
-                )
-                .is_ok()
-        );
+        assert!(service
+            .connect(
+                actor,
+                runtime_fence(&lease),
+                pose(1, 1, 1, PlayerState::Overworld)
+            )
+            .is_ok());
     }
 
     #[test]
@@ -3581,7 +3837,7 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_zone_change_disconnects_on_the_next_tick() {
+    fn same_region_zone_change_preserves_presence_but_region_change_disconnects() {
         let app = Phase2App::test();
         let actor = account(&app, "alice", "invite-am");
         let lease = acquire(&app, actor, 32);
@@ -3606,6 +3862,24 @@ mod tests {
             })
             .unwrap();
         let report = service.tick_at(app.store.now() + PRESENCE_TICK_MS).unwrap();
+        assert_eq!(report.removed_connections, 0);
+        assert!(service.drain(connection).is_ok());
+
+        app.store
+            .write_transaction(|state| -> Result<(), Phase2Error> {
+                state
+                    .characters
+                    .get_mut(&actor.character_id)
+                    .ok_or(Phase2Error::NotFound)?
+                    .state
+                    .world_zone = coop_protocol::WorldZone::new(RegionId::Kanto, "PALLET_TOWN", 1)
+                    .map_err(|_| Phase2Error::InvalidRequest)?;
+                Ok(())
+            })
+            .unwrap();
+        let report = service
+            .tick_at(app.store.now() + PRESENCE_TICK_MS * 2)
+            .unwrap();
         assert_eq!(report.removed_connections, 1);
         assert_eq!(
             service.drain(connection),
@@ -3805,11 +4079,9 @@ mod tests {
             sorted
         });
         assert!(handles.iter().all(|handle| *handle != newcomer.handle()));
-        assert!(
-            newcomer_events
-                .iter()
-                .all(|event| matches!(event, PresenceOutboundV1::Spawn(_)))
-        );
+        assert!(newcomer_events
+            .iter()
+            .all(|event| matches!(event, PresenceOutboundV1::Spawn(_))));
     }
 
     #[test]
