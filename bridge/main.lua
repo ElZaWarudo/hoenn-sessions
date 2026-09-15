@@ -315,10 +315,14 @@ local authenticated = false
 local pending_handshake = { bytes = handshake, offset = 1 }
 local pending_outbound = nil
 local frame_counter = 0
+local MAX_RECEIVE_BUFFER_BYTES = protocol.MESSAGE_SIZE * manifest.queue.capacity
 
 client:add("received", function()
   while client:hasdata() do
-    local bytes, receive_error = client:receive(4096)
+    local buffer_limit = authenticated and MAX_RECEIVE_BUFFER_BYTES or 256
+    local available = buffer_limit - #receive_buffer
+    if available <= 0 then return end
+    local bytes, receive_error = client:receive(math.min(4096, available))
     if not bytes then
       console:error("sidecar receive failed: " .. tostring(receive_error))
       return
@@ -334,7 +338,7 @@ end)
 local function process_handshake_response()
   local newline = string.find(receive_buffer, "\n", 1, true)
   if not newline then
-    if #receive_buffer > 256 then error("sidecar response exceeds handshake bound") end
+    if #receive_buffer >= 256 then error("sidecar response exceeds handshake bound") end
     return
   end
   local response = string.sub(receive_buffer, 1, newline)
