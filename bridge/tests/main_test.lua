@@ -82,8 +82,13 @@ function client:hasdata()
   return #incoming_chunks > 0
 end
 
-function client:receive()
-  return table.remove(incoming_chunks, 1)
+function client:receive(max_bytes)
+  local chunk = table.remove(incoming_chunks, 1)
+  if #chunk > max_bytes then
+    table.insert(incoming_chunks, 1, string.sub(chunk, max_bytes + 1))
+    return string.sub(chunk, 1, max_bytes)
+  end
+  return chunk
 end
 
 function client:send(bytes, first, last)
@@ -180,6 +185,7 @@ dofile = function(path)
   if path:match("generated_addresses%.lua$") then
     return {
       schema_version = manifest_schema,
+      queue = { capacity = 32 },
       save = {
         block3_address = 0x02001000,
         coop_offset = 4,
@@ -398,5 +404,12 @@ assert(not malformed_ok)
 assert(tostring(malformed_error):match("must carry one little%-endian u32 generation"))
 assert(#send_calls == 5)
 assert(outbound_commits == 2)
+
+-- Backpressure bounds Lua memory while the ROM cannot drain its inbound queue,
+-- as happens transiently during map loads and is amplified by fast-forward.
+incoming_chunks[1] = string.rep(session_ready, 33)
+receive_callback()
+assert(#incoming_chunks == 1)
+assert(#incoming_chunks[1] == protocol.MESSAGE_SIZE)
 
 print("bridge main-loop tests passed")
