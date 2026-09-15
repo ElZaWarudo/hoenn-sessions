@@ -176,7 +176,7 @@ static bool8 IsAnimationId(u8 value)
 static bool8 IsAvatarId(u8 value)
 {
     return value >= COOP_PRESENCE_AVATAR_BRENDAN
-        && value <= COOP_PRESENCE_AVATAR_SAILOR;
+        && value <= COOP_PRESENCE_AVATAR_MAX;
 }
 
 static bool8 IsPlayerState(u8 value)

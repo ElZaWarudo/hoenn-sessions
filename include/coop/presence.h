@@ -107,6 +107,8 @@ enum CoopPresenceAvatarId
     COOP_PRESENCE_AVATAR_SAILOR = 12,
 };
 
+#define COOP_PRESENCE_AVATAR_MAX 176
+
 enum CoopPresencePlayerState
 {
     COOP_PRESENCE_PLAYER_HIDDEN = 0,

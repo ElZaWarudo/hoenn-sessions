@@ -9,6 +9,8 @@
 #include "constants/vars.h"
 #include "test/test.h"
 
+_Static_assert(COOP_CHARACTER_COUNT == 176, "all compatible field characters are selectable");
+
 TEST("Cloud Coop Character validates persistent choices without changing identity")
 {
     u16 saved = VarGet(VAR_COOP_CHARACTER);
@@ -66,7 +68,9 @@ TEST("Cloud Coop Character roster provides all player direction and run animatio
         EXPECT_EQ(info->width, 16);
         EXPECT_EQ(info->height, 32);
         EXPECT(!info->inanimate);
-        for (animation = ANIM_STD_FACE_SOUTH; animation <= ANIM_SPIN_EAST; animation++)
+        for (animation = ANIM_STD_FACE_SOUTH; animation <= ANIM_RUN_EAST; animation++)
             EXPECT(info->anims[animation] != NULL);
+        for (u32 previous = 1; previous < i; previous++)
+            EXPECT_NE(CoopCharacter_GetGraphicsId(i), CoopCharacter_GetGraphicsId(previous));
     }
 }

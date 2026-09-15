@@ -2,8 +2,9 @@
 #define GUARD_COOP_CHARACTER_H
 
 #include "global.h"
+#include "coop/presence.h"
 
-#define COOP_CHARACTER_COUNT 12
+#define COOP_CHARACTER_COUNT COOP_PRESENCE_AVATAR_MAX
 
 u8 CoopCharacter_GetSelection(void);
 bool8 CoopCharacter_SetSelection(u8 selection);

@@ -311,20 +311,118 @@ wire_enum!(AnimationId, "animation_id", {
     0 => Idle => "IDLE",
     1 => Locomotion => "LOCOMOTION",
 });
-wire_enum!(AvatarId, "avatar_id", {
-    1 => Brendan => "BRENDAN",
-    2 => May => "MAY",
-    3 => Red => "RED",
-    4 => Leaf => "LEAF",
-    5 => Wally => "WALLY",
-    6 => Steven => "STEVEN",
-    7 => Norman => "NORMAN",
-    8 => Youngster => "YOUNGSTER",
-    9 => Lass => "LASS",
-    10 => Birch => "BIRCH",
-    11 => Hiker => "HIKER",
-    12 => Sailor => "SAILOR",
-});
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AvatarId(u8);
+
+#[allow(non_upper_case_globals)]
+impl AvatarId {
+    pub const Brendan: Self = Self(1);
+    pub const May: Self = Self(2);
+    pub const Red: Self = Self(3);
+    pub const Leaf: Self = Self(4);
+    pub const Wally: Self = Self(5);
+    pub const Steven: Self = Self(6);
+    pub const Norman: Self = Self(7);
+    pub const Youngster: Self = Self(8);
+    pub const Lass: Self = Self(9);
+    pub const Birch: Self = Self(10);
+    pub const Hiker: Self = Self(11);
+    pub const Sailor: Self = Self(12);
+    pub const MAX: u8 = 176;
+
+    #[must_use]
+    pub const fn wire(self) -> u8 {
+        self.0
+    }
+
+    pub const fn from_wire(value: u8) -> Result<Self, PresenceError> {
+        if value >= Self::Brendan.0 && value <= Self::MAX {
+            Ok(Self(value))
+        } else {
+            Err(PresenceError::UnknownEnum {
+                field: "avatar_id",
+                value,
+            })
+        }
+    }
+
+    const fn legacy_token(self) -> Option<&'static str> {
+        match self.0 {
+            1 => Some("BRENDAN"),
+            2 => Some("MAY"),
+            3 => Some("RED"),
+            4 => Some("LEAF"),
+            5 => Some("WALLY"),
+            6 => Some("STEVEN"),
+            7 => Some("NORMAN"),
+            8 => Some("YOUNGSTER"),
+            9 => Some("LASS"),
+            10 => Some("BIRCH"),
+            11 => Some("HIKER"),
+            12 => Some("SAILOR"),
+            _ => None,
+        }
+    }
+
+    fn parse_token(value: &str) -> Result<Self, PresenceError> {
+        let legacy = match value {
+            "BRENDAN" => Some(Self::Brendan),
+            "MAY" => Some(Self::May),
+            "RED" => Some(Self::Red),
+            "LEAF" => Some(Self::Leaf),
+            "WALLY" => Some(Self::Wally),
+            "STEVEN" => Some(Self::Steven),
+            "NORMAN" => Some(Self::Norman),
+            "YOUNGSTER" => Some(Self::Youngster),
+            "LASS" => Some(Self::Lass),
+            "BIRCH" => Some(Self::Birch),
+            "HIKER" => Some(Self::Hiker),
+            "SAILOR" => Some(Self::Sailor),
+            _ => None,
+        };
+        if let Some(avatar) = legacy {
+            return Ok(avatar);
+        }
+        let ordinal = value
+            .strip_prefix("CHARACTER_")
+            .and_then(|value| value.parse::<u8>().ok())
+            .ok_or(PresenceError::UnknownEnum {
+                field: "avatar_id",
+                value: 0,
+            })?;
+        let avatar = Self::from_wire(ordinal)?;
+        if ordinal <= Self::Sailor.0 || value != format!("CHARACTER_{ordinal:03}") {
+            return Err(PresenceError::UnknownEnum {
+                field: "avatar_id",
+                value: ordinal,
+            });
+        }
+        Ok(avatar)
+    }
+}
+
+impl Serialize for AvatarId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let Some(token) = self.legacy_token() {
+            serializer.serialize_str(token)
+        } else {
+            serializer.serialize_str(&format!("CHARACTER_{:03}", self.0))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AvatarId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let token = String::deserialize(deserializer)?;
+        Self::parse_token(&token).map_err(serde::de::Error::custom)
+    }
+}
 wire_enum!(PlayerState, "player_state", {
     0 => Hidden => "HIDDEN",
     1 => Overworld => "OVERWORLD",
@@ -1666,14 +1764,14 @@ mod tests {
         assert_eq!(MovementMode::from_wire(2), Ok(MovementMode::Run));
         assert_eq!(AnimationId::from_wire(1), Ok(AnimationId::Locomotion));
         assert_eq!(AvatarId::from_wire(2), Ok(AvatarId::May));
-        for value in 1..=12 {
+        for value in 1..=176 {
             let avatar = AvatarId::from_wire(value).expect("selectable character");
             assert_eq!(avatar.wire(), value);
             let json = serde_json::to_string(&avatar).unwrap();
             assert_eq!(serde_json::from_str::<AvatarId>(&json).unwrap(), avatar);
         }
         assert!(AvatarId::from_wire(0).is_err());
-        assert!(AvatarId::from_wire(13).is_err());
+        assert!(AvatarId::from_wire(177).is_err());
         assert_eq!(PlayerState::from_wire(0), Ok(PlayerState::Hidden));
         assert_eq!(
             DespawnReason::from_wire(6),

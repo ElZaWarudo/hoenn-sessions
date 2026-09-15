@@ -888,7 +888,7 @@ TEST("Cloud Coop presence decoders accept every assigned pose ordinal")
         EXPECT(CoopPresence_DecodePose(bytes, sizeof(bytes), &decoded));
         ExpectPoseEqual(&decoded, &pose);
     }
-    for (i = COOP_PRESENCE_AVATAR_BRENDAN; i <= COOP_PRESENCE_AVATAR_SAILOR; i++)
+    for (i = COOP_PRESENCE_AVATAR_BRENDAN; i <= COOP_PRESENCE_AVATAR_MAX; i++)
     {
         pose.avatar_id = i;
         decoded.avatar_id = 0;

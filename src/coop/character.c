@@ -11,6 +11,7 @@
 #include "script.h"
 #include "sound.h"
 #include "sprite.h"
+#include "string_util.h"
 #include "task.h"
 #include "text.h"
 #include "window.h"
@@ -26,7 +27,7 @@
 static const struct {
     u16 graphicsId;
     const u8 *name;
-} sCharacters[] = {
+} sFeaturedCharacters[] = {
     {OBJ_EVENT_GFX_BRENDAN_NORMAL, COMPOUND_STRING("Brendan")},
     {OBJ_EVENT_GFX_MAY_NORMAL, COMPOUND_STRING("May")},
     {OBJ_EVENT_GFX_RED_NORMAL, COMPOUND_STRING("Red")},
@@ -40,15 +41,66 @@ static const struct {
     {OBJ_EVENT_GFX_HIKER, COMPOUND_STRING("Hiker")},
     {OBJ_EVENT_GFX_SAILOR, COMPOUND_STRING("Sailor")},
 };
-_Static_assert(ARRAY_COUNT(sCharacters) == COOP_CHARACTER_COUNT, "character roster size");
+_Static_assert(ARRAY_COUNT(sFeaturedCharacters) == COOP_PRESENCE_AVATAR_SAILOR, "featured roster size");
 
 static EWRAM_DATA u8 sWindow;
 static EWRAM_DATA u8 sPreview;
 static EWRAM_DATA u8 sChoice;
+static EWRAM_DATA bool8 sRosterInitialized;
+static EWRAM_DATA u16 sCharacterGraphicsIds[COOP_CHARACTER_COUNT];
 static const struct WindowTemplate sWindowTemplate = {
     .bg = 0, .tilemapLeft = 2, .tilemapTop = 1,
     .width = 26, .height = 18, .paletteNum = 15, .baseBlock = 8,
 };
+
+static bool32 IsFeaturedGraphicsId(u16 graphicsId)
+{
+    for (u32 i = 0; i < ARRAY_COUNT(sFeaturedCharacters); i++)
+        if (sFeaturedCharacters[i].graphicsId == graphicsId)
+            return TRUE;
+    return FALSE;
+}
+
+static bool32 IsSelectableGraphicsId(u16 graphicsId)
+{
+    const struct ObjectEventGraphicsInfo *info = GetObjectEventGraphicsInfo(graphicsId);
+    const union AnimCmd *const *standardAnims = GetObjectEventGraphicsInfo(OBJ_EVENT_GFX_YOUNGSTER)->anims;
+
+    if (info->width != 16 || info->height != 32 || info->inanimate)
+        return FALSE;
+    if (info->anims == standardAnims)
+        return TRUE;
+    switch (graphicsId)
+    {
+    case OBJ_EVENT_GFX_BRENDAN_NORMAL:
+    case OBJ_EVENT_GFX_MAY_NORMAL:
+    case OBJ_EVENT_GFX_RIVAL_BRENDAN_NORMAL:
+    case OBJ_EVENT_GFX_RIVAL_MAY_NORMAL:
+    case OBJ_EVENT_GFX_LINK_BRENDAN:
+    case OBJ_EVENT_GFX_LINK_MAY:
+    case OBJ_EVENT_GFX_RED_NORMAL:
+    case OBJ_EVENT_GFX_GREEN_NORMAL:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static void InitCharacterRoster(void)
+{
+    u32 count = 0;
+
+    if (sRosterInitialized)
+        return;
+    for (u32 i = 0; i < ARRAY_COUNT(sFeaturedCharacters); i++)
+        sCharacterGraphicsIds[count++] = sFeaturedCharacters[i].graphicsId;
+    for (u32 graphicsId = 0; graphicsId < NUM_OBJ_EVENT_GFX && count < COOP_CHARACTER_COUNT; graphicsId++)
+    {
+        if (!IsFeaturedGraphicsId(graphicsId) && IsSelectableGraphicsId(graphicsId))
+            sCharacterGraphicsIds[count++] = graphicsId;
+    }
+    sRosterInitialized = TRUE;
+}
 
 u8 CoopCharacter_GetSelection(void)
 {
@@ -78,9 +130,10 @@ u8 CoopCharacter_GetAvatarId(void)
 
 u16 CoopCharacter_GetGraphicsId(u8 avatarId)
 {
+    InitCharacterRoster();
     if (avatarId == 0 || avatarId > COOP_CHARACTER_COUNT)
         return OBJ_EVENT_GFX_BRENDAN_NORMAL;
-    return sCharacters[avatarId - 1].graphicsId;
+    return sCharacterGraphicsIds[avatarId - 1];
 }
 
 u16 CoopCharacter_OverrideNormalGraphics(u16 original)
@@ -111,7 +164,17 @@ static void Draw(void)
     RemovePreview();
     FillWindowPixelBuffer(sWindow, PIXEL_FILL(1));
     Print(COMPOUND_STRING("CHARACTER"), 8, 0);
-    Print(sChoice == 0 ? COMPOUND_STRING("Original appearance") : sCharacters[sChoice - 1].name, 8, 20);
+    if (sChoice == 0)
+        Print(COMPOUND_STRING("Original appearance"), 8, 20);
+    else if (sChoice <= ARRAY_COUNT(sFeaturedCharacters))
+        Print(sFeaturedCharacters[sChoice - 1].name, 8, 20);
+    else
+    {
+        ConvertIntToDecimalStringN(gStringVar1, sChoice, STR_CONV_MODE_LEFT_ALIGN, 3);
+        ConvertIntToDecimalStringN(gStringVar2, COOP_CHARACTER_COUNT, STR_CONV_MODE_LEFT_ALIGN, 3);
+        StringExpandPlaceholders(gStringVar4, COMPOUND_STRING("Appearance {STR_VAR_1}/{STR_VAR_2}"));
+        Print(gStringVar4, 8, 20);
+    }
     Print(COMPOUND_STRING("LEFT/RIGHT: choose"), 8, 80);
     Print(COMPOUND_STRING("A: use     B: cancel"), 8, 96);
     Print(COMPOUND_STRING("Walking appearance only."), 8, 116);
