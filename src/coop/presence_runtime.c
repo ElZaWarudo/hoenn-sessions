@@ -69,6 +69,8 @@ struct CoopPresenceRuntime
     bool8 initialized;
     bool8 transport_ready;
     bool8 renderer_owned;
+    u8 despawn_hold_reason;
+    u32 despawn_hold_start;
 };
 
 static EWRAM_DATA struct CoopPresenceRuntime sCoopPresenceRuntime = {0};
@@ -434,6 +436,9 @@ static void RemoveOwnedRenderer(void)
     bool8 object_identity;
     bool8 sprite_identity;
 
+    /* Every real removal drops a pending despawn hold with it. The hold
+     * path below never calls this until the grace expires. */
+    sCoopPresenceRuntime.despawn_hold_reason = 0;
     if (!sCoopPresenceRuntime.renderer_owned)
     {
         object_id = FindRemoteObjectEvent();
@@ -787,12 +792,26 @@ static bool8 IsOwnedRendererEffectivelyVisible(const struct CoopPresenceRemote *
     return TRUE;
 }
 
+static bool8 IsTransientDespawnReason(u8 reason)
+{
+    return reason == COOP_PRESENCE_DESPAWN_HIDDEN
+        || reason == COOP_PRESENCE_DESPAWN_DISCONNECTED;
+}
+
+static bool8 DespawnHoldActive(void)
+{
+    return sCoopPresenceRuntime.despawn_hold_reason != 0
+        && sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.despawn_hold_start
+            < COOP_PRESENCE_RUNTIME_DESPAWN_HOLD_FRAMES;
+}
+
 static void ApplyPendingFrames(void)
 {
     struct CoopPresenceLocalState local;
     struct CoopPresencePendingFrame *pending;
     enum CoopPresenceApplyResult result;
     struct WorldLocation location;
+    bool8 renderer_owned;
 
     if (!CoopPresenceRuntime_GetLocalState(&local)
      || !IsWorldLocationCurrent(&location)
@@ -810,14 +829,29 @@ static void ApplyPendingFrames(void)
         case COOP_PRESENCE_PENDING_SPAWN:
             result = CoopPresenceReducer_ApplySpawn(&sCoopPresenceRuntime.reducer,
                                                     &pending->value.spawn);
+            if (result == COOP_PRESENCE_APPLY_APPLIED)
+                sCoopPresenceRuntime.despawn_hold_reason = 0;
             break;
         case COOP_PRESENCE_PENDING_UPDATE:
             result = CoopPresenceReducer_ApplyUpdate(&sCoopPresenceRuntime.reducer,
                                                      &pending->value.update);
             break;
         case COOP_PRESENCE_PENDING_DESPAWN:
+            renderer_owned = sCoopPresenceRuntime.renderer_owned;
             result = CoopPresenceReducer_ApplyDespawn(&sCoopPresenceRuntime.reducer,
                                                       &pending->value.despawn);
+            if (result == COOP_PRESENCE_APPLY_APPLIED)
+            {
+                if (IsTransientDespawnReason(pending->value.despawn.reason) && renderer_owned)
+                {
+                    sCoopPresenceRuntime.despawn_hold_reason = pending->value.despawn.reason;
+                    sCoopPresenceRuntime.despawn_hold_start = sCoopPresenceRuntime.frame_counter;
+                }
+                else
+                {
+                    sCoopPresenceRuntime.despawn_hold_reason = 0;
+                }
+            }
             break;
         default:
             result = COOP_PRESENCE_APPLY_REJECTED;
@@ -860,7 +894,12 @@ void CoopPresenceRuntime_Update(void)
      || sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.last_lifecycle_frame
         >= COOP_PRESENCE_RUNTIME_STALE_FRAMES)
     {
-        RemoveOwnedRenderer();
+        /* A transient despawn freezes the placed sprite for a short grace
+         * instead of popping it. The reducer already dropped the remote,
+         * so TryInteract stays disabled for the whole hold, and only a
+         * new spawn, warp, epoch, or transport change ends it. */
+        if (!DespawnHoldActive())
+            RemoveOwnedRenderer();
         return;
     }
     if (!EnsureRemoteRenderer(remote))

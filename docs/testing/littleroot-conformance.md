@@ -95,9 +95,11 @@ No external server, account, or network configuration change is involved.
    more than 30 seconds, then attempt acceptance. Neither stale action may
    create a group; Refresh must show the authoritative state.
 5. Close both menus. Create the printed `interrupt-websockets.txt` marker once.
-   The proxy logs each actual disconnection. Observe old avatars clear and
-   reciprocal movement return. The Online acceptance marker is rejected unless
-   at least two WebSockets were actually interrupted.
+   The proxy logs each actual disconnection. Observe old avatars freeze for
+   about half a second (the 30-frame transient-despawn hold), then clear,
+   and reciprocal movement return. An instant pop is a regression of the
+   hold; an avatar that never clears is a removal bug. The Online acceptance
+   marker is rejected unless at least two WebSockets were actually interrupted.
 6. Enter a house and return to Littleroot with each player, observing reciprocal
    presence after each return. Neither emulator should restart.
 7. Check Back during loading/unavailable states, long names, and a fully unlocked

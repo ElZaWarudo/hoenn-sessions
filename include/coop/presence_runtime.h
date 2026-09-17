@@ -9,6 +9,11 @@
 #define COOP_PRESENCE_RUNTIME_SAMPLE_INTERVAL 6
 #define COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES 6
 #define COOP_PRESENCE_RUNTIME_STALE_FRAMES 90
+/* Renderer-only grace after a transient despawn (HIDDEN or DISCONNECTED).
+ * The reducer still drops the remote at once, so interaction stays
+ * disabled; only the already-placed sprite is left frozen. Well under
+ * STALE_FRAMES so a real disconnect cannot hide behind the hold. */
+#define COOP_PRESENCE_RUNTIME_DESPAWN_HOLD_FRAMES 30
 #define COOP_PRESENCE_RUNTIME_PENDING_CAPACITY COOP_NET_BRIDGE_QUEUE_CAPACITY
 #define COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID OBJ_EVENT_ID_COOP_REMOTE_PLAYER
 

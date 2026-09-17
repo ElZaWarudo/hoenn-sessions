@@ -29,6 +29,8 @@ _Static_assert(COOP_PRESENCE_RUNTIME_INTERPOLATION_FRAMES == 6,
                "idle presence corrections settle in six frames");
 _Static_assert(COOP_PRESENCE_RUNTIME_STALE_FRAMES == 90,
                "presence visuals expire after ninety frames");
+_Static_assert(COOP_PRESENCE_RUNTIME_DESPAWN_HOLD_FRAMES == 30,
+               "transient despawns hold the placed sprite for thirty frames");
 _Static_assert(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID == 0xFC,
                "presence owns the reserved remote object local ID");
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_SIZE == 10,
@@ -517,6 +519,152 @@ TEST("Cloud Coop presence runtime executes hidden stale and warp lifecycle paths
     EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
     EXPECT(gObjectEvents[1].active);
     EXPECT(gSprites[gObjectEvents[1].spriteId].inUse);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+static void QueueRuntimeDespawn(u64 handle, u32 sequence, u8 reason)
+{
+    struct CoopPresenceDespawn despawn = {
+        .handle = handle,
+        .server_sequence = sequence,
+        .reason = reason,
+    };
+    u8 despawn_bytes[COOP_PRESENCE_DESPAWN_SIZE];
+
+    EXPECT(CoopPresence_EncodeDespawn(&despawn, despawn_bytes, sizeof(despawn_bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN,
+        despawn_bytes, sizeof(despawn_bytes)));
+}
+
+static void SpawnHeldFixtureRemote(u64 handle, u32 sequence, u32 warp)
+{
+    struct CoopPresenceSpawn spawn = RuntimeSpawn(handle, sequence);
+    u8 spawn_bytes[COOP_PRESENCE_SPAWN_SIZE];
+
+    spawn.state.pose.location.y = 6;
+    spawn.state.pose.warp_sequence = warp;
+    EXPECT(CoopPresence_EncodeSpawn(&spawn, spawn_bytes, sizeof(spawn_bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN,
+        spawn_bytes, sizeof(spawn_bytes)));
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(gObjectEvents[1].active);
+}
+
+TEST("Cloud Coop transient disconnect holds the avatar for thirty frames")
+{
+    u32 frame;
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    CoopPresenceRuntime_SetSessionEpoch(23);
+    SpawnHeldFixtureRemote(11, 1, 1);
+
+    QueueRuntimeDespawn(11, 2, COOP_PRESENCE_DESPAWN_DISCONNECTED);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(gObjectEvents[1].active);
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+
+    for (frame = 0; frame < COOP_PRESENCE_RUNTIME_DESPAWN_HOLD_FRAMES - 1; frame++)
+    {
+        CoopPresenceRuntime_AdvanceFrame();
+        CoopPresenceRuntime_Update();
+        EXPECT(gObjectEvents[1].active);
+    }
+    CoopPresenceRuntime_AdvanceFrame();
+    CoopPresenceRuntime_Update();
+    EXPECT(!gObjectEvents[1].active);
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop fatal despawns retire the avatar at once")
+{
+    static const u8 reasons[] = {
+        COOP_PRESENCE_DESPAWN_REPLACED,
+        COOP_PRESENCE_DESPAWN_LEASE_INVALID,
+        COOP_PRESENCE_DESPAWN_PARTITION_LEFT,
+        COOP_PRESENCE_DESPAWN_STALE,
+    };
+    u32 sequence = 1;
+    u32 warp = 1;
+    u32 i;
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    CoopPresenceRuntime_SetSessionEpoch(23);
+    for (i = 0; i < ARRAY_COUNT(reasons); i++)
+    {
+        SpawnHeldFixtureRemote(12, sequence, warp);
+        QueueRuntimeDespawn(12, sequence + 1, reasons[i]);
+        CoopPresenceRuntime_Update();
+        EXPECT(!CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+        EXPECT(!gObjectEvents[1].active);
+        EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+        CoopPresenceRuntime_OnWarpCommit();
+        sequence += 2;
+        warp++;
+    }
+
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop hold resumes on respawn and ends on warp")
+{
+    struct CoopPresenceUpdate update;
+    u8 update_bytes[COOP_PRESENCE_UPDATE_SIZE];
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    CoopPresenceRuntime_SetSessionEpoch(23);
+    SpawnHeldFixtureRemote(13, 1, 1);
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(),
+              COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK);
+
+    QueueRuntimeDespawn(13, 2, COOP_PRESENCE_DESPAWN_HIDDEN);
+    CoopPresenceRuntime_Update();
+    EXPECT(gObjectEvents[1].active);
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+
+    /* An update against the cleared handle stays NOT_ACTIVE: the reducer
+     * remains inactive, interaction stays disabled, and the hold keeps
+     * the placed sprite frozen. */
+    update = (struct CoopPresenceUpdate){
+        .handle = 13,
+        .server_sequence = 3,
+        .state = RuntimeSpawn(13, 3).state,
+    };
+    update.state.pose.location.y = 6;
+    update.state.pose.warp_sequence = 1;
+    EXPECT(CoopPresence_EncodeUpdate(&update, update_bytes, sizeof(update_bytes)));
+    EXPECT(CoopPresenceRuntime_QueueBridgeFrame(
+        COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE,
+        update_bytes, sizeof(update_bytes)));
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT(gObjectEvents[1].active);
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
+
+    /* Only a new spawn can resurrect a despawned remote. */
+    SpawnHeldFixtureRemote(13, 4, 1);
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(),
+              COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK);
+
+    QueueRuntimeDespawn(13, 5, COOP_PRESENCE_DESPAWN_HIDDEN);
+    CoopPresenceRuntime_Update();
+    EXPECT(gObjectEvents[1].active);
+    CoopPresenceRuntime_OnWarpCommit();
+    EXPECT(!gObjectEvents[1].active);
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT_EQ(CoopPresenceRuntime_TryInteract(), COOP_PRESENCE_INTERACTION_NONE);
 
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
