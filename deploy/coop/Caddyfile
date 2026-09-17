@@ -23,3 +23,26 @@
 	}
 	reverse_proxy server:3000
 }
+
+# --- Optional private client downloads (see RELEASES.md) ---
+# To serve the atomically switched /srv/hoenn/current release directory at
+# /download/* on the same domain:
+#   1. Set COOP_DOWNLOAD_USER / COOP_DOWNLOAD_HASH in .env (hash from
+#      `caddy hash-password`; double each `$` as `$$` in .env so Compose
+#      passes the bcrypt hash through literally).
+#   2. Uncomment the /srv/hoenn parent mount in compose.yaml. Mount the
+#      parent, not the `current` symlink: the symlink is resolved per request
+#      inside the container, so downloads always track the live release with
+#      no caddy restart on promotion. Only /download/* is served; staging
+#      directories are never exposed and `..` escapes are rejected.
+#   3. Paste the block below INSIDE the {$COOP_DOMAIN} site block above and
+#      recreate caddy once. Keep basic auth enabled; the game reverse proxy
+#      above is unaffected. Unset credentials fail closed at startup.
+#	handle /download/* {
+#		basic_auth {
+#			{$COOP_DOWNLOAD_USER} {$COOP_DOWNLOAD_HASH}
+#		}
+#		uri strip_prefix /download
+#		root * /srv/hoenn/current
+#		file_server
+#	}

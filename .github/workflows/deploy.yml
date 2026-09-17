@@ -1,0 +1,368 @@
+# Production release pipeline: ONE COMMIT = ONE ROM = ONE manifest = ONE
+# sidecar = ONE server image = ONE VPS release directory.
+#
+# Triggers on pushes to main (and manually). Never on pull requests.
+# All expensive compilation happens here on GitHub-hosted runners; the VPS
+# only receives files, pulls the pushed image, flips a symlink and restarts
+# the server container. The ROM is transferred directly runner -> VPS and is
+# never published as a public GitHub Release or workflow artifact.
+#
+# Immutability notes:
+# - The server image is deployed by digest (name@sha256:<digest> captured
+#   from the push), never by tag: GHCR tags are mutable and a re-run would
+#   otherwise silently swap the image behind a promoted release.
+# - The concurrency group serialises releases, but GitHub cancels superseded
+#   *queued* runs: an intermediate main commit may never get its own run.
+#   Every *deployed release* still equals exactly one commit (main is linear,
+#   so a later release contains earlier commits' code), but not every commit
+#   is guaranteed its own release.
+# - Promotion is idempotent, and a status check at the start skips the
+#   rebuild entirely when this commit is already released: re-running the
+#   workflow after a failed server rollout rolls out the recorded digest
+#   instead of building (and conflicting with) a second bundle.
+# - Secrets reach shell steps through `env:` mappings, never through
+#   `${{ }}` interpolation into quoted shell: a quote in a secret value
+#   would otherwise break out and execute at parse time, before any
+#   validation could run.
+name: Production release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+env:
+  GAME_REVISION: 0
+  GAME_LANGUAGE: ENGLISH
+  COMPARE: 0
+  UNUSED_ERROR: 1
+  DEPRECATED_ERROR: 1
+  REGISTRY: ghcr.io
+
+jobs:
+  # Gate: Rust test suite must pass before any release work starts.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+          components: clippy, rustfmt
+
+      - name: Rust tests
+        run: cargo test --locked --workspace --exclude coop-android
+
+      - name: Release script tests
+        run: bash deploy/coop/test-release-scripts.sh
+
+      - name: Manifest tooling syntax
+        run: |
+          python3 -m py_compile tools/generate_bridge_manifest.py
+          bash -n deploy/coop/promote-release.sh
+          bash -n deploy/coop/deploy-release.sh
+
+  release:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_ID: ${{ github.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image name
+        id: image
+        run: |
+          # GHCR requires lowercase names; the owner may contain capitals.
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "base=${{ env.REGISTRY }}/${owner}/hoenn-sessions-server" >> "$GITHUB_OUTPUT"
+
+      - name: Set up SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          # Pinned host keys are mandatory: a keyscan fallback would trust an
+          # unauthenticated network answer for the connection it secures.
+          if [ -z "$VPS_KNOWN_HOSTS" ]; then
+            echo "error: VPS_KNOWN_HOSTS secret is required (see deploy/coop/RELEASES.md)" >&2
+            exit 1
+          fi
+          # These values are written verbatim into ~/.ssh/config, where an
+          # embedded newline would inject directives (e.g. ProxyCommand).
+          # Fail closed on anything outside the expected grammars.
+          case "$VPS_HOST" in
+            "" | *[!A-Za-z0-9.:_-]* )
+              echo "error: VPS_HOST must be a hostname or IP address" >&2; exit 1 ;;
+          esac
+          case "$VPS_USER" in
+            "" | *[!A-Za-z0-9_.-]* )
+              echo "error: VPS_USER must match [A-Za-z0-9_.-]" >&2; exit 1 ;;
+          esac
+          case "$VPS_PORT" in
+            "" | *[!0-9]* )
+              echo "error: VPS_PORT must be empty or numeric" >&2; exit 1 ;;
+          esac
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s' "$VPS_SSH_KEY" > ~/.ssh/hoenn_release
+          chmod 600 ~/.ssh/hoenn_release
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          {
+            echo "Host hoenn-vps"
+            echo "  HostName $VPS_HOST"
+            echo "  User $VPS_USER"
+            echo "  Port ${VPS_PORT:-22}"
+            echo "  IdentityFile ~/.ssh/hoenn_release"
+            echo "  StrictHostKeyChecking yes"
+          } >> ~/.ssh/config
+
+      # Skip the rebuild when this commit is already released (e.g. a re-run
+      # after a failed server rollout): the rollout step below reuses the
+      # recorded digest instead of building a conflicting second bundle.
+      # Fail-closed: an unreachable VPS or unreadable live metadata fails
+      # this step instead of triggering a blind rebuild that could conflict
+      # with the already-promoted release.
+      - name: Check whether this commit is already released
+        id: status
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          probe="$(ssh hoenn-vps 'if [ ! -e /srv/hoenn/current ]; then echo NO_RELEASE; else cat /srv/hoenn/current/release.json; fi')"
+          if [ "$probe" = "NO_RELEASE" ]; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            echo "released_digest=" >> "$GITHUB_OUTPUT"
+            echo "no live release for this commit; building"
+            exit 0
+          fi
+          commit="$(printf '%s' "$probe" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
+          digest="$(printf '%s' "$probe" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("server_image_digest", ""))')"
+          # Guard the GITHUB_OUTPUT protocol (single-line key=value) and the
+          # downstream digest gate before trusting anything from the VPS.
+          newline='
+          '
+          case "$commit$digest" in
+            *"$newline"* ) echo "error: live release metadata contains a newline; refusing" >&2; exit 1 ;;
+          esac
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "error: live release has no usable server_image_digest; refusing" >&2; exit 1 ;;
+          esac
+          if [ "$commit" = "$RELEASE_SHA" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "released_digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "commit $RELEASE_SHA already released; skipping rebuild"
+            exit 0
+          fi
+          echo "released=false" >> "$GITHUB_OUTPUT"
+          echo "released_digest=" >> "$GITHUB_OUTPUT"
+          echo "live release is a different commit; building"
+
+      - name: Install ARM/GBA toolchain
+        if: steps.status.outputs.released != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3 mingw-w64
+
+      - name: Add Windows target
+        if: steps.status.outputs.released != 'true'
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Cache ROM build tools
+        if: steps.status.outputs.released != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            tools/bin2c/bin2c
+            tools/gbafix/gbafix
+            tools/gbagfx/gbagfx
+            tools/jsonproc/jsonproc
+            tools/mapjson/mapjson
+            tools/mid2agb/mid2agb
+            tools/preproc/preproc
+            tools/ramscrgen/ramscrgen
+            tools/rsfont/rsfont
+            tools/scaninc/scaninc
+            tools/trainerproc/trainerproc
+            tools/compresSmol/compresSmol
+            tools/compresSmol/compresSmolTilemap
+            tools/wav2agb/wav2agb
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+
+      # Single ROM build for this release; reused by manifest + distribution.
+      - name: Build Emerald ROM and ELF
+        if: steps.status.outputs.released != 'true'
+        env:
+          GAME_VERSION: EMERALD
+        run: make -j"$(nproc)" -O all
+
+      # The generated manifest below is authoritative for this release; the
+      # copy committed to the repository is never substituted in.
+      - name: Generate bridge manifest from this ROM
+        if: steps.status.outputs.released != 'true'
+        run: |
+          python3 tools/generate_bridge_manifest.py \
+            --elf pokeemerald.elf \
+            --rom pokeemerald.gba
+          python3 - <<'PY'
+          import hashlib, json
+          rom = hashlib.sha256(open("pokeemerald.gba", "rb").read()).hexdigest()
+          manifest = json.load(open("dist/bridge_manifest.json"))
+          assert manifest["game_build"]["rom_sha256"] == rom, "manifest/ROM mismatch"
+          print("manifest rom_sha256:", rom)
+          PY
+
+      - name: Build coop-sidecar (Windows x86_64)
+        if: steps.status.outputs.released != 'true'
+        run: |
+          cargo build --locked --release --target x86_64-pc-windows-gnu -p coop-sidecar
+          cp target/x86_64-pc-windows-gnu/release/coop-sidecar.exe coop-sidecar.exe
+
+      - name: Log in to GHCR
+        if: steps.status.outputs.released != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Built AFTER manifest generation: the Dockerfile copies
+      # dist/bridge_manifest.json and the server binary embeds/uses it.
+      # The pushed digest (not the tag) is the immutable deployment handle.
+      - name: Build and push coop-server image
+        if: steps.status.outputs.released != 'true'
+        id: server-image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/coop/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.image.outputs.base }}:${{ github.sha }}
+            ${{ steps.image.outputs.base }}:latest
+
+      - name: Assemble release bundle
+        if: steps.status.outputs.released != 'true'
+        run: |
+          rm -rf release-bundle && mkdir -p "release-bundle/${{ github.sha }}"
+          cp pokeemerald.gba "release-bundle/${{ github.sha }}/game.gba"
+          cp coop-sidecar.exe "release-bundle/${{ github.sha }}/coop-sidecar.exe"
+          cp dist/bridge_manifest.json "release-bundle/${{ github.sha }}/bridge_manifest.json"
+          python3 - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          d = Path("release-bundle/${{ github.sha }}")
+          def sha256(p):
+              return hashlib.sha256((d / p).read_bytes()).hexdigest()
+          digest = "${{ steps.server-image.outputs.digest }}"
+          assert digest.startswith("sha256:"), f"unexpected digest output: {digest}"
+          base = "${{ steps.image.outputs.base }}"
+          # The manifest already carries the canonical ROM hash
+          # (game_build.rom_sha256); it is not duplicated here.
+          release = {
+              "version": "${{ github.sha }}",
+              "commit": "${{ github.sha }}",
+              "rom": "game.gba",
+              "sidecar": "coop-sidecar.exe",
+              "manifest": "bridge_manifest.json",
+              "server_image": f"{base}@{digest}",
+              "server_image_tag": f"{base}:${{ github.sha }}",
+              "server_image_digest": digest,
+              "sidecar_sha256": sha256("coop-sidecar.exe"),
+              "manifest_sha256": sha256("bridge_manifest.json"),
+          }
+          (d / "release.json").write_text(json.dumps(release, indent=2, sort_keys=True) + "\n")
+          PY
+          (cd "release-bundle/${{ github.sha }}" && \
+            sha256sum game.gba coop-sidecar.exe bridge_manifest.json release.json > SHA256SUMS)
+          cat "release-bundle/${{ github.sha }}/release.json"
+
+      # Deploy scripts travel with every run (the rollout below needs them
+      # even when the rebuild is skipped for an already-released commit).
+      - name: Upload deploy scripts
+        run: |
+          scp deploy/coop/promote-release.sh deploy/coop/deploy-release.sh hoenn-vps:/tmp/
+
+      # ROM travels runner -> VPS only; nothing is uploaded as a GH artifact.
+      - name: Upload release to VPS staging
+        if: steps.status.outputs.released != 'true'
+        run: |
+          scp -r "release-bundle/${{ github.sha }}" "hoenn-vps:/srv/hoenn/staging/"
+
+      - name: Promote release and roll the server
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          IMAGE_BASE: ${{ steps.image.outputs.base }}
+          FRESH_DIGEST: ${{ steps.server-image.outputs.digest }}
+          WAS_RELEASED: ${{ steps.status.outputs.released }}
+          RELEASED_DIGEST: ${{ steps.status.outputs.released_digest }}
+          GHCR_USER: ${{ secrets.VPS_GHCR_USER }}
+          GHCR_TOKEN: ${{ secrets.VPS_GHCR_TOKEN }}
+          VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
+        run: |
+          if [ "$WAS_RELEASED" = "true" ]; then
+            DIGEST="$RELEASED_DIGEST"
+          else
+            DIGEST="$FRESH_DIGEST"
+          fi
+          case "$DIGEST" in
+            sha256:*) ;;
+            *) echo "error: unexpected digest output: $DIGEST" >&2; exit 1 ;;
+          esac
+          IMAGE_REF="$IMAGE_BASE@$DIGEST"
+          case "$IMAGE_REF" in
+            "" | *[!A-Za-z0-9_./:@-]* )
+              echo "error: unsafe image reference: $IMAGE_REF" >&2; exit 1 ;;
+          esac
+          # The remote command below embeds these values single-quoted, so
+          # quote-active characters are refused up front (defence in depth:
+          # secrets arrive via `env:`, never via expression interpolation).
+          case "$GHCR_USER" in
+            "" | *[!A-Za-z0-9_.-]* )
+              echo "error: VPS_GHCR_USER must be empty or match [A-Za-z0-9_.-]" >&2
+              exit 1
+              ;;
+          esac
+          case "$VPS_DEPLOY_DIR" in
+            "" | *"'"* )
+              echo "error: VPS_DEPLOY_DIR must be set and contain no single quotes" >&2
+              exit 1
+              ;;
+          esac
+          if { [ -n "$GHCR_USER" ] && [ -z "$GHCR_TOKEN" ]; } || \
+             { [ -z "$GHCR_USER" ] && [ -n "$GHCR_TOKEN" ]; }; then
+            echo "error: VPS_GHCR_USER and VPS_GHCR_TOKEN must be set together or not at all" >&2
+            exit 1
+          fi
+          REMOTE="HOENN_ROOT=/srv/hoenn bash /tmp/promote-release.sh '$RELEASE_SHA'"
+          REMOTE="$REMOTE && bash /tmp/deploy-release.sh --image '$IMAGE_REF' --deploy-dir '$VPS_DEPLOY_DIR'"
+          if [ -n "$GHCR_TOKEN" ]; then
+            # The token travels over the encrypted channel on stdin and is
+            # read by the remote shell into GHCR_TOKEN; it never appears in
+            # the remote command line, logs, or process lists. Statement
+            # form (not an env-prefix) is required: a `VAR=x cmd1 && cmd2`
+            # prefix would leave cmd2 — the deploy step that needs the
+            # token — without it.
+            printf '%s' "$GHCR_TOKEN" | ssh hoenn-vps \
+              "GHCR_USER='$GHCR_USER'; GHCR_TOKEN=\"\$(cat)\"; export GHCR_USER GHCR_TOKEN; $REMOTE"
+          else
+            ssh hoenn-vps "$REMOTE"
+          fi

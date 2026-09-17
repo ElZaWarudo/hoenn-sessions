@@ -75,9 +75,20 @@ services:
     restart: unless-stopped
     environment:
       COOP_DOMAIN: ${COOP_DOMAIN:?Set COOP_DOMAIN}
+      # Credentials for the optional private /download/* file server. Empty
+      # by default; the Caddyfile download block (commented out) fails
+      # closed if enabled without them. Never put real secrets in git.
+      COOP_DOWNLOAD_USER: ${COOP_DOWNLOAD_USER:-}
+      COOP_DOWNLOAD_HASH: ${COOP_DOWNLOAD_HASH:-}
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Uncomment to enable the optional private /download/* file server
+      # (see Caddyfile and RELEASES.md). Mount the PARENT directory, not the
+      # `current` symlink: Docker resolves symlinks at container creation, so
+      # mounting `current` would pin downloads to one release, while the
+      # parent mount lets every request resolve the live symlink target.
+      # - /srv/hoenn:/srv/hoenn:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]

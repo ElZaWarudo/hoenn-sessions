@@ -36,7 +36,7 @@ Run the following from this directory on the target host only when ready to depl
 
 ```sh
 cp .env.example .env
-# Edit the domain, bucket and release image tag in .env.
+# Edit the domain, bucket and release image digest in .env.
 bash init-secrets.sh
 # Copy the service account JSON securely to secrets/firebase-service-account.json.
 chmod 444 secrets/firebase-service-account.json
@@ -163,11 +163,12 @@ After deployment, the operator should watch for 30 minutes and then daily:
   quotas are reached. No latency/player-capacity claim is made without load tests.
 
 If readiness stays unhealthy, saves fail, or revisions regress, stop client
-access and investigate before restarting repeatedly. To roll back compatible
-code, stop `server`, set `COOP_IMAGE` to the retained previous image, and run
-`docker compose up -d --no-build server`. A changed persistence format may also
-require its matching database backup; never run old code against an unknown
-format. Do not recreate PostgreSQL to fix an application startup error.
+access and investigate before restarting repeatedly. To roll back, use the
+digest-pinned rollback in [RELEASES.md](RELEASES.md) (validates the
+immutable image reference and health-checks); do not hand-edit `COOP_IMAGE`
+to a tag and recreate the container around it. A changed persistence format
+may also require its matching database backup; never run old code against an
+unknown format. Do not recreate PostgreSQL to fix an application startup error.
 
 ## Budget
 
@@ -206,3 +207,14 @@ COOP_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55439/postgres \
 Those tests create and drop only randomly named test databases. Never supply a
 production database URL. Live Firebase authentication and a real two-player
 internet session remain deployment smoke checks requiring the target project.
+
+## Production releases
+
+Merges to `main` are released automatically by `.github/workflows/deploy.yml`:
+CI builds the ROM, regenerates `dist/bridge_manifest.json` from that ROM,
+cross-compiles the Windows sidecar, pushes a server image to GHCR, captures
+its digest, uploads the bundle to `/srv/hoenn/staging/`, promotes it
+atomically to `/srv/hoenn/releases/<sha>` + `current`, and rolls the server
+(pinned by digest, never by tag) with a `/health/ready` gate. See
+[RELEASES.md](RELEASES.md) for secrets, VPS setup, manual deploy, rollback,
+verification and private client downloads.
