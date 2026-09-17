@@ -118,6 +118,112 @@ pub enum RealtimeInputError {
     Closed,
 }
 
+impl RealtimeError {
+    /// Stable identifier for logs and user-facing status. Never carries
+    /// secrets, endpoints, or peer-controlled text.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::InvalidEndpoint => "INVALID_ENDPOINT",
+            Self::InvalidGrant => "INVALID_GRANT",
+            Self::ExpiredGrant => "EXPIRED_GRANT",
+            Self::InvalidState => "INVALID_STATE",
+        }
+    }
+
+    /// Plain-language explanation safe to show to the player.
+    #[must_use]
+    pub const fn user_message(&self) -> &'static str {
+        match self {
+            Self::InvalidEndpoint => "the co-op server address is invalid",
+            Self::InvalidGrant => "the co-op sign-in is invalid; sign in again",
+            Self::ExpiredGrant => "the co-op sign-in expired; sign in again",
+            Self::InvalidState => "the presence data is invalid",
+        }
+    }
+}
+
+impl RealtimeOutcome {
+    /// Stable identifier for logs and user-facing status. Never carries
+    /// secrets, endpoints, or peer-controlled text.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::OwnerStopped => "OWNER_STOPPED",
+            Self::Expired => "TICKET_EXPIRED",
+            Self::ConnectTimeout => "CONNECT_TIMEOUT",
+            Self::ReadyTimeout => "READY_TIMEOUT",
+            Self::WriteFailed => "WRITE_FAILED",
+            Self::PeerClosed => "PEER_CLOSED",
+            Self::TransportFailed => "TRANSPORT_FAILED",
+            Self::ProtocolViolation => "PROTOCOL_VIOLATION",
+            Self::CapacityExceeded => "CAPACITY_EXCEEDED",
+            Self::OwnerBackpressure => "OWNER_BACKPRESSURE",
+        }
+    }
+
+    /// Plain-language explanation safe to show to the player.
+    #[must_use]
+    pub const fn user_message(&self) -> &'static str {
+        match self {
+            Self::OwnerStopped => "the co-op session stopped",
+            Self::Expired => "the co-op ticket expired before connecting; try again",
+            Self::ConnectTimeout => "could not reach the co-op server; try again",
+            Self::ReadyTimeout => "the server did not confirm presence; try again",
+            Self::WriteFailed => "the connection to the co-op server broke; try again",
+            Self::PeerClosed => "the server closed the presence connection; try again",
+            Self::TransportFailed => "the connection to the co-op server failed; try again",
+            Self::ProtocolViolation => "the server sent an unexpected message; try again",
+            Self::CapacityExceeded => "too many remote players are present; try again later",
+            Self::OwnerBackpressure => "presence updates arrived too fast; try again",
+        }
+    }
+
+    /// Whether the launcher treats this outcome as worth a presence
+    /// recovery attempt. Mirrors the launcher coordinator policy; the
+    /// launcher parity test fails if the two ever disagree.
+    #[must_use]
+    pub const fn is_recoverable(&self) -> bool {
+        match self {
+            Self::Expired
+            | Self::ConnectTimeout
+            | Self::ReadyTimeout
+            | Self::WriteFailed
+            | Self::PeerClosed
+            | Self::TransportFailed => true,
+            Self::OwnerStopped
+            | Self::ProtocolViolation
+            | Self::CapacityExceeded
+            | Self::OwnerBackpressure => false,
+        }
+    }
+}
+
+impl RealtimeInputError {
+    /// Stable identifier for logs and user-facing status. Never carries
+    /// secrets, endpoints, or peer-controlled text.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            Self::Stopped => "OWNER_STOPPED",
+            Self::NotReady => "NOT_READY",
+            Self::QueueFull => "QUEUE_FULL",
+            Self::Closed => "DRIVER_CLOSED",
+        }
+    }
+
+    /// Plain-language explanation safe to show to the player.
+    #[must_use]
+    pub const fn user_message(&self) -> &'static str {
+        match self {
+            Self::Stopped => "the co-op session stopped",
+            Self::NotReady => "presence is not ready yet",
+            Self::QueueFull => "presence updates arrived too fast; try again",
+            Self::Closed => "the co-op session ended",
+        }
+    }
+}
+
 /// A canonical, validated realtime WebSocket endpoint.
 #[derive(Clone, Eq, PartialEq)]
 pub struct RealtimeEndpoint {
@@ -906,6 +1012,136 @@ mod online_recovery_tests {
                 receive_frame(Some(Ok(frame)), &mut sink).await,
                 Receive::Protocol
             ));
+        }
+    }
+
+    // Kinds and messages are pinned: they are the player-facing
+    // contract, so any rewording must update these tests deliberately.
+    #[test]
+    fn status_mapping_covers_every_outcome() {
+        for (outcome, kind, message, recoverable) in [
+            (
+                RealtimeOutcome::OwnerStopped,
+                "OWNER_STOPPED",
+                "the co-op session stopped",
+                false,
+            ),
+            (
+                RealtimeOutcome::Expired,
+                "TICKET_EXPIRED",
+                "the co-op ticket expired before connecting; try again",
+                true,
+            ),
+            (
+                RealtimeOutcome::ConnectTimeout,
+                "CONNECT_TIMEOUT",
+                "could not reach the co-op server; try again",
+                true,
+            ),
+            (
+                RealtimeOutcome::ReadyTimeout,
+                "READY_TIMEOUT",
+                "the server did not confirm presence; try again",
+                true,
+            ),
+            (
+                RealtimeOutcome::WriteFailed,
+                "WRITE_FAILED",
+                "the connection to the co-op server broke; try again",
+                true,
+            ),
+            (
+                RealtimeOutcome::PeerClosed,
+                "PEER_CLOSED",
+                "the server closed the presence connection; try again",
+                true,
+            ),
+            (
+                RealtimeOutcome::TransportFailed,
+                "TRANSPORT_FAILED",
+                "the connection to the co-op server failed; try again",
+                true,
+            ),
+            (
+                RealtimeOutcome::ProtocolViolation,
+                "PROTOCOL_VIOLATION",
+                "the server sent an unexpected message; try again",
+                false,
+            ),
+            (
+                RealtimeOutcome::CapacityExceeded,
+                "CAPACITY_EXCEEDED",
+                "too many remote players are present; try again later",
+                false,
+            ),
+            (
+                RealtimeOutcome::OwnerBackpressure,
+                "OWNER_BACKPRESSURE",
+                "presence updates arrived too fast; try again",
+                false,
+            ),
+        ] {
+            assert_eq!(outcome.kind(), kind);
+            assert_eq!(outcome.user_message(), message);
+            assert_eq!(outcome.is_recoverable(), recoverable);
+        }
+    }
+
+    #[test]
+    fn status_mapping_covers_every_setup_error() {
+        for (error, kind, message) in [
+            (
+                RealtimeError::InvalidEndpoint,
+                "INVALID_ENDPOINT",
+                "the co-op server address is invalid",
+            ),
+            (
+                RealtimeError::InvalidGrant,
+                "INVALID_GRANT",
+                "the co-op sign-in is invalid; sign in again",
+            ),
+            (
+                RealtimeError::ExpiredGrant,
+                "EXPIRED_GRANT",
+                "the co-op sign-in expired; sign in again",
+            ),
+            (
+                RealtimeError::InvalidState,
+                "INVALID_STATE",
+                "the presence data is invalid",
+            ),
+        ] {
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.user_message(), message);
+        }
+    }
+
+    #[test]
+    fn status_mapping_covers_every_input_error() {
+        for (error, kind, message) in [
+            (
+                RealtimeInputError::Stopped,
+                "OWNER_STOPPED",
+                "the co-op session stopped",
+            ),
+            (
+                RealtimeInputError::NotReady,
+                "NOT_READY",
+                "presence is not ready yet",
+            ),
+            (
+                RealtimeInputError::QueueFull,
+                "QUEUE_FULL",
+                "presence updates arrived too fast; try again",
+            ),
+            (
+                RealtimeInputError::Closed,
+                "DRIVER_CLOSED",
+                "the co-op session ended",
+            ),
+        ] {
+            assert_eq!(error.kind(), kind);
+            assert_eq!(error.user_message(), message);
         }
     }
 

@@ -478,6 +478,11 @@ pub enum SessionError {
     FinalizeConflict,
     #[error("realtime lifecycle failed")]
     Realtime,
+    #[error("realtime connection ended: {message}")]
+    RealtimeStatus {
+        kind: &'static str,
+        message: &'static str,
+    },
     #[error("presence transport requires an acknowledged replacement")]
     PresenceRecovery { transport_failure: bool },
 }
@@ -2684,13 +2689,11 @@ impl SessionLifecycle {
                             }
                         }
                         Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => {
-                            result = Err(if realtime.recovery_needed() {
-                                SessionError::PresenceRecovery {
-                                    transport_failure: !realtime.planned_recovery(),
-                                }
-                            } else {
-                                SessionError::Realtime
-                            });
+                            result = Err(Self::terminal_session_error(
+                                realtime.recovery_needed(),
+                                realtime.planned_recovery(),
+                                realtime.terminal_report(),
+                            ));
                         }
                     }
                 }
@@ -2932,10 +2935,13 @@ impl SessionLifecycle {
         // Flash programming emits no genuine ROM poses. Retire the transport
         // before granting flash work rather than manufacturing presence freshness.
         control.disable_lifecycle();
-        realtime
-            .suspend_for_checkpoint()
-            .await
-            .map_err(|_| SessionError::Realtime)?;
+        if realtime.suspend_for_checkpoint().await.is_err() {
+            return Err(Self::terminal_session_error(
+                realtime.recovery_needed(),
+                realtime.planned_recovery(),
+                realtime.terminal_report(),
+            ));
+        }
         let outcome = self
             .checkpoint_before_activation_with_realtime(
                 api, control, ready, realtime, shutdown, heartbeat,
@@ -3098,11 +3104,9 @@ impl SessionLifecycle {
                         realtime_first = true;
                     }
                     RealtimeCheckpointWorkInput::Realtime(event) => {
-                        if let Err(error) = Self::buffer_checkpoint_realtime_event(
-                            event,
-                            &mut buffered,
-                            realtime.recovery_needed(),
-                        ) {
+                        if let Err(error) =
+                            Self::buffer_checkpoint_realtime_event(event, &mut buffered, &*realtime)
+                        {
                             terminal = Some(error);
                         }
                         realtime_first = false;
@@ -3185,11 +3189,7 @@ impl SessionLifecycle {
                     priority = RealtimeSource::Control;
                 }
                 CheckpointInput::Realtime(event) => {
-                    Self::buffer_checkpoint_realtime_event(
-                        event,
-                        buffered,
-                        realtime.recovery_needed(),
-                    )?;
+                    Self::buffer_checkpoint_realtime_event(event, buffered, &*realtime)?;
                     priority = RealtimeSource::Heartbeat;
                 }
                 CheckpointInput::Control(Err(error)) => {
@@ -3223,21 +3223,45 @@ impl SessionLifecycle {
         }
     }
 
+    /// Maps a finished realtime driver to the player-facing session error.
+    /// Recovery classification stays with the coordinator; the terminal
+    /// detail comes from its report so fatal outcomes keep their stable
+    /// kind and message instead of collapsing to an opaque error.
+    fn terminal_session_error(
+        recovery_needed: bool,
+        planned_recovery: bool,
+        report: Option<(&'static str, &'static str)>,
+    ) -> SessionError {
+        if recovery_needed {
+            SessionError::PresenceRecovery {
+                transport_failure: !planned_recovery,
+            }
+        } else if let Some((kind, message)) = report {
+            SessionError::RealtimeStatus { kind, message }
+        } else {
+            SessionError::Realtime
+        }
+    }
+
     fn buffer_checkpoint_realtime_event(
         event: Result<RealtimeCoordinatorEvent, crate::realtime::RealtimeCoordinatorError>,
         buffered: &mut Vec<ControlCommand>,
-        recovery_needed: bool,
+        realtime: &RealtimeCoordinator,
     ) -> Result<(), SessionError> {
         match event {
             Ok(RealtimeCoordinatorEvent::Ready) => Ok(()),
             Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
                 Self::buffer_checkpoint_command(buffered, command)
             }
-            Ok(RealtimeCoordinatorEvent::Terminal) if recovery_needed => {
+            Ok(RealtimeCoordinatorEvent::Terminal) if realtime.recovery_needed() => {
                 buffered.clear();
                 Ok(())
             }
-            Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => Err(SessionError::Realtime),
+            Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => Err(Self::terminal_session_error(
+                realtime.recovery_needed(),
+                realtime.planned_recovery(),
+                realtime.terminal_report(),
+            )),
         }
     }
 
@@ -3315,11 +3339,7 @@ impl SessionLifecycle {
                     priority = CutoverSource::Realtime;
                 }
                 RealtimeCutoverInput::Realtime(event) => {
-                    Self::buffer_checkpoint_realtime_event(
-                        event,
-                        buffered,
-                        realtime.recovery_needed(),
-                    )?;
+                    Self::buffer_checkpoint_realtime_event(event, buffered, &*realtime)?;
                     priority = if realtime.server_ready() {
                         CutoverSource::Activate
                     } else {
@@ -8288,5 +8308,54 @@ mod lifecycle_tests {
             Err(SessionError::Package)
         ));
         assert!(!original.exists());
+    }
+
+    #[test]
+    fn terminal_error_preserves_fatal_outcome_status() {
+        use coop_sidecar::RealtimeOutcome;
+
+        // Inputs come from the real sidecar mappings, not literals, so a
+        // renamed kind or reworded message fails here instead of drifting.
+        let fatal = RealtimeOutcome::ProtocolViolation;
+        assert!(!fatal.is_recoverable());
+        let error = SessionLifecycle::terminal_session_error(
+            fatal.is_recoverable(),
+            false,
+            Some((fatal.kind(), fatal.user_message())),
+        );
+        assert!(matches!(
+            error,
+            SessionError::RealtimeStatus {
+                kind: "PROTOCOL_VIOLATION",
+                ..
+            }
+        ));
+        assert_eq!(
+            error.to_string(),
+            format!("realtime connection ended: {}", fatal.user_message())
+        );
+
+        let recoverable = RealtimeOutcome::TransportFailed;
+        assert!(recoverable.is_recoverable());
+        assert!(matches!(
+            SessionLifecycle::terminal_session_error(
+                recoverable.is_recoverable(),
+                false,
+                Some((recoverable.kind(), recoverable.user_message())),
+            ),
+            SessionError::PresenceRecovery {
+                transport_failure: true
+            }
+        ));
+        assert!(matches!(
+            SessionLifecycle::terminal_session_error(true, true, None),
+            SessionError::PresenceRecovery {
+                transport_failure: false
+            }
+        ));
+        assert!(matches!(
+            SessionLifecycle::terminal_session_error(false, false, None),
+            SessionError::Realtime
+        ));
     }
 }

@@ -186,6 +186,15 @@ impl RealtimeCoordinator {
         self.planned_recovery
     }
 
+    /// Stable player-facing report for a finished driver, if it recorded
+    /// an outcome. Recovery classification stays with [`Self::recovery_needed`];
+    /// this only preserves the detail that [`RealtimeCoordinatorEvent::Terminal`]
+    /// otherwise discards.
+    pub(crate) fn terminal_report(&self) -> Option<(&'static str, &'static str)> {
+        self.terminal_outcome
+            .map(|outcome| (outcome.kind(), outcome.user_message()))
+    }
+
     pub(crate) async fn suspend_for_checkpoint(&mut self) -> Result<(), RealtimeCoordinatorError> {
         self.stop_owner_input();
         if self.task.is_some() {
@@ -818,6 +827,31 @@ mod tests {
             consume_at(now, now + REALTIME_TICKET_TTL_MS + 1),
             Err(RealtimeHttpError::InvalidGrant)
         ));
+    }
+
+    #[test]
+    fn terminal_report_parity_with_sidecar_recovery_policy() {
+        for outcome in [
+            RealtimeOutcome::OwnerStopped,
+            RealtimeOutcome::Expired,
+            RealtimeOutcome::ConnectTimeout,
+            RealtimeOutcome::ReadyTimeout,
+            RealtimeOutcome::WriteFailed,
+            RealtimeOutcome::PeerClosed,
+            RealtimeOutcome::TransportFailed,
+            RealtimeOutcome::ProtocolViolation,
+            RealtimeOutcome::CapacityExceeded,
+            RealtimeOutcome::OwnerBackpressure,
+        ] {
+            assert_eq!(
+                recoverable_outcome(outcome),
+                outcome.is_recoverable(),
+                "launcher recovery policy disagrees with sidecar for {}",
+                outcome.kind()
+            );
+            assert!(!outcome.kind().is_empty());
+            assert!(!outcome.user_message().is_empty());
+        }
     }
 
     #[test]
