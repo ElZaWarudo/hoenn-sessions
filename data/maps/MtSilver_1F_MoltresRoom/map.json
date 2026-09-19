@@ -2,7 +2,7 @@
   "id": "MAP_MT_SILVER_1F_MOLTRES_ROOM",
   "name": "MtSilver_1F_MoltresRoom",
   "layout": "LAYOUT_JOHTO_MT_SILVER_1F_MOLTRES_ROOM",
-  "music": "MUS_HG_LIGHTHOUSE",
+  "music": "MUS_OCEANIC_MUSEUM",
   "region_map_section": "MAPSEC_JOHTO_MT_SILVER",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MOLTRES",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MOLTRES)",
       "x": 17,
       "y": 20,
       "elevation": 0,
@@ -25,7 +25,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtSilver_1F_MoltresRoom_MtSilver_1F_MoltresRoom_EventScript_Moltres",
-      "flag": "FLAG_HIDE_MOLTRES"
+      "flag": "JOHTO_FLAG_HIDE_MOLTRES"
     }
   ],
   "warp_events": [

@@ -14,7 +14,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from tools.johto.region_manifest import EXPECTED_SECTION_TAIL_IDS
+from tools.johto.region_manifest import (
+    EXPECTED_SECTION_ALLOCATION_ORDER,
+    EXPECTED_SECTION_TAIL_IDS,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -81,16 +84,12 @@ def _tail_symbols(manifest: dict[str, Any]) -> tuple[str, ...]:
     order = sections.get("allocation_order")
     if (
         not isinstance(order, list)
-        or len(order) != 42
-        or order[0] != "MAPSEC_NEW_BARK_TOWN"
-        or order.count("MAPSEC_KANTO_VICTORY_ROAD") != 1
+        or tuple(order) != EXPECTED_SECTION_ALLOCATION_ORDER
     ):
         raise SectionRegistrationError("region manifest section allocation order drifted")
-    if not all(isinstance(symbol, str) for symbol in order):
-        raise SectionRegistrationError("region manifest Johto tail is malformed")
     tail = tuple(symbol for symbol in order if symbol.startswith("MAPSEC_JOHTO_"))
-    if tail != EXPECTED_SECTION_TAIL_IDS or len(set(tail)) != 40:
-        raise SectionRegistrationError("region manifest Johto tail is malformed")
+    if tail != EXPECTED_SECTION_TAIL_IDS:
+        raise SectionRegistrationError("region manifest section allocation order drifted")
     entries = sections.get("entries")
     ids = {
         entry.get("target_symbol"): entry.get("target_id")

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "unit": "j3-haircut",
-  "campaign_ready": false,
+  "campaign_ready": true,
   "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
   "source_root": "johto-hns/src/field_specials.c",
   "provenance": {
@@ -30,10 +30,9 @@
     "Use host CalculateFriendshipBonuses and ShouldSkipFriendshipChange policy",
     "Preserve host Enigma Berry hold-effect branch and MAX_FRIENDSHIP saturation",
     "Append an effects-aware HaircutBrother1 special with explicit boolean result",
-    "Leave map payment, daily gate and campaign integration to the later script importer"
+    "Use generated Goldenrod scripts for payment, daily gates, and the HaircutBrother1 call"
   ],
   "limitations": [
-    "Goldenrod map script payment and daily-limit wiring remains subsequent importer work",
-    "Root GBA build and real emulator evidence remain external to this unit"
+    "Goldenrod payment and daily-limit scripts are linked; real emulator interaction remains pending validation."
   ]
 }

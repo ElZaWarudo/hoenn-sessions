@@ -2,7 +2,7 @@
   "id": "MAP_CHERRYGROVE_CITY_MART",
   "name": "CherrygroveCity_Mart",
   "layout": "LAYOUT_JOHTO_CHERRYGROVE_CITY_MART",
-  "music": "MUS_HG_POKE_MART",
+  "music": "MUS_POKE_MART",
   "region_map_section": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_CLERK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CLERK",
       "x": 2,
       "y": 3,
       "elevation": 3,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 3,
       "y": 5,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BUG_CATCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BUG_CATCHER",
       "x": 8,
       "y": 5,
       "elevation": 0,

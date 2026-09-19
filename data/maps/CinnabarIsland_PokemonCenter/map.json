@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_NURSE",
       "x": 7,
       "y": 2,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_NURSE_CHANSEY",
       "x": 8,
       "y": 2,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 1,
       "y": 6,
       "elevation": 0,

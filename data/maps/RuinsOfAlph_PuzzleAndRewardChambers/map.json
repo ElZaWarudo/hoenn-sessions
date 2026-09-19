@@ -2,7 +2,7 @@
   "id": "MAP_RUINS_OF_ALPH_PUZZLE_AND_REWARD_CHAMBERS",
   "name": "RuinsOfAlph_PuzzleAndRewardChambers",
   "layout": "LAYOUT_JOHTO_RUINS_OF_ALPH_PUZZLE_AND_REWARD_CHAMBERS",
-  "music": "MUS_HG_RUINS_OF_ALPH",
+  "music": "MUS_SEALED_CHAMBER",
   "region_map_section": "MAPSEC_JOHTO_RUINS_OF_ALPH",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_ATTENDANT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ATTENDANT",
       "x": 24,
       "y": 5,
       "elevation": 0,
@@ -38,7 +38,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_LumBerry1",
-      "flag": "FLAG_ITEM_RUINSOFALPH_LUM_BERRY_1"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_LUM_BERRY_1"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -51,7 +51,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_Charcoal",
-      "flag": "FLAG_ITEM_RUINSOFALPH_CHARCOAL"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_CHARCOAL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -64,7 +64,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_MaxRevive1",
-      "flag": "FLAG_ITEM_RUINSOFALPH_MAX_REVIVE_1"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_MAX_REVIVE_1"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -77,7 +77,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_SacredAsh",
-      "flag": "FLAG_ITEM_RUINSOFALPH_SACRED_ASH"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_SACRED_ASH"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -90,7 +90,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_HealPowder1",
-      "flag": "FLAG_ITEM_RUINSOFALPH_HEAL_POWDER_1"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_HEAL_POWDER_1"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -103,7 +103,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_EnergyRoot",
-      "flag": "FLAG_ITEM_RUINSOFALPH_ENERGY_ROOT"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_ENERGY_ROOT"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -116,7 +116,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_SitrusBerry2",
-      "flag": "FLAG_ITEM_RUINSOFALPH_SITRUS_BERRY_2"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_SITRUS_BERRY_2"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -129,7 +129,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_MoonStone",
-      "flag": "FLAG_ITEM_RUINSOFALPH_MOON_STONE"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_MOON_STONE"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -142,7 +142,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_PechaBerry",
-      "flag": "FLAG_ITEM_RUINSOFALPH_PECHA_BERRY"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_PECHA_BERRY"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -155,7 +155,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_EnergyPowder",
-      "flag": "FLAG_ITEM_RUINSOFALPH_ENERGY_POWDER"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_ENERGY_POWDER"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -168,7 +168,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_HealPowder2",
-      "flag": "FLAG_ITEM_RUINSOFALPH_HEAL_POWDER_2"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_HEAL_POWDER_2"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -181,7 +181,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_OranBerry",
-      "flag": "FLAG_ITEM_RUINSOFALPH_ORAN_BERRY"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_ORAN_BERRY"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -194,7 +194,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_WaterStone",
-      "flag": "FLAG_ITEM_RUINSOFALPH_WATER_STONE"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_WATER_STONE"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -207,7 +207,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_StarPiece",
-      "flag": "FLAG_ITEM_RUINSOFALPH_STAR_PIECE"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_STAR_PIECE"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -220,7 +220,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_Stardust",
-      "flag": "FLAG_ITEM_RUINSOFALPH_STARDUST"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_STARDUST"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -233,7 +233,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_EventScript_Item_LumBerry2",
-      "flag": "FLAG_ITEM_RUINSOFALPH_LUM_BERRY_2"
+      "flag": "JOHTO_FLAG_ITEM_RUINSOFALPH_LUM_BERRY_2"
     }
   ],
   "warp_events": [

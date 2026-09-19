@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "unit": "j3-daily-events",
-  "campaign_ready": false,
-  "engine_hooks_ready": false,
+  "campaign_ready": true,
+  "engine_hooks_ready": true,
   "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
   "selected_daily_flags": [
     {
@@ -65,7 +65,7 @@
     "Keep the selected source identities generated and namespaced; do not edit constants/flags.h."
   ],
   "limitations": [
-    "Contest, haircut, lottery, payment, and map service behavior remain subsequent units.",
-    "Root-owned aggregate engine and production runtime evidence remain external to this worker."
+    "Contest, haircut, and lottery campaign scripts consume the relocated flags; emulator day-rollover validation remains pending.",
+    "Production engine fixture execution remains part of aggregate validation."
   ]
 }

@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE4",
   "name": "Route4",
   "layout": "LAYOUT_KANTO_LATER_ROUTE4",
-  "music": "MUS_HG_ROUTE3",
+  "music": "MUS_RG_ROUTE3",
   "region_map_section": "MAPSEC_ROUTE_4",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -41,10 +41,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route4_Route4_EventScript_HpUp",
-      "flag": "FLAG_ITEM_ROUTE4_HPUP"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE4_HPUP"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PICNICKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PICNICKER",
       "x": 67,
       "y": 4,
       "elevation": 0,
@@ -70,7 +70,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PICNICKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PICNICKER",
       "x": 61,
       "y": 17,
       "elevation": 0,
@@ -83,7 +83,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEY)",
       "x": 58,
       "y": 0,
       "elevation": 0,
@@ -96,7 +96,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_EKANS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(EKANS)",
       "x": 72,
       "y": 13,
       "elevation": 0,
@@ -117,12 +117,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_TAMATO_2",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_ROUTE_4_TAMATO_2",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEVIPER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEVIPER)",
       "x": 83,
       "y": 0,
       "elevation": 0,
@@ -132,10 +132,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ZANGOOSE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ZANGOOSE)",
       "x": 30,
       "y": 16,
       "elevation": 0,
@@ -145,7 +145,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -158,10 +158,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route4_Route4_EventScript_UltraBall",
-      "flag": "FLAG_ITEM_ROUTE4_ULTRABALL"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE4_ULTRABALL"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
       "x": 50,
       "y": 3,
       "elevation": 3,

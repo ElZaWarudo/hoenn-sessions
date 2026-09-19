@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_NURSE",
       "x": 7,
       "y": 2,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_NURSE_CHANSEY",
       "x": 8,
       "y": 2,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_EUSINE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_EUSINE",
       "x": 5,
       "y": 4,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_CeladonCity_PokemonCenter_CeladonCity_PokemonCenter_EventScript_Eusine",
-      "flag": "FLAG_HIDE_CELADON_EUSINE"
+      "flag": "JOHTO_FLAG_HIDE_CELADON_EUSINE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 2,
       "y": 5,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BATTLE_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_BATTLE_GIRL",
       "x": 12,
       "y": 5,
       "elevation": 0,

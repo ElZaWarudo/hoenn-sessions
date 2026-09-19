@@ -2,7 +2,7 @@
   "id": "MAP_SSAQUA_ROOM_SSW",
   "name": "SSAqua_RoomSSW",
   "layout": "LAYOUT_JOHTO_SSAQUA_ROOM_SSW",
-  "music": "MUS_HG_SS_AQUA",
+  "music": "MUS_SAILING",
   "region_map_section": "MAPSEC_JOHTO_SS_AQUA",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_FIREBREATHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_FIREBREATHER",
       "x": 1,
       "y": 4,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BUG_CATCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BUG_CATCHER",
       "x": 5,
       "y": 2,
       "elevation": 0,

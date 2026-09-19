@@ -26,13 +26,18 @@ TEST("Johto sections agree across engine and co-op authorities")
     enum CoopRegion normalized;
     for (section = JOHTO_MAPSEC_START; section <= JOHTO_MAPSEC_END; section++)
     {
+        bool32 isKantoRoute = section >= MAPSEC_JOHTO_ROUTE_26
+            && section <= MAPSEC_JOHTO_ROUTE_28;
+        enum CoopRegion expectedCoopRegion = isKantoRoute ? COOP_REGION_KANTO : COOP_REGION_JOHTO;
+
         EXPECT_EQ(GetRegionForSectionId(section), REGION_JOHTO);
-        EXPECT_EQ(CoopRegion_FromSectionId(section), COOP_REGION_JOHTO);
+        EXPECT_EQ(CoopRegion_FromSectionId(section), expectedCoopRegion);
         normalized = COOP_REGION_UNSPECIFIED;
-        EXPECT(CoopRegion_Normalize(&normalized, REGION_JOHTO, section));
-        EXPECT_EQ(normalized, COOP_REGION_JOHTO);
+        EXPECT(CoopRegion_Normalize(&normalized, isKantoRoute ? REGION_KANTO : REGION_JOHTO, section));
+        EXPECT_EQ(normalized, expectedCoopRegion);
         EXPECT(!CoopRegion_Normalize(&normalized, REGION_HOENN, section));
-        EXPECT(!CoopRegion_Normalize(&normalized, REGION_KANTO, section));
+        EXPECT_EQ(CoopRegion_Normalize(&normalized, REGION_KANTO, section), isKantoRoute);
+        EXPECT_EQ(CoopRegion_Normalize(&normalized, REGION_JOHTO, section), !isKantoRoute);
     }
     EXPECT_EQ(GetRegionForSectionId(MAPSEC_LITTLEROOT_TOWN), REGION_HOENN);
     EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_LITTLEROOT_TOWN), COOP_REGION_HOENN);

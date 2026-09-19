@@ -2,7 +2,7 @@
   "id": "MAP_TOHJO_FALLS_CAVERN",
   "name": "TohjoFalls_Cavern",
   "layout": "LAYOUT_JOHTO_TOHJO_FALLS_CAVERN",
-  "music": "MUS_HG_UNION_CAVE",
+  "music": "MUS_PETALBURG_WOODS",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_27",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_TohjoFalls_Cavern_TohjoFalls_Cavern_EventScript_HeartScale",
-      "flag": "FLAG_ITEM_TOHJOFALLS_HEART_SCALE"
+      "flag": "JOHTO_FLAG_ITEM_TOHJOFALLS_HEART_SCALE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SLOWPOKE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SLOWPOKE)",
       "x": 42,
       "y": 10,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SLOWPOKE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SLOWPOKE)",
       "x": 45,
       "y": 11,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SLOWPOKE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SLOWPOKE)",
       "x": 49,
       "y": 10,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ZUBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ZUBAT)",
       "x": 15,
       "y": 22,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATICATE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATICATE)",
       "x": 41,
       "y": 25,
       "elevation": 0,

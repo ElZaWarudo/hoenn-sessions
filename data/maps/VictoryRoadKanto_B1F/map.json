@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_B1F",
   "name": "VictoryRoadKanto_B1F",
   "layout": "LAYOUT_KANTO_LATER_VICTORY_ROAD_KANTO_B1F",
-  "music": "MUS_HG_VICTORY_ROAD",
+  "music": "MUS_VICTORY_ROAD",
   "region_map_section": "MAPSEC_KANTO_VICTORY_ROAD",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_QUAGSIRE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(QUAGSIRE)",
       "x": 37,
       "y": 26,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_WOOPER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(WOOPER)",
       "x": 38,
       "y": 27,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RHYDON",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RHYDON)",
       "x": 27,
       "y": 1,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DONPHAN",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DONPHAN)",
       "x": 18,
       "y": 9,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SANDSLASH",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SANDSLASH)",
       "x": 31,
       "y": 9,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PUSHABLE_BOULDER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PUSHABLE_BOULDER",
       "x": 9,
       "y": 11,
       "elevation": 0,
@@ -93,7 +93,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PUSHABLE_BOULDER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PUSHABLE_BOULDER",
       "x": 48,
       "y": 12,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VictoryRoadKanto_B1F_VictoryRoadKanto_B1F_EventScript_Item_MaxRevive",
-      "flag": "FLAG_ITEM_VICTORYROAD2_MAX_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_VICTORYROAD2_MAX_REVIVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLEM",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLEM)",
       "x": 42,
       "y": 17,
       "elevation": 0,
@@ -142,7 +142,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VictoryRoadKanto_B1F_VictoryRoadKanto_B1F_EventScript_Item_HpUp",
-      "flag": "FLAG_ITEM_VICTORYROAD2_HP_UP"
+      "flag": "JOHTO_FLAG_ITEM_VICTORYROAD2_HP_UP"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -155,7 +155,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VictoryRoadKanto_B1F_VictoryRoadKanto_B1F_EventScript_Item_FullRestore",
-      "flag": "FLAG_ITEM_VICTORYROAD2_FULL_RESTORE"
+      "flag": "JOHTO_FLAG_ITEM_VICTORYROAD2_FULL_RESTORE"
     }
   ],
   "warp_events": [

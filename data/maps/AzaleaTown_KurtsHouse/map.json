@@ -2,7 +2,7 @@
   "id": "MAP_AZALEA_TOWN_KURTS_HOUSE",
   "name": "AzaleaTown_KurtsHouse",
   "layout": "LAYOUT_JOHTO_AZALEA_TOWN_KURTS_HOUSE",
-  "music": "MUS_HG_AZALEA",
+  "music": "MUS_FALLARBOR",
   "region_map_section": "MAPSEC_JOHTO_AZALEA_TOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_KURT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KURT",
       "x": 4,
       "y": 3,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_AzaleaTown_KurtsHouse_AzaleaTown_KurtsHouse_EventScript_KurtBefore",
-      "flag": "FLAG_HIDE_KURT_1"
+      "flag": "JOHTO_FLAG_HIDE_KURT_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_1",
       "x": 10,
       "y": 5,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KURT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KURT",
       "x": 15,
       "y": 3,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_AzaleaTown_KurtsHouse_AzaleaTown_KurtsHouse_EventScript_Kurt",
-      "flag": "FLAG_HIDE_KURT_2"
+      "flag": "JOHTO_FLAG_HIDE_KURT_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SLOWPOKE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SLOWPOKE)",
       "x": 9,
       "y": 4,
       "elevation": 0,
@@ -64,7 +64,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_AzaleaTown_AzaleaTown_EventScript_Slowpoke",
-      "flag": "FLAG_HIDE_AZALEA_TOWN_SLOWPOKE"
+      "flag": "JOHTO_FLAG_HIDE_AZALEA_TOWN_SLOWPOKE"
     }
   ],
   "warp_events": [

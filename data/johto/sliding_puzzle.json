@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "unit": "j3-sliding-puzzle",
-  "campaign_ready": false,
+  "campaign_ready": true,
   "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
   "source_root": "johto-hns/graphics/sliding_puzzle",
   "provenance": {
@@ -85,7 +85,6 @@
     "puzzles/omanyte/tiles.png": "23227983f47c72d947f5ffac5486eabbce80b91e55e7232d02f3b279b107befc"
   },
   "limitations": [
-    "Chamber map/event linkage remains subsequent importer work",
-    "Root GBA build and real keypad emulator evidence remain external to this unit"
+    "All four chamber puzzle events are map-bound to generated DoSlidingPuzzle consumers; real keypad emulator validation remains pending."
   ]
 }

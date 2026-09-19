@@ -191,8 +191,79 @@ TEST("Johto source tables preserve representative slots and effective host width
     EXPECT(sourceMatches);
     EXPECT_EQ(LAND_WILD_COUNT, 12);
     EXPECT_EQ(WATER_WILD_COUNT, 5);
+    EXPECT_EQ(WATER_WILD_COUNT_MAX, 12);
     EXPECT_EQ(ROCK_WILD_COUNT, 5);
     EXPECT_EQ(FISH_WILD_COUNT, 10);
+}
+
+TEST("Johto water selectors reach every emitted source slot")
+{
+    bool8 allReachable = TRUE;
+    bool8 sawTenSlots = FALSE;
+    bool8 sawTwelveSlots = FALSE;
+    u32 headerId;
+
+    for (headerId = 0; gWildMonHeaders[headerId].mapGroup != MAP_GROUP(MAP_UNDEFINED); headerId++)
+    {
+        const struct WildPokemonHeader *header = &gWildMonHeaders[headerId];
+        u32 time;
+
+        if (header->mapGroup < 75 || header->mapGroup > 78)
+            continue;
+
+        for (time = 0; time < TIMES_OF_DAY_COUNT; time++)
+        {
+            const struct WildPokemonInfo *water = header->encounterTypes[time].waterMonsInfo;
+            bool8 reached[12] = {FALSE};
+            u32 count;
+            u32 roll;
+            u32 slot;
+
+            if (water == NULL)
+                continue;
+            count = GetWaterWildMonCount(water);
+            if (count == 10)
+                sawTenSlots = TRUE;
+            else if (count == 12)
+                sawTwelveSlots = TRUE;
+            else if (count != 5)
+                allReachable = FALSE;
+            if (count > ARRAY_COUNT(reached))
+            {
+                allReachable = FALSE;
+                continue;
+            }
+
+            for (roll = 0; roll < 100; roll++)
+            {
+                u32 selected = ChooseWildMonIndex_WaterWithRoll(water, roll, FALSE);
+                if (selected >= count)
+                    allReachable = FALSE;
+                else
+                    reached[selected] = TRUE;
+            }
+            for (slot = 0; slot < count; slot++)
+            {
+                if (!reached[slot])
+                    allReachable = FALSE;
+                if (ChooseWildMonIndex_WaterWithRoll(water, slot, TRUE) >= count)
+                    allReachable = FALSE;
+            }
+        }
+    }
+
+    EXPECT(allReachable);
+    EXPECT(sawTenSlots);
+    EXPECT(sawTwelveSlots);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 0, FALSE), 0);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 59, FALSE), 0);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 60, FALSE), 1);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 89, FALSE), 1);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 90, FALSE), 2);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 94, FALSE), 2);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 95, FALSE), 3);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 98, FALSE), 3);
+    EXPECT_EQ(ChooseWildMonIndex_WaterWithRoll(NULL, 99, FALSE), 4);
 }
 
 TEST("Johto live RTC selector drives Johto and preserves the ordinary host path")
@@ -205,24 +276,37 @@ TEST("Johto live RTC selector drives Johto and preserves the ordinary host path"
     struct SiiRtcInfo savedFakeRtc = gSaveBlock3Ptr->fakeRTC;
 #endif
     const u8 hours[] = { 5, 6, 17, 18 };
+    const struct JohtoWildMapLink rtcMaps[] =
+    {
+        { 75, 11 }, // MAP_ROUTE29, Johto boundary.
+        { 77, 0 },  // MAP_PALLET_TOWN, Later-Kanto outdoor boundary.
+        { 78, 21 }, // MAP_VICTORY_ROAD_KANTO_B2F, Later-Kanto dungeon boundary.
+    };
     const enum TimeOfDay expected[] = { TIME_NIGHT, TIME_DAY, TIME_DAY, TIME_NIGHT };
-    enum TimeOfDay actual[sizeof(hours) / sizeof(hours[0])];
-    bool8 johtoHeaderFound;
-    u16 johtoHeaderId;
+    enum TimeOfDay actual[ARRAY_COUNT(rtcMaps)][ARRAY_COUNT(hours)] = {0};
+    bool8 rtcHeadersFound = TRUE;
     u16 ordinaryHeaderId;
     bool8 ordinaryPath;
+    u32 mapIndex;
     u32 i;
 
-    SetTestMap(75, 11); // MAP_ROUTE29.
-    johtoHeaderId = GetCurrentMapWildMonHeaderId();
-    johtoHeaderFound = johtoHeaderId != HEADER_NONE;
     RtcInitLocalTimeOffset(0, 0);
-    for (i = 0; i < sizeof(hours) / sizeof(hours[0]); i++)
+    for (mapIndex = 0; mapIndex < ARRAY_COUNT(rtcMaps); mapIndex++)
     {
-        RtcCalcLocalTimeOffset(0, hours[i], 30, 0);
-        actual[i] = johtoHeaderFound
-            ? GetTimeOfDayForEncounters(johtoHeaderId, WILD_AREA_LAND)
-            : TIME_OF_DAY_DEFAULT;
+        u16 headerId;
+
+        SetTestMap(rtcMaps[mapIndex].group, rtcMaps[mapIndex].num);
+        headerId = GetCurrentMapWildMonHeaderId();
+        if (headerId == HEADER_NONE)
+        {
+            rtcHeadersFound = FALSE;
+            continue;
+        }
+        for (i = 0; i < ARRAY_COUNT(hours); i++)
+        {
+            RtcCalcLocalTimeOffset(0, hours[i], 30, 0);
+            actual[mapIndex][i] = GetTimeOfDayForEncounters(headerId, WILD_AREA_LAND);
+        }
     }
 
     SetTestMap(MAP_GROUP(MAP_ROUTE101), MAP_NUM(MAP_ROUTE101));
@@ -240,9 +324,12 @@ TEST("Johto live RTC selector drives Johto and preserves the ordinary host path"
     gSaveBlock3Ptr->fakeRTC = savedFakeRtc;
 #endif
 
-    EXPECT(johtoHeaderFound);
-    for (i = 0; i < sizeof(hours) / sizeof(hours[0]); i++)
-        EXPECT_EQ(actual[i], expected[i]);
+    EXPECT(rtcHeadersFound);
+    for (mapIndex = 0; mapIndex < ARRAY_COUNT(rtcMaps); mapIndex++)
+    {
+        for (i = 0; i < ARRAY_COUNT(hours); i++)
+            EXPECT_EQ(actual[mapIndex][i], expected[i]);
+    }
     EXPECT(ordinaryPath);
 }
 

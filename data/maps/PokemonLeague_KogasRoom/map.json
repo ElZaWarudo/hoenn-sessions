@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_POKEMON_LEAGUE_KOGAS_ROOM",
   "name": "PokemonLeague_KogasRoom",
   "layout": "LAYOUT_KANTO_LATER_POKEMON_LEAGUE_KOGAS_ROOM",
-  "music": "MUS_HG_POKEMON_LEAGUE",
+  "music": "MUS_VICTORY_ROAD",
   "region_map_section": "MAPSEC_INDIGO_PLATEAU",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -11,7 +11,7 @@
   "allow_escaping": false,
   "allow_running": false,
   "show_map_name": false,
-  "battle_scene": "MAP_BATTLE_SCENE_KOGA",
+  "battle_scene": "MAP_BATTLE_SCENE_PHOEBE",
   "connections": [],
   "object_events": [
     {

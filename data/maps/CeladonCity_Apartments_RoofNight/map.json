@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_CELADON_CITY_APARTMENTS_ROOF_NIGHT",
   "name": "CeladonCity_Apartments_RoofNight",
   "layout": "LAYOUT_KANTO_LATER_CELADON_CITY_APARTMENTS_ROOF_NIGHT",
-  "music": "MUS_HG_CELADON",
+  "music": "MUS_RG_CELADON",
   "region_map_section": "MAPSEC_CELADON_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 10,
       "y": 8,
       "elevation": 0,

@@ -2,7 +2,7 @@
   "id": "MAP_GATE_ECRUTEAK_CITY_ROUTE38",
   "name": "Gate_EcruteakCity_Route38",
   "layout": "LAYOUT_JOHTO_GATE_ECRUTEAK_CITY_ROUTE38",
-  "music": "MUS_HG_ROUTE38",
+  "music": "MUS_GSC_ROUTE38",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_38",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
       "x": 6,
       "y": 2,
       "elevation": 0,

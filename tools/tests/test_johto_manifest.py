@@ -56,6 +56,28 @@ class ManifestContractTests(unittest.TestCase):
                             for m in later))
         self.assertEqual(len({m["proposed_map"]["map_id"] for m in maps}), 407)
 
+    def test_live_host_identity_preserves_baseline_and_manifest_tail(self):
+        baseline = manifest._host_identity(manifest.HOST_IDENTITY_BASELINE)
+        live = json.loads((manifest.ROOT / "data/maps/map_groups.json").read_text(
+            encoding="utf-8"
+        ))
+        baseline_count = len(baseline["group_order"])
+        self.assertEqual(live["group_order"][:baseline_count], baseline["group_order"])
+        self.assertEqual(
+            live["group_order"][baseline_count:],
+            ["gMapGroup_Johto_2", "gMapGroup_KantoLater", "gMapGroup_KantoLater_2"],
+        )
+        expected_counts = {
+            "gMapGroup_Johto_2": 111,
+            "gMapGroup_KantoLater": 128,
+            "gMapGroup_KantoLater_2": 40,
+        }
+        self.assertEqual(
+            {group: len(live[group]) for group in expected_counts},
+            expected_counts,
+        )
+        manifest._assert_host_identity(baseline)
+
     def test_sections_aliases_and_reservations(self):
         sections = self.ledger["sections"]
         self.assertEqual(sections["source_count"], 99)
@@ -81,6 +103,13 @@ class ManifestContractTests(unittest.TestCase):
                              if m["source_map"] == "MAP_RECEPTION_GATE")
         self.assertEqual(reception_map["region"], "REGION_KANTO")
         self.assertEqual(reception_map["resolved_section"]["alias_target"], "RECEPTION_GATE")
+        self.assertEqual(
+            tuple(sections["allocation_order"]),
+            manifest.EXPECTED_SECTION_ALLOCATION_ORDER,
+        )
+        self.assertEqual(len(sections["allocation_order"]), 84)
+        self.assertEqual(sections["allocation_order"][36], "MAPSEC_KANTO_VICTORY_ROAD")
+        self.assertEqual(sections["allocation_order"][-1], "MAPSEC_SEAFOAM_ISLANDS")
 
     def test_later_identity_ledger_is_explicit_and_pinned(self):
         extension = self.ledger["era_extension"]
@@ -104,7 +133,7 @@ class ManifestContractTests(unittest.TestCase):
             encoding="utf-8"
         ))
         expected = {entry["source_map"]: entry["target_layout_id"]
-                    for entry in scenery["layouts"]}
+                    for entry in scenery["layouts"][:manifest.EXPECTED_ORIGINAL_SELECTED]}
         original = self.ledger["maps"][:manifest.EXPECTED_ORIGINAL_SELECTED]
         self.assertEqual(len(expected), manifest.EXPECTED_ORIGINAL_SELECTED)
         self.assertEqual({item["source_map"] for item in original}, set(expected))
@@ -116,7 +145,15 @@ class ManifestContractTests(unittest.TestCase):
                             or item["source_map"] == "MAP_NEW_BARK_TOWN"
                             for item in original))
         later = self.ledger["maps"][manifest.EXPECTED_ORIGINAL_SELECTED:]
+        later_expected = {
+            entry["source_map"]: entry["target_layout_id"]
+            for entry in scenery["layouts"][manifest.EXPECTED_ORIGINAL_SELECTED:]
+        }
         later_layouts = [item["identity_namespace"]["layout"] for item in later]
+        self.assertEqual(
+            {item["source_map"]: item["identity_namespace"]["layout"] for item in later},
+            later_expected,
+        )
         self.assertEqual(len(later_layouts), len(set(later_layouts)))
         self.assertTrue(all(layout.startswith("LAYOUT_KANTO_LATER_") for layout in later_layouts))
         self.assertTrue(set(later_layouts).isdisjoint(expected.values()))
@@ -229,7 +266,10 @@ class ManifestSyntheticContractTests(unittest.TestCase):
         baseline = manifest._host_identity(manifest.HOST_IDENTITY_BASELINE)
         changed = copy.deepcopy(baseline)
         changed["group_order"] = list(reversed(changed["group_order"]))
-        with self.assertRaisesRegex(manifest.ManifestError, "group order"):
+        with self.assertRaisesRegex(
+            manifest.ManifestError,
+            "host map group order does not preserve immutable baseline prefix",
+        ):
             manifest._assert_host_identity(changed)
         changed = copy.deepcopy(baseline)
         first_group = changed["group_order"][0]
@@ -238,6 +278,62 @@ class ManifestSyntheticContractTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(manifest.ManifestError, "identity/order"):
             manifest._assert_host_identity(changed)
+
+    def test_host_identity_rejects_extension_of_legacy_baseline_group(self):
+        baseline = manifest._host_identity(manifest.HOST_IDENTITY_BASELINE)
+        live_path = manifest.ROOT / "data/maps/map_groups.json"
+        live = json.loads(live_path.read_text(encoding="utf-8"))
+        legacy_group = baseline["group_order"][0]
+        live[legacy_group].append("UnexpectedLegacyMap")
+        original_load = manifest._load
+
+        def load_with_extended_legacy_group(path):
+            return live if Path(path) == live_path else original_load(path)
+
+        with mock.patch.object(manifest, "_load", side_effect=load_with_extended_legacy_group):
+            with self.assertRaisesRegex(
+                manifest.ManifestError,
+                f"host map group identity/order differs from baseline: {legacy_group}",
+            ):
+                manifest._assert_host_identity(baseline)
+
+    def test_host_identity_accepts_only_reviewed_legacy_adapter_tails(self):
+        baseline = manifest._host_identity(manifest.HOST_IDENTITY_BASELINE)
+        live_path = manifest.ROOT / "data/maps/map_groups.json"
+        live = json.loads(live_path.read_text(encoding="utf-8"))
+        adapters = manifest._host_adapter_identities()
+        for group, adapter in adapters.items():
+            expected_prefix = [entry["name"] for entry in baseline["groups"][group]]
+            self.assertEqual(live[group], [*expected_prefix, adapter["name"]])
+            self.assertEqual(adapter["index"], len(expected_prefix))
+        manifest._assert_host_identity(baseline)
+
+    def test_host_identity_rejects_adapter_tail_drift(self):
+        baseline = manifest._host_identity(manifest.HOST_IDENTITY_BASELINE)
+        live_path = manifest.ROOT / "data/maps/map_groups.json"
+        source = json.loads(live_path.read_text(encoding="utf-8"))
+        original_load = manifest._load
+
+        for group in manifest.EXPECTED_HOST_ADAPTERS:
+            for mutation in ("extra", "wrong_name", "reordered"):
+                with self.subTest(group=group, mutation=mutation):
+                    live = copy.deepcopy(source)
+                    if mutation == "extra":
+                        live[group].append("UnexpectedAdapterMap")
+                    elif mutation == "wrong_name":
+                        live[group][-1] = "WrongAdapterMap"
+                    else:
+                        live[group][-1], live[group][-2] = live[group][-2], live[group][-1]
+
+                    def load_with_drift(path):
+                        return live if Path(path) == live_path else original_load(path)
+
+                    with mock.patch.object(manifest, "_load", side_effect=load_with_drift):
+                        with self.assertRaisesRegex(
+                            manifest.ManifestError,
+                            f"host map group identity/order differs from baseline: {group}",
+                        ):
+                            manifest._assert_host_identity(baseline)
 
     def test_dirty_donor_inputs_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory:

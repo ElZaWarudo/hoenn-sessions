@@ -132,13 +132,20 @@ EVs: 252 Atk / 252 SpA / 6 SpD
         self.assertEqual(re.findall(r"ANIMCMD_FRAME\((\d+), (\d+)\)", animation), [("0", "24"), ("1", "9"), ("2", "24"), ("0", "9"), ("3", "50")])
         self.assertIn("ANIMCMD_END", animation)
 
-    def test_provenance_binds_source_and_keeps_campaign_gate_closed(self):
+    def test_provenance_binds_source_and_campaign_consumer(self):
         self.assertEqual(self.meta["provenance"]["donor_revision"], DONOR_REVISION)
-        self.assertFalse(self.meta["campaign_battle_ready"])
+        self.assertTrue(self.meta["campaign_battle_ready"])
         self.assertEqual(self.meta["partner"]["party"][0]["held_item"], "ITEM_NONE")
         self.assertEqual(self.meta["presentation"]["throw_frames"], [0, 1, 2, 0, 3])
         self.assertEqual(self.meta["presentation"]["throw_durations"], [24, 9, 24, 9, 50])
         self.assertEqual(self.meta["presentation"]["neutral_frame"], 3)
+
+        campaign = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+        call = "multi_2_vs_2 JOHTO_TRAINER_ARIANA_1, Johto_RocketHideout_B2F_RocketHideout_B2F_Text_ArianaLoss, JOHTO_TRAINER_GRUNT_23, Johto_RocketHideout_B2F_RocketHideout_B2F_Text_GruntLoss, PARTNER_LANCE"
+        self.assertEqual(campaign.count(call), 1)
+        partner_source = (ROOT / "src/battle_partner.c").read_text(encoding="utf-8")
+        self.assertIn("gBattlePartners[difficulty][trainerId - TRAINER_PARTNER(PARTNER_NONE)].party", partner_source)
+        self.assertIn("FillPartnerParty(gPartnerTrainerId);", (ROOT / "src/battle_special.c").read_text(encoding="utf-8"))
 
 if __name__ == "__main__":
     unittest.main()

@@ -125,7 +125,11 @@ int get_map_engine_region_value(const Json &map_data) {
     /* A missing region must not silently assign a Johto section to Hoenn. */
     bool johto_section = section == "MAPSEC_NEW_BARK_TOWN"
                       || section.rfind("MAPSEC_JOHTO_", 0) == 0;
-    if ((region == "REGION_JOHTO") != johto_section)
+    bool kanto_border_section = section == "MAPSEC_JOHTO_ROUTE_26"
+                             || section == "MAPSEC_JOHTO_ROUTE_27"
+                             || section == "MAPSEC_JOHTO_ROUTE_28";
+    if ((kanto_border_section && region != "REGION_KANTO")
+     || (!kanto_border_section && (region == "REGION_JOHTO") != johto_section))
         FATAL_ERROR("Map engine region '%s' contradicts section '%s'.\n", region.c_str(), section.c_str());
 
     /* An absent region is the only form that inherits the original Emerald

@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE42",
   "name": "Route42",
   "layout": "LAYOUT_JOHTO_ROUTE42",
-  "music": "MUS_HG_ROUTE42",
+  "music": "MUS_ROUTE120",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_42",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 12,
       "y": 6,
       "elevation": 0,
@@ -36,10 +36,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route42_Route42_EventScript_Item_SuperPotion",
-      "flag": "FLAG_ITEM_ROUTE42_SUPER_POTION"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE42_SUPER_POTION"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 31,
       "y": 9,
       "elevation": 0,
@@ -49,10 +49,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route42_Route42_EventScript_Item_UltraBall",
-      "flag": "FLAG_ITEM_ROUTE42_ULTRA_BALL"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE42_ULTRA_BALL"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 36,
       "y": 15,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 32,
       "y": 12,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 63,
       "y": 15,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_HIKER",
       "x": 66,
       "y": 9,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_REMORAID",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(REMORAID)",
       "x": 25,
       "y": 22,
       "elevation": 0,
@@ -117,7 +117,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_REMORAID",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(REMORAID)",
       "x": 27,
       "y": 23,
       "elevation": 0,
@@ -130,7 +130,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HERACROSS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HERACROSS)",
       "x": 49,
       "y": 21,
       "elevation": 0,
@@ -143,7 +143,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FEAROW)",
       "x": 31,
       "y": 4,
       "elevation": 0,
@@ -156,7 +156,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATICATE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATICATE)",
       "x": 51,
       "y": 6,
       "elevation": 0,
@@ -169,7 +169,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ARBOK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ARBOK)",
       "x": 46,
       "y": 19,
       "elevation": 0,
@@ -182,7 +182,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ARBOK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ARBOK)",
       "x": 49,
       "y": 29,
       "elevation": 0,
@@ -195,7 +195,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GLIGAR",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GLIGAR)",
       "x": 60,
       "y": 22,
       "elevation": 0,
@@ -208,7 +208,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GLIGAR",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GLIGAR)",
       "x": 71,
       "y": 17,
       "elevation": 0,
@@ -229,12 +229,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_CHESTO_2",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_CHESTO_2",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SUICUNE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SUICUNE)",
       "x": 42,
       "y": 18,
       "elevation": 0,
@@ -244,10 +244,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROUTE42_SUICUNE"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE42_SUICUNE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 52,
       "y": 8,
       "elevation": 0,
@@ -257,10 +257,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route42_Route42_EventScript_Item_Mint",
-      "flag": "FLAG_ITEM_ROUTE42_MODEST_MINT"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE42_MODEST_MINT"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_EUSINE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_EUSINE",
       "x": 40,
       "y": 11,
       "elevation": 0,
@@ -270,7 +270,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROUTE42_EUSINE"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE42_EUSINE"
     }
   ],
   "warp_events": [
@@ -318,7 +318,7 @@
       "x": 75,
       "y": 6,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "0",
       "script": "Johto_Mahoganytown_MahoganyTown_EventScript_TownTrigger"
     },
@@ -327,7 +327,7 @@
       "x": 75,
       "y": 7,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "0",
       "script": "Johto_Mahoganytown_MahoganyTown_EventScript_TownTrigger"
     },
@@ -336,7 +336,7 @@
       "x": 75,
       "y": 8,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "0",
       "script": "Johto_Mahoganytown_MahoganyTown_EventScript_TownTrigger"
     },
@@ -345,7 +345,7 @@
       "x": 75,
       "y": 9,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "0",
       "script": "Johto_Mahoganytown_MahoganyTown_EventScript_TownTrigger"
     }

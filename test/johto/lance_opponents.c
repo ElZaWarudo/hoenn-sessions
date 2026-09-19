@@ -11,7 +11,7 @@ TEST("Johto Lance opponents alone use half teams in the public roster")
     u32 ordinal;
     u32 halfCount = 0;
 
-    EXPECT_EQ(JOHTO_TRAINER_RECORD_COUNT, 284);
+    EXPECT_EQ(JOHTO_TRAINER_RECORD_COUNT, 412);
     for (ordinal = 0; ordinal < JOHTO_TRAINER_RECORD_COUNT; ordinal++)
     {
         u16 id = JOHTO_TRAINER_ID_MIN + ordinal;

@@ -636,6 +636,9 @@
       "EcruteakTheater": "InitTilesetAnim_JohtoEcruteakTheater",
       "AzaleaTown_Gym": "InitTilesetAnim_JohtoAzaleaGym",
       "BlackthornGym": "InitTilesetAnim_JohtoBlackthornGym",
+      "CeladonCity": "InitTilesetAnim_CeladonCity",
+      "Lavaridge": "InitTilesetAnim_JohtoBlackthornGym",
+      "SilphCo": "InitTilesetAnim_SilphCo",
       "SootopolisGym": null,
       "BikeShop": null
     }

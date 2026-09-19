@@ -2,7 +2,7 @@
   "id": "MAP_RECEPTION_GATE",
   "name": "ReceptionGate",
   "layout": "LAYOUT_JOHTO_RECEPTION_GATE",
-  "music": "MUS_HG_ROUTE26",
+  "music": "MUS_EVER_GRANDE",
   "region_map_section": "MAPSEC_KANTO_VICTORY_ROAD",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
       "x": 9,
       "y": 14,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
       "x": 7,
       "y": 7,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_ReceptionGate_ReceptionGate_EventScript_SilverGuard",
-      "flag": "FLAG_INDIGOJUNCTION_HIDE_SILVER_GUARD"
+      "flag": "JOHTO_FLAG_INDIGOJUNCTION_HIDE_SILVER_GUARD"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
       "x": 14,
       "y": 7,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_ReceptionGate_ReceptionGate_EventScript_KantoGuard",
-      "flag": "FLAG_INDIGOJUNCTION_HIDE_KANTO_GUARD"
+      "flag": "JOHTO_FLAG_INDIGOJUNCTION_HIDE_KANTO_GUARD"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_JANINE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_JANINE",
       "x": 11,
       "y": 6,
       "elevation": 0,
@@ -64,7 +64,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_ReceptionGate_ReceptionGate_EventScript_Janine",
-      "flag": "FLAG_HIDE_ROUTE22_JANINE"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE22_JANINE"
     }
   ],
   "warp_events": [
@@ -110,7 +110,7 @@
       "x": 11,
       "y": 14,
       "elevation": 0,
-      "var": "VAR_ROUTE27_STATE",
+      "var": "JOHTO_VAR_ROUTE27_STATE",
       "var_value": "1",
       "script": "Johto_ReceptionGate_ReceptionGate_Trigger"
     },

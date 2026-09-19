@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE27",
   "name": "Route27",
   "layout": "LAYOUT_JOHTO_ROUTE27",
-  "music": "MUS_HG_ROUTE26",
+  "music": "MUS_EVER_GRANDE",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_27",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 27,
       "y": 24,
       "elevation": 0,
@@ -101,7 +101,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route27_Route27_EventScript_Item_RareCandy",
-      "flag": "FLAG_ITEM_ROUTE27_RARECANDY"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE27_RARECANDY"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -114,10 +114,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route27_Route27_EventScript_Item_Moonstone",
-      "flag": "FLAG_ITEM_ROUTE27_MOONSTONE"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE27_MOONSTONE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PSYCHIC_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PSYCHIC_M",
       "x": 100,
       "y": 18,
       "elevation": 0,
@@ -143,7 +143,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 145,
       "y": 25,
       "elevation": 0,
@@ -156,7 +156,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHIKORITA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHIKORITA)",
       "x": 58,
       "y": 14,
       "elevation": 0,
@@ -169,7 +169,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CYNDAQUIL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CYNDAQUIL)",
       "x": 55,
       "y": 14,
       "elevation": 0,
@@ -179,10 +179,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TOTODILE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TOTODILE)",
       "x": 58,
       "y": 16,
       "elevation": 0,
@@ -192,10 +192,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ARBOK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ARBOK)",
       "x": 4,
       "y": 13,
       "elevation": 0,
@@ -208,7 +208,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MURKROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MURKROW)",
       "x": 30,
       "y": 17,
       "elevation": 0,
@@ -218,10 +218,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PONYTA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PONYTA)",
       "x": 72,
       "y": 15,
       "elevation": 0,
@@ -234,7 +234,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DODRIO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DODRIO)",
       "x": 110,
       "y": 8,
       "elevation": 0,
@@ -247,7 +247,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RAPIDASH",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RAPIDASH)",
       "x": 109,
       "y": 9,
       "elevation": 0,
@@ -270,7 +270,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route27_Route27_EventScript_Item_SolarBeam",
-      "flag": "FLAG_ITEM_ROUTE27_SOLARBEAM"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE27_SOLARBEAM"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -283,7 +283,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route27_Route27_EventScript_Item_Revive",
-      "flag": "FLAG_ITEM_ROUTE27_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE27_REVIVE"
     }
   ],
   "warp_events": [
@@ -315,7 +315,7 @@
       "x": 25,
       "y": 25,
       "elevation": 0,
-      "var": "VAR_ROUTE27_STATE",
+      "var": "JOHTO_VAR_ROUTE27_STATE",
       "var_value": "0",
       "script": "Johto_Route27_Route27_EventScript_FirstSteps"
     },
@@ -324,7 +324,7 @@
       "x": 25,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_ROUTE27_STATE",
+      "var": "JOHTO_VAR_ROUTE27_STATE",
       "var_value": "0",
       "script": "Johto_Route27_Route27_EventScript_FirstSteps"
     },
@@ -333,7 +333,7 @@
       "x": 45,
       "y": 19,
       "elevation": 0,
-      "var": "VAR_ROUTE27_BAOBA_CALL",
+      "var": "JOHTO_VAR_ROUTE27_BAOBA_CALL",
       "var_value": "0",
       "script": "Johto_Route27_Route27_EventScript_BaobaCall"
     },
@@ -342,7 +342,7 @@
       "x": 46,
       "y": 18,
       "elevation": 0,
-      "var": "VAR_ROUTE27_BAOBA_CALL",
+      "var": "JOHTO_VAR_ROUTE27_BAOBA_CALL",
       "var_value": "0",
       "script": "Johto_Route27_Route27_EventScript_BaobaCall"
     }

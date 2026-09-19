@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_PEWTER_CITY",
   "name": "PewterCity",
   "layout": "LAYOUT_KANTO_LATER_PEWTER_CITY",
-  "music": "MUS_HG_PEWTER",
+  "music": "MUS_RG_PEWTER",
   "region_map_section": "MAPSEC_PEWTER_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_TWIN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_TWIN",
       "x": 17,
       "y": 34,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_1",
       "x": 37,
       "y": 19,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 9,
       "y": 21,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GEODUDE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GEODUDE)",
       "x": 10,
       "y": 27,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GEODUDE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GEODUDE)",
       "x": 14,
       "y": 15,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEY)",
       "x": 21,
       "y": 4,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SPEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SPEAROW)",
       "x": 36,
       "y": 13,
       "elevation": 0,
@@ -125,12 +125,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_POMEG_2",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_POMEG_2",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 27,
       "y": 15,
       "elevation": 3,

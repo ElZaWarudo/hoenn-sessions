@@ -2,7 +2,7 @@
   "id": "MAP_DRAGONS_DEN_ENTRANCE",
   "name": "DragonsDen_Entrance",
   "layout": "LAYOUT_JOHTO_DRAGONS_DEN_ENTRANCE",
-  "music": "MUS_HG_DRAGONS_DEN",
+  "music": "MUS_CAVE_OF_ORIGIN",
   "region_map_section": "MAPSEC_JOHTO_BLACKTHORN_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",

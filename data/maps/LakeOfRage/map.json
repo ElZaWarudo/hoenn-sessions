@@ -2,7 +2,7 @@
   "id": "MAP_LAKE_OF_RAGE",
   "name": "LakeOfRage",
   "layout": "LAYOUT_JOHTO_LAKE_OF_RAGE",
-  "music": "MUS_HG_ROUTE42",
+  "music": "MUS_ROUTE120",
   "region_map_section": "MAPSEC_JOHTO_LAKE_OF_RAGE",
   "requires_flash": false,
   "weather": "WEATHER_RAIN_THUNDERSTORM",
@@ -21,7 +21,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 37,
       "y": 36,
       "elevation": 0,
@@ -34,7 +34,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 25,
       "y": 38,
       "elevation": 0,
@@ -47,7 +47,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LANCE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LANCE",
       "x": 30,
       "y": 37,
       "elevation": 0,
@@ -57,10 +57,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Lance",
-      "flag": "FLAG_HIDE_LAKE_OF_RAGE_LANCE"
+      "flag": "JOHTO_FLAG_HIDE_LAKE_OF_RAGE_LANCE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_1",
       "x": 32,
       "y": 35,
       "elevation": 0,
@@ -73,7 +73,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 3,
       "y": 39,
       "elevation": 0,
@@ -86,7 +86,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
       "x": 55,
       "y": 15,
       "elevation": 0,
@@ -112,7 +112,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SHINY_GYARADOS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHINY_GYARADOS",
       "x": 32,
       "y": 28,
       "elevation": 0,
@@ -122,7 +122,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Gyarados",
-      "flag": "FLAG_HIDE_LAKE_OF_RAGE_GYARADOS"
+      "flag": "JOHTO_FLAG_HIDE_LAKE_OF_RAGE_GYARADOS"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_COOLTRAINER_M",
@@ -138,7 +138,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 21,
       "y": 3,
       "elevation": 0,
@@ -148,10 +148,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Item_Full_Restore",
-      "flag": "FLAG_ITEM_LAKEOFRAGE_FULL_RESTORE"
+      "flag": "JOHTO_FLAG_ITEM_LAKEOFRAGE_FULL_RESTORE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 37,
       "y": 1,
       "elevation": 0,
@@ -161,10 +161,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Item_Max_Revive",
-      "flag": "FLAG_ITEM_LAKEOFRAGE_MAX_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_LAKEOFRAGE_MAX_REVIVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 54,
       "y": 9,
       "elevation": 0,
@@ -174,10 +174,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Item_Red_Flute",
-      "flag": "FLAG_ITEM_LAKEOFRAGE_RED_FLUTE"
+      "flag": "JOHTO_FLAG_ITEM_LAKEOFRAGE_RED_FLUTE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SKARMORY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SKARMORY)",
       "x": 52,
       "y": 37,
       "elevation": 0,
@@ -190,7 +190,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FURRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FURRET)",
       "x": 16,
       "y": 0,
       "elevation": 0,
@@ -203,7 +203,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 46,
       "y": 32,
       "elevation": 0,
@@ -216,7 +216,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DRAGONITE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DRAGONITE)",
       "x": 31,
       "y": 37,
       "elevation": 0,
@@ -226,10 +226,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Dragonite",
-      "flag": "FLAG_HIDE_LAKE_OF_RAGE_LANCE"
+      "flag": "JOHTO_FLAG_HIDE_LAKE_OF_RAGE_LANCE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PRYCE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_PRYCE",
       "x": 9,
       "y": 38,
       "elevation": 0,
@@ -239,7 +239,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_LakeOfRage_LakeOfRage_EventScript_Pryce",
-      "flag": "FLAG_HIDE_LAKE_PRYCE"
+      "flag": "JOHTO_FLAG_HIDE_LAKE_PRYCE"
     }
   ],
   "warp_events": [

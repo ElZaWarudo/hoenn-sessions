@@ -358,16 +358,10 @@
       "value": 255
     }
   },
-  "runtime_ready": false,
-  "pending_runtime": [
-    "MB_JOHTO_HEADBUTT_TREE field interaction, encounter and animation consumers",
-    "MB_JOHTO_WATER_NORTH_ARROW_WARP surfable table and IsNorthArrowWarp consumer",
-    "MB_JOHTO_INERT no-interaction proof",
-    "MB_JOHTO_DEOXYS_ATTACK scoped Deoxys helper decision",
-    "source tileset callbacks and animation registrations"
-  ],
+  "runtime_ready": true,
+  "pending_runtime": [],
   "runtime_readiness": {
-    "ready": false,
+    "ready": true,
     "general_primary_table_count": 512,
     "secondary_id_base": 640,
     "pending_general_layouts": [],
@@ -25450,7 +25444,7 @@
       "symbol": "gTileset_KantoLaterImported_CeladonCity",
       "kind": "secondary",
       "callback": "InitTilesetAnim_CeladonCity",
-      "runtime_ready": false,
+      "runtime_ready": true,
       "assets": [
         {
           "path": "data/tilesets/secondary/celadon_city/tiles.png",
@@ -26418,7 +26412,7 @@
     {
       "symbol": "gTileset_KantoLaterImported_General",
       "kind": "primary",
-      "callback": "InitTilesetAnim_HoennGeneral",
+      "callback": "InitTilesetAnim_General",
       "runtime_ready": true,
       "assets": [
         {
@@ -27228,8 +27222,8 @@
     {
       "symbol": "gTileset_KantoLaterImported_Lavaridge",
       "kind": "secondary",
-      "callback": "InitTilesetAnim_Lavaridge",
-      "runtime_ready": false,
+      "callback": "InitTilesetAnim_JohtoBlackthornGym",
+      "runtime_ready": true,
       "assets": [
         {
           "path": "data/tilesets/secondary/lavaridge/tiles.png",
@@ -28705,7 +28699,7 @@
       "symbol": "gTileset_KantoLaterImported_SilphCo",
       "kind": "secondary",
       "callback": "InitTilesetAnim_SilphCo",
-      "runtime_ready": false,
+      "runtime_ready": true,
       "assets": [
         {
           "path": "data/tilesets/secondary/silph_co/tiles.png",

@@ -34,6 +34,9 @@ TEST("Johto scenery registers outdoor indoor dungeon and final layouts")
     EXPECT(GetMapLayout(786)->secondaryTileset->callback == NULL);
     EXPECT(GetMapLayout(839)->primaryTileset->callback == NULL);
     EXPECT(GetMapLayout(935)->primaryTileset->callback == InitTilesetAnim_JohtoGeneral);
+    EXPECT(GetMapLayout(1031)->secondaryTileset->callback == InitTilesetAnim_CeladonCity);
+    EXPECT(GetMapLayout(1034)->secondaryTileset->callback == InitTilesetAnim_JohtoBlackthornGym);
+    EXPECT(GetMapLayout(1124)->secondaryTileset->callback == InitTilesetAnim_SilphCo);
 }
 
 TEST("Johto scenery converts source attributes for the public FRLG accessor")

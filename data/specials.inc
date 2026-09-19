@@ -674,3 +674,7 @@ gSpecials::
 	def_special Johto_NameRival, requests_effects=1
 	def_special DoSlidingPuzzle, requests_effects=1
 	def_special HaircutBrother1, requests_effects=1
+	def_special Special_CoopGroupTravelBegin
+	def_special Special_CoopGroupTravelGetOffer
+	def_special Special_CoopGroupTravelRespond
+	def_special Special_CoopGroupTravelCancel

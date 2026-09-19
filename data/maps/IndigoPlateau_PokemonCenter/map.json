@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_INDIGO_PLATEAU_POKEMON_CENTER",
   "name": "IndigoPlateau_PokemonCenter",
   "layout": "LAYOUT_KANTO_LATER_INDIGO_PLATEAU_POKEMON_CENTER",
-  "music": "MUS_HG_POKEMON_LEAGUE",
+  "music": "MUS_VICTORY_ROAD",
   "region_map_section": "MAPSEC_INDIGO_PLATEAU",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_NURSE",
       "x": 19,
       "y": 10,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_NURSE_CHANSEY",
       "x": 20,
       "y": 10,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CLERK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CLERK",
       "x": 10,
       "y": 10,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PSYCHIC_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PSYCHIC_M",
       "x": 30,
       "y": 14,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ABRA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ABRA)",
       "x": 28,
       "y": 15,
       "elevation": 0,
@@ -93,7 +93,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SILVER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SILVER",
       "x": 32,
       "y": 8,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_IndigoPlateau_PokemonCenter_IndigoPlateau_EventScript_Silver",
-      "flag": "FLAG_HIDE_INDIGO_PLATEAU_SILVER"
+      "flag": "JOHTO_FLAG_HIDE_INDIGO_PLATEAU_SILVER"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
       "x": 32,
       "y": 3,
       "elevation": 0,
@@ -116,7 +116,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_IndigoPlateau_PokemonCenter_IndigoPlateau_EventScript_BlackBelt",
-      "flag": "FLAG_HIDE_LEAGUE_BLACKBELT"
+      "flag": "JOHTO_FLAG_HIDE_LEAGUE_BLACKBELT"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_COOLTRAINER_M",

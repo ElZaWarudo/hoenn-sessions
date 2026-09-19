@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_RED_NORMAL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_RED_NORMAL",
       "x": 10,
       "y": 6,
       "elevation": 0,
@@ -25,7 +25,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtSilver_SummitDay_MtSilver_SummitDay_EventScript_Red",
-      "flag": "FLAG_HIDE_MTSILVER_RED"
+      "flag": "JOHTO_FLAG_HIDE_MTSILVER_RED"
     }
   ],
   "warp_events": [

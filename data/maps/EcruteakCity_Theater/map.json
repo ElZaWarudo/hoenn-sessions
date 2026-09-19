@@ -2,7 +2,7 @@
   "id": "MAP_ECRUTEAK_CITY_THEATER",
   "name": "EcruteakCity_Theater",
   "layout": "LAYOUT_JOHTO_ECRUTEAK_CITY_THEATER",
-  "music": "MUS_HG_DANCE_THEATER",
+  "music": "MUS_LILYCOVE_MUSEUM",
   "region_map_section": "MAPSEC_JOHTO_ECRUTEAK_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 7,
       "y": 2,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_KimonoGirl",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 5,
       "y": 3,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_KimonoGirl",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 13,
       "y": 2,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_KimonoGirl",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 15,
       "y": 3,
       "elevation": 0,
@@ -64,10 +64,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_KimonoGirl",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_KIMONOS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 10,
       "y": 3,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Zuki",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_ZUKI"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_ZUKI"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_WOMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_WOMAN",
       "x": 7,
       "y": 11,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Granny",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 13,
       "y": 11,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_SurfGuy",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 17,
       "y": 9,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Boy",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PSYDUCK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PSYDUCK)",
       "x": 13,
       "y": 9,
       "elevation": 0,
@@ -129,10 +129,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Psyduck",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_1",
       "x": 3,
       "y": 9,
       "elevation": 0,
@@ -142,23 +142,23 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Gramps",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_TWIN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_TWIN",
       "x": 5,
       "y": 11,
       "elevation": 0,
-      "movement_type": "MOVEMENT_TYPE_TOWER_BEAM",
+      "movement_type": "MOVEMENT_TYPE_INVISIBLE",
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Girl",
-      "flag": "FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_CITY_THEATER_NPCS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 10,
       "y": 4,
       "elevation": 0,
@@ -168,7 +168,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_Rocket",
-      "flag": "FLAG_HIDE_ECRUTEAK_ROCKET"
+      "flag": "JOHTO_FLAG_HIDE_ECRUTEAK_ROCKET"
     }
   ],
   "warp_events": [
@@ -186,7 +186,7 @@
       "x": 10,
       "y": 16,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_RocketEventTrigger"
     },
@@ -195,7 +195,7 @@
       "x": 11,
       "y": 17,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_RocketEventTrigger"
     },
@@ -204,7 +204,7 @@
       "x": 9,
       "y": 17,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "0",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_RocketEventTrigger"
     },
@@ -213,7 +213,7 @@
       "x": 10,
       "y": 17,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "2",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_EventScript_TriggerSurfGuy"
     },
@@ -222,7 +222,7 @@
       "x": 10,
       "y": 16,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "5",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_Trigger_PreBattleCutsceneTop"
     },
@@ -231,7 +231,7 @@
       "x": 11,
       "y": 17,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "5",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_Trigger_PreBattleCutsceneRight"
     },
@@ -240,7 +240,7 @@
       "x": 9,
       "y": 17,
       "elevation": 0,
-      "var": "VAR_ECRUTEAK_CITY_THEATER",
+      "var": "JOHTO_VAR_ECRUTEAK_CITY_THEATER",
       "var_value": "5",
       "script": "Johto_EcruteakCity_Theater_EcruteakCity_Theater_Trigger_PreBattleCutsceneLeft"
     }

@@ -2,7 +2,7 @@
   "id": "MAP_BELLCHIME_TRAIL",
   "name": "BellchimeTrail",
   "layout": "LAYOUT_JOHTO_BELLCHIME_TRAIL",
-  "music": "MUS_HG_BELL_TOWER",
+  "music": "MUS_MT_PYRE",
   "region_map_section": "MAPSEC_JOHTO_ECRUTEAK_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -21,7 +21,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 12,
       "y": 55,
       "elevation": 0,
@@ -31,10 +31,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_BellchimeTrail_EcruteakBellchimeTrail_EventScript_Item_BigMushroom",
-      "flag": "FLAG_ITEM_BELLCHIME_BIG_MUSHROOM"
+      "flag": "JOHTO_FLAG_ITEM_BELLCHIME_BIG_MUSHROOM"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISDREAVUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISDREAVUS)",
       "x": 25,
       "y": 27,
       "elevation": 0,
@@ -44,10 +44,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POLITOED",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POLITOED)",
       "x": 18,
       "y": 15,
       "elevation": 0,
@@ -60,7 +60,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POLITOED",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POLITOED)",
       "x": 18,
       "y": 10,
       "elevation": 0,
@@ -73,7 +73,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POLITOED",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POLITOED)",
       "x": 14,
       "y": 12,
       "elevation": 0,
@@ -86,7 +86,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISDREAVUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISDREAVUS)",
       "x": 10,
       "y": 29,
       "elevation": 0,
@@ -96,10 +96,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_WYRDEER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(WYRDEER)",
       "x": 56,
       "y": 44,
       "elevation": 0,
@@ -112,7 +112,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 56,
       "y": 34,
       "elevation": 0,
@@ -125,7 +125,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 58,
       "y": 39,
       "elevation": 0,
@@ -138,7 +138,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 60,
       "y": 49,
       "elevation": 0,
@@ -151,7 +151,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HOUNDOOM",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HOUNDOOM)",
       "x": 60,
       "y": 13,
       "elevation": 0,
@@ -161,10 +161,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HOUNDOUR",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HOUNDOUR)",
       "x": 61,
       "y": 12,
       "elevation": 0,
@@ -174,10 +174,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEOT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEOT)",
       "x": 37,
       "y": 39,
       "elevation": 0,
@@ -187,10 +187,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_NOCTOWL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(NOCTOWL)",
       "x": 37,
       "y": 39,
       "elevation": 0,
@@ -200,10 +200,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISMAGIUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISMAGIUS)",
       "x": 54,
       "y": 56,
       "elevation": 0,
@@ -213,10 +213,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ANNIHILAPE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ANNIHILAPE)",
       "x": 17,
       "y": 55,
       "elevation": 0,
@@ -226,10 +226,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_VULPIX",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(VULPIX)",
       "x": 62,
       "y": 12,
       "elevation": 0,
@@ -239,10 +239,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_NINETALES",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(NINETALES)",
       "x": 61,
       "y": 13,
       "elevation": 0,
@@ -252,10 +252,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISDREAVUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISDREAVUS)",
       "x": 29,
       "y": 54,
       "elevation": 0,
@@ -265,10 +265,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 24,
       "y": 45,
       "elevation": 0,
@@ -278,10 +278,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 37,
       "y": 12,
       "elevation": 0,
@@ -291,10 +291,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 45,
       "y": 36,
       "elevation": 0,
@@ -304,10 +304,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FARIGIRAF",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FARIGIRAF)",
       "x": 49,
       "y": 65,
       "elevation": 0,
@@ -320,7 +320,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GIRAFARIG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GIRAFARIG)",
       "x": 51,
       "y": 66,
       "elevation": 0,
@@ -333,7 +333,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 29,
       "y": 64,
       "elevation": 0,
@@ -346,7 +346,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 25,
       "y": 65,
       "elevation": 0,
@@ -359,7 +359,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 21,
       "y": 65,
       "elevation": 0,
@@ -372,7 +372,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 33,
       "y": 4,
       "elevation": 0,
@@ -385,7 +385,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STANTLER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STANTLER)",
       "x": 37,
       "y": 4,
       "elevation": 0,
@@ -398,7 +398,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GIRAFARIG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GIRAFARIG)",
       "x": 43,
       "y": 5,
       "elevation": 0,
@@ -411,7 +411,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ARIADOS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ARIADOS)",
       "x": 1,
       "y": 15,
       "elevation": 0,
@@ -421,10 +421,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ARIADOS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ARIADOS)",
       "x": 38,
       "y": 68,
       "elevation": 0,
@@ -434,10 +434,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HAUNTER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HAUNTER)",
       "x": 42,
       "y": 23,
       "elevation": 0,
@@ -447,10 +447,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 11,
       "y": 29,
       "elevation": 0,
@@ -460,10 +460,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 26,
       "y": 27,
       "elevation": 0,
@@ -473,10 +473,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 38,
       "y": 54,
       "elevation": 0,
@@ -486,10 +486,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FURRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FURRET)",
       "x": 38,
       "y": 12,
       "elevation": 0,
@@ -499,10 +499,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 44,
       "y": 36,
       "elevation": 0,
@@ -512,10 +512,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 41,
       "y": 23,
       "elevation": 0,
@@ -525,10 +525,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HITMONTOP",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HITMONTOP)",
       "x": 17,
       "y": 55,
       "elevation": 0,
@@ -538,10 +538,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 25,
       "y": 45,
       "elevation": 0,
@@ -551,10 +551,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FARFETCHD",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FARFETCHD)",
       "x": 4,
       "y": 45,
       "elevation": 0,
@@ -564,10 +564,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_EEVEE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(EEVEE)",
       "x": 4,
       "y": 56,
       "elevation": 0,
@@ -577,10 +577,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ESPEON",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ESPEON)",
       "x": 3,
       "y": 66,
       "elevation": 0,
@@ -590,10 +590,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_UMBREON",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(UMBREON)",
       "x": 4,
       "y": 66,
       "elevation": 0,
@@ -603,10 +603,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MURKROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MURKROW)",
       "x": 5,
       "y": 38,
       "elevation": 0,
@@ -616,10 +616,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HONCHKROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HONCHKROW)",
       "x": 4,
       "y": 52,
       "elevation": 0,
@@ -629,10 +629,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MORTY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_MORTY",
       "x": 54,
       "y": 59,
       "elevation": 0,
@@ -642,7 +642,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_BellchimeTrail_BellchimeTrail_EventScript_Morty",
-      "flag": "FLAG_HIDE_BELLCHIME_MORTY"
+      "flag": "JOHTO_FLAG_HIDE_BELLCHIME_MORTY"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_LIGHT_SPRITE",

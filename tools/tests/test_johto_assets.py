@@ -18,6 +18,30 @@ ORIGINAL_PREFIX_SHA256 = "165b842ab4d4a341a549cbac3e89c613c64253b8b528374738f21e
 
 
 class AssetFormatTests(unittest.TestCase):
+    def test_callback_closure_maps_active_donors_and_fails_closed(self):
+        animation = {
+            "tileset_registration": {
+                "secondary": {
+                    "CeladonCity": "InitTilesetAnim_CeladonCity",
+                    "Lavaridge": "InitTilesetAnim_JohtoBlackthornGym",
+                    "SilphCo": "InitTilesetAnim_SilphCo",
+                }
+            }
+        }
+        self.assertEqual(
+            assets.closed_tileset_callback(
+                animation, "gTileset_Lavaridge", "secondary", "InitTilesetAnim_Lavaridge"
+            ),
+            "InitTilesetAnim_JohtoBlackthornGym",
+        )
+        with self.assertRaisesRegex(assets.AssetError, "active donor callback has no closed mapping"):
+            assets.closed_tileset_callback(
+                {"tileset_registration": {"secondary": {}}},
+                "gTileset_Lavaridge",
+                "secondary",
+                "InitTilesetAnim_Lavaridge",
+            )
+
     def test_strict_converter_rejects_unknown_reserved_and_unsupported_values(self):
         mapping = {0: {"target_value": 0}, 0xA1: {"target_value": 0xF0}}
         self.assertEqual(assets.convert_attributes(struct.pack("<HH", 0, 0x20A1), mapping),
@@ -89,7 +113,7 @@ class AssetCorpusTests(unittest.TestCase):
             DONOR / "include/constants/metatile_behaviors.h",
             assets.ROOT / "include/constants/metatile_behaviors.h")
 
-    def test_full_manifest_matches_selection_and_keeps_global_runtime_gate(self):
+    def test_full_manifest_matches_selection_and_closes_global_runtime_gate(self):
         self.assertEqual(self.manifest, assets.build_manifest(DONOR))
         self.assertEqual(self.manifest["selection"],
                          {"layout_count": 407, "tileset_count": 97, "asset_count": 2366})
@@ -98,8 +122,15 @@ class AssetCorpusTests(unittest.TestCase):
             entry["symbol"] for entry in self.manifest["tilesets"]
             if entry["runtime_ready"]
         }
-        self.assertEqual(ready_tilesets, {"gTileset_KantoLaterImported_General"})
-        self.assertFalse(self.manifest["runtime_ready"])
+        self.assertEqual(ready_tilesets, {
+            "gTileset_KantoLaterImported_CeladonCity",
+            "gTileset_KantoLaterImported_General",
+            "gTileset_KantoLaterImported_Lavaridge",
+            "gTileset_KantoLaterImported_SilphCo",
+        })
+        self.assertTrue(self.manifest["runtime_ready"])
+        self.assertEqual(self.manifest["pending_runtime"], [])
+        self.assertTrue(self.manifest["runtime_readiness"]["ready"])
         self.assertEqual(len(self.manifest["layouts"]), 407)
         self.assertEqual(len(self.manifest["tilesets"]), 97)
         self.assertEqual(sum(len(item["assets"]) for item in self.manifest["layouts"]), 814)
@@ -155,7 +186,7 @@ class AssetCorpusTests(unittest.TestCase):
         general = next(item for item in self.manifest["tilesets"]
                        if item["symbol"] == "gTileset_KantoLaterImported_General")
         self.assertEqual(general["kind"], "primary")
-        self.assertEqual(general["callback"], "InitTilesetAnim_HoennGeneral")
+        self.assertEqual(general["callback"], "InitTilesetAnim_General")
         self.assertTrue(general["runtime_ready"])
         self.assertEqual(general["assets"][1]["metatile_count"], 512)
         self.assertEqual(general["assets"][2]["source_size"], 1024)
@@ -183,6 +214,22 @@ class AssetCorpusTests(unittest.TestCase):
             self.assertEqual(item["target_layout"], source.replace(
                 "LAYOUT_FUCHSIA_", "LAYOUT_KANTO_LATER_FUCHSIA_"), source)
 
+    def test_later_active_callbacks_use_the_closed_runtime_mapping(self):
+        callbacks = {
+            item["symbol"]: item["callback"]
+            for item in self.manifest["tilesets"]
+            if item["symbol"] in {
+                "gTileset_KantoLaterImported_CeladonCity",
+                "gTileset_KantoLaterImported_Lavaridge",
+                "gTileset_KantoLaterImported_SilphCo",
+            }
+        }
+        self.assertEqual(callbacks, {
+            "gTileset_KantoLaterImported_CeladonCity": "InitTilesetAnim_CeladonCity",
+            "gTileset_KantoLaterImported_Lavaridge": "InitTilesetAnim_JohtoBlackthornGym",
+            "gTileset_KantoLaterImported_SilphCo": "InitTilesetAnim_SilphCo",
+        })
+
     def test_general_runtime_readiness_drift_is_rejected_exactly(self):
         mutations = {}
         forged = copy.deepcopy(self.manifest)
@@ -193,7 +240,7 @@ class AssetCorpusTests(unittest.TestCase):
         forged = copy.deepcopy(self.manifest)
         general = next(item for item in forged["tilesets"]
                        if item["symbol"] == "gTileset_KantoLaterImported_General")
-        general["callback"] = "InitTilesetAnim_General"
+        general["callback"] = "InitTilesetAnim_HoennGeneral"
         mutations["callback identity"] = forged
         forged = copy.deepcopy(self.manifest)
         forged["runtime_readiness"]["pending_general_layouts"].append({

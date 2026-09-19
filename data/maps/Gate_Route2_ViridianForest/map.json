@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_GATE_ROUTE2_VIRIDIAN_FOREST",
   "name": "Gate_Route2_ViridianForest",
   "layout": "LAYOUT_KANTO_LATER_GATE_ROUTE2_VIRIDIAN_FOREST",
-  "music": "MUS_HG_ROUTE1",
+  "music": "MUS_RG_ROUTE1",
   "region_map_section": "MAPSEC_ROUTE_2",
   "requires_flash": false,
   "weather": "WEATHER_NONE",

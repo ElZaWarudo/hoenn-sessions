@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_LAVENDER_TOWN_RADIO_STATION",
   "name": "LavenderTown_RadioStation",
   "layout": "LAYOUT_KANTO_LATER_LAVENDER_TOWN_RADIO_STATION",
-  "music": "MUS_HG_LAVENDER",
+  "music": "MUS_RG_LAVENDER",
   "region_map_section": "MAPSEC_LAVENDER_TOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
       "x": 17,
       "y": 4,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 16,
       "y": 8,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 2,
       "y": 4,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 12,
       "y": 2,
       "elevation": 0,

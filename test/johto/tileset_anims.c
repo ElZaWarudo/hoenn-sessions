@@ -15,6 +15,12 @@ static const u16 sTheaterFrame1[] = INCBIN_U16("graphics/johto/tileset_anims/the
 static const u16 sAzaleaFrame1[] = INCBIN_U16("graphics/johto/tileset_anims/azalea/1.4bpp");
 static const u16 sBlackthornFrame0[] = INCBIN_U16("graphics/johto/tileset_anims/blackthorn/0.4bpp");
 static const u16 sBlackthornFrame7[] = INCBIN_U16("graphics/johto/tileset_anims/blackthorn/7.4bpp");
+static const u16 sCeladonFrame0[] = INCBIN_U16("data/tilesets/secondary/celadon_city_frlg/anim/fountain/0.4bpp");
+static const u16 sCeladonFrame1[] = INCBIN_U16("data/tilesets/secondary/celadon_city_frlg/anim/fountain/1.4bpp");
+static const u16 sCeladonFrame4[] = INCBIN_U16("data/tilesets/secondary/celadon_city_frlg/anim/fountain/4.4bpp");
+static const u16 sSilphCoFrame0[] = INCBIN_U16("data/tilesets/secondary/silph_co_frlg/anim/fountain/0.4bpp");
+static const u16 sSilphCoFrame1[] = INCBIN_U16("data/tilesets/secondary/silph_co_frlg/anim/fountain/1.4bpp");
+static const u16 sSilphCoFrame3[] = INCBIN_U16("data/tilesets/secondary/silph_co_frlg/anim/fountain/3.4bpp");
 
 static const u16 sGeneralLandFrame0[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/0.4bpp");
 static const u16 sGeneralLandFrame3[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/3.4bpp");
@@ -147,6 +153,35 @@ TEST("Johto gym and theater callbacks preserve stream timing")
     ExpectCopy(961, sBlackthornFrame7, 128);
     RunAnimationFrames(16);
     ExpectCopy(961, sBlackthornFrame0, 128);
+
+    RestoreAnimationFixture(oldLayout, oldDispcnt);
+}
+
+TEST("Imported Kanto callbacks copy exact secondary frames on cadence and wrap")
+{
+    struct MapLayout layout;
+    struct Tileset primary;
+    struct Tileset secondary;
+    const struct MapLayout *oldLayout = gMapHeader.mapLayout;
+    u16 oldDispcnt = REG_DISPCNT;
+
+    PrepareAnimationFixture(&layout, &primary, &secondary, NULL, InitTilesetAnim_CeladonCity);
+    RunAnimationFrames(12);
+    ExpectCopy(744, sCeladonFrame1, 256);
+    RunAnimationFrames(36);
+    ExpectCopy(744, sCeladonFrame4, 256);
+    RunAnimationFrames(12);
+    ExpectCopy(744, sCeladonFrame0, 256);
+    ExpectVramSentinels();
+
+    PrepareAnimationFixture(&layout, &primary, &secondary, NULL, InitTilesetAnim_SilphCo);
+    RunAnimationFrames(10);
+    ExpectCopy(976, sSilphCoFrame1, 256);
+    RunAnimationFrames(20);
+    ExpectCopy(976, sSilphCoFrame3, 256);
+    RunAnimationFrames(10);
+    ExpectCopy(976, sSilphCoFrame0, 256);
+    ExpectVramSentinels();
 
     RestoreAnimationFixture(oldLayout, oldDispcnt);
 }

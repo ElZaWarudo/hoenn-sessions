@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_SAFFRON_CITY_TUNNEL_SW",
   "name": "SaffronCity_Tunnel_SW",
   "layout": "LAYOUT_KANTO_LATER_SAFFRON_CITY_TUNNEL_SW",
-  "music": "MUS_HG_ROUTE1",
+  "music": "MUS_RG_ROUTE1",
   "region_map_section": "MAPSEC_ROUTE_7",
   "requires_flash": false,
   "weather": "WEATHER_NONE",

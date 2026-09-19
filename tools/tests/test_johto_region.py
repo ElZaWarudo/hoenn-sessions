@@ -110,6 +110,22 @@ class JohtoMapHeaderTests(unittest.TestCase):
                 header = (self.directory / "header.inc").read_text()
                 self.assertIn(f"\t.byte {ordinal}\n\tmap_header_flags", header)
 
+    def test_routes_26_to_28_use_kanto_engine_region(self) -> None:
+        for section in (
+            "MAPSEC_JOHTO_ROUTE_26",
+            "MAPSEC_JOHTO_ROUTE_27",
+            "MAPSEC_JOHTO_ROUTE_28",
+        ):
+            with self.subTest(section=section):
+                result = self.generate("REGION_KANTO", section)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                header = (self.directory / "header.inc").read_text()
+                self.assertIn("\t.byte 1\n\tmap_header_flags", header)
+
+                for engine in ("REGION_HOENN", "REGION_JOHTO"):
+                    with self.subTest(section=section, engine=engine):
+                        self.assertNotEqual(self.generate(engine, section).returncode, 0)
+
     def test_invalid_johto_headers_fail(self) -> None:
         for engine, section in (
             (None, "MAPSEC_NEW_BARK_TOWN"),

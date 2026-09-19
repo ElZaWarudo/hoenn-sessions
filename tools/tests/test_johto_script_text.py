@@ -38,12 +38,24 @@ class ScriptTextTests(unittest.TestCase):
 
     def test_provenance(self):
         data = json.loads((ROOT / "data/johto/script_text.json").read_text())
-        self.assertFalse(data["campaign_ready"])
+        self.assertTrue(data["campaign_ready"])
         self.assertEqual(data["donor_revision"], "751823abaf677020bcd72c45fe3e7cb2b8a576e4")
         self.assertEqual({x["path"] for x in data["source_hashes"]}, {"src/scrcmd.c", "data/maps/NewBarkTown_Lab/scripts.inc"})
         for entry in data["source_hashes"]:
             raw = (DONOR / entry["path"]).read_bytes().replace(b"\r\n", b"\n")
             self.assertEqual(hashlib.sha256(raw).hexdigest(), entry["sha256"])
+
+    def test_generated_campaign_links_macro_and_all_three_exact_consumers(self):
+        campaign = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+        self.assertEqual(campaign.count('#include "asm/macros/johto_text.inc"'), 1)
+        for species in ("CHIKORITA", "CYNDAQUIL", "TOTODILE"):
+            assignment = f"setvar Johto_NewBarkTown_Lab_PLAYER_STARTER_SPECIES, SPECIES_{species}"
+            # The host macro consumes a zero-based text buffer index, while the
+            # donor command used the script-facing STR_VAR_2 constant.
+            call = "johto_buffermoncategory 1, Johto_NewBarkTown_Lab_PLAYER_STARTER_SPECIES"
+            start = campaign.index(assignment)
+            self.assertLess(start, campaign.index(call, start))
+        self.assertEqual(campaign.count("johto_buffermoncategory 1, Johto_NewBarkTown_Lab_PLAYER_STARTER_SPECIES"), 3)
 
 
 if __name__ == "__main__":

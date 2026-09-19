@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_CeruleanCity_Gym_CeruleanCity_Gym_EventScript_Misty",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_TRAINERS"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_TRAINERS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_M_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_M_WATER",
       "x": 9,
       "y": 13,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "1",
       "script": "KantoLater_CeruleanCity_Gym_CeruleanGym_EventScript_Parker",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_TRAINERS"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_TRAINERS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 5,
       "y": 8,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "1",
       "script": "KantoLater_CeruleanCity_Gym_CeruleanGym_EventScript_Briana",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_TRAINERS"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_TRAINERS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 4,
       "y": 12,
       "elevation": 0,
@@ -64,10 +64,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "1",
       "script": "KantoLater_CeruleanCity_Gym_CeruleanGym_EventScript_Diana",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_TRAINERS"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_TRAINERS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 7,
       "y": 15,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_ROCKET"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_ROCKET"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GYM_GUY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GYM_GUY",
       "x": 9,
       "y": 16,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_CeruleanCity_Gym_CeruleanCity_Gym_EventScript_GymGuy",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_TRAINERS"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_TRAINERS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHINCHOU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHINCHOU)",
       "x": 4,
       "y": 12,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Chinchou",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_POKEMON"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STARYU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STARYU)",
       "x": 9,
       "y": 13,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_CherrygroveCity_CherryGroveCity_EventScript_Staryu",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_POKEMON"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CORSOLA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CORSOLA)",
       "x": 5,
       "y": 8,
       "elevation": 0,
@@ -129,10 +129,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_CherrygroveCity_CherryGroveCity_EventScript_Corsola",
-      "flag": "FLAG_HIDE_CERULEAN_GYM_POKEMON"
+      "flag": "JOHTO_FLAG_HIDE_CERULEAN_GYM_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARCHER",
       "x": 5,
       "y": 13,
       "elevation": 0,
@@ -142,7 +142,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_CeruleanCity_Gym_CeruleanCity_Gym_EventScript_MachinePartItem",
-      "flag": "FLAG_HIDDEN_ITEM_MACHINE_PART"
+      "flag": "JOHTO_FLAG_HIDDEN_ITEM_MACHINE_PART"
     }
   ],
   "warp_events": [

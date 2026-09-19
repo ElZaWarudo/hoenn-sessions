@@ -37,6 +37,11 @@ class JohtoSectionRegistrationTests(unittest.TestCase):
         expected = [entry["id"] for entry in baseline["section_constants"]]
         self.assertEqual([entry["id"] for entry in self.records[:210]], expected)
         tail = self.manifest["sections"]["allocation_order"]
+        self.assertEqual(
+            tuple(tail),
+            register_sections.EXPECTED_SECTION_ALLOCATION_ORDER,
+        )
+        self.assertEqual(len(tail), 84)
         tail = [symbol for symbol in tail if symbol.startswith("MAPSEC_JOHTO_")]
         self.assertEqual(len(tail), 40)
         self.assertEqual([entry["id"] for entry in self.records[210:]], tail)
@@ -71,8 +76,8 @@ class JohtoSectionRegistrationTests(unittest.TestCase):
             }
             self.assertEqual(record, expected)
 
-    def test_manifest_tail_rejects_duplicate_unknown_reordered_and_nonstring(self):
-        for mutation in ("duplicate", "unknown", "reordered", "nonstring"):
+    def test_manifest_allocation_rejects_duplicate_unknown_reordered_and_nonstring(self):
+        for mutation in ("duplicate", "unknown", "reordered", "nonstring", "kanto_reordered"):
             with self.subTest(mutation=mutation):
                 manifest = json.loads(json.dumps(self.manifest))
                 order = manifest["sections"]["allocation_order"]
@@ -85,6 +90,8 @@ class JohtoSectionRegistrationTests(unittest.TestCase):
                     order[a] = "MAPSEC_JOHTO_UNKNOWN"
                 elif mutation == "reordered":
                     order[a], order[b] = order[b], order[a]
+                elif mutation == "kanto_reordered":
+                    order[-1], order[-2] = order[-2], order[-1]
                 else:
                     order[a] = None
                 # Keep entry ordinals aligned with tampered allocation: the
@@ -94,7 +101,8 @@ class JohtoSectionRegistrationTests(unittest.TestCase):
                         if entry["target_symbol"] == order[i]:
                             entry["target_id"] = 210 + positions.index(i)
                 with self.assertRaisesRegex(
-                    register_sections.SectionRegistrationError, "tail is malformed"
+                    register_sections.SectionRegistrationError,
+                    "region manifest section allocation order drifted",
                 ):
                     register_sections._tail_symbols(manifest)
 

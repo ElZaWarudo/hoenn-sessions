@@ -419,6 +419,11 @@ class JohtoWorldPlannerTest(unittest.TestCase):
                 {"mutate_content": lambda data: data["provenance"].__setitem__("manifest_sha256", "0" * 64)},
                 "content-symbol ledger semantics differ from the sealed digest",
             ),
+            (
+                "scenery-asset",
+                {"mutate_scenery": lambda data: data["provenance"].__setitem__("asset_manifest_sha256", "0" * 64)},
+                "scenery ledger semantics differ from the sealed digest",
+            ),
         )
         for label, arguments, reason in mutations:
             with self.subTest(label=label):
@@ -611,7 +616,7 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(station["layout"], "LAYOUT_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION")
         self.assertEqual(
             [(event["x"], event["y"], event["graphics_id"]) for event in station["object_events"]],
-            [(137, 20, "OBJ_EVENT_GFX_POLICEMAN"), (152, 5, "OBJ_EVENT_GFX_TRAIN_BACK")],
+            [(137, 20, "OBJ_EVENT_GFX_POLICEMAN"), (152, 5, "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT")],
         )
         self.assertEqual((station["warp_events"][0]["dest_map"], station["warp_events"][0]["dest_warp_id"]), ("MAP_SAFFRON_CITY", "15"))
         self.assertEqual((station["warp_events"][1]["x"], station["warp_events"][1]["y"]), (140, 16))
@@ -688,6 +693,56 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             ["MAP_ROUTE26", "MAP_ROUTE28"],
         )
 
+        route13 = json.loads(outputs[Path("data/maps/Route13/map.json")])
+        calcium = next(event for event in route13["bg_events"] if event["type"] == "hidden_item")
+        self.assertEqual(
+            calcium["flag"],
+            "JOHTO_FLAG_ITEM_ROUTE13_CALCIUM",
+        )
+        species_objects = [
+            event["graphics_id"]
+            for event in route13["object_events"]
+            if event["graphics_id"].startswith("OBJ_EVENT_GFX_SPECIES(")
+        ]
+        self.assertIn("OBJ_EVENT_GFX_SPECIES(NIDORINO)", species_objects)
+        self.assertIn("OBJ_EVENT_GFX_SPECIES(NIDORINA)", species_objects)
+        route20 = json.loads(outputs[Path("data/maps/Route20/map.json")])
+        self.assertIn(
+            "OBJ_EVENT_GFX_SPECIES_SHINY(MAGIKARP)",
+            [event["graphics_id"] for event in route20["object_events"]],
+        )
+        route19_cave = json.loads(outputs[Path("data/maps/Route19_Cave/map.json")])
+        self.assertEqual(route19_cave["music"], "MUS_ABNORMAL_WEATHER")
+        goldenrod = json.loads(outputs[Path("data/maps/GoldenrodCity/map.json")])
+        movements = [event["movement_type"] for event in goldenrod["object_events"]]
+        self.assertIn("MOVEMENT_TYPE_INVISIBLE", movements)
+        self.assertNotIn("MOVEMENT_TYPE_TOWER_BEAM", movements)
+
+        azalea = json.loads(outputs[Path("data/maps/AzaleaTown/map.json")])
+        self.assertEqual(azalea["music"], "MUS_FALLARBOR")
+        self.assertIn(
+            "OBJ_EVENT_GFX_JOHTO_SILVER",
+            [event["graphics_id"] for event in azalea["object_events"]],
+        )
+        celadon = json.loads(outputs[Path("data/maps/CeladonCity/map.json")])
+        self.assertEqual(celadon["music"], "MUS_RG_CELADON")
+        self.assertIn(
+            "OBJ_EVENT_GFX_JOHTO_SHARED_BEAUTY",
+            [event["graphics_id"] for event in celadon["object_events"]],
+        )
+        for map_name, battle_scene in (
+            ("PokemonLeague_WillsRoom", "MAP_BATTLE_SCENE_SIDNEY"),
+            ("PokemonLeague_KogasRoom", "MAP_BATTLE_SCENE_PHOEBE"),
+            ("PokemonLeague_BrunosRoom", "MAP_BATTLE_SCENE_GLACIA"),
+            ("PokemonLeague_KarensRoom", "MAP_BATTLE_SCENE_DRAKE"),
+        ):
+            with self.subTest(map_name=map_name):
+                materialized = json.loads(outputs[Path(f"data/maps/{map_name}/map.json")])
+                self.assertEqual(materialized["battle_scene"], battle_scene)
+        mountain_side = json.loads(outputs[Path("data/maps/MtSilver_MountainSide/map.json")])
+        self.assertEqual(mountain_side["object_events"][18]["movement_range_y"], 15)
+        self.assertEqual(mountain_side["object_events"][19]["movement_range_y"], 15)
+
         later = json.loads(outputs[Path("data/maps/Route22/map.json")])
         self.assertEqual(later["shared_scripts_map"], "KantoLater_Route22_Overland")
         self.assertEqual(later["warp_events"], [])
@@ -721,9 +776,58 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             (8, 12, "KantoOriginal_Route22_Overland_EventScript_Attendant"),
         )
 
+    def test_linker_closure_predecessors_are_exact(self):
+        outputs = world._registration_outputs(ROOT, DONOR, world.build_plan(ROOT, DONOR))
+        aliases = world._object_graphics_aliases(ROOT)
+        reverse_aliases = {target: source for source, target in aliases.items()}
+
+        relative = Path("data/maps/AzaleaTown/map.json")
+        expected = outputs[relative]
+        predecessor = json.loads(expected)
+        predecessor["music"] = "MUS_HG_AZALEA"
+        for event in predecessor["object_events"]:
+            graphics_id = event.get("graphics_id")
+            if graphics_id in reverse_aliases:
+                event["graphics_id"] = reverse_aliases[graphics_id]
+        predecessor_raw = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode()
+        self.assertTrue(world._is_pre_linker_closure_map(ROOT, DONOR, relative, predecessor_raw, expected))
+
+        relative = Path("data/maps/GoldenrodCity/map.json")
+        expected = outputs[relative]
+        predecessor = json.loads(expected)
+        donor_map = json.loads(world._git_blob(DONOR, relative.as_posix()))
+        for index, source_event in enumerate(donor_map["object_events"]):
+            if source_event["movement_type"] == "MOVEMENT_TYPE_TOWER_BEAM":
+                predecessor["object_events"][index]["movement_type"] = "MOVEMENT_TYPE_TOWER_BEAM"
+        predecessor_raw = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode()
+        self.assertTrue(world._is_pre_map_field_alias_map(DONOR, relative, predecessor_raw, expected))
+
+        relative = Path("data/maps/Route19_Cave/map.json")
+        expected = outputs[relative]
+        predecessor = json.loads(expected)
+        predecessor["music"] = "MUS_WEATHER_KYOGRE"
+        predecessor_raw = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode()
+        self.assertTrue(world._is_pre_map_field_alias_map(DONOR, relative, predecessor_raw, expected))
+
+        predecessor["object_events"][0]["x"] += 1
+        mutated = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode()
+        self.assertFalse(world._is_pre_linker_closure_map(ROOT, DONOR, relative, mutated, expected))
+
+        relative = Path("data/maps/VermilionCity/map.json")
+        expected = outputs[relative]
+        predecessor = json.loads(expected)
+        for event in predecessor["object_events"]:
+            if event.get("graphics_id") == "OBJ_EVENT_GFX_SNORLAX":
+                event["graphics_id"] = "OBJ_EVENT_GFX_BIG_SNORLAX"
+        predecessor_raw = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode()
+        self.assertTrue(world._is_pre_linker_closure_map(ROOT, DONOR, relative, predecessor_raw, expected))
+
     def test_overland_scripts_prepare_before_departure_and_commit_only_on_matching_arrival(self):
         assembly = world._render_event_script_assembly(ROOT)
-        selector = script_block(assembly, "Johto_ReceptionGate_Overland_EventScript_ChooseKanto")
+        selector_start = assembly.index(b"Johto_ReceptionGate_Overland_EventScript_ChooseKanto::")
+        selector = assembly[
+            selector_start:assembly.index(b"KantoOriginal_Route22_Overland_MapScripts::", selector_start)
+        ]
         lifecycle = (
             b"call EventScript_ChooseKantoEra",
             b"special Johto_RecordCurrentHeal",
@@ -773,6 +877,78 @@ class JohtoWorldPlannerTest(unittest.TestCase):
                 positions = [block.index(command) for command in lifecycle]
                 self.assertEqual(positions, sorted(positions))
                 self.assertNotIn(b"special Johto_CommitKantoTravel", block)
+
+    def test_reception_gate_offers_group_travel_before_solo_departure(self):
+        assembly = world._render_event_script_assembly(ROOT).replace(b"\r\n", b"\n")
+        label = "Johto_ReceptionGate_Overland_EventScript_ChooseKanto"
+        start = assembly.index(f"{label}::".encode())
+        selector = assembly[
+            start:assembly.index(b"KantoOriginal_Route22_Overland_MapScripts::", start)
+        ]
+        choose = selector.index(b"call EventScript_ChooseKantoEra")
+        begin = selector.index(b"special Special_CoopGroupTravelBegin")
+        solo = selector.index(f"{label}_SoloTravel::".encode())
+        heal = selector.index(b"special Johto_RecordCurrentHeal")
+        movement = selector.index(b"applymovement OBJ_EVENT_ID_PLAYER, Common_Movement_WalkRight")
+        self.assertLess(choose, begin)
+        self.assertLess(begin, solo)
+        self.assertLess(solo, heal)
+        self.assertLess(heal, movement)
+        self.assertIn(b"setvar VAR_0x8004, 5", selector)
+        self.assertIn(b"setvar VAR_0x8004, 6", selector)
+        self.assertIn(
+            f"\tcase 2, {label}_GroupTravelOriginal\n".encode(),
+            selector,
+        )
+        self.assertIn(
+            f"\tcase 3, {label}_GroupTravelLater\n".encode(),
+            selector,
+        )
+        self.assertIn(
+            b"special Special_CoopGroupTravelBegin\n"
+            + f"\tgoto_if_eq VAR_RESULT, 0, {label}_SoloTravel\n".encode()
+            + f"\tgoto_if_eq VAR_RESULT, 1, {label}_GroupTravelWaiting\n".encode()
+            + b"\tgoto Johto_ReceptionGate_Overland_EventScript_TravelFailed\n",
+            selector,
+        )
+        self.assertIn(
+            f"{label}_SoloTravel::\n".encode()
+            + b"\tspecial Johto_RecordCurrentHeal\n"
+            + b"\tgoto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_TravelFailed\n"
+            + b"\tspecial Johto_PrepareKantoTravel\n"
+            + b"\tgoto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_TravelFailed\n"
+            + b"\tswitch JOHTO_VAR_PENDING_KANTO_DESTINATION\n",
+            selector,
+        )
+        waiting = script_block(assembly, f"{label}_GroupTravelWaiting")
+        self.assertIn(b"end", waiting)
+        self.assertNotIn(b"release", waiting)
+
+        campaign = (ROOT / "data/johto/campaign_scripts.inc").read_bytes()
+        route_labels = {
+            b"Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_BoardTrain_GroupTravelOriginal": 1,
+            b"Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_BoardTrain_GroupTravelLater": 2,
+            b"Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseVermilion_GroupTravelOriginal": 3,
+            b"Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseVermilion_GroupTravelLater": 4,
+            b"Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal": 5,
+            b"Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater": 6,
+        }
+        combined = campaign + assembly
+        for route_label, route in route_labels.items():
+            self.assertIn(
+                route_label + b"::\n\tsetvar VAR_0x8004, " + str(route).encode(),
+                combined,
+            )
+        self.assertEqual(assembly.count(b"EventScript_CoopGroupTravelOffer::"), 1)
+        self.assertIn(b"special Special_CoopGroupTravelGetOffer", assembly)
+        for transport in (b"MAGNET TRAIN", b"ferry", b"S.S. AQUA", b"through the gate"):
+            self.assertIn(transport, assembly)
+        self.assertEqual(assembly.count(b"to original KANTO?$"), 4)
+        self.assertEqual(assembly.count(b"to KANTO three years later?$"), 4)
+        self.assertGreater(
+            assembly.index(b"EventScript_CoopGroupTravelOffer::"),
+            assembly.index(world.REGISTERED_ADAPTER_MARKER),
+        )
 
     def test_consistent_host_baseline_and_group_mutation_is_rejected(self):
         temporary, root = self._minimal_registration_root()
@@ -845,6 +1021,10 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(plan["general_runtime_ready_map_count"], 407)
         self.assertTrue(plan["production_write_ready"])
         self.assertEqual(plan["blockers"], [])
+
+        scenery = json.loads((ROOT / world.SCENERY_PATH).read_bytes())
+        self.assertTrue(scenery["runtime_readiness"]["ready"])
+        self.assertEqual(scenery["runtime_readiness"]["pending"], [])
 
         def regress(data):
             data["runtime_readiness"]["general_pending_layouts"].append("LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH")

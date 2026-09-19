@@ -30,10 +30,6 @@ class JohtoDailyEventsTests(unittest.TestCase):
             expression = entry["definition"]["expression"].split("//")[0].strip().strip("()")
             actual.append((symbol, entry["qualified"], expression, entry["runtime_id"]))
         self.assertEqual(actual, EXPECTED)
-        self.assertEqual(
-            [entry["symbol"] for entry in symbols["identities"]["flags"] if "DAILY_" in entry["symbol"]],
-            [item[0] for item in EXPECTED],
-        )
 
     def test_source_clears_only_generated_qualified_flags_and_wires_host_hook(self):
         source = (ROOT / "src/johto/daily_events.c").read_text(encoding="utf-8")
@@ -49,8 +45,8 @@ class JohtoDailyEventsTests(unittest.TestCase):
 
     def test_provenance_binds_pinned_donor_bytes_hashes_and_symbols(self):
         provenance = json.loads((ROOT / "data/johto/daily_events.json").read_text(encoding="utf-8"))
-        self.assertFalse(provenance["campaign_ready"])
-        self.assertFalse(provenance["engine_hooks_ready"])
+        self.assertTrue(provenance["campaign_ready"])
+        self.assertTrue(provenance["engine_hooks_ready"])
         self.assertEqual(provenance["source_revision"], DONOR_REVISION)
         self.assertEqual(provenance["provenance"]["donor_revision"], DONOR_REVISION)
         for item in provenance["provenance"]["source_hashes"]:
@@ -83,6 +79,17 @@ class JohtoDailyEventsTests(unittest.TestCase):
         ):
             self.assertIn(token, fixture)
         self.assertGreaterEqual(fixture.count("TEST("), 2)
+
+    def test_campaign_consumers_use_the_relocated_daily_flags(self):
+        campaign = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+        self.assertIn("goto_if_set JOHTO_FLAG_DAILY_BUG_CONTEST_COMPLETED", campaign)
+        self.assertIn("goto_if_set JOHTO_FLAG_DAILY_PICKED_LOTO_TICKET", campaign)
+        self.assertIn("setflag JOHTO_FLAG_DAILY_PICKED_LOTO_TICKET", campaign)
+        for suffix in ("1", "2"):
+            flag = f"JOHTO_FLAG_DAILY_HAIRCUT{suffix}_RECEIVED"
+            self.assertIn(f"goto_if_set {flag}", campaign)
+            self.assertIn(f"setflag {flag}", campaign)
+        self.assertEqual(campaign.count("special HaircutBrother1"), 3)
 
 
 if __name__ == "__main__":

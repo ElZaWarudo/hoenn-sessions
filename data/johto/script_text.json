@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "campaign_ready": false,
+  "campaign_ready": true,
   "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
   "normalization": "CRLF to LF",
   "source_hashes": [
@@ -19,7 +19,6 @@
     "Macro consumes destination byte and species halfword; no saved effects."
   ],
   "limitations": [
-    "Campaign importer must wire macro include and transform the three lab call sites.",
-    "Root GBA tests and campaign runtime remain pending."
+    "The macro is linked and all three New Bark Lab call sites are transformed; emulator dialogue validation remains pending."
   ]
 }

@@ -13,17 +13,17 @@ static void ResetCrops(void)
     ClearBerryTrees();
 }
 
-TEST("Johto ripe lifetime includes 90 and 109 but preserves host policy at 89 and 110")
+TEST("Johto ripe lifetime includes 90 through 124 but preserves host policy at 89 and 125")
 {
     u32 i;
     ResetCrops();
-    for (i = 89; i <= 110; i++)
+    for (i = 89; i <= 125; i++)
         PlantBerryTree(i, BERRY_ID_ORAN, BERRY_STAGE_BERRIES, TRUE);
     memcpy(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore));
     BerryTreeTimeUpdate(0x7FFFFFFF);
     for (i = 0; i < BERRY_TREES_COUNT; i++)
     {
-        if ((i == 89 || i == 110) && !OW_BERRY_IMMORTAL)
+        if ((i == 89 || i == 125) && !OW_BERRY_IMMORTAL)
             EXPECT_EQ(GetStageByBerryTreeId(i), BERRY_STAGE_NO_BERRY);
         else
             EXPECT_EQ(memcmp(GetBerryTreeInfo(i), &sBefore[i], sizeof(sBefore[i])), 0);
@@ -66,7 +66,7 @@ TEST("Johto elapsed clock honors the exact next stage and ignores nonpositive ti
     u16 duration;
     ResetCrops();
     PlantBerryTree(90, BERRY_ID_CHERI, BERRY_STAGE_SPROUTED, TRUE);
-    PlantBerryTree(109, BERRY_ID_ORAN, BERRY_STAGE_SPROUTED, FALSE);
+    PlantBerryTree(124, BERRY_ID_ORAN, BERRY_STAGE_SPROUTED, FALSE);
     memcpy(sBefore, gSaveBlock1Ptr->berryTrees, sizeof(sBefore));
     BerryTreeTimeUpdate(0);
     BerryTreeTimeUpdate(-1);
@@ -79,7 +79,7 @@ TEST("Johto elapsed clock honors the exact next stage and ignores nonpositive ti
     EXPECT_EQ((u32)GetBerryTreeInfo(90)->minutesUntilNextStage, 1);
     BerryTreeTimeUpdate(1);
     EXPECT_EQ(GetStageByBerryTreeId(90), BERRY_STAGE_TALLER);
-    EXPECT_EQ(memcmp(GetBerryTreeInfo(109), &sBefore[109], sizeof(sBefore[109])), 0);
+    EXPECT_EQ(memcmp(GetBerryTreeInfo(124), &sBefore[124], sizeof(sBefore[124])), 0);
 }
 
 TEST("Host ripe trees still regrow at their timer while Johto stays ripe")

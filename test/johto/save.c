@@ -28,7 +28,7 @@ struct TestFlashSectorMeta
     u8 saveBlock3Chunk[SAVE_BLOCK_3_CHUNK_SIZE];
 };
 
-static EWRAM_DATA u8 sFlashSaveBlock1Tail[NUM_SAVE_SLOTS][SECTOR_DATA_SIZE];
+static EWRAM_DATA u8 sFlashSaveBlock1Tail[NUM_SAVE_SLOTS][JOHTO_SAVE_SERIALIZED_TAIL_SIZE];
 static EWRAM_DATA struct TestFlashSectorMeta sFlashMeta[SECTORS_COUNT];
 static EWRAM_DATA struct SaveSector sPartialWriteBuffer;
 static u16 sPartialSector;
@@ -87,7 +87,7 @@ static void TestFlashRead(u16 sectorNum, u32 offset, u8 *dest, u32 size)
 
     slot = sectorNum / NUM_SECTORS_PER_SLOT;
     if (meta->id == SECTOR_ID_SAVEBLOCK1_END)
-        memcpy(sector->data, sFlashSaveBlock1Tail[slot], SECTOR_DATA_SIZE);
+        memcpy(sector->data, sFlashSaveBlock1Tail[slot], JOHTO_SAVE_SERIALIZED_TAIL_SIZE);
     memcpy(sector->saveBlock3Chunk, meta->saveBlock3Chunk, sizeof(sector->saveBlock3Chunk));
     sector->id = meta->id;
     sector->checksum = meta->checksum;
@@ -107,7 +107,7 @@ static void TestFlashStoreSector(u16 sectorNum, const struct SaveSector *sector)
     slot = sectorNum / NUM_SECTORS_PER_SLOT;
     meta = &sFlashMeta[sectorNum];
     if (sector->id == SECTOR_ID_SAVEBLOCK1_END)
-        memcpy(sFlashSaveBlock1Tail[slot], sector->data, SECTOR_DATA_SIZE);
+        memcpy(sFlashSaveBlock1Tail[slot], sector->data, JOHTO_SAVE_SERIALIZED_TAIL_SIZE);
     memcpy(meta->saveBlock3Chunk, sector->saveBlock3Chunk, sizeof(meta->saveBlock3Chunk));
     meta->id = sector->id;
     /* The fixture stores the production sector-5 bytes.  Other sectors are

@@ -16021,6 +16021,58 @@ const struct ItemInfo gItemsInfo[] =
         .iconPalette = gItemIconPalette_ExpShare,
     },
 
+    [ITEM_JOHTO_LOST_ITEM] =
+    {
+        .name = ITEM_NAME("Lost Item"),
+        .price = 0,
+        .description = COMPOUND_STRING("A Poké Doll that was\nlost by a girl in\nSaffron City."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_CardKey,
+        .iconPalette = gItemIconPalette_CardKey,
+    },
+
+    [ITEM_JOHTO_MACHINE_PART] =
+    {
+        .name = ITEM_NAME("Machine Part"),
+        .price = 0,
+        .description = COMPOUND_STRING("An important part\nfrom the Power Plant's\ngenerator."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_CardKey,
+        .iconPalette = gItemIconPalette_CardKey,
+    },
+
+    [ITEM_JOHTO_RADIO] =
+    {
+        .name = ITEM_NAME("Radio Card"),
+        .price = 0,
+        .description = COMPOUND_STRING("A card that adds the\nradio function to the\nPokégear."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_CardKey,
+        .iconPalette = gItemIconPalette_CardKey,
+    },
+
+    [ITEM_JOHTO_SQUIRT_BOTTLE] =
+    {
+        .name = ITEM_NAME("SquirtBottle"),
+        .price = 0,
+        .description = COMPOUND_STRING("A bottle used to\nwater plants. Some\nPokémon dislike it."),
+        .importance = 1,
+        .pocket = POCKET_KEY_ITEMS,
+        .type = ITEM_USE_BAG_MENU,
+        .fieldUseFunc = ItemUseOutOfBattle_CannotUse,
+        .iconPic = gItemIcon_WailmerPail,
+        .iconPalette = gItemIconPalette_WailmerPail,
+    },
+
 };
 
 #undef ITEM_NAME

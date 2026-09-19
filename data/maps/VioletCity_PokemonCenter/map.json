@@ -2,7 +2,7 @@
   "id": "MAP_VIOLET_CITY_POKEMON_CENTER",
   "name": "VioletCity_PokemonCenter",
   "layout": "LAYOUT_JOHTO_VIOLET_CITY_POKEMON_CENTER",
-  "music": "MUS_HG_POKE_CENTER",
+  "music": "MUS_POKE_CENTER",
   "region_map_section": "MAPSEC_JOHTO_VIOLET_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_NURSE",
       "x": 7,
       "y": 2,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_NURSE_CHANSEY",
       "x": 8,
       "y": 2,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 12,
       "y": 5,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 3,
       "y": 6,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GBA_KID",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GBA_KID",
       "x": 12,
       "y": 2,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SCIENTIST_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SCIENTIST_M",
       "x": 9,
       "y": 4,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_PokemonCenter_VioletCity_PokemonCenter_EventScript_Aide",
-      "flag": "FLAG_HIDE_VIOLET_CITY_AIDE"
+      "flag": "JOHTO_FLAG_HIDE_VIOLET_CITY_AIDE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BEAUTY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BEAUTY",
       "x": 2,
       "y": 2,
       "elevation": 0,

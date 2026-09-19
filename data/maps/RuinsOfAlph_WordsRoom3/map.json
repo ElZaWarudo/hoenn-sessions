@@ -2,7 +2,7 @@
   "id": "MAP_RUINS_OF_ALPH_WORDS_ROOM3",
   "name": "RuinsOfAlph_WordsRoom3",
   "layout": "LAYOUT_JOHTO_RUINS_OF_ALPH_WORDS_ROOM3",
-  "music": "MUS_HG_RUINS_OF_ALPH",
+  "music": "MUS_SEALED_CHAMBER",
   "region_map_section": "MAPSEC_JOHTO_RUINS_OF_ALPH",
   "requires_flash": false,
   "weather": "WEATHER_NONE",

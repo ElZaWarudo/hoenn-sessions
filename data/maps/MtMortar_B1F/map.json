@@ -2,7 +2,7 @@
   "id": "MAP_MT_MORTAR_B1F",
   "name": "MtMortar_B1F",
   "layout": "LAYOUT_JOHTO_MT_MORTAR_B1F",
-  "music": "MUS_HG_UNION_CAVE",
+  "music": "MUS_PETALBURG_WOODS",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_42",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_PUSHABLE_BOULDER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PUSHABLE_BOULDER",
       "x": 9,
       "y": 10,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
       "x": 16,
       "y": 4,
       "elevation": 0,
@@ -51,7 +51,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtMortar_B1F_MtMortar_B1F_EventScript_Item_PPUp",
-      "flag": "FLAG_ITEM_MTMORTAR4_PP_UP"
+      "flag": "JOHTO_FLAG_ITEM_MTMORTAR4_PP_UP"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -64,7 +64,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtMortar_B1F_MtMortar_B1F_EventScript_Item_MaxRevive",
-      "flag": "FLAG_ITEM_MTMORTAR4_MAX_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_MTMORTAR4_MAX_REVIVE"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -77,7 +77,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtMortar_B1F_MtMortar_B1F_EventScript_Item_Carbos",
-      "flag": "FLAG_ITEM_MTMORTAR4_CARBOS"
+      "flag": "JOHTO_FLAG_ITEM_MTMORTAR4_CARBOS"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -90,7 +90,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtMortar_B1F_MtMortar_B1F_EventScript_Item_MaxEther",
-      "flag": "FLAG_ITEM_MTMORTAR4_MAX_ETHER"
+      "flag": "JOHTO_FLAG_ITEM_MTMORTAR4_MAX_ETHER"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_MtMortar_B1F_MtMortar_B1F_EventScript_Item_HyperPotion",
-      "flag": "FLAG_ITEM_MTMORTAR4_HYPER_POTION"
+      "flag": "JOHTO_FLAG_ITEM_MTMORTAR4_HYPER_POTION"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MARILL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MARILL)",
       "x": 20,
       "y": 21,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RHYHORN",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RHYHORN)",
       "x": 8,
       "y": 26,
       "elevation": 0,
@@ -132,7 +132,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MACHOP",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MACHOP)",
       "x": 20,
       "y": 4,
       "elevation": 0,
@@ -145,7 +145,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CUBONE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CUBONE)",
       "x": 38,
       "y": 19,
       "elevation": 0,

@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE35",
   "name": "Route35",
   "layout": "LAYOUT_JOHTO_ROUTE35",
-  "music": "MUS_HG_ROUTE34",
+  "music": "MUS_ROUTE110",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_35",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_PICNICKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PICNICKER",
       "x": 10,
       "y": 38,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PICNICKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PICNICKER",
       "x": 21,
       "y": 23,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CAMPER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CAMPER",
       "x": 22,
       "y": 23,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CAMPER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CAMPER",
       "x": 14,
       "y": 23,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FIREBREATHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_FIREBREATHER",
       "x": 15,
       "y": 11,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_JUGGLER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_JUGGLER",
       "x": 18,
       "y": 16,
       "elevation": 0,
@@ -117,7 +117,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
       "x": 20,
       "y": 6,
       "elevation": 0,
@@ -127,10 +127,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "3",
       "script": "Johto_Route35_Route35_EventScript_PolicemanDirk",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BUG_CATCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BUG_CATCHER",
       "x": 30,
       "y": 7,
       "elevation": 0,
@@ -143,7 +143,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 31,
       "y": 6,
       "elevation": 0,
@@ -156,7 +156,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 35,
       "y": 45,
       "elevation": 0,
@@ -166,10 +166,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route35_Route35_EventScript_Item_RockTomb",
-      "flag": "FLAG_ITEM_ROUTE35_ROCK_TOMB"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE35_ROCK_TOMB"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 11,
       "y": 12,
       "elevation": 0,
@@ -179,10 +179,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route35_Route35_EventScript_Item_Nugget",
-      "flag": "FLAG_ITEM_ROUTE35_BIG_NUGGET"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE35_BIG_NUGGET"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GROWLITHE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GROWLITHE)",
       "x": 26,
       "y": 45,
       "elevation": 0,
@@ -195,7 +195,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_YANMA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(YANMA)",
       "x": 26,
       "y": 13,
       "elevation": 0,
@@ -208,7 +208,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_YANMA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(YANMA)",
       "x": 28,
       "y": 11,
       "elevation": 0,
@@ -221,7 +221,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SNUBBULL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SNUBBULL)",
       "x": 4,
       "y": 18,
       "elevation": 0,
@@ -234,7 +234,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GROWLITHE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GROWLITHE)",
       "x": 7,
       "y": 18,
       "elevation": 0,
@@ -247,7 +247,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ABRA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ABRA)",
       "x": 7,
       "y": 39,
       "elevation": 0,
@@ -260,7 +260,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PSYDUCK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PSYDUCK)",
       "x": 12,
       "y": 32,
       "elevation": 0,
@@ -270,10 +270,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ABRA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ABRA)",
       "x": 38,
       "y": 33,
       "elevation": 0,
@@ -286,7 +286,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 27,
       "y": 17,
       "elevation": 0,
@@ -296,7 +296,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route35_Route35_EventScript_Item_ParalyzeHeal",
-      "flag": "FLAG_ITEM_ROUTE35_PARALYZE_HEAL"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE35_PARALYZE_HEAL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_BERRY_TREE",
@@ -307,7 +307,7 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_PERSIM_1",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_PERSIM_1",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     }

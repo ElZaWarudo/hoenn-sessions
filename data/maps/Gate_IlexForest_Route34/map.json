@@ -2,7 +2,7 @@
   "id": "MAP_GATE_ILEX_FOREST_ROUTE34",
   "name": "Gate_IlexForest_Route34",
   "layout": "LAYOUT_JOHTO_GATE_ILEX_FOREST_ROUTE34",
-  "music": "MUS_HG_ROUTE34",
+  "music": "MUS_ROUTE110",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_34",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_2",
       "x": 9,
       "y": 6,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BUTTERFREE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BUTTERFREE)",
       "x": 9,
       "y": 5,
       "elevation": 0,

@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_MT_MOON_OUTSIDE",
   "name": "MtMoon_Outside",
   "layout": "LAYOUT_KANTO_LATER_MT_MOON_OUTSIDE",
-  "music": "MUS_HG_MT_MOON_SQUARE",
+  "music": "MUS_RG_MT_MOON",
   "region_map_section": "MAPSEC_MT_MOON",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -31,10 +31,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_EventScript_Moonstone",
-      "flag": "FLAG_ITEM_MTMOON_MOONSTONE"
+      "flag": "JOHTO_FLAG_ITEM_MTMOON_MOONSTONE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 7,
       "y": 11,
       "elevation": 0,
@@ -44,10 +44,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 7,
       "y": 16,
       "elevation": 0,
@@ -57,10 +57,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 7,
       "y": 6,
       "elevation": 0,
@@ -70,10 +70,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 19,
       "y": 6,
       "elevation": 0,
@@ -83,10 +83,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 19,
       "y": 11,
       "elevation": 0,
@@ -96,10 +96,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 19,
       "y": 16,
       "elevation": 0,
@@ -109,10 +109,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 10,
       "y": 14,
       "elevation": 0,
@@ -122,10 +122,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_JIRACHI",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(JIRACHI)",
       "x": 13,
       "y": 11,
       "elevation": 0,
@@ -135,10 +135,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Jirachi",
-      "flag": "FLAG_HIDE_MTMOON_JIRACHI"
+      "flag": "JOHTO_FLAG_HIDE_MTMOON_JIRACHI"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLEFAIRY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
       "x": 16,
       "y": 8,
       "elevation": 0,
@@ -148,10 +148,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_MtMoon_Outside_MtMoon_Outside_EventScript_Clefairy",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SKARMORY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SKARMORY)",
       "x": 40,
       "y": 1,
       "elevation": 0,
@@ -164,7 +164,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEY)",
       "x": 25,
       "y": 26,
       "elevation": 0,
@@ -177,7 +177,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SPEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SPEAROW)",
       "x": 27,
       "y": 26,
       "elevation": 0,

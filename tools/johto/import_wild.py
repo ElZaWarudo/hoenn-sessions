@@ -25,21 +25,24 @@ DONOR_SOURCE = "src/data/wild_encounters.json"
 MANIFEST_SOURCE = "data/johto/region_manifest.json"
 SPECIES_SOURCE = "include/constants/species.h"
 OUTPUT_SOURCE = "data/johto/wild_encounters.json"
-EXPECTED_APPROVED_MAPS = 239
-EXPECTED_MAPS_WITH_ENCOUNTERS = 93
-EXPECTED_SOURCE_HEADERS = 149
-EXPECTED_EMITTED_TABLES = 147
-EXPECTED_SINGLE_HEADER_MAPS = 39
+EXPECTED_APPROVED_MAPS = 407
+EXPECTED_ORIGINAL_MAPS = 239
+EXPECTED_LATER_MAPS = 168
+EXPECTED_MAPS_WITH_ENCOUNTERS = 145
+EXPECTED_SOURCE_HEADERS = 236
+EXPECTED_EMITTED_TABLES = 234
+EXPECTED_SINGLE_HEADER_MAPS = 56
 JOHTO_WILD_GROUP = "gJohtoWildMonHeaders"
 
 FIELD_ORDER = ("land_mons", "water_mons", "rock_smash_mons", "fishing_mons")
 FIELD_SLOT_LENGTHS = {
     "land_mons": {12},
-    "water_mons": {5, 12},
+    "water_mons": {5, 10, 12},
     "rock_smash_mons": {5},
     "fishing_mons": {10, 12},
 }
 FIELD_KEYS = set(FIELD_ORDER)
+WATER_SLOT_WEIGHTS = (60, 30, 5, 4, 1)
 SOURCE_LABEL_RE = re.compile(r"^g[A-Za-z0-9_]+$")
 SPECIES_RE = re.compile(r"^SPECIES_[A-Z0-9_]+$")
 
@@ -116,6 +119,22 @@ def _load_manifest(repo_root: Path) -> tuple[dict[str, dict[str, Any]], str]:
             f"approved map manifest has {len(maps) if isinstance(maps, list) else 'invalid'} "
             f"entries, expected {EXPECTED_APPROVED_MAPS}"
         )
+    selection = manifest.get("selection")
+    if not isinstance(selection, dict) or (
+        selection.get("selected_count") != EXPECTED_APPROVED_MAPS
+        or selection.get("original_selected_count") != EXPECTED_ORIGINAL_MAPS
+        or selection.get("later_selected_count") != EXPECTED_LATER_MAPS
+    ):
+        raise ImportErrorStrict("region manifest world selection counts drifted")
+    expected_ranges = {
+        "existing": 75,
+        "first_range": "75:0..127",
+        "second_range": "76:0..110",
+        "later_first_range": "77:0..127",
+        "later_second_range": "78:0..39",
+    }
+    if selection.get("proposed_map_groups") != expected_ranges:
+        raise ImportErrorStrict("region manifest host map ranges drifted")
     by_map: dict[str, dict[str, Any]] = {}
     for ordinal, entry in enumerate(maps):
         if not isinstance(entry, dict):
@@ -149,6 +168,30 @@ def _load_manifest(repo_root: Path) -> tuple[dict[str, dict[str, Any]], str]:
             raise ImportErrorStrict(f"malformed manifest linkage for {source_map!r}")
         if source_map in by_map:
             raise ImportErrorStrict(f"duplicate approved map {source_map}")
+        expected_era = "JOHTO" if ordinal < EXPECTED_ORIGINAL_MAPS else "KANTO_LATER"
+        expected_map_ids = (
+            {source_map, f"MAP_JOHTO_{source_map[4:]}"}
+            if expected_era == "JOHTO"
+            else {f"MAP_KANTO_LATER_{source_map[4:]}"}
+        )
+        identity = entry.get("identity_namespace")
+        if ordinal < 128:
+            expected_host = (75, ordinal)
+        elif ordinal < EXPECTED_ORIGINAL_MAPS:
+            expected_host = (76, ordinal - 128)
+        elif ordinal < EXPECTED_ORIGINAL_MAPS + 128:
+            expected_host = (77, ordinal - EXPECTED_ORIGINAL_MAPS)
+        else:
+            expected_host = (78, ordinal - EXPECTED_ORIGINAL_MAPS - 128)
+        if (
+            entry.get("world_era") != expected_era
+            or entry.get("campaign") != expected_era
+            or proposed["map_id"] not in expected_map_ids
+            or not isinstance(identity, dict)
+            or identity.get("map") != proposed["map_id"]
+            or (host["group"], host["index"]) != expected_host
+        ):
+            raise ImportErrorStrict(f"world identity drifted for {source_map}")
         by_map[source_map] = entry
     return by_map, _sha256(path)
 
@@ -246,6 +289,16 @@ def _validate_mons(value: Any, field_type: str, species: set[str]) -> dict[str, 
             "species": symbol,
         })
     return {"encounter_rate": rate, "mons": converted}
+
+
+def water_slot_selection(slot_count: int) -> dict[str, Any]:
+    """Describe the runtime selector for an accepted water table width."""
+
+    if slot_count == len(WATER_SLOT_WEIGHTS):
+        return {"mode": "weighted", "weights": list(WATER_SLOT_WEIGHTS)}
+    if slot_count in FIELD_SLOT_LENGTHS["water_mons"]:
+        return {"mode": "uniform_explicit_slots", "weights": [1] * slot_count}
+    raise ImportErrorStrict(f"invalid water_mons slot length {slot_count}")
 
 
 def _payload(entry: dict[str, Any]) -> dict[str, Any]:
@@ -470,6 +523,12 @@ def build_fragment(donor_root: Path, repo_root: Path = ROOT) -> dict[str, Any]:
             "night": {"start": "18:00", "end": "05:59"},
             "selection_helper": "time_of_day_for_hour",
             "existing_region_default_selection": "unchanged",
+        },
+        "slot_selection": {
+            "water_mons": {
+                str(slot_count): water_slot_selection(slot_count)
+                for slot_count in sorted(FIELD_SLOT_LENGTHS["water_mons"])
+            },
         },
         "absent_night_fallback": _fallback_metadata(encounters, by_map),
         "wild_encounter_groups": [

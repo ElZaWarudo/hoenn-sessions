@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE2",
   "name": "Route2",
   "layout": "LAYOUT_KANTO_LATER_ROUTE2",
-  "music": "MUS_HG_ROUTE1",
+  "music": "MUS_RG_ROUTE1",
   "region_map_section": "MAPSEC_ROUTE_2",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -36,10 +36,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route2_Route2_EventScript_Carbos",
-      "flag": "FLAG_ITEM_ROUTE2_CARBOS"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE2_CARBOS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 15,
       "y": 62,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 15,
       "y": 70,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "FLAG_TEMP_3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 15,
       "y": 69,
       "elevation": 0,
@@ -88,10 +88,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route2_Route2_EventScript_Nugget",
-      "flag": "FLAG_ITEM_ROUTE2_NUGGET"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE2_NUGGET"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 18,
       "y": 26,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CATERPIE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CATERPIE)",
       "x": 14,
       "y": 54,
       "elevation": 0,
@@ -117,7 +117,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_WEEDLE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(WEEDLE)",
       "x": 1,
       "y": 62,
       "elevation": 0,
@@ -130,7 +130,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 11,
       "y": 13,
       "elevation": 0,
@@ -143,7 +143,7 @@
       "flag": "FLAG_TEMP_5"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ZIGZAGOON",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)",
       "x": 23,
       "y": 77,
       "elevation": 0,

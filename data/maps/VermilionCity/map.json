@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_VERMILION_CITY",
   "name": "VermilionCity",
   "layout": "LAYOUT_KANTO_LATER_VERMILION_CITY",
-  "music": "MUS_HG_VERMILION",
+  "music": "MUS_RG_VERMILLION",
   "region_map_section": "MAPSEC_VERMILION_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -31,7 +31,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_BIG_SNORLAX",
+      "graphics_id": "OBJ_EVENT_GFX_SNORLAX",
       "x": 61,
       "y": 13,
       "elevation": 0,
@@ -41,10 +41,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VermilionCity_VermilionCity_EventScript_Snorlax",
-      "flag": "FLAG_HIDE_VERMILION_SNORLAX"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_SNORLAX"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_HIKER",
       "x": 46,
       "y": 16,
       "elevation": 0,
@@ -57,7 +57,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_1",
       "x": 43,
       "y": 9,
       "elevation": 0,
@@ -70,7 +70,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MACHOP",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MACHOP)",
       "x": 45,
       "y": 11,
       "elevation": 0,
@@ -83,7 +83,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BATTLE_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_BATTLE_GIRL",
       "x": 31,
       "y": 10,
       "elevation": 0,
@@ -109,7 +109,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SPEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SPEAROW)",
       "x": 27,
       "y": 14,
       "elevation": 0,
@@ -122,7 +122,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARCHER",
       "x": 62,
       "y": 13,
       "elevation": 0,
@@ -132,10 +132,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VermilionCity_VermilionCity_EventScript_Snorlax",
-      "flag": "FLAG_HIDE_VERMILION_SNORLAX"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_SNORLAX"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARCHER",
       "x": 60,
       "y": 13,
       "elevation": 0,
@@ -145,10 +145,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VermilionCity_VermilionCity_EventScript_Snorlax",
-      "flag": "FLAG_HIDE_VERMILION_SNORLAX"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_SNORLAX"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARCHER",
       "x": 60,
       "y": 12,
       "elevation": 0,
@@ -158,10 +158,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VermilionCity_VermilionCity_EventScript_Snorlax",
-      "flag": "FLAG_HIDE_VERMILION_SNORLAX"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_SNORLAX"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARCHER",
       "x": 62,
       "y": 12,
       "elevation": 0,
@@ -171,10 +171,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VermilionCity_VermilionCity_EventScript_Snorlax",
-      "flag": "FLAG_HIDE_VERMILION_SNORLAX"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_SNORLAX"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 50,
       "y": 12,
       "elevation": 0,
@@ -187,7 +187,7 @@
       "flag": "FLAG_TEMP_7"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 50,
       "y": 6,
       "elevation": 0,
@@ -200,7 +200,7 @@
       "flag": "FLAG_TEMP_4"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 49,
       "y": 4,
       "elevation": 0,
@@ -213,7 +213,7 @@
       "flag": "FLAG_TEMP_3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 51,
       "y": 6,
       "elevation": 0,
@@ -226,7 +226,7 @@
       "flag": "FLAG_TEMP_5"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 51,
       "y": 7,
       "elevation": 0,
@@ -239,7 +239,7 @@
       "flag": "FLAG_TEMP_6"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 49,
       "y": 13,
       "elevation": 0,
@@ -252,7 +252,7 @@
       "flag": "FLAG_TEMP_8"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 43,
       "y": 4,
       "elevation": 0,
@@ -265,7 +265,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 46,
       "y": 4,
       "elevation": 0,
@@ -278,7 +278,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 26,
       "y": 22,
       "elevation": 0,
@@ -291,7 +291,7 @@
       "flag": "FLAG_TEMP_9"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RAICHU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RAICHU)",
       "x": 19,
       "y": 20,
       "elevation": 0,
@@ -314,10 +314,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VermilionCity_VermilionCity_EventScript_OldSeaMap",
-      "flag": "FLAG_ITEM_VERMILION_OLD_SEA_MAP"
+      "flag": "JOHTO_FLAG_ITEM_VERMILION_OLD_SEA_MAP"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SUICUNE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SUICUNE)",
       "x": 55,
       "y": 28,
       "elevation": 0,
@@ -327,10 +327,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_VERMILION_EUSINE_SUICUNE"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_EUSINE_SUICUNE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_EUSINE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_EUSINE",
       "x": 50,
       "y": 22,
       "elevation": 0,
@@ -340,7 +340,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_VERMILION_EUSINE_SUICUNE"
+      "flag": "JOHTO_FLAG_HIDE_VERMILION_EUSINE_SUICUNE"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_LIGHT_SPRITE",
@@ -628,7 +628,7 @@
       "x": 48,
       "y": 30,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "3",
       "script": "KantoLater_VermilionCity_VermilionCity_TriggerSuicuneTop"
     },
@@ -637,7 +637,7 @@
       "x": 48,
       "y": 31,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "3",
       "script": "KantoLater_VermilionCity_VermilionCity_TriggerSuicuneMid"
     },
@@ -646,7 +646,7 @@
       "x": 48,
       "y": 32,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "3",
       "script": "KantoLater_VermilionCity_VermilionCity_TriggerSuicuneBot"
     },
@@ -655,7 +655,7 @@
       "x": 49,
       "y": 20,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "3",
       "script": "KantoLater_VermilionCity_VermilionCity_TriggerSuicuneNorth_Left"
     },
@@ -664,7 +664,7 @@
       "x": 50,
       "y": 20,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "3",
       "script": "KantoLater_VermilionCity_VermilionCity_TriggerSuicuneNorth_Mid"
     },
@@ -673,7 +673,7 @@
       "x": 51,
       "y": 20,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "3",
       "script": "KantoLater_VermilionCity_VermilionCity_TriggerSuicuneNorth_Right"
     }

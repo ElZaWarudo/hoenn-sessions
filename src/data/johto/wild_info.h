@@ -5675,3 +5675,4262 @@ static const struct WildPokemon sJohtoWild_SafariZone_Top_Right0_fishing_mons[] 
 };
 
 static const struct WildPokemonInfo sJohtoWild_SafariZone_Top_Right0_fishing_monsInfo = { 30, sJohtoWild_SafariZone_Top_Right0_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_PalletTown_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_PalletTown_rock_smash_monsInfo = { 60, sJohtoWild_PalletTown_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_PalletTown_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CORPHISH },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_CORPHISH },
+    { 40, 40, SPECIES_CORPHISH },
+    { 40, 40, SPECIES_CORPHISH },
+};
+
+static const struct WildPokemonInfo sJohtoWild_PalletTown_fishing_monsInfo = { 30, sJohtoWild_PalletTown_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_land_monsInfo = { 0, sJohtoWild_ViridianCity_land_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_water_monsInfo = { 7, sJohtoWild_ViridianCity_water_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_rock_smash_monsInfo = { 60, sJohtoWild_ViridianCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWHIRL },
+    { 40, 40, SPECIES_POLIWAG },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_fishing_monsInfo = { 30, sJohtoWild_ViridianCity_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_Night_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_Night_land_monsInfo = { 0, sJohtoWild_ViridianCity_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_Night_water_monsInfo = { 7, sJohtoWild_ViridianCity_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_Night_rock_smash_monsInfo = { 60, sJohtoWild_ViridianCity_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianCity_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWHIRL },
+    { 40, 40, SPECIES_POLIWAG },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianCity_Night_fishing_monsInfo = { 30, sJohtoWild_ViridianCity_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_PewterCity_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_PewterCity_rock_smash_monsInfo = { 60, sJohtoWild_PewterCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCity_water_mons[] =
+{
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCity_water_monsInfo = { 7, sJohtoWild_CeruleanCity_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCity_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCity_rock_smash_monsInfo = { 60, sJohtoWild_CeruleanCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCity_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCity_fishing_monsInfo = { 30, sJohtoWild_CeruleanCity_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCity_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCity_Night_water_monsInfo = { 7, sJohtoWild_CeruleanCity_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCity_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCity_Night_rock_smash_monsInfo = { 60, sJohtoWild_CeruleanCity_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCity_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCity_Night_fishing_monsInfo = { 30, sJohtoWild_CeruleanCity_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_land_monsInfo = { 0, sJohtoWild_VermilionCity_land_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_water_monsInfo = { 7, sJohtoWild_VermilionCity_water_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_rock_smash_mons[] =
+{
+    { 20, 22, SPECIES_GEODUDE },
+    { 20, 22, SPECIES_GEODUDE },
+    { 20, 22, SPECIES_GEODUDE },
+    { 20, 22, SPECIES_SHUCKLE },
+    { 20, 22, SPECIES_SHUCKLE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_rock_smash_monsInfo = { 60, sJohtoWild_VermilionCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_fishing_monsInfo = { 30, sJohtoWild_VermilionCity_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_Night_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_Night_land_monsInfo = { 0, sJohtoWild_VermilionCity_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_Night_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_Night_water_monsInfo = { 7, sJohtoWild_VermilionCity_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_Night_rock_smash_mons[] =
+{
+    { 20, 22, SPECIES_GEODUDE },
+    { 20, 22, SPECIES_GEODUDE },
+    { 20, 22, SPECIES_GEODUDE },
+    { 20, 22, SPECIES_SHUCKLE },
+    { 20, 22, SPECIES_SHUCKLE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_Night_rock_smash_monsInfo = { 60, sJohtoWild_VermilionCity_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_Night_fishing_monsInfo = { 30, sJohtoWild_VermilionCity_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_LavenderTown_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_LavenderTown_rock_smash_monsInfo = { 60, sJohtoWild_LavenderTown_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_water_mons[] =
+{
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 19, SPECIES_MUK },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 19, SPECIES_MUK },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 19, SPECIES_MUK },
+    { 15, 24, SPECIES_GRIMER },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_water_monsInfo = { 7, sJohtoWild_CeladonCity_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_rock_smash_monsInfo = { 60, sJohtoWild_CeladonCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_fishing_mons[] =
+{
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_fishing_monsInfo = { 0, sJohtoWild_CeladonCity_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_Night_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_Night_land_monsInfo = { 0, sJohtoWild_CeladonCity_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_Night_water_mons[] =
+{
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 19, SPECIES_MUK },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 19, SPECIES_MUK },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 24, SPECIES_GRIMER },
+    { 15, 19, SPECIES_MUK },
+    { 15, 24, SPECIES_GRIMER },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_Night_water_monsInfo = { 7, sJohtoWild_CeladonCity_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_Night_rock_smash_monsInfo = { 60, sJohtoWild_CeladonCity_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeladonCity_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+    { 5, 5, SPECIES_GRIMER },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeladonCity_Night_fishing_monsInfo = { 0, sJohtoWild_CeladonCity_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_SaffronCity_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_SaffronCity_rock_smash_monsInfo = { 60, sJohtoWild_SaffronCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_water_mons[] =
+{
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_water_monsInfo = { 7, sJohtoWild_FuchsiaCity_water_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_rock_smash_monsInfo = { 60, sJohtoWild_FuchsiaCity_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GYARADOS },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_GYARADOS },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_GYARADOS },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_fishing_monsInfo = { 30, sJohtoWild_FuchsiaCity_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_Night_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_Night_land_monsInfo = { 0, sJohtoWild_FuchsiaCity_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_Night_water_mons[] =
+{
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+    { 10, 24, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_Night_water_monsInfo = { 7, sJohtoWild_FuchsiaCity_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_Night_rock_smash_monsInfo = { 60, sJohtoWild_FuchsiaCity_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GYARADOS },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_GYARADOS },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_GYARADOS },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_Night_fishing_monsInfo = { 30, sJohtoWild_FuchsiaCity_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CinnabarIsland_land_mons[] =
+{
+    { 30, 35, SPECIES_SLUGMA },
+    { 30, 35, SPECIES_KOFFING },
+    { 37, 41, SPECIES_GRAVELER },
+    { 39, 42, SPECIES_WEEZING },
+    { 33, 38, SPECIES_MAGMAR },
+    { 36, 41, SPECIES_MAGCARGO },
+    { 38, 42, SPECIES_MAGMAR },
+    { 37, 43, SPECIES_TORKOAL },
+    { 10, 20, SPECIES_MAGBY },
+    { 10, 20, SPECIES_MAGBY },
+    { 10, 20, SPECIES_MAGBY },
+    { 10, 20, SPECIES_MAGBY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CinnabarIsland_land_monsInfo = { 20, sJohtoWild_CinnabarIsland_land_mons };
+
+static const struct WildPokemon sJohtoWild_CinnabarIsland_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_WAILMER },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CinnabarIsland_water_monsInfo = { 7, sJohtoWild_CinnabarIsland_water_mons };
+
+static const struct WildPokemon sJohtoWild_CinnabarIsland_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CinnabarIsland_fishing_monsInfo = { 30, sJohtoWild_CinnabarIsland_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CinnabarIsland_Night_land_mons[] =
+{
+    { 30, 35, SPECIES_SLUGMA },
+    { 30, 35, SPECIES_KOFFING },
+    { 37, 41, SPECIES_GRAVELER },
+    { 39, 42, SPECIES_WEEZING },
+    { 33, 38, SPECIES_MAGMAR },
+    { 36, 41, SPECIES_MAGCARGO },
+    { 38, 42, SPECIES_MAGMAR },
+    { 37, 43, SPECIES_TORKOAL },
+    { 10, 20, SPECIES_MISDREAVUS },
+    { 10, 20, SPECIES_MISDREAVUS },
+    { 10, 20, SPECIES_MISDREAVUS },
+    { 10, 20, SPECIES_MISDREAVUS },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CinnabarIsland_Night_land_monsInfo = { 20, sJohtoWild_CinnabarIsland_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_CinnabarIsland_Night_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_WAILMER },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CinnabarIsland_Night_water_monsInfo = { 7, sJohtoWild_CinnabarIsland_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_CinnabarIsland_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CinnabarIsland_Night_fishing_monsInfo = { 30, sJohtoWild_CinnabarIsland_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_land_mons[] =
+{
+    { 2, 4, SPECIES_PIDGEY },
+    { 2, 2, SPECIES_RATTATA },
+    { 3, 3, SPECIES_SENTRET },
+    { 6, 6, SPECIES_FURRET },
+    { 2, 4, SPECIES_PIDGEY },
+    { 2, 2, SPECIES_RATTATA },
+    { 3, 3, SPECIES_POOCHYENA },
+    { 2, 2, SPECIES_SENTRET },
+    { 2, 4, SPECIES_PIDGEY },
+    { 6, 6, SPECIES_FURRET },
+    { 6, 6, SPECIES_FURRET },
+    { 6, 6, SPECIES_FURRET },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_land_monsInfo = { 20, sJohtoWild_Route1_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_water_monsInfo = { 7, sJohtoWild_Route1_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_rock_smash_monsInfo = { 60, sJohtoWild_Route1_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_fishing_monsInfo = { 30, sJohtoWild_Route1_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_Night_land_mons[] =
+{
+    { 2, 3, SPECIES_RATTATA },
+    { 2, 4, SPECIES_HOOTHOOT },
+    { 2, 3, SPECIES_RATTATA },
+    { 2, 4, SPECIES_HOOTHOOT },
+    { 2, 3, SPECIES_RATTATA },
+    { 2, 4, SPECIES_HOOTHOOT },
+    { 2, 4, SPECIES_POOCHYENA },
+    { 6, 6, SPECIES_SENTRET },
+    { 6, 6, SPECIES_RATICATE },
+    { 2, 4, SPECIES_HOOTHOOT },
+    { 6, 6, SPECIES_RATICATE },
+    { 6, 6, SPECIES_RATICATE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_Night_land_monsInfo = { 20, sJohtoWild_Route1_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_Night_water_monsInfo = { 7, sJohtoWild_Route1_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route1_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route1_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route1_Night_fishing_monsInfo = { 30, sJohtoWild_Route1_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_land_mons[] =
+{
+    { 3, 5, SPECIES_PIDGEY },
+    { 3, 3, SPECIES_CATERPIE },
+    { 7, 7, SPECIES_BUTTERFREE },
+    { 7, 7, SPECIES_PIDGEOTTO },
+    { 3, 5, SPECIES_PIDGEY },
+    { 3, 3, SPECIES_CATERPIE },
+    { 3, 5, SPECIES_ZIGZAGOON },
+    { 3, 3, SPECIES_LEDYBA },
+    { 4, 4, SPECIES_LEDYBA },
+    { 7, 7, SPECIES_LEDIAN },
+    { 4, 4, SPECIES_LEDYBA },
+    { 7, 7, SPECIES_PIDGEOTTO },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_land_monsInfo = { 20, sJohtoWild_Route2_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_water_monsInfo = { 7, sJohtoWild_Route2_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_rock_smash_monsInfo = { 60, sJohtoWild_Route2_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_fishing_monsInfo = { 30, sJohtoWild_Route2_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_Night_land_mons[] =
+{
+    { 3, 5, SPECIES_HOOTHOOT },
+    { 3, 3, SPECIES_SPINARAK },
+    { 4, 7, SPECIES_NOCTOWL },
+    { 7, 7, SPECIES_ARIADOS },
+    { 3, 5, SPECIES_HOOTHOOT },
+    { 3, 3, SPECIES_SPINARAK },
+    { 3, 5, SPECIES_ZIGZAGOON },
+    { 4, 7, SPECIES_HOOTHOOT },
+    { 3, 3, SPECIES_SPINARAK },
+    { 4, 7, SPECIES_NOCTOWL },
+    { 4, 7, SPECIES_NOCTOWL },
+    { 7, 7, SPECIES_ARIADOS },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_Night_land_monsInfo = { 20, sJohtoWild_Route2_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_Night_water_monsInfo = { 7, sJohtoWild_Route2_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route2_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route2_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route2_Night_fishing_monsInfo = { 30, sJohtoWild_Route2_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_land_mons[] =
+{
+    { 5, 5, SPECIES_SPEAROW },
+    { 5, 5, SPECIES_RATTATA },
+    { 8, 8, SPECIES_JIGGLYPUFF },
+    { 10, 10, SPECIES_JIGGLYPUFF },
+    { 5, 5, SPECIES_SANDSHREW },
+    { 5, 5, SPECIES_RATTATA },
+    { 8, 8, SPECIES_JIGGLYPUFF },
+    { 10, 10, SPECIES_SKITTY },
+    { 10, 10, SPECIES_ARBOK },
+    { 10, 10, SPECIES_ARBOK },
+    { 10, 10, SPECIES_SANDSHREW },
+    { 10, 10, SPECIES_RATICATE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_land_monsInfo = { 20, sJohtoWild_Route3_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_water_monsInfo = { 0, sJohtoWild_Route3_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_rock_smash_monsInfo = { 60, sJohtoWild_Route3_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_fishing_monsInfo = { 0, sJohtoWild_Route3_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_Night_land_mons[] =
+{
+    { 5, 10, SPECIES_RATTATA },
+    { 10, 10, SPECIES_RATICATE },
+    { 6, 6, SPECIES_ZUBAT },
+    { 6, 6, SPECIES_CLEFAIRY },
+    { 5, 10, SPECIES_RATTATA },
+    { 5, 10, SPECIES_RATTATA },
+    { 5, 10, SPECIES_NINCADA },
+    { 6, 6, SPECIES_ZUBAT },
+    { 6, 6, SPECIES_CLEFAIRY },
+    { 10, 10, SPECIES_RATICATE },
+    { 5, 10, SPECIES_RATTATA },
+    { 5, 10, SPECIES_RATTATA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_Night_land_monsInfo = { 20, sJohtoWild_Route3_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_Night_water_monsInfo = { 0, sJohtoWild_Route3_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route3_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route3_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route3_Night_fishing_monsInfo = { 0, sJohtoWild_Route3_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_land_mons[] =
+{
+    { 5, 5, SPECIES_SPEAROW },
+    { 5, 5, SPECIES_RATTATA },
+    { 8, 8, SPECIES_EKANS },
+    { 10, 10, SPECIES_RATICATE },
+    { 5, 5, SPECIES_SPEAROW },
+    { 5, 5, SPECIES_SANDSHREW },
+    { 8, 8, SPECIES_EKANS },
+    { 10, 10, SPECIES_ZANGOOSE },
+    { 10, 10, SPECIES_ARBOK },
+    { 10, 10, SPECIES_SANDSHREW },
+    { 10, 10, SPECIES_ARBOK },
+    { 10, 10, SPECIES_RATICATE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_land_monsInfo = { 20, sJohtoWild_Route4_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_water_mons[] =
+{
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_water_monsInfo = { 7, sJohtoWild_Route4_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_rock_smash_monsInfo = { 60, sJohtoWild_Route4_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_SEAKING },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_fishing_monsInfo = { 30, sJohtoWild_Route4_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_Night_land_mons[] =
+{
+    { 5, 10, SPECIES_RATTATA },
+    { 5, 10, SPECIES_RATTATA },
+    { 5, 10, SPECIES_RATTATA },
+    { 10, 10, SPECIES_RATICATE },
+    { 5, 10, SPECIES_RATTATA },
+    { 5, 10, SPECIES_RATICATE },
+    { 10, 10, SPECIES_RATICATE },
+    { 6, 6, SPECIES_SEVIPER },
+    { 5, 10, SPECIES_RATTATA },
+    { 6, 6, SPECIES_ZUBAT },
+    { 6, 6, SPECIES_CLEFAIRY },
+    { 6, 6, SPECIES_CLEFAIRY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_Night_land_monsInfo = { 20, sJohtoWild_Route4_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 5, 14, SPECIES_GOLDEEN },
+    { 10, 14, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_Night_water_monsInfo = { 7, sJohtoWild_Route4_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route4_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route4_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_SEAKING },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route4_Night_fishing_monsInfo = { 30, sJohtoWild_Route4_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_land_mons[] =
+{
+    { 13, 13, SPECIES_PIDGEY },
+    { 13, 13, SPECIES_SNUBBULL },
+    { 15, 15, SPECIES_MEOWTH },
+    { 12, 14, SPECIES_ABRA },
+    { 13, 13, SPECIES_PIDGEY },
+    { 13, 13, SPECIES_MEOWTH },
+    { 15, 15, SPECIES_PIDGEOTTO },
+    { 12, 14, SPECIES_SPINDA },
+    { 12, 14, SPECIES_ABRA },
+    { 14, 14, SPECIES_JIGGLYPUFF },
+    { 12, 14, SPECIES_ABRA },
+    { 14, 14, SPECIES_JIGGLYPUFF },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_land_monsInfo = { 20, sJohtoWild_Route5_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_water_monsInfo = { 0, sJohtoWild_Route5_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_rock_smash_monsInfo = { 60, sJohtoWild_Route5_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_fishing_monsInfo = { 0, sJohtoWild_Route5_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_Night_land_mons[] =
+{
+    { 13, 13, SPECIES_HOOTHOOT },
+    { 13, 13, SPECIES_MEOWTH },
+    { 15, 15, SPECIES_NOCTOWL },
+    { 12, 14, SPECIES_ABRA },
+    { 13, 13, SPECIES_SPINDA },
+    { 13, 13, SPECIES_MEOWTH },
+    { 15, 15, SPECIES_NOCTOWL },
+    { 12, 14, SPECIES_ABRA },
+    { 12, 14, SPECIES_ABRA },
+    { 14, 14, SPECIES_JIGGLYPUFF },
+    { 12, 14, SPECIES_ABRA },
+    { 14, 14, SPECIES_JIGGLYPUFF },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_Night_land_monsInfo = { 20, sJohtoWild_Route5_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_Night_water_monsInfo = { 0, sJohtoWild_Route5_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route5_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route5_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route5_Night_fishing_monsInfo = { 0, sJohtoWild_Route5_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_land_mons[] =
+{
+    { 13, 13, SPECIES_RATTATA },
+    { 13, 13, SPECIES_SNUBBULL },
+    { 14, 14, SPECIES_MAGNEMITE },
+    { 15, 15, SPECIES_RATICATE },
+    { 13, 13, SPECIES_RATTATA },
+    { 13, 13, SPECIES_SNUBBULL },
+    { 14, 14, SPECIES_PLUSLE },
+    { 12, 12, SPECIES_MINUN },
+    { 15, 15, SPECIES_GRANBULL },
+    { 15, 15, SPECIES_GRANBULL },
+    { 12, 12, SPECIES_SNUBBULL },
+    { 15, 15, SPECIES_RATICATE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_land_monsInfo = { 20, sJohtoWild_Route6_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_water_mons[] =
+{
+    { 5, 14, SPECIES_PSYDUCK },
+    { 5, 14, SPECIES_PSYDUCK },
+    { 5, 14, SPECIES_PSYDUCK },
+    { 5, 14, SPECIES_PSYDUCK },
+    { 10, 14, SPECIES_GOLDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_water_monsInfo = { 7, sJohtoWild_Route6_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_rock_smash_monsInfo = { 60, sJohtoWild_Route6_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_fishing_monsInfo = { 30, sJohtoWild_Route6_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_Night_land_mons[] =
+{
+    { 13, 13, SPECIES_MEOWTH },
+    { 13, 13, SPECIES_DROWZEE },
+    { 14, 14, SPECIES_MAGNEMITE },
+    { 15, 15, SPECIES_PSYDUCK },
+    { 13, 13, SPECIES_MEOWTH },
+    { 13, 13, SPECIES_DROWZEE },
+    { 14, 14, SPECIES_PLUSLE },
+    { 15, 15, SPECIES_MINUN },
+    { 15, 15, SPECIES_RATICATE },
+    { 15, 15, SPECIES_RATICATE },
+    { 15, 15, SPECIES_JIGGLYPUFF },
+    { 15, 15, SPECIES_PSYDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_Night_land_monsInfo = { 20, sJohtoWild_Route6_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_PSYDUCK },
+    { 5, 14, SPECIES_PSYDUCK },
+    { 5, 14, SPECIES_PSYDUCK },
+    { 5, 14, SPECIES_PSYDUCK },
+    { 10, 14, SPECIES_GOLDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_Night_water_monsInfo = { 7, sJohtoWild_Route6_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route6_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route6_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route6_Night_fishing_monsInfo = { 30, sJohtoWild_Route6_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_land_mons[] =
+{
+    { 17, 17, SPECIES_RATTATA },
+    { 17, 17, SPECIES_SPEAROW },
+    { 18, 18, SPECIES_SNUBBULL },
+    { 18, 18, SPECIES_RATICATE },
+    { 17, 17, SPECIES_SPEAROW },
+    { 17, 17, SPECIES_SNUBBULL },
+    { 18, 18, SPECIES_RALTS },
+    { 18, 18, SPECIES_JIGGLYPUFF },
+    { 16, 16, SPECIES_ABRA },
+    { 18, 18, SPECIES_RATICATE },
+    { 16, 16, SPECIES_ABRA },
+    { 18, 18, SPECIES_JIGGLYPUFF },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_land_monsInfo = { 20, sJohtoWild_Route7_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_water_monsInfo = { 0, sJohtoWild_Route7_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_rock_smash_monsInfo = { 60, sJohtoWild_Route7_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_fishing_monsInfo = { 0, sJohtoWild_Route7_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_Night_land_mons[] =
+{
+    { 17, 17, SPECIES_MEOWTH },
+    { 17, 17, SPECIES_MURKROW },
+    { 18, 18, SPECIES_HOUNDOUR },
+    { 18, 18, SPECIES_PERSIAN },
+    { 17, 17, SPECIES_MURKROW },
+    { 17, 17, SPECIES_JIGGLYPUFF },
+    { 18, 18, SPECIES_HOUNDOUR },
+    { 18, 18, SPECIES_RALTS },
+    { 16, 16, SPECIES_ABRA },
+    { 18, 18, SPECIES_PERSIAN },
+    { 16, 16, SPECIES_ABRA },
+    { 18, 18, SPECIES_JIGGLYPUFF },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_Night_land_monsInfo = { 20, sJohtoWild_Route7_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_Night_water_monsInfo = { 0, sJohtoWild_Route7_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route7_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route7_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route7_Night_fishing_monsInfo = { 0, sJohtoWild_Route7_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route8_land_mons[] =
+{
+    { 17, 17, SPECIES_SNUBBULL },
+    { 19, 19, SPECIES_PIDGEOTTO },
+    { 16, 16, SPECIES_ABRA },
+    { 17, 17, SPECIES_GROWLITHE },
+    { 17, 17, SPECIES_SNUBBULL },
+    { 19, 19, SPECIES_PIDGEOTTO },
+    { 16, 16, SPECIES_ABRA },
+    { 16, 16, SPECIES_VULPIX },
+    { 18, 18, SPECIES_KADABRA },
+    { 17, 17, SPECIES_GROWLITHE },
+    { 18, 18, SPECIES_KADABRA },
+    { 16, 16, SPECIES_JIGGLYPUFF },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route8_land_monsInfo = { 20, sJohtoWild_Route8_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route8_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route8_water_monsInfo = { 0, sJohtoWild_Route8_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route8_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route8_rock_smash_monsInfo = { 60, sJohtoWild_Route8_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route8_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route8_fishing_monsInfo = { 0, sJohtoWild_Route8_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route8_Night_land_mons[] =
+{
+    { 17, 17, SPECIES_MEOWTH },
+    { 20, 20, SPECIES_NOCTOWL },
+    { 16, 16, SPECIES_ABRA },
+    { 17, 17, SPECIES_HAUNTER },
+    { 17, 17, SPECIES_MEOWTH },
+    { 20, 20, SPECIES_ABRA },
+    { 16, 16, SPECIES_DUSKULL },
+    { 16, 16, SPECIES_JIGGLYPUFF },
+    { 18, 18, SPECIES_KADABRA },
+    { 17, 17, SPECIES_HAUNTER },
+    { 18, 18, SPECIES_KADABRA },
+    { 16, 16, SPECIES_JIGGLYPUFF },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route8_Night_land_monsInfo = { 20, sJohtoWild_Route8_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route8_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route8_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route8_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_land_mons[] =
+{
+    { 15, 15, SPECIES_RATTATA },
+    { 15, 15, SPECIES_SPEAROW },
+    { 15, 15, SPECIES_RATICATE },
+    { 15, 15, SPECIES_FEAROW },
+    { 15, 15, SPECIES_SPEAROW },
+    { 15, 15, SPECIES_RATICATE },
+    { 15, 15, SPECIES_ARON },
+    { 18, 18, SPECIES_MAROWAK },
+    { 15, 15, SPECIES_FEAROW },
+    { 18, 18, SPECIES_MAROWAK },
+    { 15, 15, SPECIES_FEAROW },
+    { 15, 15, SPECIES_RATICATE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_land_monsInfo = { 20, sJohtoWild_Route9_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_water_monsInfo = { 7, sJohtoWild_Route9_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_rock_smash_monsInfo = { 60, sJohtoWild_Route9_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_SEAKING },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_fishing_monsInfo = { 30, sJohtoWild_Route9_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_Night_land_mons[] =
+{
+    { 15, 15, SPECIES_RATTATA },
+    { 15, 15, SPECIES_VENONAT },
+    { 15, 18, SPECIES_RATICATE },
+    { 15, 15, SPECIES_VENOMOTH },
+    { 15, 15, SPECIES_VENONAT },
+    { 15, 15, SPECIES_RATICATE },
+    { 15, 18, SPECIES_ARON },
+    { 15, 15, SPECIES_ZUBAT },
+    { 15, 18, SPECIES_RATICATE },
+    { 15, 15, SPECIES_ZUBAT },
+    { 15, 15, SPECIES_VENOMOTH },
+    { 15, 15, SPECIES_ZUBAT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_Night_land_monsInfo = { 20, sJohtoWild_Route9_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_Night_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_Night_water_monsInfo = { 7, sJohtoWild_Route9_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route9_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route9_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_SEAKING },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route9_Night_fishing_monsInfo = { 30, sJohtoWild_Route9_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_land_mons[] =
+{
+    { 35, 35, SPECIES_SPEAROW },
+    { 37, 37, SPECIES_VOLTORB },
+    { 35, 35, SPECIES_RATICATE },
+    { 45, 45, SPECIES_FEAROW },
+    { 35, 35, SPECIES_RATICATE },
+    { 37, 37, SPECIES_VOLTORB },
+    { 35, 35, SPECIES_ELECTRIKE },
+    { 45, 45, SPECIES_MAROWAK },
+    { 46, 46, SPECIES_ELECTABUZZ },
+    { 45, 45, SPECIES_MAROWAK },
+    { 46, 46, SPECIES_ELECTABUZZ },
+    { 46, 46, SPECIES_ELECTABUZZ },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_land_monsInfo = { 20, sJohtoWild_Route10_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_water_monsInfo = { 7, sJohtoWild_Route10_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_rock_smash_monsInfo = { 60, sJohtoWild_Route10_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_SEAKING },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_fishing_monsInfo = { 30, sJohtoWild_Route10_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_Night_land_mons[] =
+{
+    { 35, 35, SPECIES_VENONAT },
+    { 37, 37, SPECIES_VOLTORB },
+    { 35, 35, SPECIES_RATICATE },
+    { 45, 45, SPECIES_VENOMOTH },
+    { 35, 35, SPECIES_RATICATE },
+    { 37, 37, SPECIES_VOLTORB },
+    { 35, 35, SPECIES_ELECTRIKE },
+    { 35, 35, SPECIES_ZUBAT },
+    { 46, 46, SPECIES_ELECTABUZZ },
+    { 35, 35, SPECIES_ZUBAT },
+    { 46, 46, SPECIES_ELECTABUZZ },
+    { 46, 46, SPECIES_ELECTABUZZ },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_Night_land_monsInfo = { 20, sJohtoWild_Route10_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_Night_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_Night_water_monsInfo = { 7, sJohtoWild_Route10_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route10_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route10_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_GOLDEEN },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_SEAKING },
+    { 20, 20, SPECIES_GOLDEEN },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_MAGIKARP },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route10_Night_fishing_monsInfo = { 30, sJohtoWild_Route10_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_land_mons[] =
+{
+    { 14, 16, SPECIES_HOPPIP },
+    { 13, 13, SPECIES_RATICATE },
+    { 15, 15, SPECIES_MAGNEMITE },
+    { 16, 16, SPECIES_PIDGEOTTO },
+    { 14, 16, SPECIES_RATTATA },
+    { 13, 13, SPECIES_RATICATE },
+    { 15, 15, SPECIES_MAGNEMITE },
+    { 16, 16, SPECIES_SLAKOTH },
+    { 16, 16, SPECIES_RATTATA },
+    { 16, 16, SPECIES_PIDGEOTTO },
+    { 14, 14, SPECIES_HOPPIP },
+    { 15, 15, SPECIES_MAGNEMITE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_land_monsInfo = { 20, sJohtoWild_Route11_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_water_monsInfo = { 0, sJohtoWild_Route11_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_rock_smash_monsInfo = { 60, sJohtoWild_Route11_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_fishing_monsInfo = { 0, sJohtoWild_Route11_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_Night_land_mons[] =
+{
+    { 14, 14, SPECIES_DROWZEE },
+    { 13, 13, SPECIES_MEOWTH },
+    { 15, 15, SPECIES_MAGNEMITE },
+    { 16, 16, SPECIES_RATICATE },
+    { 14, 14, SPECIES_DROWZEE },
+    { 13, 13, SPECIES_MEOWTH },
+    { 15, 15, SPECIES_MAGNEMITE },
+    { 16, 16, SPECIES_SLAKOTH },
+    { 16, 16, SPECIES_RATICATE },
+    { 16, 16, SPECIES_NOCTOWL },
+    { 16, 16, SPECIES_HYPNO },
+    { 16, 16, SPECIES_HYPNO },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_Night_land_monsInfo = { 20, sJohtoWild_Route11_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_Night_water_monsInfo = { 0, sJohtoWild_Route11_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route11_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route11_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route11_Night_fishing_monsInfo = { 0, sJohtoWild_Route11_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_land_mons[] =
+{
+    { 23, 23, SPECIES_NIDORINO },
+    { 23, 23, SPECIES_NIDORINA },
+    { 25, 25, SPECIES_PIDGEOTTO },
+    { 25, 27, SPECIES_HOPPIP },
+    { 23, 23, SPECIES_NIDORINO },
+    { 23, 23, SPECIES_NIDORINA },
+    { 25, 25, SPECIES_PIDGEOTTO },
+    { 25, 27, SPECIES_SEEDOT },
+    { 25, 27, SPECIES_HOPPIP },
+    { 25, 27, SPECIES_HOPPIP },
+    { 25, 25, SPECIES_CHANSEY },
+    { 25, 25, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_land_monsInfo = { 20, sJohtoWild_Route12_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_CARVANHA },
+    { 25, 29, SPECIES_CARVANHA },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_water_monsInfo = { 7, sJohtoWild_Route12_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_rock_smash_monsInfo = { 60, sJohtoWild_Route12_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_fishing_monsInfo = { 30, sJohtoWild_Route12_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_Night_land_mons[] =
+{
+    { 23, 23, SPECIES_VENONAT },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_NOCTOWL },
+    { 25, 25, SPECIES_VENOMOTH },
+    { 23, 23, SPECIES_VENONAT },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_NOCTOWL },
+    { 23, 25, SPECIES_SEEDOT },
+    { 25, 25, SPECIES_VENOMOTH },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_CHANSEY },
+    { 25, 25, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_Night_land_monsInfo = { 20, sJohtoWild_Route12_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_Night_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_CARVANHA },
+    { 25, 29, SPECIES_CARVANHA },
+    { 25, 29, SPECIES_CARVANHA },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_Night_water_monsInfo = { 7, sJohtoWild_Route12_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SPINARAK },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route12_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route12_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route12_Night_fishing_monsInfo = { 30, sJohtoWild_Route12_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_land_mons[] =
+{
+    { 23, 23, SPECIES_NIDORINO },
+    { 23, 23, SPECIES_NIDORINA },
+    { 25, 25, SPECIES_PIDGEOTTO },
+    { 25, 27, SPECIES_HOPPIP },
+    { 23, 23, SPECIES_NIDORINO },
+    { 23, 23, SPECIES_NIDORINA },
+    { 25, 25, SPECIES_PIDGEOTTO },
+    { 25, 27, SPECIES_SEEDOT },
+    { 25, 27, SPECIES_HOPPIP },
+    { 25, 27, SPECIES_HOPPIP },
+    { 25, 25, SPECIES_CHANSEY },
+    { 25, 25, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_land_monsInfo = { 20, sJohtoWild_Route13_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_water_monsInfo = { 7, sJohtoWild_Route13_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SEEDOT },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_rock_smash_monsInfo = { 60, sJohtoWild_Route13_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_fishing_monsInfo = { 30, sJohtoWild_Route13_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_Night_land_mons[] =
+{
+    { 23, 23, SPECIES_VENONAT },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_NOCTOWL },
+    { 25, 25, SPECIES_VENOMOTH },
+    { 23, 23, SPECIES_VENONAT },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_NOCTOWL },
+    { 23, 25, SPECIES_SEEDOT },
+    { 25, 25, SPECIES_VENOMOTH },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_CHANSEY },
+    { 25, 25, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_Night_land_monsInfo = { 20, sJohtoWild_Route13_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_Night_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_Night_water_monsInfo = { 7, sJohtoWild_Route13_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_Night_rock_smash_mons[] =
+{
+    { 10, 10, SPECIES_PINECO },
+    { 10, 10, SPECIES_EXEGGCUTE },
+    { 10, 10, SPECIES_SEEDOT },
+    { 10, 10, SPECIES_LEDYBA },
+    { 10, 10, SPECIES_LEDYBA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_Night_rock_smash_monsInfo = { 60, sJohtoWild_Route13_Night_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_Route13_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route13_Night_fishing_monsInfo = { 30, sJohtoWild_Route13_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route14_land_mons[] =
+{
+    { 26, 26, SPECIES_NIDORINO },
+    { 26, 26, SPECIES_NIDORINA },
+    { 28, 28, SPECIES_PIDGEOTTO },
+    { 28, 28, SPECIES_HOPPIP },
+    { 26, 26, SPECIES_NIDORINO },
+    { 26, 26, SPECIES_NIDORINA },
+    { 28, 28, SPECIES_SHROOMISH },
+    { 30, 30, SPECIES_SKIPLOOM },
+    { 30, 30, SPECIES_SKIPLOOM },
+    { 28, 28, SPECIES_HOPPIP },
+    { 28, 28, SPECIES_CHANSEY },
+    { 28, 28, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route14_land_monsInfo = { 20, sJohtoWild_Route14_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route14_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route14_water_monsInfo = { 7, sJohtoWild_Route14_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route14_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route14_fishing_monsInfo = { 30, sJohtoWild_Route14_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route14_Night_land_mons[] =
+{
+    { 26, 26, SPECIES_VENONAT },
+    { 26, 28, SPECIES_CHANSEY },
+    { 28, 28, SPECIES_NOCTOWL },
+    { 28, 28, SPECIES_VENOMOTH },
+    { 26, 26, SPECIES_VENONAT },
+    { 26, 28, SPECIES_CHANSEY },
+    { 28, 28, SPECIES_NOCTOWL },
+    { 26, 28, SPECIES_SHROOMISH },
+    { 28, 28, SPECIES_VENOMOTH },
+    { 26, 28, SPECIES_QUAGSIRE },
+    { 28, 28, SPECIES_CHANSEY },
+    { 28, 28, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route14_Night_land_monsInfo = { 20, sJohtoWild_Route14_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route14_Night_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route14_Night_water_monsInfo = { 7, sJohtoWild_Route14_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route14_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route14_Night_fishing_monsInfo = { 30, sJohtoWild_Route14_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route15_land_mons[] =
+{
+    { 23, 23, SPECIES_NIDORINO },
+    { 23, 23, SPECIES_NIDORINA },
+    { 25, 25, SPECIES_PIDGEOTTO },
+    { 25, 27, SPECIES_HOPPIP },
+    { 23, 23, SPECIES_NIDORINO },
+    { 23, 23, SPECIES_NIDORINA },
+    { 25, 25, SPECIES_PIDGEOTTO },
+    { 25, 27, SPECIES_VOLBEAT },
+    { 25, 27, SPECIES_HOPPIP },
+    { 25, 27, SPECIES_HOPPIP },
+    { 25, 25, SPECIES_CHANSEY },
+    { 25, 25, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route15_land_monsInfo = { 20, sJohtoWild_Route15_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route15_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route15_water_monsInfo = { 7, sJohtoWild_Route15_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route15_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route15_fishing_monsInfo = { 30, sJohtoWild_Route15_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route15_Night_land_mons[] =
+{
+    { 23, 23, SPECIES_VENONAT },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_NOCTOWL },
+    { 25, 25, SPECIES_VENOMOTH },
+    { 23, 23, SPECIES_VENONAT },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_NOCTOWL },
+    { 23, 25, SPECIES_ILLUMISE },
+    { 25, 25, SPECIES_VENOMOTH },
+    { 23, 25, SPECIES_QUAGSIRE },
+    { 25, 25, SPECIES_CHANSEY },
+    { 25, 25, SPECIES_CHANSEY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route15_Night_land_monsInfo = { 20, sJohtoWild_Route15_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route15_Night_water_mons[] =
+{
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_QUAGSIRE },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACOOL },
+    { 25, 29, SPECIES_TENTACRUEL },
+    { 25, 29, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route15_Night_water_monsInfo = { 7, sJohtoWild_Route15_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route15_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route15_Night_fishing_monsInfo = { 30, sJohtoWild_Route15_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route16_land_mons[] =
+{
+    { 26, 28, SPECIES_GRIMER },
+    { 27, 29, SPECIES_FEAROW },
+    { 29, 29, SPECIES_SLUGMA },
+    { 30, 30, SPECIES_MUK },
+    { 26, 28, SPECIES_GRIMER },
+    { 27, 29, SPECIES_FEAROW },
+    { 26, 28, SPECIES_ROSELIA },
+    { 27, 29, SPECIES_FEAROW },
+    { 26, 28, SPECIES_GRIMER },
+    { 27, 29, SPECIES_FEAROW },
+    { 30, 30, SPECIES_MUK },
+    { 29, 29, SPECIES_SLUGMA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route16_land_monsInfo = { 20, sJohtoWild_Route16_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route16_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route16_water_monsInfo = { 0, sJohtoWild_Route16_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route16_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route16_fishing_monsInfo = { 0, sJohtoWild_Route16_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route16_Night_land_mons[] =
+{
+    { 26, 28, SPECIES_GRIMER },
+    { 26, 28, SPECIES_GRIMER },
+    { 26, 28, SPECIES_GRIMER },
+    { 26, 28, SPECIES_GRIMER },
+    { 29, 29, SPECIES_MURKROW },
+    { 26, 28, SPECIES_GRIMER },
+    { 26, 28, SPECIES_SHUPPET },
+    { 29, 29, SPECIES_MURKROW },
+    { 26, 28, SPECIES_GRIMER },
+    { 26, 28, SPECIES_GRIMER },
+    { 30, 30, SPECIES_MUK },
+    { 30, 30, SPECIES_MUK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route16_Night_land_monsInfo = { 20, sJohtoWild_Route16_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route16_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route16_Night_water_monsInfo = { 0, sJohtoWild_Route16_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route16_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route16_Night_fishing_monsInfo = { 0, sJohtoWild_Route16_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route17_land_mons[] =
+{
+    { 30, 34, SPECIES_FEAROW },
+    { 29, 32, SPECIES_GRIMER },
+    { 29, 29, SPECIES_GRIMER },
+    { 33, 33, SPECIES_MUK },
+    { 30, 32, SPECIES_FEAROW },
+    { 29, 32, SPECIES_HOUNDOUR },
+    { 29, 29, SPECIES_GULPIN },
+    { 30, 32, SPECIES_GRIMER },
+    { 30, 34, SPECIES_FEAROW },
+    { 29, 29, SPECIES_GRIMER },
+    { 33, 33, SPECIES_MUK },
+    { 29, 32, SPECIES_HOUNDOUR },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route17_land_monsInfo = { 20, sJohtoWild_Route17_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route17_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route17_water_monsInfo = { 0, sJohtoWild_Route17_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route17_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route17_fishing_monsInfo = { 0, sJohtoWild_Route17_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route17_Night_land_mons[] =
+{
+    { 29, 33, SPECIES_GRIMER },
+    { 29, 33, SPECIES_GRIMER },
+    { 29, 33, SPECIES_GRIMER },
+    { 29, 33, SPECIES_HOUNDOUR },
+    { 29, 33, SPECIES_GRIMER },
+    { 29, 33, SPECIES_GRIMER },
+    { 29, 33, SPECIES_GULPIN },
+    { 33, 33, SPECIES_MUK },
+    { 33, 33, SPECIES_MUK },
+    { 29, 33, SPECIES_GRIMER },
+    { 33, 33, SPECIES_MUK },
+    { 33, 33, SPECIES_MUK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route17_Night_land_monsInfo = { 20, sJohtoWild_Route17_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route17_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route17_Night_water_monsInfo = { 0, sJohtoWild_Route17_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route17_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route17_Night_fishing_monsInfo = { 0, sJohtoWild_Route17_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route18_land_mons[] =
+{
+    { 26, 28, SPECIES_DODUO },
+    { 27, 29, SPECIES_FEAROW },
+    { 29, 29, SPECIES_DODUO },
+    { 30, 30, SPECIES_RATTATA },
+    { 26, 28, SPECIES_RATICATE },
+    { 27, 29, SPECIES_FEAROW },
+    { 26, 28, SPECIES_KECLEON },
+    { 27, 29, SPECIES_FEAROW },
+    { 26, 28, SPECIES_RATICATE },
+    { 27, 29, SPECIES_FEAROW },
+    { 30, 30, SPECIES_RATICATE },
+    { 29, 29, SPECIES_DODUO },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route18_land_monsInfo = { 20, sJohtoWild_Route18_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route18_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route18_water_monsInfo = { 0, sJohtoWild_Route18_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route18_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route18_fishing_monsInfo = { 0, sJohtoWild_Route18_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route18_Night_land_mons[] =
+{
+    { 26, 28, SPECIES_DODUO },
+    { 27, 29, SPECIES_NOCTOWL },
+    { 29, 29, SPECIES_DODUO },
+    { 30, 30, SPECIES_RATTATA },
+    { 26, 28, SPECIES_HAUNTER },
+    { 27, 29, SPECIES_GASTLY },
+    { 26, 28, SPECIES_KECLEON },
+    { 27, 29, SPECIES_NOCTOWL },
+    { 26, 28, SPECIES_RATICATE },
+    { 27, 29, SPECIES_HAUNTER },
+    { 30, 30, SPECIES_RATICATE },
+    { 29, 29, SPECIES_HAUNTER },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route18_Night_land_monsInfo = { 20, sJohtoWild_Route18_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route18_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route18_Night_water_monsInfo = { 0, sJohtoWild_Route18_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route18_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route18_Night_fishing_monsInfo = { 0, sJohtoWild_Route18_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route19_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_WINGULL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route19_water_monsInfo = { 7, sJohtoWild_Route19_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route19_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route19_fishing_monsInfo = { 30, sJohtoWild_Route19_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route19_Night_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_WINGULL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route19_Night_water_monsInfo = { 7, sJohtoWild_Route19_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route19_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route19_Night_fishing_monsInfo = { 30, sJohtoWild_Route19_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route20_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_SEEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_DEWGONG },
+    { 30, 39, SPECIES_DEWGONG },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route20_water_monsInfo = { 7, sJohtoWild_Route20_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route20_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_CLAMPERL },
+    { 40, 40, SPECIES_CLAMPERL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route20_fishing_monsInfo = { 30, sJohtoWild_Route20_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route20_Night_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route20_Night_water_monsInfo = { 7, sJohtoWild_Route20_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route20_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_CLAMPERL },
+    { 40, 40, SPECIES_CLAMPERL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route20_Night_fishing_monsInfo = { 30, sJohtoWild_Route20_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route21_land_mons[] =
+{
+    { 30, 35, SPECIES_TANGELA },
+    { 25, 25, SPECIES_RATTATA },
+    { 20, 20, SPECIES_RATICATE },
+    { 28, 30, SPECIES_MR_MIME },
+    { 30, 35, SPECIES_TANGELA },
+    { 25, 25, SPECIES_RATTATA },
+    { 28, 30, SPECIES_MR_MIME },
+    { 28, 30, SPECIES_MR_MIME },
+    { 28, 30, SPECIES_MR_MIME },
+    { 20, 20, SPECIES_RATICATE },
+    { 28, 30, SPECIES_MR_MIME },
+    { 28, 30, SPECIES_MR_MIME },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route21_land_monsInfo = { 20, sJohtoWild_Route21_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route21_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route21_water_monsInfo = { 7, sJohtoWild_Route21_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route21_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CORPHISH },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_CORPHISH },
+    { 40, 40, SPECIES_CORPHISH },
+    { 40, 40, SPECIES_CORPHISH },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route21_fishing_monsInfo = { 30, sJohtoWild_Route21_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route21_Night_land_mons[] =
+{
+    { 28, 35, SPECIES_TANGELA },
+    { 25, 25, SPECIES_RATTATA },
+    { 20, 20, SPECIES_RATICATE },
+    { 28, 35, SPECIES_TANGELA },
+    { 28, 35, SPECIES_TANGELA },
+    { 25, 25, SPECIES_RATTATA },
+    { 28, 35, SPECIES_TANGELA },
+    { 28, 35, SPECIES_TANGELA },
+    { 28, 35, SPECIES_TANGELA },
+    { 20, 20, SPECIES_RATICATE },
+    { 28, 35, SPECIES_TANGELA },
+    { 28, 35, SPECIES_TANGELA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route21_Night_land_monsInfo = { 20, sJohtoWild_Route21_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route21_Night_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route21_Night_water_monsInfo = { 7, sJohtoWild_Route21_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route21_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CORPHISH },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_CORPHISH },
+    { 40, 40, SPECIES_CORPHISH },
+    { 40, 40, SPECIES_CORPHISH },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route21_Night_fishing_monsInfo = { 30, sJohtoWild_Route21_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route22_land_mons[] =
+{
+    { 3, 5, SPECIES_SPEAROW },
+    { 3, 3, SPECIES_RATTATA },
+    { 4, 4, SPECIES_DODUO },
+    { 6, 6, SPECIES_PONYTA },
+    { 3, 5, SPECIES_SPEAROW },
+    { 3, 3, SPECIES_RATTATA },
+    { 7, 7, SPECIES_TAILLOW },
+    { 6, 6, SPECIES_RATTATA },
+    { 7, 7, SPECIES_SPEAROW },
+    { 4, 4, SPECIES_DODUO },
+    { 4, 4, SPECIES_PONYTA },
+    { 7, 7, SPECIES_SPEAROW },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route22_land_monsInfo = { 20, sJohtoWild_Route22_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route22_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route22_water_monsInfo = { 7, sJohtoWild_Route22_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route22_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route22_fishing_monsInfo = { 30, sJohtoWild_Route22_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route22_Night_land_mons[] =
+{
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 7, SPECIES_TAILLOW },
+    { 3, 7, SPECIES_RATTATA },
+    { 3, 4, SPECIES_POLIWAG },
+    { 3, 4, SPECIES_POLIWAG },
+    { 3, 4, SPECIES_POLIWAG },
+    { 3, 4, SPECIES_POLIWAG },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route22_Night_land_monsInfo = { 20, sJohtoWild_Route22_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route22_Night_water_mons[] =
+{
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+    { 5, 14, SPECIES_POLIWAG },
+    { 10, 14, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route22_Night_water_monsInfo = { 7, sJohtoWild_Route22_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route22_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route22_Night_fishing_monsInfo = { 30, sJohtoWild_Route22_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route24_land_mons[] =
+{
+    { 8, 10, SPECIES_CATERPIE },
+    { 12, 12, SPECIES_SUNKERN },
+    { 12, 12, SPECIES_ABRA },
+    { 10, 10, SPECIES_BELLSPROUT },
+    { 8, 10, SPECIES_CATERPIE },
+    { 12, 12, SPECIES_SUNKERN },
+    { 8, 10, SPECIES_SURSKIT },
+    { 12, 12, SPECIES_METAPOD },
+    { 8, 10, SPECIES_CATERPIE },
+    { 12, 12, SPECIES_ABRA },
+    { 14, 14, SPECIES_BUTTERFREE },
+    { 14, 14, SPECIES_BUTTERFREE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route24_land_monsInfo = { 20, sJohtoWild_Route24_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route24_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route24_water_monsInfo = { 7, sJohtoWild_Route24_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route24_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route24_fishing_monsInfo = { 30, sJohtoWild_Route24_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route24_Night_land_mons[] =
+{
+    { 10, 12, SPECIES_ODDISH },
+    { 10, 10, SPECIES_VENONAT },
+    { 12, 12, SPECIES_ABRA },
+    { 10, 10, SPECIES_BELLSPROUT },
+    { 10, 12, SPECIES_VENONAT },
+    { 10, 10, SPECIES_VENONAT },
+    { 10, 12, SPECIES_ODDISH },
+    { 10, 10, SPECIES_SPOINK },
+    { 10, 12, SPECIES_ODDISH },
+    { 12, 12, SPECIES_ABRA },
+    { 14, 14, SPECIES_GLOOM },
+    { 14, 14, SPECIES_GLOOM },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route24_Night_land_monsInfo = { 20, sJohtoWild_Route24_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route24_Night_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route24_Night_water_monsInfo = { 7, sJohtoWild_Route24_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route24_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_POLIWAG },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_POLIWHIRL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route24_Night_fishing_monsInfo = { 30, sJohtoWild_Route24_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route25_land_mons[] =
+{
+    { 10, 10, SPECIES_CATERPIE },
+    { 10, 10, SPECIES_PIDGEY },
+    { 12, 12, SPECIES_PIDGEOTTO },
+    { 12, 12, SPECIES_METAPOD },
+    { 10, 10, SPECIES_BELLSPROUT },
+    { 10, 10, SPECIES_PIDGEY },
+    { 12, 12, SPECIES_PIDGEOTTO },
+    { 10, 10, SPECIES_SWABLU },
+    { 14, 14, SPECIES_BUTTERFREE },
+    { 14, 14, SPECIES_BUTTERFREE },
+    { 12, 12, SPECIES_METAPOD },
+    { 10, 10, SPECIES_BELLSPROUT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route25_land_monsInfo = { 20, sJohtoWild_Route25_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route25_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route25_water_monsInfo = { 7, sJohtoWild_Route25_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route25_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_LUVDISC },
+    { 20, 20, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route25_fishing_monsInfo = { 30, sJohtoWild_Route25_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_Route25_Night_land_mons[] =
+{
+    { 10, 10, SPECIES_ODDISH },
+    { 10, 10, SPECIES_HOOTHOOT },
+    { 10, 10, SPECIES_VENONAT },
+    { 12, 14, SPECIES_NOCTOWL },
+    { 10, 10, SPECIES_ODDISH },
+    { 10, 10, SPECIES_VENONAT },
+    { 10, 10, SPECIES_SWABLU },
+    { 12, 14, SPECIES_NOCTOWL },
+    { 10, 10, SPECIES_ODDISH },
+    { 12, 14, SPECIES_NOCTOWL },
+    { 10, 10, SPECIES_BELLSPROUT },
+    { 10, 10, SPECIES_BELLSPROUT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route25_Night_land_monsInfo = { 20, sJohtoWild_Route25_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_Route25_Night_water_mons[] =
+{
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+    { 10, 19, SPECIES_GOLDEEN },
+    { 15, 19, SPECIES_SEAKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route25_Night_water_monsInfo = { 7, sJohtoWild_Route25_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_Route25_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_POLIWAG },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_LUVDISC },
+    { 20, 20, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+    { 40, 40, SPECIES_LUVDISC },
+};
+
+static const struct WildPokemonInfo sJohtoWild_Route25_Night_fishing_monsInfo = { 30, sJohtoWild_Route25_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_PortOutside_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_PortOutside_land_monsInfo = { 0, sJohtoWild_VermilionCity_PortOutside_land_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_PortOutside_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_PortOutside_water_monsInfo = { 7, sJohtoWild_VermilionCity_PortOutside_water_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_PortOutside_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_PortOutside_fishing_monsInfo = { 30, sJohtoWild_VermilionCity_PortOutside_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_PortOutside_Night_land_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_PortOutside_Night_land_monsInfo = { 0, sJohtoWild_VermilionCity_PortOutside_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_PortOutside_Night_water_mons[] =
+{
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+    { 30, 39, SPECIES_TENTACOOL },
+    { 35, 39, SPECIES_TENTACRUEL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_PortOutside_Night_water_monsInfo = { 7, sJohtoWild_VermilionCity_PortOutside_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_VermilionCity_PortOutside_Night_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VermilionCity_PortOutside_Night_fishing_monsInfo = { 30, sJohtoWild_VermilionCity_PortOutside_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCitySafariZoneBeach_land_mons[] =
+{
+    { 20, 30, SPECIES_LOTAD },
+    { 20, 30, SPECIES_CACNEA },
+    { 20, 30, SPECIES_MAKUHITA },
+    { 20, 30, SPECIES_MAKUHITA },
+    { 20, 30, SPECIES_LOMBRE },
+    { 20, 30, SPECIES_TRAPINCH },
+    { 20, 30, SPECIES_TRAPINCH },
+    { 20, 30, SPECIES_TRAPINCH },
+    { 20, 30, SPECIES_BELDUM },
+    { 20, 30, SPECIES_VIBRAVA },
+    { 20, 30, SPECIES_BELDUM },
+    { 20, 30, SPECIES_VIBRAVA },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCitySafariZoneBeach_land_monsInfo = { 20, sJohtoWild_FuchsiaCitySafariZoneBeach_land_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCitySafariZoneBeach_water_mons[] =
+{
+    { 20, 30, SPECIES_MAGIKARP },
+    { 20, 30, SPECIES_TENTACOOL },
+    { 20, 30, SPECIES_TENTACOOL },
+    { 20, 30, SPECIES_TENTACOOL },
+    { 20, 30, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCitySafariZoneBeach_water_monsInfo = { 4, sJohtoWild_FuchsiaCitySafariZoneBeach_water_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 20, 20, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_QUAGSIRE },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_MAGIKARP },
+    { 40, 40, SPECIES_TENTACOOL },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_monsInfo = { 30, sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneBrush_land_mons[] =
+{
+    { 17, 30, SPECIES_TROPIUS },
+    { 17, 30, SPECIES_TROPIUS },
+    { 17, 30, SPECIES_CHIMECHO },
+    { 17, 30, SPECIES_CHIMECHO },
+    { 17, 30, SPECIES_CHIMECHO },
+    { 17, 30, SPECIES_CHIMECHO },
+    { 17, 30, SPECIES_TROPIUS },
+    { 17, 30, SPECIES_TROPIUS },
+    { 17, 30, SPECIES_ABSOL },
+    { 17, 30, SPECIES_ABSOL },
+    { 17, 30, SPECIES_ABSOL },
+    { 17, 30, SPECIES_CASTFORM },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneBrush_land_monsInfo = { 20, sJohtoWild_FuchsiaCity_SafariZoneBrush_land_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneMountain_land_mons[] =
+{
+    { 17, 30, SPECIES_MEDITITE },
+    { 17, 30, SPECIES_MEDITITE },
+    { 17, 30, SPECIES_NUMEL },
+    { 17, 30, SPECIES_NUMEL },
+    { 17, 30, SPECIES_BALTOY },
+    { 17, 30, SPECIES_BALTOY },
+    { 17, 30, SPECIES_GEODUDE },
+    { 17, 30, SPECIES_GEODUDE },
+    { 17, 30, SPECIES_ABSOL },
+    { 17, 30, SPECIES_ABSOL },
+    { 17, 30, SPECIES_MEDICHAM },
+    { 17, 30, SPECIES_CAMERUPT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneMountain_land_monsInfo = { 20, sJohtoWild_FuchsiaCity_SafariZoneMountain_land_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneMountain_water_mons[] =
+{
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_WHISCASH },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneMountain_water_monsInfo = { 4, sJohtoWild_FuchsiaCity_SafariZoneMountain_water_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_mons[] =
+{
+    { 5, 5, SPECIES_MAGIKARP },
+    { 5, 5, SPECIES_MAGIKARP },
+    { 5, 5, SPECIES_MAGIKARP },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_WHISCASH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+    { 5, 5, SPECIES_BARBOACH },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_monsInfo = { 30, sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneCave_land_mons[] =
+{
+    { 17, 30, SPECIES_WHISMUR },
+    { 17, 30, SPECIES_WHISMUR },
+    { 17, 30, SPECIES_NOSEPASS },
+    { 17, 30, SPECIES_NOSEPASS },
+    { 17, 30, SPECIES_NOSEPASS },
+    { 17, 30, SPECIES_GEODUDE },
+    { 17, 30, SPECIES_GEODUDE },
+    { 17, 30, SPECIES_BAGON },
+    { 17, 30, SPECIES_ZUBAT },
+    { 17, 30, SPECIES_ZUBAT },
+    { 17, 30, SPECIES_ZUBAT },
+    { 17, 30, SPECIES_ZUBAT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneCave_land_monsInfo = { 20, sJohtoWild_FuchsiaCity_SafariZoneCave_land_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneCave_water_mons[] =
+{
+    { 20, 30, SPECIES_RELICANTH },
+    { 10, 30, SPECIES_WOOPER },
+    { 10, 30, SPECIES_QUAGSIRE },
+    { 10, 30, SPECIES_QUAGSIRE },
+    { 10, 30, SPECIES_QUAGSIRE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneCave_water_monsInfo = { 4, sJohtoWild_FuchsiaCity_SafariZoneCave_water_mons };
+
+static const struct WildPokemon sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 30, 30, SPECIES_MAGIKARP },
+    { 30, 30, SPECIES_MAGIKARP },
+    { 30, 30, SPECIES_MAGIKARP },
+    { 30, 30, SPECIES_FEEBAS },
+};
+
+static const struct WildPokemonInfo sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_monsInfo = { 30, sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_B2F_land_mons[] =
+{
+    { 44, 44, SPECIES_GOLEM },
+    { 42, 42, SPECIES_RHYDON },
+    { 43, 43, SPECIES_DONPHAN },
+    { 44, 44, SPECIES_GOLBAT },
+    { 44, 44, SPECIES_GOLEM },
+    { 42, 42, SPECIES_RHYDON },
+    { 43, 43, SPECIES_DONPHAN },
+    { 45, 45, SPECIES_SANDSLASH },
+    { 45, 45, SPECIES_ONIX },
+    { 45, 45, SPECIES_ONIX },
+    { 45, 45, SPECIES_STEELIX },
+    { 45, 45, SPECIES_ONIX },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_B2F_land_monsInfo = { 10, sJohtoWild_VictoryRoadKanto_B2F_land_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_B2F_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_B2F_water_monsInfo = { 0, sJohtoWild_VictoryRoadKanto_B2F_water_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_B2F_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_B2F_fishing_monsInfo = { 0, sJohtoWild_VictoryRoadKanto_B2F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_B1F_land_mons[] =
+{
+    { 44, 44, SPECIES_GOLEM },
+    { 42, 42, SPECIES_RHYDON },
+    { 43, 43, SPECIES_DONPHAN },
+    { 44, 44, SPECIES_GOLBAT },
+    { 44, 44, SPECIES_GOLEM },
+    { 42, 42, SPECIES_RHYDON },
+    { 43, 43, SPECIES_DONPHAN },
+    { 45, 45, SPECIES_SANDSLASH },
+    { 45, 45, SPECIES_ONIX },
+    { 45, 45, SPECIES_ONIX },
+    { 45, 45, SPECIES_STEELIX },
+    { 45, 45, SPECIES_ONIX },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_B1F_land_monsInfo = { 10, sJohtoWild_VictoryRoadKanto_B1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_B1F_water_mons[] =
+{
+    { 30, 40, SPECIES_WOOPER },
+    { 30, 40, SPECIES_WOOPER },
+    { 30, 40, SPECIES_WOOPER },
+    { 30, 40, SPECIES_QUAGSIRE },
+    { 30, 40, SPECIES_QUAGSIRE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_B1F_water_monsInfo = { 7, sJohtoWild_VictoryRoadKanto_B1F_water_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_B1F_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_B1F_fishing_monsInfo = { 30, sJohtoWild_VictoryRoadKanto_B1F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_1F_land_mons[] =
+{
+    { 44, 44, SPECIES_GOLEM },
+    { 42, 42, SPECIES_RHYDON },
+    { 43, 43, SPECIES_DONPHAN },
+    { 44, 44, SPECIES_GOLBAT },
+    { 44, 44, SPECIES_GOLEM },
+    { 42, 42, SPECIES_RHYDON },
+    { 43, 43, SPECIES_DONPHAN },
+    { 45, 45, SPECIES_SANDSLASH },
+    { 45, 45, SPECIES_ONIX },
+    { 45, 45, SPECIES_ONIX },
+    { 45, 45, SPECIES_STEELIX },
+    { 45, 45, SPECIES_ONIX },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_1F_land_monsInfo = { 10, sJohtoWild_VictoryRoadKanto_1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_1F_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_1F_water_monsInfo = { 0, sJohtoWild_VictoryRoadKanto_1F_water_mons };
+
+static const struct WildPokemon sJohtoWild_VictoryRoadKanto_1F_fishing_mons[] =
+{
+    { 10, 10, SPECIES_MAGIKARP },
+    { 10, 10, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_MAGIKARP },
+    { 20, 20, SPECIES_TENTACOOL },
+    { 20, 20, SPECIES_CHINCHOU },
+    { 20, 20, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_CHINCHOU },
+    { 40, 40, SPECIES_SHELLDER },
+    { 40, 40, SPECIES_TENTACRUEL },
+    { 40, 40, SPECIES_LANTURN },
+};
+
+static const struct WildPokemonInfo sJohtoWild_VictoryRoadKanto_1F_fishing_monsInfo = { 30, sJohtoWild_VictoryRoadKanto_1F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_ViridianForest_land_mons[] =
+{
+    { 5, 10, SPECIES_CATERPIE },
+    { 5, 13, SPECIES_WEEDLE },
+    { 5, 13, SPECIES_KAKUNA },
+    { 5, 11, SPECIES_METAPOD },
+    { 5, 11, SPECIES_ODDISH },
+    { 5, 13, SPECIES_PARAS },
+    { 5, 10, SPECIES_PIKACHU },
+    { 5, 11, SPECIES_WURMPLE },
+    { 5, 10, SPECIES_BUTTERFREE },
+    { 5, 10, SPECIES_BEEDRILL },
+    { 5, 11, SPECIES_BEEDRILL },
+    { 5, 11, SPECIES_BUTTERFREE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_ViridianForest_land_monsInfo = { 10, sJohtoWild_ViridianForest_land_mons };
+
+static const struct WildPokemon sJohtoWild_MtMoon_Cave_land_mons[] =
+{
+    { 8, 10, SPECIES_GEODUDE },
+    { 6, 6, SPECIES_ZUBAT },
+    { 8, 8, SPECIES_SANDSHREW },
+    { 12, 12, SPECIES_PARAS },
+    { 8, 10, SPECIES_GEODUDE },
+    { 6, 6, SPECIES_ZUBAT },
+    { 8, 10, SPECIES_CLEFAIRY },
+    { 8, 8, SPECIES_SOLROCK },
+    { 8, 8, SPECIES_CLEFAIRY },
+    { 12, 12, SPECIES_PARAS },
+    { 8, 8, SPECIES_CLEFAIRY },
+    { 8, 8, SPECIES_CLEFAIRY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_MtMoon_Cave_land_monsInfo = { 10, sJohtoWild_MtMoon_Cave_land_mons };
+
+static const struct WildPokemon sJohtoWild_MtMoon_Cave_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_MtMoon_Cave_water_monsInfo = { 0, sJohtoWild_MtMoon_Cave_water_mons };
+
+static const struct WildPokemon sJohtoWild_MtMoon_Cave_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_MtMoon_Cave_fishing_monsInfo = { 0, sJohtoWild_MtMoon_Cave_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_MtMoon_Cave_Night_land_mons[] =
+{
+    { 8, 10, SPECIES_GEODUDE },
+    { 6, 6, SPECIES_ZUBAT },
+    { 8, 12, SPECIES_CLEFAIRY },
+    { 12, 12, SPECIES_PARAS },
+    { 8, 10, SPECIES_GEODUDE },
+    { 6, 6, SPECIES_ZUBAT },
+    { 8, 10, SPECIES_CLEFAIRY },
+    { 8, 12, SPECIES_LUNATONE },
+    { 8, 12, SPECIES_CLEFAIRY },
+    { 12, 12, SPECIES_PARAS },
+    { 8, 12, SPECIES_CLEFAIRY },
+    { 8, 12, SPECIES_CLEFAIRY },
+};
+
+static const struct WildPokemonInfo sJohtoWild_MtMoon_Cave_Night_land_monsInfo = { 10, sJohtoWild_MtMoon_Cave_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_MtMoon_Cave_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_MtMoon_Cave_Night_water_monsInfo = { 0, sJohtoWild_MtMoon_Cave_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_MtMoon_Cave_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_MtMoon_Cave_Night_fishing_monsInfo = { 0, sJohtoWild_MtMoon_Cave_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_B1F_land_mons[] =
+{
+    { 42, 42, SPECIES_CUBONE },
+    { 44, 44, SPECIES_GEODUDE },
+    { 43, 43, SPECIES_MACHOP },
+    { 42, 42, SPECIES_ZUBAT },
+    { 42, 42, SPECIES_CUBONE },
+    { 44, 44, SPECIES_MACHOP },
+    { 43, 43, SPECIES_SABLEYE },
+    { 45, 45, SPECIES_MACHOKE },
+    { 45, 45, SPECIES_MAROWAK },
+    { 45, 45, SPECIES_MACHOKE },
+    { 45, 45, SPECIES_MAROWAK },
+    { 42, 42, SPECIES_ZUBAT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_B1F_land_monsInfo = { 10, sJohtoWild_RockTunnel_B1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_B1F_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_B1F_water_monsInfo = { 0, sJohtoWild_RockTunnel_B1F_water_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_B1F_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_B1F_fishing_monsInfo = { 0, sJohtoWild_RockTunnel_B1F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_B1F_Night_land_mons[] =
+{
+    { 44, 44, SPECIES_GEODUDE },
+    { 42, 42, SPECIES_ZUBAT },
+    { 44, 44, SPECIES_GEODUDE },
+    { 45, 45, SPECIES_GOLBAT },
+    { 43, 43, SPECIES_SABLEYE },
+    { 42, 42, SPECIES_ZUBAT },
+    { 43, 43, SPECIES_GEODUDE },
+    { 42, 42, SPECIES_HAUNTER },
+    { 45, 45, SPECIES_GOLBAT },
+    { 42, 42, SPECIES_HAUNTER },
+    { 42, 42, SPECIES_HAUNTER },
+    { 42, 42, SPECIES_ZUBAT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_B1F_Night_land_monsInfo = { 10, sJohtoWild_RockTunnel_B1F_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_B1F_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_B1F_Night_water_monsInfo = { 0, sJohtoWild_RockTunnel_B1F_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_B1F_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_B1F_Night_fishing_monsInfo = { 0, sJohtoWild_RockTunnel_B1F_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_1F_land_mons[] =
+{
+    { 42, 42, SPECIES_CUBONE },
+    { 44, 44, SPECIES_GEODUDE },
+    { 46, 46, SPECIES_ONIX },
+    { 42, 42, SPECIES_ZUBAT },
+    { 42, 42, SPECIES_CUBONE },
+    { 44, 44, SPECIES_ONIX },
+    { 46, 46, SPECIES_MAWILE },
+    { 45, 45, SPECIES_MAROWAK },
+    { 45, 45, SPECIES_KANGASKHAN },
+    { 45, 45, SPECIES_MAROWAK },
+    { 45, 45, SPECIES_KANGASKHAN },
+    { 42, 42, SPECIES_ZUBAT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_1F_land_monsInfo = { 10, sJohtoWild_RockTunnel_1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_1F_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_1F_water_monsInfo = { 0, sJohtoWild_RockTunnel_1F_water_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_1F_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_1F_fishing_monsInfo = { 0, sJohtoWild_RockTunnel_1F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_1F_Night_land_mons[] =
+{
+    { 42, 45, SPECIES_ZUBAT },
+    { 44, 44, SPECIES_GEODUDE },
+    { 46, 46, SPECIES_ONIX },
+    { 42, 42, SPECIES_HAUNTER },
+    { 45, 45, SPECIES_GOLBAT },
+    { 42, 45, SPECIES_MAWILE },
+    { 46, 46, SPECIES_ONIX },
+    { 42, 42, SPECIES_HAUNTER },
+    { 44, 44, SPECIES_GEODUDE },
+    { 45, 45, SPECIES_GOLBAT },
+    { 42, 42, SPECIES_HAUNTER },
+    { 42, 45, SPECIES_ZUBAT },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_1F_Night_land_monsInfo = { 10, sJohtoWild_RockTunnel_1F_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_1F_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_1F_Night_water_monsInfo = { 0, sJohtoWild_RockTunnel_1F_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_RockTunnel_1F_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_RockTunnel_1F_Night_fishing_monsInfo = { 0, sJohtoWild_RockTunnel_1F_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_1F_land_mons[] =
+{
+    { 49, 58, SPECIES_PARASECT },
+    { 49, 58, SPECIES_MAGNETON },
+    { 49, 55, SPECIES_GOLBAT },
+    { 52, 61, SPECIES_PRIMEAPE },
+    { 52, 61, SPECIES_DITTO },
+    { 46, 55, SPECIES_MACHOKE },
+    { 58, 61, SPECIES_ELECTRODE },
+    { 49, 58, SPECIES_PARASECT },
+    { 52, 58, SPECIES_WOBBUFFET },
+    { 49, 55, SPECIES_GOLBAT },
+    { 52, 61, SPECIES_MACHAMP },
+    { 52, 61, SPECIES_DITTO },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_1F_land_monsInfo = { 10, sJohtoWild_CeruleanCave_1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_1F_water_mons[] =
+{
+    { 50, 50, SPECIES_PSYDUCK },
+    { 50, 50, SPECIES_GOLDUCK },
+    { 58, 58, SPECIES_GOLDUCK },
+    { 58, 58, SPECIES_PSYDUCK },
+    { 58, 58, SPECIES_PSYDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_1F_water_monsInfo = { 4, sJohtoWild_CeruleanCave_1F_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_1F_rock_smash_mons[] =
+{
+    { 55, 55, SPECIES_GEODUDE },
+    { 55, 55, SPECIES_GRAVELER },
+    { 55, 55, SPECIES_GRAVELER },
+    { 55, 55, SPECIES_GEODUDE },
+    { 55, 55, SPECIES_GEODUDE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_1F_rock_smash_monsInfo = { 60, sJohtoWild_CeruleanCave_1F_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_1F_fishing_mons[] =
+{
+    { 1, 60, SPECIES_MAGIKARP },
+    { 1, 60, SPECIES_MAGIKARP },
+    { 30, 50, SPECIES_POLIWAG },
+    { 30, 50, SPECIES_GOLDEEN },
+    { 30, 60, SPECIES_MAGIKARP },
+    { 50, 50, SPECIES_POLIWAG },
+    { 50, 58, SPECIES_POLIWHIRL },
+    { 60, 62, SPECIES_GYARADOS },
+    { 30, 50, SPECIES_PSYDUCK },
+    { 30, 50, SPECIES_PSYDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_1F_fishing_monsInfo = { 30, sJohtoWild_CeruleanCave_1F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B1F_land_mons[] =
+{
+    { 49, 58, SPECIES_GOLBAT },
+    { 49, 56, SPECIES_MACHOKE },
+    { 52, 61, SPECIES_PARASECT },
+    { 55, 64, SPECIES_KADABRA },
+    { 55, 64, SPECIES_DITTO },
+    { 52, 53, SPECIES_MAGNETON },
+    { 58, 58, SPECIES_WOBBUFFET },
+    { 55, 62, SPECIES_CROBAT },
+    { 52, 61, SPECIES_PARASECT },
+    { 61, 61, SPECIES_ELECTRODE },
+    { 64, 64, SPECIES_ALAKAZAM },
+    { 55, 64, SPECIES_MAGNEZONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B1F_land_monsInfo = { 10, sJohtoWild_CeruleanCave_B1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B1F_water_mons[] =
+{
+    { 50, 50, SPECIES_PSYDUCK },
+    { 50, 50, SPECIES_GOLDUCK },
+    { 58, 58, SPECIES_GOLDUCK },
+    { 58, 58, SPECIES_PSYDUCK },
+    { 58, 58, SPECIES_PSYDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B1F_water_monsInfo = { 4, sJohtoWild_CeruleanCave_B1F_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B1F_rock_smash_mons[] =
+{
+    { 55, 55, SPECIES_GEODUDE },
+    { 55, 55, SPECIES_GRAVELER },
+    { 55, 55, SPECIES_GRAVELER },
+    { 55, 55, SPECIES_GEODUDE },
+    { 55, 55, SPECIES_GEODUDE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B1F_rock_smash_monsInfo = { 60, sJohtoWild_CeruleanCave_B1F_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B1F_fishing_mons[] =
+{
+    { 5, 5, SPECIES_MAGIKARP },
+    { 5, 5, SPECIES_MAGIKARP },
+    { 15, 15, SPECIES_POLIWAG },
+    { 15, 25, SPECIES_MAGIKARP },
+    { 15, 15, SPECIES_GOLDEEN },
+    { 25, 25, SPECIES_POLIWAG },
+    { 25, 25, SPECIES_POLIWHIRL },
+    { 25, 25, SPECIES_GYARADOS },
+    { 35, 35, SPECIES_PSYDUCK },
+    { 35, 35, SPECIES_PSYDUCK },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B1F_fishing_monsInfo = { 30, sJohtoWild_CeruleanCave_B1F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B2F_land_mons[] =
+{
+    { 58, 67, SPECIES_KADABRA },
+    { 58, 67, SPECIES_DITTO },
+    { 55, 64, SPECIES_PARASECT },
+    { 52, 61, SPECIES_GOLBAT },
+    { 52, 55, SPECIES_MACHOKE },
+    { 55, 55, SPECIES_MAGNETON },
+    { 58, 67, SPECIES_DITTO },
+    { 58, 67, SPECIES_KADABRA },
+    { 55, 64, SPECIES_PARASECT },
+    { 67, 67, SPECIES_CROBAT },
+    { 67, 67, SPECIES_CROBAT },
+    { 67, 67, SPECIES_ANNIHILAPE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B2F_land_monsInfo = { 10, sJohtoWild_CeruleanCave_B2F_land_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B2F_water_mons[] =
+{
+    { 40, 60, SPECIES_SLOWPOKE },
+    { 50, 65, SPECIES_SLOWBRO },
+    { 40, 60, SPECIES_SLOWPOKE },
+    { 50, 60, SPECIES_SLOWBRO },
+    { 67, 67, SPECIES_SLOWKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B2F_water_monsInfo = { 4, sJohtoWild_CeruleanCave_B2F_water_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B2F_rock_smash_mons[] =
+{
+    { 55, 55, SPECIES_GEODUDE },
+    { 55, 55, SPECIES_GRAVELER },
+    { 55, 55, SPECIES_GRAVELER },
+    { 55, 55, SPECIES_GEODUDE },
+    { 55, 55, SPECIES_GEODUDE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B2F_rock_smash_monsInfo = { 60, sJohtoWild_CeruleanCave_B2F_rock_smash_mons };
+
+static const struct WildPokemon sJohtoWild_CeruleanCave_B2F_fishing_mons[] =
+{
+    { 5, 60, SPECIES_MAGIKARP },
+    { 5, 60, SPECIES_MAGIKARP },
+    { 5, 40, SPECIES_POLIWAG },
+    { 5, 40, SPECIES_GOLDEEN },
+    { 5, 60, SPECIES_MAGIKARP },
+    { 5, 40, SPECIES_POLIWAG },
+    { 5, 50, SPECIES_POLIWHIRL },
+    { 55, 67, SPECIES_GYARADOS },
+    { 50, 65, SPECIES_SLOWBRO },
+    { 67, 67, SPECIES_SLOWKING },
+};
+
+static const struct WildPokemonInfo sJohtoWild_CeruleanCave_B2F_fishing_monsInfo = { 30, sJohtoWild_CeruleanCave_B2F_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_DiglettsCave_Tunnel_land_mons[] =
+{
+    { 2, 16, SPECIES_DIGLETT },
+    { 2, 16, SPECIES_DIGLETT },
+    { 2, 16, SPECIES_DIGLETT },
+    { 2, 16, SPECIES_DIGLETT },
+    { 2, 16, SPECIES_DIGLETT },
+    { 2, 16, SPECIES_DIGLETT },
+    { 2, 16, SPECIES_DIGLETT },
+    { 16, 16, SPECIES_DUGTRIO },
+    { 16, 16, SPECIES_DUGTRIO },
+    { 16, 16, SPECIES_DUGTRIO },
+    { 16, 16, SPECIES_DUGTRIO },
+    { 16, 16, SPECIES_DUGTRIO },
+};
+
+static const struct WildPokemonInfo sJohtoWild_DiglettsCave_Tunnel_land_monsInfo = { 10, sJohtoWild_DiglettsCave_Tunnel_land_mons };
+
+static const struct WildPokemon sJohtoWild_DiglettsCave_Tunnel_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_DiglettsCave_Tunnel_water_monsInfo = { 0, sJohtoWild_DiglettsCave_Tunnel_water_mons };
+
+static const struct WildPokemon sJohtoWild_DiglettsCave_Tunnel_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_DiglettsCave_Tunnel_fishing_monsInfo = { 0, sJohtoWild_DiglettsCave_Tunnel_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_DiglettsCave_Tunnel_Night_land_mons[] =
+{
+    { 4, 32, SPECIES_DIGLETT },
+    { 4, 32, SPECIES_DIGLETT },
+    { 4, 32, SPECIES_DIGLETT },
+    { 4, 32, SPECIES_DIGLETT },
+    { 4, 32, SPECIES_DIGLETT },
+    { 4, 32, SPECIES_DIGLETT },
+    { 4, 32, SPECIES_DIGLETT },
+    { 32, 32, SPECIES_DUGTRIO },
+    { 32, 32, SPECIES_DUGTRIO },
+    { 32, 32, SPECIES_DUGTRIO },
+    { 32, 32, SPECIES_DUGTRIO },
+    { 32, 32, SPECIES_DUGTRIO },
+};
+
+static const struct WildPokemonInfo sJohtoWild_DiglettsCave_Tunnel_Night_land_monsInfo = { 20, sJohtoWild_DiglettsCave_Tunnel_Night_land_mons };
+
+static const struct WildPokemon sJohtoWild_DiglettsCave_Tunnel_Night_water_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_DiglettsCave_Tunnel_Night_water_monsInfo = { 0, sJohtoWild_DiglettsCave_Tunnel_Night_water_mons };
+
+static const struct WildPokemon sJohtoWild_DiglettsCave_Tunnel_Night_fishing_mons[] =
+{
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+    { 5, 5, SPECIES_NONE },
+};
+
+static const struct WildPokemonInfo sJohtoWild_DiglettsCave_Tunnel_Night_fishing_monsInfo = { 0, sJohtoWild_DiglettsCave_Tunnel_Night_fishing_mons };
+
+static const struct WildPokemon sJohtoWild_SeafoamIslands_1F_land_mons[] =
+{
+    { 30, 32, SPECIES_SEEL },
+    { 40, 42, SPECIES_DEWGONG },
+    { 40, 42, SPECIES_JYNX },
+    { 35, 37, SPECIES_JYNX },
+    { 40, 43, SPECIES_PILOSWINE },
+    { 40, 43, SPECIES_DELIBIRD },
+    { 40, 44, SPECIES_SPHEAL },
+    { 40, 42, SPECIES_PILOSWINE },
+    { 5, 10, SPECIES_SMOOCHUM },
+    { 5, 12, SPECIES_SMOOCHUM },
+    { 5, 14, SPECIES_SMOOCHUM },
+    { 5, 10, SPECIES_SMOOCHUM },
+};
+
+static const struct WildPokemonInfo sJohtoWild_SeafoamIslands_1F_land_monsInfo = { 20, sJohtoWild_SeafoamIslands_1F_land_mons };
+
+static const struct WildPokemon sJohtoWild_SeafoamIslands_B1F_land_mons[] =
+{
+    { 30, 32, SPECIES_SEEL },
+    { 40, 42, SPECIES_DEWGONG },
+    { 40, 42, SPECIES_JYNX },
+    { 35, 37, SPECIES_JYNX },
+    { 40, 43, SPECIES_DELIBIRD },
+    { 40, 43, SPECIES_PILOSWINE },
+    { 40, 44, SPECIES_PILOSWINE },
+    { 40, 42, SPECIES_SNORUNT },
+    { 5, 10, SPECIES_SMOOCHUM },
+    { 5, 12, SPECIES_SMOOCHUM },
+    { 5, 14, SPECIES_SMOOCHUM },
+    { 5, 10, SPECIES_SMOOCHUM },
+};
+
+static const struct WildPokemonInfo sJohtoWild_SeafoamIslands_B1F_land_monsInfo = { 20, sJohtoWild_SeafoamIslands_B1F_land_mons };
+
+struct JohtoWildWaterSlotCount
+{
+    const struct WildPokemonInfo *info;
+    u8 count;
+};
+
+static const struct JohtoWildWaterSlotCount sJohtoWildWaterSlotCounts[] =
+{
+    { &sJohtoWild_NewBarkTown_water_monsInfo, 12 },
+    { &sJohtoWild_NewBarkTown_Night_water_monsInfo, 12 },
+    { &sJohtoWild_CherrygroveCity_water_monsInfo, 12 },
+    { &sJohtoWild_CherrygroveCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_VioletCity_water_monsInfo, 12 },
+    { &sJohtoWild_VioletCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_EcruteakCity_water_monsInfo, 12 },
+    { &sJohtoWild_EcruteakCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_OlivineCity_water_monsInfo, 12 },
+    { &sJohtoWild_OlivineCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_CianwoodCity_water_monsInfo, 12 },
+    { &sJohtoWild_CianwoodCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_BlackthornCity_water_monsInfo, 12 },
+    { &sJohtoWild_BlackthornCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_Route45_water_monsInfo, 12 },
+    { &sJohtoWild_Route28_water_monsInfo, 12 },
+    { &sJohtoWild_Route28_Night_water_monsInfo, 12 },
+    { &sJohtoWild_OlivineCity_PortOutside_water_monsInfo, 12 },
+    { &sJohtoWild_OlivineCity_PortOutside_Night_water_monsInfo, 12 },
+    { &sJohtoWild_LakeOfRage_water_monsInfo, 12 },
+    { &sJohtoWild_ViridianCity_water_monsInfo, 12 },
+    { &sJohtoWild_ViridianCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_CeruleanCity_water_monsInfo, 12 },
+    { &sJohtoWild_CeruleanCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_VermilionCity_water_monsInfo, 12 },
+    { &sJohtoWild_VermilionCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_CeladonCity_water_monsInfo, 12 },
+    { &sJohtoWild_CeladonCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_FuchsiaCity_water_monsInfo, 12 },
+    { &sJohtoWild_FuchsiaCity_Night_water_monsInfo, 12 },
+    { &sJohtoWild_CinnabarIsland_water_monsInfo, 12 },
+    { &sJohtoWild_CinnabarIsland_Night_water_monsInfo, 12 },
+    { &sJohtoWild_Route1_water_monsInfo, 10 },
+    { &sJohtoWild_Route1_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route2_water_monsInfo, 10 },
+    { &sJohtoWild_Route2_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route12_water_monsInfo, 10 },
+    { &sJohtoWild_Route12_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route13_water_monsInfo, 10 },
+    { &sJohtoWild_Route13_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route14_water_monsInfo, 10 },
+    { &sJohtoWild_Route14_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route15_water_monsInfo, 10 },
+    { &sJohtoWild_Route15_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route19_water_monsInfo, 12 },
+    { &sJohtoWild_Route19_Night_water_monsInfo, 12 },
+    { &sJohtoWild_Route20_water_monsInfo, 12 },
+    { &sJohtoWild_Route20_Night_water_monsInfo, 12 },
+    { &sJohtoWild_Route21_water_monsInfo, 12 },
+    { &sJohtoWild_Route21_Night_water_monsInfo, 12 },
+    { &sJohtoWild_Route22_water_monsInfo, 12 },
+    { &sJohtoWild_Route22_Night_water_monsInfo, 12 },
+    { &sJohtoWild_Route24_water_monsInfo, 10 },
+    { &sJohtoWild_Route24_Night_water_monsInfo, 10 },
+    { &sJohtoWild_Route25_water_monsInfo, 10 },
+    { &sJohtoWild_Route25_Night_water_monsInfo, 10 },
+    { &sJohtoWild_VermilionCity_PortOutside_water_monsInfo, 12 },
+    { &sJohtoWild_VermilionCity_PortOutside_Night_water_monsInfo, 12 },
+};
+
+static u8 JohtoWild_GetWaterSlotCount(const struct WildPokemonInfo *info)
+{
+    u32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sJohtoWildWaterSlotCounts); i++)
+    {
+        if (sJohtoWildWaterSlotCounts[i].info == info)
+            return sJohtoWildWaterSlotCounts[i].count;
+    }
+    return 0;
+}

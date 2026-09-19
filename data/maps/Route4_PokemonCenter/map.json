@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE4_POKEMON_CENTER",
   "name": "Route4_PokemonCenter",
   "layout": "LAYOUT_KANTO_LATER_ROUTE4_POKEMON_CENTER",
-  "music": "MUS_HG_POKE_CENTER",
+  "music": "MUS_POKE_CENTER",
   "region_map_section": "MAPSEC_ROUTE_4",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_NURSE",
       "x": 7,
       "y": 2,
       "elevation": 3,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_NURSE_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_NURSE_CHANSEY",
       "x": 8,
       "y": 2,
       "elevation": 0,

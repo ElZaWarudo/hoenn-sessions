@@ -2,7 +2,7 @@
   "id": "MAP_NEW_BARK_TOWN",
   "name": "NewBarkTown",
   "layout": "LAYOUT_NEW_BARK_TOWN",
-  "music": "MUS_HG_NEW_BARK",
+  "music": "MUS_LITTLEROOT",
   "region_map_section": "MAPSEC_NEW_BARK_TOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 20,
       "y": 18,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 9,
       "y": 16,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SILVER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SILVER",
       "x": 7,
       "y": 7,
       "elevation": 0,
@@ -62,10 +62,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_Silver",
-      "flag": "FLAG_HIDE_SILVER_NEWBARKTOWN"
+      "flag": "JOHTO_FLAG_HIDE_SILVER_NEWBARKTOWN"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_WOOPER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(WOOPER)",
       "x": 10,
       "y": 23,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PINECO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PINECO)",
       "x": 27,
       "y": 21,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PINECO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PINECO)",
       "x": -2,
       "y": 23,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PINECO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PINECO)",
       "x": 16,
       "y": 4,
       "elevation": 0,
@@ -117,7 +117,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PINECO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PINECO)",
       "x": 10,
       "y": 27,
       "elevation": 0,
@@ -130,7 +130,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PINECO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PINECO)",
       "x": 7,
       "y": 2,
       "elevation": 0,
@@ -193,7 +193,7 @@
       "x": 0,
       "y": 12,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "2",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_LeaveTrigger"
     },
@@ -202,7 +202,7 @@
       "x": 0,
       "y": 13,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "2",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_LeaveTrigger"
     },
@@ -211,7 +211,7 @@
       "x": 0,
       "y": 14,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "2",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_LeaveTrigger"
     },
@@ -220,7 +220,7 @@
       "x": 0,
       "y": 12,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "4",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_LeaveTrigger"
     },
@@ -229,7 +229,7 @@
       "x": 0,
       "y": 13,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "4",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_LeaveTrigger"
     },
@@ -238,7 +238,7 @@
       "x": 0,
       "y": 14,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "4",
       "script": "Johto_NewBarkTown_NewBarkTown_EventScript_LeaveTrigger"
     }

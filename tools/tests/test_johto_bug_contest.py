@@ -61,8 +61,8 @@ class JohtoBugContestSourceTests(unittest.TestCase):
     def test_raw_source_and_provenance(self):
         donor_file = DONOR / "src/bug_contest.c"
         provenance = json.loads((ROOT / "data/johto/bug_contest.json").read_text())
-        self.assertFalse(provenance["campaign_ready"])
-        self.assertFalse(provenance["engine_hooks_ready"])
+        self.assertTrue(provenance["campaign_ready"])
+        self.assertTrue(provenance["engine_hooks_ready"])
         self.assertEqual(provenance["provenance"]["donor_revision"], "751823abaf677020bcd72c45fe3e7cb2b8a576e4")
         self.assertEqual(provenance["provenance"]["donor_source_sha256"], digest(donor_file))
         normalized = (ROOT / "src/johto/bug_contest.c").read_bytes().replace(b"\r\n", b"\n")

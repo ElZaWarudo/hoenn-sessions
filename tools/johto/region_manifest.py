@@ -20,6 +20,7 @@ INVENTORY = ROOT / "docs/plans/johto-region/j1/inventory.json"
 OUTPUT = ROOT / "data/johto/region_manifest.json"
 HOST_IDENTITY_BASELINE = ROOT / "data/johto/host_identity_baseline.json"
 SCENERY_REGISTRATION = ROOT / "data/johto/scenery_registration.json"
+WORLD_PLAN = ROOT / "data/johto/world_plan.json"
 DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
 DONOR_REPOSITORY = "https://github.com/PokemonHnS-Development/pokemonHnS"
 EXPECTED_SELECTED = 239
@@ -213,6 +214,72 @@ EXPECTED_SECTION_TAIL_IDS = (
     "MAPSEC_JOHTO_SS_AQUA",
 )
 
+EXPECTED_APPEND_ONLY_GROUPS = (
+    "gMapGroup_Johto_2",
+    "gMapGroup_KantoLater",
+    "gMapGroup_KantoLater_2",
+)
+EXPECTED_EXPANDED_GROUP_COUNTS = (128, 111, 128, 40)
+EXPECTED_HOST_ADAPTERS = {
+    "gMapGroup_IndoorVermilion_Frlg": "KantoOriginal_VermilionCity_PortInside",
+    "gMapGroup_IndoorSaffron_Frlg": "KantoOriginal_SaffronCity_TrainStation",
+}
+
+# This is the reviewed encounter order in the pinned donor corpus.  These
+# symbols retain existing host IDs; they are part of the manifest allocation
+# ledger but are never appended to the host section source table.
+KANTO_GEOGRAPHIC_ALLOCATION_ORDER = (
+    "MAPSEC_PALLET_TOWN",
+    "MAPSEC_VIRIDIAN_CITY",
+    "MAPSEC_PEWTER_CITY",
+    "MAPSEC_CERULEAN_CITY",
+    "MAPSEC_VERMILION_CITY",
+    "MAPSEC_LAVENDER_TOWN",
+    "MAPSEC_CELADON_CITY",
+    "MAPSEC_SAFFRON_CITY",
+    "MAPSEC_FUCHSIA_CITY",
+    "MAPSEC_CINNABAR_ISLAND",
+    "MAPSEC_ROUTE_1",
+    "MAPSEC_ROUTE_2",
+    "MAPSEC_ROUTE_3",
+    "MAPSEC_ROUTE_4",
+    "MAPSEC_ROUTE_5",
+    "MAPSEC_ROUTE_6",
+    "MAPSEC_ROUTE_7",
+    "MAPSEC_ROUTE_8",
+    "MAPSEC_ROUTE_9",
+    "MAPSEC_ROUTE_10",
+    "MAPSEC_ROUTE_11",
+    "MAPSEC_ROUTE_12",
+    "MAPSEC_ROUTE_13",
+    "MAPSEC_ROUTE_14",
+    "MAPSEC_ROUTE_15",
+    "MAPSEC_ROUTE_16",
+    "MAPSEC_ROUTE_17",
+    "MAPSEC_ROUTE_18",
+    "MAPSEC_ROUTE_19",
+    "MAPSEC_ROUTE_20",
+    "MAPSEC_ROUTE_21",
+    "MAPSEC_ROUTE_22",
+    "MAPSEC_INDIGO_PLATEAU",
+    "MAPSEC_ROUTE_24",
+    "MAPSEC_ROUTE_25",
+    "MAPSEC_MT_MOON",
+    "MAPSEC_POWER_PLANT",
+    "MAPSEC_VIRIDIAN_FOREST",
+    "MAPSEC_ROCK_TUNNEL",
+    "MAPSEC_CERULEAN_CAVE",
+    "MAPSEC_DIGLETTS_CAVE",
+    "MAPSEC_SEAFOAM_ISLANDS",
+)
+EXPECTED_SECTION_ALLOCATION_ORDER = (
+    "MAPSEC_NEW_BARK_TOWN",
+    *EXPECTED_SECTION_TAIL_IDS[:35],
+    "MAPSEC_KANTO_VICTORY_ROAD",
+    *EXPECTED_SECTION_TAIL_IDS[35:],
+    *KANTO_GEOGRAPHIC_ALLOCATION_ORDER,
+)
+
 
 class ManifestError(ValueError):
     """An actionable donor or manifest integrity failure."""
@@ -281,17 +348,48 @@ def _host_identity(path: Path) -> dict[str, Any]:
     return baseline
 
 
+def _host_adapter_identities() -> dict[str, dict[str, Any]]:
+    """Read the two reviewed Original-Kanto append-only map identities."""
+    world_plan = _load(WORLD_PLAN)
+    records = world_plan.get("host_adapters") if isinstance(world_plan, dict) else None
+    if not isinstance(records, list) or len(records) != len(EXPECTED_HOST_ADAPTERS):
+        raise ManifestError("world plan host adapter identities are malformed")
+    result: dict[str, dict[str, Any]] = {}
+    for record in records:
+        if not isinstance(record, dict):
+            raise ManifestError("world plan host adapter identities are malformed")
+        group = record.get("group")
+        name = record.get("name")
+        if EXPECTED_HOST_ADAPTERS.get(group) != name or group in result:
+            raise ManifestError("world plan host adapter identities are malformed")
+        if not isinstance(record.get("id"), str) or not isinstance(record.get("index"), int):
+            raise ManifestError("world plan host adapter identities are malformed")
+        result[group] = record
+    if set(result) != set(EXPECTED_HOST_ADAPTERS):
+        raise ManifestError("world plan host adapter identities are malformed")
+    return result
+
+
 def _assert_host_identity(baseline: dict[str, Any]) -> None:
     """Fail closed if host map order, identity, or section constants drift."""
     live_groups = _load(ROOT / "data/maps/map_groups.json")
     expected_order = baseline["group_order"]
-    if live_groups.get("group_order") != expected_order:
-        raise ManifestError("host map group order differs from immutable baseline")
+    live_order = live_groups.get("group_order")
+    if not isinstance(live_order, list) or live_order[:len(expected_order)] != expected_order:
+        raise ManifestError("host map group order does not preserve immutable baseline prefix")
+    if tuple(live_order[len(expected_order):]) != EXPECTED_APPEND_ONLY_GROUPS:
+        raise ManifestError("host map group order has an unexpected append-only tail")
     expected_groups = baseline["groups"]
-    for group in expected_order:
+    host_adapters = _host_adapter_identities()
+    for group in expected_order[:-1]:
         expected = expected_groups.get(group)
         actual = live_groups.get(group)
         expected_names = [identity["name"] for identity in expected or []]
+        adapter = host_adapters.get(group)
+        if adapter is not None:
+            if adapter["index"] != len(expected_names):
+                raise ManifestError(f"world plan host adapter index drifted: {group}")
+            expected_names.append(adapter["name"])
         if actual != expected_names:
             raise ManifestError(f"host map group identity/order differs from baseline: {group}")
         for index, identity in enumerate(expected):
@@ -302,6 +400,56 @@ def _assert_host_identity(baseline: dict[str, Any]) -> None:
                 raise ManifestError(
                     f"host map identity differs from baseline: {group}[{index}]"
                 )
+        if adapter is not None:
+            map_data = _load(ROOT / "data/maps" / adapter["name"] / "map.json")
+            if map_data.get("id") != adapter["id"]:
+                raise ManifestError(f"host adapter map identity differs from world plan: {group}")
+    expanded_group = expected_order[-1]
+    expanded_prefix = expected_groups.get(expanded_group)
+    expanded_names = [identity["name"] for identity in expanded_prefix or []]
+    if live_groups.get(expanded_group, [])[:len(expanded_names)] != expanded_names:
+        raise ManifestError(
+            f"host map group identity/order differs from baseline: {expanded_group}"
+        )
+    for index, identity in enumerate(expanded_prefix):
+        map_data = _load(ROOT / "data/maps" / identity["name"] / "map.json")
+        actual_identity = {"name": identity["name"], "id": map_data.get("id"),
+                           "group": expanded_group, "index": index}
+        if actual_identity != identity:
+            raise ManifestError(
+                f"host map identity differs from baseline: {expanded_group}[{index}]"
+            )
+    manifest = _load(OUTPUT)
+    manifest_maps = manifest.get("maps") if isinstance(manifest, dict) else None
+    if not isinstance(manifest_maps, list):
+        raise ManifestError("region manifest has no map identity ledger")
+    expanded_groups = (expected_order[-1], *EXPECTED_APPEND_ONLY_GROUPS)
+    for group_number, (group, expected_count) in enumerate(
+        zip(expanded_groups, EXPECTED_EXPANDED_GROUP_COUNTS),
+        start=len(expected_order) - 1,
+    ):
+        identities = sorted(
+            (
+                entry for entry in manifest_maps
+                if isinstance(entry, dict)
+                and entry.get("proposed_host", {}).get("group") == group_number
+            ),
+            key=lambda entry: entry.get("proposed_host", {}).get("index", -1),
+        )
+        indexes = [entry.get("proposed_host", {}).get("index") for entry in identities]
+        if len(identities) != expected_count or indexes != list(range(expected_count)):
+            raise ManifestError(f"region manifest map allocation is malformed for {group}")
+        expected_names = [entry.get("source_name") for entry in identities]
+        if live_groups.get(group) != expected_names:
+            raise ManifestError(f"host map group identity/order differs from manifest: {group}")
+        for index, entry in enumerate(identities):
+            name = entry.get("source_name")
+            proposed = entry.get("proposed_map", {})
+            if not isinstance(name, str) or proposed.get("group") != group_number or proposed.get("index") != index:
+                raise ManifestError(f"region manifest map identity is malformed: {group}[{index}]")
+            map_data = _load(ROOT / "data/maps" / name / "map.json")
+            if map_data.get("id") != proposed.get("map_id"):
+                raise ManifestError(f"host map identity differs from manifest: {group}[{index}]")
     section_path = ROOT / "src/data/region_map/region_map_sections.json"
     live_sections = _load(section_path).get("map_sections")
     expected_sections = baseline["section_constants"]
@@ -432,9 +580,9 @@ def _accepted_target_layouts() -> dict[str, str]:
     """
     data = _load(SCENERY_REGISTRATION)
     records = data.get("layouts")
-    if not isinstance(records, list) or len(records) != EXPECTED_ORIGINAL_SELECTED:
+    if not isinstance(records, list) or len(records) != EXPECTED_TOTAL_SELECTED:
         raise ManifestError(
-            f"accepted scenery registration must contain {EXPECTED_ORIGINAL_SELECTED} layouts"
+            f"accepted scenery registration must contain {EXPECTED_TOTAL_SELECTED} layouts"
         )
     result: dict[str, str] = {}
     target_ids: set[str] = set()
@@ -633,12 +781,12 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
         )
 
     accepted_target_layouts = _accepted_target_layouts()
-    original_ids = {item["id"] for item in original_selected}
-    if set(accepted_target_layouts) != original_ids:
-        missing = sorted(original_ids - set(accepted_target_layouts))
-        extra = sorted(set(accepted_target_layouts) - original_ids)
+    selected_ids = {item["id"] for item in selected}
+    if set(accepted_target_layouts) != selected_ids:
+        missing = sorted(selected_ids - set(accepted_target_layouts))
+        extra = sorted(set(accepted_target_layouts) - selected_ids)
         raise ManifestError(
-            "accepted scenery registration map prefix differs from selected Johto maps: "
+            "accepted scenery registration differs from selected world maps: "
             f"missing={missing[:3]} extra={extra[:3]}"
         )
 
@@ -739,7 +887,7 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             "world_era": "JOHTO" if era == "johto" else "KANTO_LATER",
             "identity_namespace": {
                 "map": proposed_map_id,
-                "layout": accepted_target_layouts[item["id"]] if era == "johto" else f"LAYOUT_KANTO_LATER_{layout_id.removeprefix('LAYOUT_')}",
+                "layout": accepted_target_layouts[item["id"]],
                 "script": f"Johto_{item['name']}" if era == "johto" else f"KantoLater_{item['name']}",
             },
             "source_section": source_section,
@@ -764,6 +912,8 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
                                 "target_id": entry["id"], "classification": kind,
                                 "alias_target_suffix": alias_target})
     _assert_section_allocation(allocation)
+    if tuple(section_order) != EXPECTED_SECTION_ALLOCATION_ORDER:
+        raise ManifestError("section allocation order differs from reviewed full-world identity")
     johto_sections = {entry["target_symbol"] for entry in section_entries
                       if entry["classification"] in {"new_johto", "johto_alias", "preserved_host"}}
     if len(johto_sections) != EXPECTED_JOHTO_SECTIONS:

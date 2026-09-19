@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_CELADON_CITY_DEPARTMENT_STORE_ROOF_DAY",
   "name": "CeladonCity_DepartmentStore_RoofDay",
   "layout": "LAYOUT_KANTO_LATER_CELADON_CITY_DEPARTMENT_STORE_ROOF_DAY",
-  "music": "MUS_HG_CELADON",
+  "music": "MUS_RG_CELADON",
   "region_map_section": "MAPSEC_CELADON_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 8,
       "y": 6,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 11,
       "y": 4,
       "elevation": 0,

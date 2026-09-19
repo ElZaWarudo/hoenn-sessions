@@ -2,7 +2,7 @@
   "id": "MAP_SAFARI_ZONE_GATE_SAFARI_ZONE_ENTRANCE",
   "name": "SafariZoneGate_SafariZoneEntrance",
   "layout": "LAYOUT_JOHTO_SAFARI_ZONE_GATE_SAFARI_ZONE_ENTRANCE",
-  "music": "MUS_HG_SAFARI_ZONE_GATE",
+  "music": "MUS_FORTREE",
   "region_map_section": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 5,
       "y": 10,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MYSTERY_GIFT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MYSTERY_GIFT_MAN",
       "x": 15,
       "y": 3,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MYSTERY_GIFT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MYSTERY_GIFT_MAN",
       "x": 12,
       "y": 2,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LITTLE_BOY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LITTLE_BOY",
       "x": 2,
       "y": 5,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GIRL_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GIRL_1",
       "x": 14,
       "y": 7,
       "elevation": 3,
@@ -93,7 +93,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_2",
       "x": 12,
       "y": 7,
       "elevation": 3,
@@ -119,7 +119,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_TWIN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_TWIN",
       "x": 18,
       "y": 11,
       "elevation": 3,
@@ -132,7 +132,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_2",
       "x": 16,
       "y": 7,
       "elevation": 3,

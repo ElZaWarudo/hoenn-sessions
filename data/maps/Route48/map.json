@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE48",
   "name": "Route48",
   "layout": "LAYOUT_JOHTO_ROUTE48",
-  "music": "MUS_HG_ROUTE47",
+  "music": "MUS_ROUTE119",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_48",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TAUROS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TAUROS)",
       "x": 39,
       "y": 11,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GROWLITHE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GROWLITHE)",
       "x": 41,
       "y": 18,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_VULPIX",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(VULPIX)",
       "x": 42,
       "y": 24,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GLOOM",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GLOOM)",
       "x": 11,
       "y": 19,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SKIPLOOM",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SKIPLOOM)",
       "x": 43,
       "y": 13,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GIRAFARIG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GIRAFARIG)",
       "x": 18,
       "y": 28,
       "elevation": 0,
@@ -111,7 +111,7 @@
       "x": 21,
       "y": 0,
       "elevation": 0,
-      "var": "VAR_SAFARI_ZONE_GATE_STATE",
+      "var": "JOHTO_VAR_SAFARI_ZONE_GATE_STATE",
       "var_value": "2",
       "script": "Johto_SafariZoneGate_SafariZoneGate_EventScript_Trigger"
     },
@@ -120,7 +120,7 @@
       "x": 22,
       "y": 0,
       "elevation": 0,
-      "var": "VAR_SAFARI_ZONE_GATE_STATE",
+      "var": "JOHTO_VAR_SAFARI_ZONE_GATE_STATE",
       "var_value": "2",
       "script": "Johto_SafariZoneGate_SafariZoneGate_EventScript_Trigger"
     },
@@ -129,7 +129,7 @@
       "x": 23,
       "y": 0,
       "elevation": 0,
-      "var": "VAR_SAFARI_ZONE_GATE_STATE",
+      "var": "JOHTO_VAR_SAFARI_ZONE_GATE_STATE",
       "var_value": "2",
       "script": "Johto_SafariZoneGate_SafariZoneGate_EventScript_Trigger"
     },
@@ -138,7 +138,7 @@
       "x": 24,
       "y": 0,
       "elevation": 0,
-      "var": "VAR_SAFARI_ZONE_GATE_STATE",
+      "var": "JOHTO_VAR_SAFARI_ZONE_GATE_STATE",
       "var_value": "2",
       "script": "Johto_SafariZoneGate_SafariZoneGate_EventScript_Trigger"
     },

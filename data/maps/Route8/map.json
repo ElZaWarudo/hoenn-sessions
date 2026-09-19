@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE8",
   "name": "Route8",
   "layout": "LAYOUT_KANTO_LATER_ROUTE8",
-  "music": "MUS_HG_ROUTE3",
+  "music": "MUS_RG_ROUTE3",
   "region_map_section": "MAPSEC_ROUTE_8",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -31,7 +31,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 33,
       "y": 3,
       "elevation": 0,
@@ -44,7 +44,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 51,
       "y": 9,
       "elevation": 0,
@@ -57,7 +57,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 43,
       "y": 12,
       "elevation": 0,
@@ -70,7 +70,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 29,
       "y": 15,
       "elevation": 0,
@@ -122,7 +122,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KADABRA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KADABRA)",
       "x": 36,
       "y": 19,
       "elevation": 0,
@@ -135,7 +135,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GROWLITHE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GROWLITHE)",
       "x": 31,
       "y": 1,
       "elevation": 0,
@@ -148,7 +148,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_VULPIX",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(VULPIX)",
       "x": 32,
       "y": 1,
       "elevation": 0,
@@ -169,12 +169,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_TAMATO_2",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_ROUTE_8_TAMATO_2",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DUSKULL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DUSKULL)",
       "x": 59,
       "y": 3,
       "elevation": 0,
@@ -184,7 +184,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     }
   ],
   "warp_events": [

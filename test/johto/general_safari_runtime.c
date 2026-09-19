@@ -2,6 +2,7 @@
 #include "fieldmap.h"
 #include "field_camera.h"
 #include "fldeff.h"
+#include "malloc.h"
 #include "overworld.h"
 #include "tileset_anims.h"
 #include "constants/metatile_behaviors.h"
@@ -93,31 +94,39 @@ TEST("Kanto Later General Safari sanitizes invalid border and drawing reads")
     struct MapLayout layout = *GetMapLayout(LAYOUT_KANTO_LATER_SAFARI_BEACH);
     u16 border[] = {0x208, 0x208, 0x208, 0x208};
     u16 mapData[] = {0x208};
-    u16 bg1[0x400] = {0};
-    u16 bg2[0x400] = {0};
-    u16 bg3[0x400] = {0};
     u16 *savedBg1 = gOverworldTilemapBuffer_Bg1;
     u16 *savedBg2 = gOverworldTilemapBuffer_Bg2;
     u16 *savedBg3 = gOverworldTilemapBuffer_Bg3;
+    u16 *tilemaps = AllocZeroed(3 * 0x400 * sizeof(*tilemaps));
+    struct WarpData savedLocation = gSaveBlock1Ptr->location;
+    s16 savedX = gSaveBlock1Ptr->pos.x;
+    s16 savedY = gSaveBlock1Ptr->pos.y;
 
     layout.border = border;
     gMapHeader.mapLayout = &layout;
     gBackupMapLayout.width = 1;
     gBackupMapLayout.height = 1;
     gBackupMapLayout.map = mapData;
+    gSaveBlock1Ptr->pos.x = 0;
+    gSaveBlock1Ptr->pos.y = 0;
     EXPECT_EQ(MapGridGetMetatileIdAt(-1, -1), 0);
 
-    gOverworldTilemapBuffer_Bg1 = bg1;
-    gOverworldTilemapBuffer_Bg2 = bg2;
-    gOverworldTilemapBuffer_Bg3 = bg3;
+    EXPECT(tilemaps != NULL);
+    gOverworldTilemapBuffer_Bg1 = tilemaps;
+    gOverworldTilemapBuffer_Bg2 = tilemaps + 0x400;
+    gOverworldTilemapBuffer_Bg3 = tilemaps + 0x800;
     CurrentMapDrawMetatileAt(gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y);
     EXPECT_EQ(MapGridGetMetatileIdAt(0, 0), 0);
 
     gOverworldTilemapBuffer_Bg1 = savedBg1;
     gOverworldTilemapBuffer_Bg2 = savedBg2;
     gOverworldTilemapBuffer_Bg3 = savedBg3;
+    gSaveBlock1Ptr->location = savedLocation;
+    gSaveBlock1Ptr->pos.x = savedX;
+    gSaveBlock1Ptr->pos.y = savedY;
     gBackupMapLayout = savedBackup;
     gMapHeader.mapLayout = savedLayout;
+    Free(tilemaps);
 }
 
 TEST("Kanto Later General Cut passes avoid Fortree root writes")

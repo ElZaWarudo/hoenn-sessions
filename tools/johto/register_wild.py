@@ -130,6 +130,12 @@ def _validate_accepted(donor_root: Path) -> tuple[dict[str, Any], dict[str, Any]
         raise WildRuntimeError("accepted selection counts drifted")
     if source_count != import_wild.EXPECTED_SOURCE_HEADERS:
         raise WildRuntimeError("pinned source header count drifted")
+    expected_water_selection = {
+        str(slot_count): import_wild.water_slot_selection(slot_count)
+        for slot_count in sorted(import_wild.FIELD_SLOT_LENGTHS["water_mons"])
+    }
+    if accepted.get("slot_selection") != {"water_mons": expected_water_selection}:
+        raise WildRuntimeError("accepted water slot selection semantics drifted")
 
     by_map: dict[str, dict[str, dict[str, Any]]] = {}
     for entry in donor_rows:
@@ -156,17 +162,21 @@ def _validate_accepted(donor_root: Path) -> tuple[dict[str, Any], dict[str, Any]
         if linkage != expected_linkage:
             raise WildRuntimeError(f"map linkage drifted for {map_name}")
         host = linkage["host"]
-        if host["group"] not in (75, 76) or not 0 <= host["index"] <= 127:
-            raise WildRuntimeError(f"Johto host linkage out of range for {map_name}")
+        if host["group"] not in (75, 76, 77, 78) or not 0 <= host["index"] <= 127:
+            raise WildRuntimeError(f"world host linkage out of range for {map_name}")
         for field_type in FIELD_ORDER:
             if field_type in entry:
                 import_wild._validate_mons(entry[field_type], field_type, species)
         by_map.setdefault(map_name, {})[time] = entry
 
     if len(by_map) != import_wild.EXPECTED_MAPS_WITH_ENCOUNTERS:
-        raise WildRuntimeError("accepted map count is not 93")
+        raise WildRuntimeError(
+            f"accepted map count is not {import_wild.EXPECTED_MAPS_WITH_ENCOUNTERS}"
+        )
     if sum(len(times) for times in by_map.values()) != import_wild.EXPECTED_EMITTED_TABLES:
-        raise WildRuntimeError("accepted table count is not 147")
+        raise WildRuntimeError(
+            f"accepted table count is not {import_wild.EXPECTED_EMITTED_TABLES}"
+        )
     fallback_maps = {name for name, times in by_map.items() if set(times) == {DAY}}
     metadata = accepted.get("absent_night_fallback")
     if not isinstance(metadata, dict) or metadata.get("count") != import_wild.EXPECTED_SINGLE_HEADER_MAPS:
@@ -190,6 +200,7 @@ def _render_info(rows: list[dict[str, Any]]) -> str:
         "",
     ]
     seen: set[str] = set()
+    water_infos: list[tuple[str, int]] = []
     for entry in rows:
         label = entry["base_label"]
         for field_type in FIELD_ORDER:
@@ -210,6 +221,36 @@ def _render_info(rows: list[dict[str, Any]]) -> str:
                 f"static const struct WildPokemonInfo {_info_symbol(label, field_type)} = {{ {field['encounter_rate']}, {symbol} }};",
                 "",
             ])
+            if field_type == "water_mons" and len(field["mons"]) != len(import_wild.WATER_SLOT_WEIGHTS):
+                water_infos.append((_info_symbol(label, field_type), len(field["mons"])))
+    lines.extend([
+        "struct JohtoWildWaterSlotCount",
+        "{",
+        "    const struct WildPokemonInfo *info;",
+        "    u8 count;",
+        "};",
+        "",
+        "static const struct JohtoWildWaterSlotCount sJohtoWildWaterSlotCounts[] =",
+        "{",
+    ])
+    for info_symbol, slot_count in water_infos:
+        lines.append(f"    {{ &{info_symbol}, {slot_count} }},")
+    lines.extend([
+        "};",
+        "",
+        "static u8 JohtoWild_GetWaterSlotCount(const struct WildPokemonInfo *info)",
+        "{",
+        "    u32 i;",
+        "",
+        "    for (i = 0; i < ARRAY_COUNT(sJohtoWildWaterSlotCounts); i++)",
+        "    {",
+        "        if (sJohtoWildWaterSlotCounts[i].info == info)",
+        "            return sJohtoWildWaterSlotCounts[i].count;",
+        "    }",
+        "    return 0;",
+        "}",
+        "",
+    ])
     return "\n".join(lines)
 
 
@@ -268,7 +309,7 @@ def _render_runtime(accepted: dict[str, Any], info: dict[str, Any]) -> str:
             if time not in entry:
                 continue
             row = entry[time]
-            tables.append({
+            table = {
                 "map": row["map"],
                 "source_labels": row["source_labels"],
                 "canonical_label": row["base_label"],
@@ -277,15 +318,22 @@ def _render_runtime(accepted: dict[str, Any], info: dict[str, Any]) -> str:
                 "pointers": {field: _pointer(row, field) for field in FIELD_ORDER},
                 "map_linkage": row["map_linkage"],
                 "selection": time,
-            })
+            }
+            if "water_mons" in row:
+                slot_count = len(row["water_mons"]["mons"])
+                table["water_selection"] = {
+                    "slot_count": slot_count,
+                    **import_wild.water_slot_selection(slot_count),
+                }
+            tables.append(table)
     runtime = {
         "schema_version": 1,
         "schema": "johto-wild-runtime-v1",
         "region": "johto",
         "runtime_ready": True,
         "runtime_status": "host_wild_headers_and_rtc_selector_wired",
-        "world_status": "unwired",
-        "limitation": "Map assets, navigation, native adapters, and campaign traversal remain outside this unit.",
+        "world_status": "authoritative_407_map_world",
+        "world_identity": "johto_and_later_kanto",
         "provenance": {
             "accepted_source_path": "data/johto/wild_encounters.json",
             "accepted_source_sha256": _sha256(ACCEPTED_SOURCE),

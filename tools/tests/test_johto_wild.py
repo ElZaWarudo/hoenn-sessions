@@ -40,7 +40,7 @@ class JohtoWildImporterTests(unittest.TestCase):
             new_map = next(name for name in approved if name not in represented)
             entry = next(e for e in entries if e["base_label"] == "gRoute29_Night")
             entry["map"] = new_map
-        with self.assertRaisesRegex(import_wild.ImportErrorStrict, "encounter maps total 94"):
+        with self.assertRaisesRegex(import_wild.ImportErrorStrict, "encounter maps total 146"):
             self.parse_modified_source(change)
 
     def test_parser_rejects_unknown_encounter_field(self):
@@ -57,12 +57,12 @@ class JohtoWildImporterTests(unittest.TestCase):
 
     def test_full_selected_corpus_and_exact_source_roundtrip(self):
         self.assertFalse(self.fragment["runtime_ready"])
-        self.assertEqual(self.fragment["selection"]["approved_map_count"], 239)
-        self.assertEqual(self.fragment["selection"]["maps_with_encounters"], 93)
-        self.assertEqual(self.fragment["selection"]["source_header_count"], 149)
-        self.assertEqual(self.fragment["selection"]["emitted_table_count"], 147)
-        self.assertEqual(len(self.entries), 147)
-        self.assertEqual(len({entry["map"] for entry in self.entries}), 93)
+        self.assertEqual(self.fragment["selection"]["approved_map_count"], 407)
+        self.assertEqual(self.fragment["selection"]["maps_with_encounters"], 145)
+        self.assertEqual(self.fragment["selection"]["source_header_count"], 236)
+        self.assertEqual(self.fragment["selection"]["emitted_table_count"], 234)
+        self.assertEqual(len(self.entries), 234)
+        self.assertEqual(len({entry["map"] for entry in self.entries}), 145)
 
         source = json.loads((DONOR / import_wild.DONOR_SOURCE).read_text(encoding="utf-8"))
         manifest = json.loads(
@@ -76,7 +76,7 @@ class JohtoWildImporterTests(unittest.TestCase):
             for entry in group["encounters"]
             if entry.get("map") in approved
         ]
-        self.assertEqual(len(selected), 149)
+        self.assertEqual(len(selected), 236)
 
         by_key = {
             (entry["map"], entry["time_of_day"], entry["base_label"]): entry
@@ -99,7 +99,14 @@ class JohtoWildImporterTests(unittest.TestCase):
             self.assertEqual(linkage["source_map"], source_entry["map"])
             self.assertEqual(linkage["host"]["map_id"], approved[source_entry["map"]]["proposed_map"]["map_id"])
             self.assertIn(source_entry["base_label"], output_entry["source_labels"])
-        self.assertEqual(len(represented), 149)
+        self.assertEqual(len(represented), 236)
+
+        source_maps = {entry["map"] for entry in self.entries}
+        self.assertTrue(any(approved[name]["world_era"] == "KANTO_LATER" for name in source_maps))
+        self.assertEqual(
+            {entry["map_linkage"]["host"]["map_id"] for entry in self.entries},
+            {approved[name]["proposed_map"]["map_id"] for name in source_maps},
+        )
 
     def test_verified_snow_duplicate_and_absent_night_metadata(self):
         snow = {
@@ -128,8 +135,8 @@ class JohtoWildImporterTests(unittest.TestCase):
             )
         )
         fallback = self.fragment["absent_night_fallback"]
-        self.assertEqual(fallback["count"], 39)
-        self.assertEqual(len(fallback["maps"]), 39)
+        self.assertEqual(fallback["count"], 56)
+        self.assertEqual(len(fallback["maps"]), 56)
         self.assertTrue(all(item["canonical_day_label"] for item in fallback["maps"]))
 
     def test_boundaries_and_unchanged_existing_default(self):
@@ -143,6 +150,16 @@ class JohtoWildImporterTests(unittest.TestCase):
         )
         self.assertEqual(self.fragment["time_windows"]["day"], {"start": "06:00", "end": "17:59"})
         self.assertEqual(self.fragment["time_windows"]["night"], {"start": "18:00", "end": "05:59"})
+
+        approved, _digest = import_wild._load_manifest(ROOT)
+        ordered = sorted(approved.values(), key=lambda entry: entry["ordinal"])
+        self.assertEqual(
+            [
+                (ordered[index]["proposed_host"]["group"], ordered[index]["proposed_host"]["index"])
+                for index in (0, 127, 128, 238, 239, 366, 367, 406)
+            ],
+            [(75, 0), (75, 127), (76, 0), (76, 110), (77, 0), (77, 127), (78, 0), (78, 39)],
+        )
 
     def test_invalid_slot_shapes_and_levels_fail_closed(self):
         sample = copy.deepcopy(self.entries[0]["land_mons"])
@@ -158,6 +175,36 @@ class JohtoWildImporterTests(unittest.TestCase):
             import_wild._validate_mons(invalid_species, "land_mons", {"SPECIES_SENTRET"})
         with self.assertRaises(import_wild.ImportErrorStrict):
             import_wild._validate_group_fields([{"type": "land_mons", "encounter_rates": [1]}])
+
+    def test_later_kanto_water_shape_is_accepted_but_unknown_shapes_fail_closed(self):
+        water = next(
+            entry["water_mons"]
+            for entry in self.entries
+            if "water_mons" in entry and len(entry["water_mons"]["mons"]) == 10
+        )
+        species = import_wild._species_symbols(ROOT)
+        self.assertEqual(len(import_wild._validate_mons(water, "water_mons", species)["mons"]), 10)
+        invalid = copy.deepcopy(water)
+        invalid["mons"].append(copy.deepcopy(invalid["mons"][-1]))
+        with self.assertRaisesRegex(import_wild.ImportErrorStrict, "invalid water_mons slot length"):
+            import_wild._validate_mons(invalid, "water_mons", species)
+
+        water_ten = [
+            entry
+            for entry in self.entries
+            if "water_mons" in entry and len(entry["water_mons"]["mons"]) == 10
+        ]
+        self.assertEqual(len(water_ten), 16)
+        self.assertTrue(all(entry["map_linkage"]["host"]["group"] == 77 for entry in water_ten))
+
+        self.assertEqual(
+            self.fragment["slot_selection"]["water_mons"],
+            {
+                "5": {"mode": "weighted", "weights": [60, 30, 5, 4, 1]},
+                "10": {"mode": "uniform_explicit_slots", "weights": [1] * 10},
+                "12": {"mode": "uniform_explicit_slots", "weights": [1] * 12},
+            },
+        )
 
     def test_check_is_deterministic_and_detects_drift(self):
         rendered = import_wild._render(self.fragment)

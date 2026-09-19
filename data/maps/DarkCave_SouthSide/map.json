@@ -2,7 +2,7 @@
   "id": "MAP_DARK_CAVE_SOUTH_SIDE",
   "name": "DarkCave_SouthSide",
   "layout": "LAYOUT_JOHTO_DARK_CAVE_SOUTH_SIDE",
-  "music": "MUS_HG_UNION_CAVE",
+  "music": "MUS_PETALBURG_WOODS",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_31",
   "requires_flash": true,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 10,
       "y": 7,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_DarkCave_SouthSide_DarkCave1_EventScript_Item_Potion",
-      "flag": "FLAG_ITEM_DARKCAVE1_POTION"
+      "flag": "JOHTO_FLAG_ITEM_DARKCAVE1_POTION"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 23,
       "y": 19,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 18,
       "y": 19,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 43,
       "y": 12,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "FLAG_TEMP_3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 58,
       "y": 43,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "FLAG_TEMP_4"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 45,
       "y": 8,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_DarkCave_SouthSide_DarkCave1_EventScript_Item_Revive",
-      "flag": "FLAG_ITEM_DARKCAVE1_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_DARKCAVE1_REVIVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 51,
       "y": 41,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_DarkCave_SouthSide_DarkCave1_EventScript_Item_MaxRevive",
-      "flag": "FLAG_ITEM_DARKCAVE1_MAX_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_DARKCAVE1_MAX_REVIVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 59,
       "y": 47,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_DarkCave_SouthSide_DarkCave1_EventScript_Item_Elixir",
-      "flag": "FLAG_ITEM_DARKCAVE1_ELIXIR"
+      "flag": "JOHTO_FLAG_ITEM_DARKCAVE1_ELIXIR"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DUNSPARCE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DUNSPARCE)",
       "x": 14,
       "y": 22,
       "elevation": 0,
@@ -132,7 +132,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ZUBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ZUBAT)",
       "x": 30,
       "y": 21,
       "elevation": 0,
@@ -145,7 +145,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GEODUDE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GEODUDE)",
       "x": 39,
       "y": 6,
       "elevation": 0,
@@ -158,7 +158,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TEDDIURSA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TEDDIURSA)",
       "x": 5,
       "y": 7,
       "elevation": 0,
@@ -171,7 +171,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TEDDIURSA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TEDDIURSA)",
       "x": 54,
       "y": 41,
       "elevation": 0,
@@ -184,7 +184,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_LARVITAR",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(LARVITAR)",
       "x": 63,
       "y": 7,
       "elevation": 0,
@@ -197,7 +197,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TEDDIURSA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TEDDIURSA)",
       "x": 6,
       "y": 10,
       "elevation": 0,

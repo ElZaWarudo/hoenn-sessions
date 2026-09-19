@@ -2,7 +2,7 @@
   "id": "MAP_OLIVINE_CITY",
   "name": "OlivineCity",
   "layout": "LAYOUT_JOHTO_OLIVINE_CITY",
-  "music": "MUS_HG_VIOLET",
+  "music": "MUS_GSC_PEWTER",
   "region_map_section": "MAPSEC_JOHTO_OLIVINE_CITY",
   "requires_flash": false,
   "weather": "WEATHER_RAIN",
@@ -31,7 +31,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 21,
       "y": 28,
       "elevation": 0,
@@ -41,10 +41,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_OlivineCity_OlivineCity_EventScript_Youngster",
-      "flag": "FLAG_ITEM_OLIVINE_TM_SHOCKWAVE"
+      "flag": "JOHTO_FLAG_ITEM_OLIVINE_TM_SHOCKWAVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SAILOR",
       "x": 33,
       "y": 46,
       "elevation": 0,
@@ -57,7 +57,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SAILOR",
       "x": 11,
       "y": 44,
       "elevation": 0,
@@ -70,7 +70,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SILVER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SILVER",
       "x": 11,
       "y": 27,
       "elevation": 0,
@@ -80,10 +80,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_OLIVINE_SILVER"
+      "flag": "JOHTO_FLAG_HIDE_OLIVINE_SILVER"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEOTTO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEOTTO)",
       "x": 11,
       "y": 11,
       "elevation": 0,
@@ -96,7 +96,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 9,
       "y": 52,
       "elevation": 0,
@@ -109,7 +109,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 33,
       "y": 60,
       "elevation": 0,
@@ -122,7 +122,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 39,
       "y": 61,
       "elevation": 0,
@@ -135,7 +135,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CORSOLA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CORSOLA)",
       "x": 12,
       "y": 58,
       "elevation": 0,
@@ -148,7 +148,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CORSOLA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CORSOLA)",
       "x": 7,
       "y": 61,
       "elevation": 0,
@@ -161,7 +161,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACOOL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACOOL)",
       "x": 25,
       "y": 57,
       "elevation": 0,
@@ -174,7 +174,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEY)",
       "x": 19,
       "y": 31,
       "elevation": 0,
@@ -187,7 +187,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MACHOKE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MACHOKE)",
       "x": 33,
       "y": 47,
       "elevation": 0,
@@ -200,7 +200,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FURRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FURRET)",
       "x": 26,
       "y": 34,
       "elevation": 0,
@@ -213,7 +213,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FURRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FURRET)",
       "x": 37,
       "y": 37,
       "elevation": 0,
@@ -226,7 +226,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SKARMORY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SKARMORY)",
       "x": 9,
       "y": 24,
       "elevation": 0,
@@ -239,7 +239,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SENTRET",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SENTRET)",
       "x": 26,
       "y": 17,
       "elevation": 0,
@@ -252,7 +252,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MACHOP",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MACHOP)",
       "x": 11,
       "y": 16,
       "elevation": 0,
@@ -262,10 +262,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISDREAVUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISDREAVUS)",
       "x": 14,
       "y": 7,
       "elevation": 0,
@@ -275,10 +275,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_1",
       "x": 7,
       "y": 16,
       "elevation": 0,
@@ -301,10 +301,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_OlivineCity_OlivineCity_EventScript_Item_Shockwave",
-      "flag": "FLAG_ITEM_OLIVINE_TM_SHOCKWAVE"
+      "flag": "JOHTO_FLAG_ITEM_OLIVINE_TM_SHOCKWAVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ATTENDANT",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ATTENDANT",
       "x": 26,
       "y": 52,
       "elevation": 0,
@@ -317,7 +317,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_TWIN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_TWIN",
       "x": 28,
       "y": 41,
       "elevation": 3,
@@ -483,7 +483,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "4",
       "script": "NULL",
-      "flag": "FLAG_HIDE_OLIVINE_CITY_GYM_JASMINE"
+      "flag": "JOHTO_FLAG_HIDE_OLIVINE_CITY_GYM_JASMINE"
     }
   ],
   "warp_events": [
@@ -550,7 +550,7 @@
       "x": 15,
       "y": 28,
       "elevation": 0,
-      "var": "VAR_OLIVINE_CITY_STATE",
+      "var": "JOHTO_VAR_OLIVINE_CITY_STATE",
       "var_value": "1",
       "script": "Johto_OlivineCity_OlivineCity_EventScript_SilverTrigger"
     },
@@ -559,7 +559,7 @@
       "x": 15,
       "y": 29,
       "elevation": 0,
-      "var": "VAR_OLIVINE_CITY_STATE",
+      "var": "JOHTO_VAR_OLIVINE_CITY_STATE",
       "var_value": "1",
       "script": "Johto_OlivineCity_OlivineCity_EventScript_SilverTrigger"
     },
@@ -568,7 +568,7 @@
       "x": 15,
       "y": 30,
       "elevation": 0,
-      "var": "VAR_OLIVINE_CITY_STATE",
+      "var": "JOHTO_VAR_OLIVINE_CITY_STATE",
       "var_value": "1",
       "script": "Johto_OlivineCity_OlivineCity_EventScript_SilverTrigger"
     }

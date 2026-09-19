@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE20",
   "name": "Route20",
   "layout": "LAYOUT_KANTO_LATER_ROUTE20",
-  "music": "MUS_HG_ROUTE11",
+  "music": "MUS_RG_ROUTE11",
   "region_map_section": "MAPSEC_ROUTE_20",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_M_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_M_WATER",
       "x": 96,
       "y": 13,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 57,
       "y": 3,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 48,
       "y": 17,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 71,
       "y": 12,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 72,
       "y": 9,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 83,
       "y": 3,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 42,
       "y": 9,
       "elevation": 0,
@@ -114,10 +114,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route20_Route20_EventScript_Seel",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 44,
       "y": 10,
       "elevation": 0,
@@ -127,10 +127,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route20_Route20_EventScript_Dewgong",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 34,
       "y": 5,
       "elevation": 0,
@@ -143,7 +143,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 12,
       "y": 14,
       "elevation": 0,
@@ -153,10 +153,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route20_Route20_EventScript_Dewgong",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 116,
       "y": 5,
       "elevation": 0,
@@ -169,7 +169,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CLAMPERL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLAMPERL)",
       "x": 88,
       "y": 19,
       "elevation": 0,
@@ -182,7 +182,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 85,
       "y": 6,
       "elevation": 0,
@@ -195,7 +195,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 34,
       "y": 8,
       "elevation": 0,
@@ -218,10 +218,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route20_Route20_EventScript_ShellBell",
-      "flag": "FLAG_ITEM_ROUTE20_SHELL_BELL"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE20_SHELL_BELL"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 23,
       "y": 8,
       "elevation": 0,
@@ -234,7 +234,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MAGIKARP+SPECIES_SHINY_TAG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES_SHINY(MAGIKARP)",
       "x": 24,
       "y": 8,
       "elevation": 0,

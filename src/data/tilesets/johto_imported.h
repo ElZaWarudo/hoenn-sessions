@@ -2412,7 +2412,7 @@ const struct Tileset gTileset_KantoLaterImported_CeladonCity =
     .palettes = gTilesetPalettes_KantoLaterImported_CeladonCity,
     .metatiles = gMetatiles_KantoLaterImported_CeladonCity,
     .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_CeladonCity,
-    .callback = NULL,
+    .callback = InitTilesetAnim_CeladonCity,
 };
 
 const u32 gTilesetTiles_KantoLaterImported_CeruleanCity[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/cerulean_city/tiles.4bpp.fastSmol");
@@ -2786,7 +2786,7 @@ const struct Tileset gTileset_KantoLaterImported_Lavaridge =
     .palettes = gTilesetPalettes_KantoLaterImported_Lavaridge,
     .metatiles = gMetatiles_KantoLaterImported_Lavaridge,
     .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_Lavaridge,
-    .callback = NULL,
+    .callback = InitTilesetAnim_JohtoBlackthornGym,
 };
 
 const u32 gTilesetTiles_KantoLaterImported_LavenderTown[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/lavender_town/tiles.4bpp.fastSmol");
@@ -3126,7 +3126,7 @@ const struct Tileset gTileset_KantoLaterImported_SilphCo =
     .palettes = gTilesetPalettes_KantoLaterImported_SilphCo,
     .metatiles = gMetatiles_KantoLaterImported_SilphCo,
     .metatileAttributes = (const u16 *)gMetatileAttributes_KantoLaterImported_SilphCo,
-    .callback = NULL,
+    .callback = InitTilesetAnim_SilphCo,
 };
 
 const u32 gTilesetTiles_KantoLaterImported_SoulHouse[] = INCBIN_U32("data/johto/scenery/data/tilesets/secondary/soul_house/tiles.4bpp.fastSmol");

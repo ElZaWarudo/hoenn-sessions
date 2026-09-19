@@ -2,7 +2,7 @@
   "id": "MAP_GOLDENROD_CITY_HOUSE3",
   "name": "GoldenrodCity_House3",
   "layout": "LAYOUT_JOHTO_GOLDENROD_CITY_HOUSE3",
-  "music": "MUS_HG_GOLDENROD",
+  "music": "MUS_SLATEPORT",
   "region_map_section": "MAPSEC_JOHTO_GOLDENROD_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 4,
       "y": 5,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 7,
       "y": 4,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_TWIN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_TWIN",
       "x": 7,
       "y": 7,
       "elevation": 0,

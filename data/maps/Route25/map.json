@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE25",
   "name": "Route25",
   "layout": "LAYOUT_KANTO_LATER_ROUTE25",
-  "music": "MUS_HG_ROUTE24",
+  "music": "MUS_RG_ROUTE24",
   "region_map_section": "MAPSEC_ROUTE_25",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -21,7 +21,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_LITTLE_BOY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LITTLE_BOY",
       "x": 10,
       "y": 11,
       "elevation": 0,
@@ -34,7 +34,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 24,
       "y": 11,
       "elevation": 0,
@@ -47,7 +47,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 19,
       "y": 13,
       "elevation": 0,
@@ -73,7 +73,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CAMPER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CAMPER",
       "x": 20,
       "y": 11,
       "elevation": 0,
@@ -86,7 +86,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_1",
       "x": 12,
       "y": 13,
       "elevation": 0,
@@ -99,7 +99,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 32,
       "y": 7,
       "elevation": 0,
@@ -112,7 +112,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 30,
       "y": 7,
       "elevation": 0,
@@ -148,7 +148,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROUTE25_MISTY"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE25_MISTY"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_BOY",
@@ -161,10 +161,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROUTE25_MISTY"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE25_MISTY"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SWABLU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SWABLU)",
       "x": 0,
       "y": 3,
       "elevation": 0,
@@ -174,10 +174,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SPEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SPEAROW)",
       "x": 51,
       "y": 5,
       "elevation": 0,
@@ -198,12 +198,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_KELPSY_1",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_KELPSY_1",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_EUSINE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_EUSINE",
       "x": 66,
       "y": 18,
       "elevation": 0,
@@ -213,10 +213,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route25_Route25_EventScript_Eusine",
-      "flag": "FLAG_HIDE_ROUTE25_EUSINE"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE25_EUSINE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SUICUNE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SUICUNE)",
       "x": 66,
       "y": 7,
       "elevation": 0,
@@ -226,10 +226,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route25_Route25_EventScript_Suicune",
-      "flag": "FLAG_HIDE_ROUTE25_SUICUNE"
+      "flag": "JOHTO_FLAG_HIDE_ROUTE25_SUICUNE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_LUVDISC",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(LUVDISC)",
       "x": 73,
       "y": 22,
       "elevation": 0,
@@ -242,7 +242,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_LUVDISC",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(LUVDISC)",
       "x": 74,
       "y": 23,
       "elevation": 0,
@@ -255,7 +255,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BUTTERFREE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BUTTERFREE)",
       "x": 20,
       "y": 19,
       "elevation": 0,
@@ -278,7 +278,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_Route25_Route25_EventScript_MistyRematch",
-      "flag": "FLAG_HIDE_CAPE_MISTY"
+      "flag": "JOHTO_FLAG_HIDE_CAPE_MISTY"
     }
   ],
   "warp_events": [
@@ -296,7 +296,7 @@
       "x": 65,
       "y": 13,
       "elevation": 0,
-      "var": "VAR_CERULEAN_CITY_STATE",
+      "var": "JOHTO_VAR_CERULEAN_CITY_STATE",
       "var_value": "2",
       "script": "KantoLater_Route25_Route25_Trigger_MistyLeft"
     },
@@ -305,7 +305,7 @@
       "x": 66,
       "y": 13,
       "elevation": 0,
-      "var": "VAR_CERULEAN_CITY_STATE",
+      "var": "JOHTO_VAR_CERULEAN_CITY_STATE",
       "var_value": "2",
       "script": "KantoLater_Route25_Route25_Trigger_MistyRight"
     },
@@ -314,7 +314,7 @@
       "x": 66,
       "y": 11,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "6",
       "script": "KantoLater_Route25_Route25_Trigger_SuicuneRight"
     },
@@ -323,7 +323,7 @@
       "x": 65,
       "y": 11,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "6",
       "script": "KantoLater_Route25_Route25_Trigger_SuicuneLeft"
     }

@@ -3,6 +3,8 @@
 #include "constants/event_object_movement.h"
 #include "constants/event_objects.h"
 #include "constants/flags.h"
+#include "constants/johto_content.h"
+#include "constants/johto_berry_plots.h"
 #include "constants/items.h"
 #include "constants/map_scripts.h"
 #include "constants/maps.h"

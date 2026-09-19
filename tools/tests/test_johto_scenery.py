@@ -38,6 +38,51 @@ def head_bytes(path: str) -> bytes:
     ).stdout
 
 
+def complete_registration_predecessor():
+    """Reconstruct the exact trusted document upgraded by the current generator."""
+    predecessor = json.loads(head_bytes("data/johto/scenery_registration.json"))
+    predecessor["provenance"]["region_manifest_sha256"] = (
+        "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
+    )
+    predecessor["provenance"]["asset_manifest_sha256"] = (
+        "1cbb94d8aeeb0cd4d491d21c0f6fe724b3107d45657a4de21d5f6e7d398fcd2e"
+    )
+    general = next(
+        entry for entry in predecessor["tilesets"]
+        if entry["target_symbol"] == "gTileset_KantoLaterImported_General"
+    )
+    general["callback"] = None
+    general["metadata"]["callback_rule"] = "runtime_pending"
+    readiness = predecessor["runtime_readiness"]
+    readiness["ready"] = False
+    readiness["pending"] = [
+        "source-faithful later tileset animation frames and callback registration",
+        "General map/border dynamic writer and connected-border safety",
+        "map headers, groups, scripts, warps, transport and campaign registration",
+    ]
+    readiness["general_pending_layouts"] = [
+        "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+        "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+        "LAYOUT_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+    ]
+    return predecessor
+
+
+def callback_registration_predecessor():
+    return json.loads(head_bytes("data/johto/scenery_registration.json"))
+
+
+def raw_provenance_predecessor():
+    predecessor = callback_registration_predecessor()
+    predecessor["provenance"]["region_manifest_sha256"] = (
+        "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
+    )
+    predecessor["provenance"]["asset_manifest_sha256"] = (
+        "0e2ed2a12f19f93fa0be68ee825b4ab45ed71410b0c06599614361f0d28904d5"
+    )
+    return predecessor
+
+
 class JohtoSceneryTest(unittest.TestCase):
     def test_complete_selection_and_append_only_registration(self):
         manifest = load("data/johto/asset_manifest.json")
@@ -375,10 +420,10 @@ class JohtoSceneryTest(unittest.TestCase):
         return result, original, written
 
     def test_write_upgrades_the_exact_complete_predecessor_in_isolation(self):
-        predecessor = json.loads(head_bytes("data/johto/scenery_registration.json"))
+        predecessor = callback_registration_predecessor()
         self.assertEqual(
             scenery._identity(predecessor),
-            scenery.PREDECESSOR_COMPLETE_REGISTRATION_SHA256,
+            scenery.PREDECESSOR_CALLBACK_REGISTRATION_SHA256,
         )
         result, original, written = self._isolated_registration_write(predecessor)
         self.assertEqual(result, 0)
@@ -394,13 +439,7 @@ class JohtoSceneryTest(unittest.TestCase):
         })
 
     def test_write_upgrades_raw_provenance_predecessor_and_rejects_mutation(self):
-        predecessor = load("data/johto/scenery_registration.json")
-        predecessor["provenance"]["region_manifest_sha256"] = (
-            "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
-        )
-        predecessor["provenance"]["asset_manifest_sha256"] = (
-            "0e2ed2a12f19f93fa0be68ee825b4ab45ed71410b0c06599614361f0d28904d5"
-        )
+        predecessor = raw_provenance_predecessor()
         self.assertEqual(
             scenery._identity(predecessor),
             scenery.PREDECESSOR_RAW_PROVENANCE_REGISTRATION_SHA256,
@@ -417,7 +456,7 @@ class JohtoSceneryTest(unittest.TestCase):
         self.assertEqual(written, original)
 
     def test_write_rejects_adversarial_complete_predecessor_drift_without_mutation(self):
-        predecessor = json.loads(head_bytes("data/johto/scenery_registration.json"))
+        predecessor = complete_registration_predecessor()
         mutations = {}
         changed = copy.deepcopy(predecessor)
         changed["scope"]["purpose"] = "untrusted purpose"
@@ -568,6 +607,39 @@ class JohtoSceneryTest(unittest.TestCase):
             self.assertIsNone(callback)
             self.assertEqual(metadata["swapPalettes"], 2)
 
+    def test_active_later_callbacks_require_exact_closed_mappings(self):
+        mappings = {
+            "CeladonCity": "InitTilesetAnim_CeladonCity",
+            "Lavaridge": "InitTilesetAnim_JohtoBlackthornGym",
+            "SilphCo": "InitTilesetAnim_SilphCo",
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            headers = root / "src/data/tilesets/headers.h"
+            headers.parent.mkdir(parents=True)
+            headers.write_text("\n".join(
+                f"const struct Tileset gTileset_{name} = {{ .callback = InitTilesetAnim_{name}, }};"
+                for name in mappings
+            ))
+            animation = {"tileset_registration": {"secondary": mappings}}
+            for name, expected in mappings.items():
+                callback, metadata = scenery._tileset_metadata(
+                    root,
+                    f"gTileset_{name}",
+                    {"kind": "secondary", "callback": f"InitTilesetAnim_{name}"},
+                    animation,
+                )
+                self.assertEqual(callback, expected)
+                self.assertEqual(metadata["callback_rule"], "closed_tileset_registration")
+
+            with self.assertRaisesRegex(scenery.ImportError, "active donor callback has no closed mapping"):
+                scenery._tileset_metadata(
+                    root,
+                    "gTileset_Lavaridge",
+                    {"kind": "secondary", "callback": "InitTilesetAnim_Lavaridge"},
+                    {"tileset_registration": {"secondary": {}}},
+                )
+
     def test_source_drift_rejects_before_any_output_write(self):
         with tempfile.TemporaryDirectory() as folder:
             donor = Path(folder)
@@ -584,11 +656,33 @@ class JohtoSceneryTest(unittest.TestCase):
                 scenery._source_assets({"layouts": [{"primary_tileset": "gTileset_Test_0", "secondary_tileset": "gTileset_Test_0", "assets": [asset]}], "tilesets": tilesets}, donor, AssetModule)
             self.assertEqual(list(donor.iterdir()), [donor / "source.bin"])
 
-    def test_pending_runtime_gate_is_explicit(self):
+    def test_runtime_gate_closes_when_all_scenery_callbacks_are_registered(self):
         registration = load("data/johto/scenery_registration.json")
-        self.assertFalse(registration["runtime_readiness"]["ready"])
+        self.assertTrue(registration["runtime_readiness"]["ready"])
         self.assertEqual(set(registration["runtime_readiness"]["general_pending_layouts"]), set(scenery.PENDING_GENERAL_LAYOUTS))
-        self.assertTrue(any("animation" in item.lower() for item in registration["runtime_readiness"]["pending"]))
+        self.assertEqual(registration["runtime_readiness"]["pending"], [])
+
+        callbacks = {
+            entry["target_symbol"]: entry
+            for entry in registration["tilesets"]
+            if entry["target_symbol"] in {
+                "gTileset_KantoLaterImported_CeladonCity",
+                "gTileset_KantoLaterImported_Lavaridge",
+                "gTileset_KantoLaterImported_SilphCo",
+            }
+        }
+        self.assertEqual(
+            {symbol: entry["callback"] for symbol, entry in callbacks.items()},
+            {
+                "gTileset_KantoLaterImported_CeladonCity": "InitTilesetAnim_CeladonCity",
+                "gTileset_KantoLaterImported_Lavaridge": "InitTilesetAnim_JohtoBlackthornGym",
+                "gTileset_KantoLaterImported_SilphCo": "InitTilesetAnim_SilphCo",
+            },
+        )
+        self.assertTrue(all(
+            entry["metadata"]["callback_rule"] == "closed_tileset_registration"
+            for entry in callbacks.values()
+        ))
 
 
 if __name__ == "__main__":

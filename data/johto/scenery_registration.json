@@ -4,7 +4,7 @@
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
     "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
     "region_manifest_sha256": "cdbcbca025c9635dea5f5e02da19290817c3ead298ab6dd73d7b16d7aaa70e3e",
-    "asset_manifest_sha256": "db91344abd45f1c1cd012d82db356ec35651fa92dfc79d332b72856ce011a72d",
+    "asset_manifest_sha256": "bfce5360906ad5a6e9f1e1d344c955ffe4caecb84a2838fab900d4b0f3e02419",
     "selection": {
       "layout_count": 407,
       "tileset_count": 97,
@@ -27113,13 +27113,13 @@
       "source_symbol": "gTileset_CeladonCity",
       "target_symbol": "gTileset_KantoLaterImported_CeladonCity",
       "kind": "secondary",
-      "callback": null,
+      "callback": "InitTilesetAnim_CeladonCity",
       "metadata": {
         "swapPalettes": 0,
         "lightPalettes": 0,
         "customLightColor": 0,
         "callback_source": "InitTilesetAnim_CeladonCity",
-        "callback_rule": "runtime_pending"
+        "callback_rule": "closed_tileset_registration"
       },
       "source_assets": [
         {
@@ -28123,7 +28123,7 @@
         "swapPalettes": 0,
         "lightPalettes": 0,
         "customLightColor": 0,
-        "callback_source": "InitTilesetAnim_HoennGeneral",
+        "callback_source": "InitTilesetAnim_General",
         "callback_rule": "closed_tileset_registration"
       },
       "source_assets": [
@@ -28958,13 +28958,13 @@
       "source_symbol": "gTileset_Lavaridge",
       "target_symbol": "gTileset_KantoLaterImported_Lavaridge",
       "kind": "secondary",
-      "callback": null,
+      "callback": "InitTilesetAnim_JohtoBlackthornGym",
       "metadata": {
         "swapPalettes": 0,
         "lightPalettes": 0,
         "customLightColor": 0,
-        "callback_source": "InitTilesetAnim_Lavaridge",
-        "callback_rule": "runtime_pending"
+        "callback_source": "InitTilesetAnim_JohtoBlackthornGym",
+        "callback_rule": "closed_tileset_registration"
       },
       "source_assets": [
         {
@@ -30494,13 +30494,13 @@
       "source_symbol": "gTileset_SilphCo",
       "target_symbol": "gTileset_KantoLaterImported_SilphCo",
       "kind": "secondary",
-      "callback": null,
+      "callback": "InitTilesetAnim_SilphCo",
       "metadata": {
         "swapPalettes": 0,
         "lightPalettes": 0,
         "customLightColor": 0,
         "callback_source": "InitTilesetAnim_SilphCo",
-        "callback_rule": "runtime_pending"
+        "callback_rule": "closed_tileset_registration"
       },
       "source_assets": [
         {
@@ -31799,12 +31799,9 @@
     }
   ],
   "runtime_readiness": {
-    "ready": false,
+    "ready": true,
     "static_scenery": true,
-    "pending": [
-      "source-faithful later tileset animation frames and callback registration",
-      "map headers, groups, scripts, warps, transport and campaign registration"
-    ],
+    "pending": [],
     "general_pending_layouts": []
   }
 }

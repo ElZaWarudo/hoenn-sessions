@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION",
   "name": "SaffronCity_TrainStation",
   "layout": "LAYOUT_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION",
-  "music": "MUS_HG_GOLDENROD",
+  "music": "MUS_SLATEPORT",
   "region_map_section": "MAPSEC_SAFFRON_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
       "x": 137,
       "y": 20,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BATTLE_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_BATTLE_GIRL",
       "x": 131,
       "y": 22,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 131,
       "y": 23,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 141,
       "y": 23,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_TRAIN_BACK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT",
       "x": 152,
       "y": 5,
       "elevation": 0,

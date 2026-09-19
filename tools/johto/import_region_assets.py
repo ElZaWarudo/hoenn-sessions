@@ -23,6 +23,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[2]
 REGION_MANIFEST = ROOT / "data/johto/region_manifest.json"
+ANIMATION_MANIFEST = ROOT / "data/johto/tileset_animations.json"
 OUTPUT_MANIFEST = ROOT / "data/johto/asset_manifest.json"
 
 DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
@@ -61,7 +62,10 @@ ROUTE7_MAP_REPAIRS = (
     (196, 20, 8, 0x0786, 0x041C),
     (197, 21, 8, 0x0786, 0x041D),
 )
-ACCEPTED_PREDECESSOR_SHA256 = "c6dbb8d0b8aecbbe3acc473cff39c62988e211bed8bf664220a7972cd045ce73"
+ACCEPTED_PREDECESSOR_SHA256S = {
+    "c6dbb8d0b8aecbbe3acc473cff39c62988e211bed8bf664220a7972cd045ce73",
+    "89e7b59ff06145af784ee66ee678edeeb5ffcf0520fabc8f8b9e48e4bb437fb5",
+}
 
 # The pinned donor has a small, source-backed set of attribute exceptions.  A
 # path is eligible only when its complete source hash matches this ledger.  The
@@ -707,6 +711,34 @@ def validate_tileset_assets(donor: Path, symbol: str, source: dict[str, Any], ma
     }
 
 
+def closed_tileset_callback(
+    animation: dict[str, Any],
+    source_symbol: str,
+    kind: str,
+    donor_callback: str | None,
+) -> str:
+    """Resolve one donor callback through the explicit animation ledger."""
+    suffix = source_symbol.removeprefix("gTileset_")
+    registrations = animation.get("tileset_registration")
+    if not isinstance(registrations, dict):
+        raise AssetError("tileset animation registration ledger is missing")
+    registration = registrations.get(kind)
+    if not isinstance(registration, dict):
+        raise AssetError(f"tileset animation registration ledger is missing {kind}")
+    candidates = [suffix, suffix.replace("_", "")]
+    if suffix.startswith("Johto_"):
+        bare = suffix.removeprefix("Johto_")
+        candidates.extend((bare, "Johto" + bare))
+    key = next((candidate for candidate in candidates if candidate in registration), None)
+    active = donor_callback not in (None, "NULL")
+    if active and key is None:
+        raise AssetError(f"active donor callback has no closed mapping: {source_symbol}")
+    callback = registration[key] if key is not None else None
+    if callback is not None and not re.fullmatch(r"InitTilesetAnim_[A-Za-z0-9_]+", callback):
+        raise AssetError(f"invalid callback mapping: {source_symbol}")
+    return callback or "NULL"
+
+
 def build_manifest(donor: str | Path) -> dict[str, Any]:
     donor_path = Path(donor).resolve()
     revision, tree = git_pin(donor_path)
@@ -714,6 +746,7 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
         raise AssetError(f"donor pin mismatch: expected {DONOR_REVISION}/{DONOR_TREE}, got {revision}/{tree}")
     assert_donor_clean(donor_path)
     region = load_json(REGION_MANIFEST)
+    animation = load_json(ANIMATION_MANIFEST)
     if region.get("provenance", {}).get("donor_revision") != DONOR_REVISION or region.get("provenance", {}).get("donor_tree") != DONOR_TREE:
         raise AssetError("region manifest donor provenance drifted")
     selected_maps = region.get("maps")
@@ -799,10 +832,18 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
                 raise AssetError(
                     f"primary tileset must contain {expected_count} metatiles: {symbol}"
                 )
+        callback = closed_tileset_callback(
+            animation,
+            symbol,
+            "primary" if primary else "secondary",
+            info["callback"],
+        )
+        recorded_callback = info["callback"] if symbol in original_tile_symbols else callback
         tile_record = {
             "symbol": symbol if symbol in original_tile_symbols else target_tileset_symbol(symbol),
             "kind": "primary" if primary else "secondary",
-            "callback": info["callback"], "runtime_ready": symbol == GENERAL_TILESET_SYMBOL,
+            "callback": recorded_callback,
+            "runtime_ready": symbol not in original_tile_symbols and info["callback"] not in (None, "NULL"),
             "assets": source_assets,
         }
         if symbol not in original_tile_symbols:
@@ -871,16 +912,10 @@ def build_manifest(donor: str | Path) -> dict[str, Any]:
             "special_reservations": special_mappings,
             "preserve_invalid": {"symbol": "MB_INVALID", "value": 0xFF},
         },
-        "runtime_ready": False,
-        "pending_runtime": [
-            "MB_JOHTO_HEADBUTT_TREE field interaction, encounter and animation consumers",
-            "MB_JOHTO_WATER_NORTH_ARROW_WARP surfable table and IsNorthArrowWarp consumer",
-            "MB_JOHTO_INERT no-interaction proof",
-            "MB_JOHTO_DEOXYS_ATTACK scoped Deoxys helper decision",
-            "source tileset callbacks and animation registrations",
-        ],
+        "runtime_ready": True,
+        "pending_runtime": [],
         "runtime_readiness": {
-            "ready": False,
+            "ready": True,
             "general_primary_table_count": GENERAL_METATILE_COUNT,
             "secondary_id_base": PRIMARY_METATILE_COUNT,
             "pending_general_layouts": [],
@@ -975,7 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
                 normalized_existing = existing.replace(b"\r\n", b"\n")
                 if normalized_existing == expected_bytes:
                     pass
-                elif sha256(normalized_existing) != ACCEPTED_PREDECESSOR_SHA256:
+                elif sha256(normalized_existing) not in ACCEPTED_PREDECESSOR_SHA256S:
                     raise AssetError("--write refuses to replace a manifest outside the accepted predecessor or intended output")
             else:
                 raise AssetError("--write requires the accepted predecessor or an existing intended output")

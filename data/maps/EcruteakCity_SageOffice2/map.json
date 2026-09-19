@@ -2,7 +2,7 @@
   "id": "MAP_ECRUTEAK_CITY_SAGE_OFFICE2",
   "name": "EcruteakCity_SageOffice2",
   "layout": "LAYOUT_JOHTO_ECRUTEAK_CITY_SAGE_OFFICE2",
-  "music": "MUS_HG_ECRUTEAK",
+  "music": "MUS_FALLARBOR",
   "region_map_section": "MAPSEC_JOHTO_ECRUTEAK_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",

@@ -2,7 +2,7 @@
   "id": "MAP_SLOWPOKE_WELL_B2F",
   "name": "SlowpokeWell_B2F",
   "layout": "LAYOUT_JOHTO_SLOWPOKE_WELL_B2F",
-  "music": "MUS_HG_UNION_CAVE",
+  "music": "MUS_PETALBURG_WOODS",
   "region_map_section": "MAPSEC_JOHTO_AZALEA_TOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SLOWKING",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SLOWKING)",
       "x": 13,
       "y": 9,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 22,
       "y": 10,
       "elevation": 0,
@@ -38,7 +38,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_SlowpokeWell_B2F_SlowpokeWell_EventScript_Item_Kings_Rock",
-      "flag": "FLAG_ITEM_SLOWPOKE_WELL_KINGS_ROCK"
+      "flag": "JOHTO_FLAG_ITEM_SLOWPOKE_WELL_KINGS_ROCK"
     }
   ],
   "warp_events": [

@@ -31,14 +31,15 @@ class WhirlpoolTests(unittest.TestCase):
         self.script = blocks((ROOT / "data/scripts/johto_field_moves.inc").read_text())
 
     def test_pinned_source_and_explicit_party_correction(self):
-        source = (DONOR / self.ledger["donor"]["path"]).read_text()
+        source = (DONOR / self.ledger["donor"]["path"]).read_text(encoding="utf-8")
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), self.ledger["donor"]["normalized_sha256"])
         self.assertIn("@checkpartymove MOVE_WHIRLPOOL", source)
-        self.assertFalse(self.ledger["campaign_ready"])
+        self.assertTrue(self.ledger["campaign_ready"])
+        self.assertIsNone(self.ledger["pending_binding"])
         self.assertEqual(self.ledger["external_aliases"], {"EventScript_Whirlpool": "Johto_EventScript_Whirlpool"})
 
     def test_four_crossings_exactly_match_donor(self):
-        donor = blocks((DONOR / self.ledger["donor"]["path"]).read_text())
+        donor = blocks((DONOR / self.ledger["donor"]["path"]).read_text(encoding="utf-8"))
         for direction, step in (("North", "up"), ("South", "down"), ("East", "right"), ("West", "left")):
             movement = "Movement_Whirlpool" + direction
             self.assertEqual(self.script["Johto_" + movement], ["slide_" + step] * 3 + ["step_end"])
@@ -60,14 +61,14 @@ class WhirlpoolTests(unittest.TestCase):
             self.assertIn("goto_if_eq VAR_FACING, DIR_" + direction.upper() + ", Johto_EventScript_WhirlpoolGo" + direction, entry)
         self.assertEqual(self.script["Johto_EventScript_CantWhirlpool"], [
             "msgbox Johto_Text_CantWhirlpool, MSGBOX_DEFAULT", "closemessage", "releaseall", "end"])
-        donor = blocks((DONOR / self.ledger["donor"]["path"]).read_text())
+        donor = blocks((DONOR / self.ledger["donor"]["path"]).read_text(encoding="utf-8"))
         self.assertEqual(self.script["Johto_Text_CantWhirlpool"], donor["Text_CantWhirlpool"])
 
     def test_linkage_and_real_party_native(self):
-        assembly = (ROOT / "data/event_scripts.s").read_text()
+        assembly = (ROOT / "data/event_scripts.s").read_text(encoding="utf-8")
         self.assertEqual(assembly.count('.include "data/scripts/johto_field_moves.inc"'), 1)
         self.assertIn('#include "constants/johto_content.h"', assembly)
-        for existing in ("data/maps/NewBarkTown/scripts.inc", "data/scripts/johto_berry_tree.inc"):
+        for existing in ("data/johto/campaign_scripts.inc", "data/scripts/johto_berry_tree.inc"):
             self.assertIn('.include "' + existing + '"', assembly)
         source = (ROOT / "src/johto/field_moves.c").read_text()
         for required in ("count > PARTY_SIZE", "count = PARTY_SIZE", "MON_DATA_SPECIES", "SPECIES_NONE", "MON_DATA_IS_EGG", "MAX_MON_MOVES", "MON_DATA_MOVE1 + move", "MOVE_WHIRLPOOL", "Script_RequestEffects(SCREFF_V1)", "gPlayerPartyCount"):
@@ -75,6 +76,18 @@ class WhirlpoolTests(unittest.TestCase):
         self.assertNotIn("MON_DATA_HP", source)
         self.assertNotIn("FIELD_MOVE_DIVE", source)
         self.assertLess(source.index("Script_RequestEffects(SCREFF_V1)"), source.index("gSpecialVar_Result ="))
+
+        manifest = json.loads((ROOT / "data/johto/region_manifest.json").read_text(encoding="utf-8"))
+        bindings = []
+        for entry in manifest["maps"]:
+            name = entry["source_name"]
+            donor_map = json.loads((DONOR / "data/maps" / name / "map.json").read_text(encoding="utf-8"))
+            target_map = json.loads((ROOT / "data/maps" / name / "map.json").read_text(encoding="utf-8"))
+            for index, donor_obj in enumerate(donor_map.get("object_events", [])):
+                if donor_obj.get("script") == "EventScript_Whirlpool":
+                    self.assertEqual(target_map["object_events"][index]["script"], "Johto_EventScript_Whirlpool")
+                    bindings.append((name, index))
+        self.assertEqual(len(bindings), 40)
 
 
 if __name__ == "__main__":

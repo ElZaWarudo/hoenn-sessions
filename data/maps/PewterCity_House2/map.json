@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_PEWTER_CITY_HOUSE2",
   "name": "PewterCity_House2",
   "layout": "LAYOUT_KANTO_LATER_PEWTER_CITY_HOUSE2",
-  "music": "MUS_HG_PEWTER",
+  "music": "MUS_RG_PEWTER",
   "region_map_section": "MAPSEC_PEWTER_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_1",
       "x": 5,
       "y": 4,
       "elevation": 0,

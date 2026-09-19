@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_1F",
   "name": "VictoryRoadKanto_1F",
   "layout": "LAYOUT_KANTO_LATER_VICTORY_ROAD_KANTO_1F",
-  "music": "MUS_HG_VICTORY_ROAD",
+  "music": "MUS_VICTORY_ROAD",
   "region_map_section": "MAPSEC_KANTO_VICTORY_ROAD",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -25,7 +25,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VictoryRoadKanto_1F_VictoryRoadKanto_1F_EventScript_Item_UltraBall",
-      "flag": "FLAG_ITEM_VICTORYROAD3_ULTRA_BALL"
+      "flag": "JOHTO_FLAG_ITEM_VICTORYROAD3_ULTRA_BALL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -38,7 +38,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VictoryRoadKanto_1F_VictoryRoadKanto_1F_EventScript_Item_MaxEther",
-      "flag": "FLAG_ITEM_VICTORYROAD3_MAX_ETHER"
+      "flag": "JOHTO_FLAG_ITEM_VICTORYROAD3_MAX_ETHER"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_VictoryRoadKanto_1F_VictoryRoadKanto_1F_EventScript_Item_RareCandy",
-      "flag": "FLAG_ITEM_VICTORYROAD3_RARE_CANDY"
+      "flag": "JOHTO_FLAG_ITEM_VICTORYROAD3_RARE_CANDY"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 23,
       "y": 13,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 23,
       "y": 12,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 23,
       "y": 14,
       "elevation": 0,
@@ -93,7 +93,7 @@
       "flag": "FLAG_TEMP_3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 38,
       "y": 5,
       "elevation": 0,
@@ -106,7 +106,7 @@
       "flag": "FLAG_TEMP_5"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 37,
       "y": 5,
       "elevation": 0,
@@ -119,7 +119,7 @@
       "flag": "FLAG_TEMP_4"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLEM",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLEM)",
       "x": 28,
       "y": 22,
       "elevation": 0,
@@ -132,7 +132,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RHYDON",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RHYDON)",
       "x": 42,
       "y": -2,
       "elevation": 0,
@@ -145,7 +145,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RHYDON",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RHYDON)",
       "x": 35,
       "y": 8,
       "elevation": 0,
@@ -158,7 +158,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ONIX",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ONIX)",
       "x": 0,
       "y": -1,
       "elevation": 0,
@@ -171,7 +171,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SILVER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SILVER",
       "x": 19,
       "y": 11,
       "elevation": 0,
@@ -181,7 +181,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_VICTORY_ROAD_SILVER"
+      "flag": "JOHTO_FLAG_HIDE_VICTORY_ROAD_SILVER"
     }
   ],
   "warp_events": [
@@ -262,7 +262,7 @@
       "x": 28,
       "y": 7,
       "elevation": 0,
-      "var": "VAR_ROUTE27_STATE",
+      "var": "JOHTO_VAR_ROUTE27_STATE",
       "var_value": "2",
       "script": "KantoLater_VictoryRoadKanto_1F_VictoryRoadKanto_1F_Trigger"
     },
@@ -271,7 +271,7 @@
       "x": 27,
       "y": 7,
       "elevation": 0,
-      "var": "VAR_ROUTE27_STATE",
+      "var": "JOHTO_VAR_ROUTE27_STATE",
       "var_value": "2",
       "script": "KantoLater_VictoryRoadKanto_1F_VictoryRoadKanto_1F_Trigger"
     },
@@ -280,7 +280,7 @@
       "x": 29,
       "y": 7,
       "elevation": 0,
-      "var": "VAR_ROUTE27_STATE",
+      "var": "JOHTO_VAR_ROUTE27_STATE",
       "var_value": "2",
       "script": "KantoLater_VictoryRoadKanto_1F_VictoryRoadKanto_1F_Trigger"
     }

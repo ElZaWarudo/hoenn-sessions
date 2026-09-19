@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/group_travel.h"
 #include "debug.h"
 #include "malloc.h"
 #include "battle.h"
@@ -153,7 +154,12 @@ void Johto_PrepareKantoTravel(void)
 
 void Johto_CommitKantoTravel(void)
 {
-    gSpecialVar_Result = JohtoTravel_TryCommitArrival();
+    /* Group travel owns the exact-arrival acknowledgement. Destination map
+     * scripts may still initialize their world, but must leave the pending
+     * crossing intact until the co-op runtime can emit APPLIED. */
+    gSpecialVar_Result = CoopGroupTravel_IsManagingArrival()
+        ? TRUE
+        : JohtoTravel_TryCommitArrival();
 }
 
 void Johto_NeedsLaterKantoInitialization(void)

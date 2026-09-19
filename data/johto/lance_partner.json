@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "unit": "j3-lance-partner",
-  "campaign_battle_ready": false,
+  "campaign_battle_ready": true,
   "provenance": {
     "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
@@ -43,8 +43,8 @@
     "point_animation": "safe host sAnimCmd_Point_HGSS reused through sBackAnims_Hoenn; unterminated donor command is not copied"
   },
   "scope_limits": [
-    "Root must separately prove public FillPartnerParty and real partner battle flow.",
+    "The Rocket Hideout multi battle selects PARTNER_LANCE and the public FillPartnerParty path materializes the roster; emulator battle validation remains pending.",
     "Partner Half metadata does not itself select the player party; host opponent configuration owns that decision.",
-    "No campaign script, selection, outcome, restore, or full-region readiness claim is made here."
+    "No full-region readiness claim is made here."
   ]
 }

@@ -2,7 +2,7 @@
   "id": "MAP_JOHTO_ROCKET_HIDEOUT_B2F",
   "name": "RocketHideout_B2F",
   "layout": "LAYOUT_JOHTO_ROCKET_HIDEOUT_B2F",
-  "music": "MUS_HG_TEAM_ROCKET_HQ",
+  "music": "MUS_RG_ROCKET_HIDEOUT",
   "region_map_section": "MAPSEC_JOHTO_MAHOGANY_TOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ELECTRODE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ELECTRODE)",
       "x": 20,
       "y": 9,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE3"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ELECTRODE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ELECTRODE)",
       "x": 20,
       "y": 12,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE2"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ELECTRODE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ELECTRODE)",
       "x": 20,
       "y": 15,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE1"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ELECTRODE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ELECTRODE)",
       "x": 11,
       "y": 9,
       "elevation": 0,
@@ -64,10 +64,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Electrode",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE1"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ELECTRODE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ELECTRODE)",
       "x": 11,
       "y": 12,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Electrode",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE2"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ELECTRODE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ELECTRODE)",
       "x": 11,
       "y": 15,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Electrode",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE3"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT_ELECTRODE3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LANCE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LANCE",
       "x": 9,
       "y": 22,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT2_LANCE_DRAGONITE"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT2_LANCE_DRAGONITE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DRAGONITE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DRAGONITE)",
       "x": 10,
       "y": 21,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT2_LANCE_DRAGONITE"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT2_LANCE_DRAGONITE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 25,
       "y": 26,
       "elevation": 0,
@@ -129,10 +129,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "8",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Grunt14",
-      "flag": "FLAG_HIDE_MAHOGANY_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_MAHOGANY_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 29,
       "y": 18,
       "elevation": 0,
@@ -142,10 +142,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "3",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Grunt15",
-      "flag": "FLAG_HIDE_MAHOGANY_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_MAHOGANY_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 5,
       "y": 2,
       "elevation": 0,
@@ -155,10 +155,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "6",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Grunt16",
-      "flag": "FLAG_HIDE_MAHOGANY_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_MAHOGANY_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 14,
       "y": 27,
       "elevation": 0,
@@ -168,7 +168,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT2_ARIANA_AND_GRUNT"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT2_ARIANA_AND_GRUNT"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -181,10 +181,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B2F_RocketHideout_EventScript_Item_Thief",
-      "flag": "FLAG_ITEM_ROCKETHIDEOUT2_TM_THIEF"
+      "flag": "JOHTO_FLAG_ITEM_ROCKETHIDEOUT2_TM_THIEF"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARIANA",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARIANA",
       "x": 15,
       "y": 27,
       "elevation": 0,
@@ -194,10 +194,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_ReadyForBattlePrompt",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT2_ARIANA_AND_GRUNT"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT2_ARIANA_AND_GRUNT"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MURKROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MURKROW)",
       "x": 10,
       "y": 2,
       "elevation": 0,
@@ -207,10 +207,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B3F_RocketHideout_B3F_EventScript_Murkrow",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT2_MURKROWSTAIRS"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT2_MURKROWSTAIRS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MURKROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MURKROW)",
       "x": 15,
       "y": 22,
       "elevation": 0,
@@ -220,7 +220,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_RocketHideout_B3F_RocketHideout_B3F_EventScript_Murkrow",
-      "flag": "FLAG_HIDE_ROCKETHIDEOUT2_MURKROWGATE"
+      "flag": "JOHTO_FLAG_HIDE_ROCKETHIDEOUT2_MURKROWGATE"
     }
   ],
   "warp_events": [
@@ -266,7 +266,7 @@
       "x": 8,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "5",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_LanceTriggerLeft"
     },
@@ -275,7 +275,7 @@
       "x": 9,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "5",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_Lance"
     },
@@ -284,7 +284,7 @@
       "x": 10,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "5",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_EventScript_LanceTriggerRight"
     },
@@ -293,7 +293,7 @@
       "x": 7,
       "y": 2,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "9",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowStairs"
     },
@@ -302,7 +302,7 @@
       "x": 7,
       "y": 3,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "9",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowStairs"
     },
@@ -311,7 +311,7 @@
       "x": 14,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "11",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowGate"
     },
@@ -320,7 +320,7 @@
       "x": 15,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "11",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowGate"
     },
@@ -329,7 +329,7 @@
       "x": 16,
       "y": 24,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "11",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowGate"
     },
@@ -338,7 +338,7 @@
       "x": 13,
       "y": 23,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "11",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowGate"
     },
@@ -347,7 +347,7 @@
       "x": 13,
       "y": 22,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "11",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowGate"
     },
@@ -356,7 +356,7 @@
       "x": 13,
       "y": 21,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "11",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowGate"
     },
@@ -365,7 +365,7 @@
       "x": 13,
       "y": 3,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "9",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowStairs"
     },
@@ -374,7 +374,7 @@
       "x": 13,
       "y": 2,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "9",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_MurkrowStairs"
     },
@@ -383,7 +383,7 @@
       "x": 15,
       "y": 18,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "12",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_Ariana"
     },
@@ -392,7 +392,7 @@
       "x": 14,
       "y": 18,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "12",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_Ariana"
     },
@@ -401,7 +401,7 @@
       "x": 16,
       "y": 18,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "12",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_Ariana"
     },
@@ -410,7 +410,7 @@
       "x": 14,
       "y": 17,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "13",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_Electrode"
     },
@@ -419,7 +419,7 @@
       "x": 14,
       "y": 16,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "13",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_Electrode"
     },
@@ -428,7 +428,7 @@
       "x": 14,
       "y": 18,
       "elevation": 0,
-      "var": "VAR_MAHOGANY_TOWN_STATE",
+      "var": "JOHTO_VAR_MAHOGANY_TOWN_STATE",
       "var_value": "13",
       "script": "Johto_RocketHideout_B2F_RocketHideout_B2F_Trigger_Electrode"
     }

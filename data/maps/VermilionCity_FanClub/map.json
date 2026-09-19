@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_VERMILION_CITY_FAN_CLUB",
   "name": "VermilionCity_FanClub",
   "layout": "LAYOUT_KANTO_LATER_VERMILION_CITY_FAN_CLUB",
-  "music": "MUS_HG_VERMILION",
+  "music": "MUS_RG_VERMILLION",
   "region_map_section": "MAPSEC_VERMILION_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 5,
       "y": 4,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_1",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_1",
       "x": 7,
       "y": 5,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 4,
       "y": 5,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_FAN_CLUB_CLEFAIRY_DOLL"
+      "flag": "JOHTO_FLAG_HIDE_FAN_CLUB_CLEFAIRY_DOLL"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BAYLEEF",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BAYLEEF)",
       "x": 7,
       "y": 6,
       "elevation": 0,

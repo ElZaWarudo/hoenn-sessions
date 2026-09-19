@@ -29,9 +29,24 @@ static const enum BerryId sExpectedBerries[] =
     BERRY_ID_LUM,
     BERRY_ID_SITRUS,
     BERRY_ID_SITRUS,
+    BERRY_ID_HONDEW,
+    BERRY_ID_QUALOT,
+    BERRY_ID_SITRUS,
+    BERRY_ID_POMEG,
+    BERRY_ID_SITRUS,
+    BERRY_ID_POMEG,
+    BERRY_ID_TAMATO,
+    BERRY_ID_GREPA,
+    BERRY_ID_TAMATO,
+    BERRY_ID_TAMATO,
+    BERRY_ID_GREPA,
+    BERRY_ID_QUALOT,
+    BERRY_ID_HONDEW,
+    BERRY_ID_KELPSY,
+    BERRY_ID_KELPSY,
 };
 
-TEST("Johto new-game crops seed twenty independent dormant plots only")
+TEST("Johto new-game crops seed every independent dormant plot only")
 {
     u32 i;
     SetSaveBlocksPointers(0);
@@ -43,9 +58,9 @@ TEST("Johto new-game crops seed twenty independent dormant plots only")
     for (i = 0; i < BERRY_TREES_COUNT; i++)
     {
         const struct BerryTree *tree = GetBerryTreeInfo(i);
-        if (i >= 90 && i <= 109)
+        if (i >= JOHTO_BERRY_PLOTS_FIRST && i <= JOHTO_BERRY_PLOTS_LAST)
         {
-            EXPECT_EQ((u32)tree->berry, sExpectedBerries[i - 90]);
+            EXPECT_EQ((u32)tree->berry, sExpectedBerries[i - JOHTO_BERRY_PLOTS_FIRST]);
             EXPECT_EQ((u32)tree->stage, BERRY_STAGE_BERRIES);
             EXPECT_EQ((u32)tree->stopGrowth, TRUE);
             EXPECT(tree->berryYield > 0);

@@ -47664,6 +47664,13 @@
   "runtime_allocations": {
     "flags": [
       {
+        "symbol": "FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR",
+        "qualified": "JOHTO_FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR",
+        "ordinal": 766,
+        "runtime_id": 25342,
+        "purpose": "records use of the imported one-time elemental move tutor"
+      },
+      {
         "symbol": "FLAG_KANTO_LATER_INITIALIZED",
         "qualified": "JOHTO_FLAG_KANTO_LATER_INITIALIZED",
         "ordinal": 767,

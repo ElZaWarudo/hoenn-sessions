@@ -2,7 +2,7 @@
   "id": "MAP_ICE_PATH_1F",
   "name": "IcePath_1F",
   "layout": "LAYOUT_JOHTO_ICE_PATH_1F",
-  "music": "MUS_HG_ICE_PATH",
+  "music": "MUS_MT_PYRE",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_44",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -25,7 +25,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_IcePath_1F_IcePath_1F_EventScript_Item_PpUp",
-      "flag": "FLAG_ITEM_ICEPATH1_PP_UP"
+      "flag": "JOHTO_FLAG_ITEM_ICEPATH1_PP_UP"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -38,7 +38,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_IcePath_1F_IcePath_1F_EventScript_Item_HM_Waterfall",
-      "flag": "FLAG_ITEM_ICEPATH1_HM_WATERFALL"
+      "flag": "JOHTO_FLAG_ITEM_ICEPATH1_HM_WATERFALL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_IcePath_1F_IcePath_1F_EventScript_Item_Protein",
-      "flag": "FLAG_ITEM_ICEPATH1_PROTEIN"
+      "flag": "JOHTO_FLAG_ITEM_ICEPATH1_PROTEIN"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SWINUB",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SWINUB)",
       "x": 28,
       "y": 22,
       "elevation": 0,
@@ -64,10 +64,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 29,
       "y": 15,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DELIBIRD",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DELIBIRD)",
       "x": 28,
       "y": 22,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DELIBIRD",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DELIBIRD)",
       "x": 4,
       "y": 6,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SWINUB",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SWINUB)",
       "x": 5,
       "y": 8,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 49,
       "y": 25,
       "elevation": 0,
@@ -129,10 +129,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_IcePath_1F_IcePath_1F_EventScript_KimonoGirl",
-      "flag": "FLAG_HIDE_ICE_PATH_KIMONO"
+      "flag": "JOHTO_FLAG_HIDE_ICE_PATH_KIMONO"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SWINUB",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SWINUB)",
       "x": 7,
       "y": 9,
       "elevation": 0,
@@ -142,10 +142,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DELIBIRD",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DELIBIRD)",
       "x": 7,
       "y": 6,
       "elevation": 0,
@@ -155,7 +155,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     }
   ],
   "warp_events": [
@@ -194,7 +194,7 @@
       "x": 49,
       "y": 29,
       "elevation": 0,
-      "var": "VAR_ICE_PATH_STATE",
+      "var": "JOHTO_VAR_ICE_PATH_STATE",
       "var_value": "0",
       "script": "Johto_IcePath_1F_IcePath_1F_Trigger_KimonoGirl"
     }

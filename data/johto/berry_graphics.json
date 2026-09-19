@@ -873,12 +873,12 @@
       "sha256": "2499d995d8881df8f7a79ba93cfb570279de18da5d3428c2026e37447300f988"
     }
   },
-  "campaign_ready": false,
+  "campaign_ready": true,
   "contract_hash": "sha256:60b66f702080efdf4492e32ae8607adf321340e26e521333e80f376bf1bb74f4",
   "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
   "limitations": [
-    "Map importer must bind plot IDs 90..109; this unit preserves host renderer outside the selected Johto plot range.",
-    "Campaign readiness remains false until map wiring and playthrough."
+    "All 35 selected growth objects are materialized with exact identities at plot IDs 90..124; advanced berries intentionally use the host renderer fallback.",
+    "Full-map emulator visual traversal remains pending validation."
   ],
   "palette_slot_tags": {
     "2": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",

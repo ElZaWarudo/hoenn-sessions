@@ -26,15 +26,95 @@ DEFAULT_DONOR = Path("C:/Users/Mayor/Documents/Caribbean/johto-hns")
 MANIFEST_PATH = Path("data/johto/region_manifest.json")
 SCENERY_PATH = Path("data/johto/scenery_registration.json")
 CONTENT_PATH = Path("data/johto/content_symbols.json")
+BERRY_PLOTS_PATH = Path("data/johto/berry_plots.json")
+OBJECT_GRAPHICS_PATH = Path("data/johto/object_graphics.json")
+SHARED_OBJECT_GRAPHICS_PATH = Path("data/johto/shared_object_graphics.json")
 ASSET_MANIFEST_PATH = Path("data/johto/asset_manifest.json")
 WORLD_PLAN_PATH = Path("data/johto/world_plan.json")
 CAMPAIGN_SCRIPTS_PATH = Path("data/johto/campaign_scripts.inc")
 DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
 DONOR_TREE = "33661709e5368edc01c37ed9bb5e0a7a0cb192c8"
 EXPECTED_REGION_MANIFEST_SHA256 = "cdbcbca025c9635dea5f5e02da19290817c3ead298ab6dd73d7b16d7aaa70e3e"
-EXPECTED_ASSET_MANIFEST_SHA256 = "db91344abd45f1c1cd012d82db356ec35651fa92dfc79d332b72856ce011a72d"
-EXPECTED_SCENERY_REGISTRATION_SHA256 = "38fc1957b77ed2230140b31018eeb08b5e081fe202114a5918f6d27128bd1eba"
-EXPECTED_CONTENT_SYMBOLS_SHA256 = "af50b61a2c683f8cf31663684fcddba8b3af9f08bb03ae7fa3b66e7c0fff87af"
+EXPECTED_ASSET_MANIFEST_SHA256 = "bfce5360906ad5a6e9f1e1d344c955ffe4caecb84a2838fab900d4b0f3e02419"
+EXPECTED_SCENERY_REGISTRATION_SHA256 = "131089fb4120098c3d1271978b42fcec48b83a0cedea842655fcad4cc0840ea7"
+EXPECTED_CONTENT_SYMBOLS_SHA256 = "b1203927ba04fb10705ce5d299b7f3f49482e52f7a2ba0941d41b9046d8881ca"
+
+# The donor ships HGSS song IDs that are not part of the host sound table.
+# Map headers use the closest existing geographic or functional host track.
+MAP_MUSIC_ALIASES = {
+    "MUS_WEATHER_KYOGRE": "MUS_ABNORMAL_WEATHER",
+    "MUS_HG_AZALEA": "MUS_FALLARBOR",
+    "MUS_HG_BELL_TOWER": "MUS_MT_PYRE",
+    "MUS_HG_BURNED_TOWER": "MUS_MT_PYRE",
+    "MUS_HG_CELADON": "MUS_RG_CELADON",
+    "MUS_HG_CERULEAN": "MUS_RG_FUCHSIA",
+    "MUS_HG_CHERRYGROVE": "MUS_OLDALE",
+    "MUS_HG_CIANWOOD": "MUS_DEWFORD",
+    "MUS_HG_CINNABAR": "MUS_RG_CINNABAR",
+    "MUS_HG_DANCE_THEATER": "MUS_LILYCOVE_MUSEUM",
+    "MUS_HG_DRAGONS_DEN": "MUS_CAVE_OF_ORIGIN",
+    "MUS_HG_ECRUTEAK": "MUS_FALLARBOR",
+    "MUS_HG_ELM_LAB": "MUS_BIRCH_LAB",
+    "MUS_HG_GAME_CORNER": "MUS_GAME_CORNER",
+    "MUS_HG_GOLDENROD": "MUS_SLATEPORT",
+    "MUS_HG_GYM": "MUS_GYM",
+    "MUS_HG_ICE_PATH": "MUS_MT_PYRE",
+    "MUS_HG_LAVENDER": "MUS_RG_LAVENDER",
+    "MUS_HG_LIGHTHOUSE": "MUS_OCEANIC_MUSEUM",
+    "MUS_HG_MT_MOON_SQUARE": "MUS_RG_MT_MOON",
+    "MUS_HG_NATIONAL_PARK": "MUS_SAFARI_ZONE",
+    "MUS_HG_NEW_BARK": "MUS_LITTLEROOT",
+    "MUS_HG_OAK": "MUS_RG_OAK",
+    "MUS_HG_PALLET": "MUS_RG_PALLET",
+    "MUS_HG_PEWTER": "MUS_RG_PEWTER",
+    "MUS_HG_POKEMON_LEAGUE": "MUS_VICTORY_ROAD",
+    "MUS_HG_POKE_CENTER": "MUS_POKE_CENTER",
+    "MUS_HG_POKE_MART": "MUS_POKE_MART",
+    "MUS_HG_ROCKET_TAKEOVER": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_ROCK_TUNNEL": "MUS_RG_MT_MOON",
+    "MUS_HG_ROUTE1": "MUS_RG_ROUTE1",
+    "MUS_HG_ROUTE11": "MUS_RG_ROUTE11",
+    "MUS_HG_ROUTE24": "MUS_RG_ROUTE24",
+    "MUS_HG_ROUTE26": "MUS_EVER_GRANDE",
+    "MUS_HG_ROUTE29": "MUS_ROUTE101",
+    "MUS_HG_ROUTE3": "MUS_RG_ROUTE3",
+    "MUS_HG_ROUTE30": "MUS_ROUTE104",
+    "MUS_HG_ROUTE34": "MUS_ROUTE110",
+    "MUS_HG_ROUTE38": "MUS_GSC_ROUTE38",
+    "MUS_HG_ROUTE42": "MUS_ROUTE120",
+    "MUS_HG_ROUTE47": "MUS_ROUTE119",
+    "MUS_HG_RUINS_OF_ALPH": "MUS_SEALED_CHAMBER",
+    "MUS_HG_SAFARI_ZONE": "MUS_SAFARI_ZONE",
+    "MUS_HG_SAFARI_ZONE_GATE": "MUS_FORTREE",
+    "MUS_HG_SPROUT_TOWER": "MUS_MT_PYRE",
+    "MUS_HG_SS_AQUA": "MUS_SAILING",
+    "MUS_HG_TEAM_ROCKET_HQ": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_UNION_CAVE": "MUS_PETALBURG_WOODS",
+    "MUS_HG_VERMILION": "MUS_RG_VERMILLION",
+    "MUS_HG_VICTORY_ROAD": "MUS_VICTORY_ROAD",
+    "MUS_HG_VIOLET": "MUS_GSC_PEWTER",
+    "MUS_HG_VIRIDIAN_FOREST": "MUS_RG_VIRIDIAN_FOREST",
+}
+
+MAP_MOVEMENT_TYPE_ALIASES = {
+    "MOVEMENT_TYPE_TOWER_BEAM": "MOVEMENT_TYPE_INVISIBLE",
+}
+
+MAP_BATTLE_SCENE_ALIASES = {
+    "MAP_BATTLE_SCENE_WILL": "MAP_BATTLE_SCENE_SIDNEY",
+    "MAP_BATTLE_SCENE_KOGA": "MAP_BATTLE_SCENE_PHOEBE",
+    "MAP_BATTLE_SCENE_BRUNO": "MAP_BATTLE_SCENE_GLACIA",
+    "MAP_BATTLE_SCENE_KAREN": "MAP_BATTLE_SCENE_DRAKE",
+}
+
+# Donor identities that deliberately reuse an equivalent host presentation.
+MAP_OBJECT_GRAPHICS_ALIASES = {
+    "OBJ_EVENT_GFX_BIG_SNORLAX": "OBJ_EVENT_GFX_SNORLAX",
+    "OBJ_EVENT_GFX_KAREN": "OBJ_EVENT_GFX_GLACIA",
+    "OBJ_EVENT_GFX_SURGE": "OBJ_EVENT_GFX_LT_SURGE",
+    "OBJ_EVENT_GFX_TRAIN_BACK": "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT",
+    "OBJ_EVENT_GFX_WILL": "OBJ_EVENT_GFX_SIDNEY",
+}
 # JSON provenance uses the same canonical semantic identity as the live
 # document anchors, independent of line endings and object-key order.
 ASSET_RECORDED_REGION_MANIFEST_SHA256 = EXPECTED_REGION_MANIFEST_SHA256
@@ -54,6 +134,9 @@ CAMPAIGN_INCLUDE = b'\t.include "data/johto/campaign_scripts.inc"'
 LEGACY_NEW_BARK_INCLUDE = b'\t.include "data/maps/NewBarkTown/scripts.inc"'
 REGISTERED_ADAPTER_MARKER = b"@ Original-Kanto transport adapters generated by tools/johto/import_world.py."
 EXPECTED_REGISTERED_ADAPTER_SUFFIX_SHA256 = "8eeb174475304e33c44ea9d43d075f22d5560360efa9bac3cc0a4352bdd17276"
+# The immediate predecessor already carried the current adapter inventory; the
+# responder UI was then appended outside that generated block by the runtime slice.
+GROUP_TRAVEL_PREDECESSOR_ADAPTER_SUFFIX_SHA256 = "620b20b93024895bb9b336eeaf06eecfb62884aebd6d0a47c7a9c26ecb413b2d"
 EXPECTED_REGISTERED_OUTPUT_SHA256 = {
     "data/johto/world_plan.json": "766c7650f50a9584d75d7b309b69a68d2a120e6b275403eaa3e86abaa1c51533",
     "data/maps/ReceptionGate/map.json": "85268f620987a4d19f4d529cd3b8c831e6a6fca7b2882315e82b0300f1170524",
@@ -111,6 +194,10 @@ LATER_ROUTE22_GATE = {
     "attendant_y": 10,
     "arrival_x": 13,
     "arrival_y": 10,
+}
+OBJECT_EVENT_RANGE_NORMALIZATIONS = {
+    ("MtSilver_MountainSide", 18, "movement_range_y"): (20, 15),
+    ("MtSilver_MountainSide", 19, "movement_range_y"): (20, 15),
 }
 ADAPTER_EVENT_SCRIPTS = b'''
 @ Original-Kanto transport adapters generated by tools/johto/import_world.py.
@@ -197,6 +284,28 @@ Johto_ReceptionGate_Overland_EventScript_ChooseKanto::
 	lock
 	call EventScript_ChooseKantoEra
 	goto_if_eq VAR_RESULT, 0, Johto_ReceptionGate_Overland_EventScript_TravelFailed
+	switch VAR_RESULT
+	case 2, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal
+	case 3, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal::
+	setvar VAR_0x8004, 5
+	goto Johto_ReceptionGate_Overland_EventScript_ChooseKanto_RequestGroupTravel
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater::
+	setvar VAR_0x8004, 6
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_RequestGroupTravel::
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_SoloTravel
+	goto_if_eq VAR_RESULT, 1, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelWaiting
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelWaiting::
+	end
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_SoloTravel::
 	special Johto_RecordCurrentHeal
 	goto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_TravelFailed
 	special Johto_PrepareKantoTravel
@@ -304,6 +413,87 @@ KantoOriginal_Route22_Overland_Text_ReturnToJohto:
 
 KantoLater_Route22_Overland_Text_ReturnToJohto:
 	.string "Return through the gate to JOHTO?$"
+'''
+GROUP_TRAVEL_EVENT_SCRIPTS = b'''
+
+EventScript_CoopGroupTravelOffer::
+	special Special_CoopGroupTravelGetOffer
+	goto_if_ne VAR_RESULT, 2, EventScript_CoopGroupTravelOffer_Invalid
+	switch VAR_0x8004
+	case 1, EventScript_CoopGroupTravelOffer_TrainOriginal
+	case 2, EventScript_CoopGroupTravelOffer_TrainLater
+	case 3, EventScript_CoopGroupTravelOffer_FerryOriginal
+	case 4, EventScript_CoopGroupTravelOffer_FerryLater
+	case 5, EventScript_CoopGroupTravelOffer_GateOriginal
+	case 6, EventScript_CoopGroupTravelOffer_GateLater
+	goto EventScript_CoopGroupTravelOffer_Invalid
+
+EventScript_CoopGroupTravelOffer_TrainOriginal::
+	msgbox Text_CoopGroupTravelOffer_TrainOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_TrainLater::
+	msgbox Text_CoopGroupTravelOffer_TrainLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_FerryOriginal::
+	goto_if_eq VAR_0x8005, 3, EventScript_CoopGroupTravelOffer_AquaOriginal
+	msgbox Text_CoopGroupTravelOffer_FerryOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_FerryLater::
+	goto_if_eq VAR_0x8005, 3, EventScript_CoopGroupTravelOffer_AquaLater
+	msgbox Text_CoopGroupTravelOffer_FerryLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_AquaOriginal::
+	msgbox Text_CoopGroupTravelOffer_AquaOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_AquaLater::
+	msgbox Text_CoopGroupTravelOffer_AquaLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_GateOriginal::
+	msgbox Text_CoopGroupTravelOffer_GateOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_GateLater::
+	msgbox Text_CoopGroupTravelOffer_GateLater, MSGBOX_YESNO
+
+EventScript_CoopGroupTravelOffer_Respond::
+	copyvar VAR_0x8004, VAR_RESULT
+	special Special_CoopGroupTravelRespond
+	end
+
+EventScript_CoopGroupTravelOffer_Invalid::
+	setvar VAR_0x8004, 0
+	special Special_CoopGroupTravelRespond
+	end
+
+Text_CoopGroupTravelOffer_TrainOriginal:
+	.string "Travel together by MAGNET TRAIN\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_TrainLater:
+	.string "Travel together by MAGNET TRAIN\\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_FerryOriginal:
+	.string "Travel together by ferry\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_FerryLater:
+	.string "Travel together by ferry\\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_AquaOriginal:
+	.string "Travel together aboard S.S. AQUA\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_AquaLater:
+	.string "Travel together aboard S.S. AQUA\\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_GateOriginal:
+	.string "Travel together through the gate\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_GateLater:
+	.string "Travel together through the gate\\nto KANTO three years later?$"
 '''
 EXPECTED_EVENT_TOTALS = {
     "object_events": 3357,
@@ -957,8 +1147,9 @@ def _validate_companion_ledgers(
     pending = scenery.get("runtime_readiness", {}).get("general_pending_layouts")
     if tuple(pending or ()) != PENDING_GENERAL_LAYOUTS:
         raise WorldPlanError("General Safari runtime readiness drift")
-    if scenery.get("runtime_readiness", {}).get("ready") is not False:
-        raise WorldPlanError("scenery ledger prematurely claims runtime readiness")
+    readiness = scenery.get("runtime_readiness", {})
+    if readiness.get("ready") is not True or readiness.get("pending") != []:
+        raise WorldPlanError("scenery ledger runtime readiness closure drift")
     return scenery, content, donor_blobs
 
 
@@ -1574,6 +1765,94 @@ def _materialized_map_name(record: dict[str, Any]) -> str:
     return name
 
 
+def _berry_plot_bindings(
+    root: Path, maps: list[dict[str, Any]], donor_sources: dict[str, dict[str, Any]]
+) -> dict[tuple[str, int], str]:
+    ledger = _load(root / BERRY_PLOTS_PATH)
+    plots = ledger.get("plots") if isinstance(ledger, dict) else None
+    if not isinstance(plots, list):
+        raise WorldPlanError("berry plot ledger must contain a plots array")
+    source_names = {record["source_map"]: _materialized_map_name(record) for record in maps}
+    bindings: dict[tuple[str, int], str] = {}
+    runtime_constants: set[str] = set()
+    runtime_ids: set[int] = set()
+    for ordinal, plot in enumerate(plots):
+        if not isinstance(plot, dict):
+            raise WorldPlanError(f"berry plot ledger entry {ordinal} is malformed")
+        source_name = plot.get("map")
+        object_index = plot.get("object_index")
+        source_symbol = plot.get("source_symbol")
+        runtime_constant = plot.get("runtime_constant")
+        runtime_id = plot.get("runtime_id")
+        if (
+            not isinstance(source_name, str)
+            or type(object_index) is not int
+            or object_index < 0
+            or not isinstance(source_symbol, str)
+            or not isinstance(runtime_constant, str)
+            or re.fullmatch(r"JOHTO_BERRY_TREE_[A-Z0-9_]+", runtime_constant) is None
+            or type(runtime_id) is not int
+            or not 0 <= runtime_id < 128
+        ):
+            raise WorldPlanError(f"berry plot ledger entry {ordinal} has invalid identity")
+        source_map = next((key for key, name in source_names.items() if name == source_name), None)
+        if source_map is None:
+            raise WorldPlanError(f"berry plot map is not selected: {source_name}")
+        objects = donor_sources[source_map].get("object_events")
+        if not isinstance(objects, list) or object_index >= len(objects):
+            raise WorldPlanError(f"berry plot has no donor object: {source_name}[{object_index}]")
+        donor_object = objects[object_index]
+        if (
+            not isinstance(donor_object, dict)
+            or donor_object.get("movement_type") != "MOVEMENT_TYPE_BERRY_TREE_GROWTH"
+            or donor_object.get("trainer_sight_or_berry_tree_id") != source_symbol
+        ):
+            raise WorldPlanError(f"berry plot donor identity drifted: {source_name}[{object_index}]")
+        key = (source_name, object_index)
+        if key in bindings or runtime_constant in runtime_constants or runtime_id in runtime_ids:
+            raise WorldPlanError(f"berry plot identity is not unique: {source_name}[{object_index}]")
+        bindings[key] = runtime_constant
+        runtime_constants.add(runtime_constant)
+        runtime_ids.add(runtime_id)
+    donor_growth_objects = {
+        (source_names[source_map], index)
+        for source_map, source in donor_sources.items()
+        for index, event in enumerate(source.get("object_events", []))
+        if isinstance(event, dict)
+        and event.get("movement_type") == "MOVEMENT_TYPE_BERRY_TREE_GROWTH"
+    }
+    if set(bindings) != donor_growth_objects:
+        raise WorldPlanError("berry plot ledger does not cover selected donor growth objects exactly")
+    return bindings
+
+
+def _object_graphics_aliases(root: Path) -> dict[str, str]:
+    aliases: dict[str, str] = dict(MAP_OBJECT_GRAPHICS_ALIASES)
+    public_ids: set[str] = set()
+    for relative in (OBJECT_GRAPHICS_PATH, SHARED_OBJECT_GRAPHICS_PATH):
+        ledger = _load(root / relative)
+        objects = ledger.get("objects") if isinstance(ledger, dict) else None
+        if not isinstance(objects, list):
+            raise WorldPlanError(f"{relative.as_posix()} must contain an objects array")
+        for ordinal, entry in enumerate(objects):
+            if not isinstance(entry, dict):
+                raise WorldPlanError(f"{relative.as_posix()} object {ordinal} is malformed")
+            token = entry.get("token")
+            public_id = entry.get("public_id")
+            if (
+                not isinstance(token, str)
+                or re.fullmatch(r"OBJ_EVENT_GFX_[A-Z0-9_]+", token) is None
+                or not isinstance(public_id, str)
+                or re.fullmatch(r"OBJ_EVENT_GFX_JOHTO_[A-Z0-9_]+", public_id) is None
+            ):
+                raise WorldPlanError(f"{relative.as_posix()} object {ordinal} has invalid graphics identity")
+            if token in aliases or public_id in public_ids:
+                raise WorldPlanError(f"duplicate Johto object graphics identity: {token}")
+            aliases[token] = public_id
+            public_ids.add(public_id)
+    return aliases
+
+
 def _materialize_map_json(
     root: Path,
     donor: Path,
@@ -1584,6 +1863,9 @@ def _materialize_map_json(
     campaign_labels: set[str],
     campaign_suffixes: dict[str, tuple[str, ...]],
     host_labels: set[str],
+    berry_plot_bindings: dict[tuple[str, int], str],
+    event_symbol_aliases: dict[str, str],
+    object_graphics_aliases: dict[str, str],
 ) -> bytes:
     source_map = record["source_map"]
     source_name = _materialized_map_name(record)
@@ -1598,6 +1880,12 @@ def _materialize_map_json(
     target["region_map_section"] = record["resolved_section"]["symbol"]
     target["region"] = record["region"]
     target["shared_scripts_map"] = f"{identity['script']}_{source_name}"
+    source_music = source.get("music")
+    target["music"] = MAP_MUSIC_ALIASES.get(source_music, source_music)
+    if isinstance(source_music, str) and source_music.startswith("MUS_HG_") and target["music"] == source_music:
+        raise WorldPlanError(f"{source_name} has no host music alias for {source_music}")
+    source_battle_scene = source.get("battle_scene")
+    target["battle_scene"] = MAP_BATTLE_SCENE_ALIASES.get(source_battle_scene, source_battle_scene)
 
     source_connections = source.get("connections")
     if source_connections is None:
@@ -1664,6 +1952,44 @@ def _materialize_map_json(
             if not isinstance(event, dict):
                 raise WorldPlanError(f"{source_map}.{field} contains malformed event")
             item = copy.deepcopy(event)
+            movement_type = item.get("movement_type")
+            if isinstance(movement_type, str) and movement_type in MAP_MOVEMENT_TYPE_ALIASES:
+                item["movement_type"] = MAP_MOVEMENT_TYPE_ALIASES[movement_type]
+            for range_field in ("movement_range_x", "movement_range_y"):
+                source_range = item.get(range_field)
+                normalization = OBJECT_EVENT_RANGE_NORMALIZATIONS.get((source_name, index, range_field))
+                if normalization is not None:
+                    expected_source, target_range = normalization
+                    if source_range != expected_source:
+                        raise WorldPlanError(
+                            f"{source_name}.object_events[{index}].{range_field} drifted from reviewed source"
+                        )
+                    item[range_field] = target_range
+                elif field == "object_events" and (type(source_range) is not int or not 0 <= source_range <= 15):
+                    raise WorldPlanError(
+                        f"{source_name}.object_events[{index}].{range_field} does not fit the host bitfield"
+                    )
+            for symbol_field in ("flag", "var"):
+                symbol = item.get(symbol_field)
+                if isinstance(symbol, str) and symbol in event_symbol_aliases:
+                    item[symbol_field] = event_symbol_aliases[symbol]
+            if field == "object_events":
+                graphics_id = item.get("graphics_id")
+                if isinstance(graphics_id, str) and graphics_id in object_graphics_aliases:
+                    item["graphics_id"] = object_graphics_aliases[graphics_id]
+                    graphics_id = item["graphics_id"]
+                species_graphics = re.fullmatch(
+                    r"OBJ_EVENT_GFX_MON_BASE\+SPECIES_([A-Z0-9_]+)(\+SPECIES_SHINY_TAG)?",
+                    graphics_id or "",
+                )
+                if species_graphics:
+                    macro = "OBJ_EVENT_GFX_SPECIES_SHINY" if species_graphics.group(2) else "OBJ_EVENT_GFX_SPECIES"
+                    item["graphics_id"] = f"{macro}({species_graphics.group(1)})"
+            if field == "object_events" and item.get("movement_type") == "MOVEMENT_TYPE_BERRY_TREE_GROWTH":
+                runtime_constant = berry_plot_bindings.get((source_name, index))
+                if runtime_constant is None:
+                    raise WorldPlanError(f"{source_name}.object_events[{index}] has no berry plot binding")
+                item["trainer_sight_or_berry_tree_id"] = runtime_constant
             if "script" in item:
                 item["script"] = _rewrite_event_script(
                     item["script"], identity["script"], campaign_labels, campaign_suffixes, host_labels, source_map
@@ -1810,15 +2136,27 @@ def _registered_event_script_prefix(raw: bytes) -> bytes | None:
         return None
     prefix, suffix_tail = normalized.split(REGISTERED_ADAPTER_MARKER, 1)
     suffix = REGISTERED_ADAPTER_MARKER + suffix_tail
-    generated_suffix = (
+    group_scripts = GROUP_TRAVEL_EVENT_SCRIPTS.lstrip(b"\n")
+    if suffix.endswith(GROUP_TRAVEL_EVENT_SCRIPTS):
+        adapter_suffix = suffix[: -len(GROUP_TRAVEL_EVENT_SCRIPTS)]
+    elif suffix.endswith(group_scripts):
+        adapter_suffix = suffix[: -len(group_scripts)]
+    else:
+        adapter_suffix = suffix
+    generated_adapter_suffix = (
         REGISTERED_ADAPTER_MARKER
         + ADAPTER_EVENT_SCRIPTS.split(REGISTERED_ADAPTER_MARKER, 1)[1]
     )
     accepted_suffixes = {
         EXPECTED_REGISTERED_ADAPTER_SUFFIX_SHA256,
-        _sha256(generated_suffix),
+        GROUP_TRAVEL_PREDECESSOR_ADAPTER_SUFFIX_SHA256,
+        _sha256(generated_adapter_suffix),
     }
-    if _sha256(suffix) not in accepted_suffixes:
+    adapter_hashes = {
+        _sha256(adapter_suffix),
+        _sha256(adapter_suffix.rstrip(b"\n") + b"\n"),
+    }
+    if adapter_hashes.isdisjoint(accepted_suffixes):
         return None
     if prefix.count(CAMPAIGN_INCLUDE) != 1 or LEGACY_NEW_BARK_INCLUDE in prefix:
         return None
@@ -1851,7 +2189,11 @@ def _render_event_script_assembly(root: Path) -> bytes:
             + CAMPAIGN_INCLUDE
             + newline
         )
-    event_raw = event_raw + ADAPTER_EVENT_SCRIPTS.replace(b"\n", newline)
+    event_raw = (
+        event_raw
+        + ADAPTER_EVENT_SCRIPTS.replace(b"\n", newline)
+        + GROUP_TRAVEL_EVENT_SCRIPTS.replace(b"\n", newline)
+    )
     if event_raw.count(LEGACY_NEW_BARK_INCLUDE) != 0 or event_raw.count(CAMPAIGN_INCLUDE) != 1:
         raise WorldPlanError("rendered event script assembly include inventory drifted")
     adapter_labels = re.findall(rb"(?m)^([A-Za-z_][A-Za-z0-9_]*)::?", ADAPTER_EVENT_SCRIPTS)
@@ -1959,7 +2301,7 @@ def _adapter_map_outputs(root: Path) -> dict[Path, bytes]:
                 "flag": "0",
             },
             {
-                "graphics_id": "OBJ_EVENT_GFX_TRAIN_BACK",
+                "graphics_id": "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT",
                 "x": 152, "y": 5, "elevation": 0,
                 "movement_type": "MOVEMENT_TYPE_NONE",
                 "movement_range_x": 0, "movement_range_y": 0,
@@ -2078,6 +2420,25 @@ def _registration_outputs(root: Path, donor: Path, plan: dict[str, Any]) -> dict
         )
         for record in maps
     }
+    berry_plot_bindings = _berry_plot_bindings(root, maps, donor_sources)
+    object_graphics_aliases = _object_graphics_aliases(root)
+    content = _load(root / CONTENT_PATH)
+    identities = content.get("identities")
+    if not isinstance(identities, dict):
+        raise WorldPlanError("content-symbol identity ledger is malformed")
+    event_symbol_aliases: dict[str, str] = {}
+    for category in ("flags", "vars"):
+        entries = identities.get(category)
+        if not isinstance(entries, list):
+            raise WorldPlanError(f"content-symbol {category} ledger is malformed")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise WorldPlanError(f"content-symbol {category} entry is malformed")
+            source_symbol = entry.get("symbol")
+            qualified = entry.get("qualified")
+            if not isinstance(source_symbol, str) or not isinstance(qualified, str):
+                raise WorldPlanError(f"content-symbol {category} alias is malformed")
+            event_symbol_aliases[source_symbol] = qualified
     _preflight_map_references(
         plan,
         donor_sources,
@@ -2092,7 +2453,18 @@ def _registration_outputs(root: Path, donor: Path, plan: dict[str, Any]) -> dict
         source = donor_sources[record["source_map"]]
         map_relative = Path("data/maps") / source_name / "map.json"
         outputs[map_relative] = _materialize_map_json(
-            root, donor, record, source, donor_blobs[source_path], source_map_ids, campaign_labels, campaign_suffixes, host_labels
+            root,
+            donor,
+            record,
+            source,
+            donor_blobs[source_path],
+            source_map_ids,
+            campaign_labels,
+            campaign_suffixes,
+            host_labels,
+            berry_plot_bindings,
+            event_symbol_aliases,
+            object_graphics_aliases,
         )
         block = blocks.get(source_name)
         if block is None:
@@ -2112,11 +2484,255 @@ def _same_output_contents(current: bytes, expected: bytes) -> bool:
     return current == expected or current.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
 
 
+def _is_pre_normalization_berry_map(root: Path, relative: Path, current: bytes, expected: bytes) -> bool:
+    if len(relative.parts) != 4 or relative.parts[:2] != ("data", "maps") or relative.name != "map.json":
+        return False
+    source_name = relative.parts[2]
+    ledger = _load(root / BERRY_PLOTS_PATH)
+    plots = ledger.get("plots") if isinstance(ledger, dict) else None
+    if not isinstance(plots, list):
+        return False
+    selected = [plot for plot in plots if isinstance(plot, dict) and plot.get("map") == source_name]
+    if not selected:
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    for plot in selected:
+        index = plot.get("object_index")
+        if type(index) is not int or index < 0 or index >= len(objects) or not isinstance(objects[index], dict):
+            return False
+        if objects[index].get("trainer_sight_or_berry_tree_id") != plot.get("runtime_constant"):
+            return False
+        objects[index]["trainer_sight_or_berry_tree_id"] = plot.get("source_symbol")
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_event_namespace_map(root: Path, relative: Path, current: bytes, expected: bytes) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    content = _load(root / CONTENT_PATH)
+    identities = content.get("identities") if isinstance(content, dict) else None
+    if not isinstance(identities, dict):
+        return False
+    reverse_aliases: dict[str, str] = {}
+    for category in ("flags", "vars"):
+        entries = identities.get(category)
+        if not isinstance(entries, list):
+            return False
+        for entry in entries:
+            if not isinstance(entry, dict):
+                return False
+            source_symbol = entry.get("symbol")
+            qualified = entry.get("qualified")
+            if not isinstance(source_symbol, str) or not isinstance(qualified, str):
+                return False
+            reverse_aliases[qualified] = source_symbol
+    for field in ("object_events", "coord_events", "bg_events"):
+        events = predecessor.get(field)
+        if not isinstance(events, list):
+            return False
+        for event in events:
+            if not isinstance(event, dict):
+                return False
+            for symbol_field in ("flag", "var"):
+                symbol = event.get(symbol_field)
+                if isinstance(symbol, str) and symbol in reverse_aliases:
+                    event[symbol_field] = reverse_aliases[symbol]
+            if field == "object_events":
+                graphics_id = event.get("graphics_id")
+                species_graphics = re.fullmatch(
+                    r"OBJ_EVENT_GFX_SPECIES(_SHINY)?\(([A-Z0-9_]+)\)",
+                    graphics_id or "",
+                )
+                if species_graphics:
+                    shiny_suffix = "+SPECIES_SHINY_TAG" if species_graphics.group(1) else ""
+                    event["graphics_id"] = (
+                        f"OBJ_EVENT_GFX_MON_BASE+SPECIES_{species_graphics.group(2)}{shiny_suffix}"
+                    )
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_shiny_graphics_map(relative: Path, current: bytes, expected: bytes) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    changed = False
+    for event in objects:
+        if not isinstance(event, dict):
+            return False
+        graphics_id = event.get("graphics_id")
+        species_graphics = re.fullmatch(
+            r"OBJ_EVENT_GFX_SPECIES_SHINY\(([A-Z0-9_]+)\)",
+            graphics_id or "",
+        )
+        if species_graphics:
+            event["graphics_id"] = (
+                f"OBJ_EVENT_GFX_MON_BASE+SPECIES_{species_graphics.group(1)}+SPECIES_SHINY_TAG"
+            )
+            changed = True
+    if not changed:
+        return False
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_movement_range_map(relative: Path, current: bytes, expected: bytes) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    source_name = relative.parts[2]
+    selected = [
+        (index, field, source_range, target_range)
+        for (name, index, field), (source_range, target_range) in OBJECT_EVENT_RANGE_NORMALIZATIONS.items()
+        if name == source_name
+    ]
+    if not selected:
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    for index, field, source_range, target_range in selected:
+        if index >= len(objects) or not isinstance(objects[index], dict):
+            return False
+        if objects[index].get(field) != target_range:
+            return False
+        objects[index][field] = source_range
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_map_field_alias_map(
+    donor: Path, relative: Path, current: bytes, expected: bytes
+) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    source_name = relative.parts[2]
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+        donor_map = _parse_json_document(
+            _git_blob(donor, f"data/maps/{source_name}/map.json"),
+            f"data/maps/{source_name}/map.json",
+        )
+    except WorldPlanError:
+        return False
+    source_music = donor_map.get("music")
+    if source_music == "MUS_WEATHER_KYOGRE" and MAP_MUSIC_ALIASES.get(source_music) == predecessor.get("music"):
+        predecessor["music"] = source_music
+    source_objects = donor_map.get("object_events")
+    objects = predecessor.get("object_events")
+    if not isinstance(source_objects, list) or not isinstance(objects, list) or len(objects) < len(source_objects):
+        return False
+    changed = predecessor.get("music") == source_music and source_music == "MUS_WEATHER_KYOGRE"
+    for index, source_event in enumerate(source_objects):
+        if not isinstance(source_event, dict) or not isinstance(objects[index], dict):
+            return False
+        source_movement = source_event.get("movement_type")
+        if MAP_MOVEMENT_TYPE_ALIASES.get(source_movement) == objects[index].get("movement_type"):
+            objects[index]["movement_type"] = source_movement
+            changed = True
+    if not changed:
+        return False
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_linker_closure_map(
+    root: Path, donor: Path, relative: Path, current: bytes, expected: bytes
+) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    source_name = relative.parts[2]
+    reverse_graphics = {target: source for source, target in _object_graphics_aliases(root).items()}
+    recent_predecessor = copy.deepcopy(predecessor)
+    recent_objects = recent_predecessor.get("object_events")
+    if not isinstance(recent_objects, list):
+        return False
+    reverse_fallbacks = {target: source for source, target in MAP_OBJECT_GRAPHICS_ALIASES.items()}
+    for event in recent_objects:
+        if not isinstance(event, dict):
+            return False
+        graphics_id = event.get("graphics_id")
+        if isinstance(graphics_id, str) and graphics_id in reverse_fallbacks:
+            if graphics_id == "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT" and source_name not in {
+                "SaffronCity_TrainStation",
+                "KantoOriginal_SaffronCity_TrainStation",
+            }:
+                continue
+            event["graphics_id"] = reverse_fallbacks[graphics_id]
+    recent_encoded = (json.dumps(recent_predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    if _same_output_contents(current, recent_encoded):
+        return True
+    # Several donor tracks intentionally share one host fallback, so recover the
+    # exact source token from the authenticated donor map rather than guessing.
+    try:
+        donor_map = _parse_json_document(
+            _git_blob(donor, f"data/maps/{source_name}/map.json"),
+            f"data/maps/{source_name}/map.json",
+        )
+    except WorldPlanError:
+        return False
+    expected_music = predecessor.get("music")
+    source_music = donor_map.get("music")
+    if MAP_MUSIC_ALIASES.get(source_music, source_music) == expected_music:
+        predecessor["music"] = source_music
+    reverse_battle = {target: source for source, target in MAP_BATTLE_SCENE_ALIASES.items()}
+    battle_scene = predecessor.get("battle_scene")
+    if battle_scene in reverse_battle:
+        predecessor["battle_scene"] = reverse_battle[battle_scene]
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    for event in objects:
+        if not isinstance(event, dict):
+            return False
+        graphics_id = event.get("graphics_id")
+        if isinstance(graphics_id, str) and graphics_id in reverse_graphics:
+            event["graphics_id"] = reverse_graphics[graphics_id]
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
 def _is_trusted_registration_predecessor(
-    root: Path, relative: Path, current: bytes, expected: bytes
+    root: Path, donor: Path, relative: Path, current: bytes, expected: bytes
 ) -> bool:
     registered = EXPECTED_REGISTERED_OUTPUT_SHA256.get(relative.as_posix())
     if registered is not None and _sha256(current.replace(b"\r\n", b"\n")) == registered:
+        return True
+    if _is_pre_map_field_alias_map(donor, relative, current, expected):
+        return True
+    if _is_pre_linker_closure_map(root, donor, relative, current, expected):
+        return True
+    if _is_pre_event_namespace_map(root, relative, current, expected):
+        return True
+    if _is_pre_shiny_graphics_map(relative, current, expected):
+        return True
+    if _is_pre_movement_range_map(relative, current, expected):
+        return True
+    if _is_pre_normalization_berry_map(root, relative, current, expected):
         return True
     if relative == MAP_GROUPS_PATH:
         manifest = _load(root / MANIFEST_PATH)
@@ -2141,7 +2757,9 @@ def _is_trusted_registration_predecessor(
     return False
 
 
-def _validate_registration_state(root: Path, outputs: dict[Path, bytes], *, write: bool) -> None:
+def _validate_registration_state(
+    root: Path, donor: Path, outputs: dict[Path, bytes], *, write: bool
+) -> None:
     for relative, expected in outputs.items():
         target = root / relative
         if target.is_file() and _same_output_contents(target.read_bytes(), expected):
@@ -2150,7 +2768,7 @@ def _validate_registration_state(root: Path, outputs: dict[Path, bytes], *, writ
             raise WorldPlanError(f"materialized output is missing or stale: {relative.as_posix()}")
         if target.is_file():
             current = target.read_bytes()
-            if _is_trusted_registration_predecessor(root, relative, current, expected):
+            if _is_trusted_registration_predecessor(root, donor, relative, current, expected):
                 continue
             current_hash = _sha256(current)
             trusted = TRUSTED_BOOTSTRAP_SHA256.get(relative.as_posix())
@@ -2267,7 +2885,7 @@ def run(
         _validate_group_predecessor(root)
     plan = build_plan(repo_root, donor_root)
     outputs = _registration_outputs(root, donor, plan)
-    _validate_registration_state(root, outputs, write=write)
+    _validate_registration_state(root, donor, outputs, write=write)
     if write:
         _install_registration_outputs(root, outputs)
     print(render(plan), end="")

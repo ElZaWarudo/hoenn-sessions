@@ -2,7 +2,7 @@
   "id": "MAP_NEW_BARK_TOWN_PLAYERS_HOUSE_1F",
   "name": "NewBarkTown_PlayersHouse_1F",
   "layout": "LAYOUT_JOHTO_NEW_BARK_TOWN_PLAYERS_HOUSE_1F",
-  "music": "MUS_HG_NEW_BARK",
+  "music": "MUS_LITTLEROOT",
   "region_map_section": "MAPSEC_NEW_BARK_TOWN",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MOM",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MOM",
       "x": 2,
       "y": 2,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_2",
       "x": 5,
       "y": 4,
       "elevation": 0,
@@ -38,7 +38,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_NewBarkTown_PlayersHouse_1F_NewBarkTown_PlayersHouse_1F_EventScript_MomsFriend",
-      "flag": "FLAG_HIDE_MOMS_FRIEND"
+      "flag": "JOHTO_FLAG_HIDE_MOMS_FRIEND"
     }
   ],
   "warp_events": [
@@ -63,7 +63,7 @@
       "x": 10,
       "y": 3,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "1",
       "script": "Johto_NewBarkTown_PlayersHouse_1F_NewBarkTown_PlayersHouse_1F_EventScript_MomsIntroTrigger2"
     },
@@ -72,7 +72,7 @@
       "x": 9,
       "y": 2,
       "elevation": 0,
-      "var": "VAR_NEWBARK_TOWN_STATE",
+      "var": "JOHTO_VAR_NEWBARK_TOWN_STATE",
       "var_value": "1",
       "script": "Johto_NewBarkTown_PlayersHouse_1F_NewBarkTown_PlayersHouse_1F_EventScript_MomsIntroTrigger1"
     }

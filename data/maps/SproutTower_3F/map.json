@@ -2,7 +2,7 @@
   "id": "MAP_SPROUT_TOWER_3F",
   "name": "SproutTower_3F",
   "layout": "LAYOUT_JOHTO_SPROUT_TOWER_3F",
-  "music": "MUS_HG_SPROUT_TOWER",
+  "music": "MUS_MT_PYRE",
   "region_map_section": "MAPSEC_JOHTO_VIOLET_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_SAGE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SAGE",
       "x": 14,
       "y": 13,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SAGE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SAGE",
       "x": 8,
       "y": 14,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SAGE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SAGE",
       "x": 11,
       "y": 11,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MR_FUJI",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MR_FUJI",
       "x": 11,
       "y": 3,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SILVER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SILVER",
       "x": 11,
       "y": 6,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_SPROUT_TOWER_SILVER"
+      "flag": "JOHTO_FLAG_HIDE_SPROUT_TOWER_SILVER"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 16,
       "y": 3,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_SproutTower_3F_SproutTower_3F_EventScript_EscapeRope",
-      "flag": "FLAG_ITEM_SPROUT_TOWER_ESCAPE_ROPE"
+      "flag": "JOHTO_FLAG_ITEM_SPROUT_TOWER_ESCAPE_ROPE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 7,
       "y": 16,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_SproutTower_3F_SproutTower_3F_EventScript_Potion",
-      "flag": "FLAG_ITEM_SPROUT_TOWER_POTION"
+      "flag": "JOHTO_FLAG_ITEM_SPROUT_TOWER_POTION"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 17,
       "y": 12,
       "elevation": 0,
@@ -119,7 +119,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 2,
       "y": 5,
       "elevation": 0,
@@ -132,7 +132,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATTATA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATTATA)",
       "x": 2,
       "y": 13,
       "elevation": 0,
@@ -145,11 +145,11 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_RAYQUAZA",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_RAYQUAZA",
       "x": 11,
       "y": 10,
       "elevation": 0,
-      "movement_type": "MOVEMENT_TYPE_TOWER_BEAM",
+      "movement_type": "MOVEMENT_TYPE_INVISIBLE",
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
@@ -173,7 +173,7 @@
       "x": 14,
       "y": 7,
       "elevation": 0,
-      "var": "VAR_SPROUT_TOWER",
+      "var": "JOHTO_VAR_SPROUT_TOWER",
       "var_value": "0",
       "script": "Johto_SproutTower_3F_SproutTower_3F_EventScript_TriggerSceneRight"
     },
@@ -182,7 +182,7 @@
       "x": 13,
       "y": 7,
       "elevation": 0,
-      "var": "VAR_SPROUT_TOWER",
+      "var": "JOHTO_VAR_SPROUT_TOWER",
       "var_value": "0",
       "script": "Johto_SproutTower_3F_SproutTower_3F_EventScript_TriggerSceneLeft"
     }

@@ -2,7 +2,7 @@
   "id": "MAP_SSAQUA_ROOM_NNE",
   "name": "SSAqua_RoomNNE",
   "layout": "LAYOUT_JOHTO_SSAQUA_ROOM_NNE",
-  "music": "MUS_HG_SS_AQUA",
+  "music": "MUS_SAILING",
   "region_map_section": "MAPSEC_JOHTO_SS_AQUA",
   "requires_flash": false,
   "weather": "WEATHER_NONE",

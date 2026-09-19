@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE3",
   "name": "Route3",
   "layout": "LAYOUT_KANTO_LATER_ROUTE3",
-  "music": "MUS_HG_ROUTE3",
+  "music": "MUS_RG_ROUTE3",
   "region_map_section": "MAPSEC_ROUTE_3",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 17,
       "y": 9,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 30,
       "y": 3,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FIREBREATHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_FIREBREATHER",
       "x": 44,
       "y": 6,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FIREBREATHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_FIREBREATHER",
       "x": 66,
       "y": 10,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SKITTY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SKITTY)",
       "x": 31,
       "y": 11,
       "elevation": 0,
@@ -88,10 +88,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_ARBOK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ARBOK)",
       "x": 51,
       "y": 11,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_JIGGLYPUFF",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(JIGGLYPUFF)",
       "x": 20,
       "y": 1,
       "elevation": 0,
@@ -117,7 +117,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SANDSHREW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SANDSHREW)",
       "x": 64,
       "y": 6,
       "elevation": 0,
@@ -138,12 +138,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_POMEG_1",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_POMEG_1",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_NINCADA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(NINCADA)",
       "x": 82,
       "y": 12,
       "elevation": 0,
@@ -153,7 +153,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     }
   ],
   "warp_events": [],

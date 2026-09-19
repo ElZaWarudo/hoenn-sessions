@@ -17,13 +17,32 @@ class JohtoTrainerImporterTests(unittest.TestCase):
         cls.roster = import_trainers.load_roster(DONOR)
         cls.by_symbol = {trainer.symbol: trainer for trainer in cls.roster}
 
+    def write_fixture_root(self, root, ledger, presentation=None):
+        data = root / "data/johto"
+        data.mkdir(parents=True)
+        (data / "content_symbols.json").write_text(json.dumps(ledger))
+        if presentation is None:
+            (data / "trainer_presentation.json").write_bytes(
+                (import_trainers.ROOT / "data/johto/trainer_presentation.json").read_bytes()
+            )
+        else:
+            (data / "trainer_presentation.json").write_text(json.dumps(presentation))
+        constants = root / "include/constants"
+        constants.mkdir(parents=True)
+        for name in ("trainers.h", "species.h", "items.h", "moves.h"):
+            (constants / name).write_bytes(
+                (import_trainers.ROOT / "include/constants" / name).read_bytes()
+            )
+
     def test_full_roster_and_ledger_identity(self):
-        self.assertEqual(len(self.roster), 284)
-        self.assertEqual(sum(len(t.party) for t in self.roster), 687)
+        self.assertEqual(len(self.roster), 412)
+        self.assertEqual(sum(len(t.party) for t in self.roster), 1103)
         self.assertEqual(self.roster[0].symbol, "TRAINER_JOEY")
         self.assertEqual(self.roster[0].ordinal, 0)
-        self.assertEqual(self.roster[-1].ordinal, 283)
-        self.assertEqual([t.ordinal for t in self.roster], list(range(284)))
+        self.assertEqual(self.roster[-1].symbol, "TRAINER_ZEKE")
+        self.assertEqual(self.roster[-1].ordinal, 411)
+        self.assertEqual([t.ordinal for t in self.roster], list(range(412)))
+        self.assertEqual(len(self.by_symbol), 412)
 
     def test_deterministic_render_and_check(self):
         first = import_trainers.render_header(self.roster)
@@ -44,7 +63,7 @@ class JohtoTrainerImporterTests(unittest.TestCase):
             r"\[(\d+)\] = /\* (TRAINER_[A-Z0-9_]+) \*/\n        \{(.*?)\n        \},",
             header, re.S,
         )
-        self.assertEqual(len(blocks), 284)
+        self.assertEqual(len(blocks), 412)
         expected_half = {"TRAINER_ARIANA_1", "TRAINER_GRUNT_23"}
         actual_half = set()
         for ordinal, symbol, body in blocks:
@@ -70,7 +89,29 @@ class JohtoTrainerImporterTests(unittest.TestCase):
                 [m.moves for m in trainer.party],
             )
         self.assertEqual(actual_half, expected_half)
-        self.assertEqual(header.count(".multiTeamSize = MULTI_TEAM_SIZE_FULL,"), 282)
+        self.assertEqual(header.count(".multiTeamSize = MULTI_TEAM_SIZE_FULL,"), 410)
+
+    def test_all_runtime_symbols_resolve_to_host_constants(self):
+        constants = {
+            "trainer": (import_trainers.ROOT / "include/constants/trainers.h").read_text(encoding="utf-8"),
+            "species": (import_trainers.ROOT / "include/constants/species.h").read_text(encoding="utf-8"),
+            "item": (import_trainers.ROOT / "include/constants/items.h").read_text(encoding="utf-8"),
+            "move": (import_trainers.ROOT / "include/constants/moves.h").read_text(encoding="utf-8"),
+        }
+        for trainer in self.roster:
+            for symbol in (trainer.trainer_class, trainer.music, trainer.portrait):
+                self.assertRegex(constants["trainer"], rf"\b{re.escape(symbol)}\b", symbol)
+            for symbol in trainer.items:
+                self.assertRegex(constants["item"], rf"\b{re.escape(symbol)}\b", symbol)
+            for mon in trainer.party:
+                self.assertRegex(constants["species"], rf"\b{re.escape(mon.species)}\b", mon.species)
+                self.assertRegex(constants["item"], rf"\b{re.escape(mon.held_item)}\b", mon.held_item)
+                for symbol in mon.moves:
+                    self.assertRegex(constants["move"], rf"\b{re.escape(symbol)}\b", symbol)
+        self.assertNotIn(
+            "MOVE_SMELLING_SALT",
+            {move for trainer in self.roster for mon in trainer.party for move in mon.moves},
+        )
 
     def test_all_party_layouts_and_real_fields(self):
         self.assertFalse(self.by_symbol["TRAINER_JOEY"].custom_moves)
@@ -95,15 +136,37 @@ class JohtoTrainerImporterTests(unittest.TestCase):
         ledger["identities"]["trainers"][1]["symbol"] = ledger["identities"]["trainers"][2]["symbol"]
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            data = root / "data/johto"
-            data.mkdir(parents=True)
-            (data / "content_symbols.json").write_text(json.dumps(ledger))
-            (data / "trainer_presentation.json").write_bytes((import_trainers.ROOT / "data/johto/trainer_presentation.json").read_bytes())
-            constants = root / "include/constants"
-            constants.mkdir(parents=True)
-            (constants / "trainers.h").write_bytes((import_trainers.ROOT / "include/constants/trainers.h").read_bytes())
+            self.write_fixture_root(root, ledger)
             with self.assertRaisesRegex(import_trainers.ImportErrorStrict, "duplicate"):
                 import_trainers.load_roster(DONOR, root)
+
+    def test_middle_ledger_identity_swap_rejected(self):
+        ledger = json.loads((import_trainers.ROOT / "data/johto/content_symbols.json").read_text())
+        trainers = ledger["identities"]["trainers"]
+        trainers[200]["symbol"], trainers[201]["symbol"] = trainers[201]["symbol"], trainers[200]["symbol"]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_fixture_root(root, ledger)
+            with self.assertRaisesRegex(import_trainers.ImportErrorStrict, "identity order"):
+                import_trainers.load_roster(DONOR, root)
+
+    def test_invalid_presentation_alias_targets_rejected(self):
+        ledger = json.loads((import_trainers.ROOT / "data/johto/content_symbols.json").read_text())
+        cases = (
+            ("class_aliases", "TRAINER_CLASS_BIKER", "class"),
+            ("portrait_aliases", "TRAINER_PIC_LEADER_BLAINE", "portrait"),
+            ("music_aliases", "TRAINER_ENCOUNTER_MUSIC_HG_BOY_1", "music"),
+        )
+        for aliases, source, kind in cases:
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temp:
+                presentation = json.loads(
+                    (import_trainers.ROOT / "data/johto/trainer_presentation.json").read_text()
+                )
+                presentation[aliases][source] = f"INVALID_{kind.upper()}_TARGET"
+                root = Path(temp)
+                self.write_fixture_root(root, ledger, presentation)
+                with self.assertRaisesRegex(import_trainers.ImportErrorStrict, f"unmapped {kind}"):
+                    import_trainers.load_roster(DONOR, root)
 
     def test_pinned_donor_and_unknown_expression_rejected(self):
         with self.assertRaises(import_trainers.ImportErrorStrict):

@@ -67,6 +67,7 @@ class BerryGraphicsTests(unittest.TestCase):
             )
 
     def test_actual_renderer_is_plot_and_species_gated(self):
+        self.assertTrue(self.manifest["campaign_ready"])
         self.assertIn('#include "data/object_events/johto_berry_graphics.h"', self.movement)
         self.assertIn("JohtoBerryGraphics_Apply(objectEvent, sprite, berryId, berryStage)", self.movement)
         self.assertRegex(self.header, r"plotId >= JOHTO_BERRY_PLOTS_FIRST")
@@ -75,6 +76,15 @@ class BerryGraphicsTests(unittest.TestCase):
         self.assertIn("FindObjectEventPaletteIndexByTag(paletteTags[stage])", self.header)
         self.assertIn("sprite->images = sJohtoBerryPicTables[berryId]", self.header)
         self.assertIn("sprite->images = gBerries[berryId].berryTreePicTable", self.movement)
+
+    def test_campaign_readiness_is_bound_to_all_35_materialized_plots(self):
+        plots = json.loads((ROOT / "data/johto/berry_plots.json").read_text(encoding="utf-8"))["plots"]
+        self.assertEqual(len(plots), 35)
+        for plot in plots:
+            obj = json.loads((ROOT / "data/maps" / plot["map"] / "map.json").read_text(encoding="utf-8"))["object_events"][plot["object_index"]]
+            self.assertEqual(obj["movement_type"], "MOVEMENT_TYPE_BERRY_TREE_GROWTH")
+            self.assertEqual(obj["trainer_sight_or_berry_tree_id"], plot["runtime_constant"])
+            self.assertEqual(obj["script"], "Johto_BerryTreeScript")
 
     def test_importer_checks_exact_assets_and_shared_roundtrip(self):
         importer = ROOT / "tools/johto/import_berry_graphics.py"

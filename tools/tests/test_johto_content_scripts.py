@@ -17,6 +17,8 @@ from tools.johto.content_scripts import (
     ScriptError,
     _approved_host_labels,
     _apply_transport_overrides,
+    _canonicalize_macro_operands,
+    _canonicalize_trainerbattle_single,
     _label_definition,
     _normalize_sha256,
     _normalized_donor_operands,
@@ -114,6 +116,34 @@ class ContentScriptTests(unittest.TestCase):
         with self.assertRaisesRegex(ScriptError, "missing campaign transport label"):
             _apply_transport_overrides("Unrelated::\n\tend\n")
 
+    def test_johto_trade_ids_are_namespaced_away_from_host_table(self):
+        from tools.johto.content_scripts import HOST_CONSTANT_ALIASES
+
+        self.assertEqual(HOST_CONSTANT_ALIASES["INGAME_TRADE_ONIX"], "INGAME_TRADE_JOHTO_ONIX")
+        self.assertEqual(HOST_CONSTANT_ALIASES["INGAME_TRADE_MACHOP"], "INGAME_TRADE_JOHTO_MACHOP")
+        self.assertEqual(HOST_CONSTANT_ALIASES["INGAME_TRADE_VOLTORB"], "INGAME_TRADE_JOHTO_VOLTORB")
+        self.assertEqual(HOST_CONSTANT_ALIASES["INGAME_TRADE_MR_MIME"], "INGAME_TRADE_JOHTO_MR_MIME")
+        generated = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+        self.assertIn("setvar VAR_0x8008, INGAME_TRADE_JOHTO_ONIX", generated)
+        self.assertIn("setvar VAR_0x8008, INGAME_TRADE_JOHTO_MACHOP", generated)
+        self.assertIn("setvar VAR_0x8008, INGAME_TRADE_JOHTO_VOLTORB", generated)
+        self.assertIn("setvar VAR_0x8008, INGAME_TRADE_JOHTO_MR_MIME", generated)
+        self.assertEqual(generated.count(
+            "copyvar VAR_0x8005, VAR_0x8008\n"
+            "\tspecialvar JOHTO_VAR_RESULT, GetInGameTradeSpeciesInfo"
+        ), 4)
+        self.assertEqual(generated.count(
+            "copyvar VAR_0x8004, VAR_0x800A\n"
+            "\tcopyvar VAR_0x8005, VAR_0x8008\n"
+            "\tspecial CreateInGameTradePokemon"
+        ), 4)
+        self.assertNotIn(
+            "copyvar VAR_0x8004, VAR_0x8008\n"
+            "\tcopyvar VAR_0x8005, VAR_0x800A\n"
+            "\tspecial CreateInGameTradePokemon",
+            generated,
+        )
+
     def test_transport_overrides_prompt_before_mutation_and_initialize_later_once(self):
         generated = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
 
@@ -181,6 +211,79 @@ class ContentScriptTests(unittest.TestCase):
                 body.index("\tspecial Johto_CommitKantoTravel"),
             )
         self.assertEqual(rendered.count("\tcall Johto_EventScript_InitializeLaterKantoOnce"), 2)
+
+    def test_johto_departures_offer_group_travel_before_solo_mutations(self):
+        rendered = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+
+        departures = (
+            (
+                "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_BoardTrain",
+                "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_ExitTrain",
+                "\tcheckitem ITEM_PASS",
+                (1, 2),
+                1,
+                "\tapplymovement Johto_GoldenrodCity_TrainStation_",
+            ),
+            (
+                "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseVermilion",
+                "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseSouthernIsland",
+                "\tcheckitem ITEM_SS_TICKET",
+                (3, 4),
+                2,
+                "\tcall Johto_OlivineCity_PortInside_OlivinePort_EventScript_EnterShip",
+            ),
+            (
+                "Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_MaidenVoyage",
+                "Johto_OlivineCity_PortInside_OlivinePort_EventScript_EnterShip",
+                "\tmsgbox Johto_OlivineCity_PortInside_OlivinePort_Text_FlashTicket, MSGBOX_DEFAULT",
+                (3, 4),
+                3,
+                "\tsetvar JOHTO_VAR_SSAQUA_STATE, 1",
+            ),
+        )
+
+        for label, next_label, access_check, routes, context, first_solo_animation in departures:
+            with self.subTest(label=label):
+                start = rendered.index(f"{label}::")
+                body = rendered[start:rendered.index(f"{next_label}::", start)]
+                choose = body.index("\tcall EventScript_ChooseKantoEra")
+                begin = body.index("\tspecial Special_CoopGroupTravelBegin")
+                solo = body.index(f"{label}_SoloTravel::")
+                heal = body.index("\tspecial Johto_RecordCurrentHeal")
+                animation = body.index(first_solo_animation)
+                if access_check is not None:
+                    access = rendered.rfind(access_check, max(0, start - 1000), start + begin)
+                    self.assertGreaterEqual(access, 0)
+                    self.assertLess(access, start + begin)
+                self.assertLess(choose, begin)
+                self.assertLess(begin, solo)
+                self.assertLess(solo, heal)
+                self.assertLess(heal, animation)
+                self.assertIn(f"\tcase 2, {label}_GroupTravelOriginal", body)
+                self.assertIn(f"\tcase 3, {label}_GroupTravelLater", body)
+                for route in routes:
+                    self.assertIn(f"\tsetvar VAR_0x8004, {route}", body)
+                self.assertIn(
+                    f"\tsetvar VAR_0x8005, {context}\n"
+                    "\tspecial Special_CoopGroupTravelBegin\n"
+                    f"\tgoto_if_eq VAR_RESULT, 0, {label}_SoloTravel\n"
+                    f"\tgoto_if_eq VAR_RESULT, 1, {label}_GroupTravelWaiting\n"
+                    f"\tgoto {label}_TravelFailed\n",
+                    body,
+                )
+                self.assertIn(
+                    f"{label}_SoloTravel::\n"
+                    "\tspecial Johto_RecordCurrentHeal\n"
+                    f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {label}_TravelFailed\n"
+                    "\tspecial Johto_PrepareKantoTravel\n"
+                    f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {label}_TravelFailed\n"
+                    f"\tgoto {label}_BeginTravel\n",
+                    body,
+                )
+                waiting_start = body.index(f"{label}_GroupTravelWaiting::")
+                waiting_end = body.index("\tend\n", waiting_start) + len("\tend\n")
+                waiting = body[waiting_start:waiting_end]
+                self.assertNotIn("\trelease", waiting)
 
     def test_transport_overrides_persist_return_to_johto_and_commit_arrivals(self):
         generated = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
@@ -297,6 +400,33 @@ class ContentScriptTests(unittest.TestCase):
                 trainer,
             ),
             ["TRAINER_JUSTIN", "Route32_Text_Seen", "Route32_Text_Beaten"],
+        )
+        self.assertEqual(
+            _canonicalize_trainerbattle_single(
+                "\ttrainerbattle_single TRAINER_JUSTIN Route32_Text_Seen, Route32_Text_Beaten\n",
+                "trainerbattle_single",
+                "TRAINER_JUSTIN Route32_Text_Seen, Route32_Text_Beaten",
+                trainer,
+            ),
+            "\ttrainerbattle_single TRAINER_JUSTIN, Route32_Text_Seen, Route32_Text_Beaten\n",
+        )
+        self.assertEqual(
+            _canonicalize_macro_operands(
+                "\tmsgbox VioletCity_Text_Earl MSGBOX_YESNO\n",
+                "msgbox",
+                "VioletCity_Text_Earl MSGBOX_YESNO",
+                msgbox,
+            ),
+            "\tmsgbox VioletCity_Text_Earl, MSGBOX_YESNO\n",
+        )
+        self.assertEqual(
+            _canonicalize_macro_operands(
+                "\tgoto_if_set FLAG_GOT_ITEM Destination\n",
+                "goto_if_set",
+                "FLAG_GOT_ITEM Destination",
+                MacroContract(required=2, maximum=2, parameters=("flag", "destination")),
+            ),
+            "\tgoto_if_set FLAG_GOT_ITEM, Destination\n",
         )
         self.assertEqual(
             _normalized_donor_operands("msgbox", "VioletCity_Text_Earl MSGBOX_YESNO", msgbox),
@@ -1261,6 +1391,92 @@ class ContentScriptTests(unittest.TestCase):
             compiler._runtime_cache = {}
             self.assertFalse(compiler._runtime_available("berry"))
 
+    def _elemental_tutor_compiler(self, directory, implementation_text):
+        compiler = object.__new__(ScriptCompiler)
+        compiler.root = Path(directory)
+        compiler.specials = {"GetBattleFrontierTutorMoveIndex"}
+        implementation = compiler.root / "src/field_specials.c"
+        implementation.parent.mkdir(parents=True)
+        implementation.write_text(implementation_text, encoding="utf-8")
+        constants = compiler.root / "include/constants/field_specials.h"
+        constants.parent.mkdir(parents=True)
+        constants.write_text(
+            "enum ScrollMulti {\n    SCROLL_MULTI_BF_MOVE_TUTOR_3,\n};\n",
+            encoding="utf-8",
+        )
+        (compiler.root / "Makefile").write_text(
+            "C_SUBDIR := src\nC_SRCS_IN := $(wildcard $(C_SUBDIR)/*.c)\n",
+            encoding="utf-8",
+        )
+        compiler._runtime_cache = {}
+        return compiler
+
+    def test_elemental_tutor_runtime_accepts_real_menu_and_special_chain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            compiler = self._elemental_tutor_compiler(
+                directory,
+                "void GetBattleFrontierTutorMoveIndex(void)\n"
+                "{\n"
+                "    result = GetBattleFrontierTutorMove(\n"
+                "        VarGet(VAR_TEMP_FRONTIER_TUTOR_ID),\n"
+                "        VarGet(VAR_TEMP_FRONTIER_TUTOR_SELECTION));\n"
+                "}\n"
+                "void ConfigureMenu(int menu)\n"
+                "{\n"
+                "    switch (menu)\n"
+                "    {\n"
+                "    case SCROLL_MULTI_BF_MOVE_TUTOR_3:\n"
+                "        break;\n"
+                "    }\n"
+                "}\n"
+                "static const int menus[] =\n"
+                "{\n"
+                "    [SCROLL_MULTI_BF_MOVE_TUTOR_3] = 1,\n"
+                "};\n",
+            )
+            self.assertTrue(compiler._runtime_available("trainer-hill-elemental-tutor"))
+
+    def test_elemental_tutor_runtime_rejects_comment_only_menu_reference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            compiler = self._elemental_tutor_compiler(
+                directory,
+                "void GetBattleFrontierTutorMoveIndex(void)\n"
+                "{\n"
+                "    result = GetBattleFrontierTutorMove(\n"
+                "        VarGet(VAR_TEMP_FRONTIER_TUTOR_ID),\n"
+                "        VarGet(VAR_TEMP_FRONTIER_TUTOR_SELECTION));\n"
+                "}\n"
+                "/* case SCROLL_MULTI_BF_MOVE_TUTOR_3: */\n"
+                "/* [SCROLL_MULTI_BF_MOVE_TUTOR_3] = 1, */\n",
+            )
+            self.assertFalse(compiler._runtime_available("trainer-hill-elemental-tutor"))
+
+    def test_elemental_tutor_runtime_rejects_lookup_outside_special_body(self):
+        with tempfile.TemporaryDirectory() as directory:
+            compiler = self._elemental_tutor_compiler(
+                directory,
+                "void GetBattleFrontierTutorMoveIndex(void) {}\n"
+                "void UnrelatedFunction(void)\n"
+                "{\n"
+                "    result = GetBattleFrontierTutorMove(\n"
+                "        VarGet(VAR_TEMP_FRONTIER_TUTOR_ID),\n"
+                "        VarGet(VAR_TEMP_FRONTIER_TUTOR_SELECTION));\n"
+                "}\n"
+                "void ConfigureMenu(int menu)\n"
+                "{\n"
+                "    switch (menu)\n"
+                "    {\n"
+                "    case SCROLL_MULTI_BF_MOVE_TUTOR_3:\n"
+                "        break;\n"
+                "    }\n"
+                "}\n"
+                "static const int menus[] =\n"
+                "{\n"
+                "    [SCROLL_MULTI_BF_MOVE_TUTOR_3] = 1,\n"
+                "};\n",
+            )
+            self.assertFalse(compiler._runtime_available("trainer-hill-elemental-tutor"))
+
     def test_runtime_source_inventory_rejects_depth_exclusion_and_replacement(self):
         compiler = object.__new__(ScriptCompiler)
         with tempfile.TemporaryDirectory() as directory:
@@ -1333,7 +1549,7 @@ class ContentScriptTests(unittest.TestCase):
         # fixer base intentionally has neither; canonical may have both.
         self.assertIn(pending["berry"], {"pending", "resolved"})
         self.assertIn(pending["whirlpool"], {"pending", "resolved"})
-        self.assertEqual(pending["trainer-hill-elemental-tutor"], "pending")
+        self.assertEqual(pending["trainer-hill-elemental-tutor"], "resolved")
         self.assertTrue(report["complete"])
         rendered = compiler.render(report)
         self.assertTrue(all(line == line.rstrip(" \t") for line in rendered.split("\n")))
@@ -1416,6 +1632,58 @@ class ContentScriptTests(unittest.TestCase):
                 symbols_path.write_bytes(symbols)
                 with self.assertRaises(ScriptError):
                     ScriptCompiler(root, DONOR)
+
+    def test_donor_campaign_constants_are_lowered_to_host_abi(self):
+        rendered = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+        for leaked in (
+            "HEAL_LOCATION_NEW_BARK_TOWN", "ITEM_MACHINE_PART",
+            "MULTI_DAYS_OF_WEEK", "MUS_HG_ENCOUNTER_RIVAL",
+            "METATILE_R26_21_Broken_Window", "MOVEMENT_TYPE_TOWER_BEAM",
+        ):
+            self.assertNotRegex(rendered, rf"(?<![A-Za-z0-9_]){leaked}(?![A-Za-z0-9_])")
+        for lowered in (
+            "HEAL_LOCATION_JOHTO_NEW_BARK_TOWN", "ITEM_JOHTO_MACHINE_PART",
+            "MULTI_JOHTO_DAYS_OF_WEEK", "MUS_RG_ENCOUNTER_RIVAL",
+            "JOHTO_FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR",
+            "0x32B", "MOVEMENT_TYPE_INVISIBLE",
+        ):
+            self.assertIn(lowered, rendered)
+        self.assertEqual(rendered.count("johto_buffermoncategory 1,"), 3)
+        self.assertNotIn("johto_buffermoncategory STR_VAR_2,", rendered)
+        for heal_id in (53, 54, 55):
+            self.assertEqual(rendered.count(f"setrespawn {heal_id}"), 1)
+        runtime = json.loads((ROOT / "data/johto/content_symbols.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            [entry["qualified"] for entry in runtime["runtime_allocations"]["flags"]],
+            ["JOHTO_FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR", "JOHTO_FLAG_KANTO_LATER_INITIALIZED"],
+        )
+        generated_header = (ROOT / "include/constants/johto_content.h").read_text(encoding="utf-8")
+        self.assertIn("#define JOHTO_FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR (JOHTO_FLAG_START + 766u)", generated_header)
+
+    def test_campaign_menu_heal_and_item_constants_have_runtime_backing(self):
+        menu_constants = (ROOT / "include/constants/script_menu.h").read_text(encoding="utf-8")
+        menu_data = (ROOT / "src/data/script_menu.h").read_text(encoding="utf-8")
+        menu_names = (
+            "DAYS_OF_WEEK", "KURT_BALLS", "PRIZE_MONS", "7FLOORS",
+            "GOLD_SILVER", "ELDER_QUIZ_1", "ELDER_QUIZ_2", "ELDER_QUIZ_3",
+            "ELDER_QUIZ_4", "ELDER_QUIZ_5", "OLIVINE_HARBOR",
+            "VERMILION_HARBOR", "HOENN_STARTERS", "5FLOORS",
+        )
+        for name in menu_names:
+            self.assertIn("MULTI_JOHTO_" + name, menu_constants)
+            self.assertIn("[MULTI_JOHTO_" + name + "]", menu_data)
+        heals = (ROOT / "include/constants/heal_locations.h").read_text(encoding="utf-8")
+        heal_data = (ROOT / "src/data/heal_locations.h").read_text(encoding="utf-8")
+        for name in ("ROUTE_32", "SAFARI_ZONE_GATE", "MT_SILVER"):
+            token = "HEAL_LOCATION_JOHTO_" + name
+            self.assertIn(token, heals)
+            self.assertIn("[" + token + " - 1]", heal_data)
+        item_constants = (ROOT / "include/constants/items.h").read_text(encoding="utf-8")
+        item_data = (ROOT / "src/data/items.h").read_text(encoding="utf-8")
+        for name in ("LOST_ITEM", "MACHINE_PART", "RADIO", "SQUIRT_BOTTLE"):
+            token = "ITEM_JOHTO_" + name
+            self.assertIn(token, item_constants)
+            self.assertIn("[" + token + "]", item_data)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_GYM_GUY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GYM_GUY",
       "x": 6,
       "y": 16,
       "elevation": 0,
@@ -38,7 +38,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "KantoLater_ViridianCity_Gym_ViridianCity_Gym_EventScript_Blue",
-      "flag": "FLAG_HIDE_VIRIDIAN_BLUE"
+      "flag": "JOHTO_FLAG_HIDE_VIRIDIAN_BLUE"
     }
   ],
   "warp_events": [

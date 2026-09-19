@@ -86,7 +86,7 @@ TEST("Full berry pocket and unavailable Johto plots leave tree bag and statistic
         EXPECT_EQ(slot.quantity, MAX_BAG_ITEM_CAPACITY);
     }
     EXPECT_EQ(JohtoBerryPlots_TryHarvest(89), JOHTO_BERRY_HARVEST_UNAVAILABLE);
-    EXPECT_EQ(JohtoBerryPlots_TryHarvest(110), JOHTO_BERRY_HARVEST_UNAVAILABLE);
+    EXPECT_EQ(JohtoBerryPlots_TryHarvest(125), JOHTO_BERRY_HARVEST_UNAVAILABLE);
     EXPECT_EQ(JohtoBerryPlots_TryHarvest(255), JOHTO_BERRY_HARVEST_UNAVAILABLE);
     GetBerryTreeInfo(90)->berryYield = 0;
     EXPECT_EQ(JohtoBerryPlots_TryHarvest(90), JOHTO_BERRY_HARVEST_UNAVAILABLE);

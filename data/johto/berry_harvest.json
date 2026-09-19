@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "campaign_ready": false,
+  "campaign_ready": true,
   "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
   "hash_normalization": "CRLF to LF",
   "script_alias": {
@@ -23,6 +23,6 @@
     "Native captures count/name before replant for linked success dialogue."
   ],
   "limitations": [
-    "Twenty map objects must be bound by the campaign importer; actual map interaction remains unproven."
+    "All 35 selected growth objects are bound to Johto_BerryTreeScript with exact plot identities; full-map emulator interaction remains pending validation."
   ]
 }

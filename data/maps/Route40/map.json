@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE40",
   "name": "Route40",
   "layout": "LAYOUT_JOHTO_ROUTE40",
-  "music": "MUS_HG_ROUTE38",
+  "music": "MUS_GSC_ROUTE38",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_40",
   "requires_flash": false,
   "weather": "WEATHER_RAIN",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 16,
       "y": 13,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 9,
       "y": 14,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "FLAG_TEMP_3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 9,
       "y": 16,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 13,
       "y": 14,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "FLAG_TEMP_4"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 11,
       "y": 41,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_2",
       "x": 21,
       "y": 18,
       "elevation": 0,
@@ -117,7 +117,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_M_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_M_WATER",
       "x": 13,
       "y": 26,
       "elevation": 0,
@@ -130,7 +130,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 26,
       "y": 28,
       "elevation": 0,
@@ -143,7 +143,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_M_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_M_WATER",
       "x": 22,
       "y": 50,
       "elevation": 0,
@@ -156,7 +156,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 16,
       "y": 20,
       "elevation": 0,
@@ -169,7 +169,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 19,
       "y": 21,
       "elevation": 0,
@@ -182,7 +182,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 30,
       "y": 22,
       "elevation": 0,
@@ -195,7 +195,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TEDDIURSA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TEDDIURSA)",
       "x": 2,
       "y": 16,
       "elevation": 0,
@@ -208,7 +208,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SHELLDER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SHELLDER)",
       "x": 24,
       "y": 37,
       "elevation": 0,
@@ -221,7 +221,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SHELLDER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SHELLDER)",
       "x": 25,
       "y": 50,
       "elevation": 0,
@@ -234,7 +234,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACOOL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACOOL)",
       "x": 7,
       "y": 32,
       "elevation": 0,
@@ -247,7 +247,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SHELLDER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SHELLDER)",
       "x": 4,
       "y": 47,
       "elevation": 0,
@@ -260,7 +260,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACOOL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACOOL)",
       "x": 27,
       "y": 43,
       "elevation": 0,
@@ -273,7 +273,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
       "x": 19,
       "y": 13,
       "elevation": 0,

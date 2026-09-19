@@ -30,6 +30,10 @@ class JohtoMetatileRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["host_tail"]["MB_ROCK_CLIMB"], 0xEF)
         self.assertEqual(runtime["table_length"], 0xF4)
         self.assertEqual(runtime["invalid_behavior"], 0xFF)
+        self.assertEqual(runtime["semantics"]["MB_JOHTO_HEADBUTT_TREE"]["consumer"],
+                         "JohtoFieldMoves_GetHeadbuttScript")
+        avatar = (ROOT / "src/field_control_avatar.c").read_text(encoding="utf-8")
+        self.assertIn("return JohtoFieldMoves_GetHeadbuttScript(metatileBehavior);", avatar)
 
     def test_parser_rejects_reservation_drift_and_host_occupancy(self):
         original = (ROOT / "include/constants/metatile_behaviors.h").read_text(encoding="utf-8")

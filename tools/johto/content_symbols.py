@@ -40,7 +40,10 @@ TRAINER_CAPACITY = 512
 # They are ledgered separately because the pinned donor does not reference
 # them, while still receiving generated-header freshness and collision checks.
 RUNTIME_ALLOCATIONS = {
-    "flags": [{"symbol": "FLAG_KANTO_LATER_INITIALIZED", "qualified": "JOHTO_FLAG_KANTO_LATER_INITIALIZED", "ordinal": 767, "runtime_id": FLAG_START + 767, "purpose": "marks completion of the real Later Kanto initializer"}],
+    "flags": [
+        {"symbol": "FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR", "qualified": "JOHTO_FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR", "ordinal": 766, "runtime_id": FLAG_START + 766, "purpose": "records use of the imported one-time elemental move tutor"},
+        {"symbol": "FLAG_KANTO_LATER_INITIALIZED", "qualified": "JOHTO_FLAG_KANTO_LATER_INITIALIZED", "ordinal": 767, "runtime_id": FLAG_START + 767, "purpose": "marks completion of the real Later Kanto initializer"},
+    ],
     "vars": [
         {"symbol": "VAR_PENDING_KANTO_DESTINATION", "qualified": "JOHTO_VAR_PENDING_KANTO_DESTINATION", "ordinal": 92, "runtime_id": VAR_START + 92, "purpose": "selected world for an in-progress cross-region transition"},
         {"symbol": "VAR_LAST_HEAL_JOHTO", "qualified": "JOHTO_VAR_LAST_HEAL_JOHTO", "ordinal": 93, "runtime_id": VAR_START + 93, "purpose": "last validated Johto heal location"},
@@ -49,7 +52,8 @@ RUNTIME_ALLOCATIONS = {
     ],
     "trainers": [],
 }
-RUNTIME_ALLOCATION_BINDINGS_SHA256 = "f88ba36dd2675a28930a0e241193f4d4e264613cab4db3c888ba65580f96c4d2"
+RUNTIME_ALLOCATION_BINDINGS_SHA256 = "37bd7fbf0289054989d1fc2a14ac07f614493e3345022deb0d366a636ed9595d"
+RUNTIME_ALLOCATION_PREDECESSOR_SHA256 = "f88ba36dd2675a28930a0e241193f4d4e264613cab4db3c888ba65580f96c4d2"
 
 # Frozen initial allocation, independent of future lexical discovery order.
 INITIAL_COUNTS = {"flags": 539, "vars": 63, "trainers": 284}
@@ -708,7 +712,7 @@ def _validate_runtime_allocations(value: Any, identities: dict[str, Any]) -> Non
     if not isinstance(value, dict) or set(value) != {"flags", "vars", "trainers"}:
         raise ContentSymbolError("runtime allocation classes drifted")
     digest = _sha256_bytes(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
-    if digest != RUNTIME_ALLOCATION_BINDINGS_SHA256:
+    if digest not in (RUNTIME_ALLOCATION_BINDINGS_SHA256, RUNTIME_ALLOCATION_PREDECESSOR_SHA256):
         raise ContentSymbolError("sealed runtime allocation bindings changed")
     starts = {"flags": FLAG_START, "vars": VAR_START, "trainers": TRAINER_START}
     capacities = {"flags": FLAG_CAPACITY, "vars": VAR_CAPACITY, "trainers": TRAINER_CAPACITY}
@@ -901,9 +905,16 @@ def append_ledger(
         )
     if donor is not None:
         _assert_donor_backed_candidate(candidate, donor)
-    for field in ("capacities", "aliases", "excluded_trainer_tokens", "runtime_allocations"):
+    for field in ("capacities", "aliases", "excluded_trainer_tokens"):
         if existing.get(field) != candidate.get(field):
             raise ContentSymbolError(f"append-only {field} provenance drift")
+    existing_runtime = existing.get("runtime_allocations")
+    candidate_runtime = candidate.get("runtime_allocations")
+    existing_runtime_digest = _sha256_bytes(json.dumps(existing_runtime, sort_keys=True, separators=(",", ":")).encode())
+    if (existing_runtime != candidate_runtime
+            and not (existing_runtime_digest == RUNTIME_ALLOCATION_PREDECESSOR_SHA256
+                     and candidate_runtime == RUNTIME_ALLOCATIONS)):
+        raise ContentSymbolError("append-only runtime_allocations provenance drift")
     for field in ("repository", "donor_revision", "donor_tree", "manifest_path",
                   "manifest_source_revision"):
         if existing.get("provenance", {}).get(field) != candidate.get("provenance", {}).get(field):
@@ -948,6 +959,11 @@ def append_ledger(
     else:
         raise ContentSymbolError("unsupported content ledger scope transition")
     result = json.loads(json.dumps(existing))
+    # Runtime-only identities are sealed separately from donor identities.
+    # The validated predecessor above permits the one-time addition of the
+    # elemental tutor flag; persist the candidate set before capacity checks
+    # and header rendering instead of silently retaining the old set.
+    result["runtime_allocations"] = json.loads(json.dumps(candidate["runtime_allocations"]))
     if existing_scope != candidate_scope:
         # The identity prefix remains owned by the persisted predecessor, but
         # the selected-source metadata advances to the validated candidate.

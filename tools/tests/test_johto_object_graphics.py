@@ -98,15 +98,123 @@ class JohtoObjectGraphicsTest(unittest.TestCase):
 
     def test_source_defined_runtime_namespaces_and_counts(self):
         constants = (ROOT / "include/constants/event_objects.h").read_text(encoding="utf-8")
-        pointers = (ROOT / "src/data/object_events/object_event_graphics_info_pointers.h").read_text(encoding="utf-8") + (ROOT / "src/data/object_events/johto_pointers.inc").read_text(encoding="utf-8")
+        pointers = "".join((ROOT / path).read_text(encoding="utf-8") for path in (
+            "src/data/object_events/object_event_graphics_info_pointers.h",
+            "src/data/object_events/johto_pointers.inc",
+            "src/data/object_events/johto_shared_pointers.inc",
+        ))
         info = (ROOT / "src/data/object_events/johto_info.h").read_text(encoding="utf-8")
-        self.assertEqual(constants.count("OBJ_EVENT_GFX_JOHTO_"), 35)
-        self.assertEqual(pointers.count("OBJ_EVENT_GFX_JOHTO_"), 35)
+        self.assertEqual(constants.count("OBJ_EVENT_GFX_JOHTO_"), 84)
+        self.assertEqual(constants.count("OBJ_EVENT_GFX_JOHTO_SHARED_"), 49)
+        self.assertEqual(pointers.count("OBJ_EVENT_GFX_JOHTO_"), 84)
+        self.assertEqual(pointers.count("OBJ_EVENT_GFX_JOHTO_SHARED_"), 49)
         self.assertEqual(info.count("const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_Johto_"), 35)
         self.assertEqual(info.count("static const struct SpriteFrameImage sJohtoPicTable_"), 35)
         self.assertEqual(info.count("sJohtoWhirlpool_"), 9 + 20)  # nine commands plus the 20 table entries
         self.assertIn("sJohtoAnimTable_Whirlpool", info)
         self.assertIn("* binary", (ROOT / "graphics/johto/object_events/.gitattributes").read_text())
+
+    def test_base_integration_preserves_shared_and_berry_blocks(self):
+        paths = [
+            "include/constants/event_objects.h",
+            "src/event_object_movement.c",
+            "src/data/object_events/object_event_graphics_info_pointers.h",
+            "spritesheet_rules.mk",
+        ]
+        originals = {path: (ROOT / path).read_text(encoding="utf-8") for path in paths}
+        outputs = importer.integration_outputs(ROOT)
+
+        constants = outputs[ROOT / paths[0]].decode()
+        self.assertEqual(constants.count("OBJ_EVENT_GFX_JOHTO_SHARED_"), 49)
+        self.assertLess(constants.index("/* JOHTO_OBJECT_GRAPHICS_IDS */"), constants.index("/* JOHTO_SHARED_OBJECT_GRAPHICS_IDS */"))
+        self.assertLess(constants.index("/* JOHTO_SHARED_OBJECT_GRAPHICS_IDS */"), constants.index("NUM_OBJ_EVENT_GFX"))
+        for start, end in (
+            ("/* JOHTO_SHARED_OBJECT_GRAPHICS_IDS */", "    NUM_OBJ_EVENT_GFX,"),
+            ("/* JOHTO_SHARED_OBJECT_GRAPHICS_PALETTE_TAGS */", "#define OBJ_EVENT_PAL_TAG_NONE"),
+        ):
+            original = originals[paths[0]]
+            self.assertEqual(
+                constants[constants.index(start):constants.index(end)],
+                original[original.index(start):original.index(end)],
+            )
+
+        movement = outputs[ROOT / paths[1]].decode()
+        self.assertIn('#include "data/object_events/johto_shared_assets.h"', movement)
+        self.assertIn('#include "data/object_events/johto_shared_info.h"', movement)
+        self.assertIn('#include "data/object_events/johto_shared_palettes.inc"', movement)
+
+        pointers = outputs[ROOT / paths[2]].decode()
+        self.assertIn('#include "johto_shared_declarations.h"', pointers)
+        self.assertIn('#include "johto_shared_pointers.inc"', pointers)
+
+        rules = outputs[ROOT / paths[3]].decode()
+        self.assertIn("# BEGIN JOHTO BERRY GRAPHICS RULES", rules)
+        self.assertIn("# BEGIN JOHTO SHARED OBJECT FRAME RULES", rules)
+        self.assertLess(rules.index("# BEGIN JOHTO OBJECT FRAME RULES"), rules.index("# BEGIN JOHTO BERRY GRAPHICS RULES"))
+        self.assertLess(rules.index("# BEGIN JOHTO BERRY GRAPHICS RULES"), rules.index("# BEGIN JOHTO SHARED OBJECT FRAME RULES"))
+        original_rules = originals[paths[3]]
+        downstream = "# BEGIN JOHTO BERRY GRAPHICS RULES"
+        self.assertEqual(rules[rules.index(downstream):], original_rules[original_rules.index(downstream):])
+
+        prefix_markers = {
+            paths[0]: "    /* JOHTO_OBJECT_GRAPHICS_IDS */",
+            paths[1]: '#include "data/object_events/johto_assets.h"',
+            paths[3]: "# BEGIN JOHTO OBJECT FRAME RULES",
+        }
+        for path, marker in prefix_markers.items():
+            original = originals[path]
+            generated = outputs[ROOT / path].decode()
+            self.assertEqual(generated[:generated.index(marker)], original[:original.index(marker)])
+
+    def test_shared_includes_must_remain_in_their_local_groups(self):
+        paths = [
+            "include/constants/event_objects.h",
+            "src/event_object_movement.c",
+            "src/data/object_events/object_event_graphics_info_pointers.h",
+            "spritesheet_rules.mk",
+        ]
+        cases = [
+            (
+                "src/event_object_movement.c",
+                '#include "data/object_events/johto_shared_assets.h"\n',
+                '// movement type callbacks\n',
+            ),
+            (
+                "src/event_object_movement.c",
+                '#include "data/object_events/johto_shared_info.h"\n',
+                '#include "data/object_events/object_event_graphics_info_followers.h"\n',
+            ),
+            (
+                "src/event_object_movement.c",
+                '#include "data/object_events/johto_shared_palettes.inc"\n',
+                'static const u16 sReflectionPaletteTags_Brendan[] = {\n',
+            ),
+            (
+                "src/data/object_events/object_event_graphics_info_pointers.h",
+                '#include "johto_shared_declarations.h"\n',
+                'extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_BrendanNormal;\n',
+            ),
+            (
+                "src/data/object_events/object_event_graphics_info_pointers.h",
+                '#include "johto_shared_pointers.inc"\n',
+                'const struct ObjectEventGraphicsInfo *const gMauvilleOldManGraphicsInfoPointers[] = {\n',
+            ),
+        ]
+
+        for path, shared_include, destination in cases:
+            with self.subTest(shared_include=shared_include.strip()):
+                with tempfile.TemporaryDirectory() as folder:
+                    root = Path(folder)
+                    for integration_path in paths:
+                        target = root / integration_path
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes((ROOT / integration_path).read_bytes())
+                    target = root / path
+                    text = target.read_text(encoding="utf-8").replace(shared_include, "", 1)
+                    text = text.replace(destination, destination + shared_include, 1)
+                    target.write_text(text, encoding="utf-8")
+                    with self.assertRaisesRegex(SystemExit, "integration .* drift"):
+                        importer.integration_outputs(root)
 
     def test_deterministic_manifest_order_and_names(self):
         objects = self.manifest["objects"]

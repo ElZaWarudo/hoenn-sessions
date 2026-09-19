@@ -30,36 +30,83 @@ class NewBarkImportTests(unittest.TestCase):
         with self.assertRaises(struct.error):
             convert_attributes(b"\x00")
 
-    def test_registered_town_has_no_dangling_exits(self):
-        town = json.loads((ROOT / "data/maps/NewBarkTown/map.json").read_text())
-        groups = json.loads((ROOT / "data/maps/map_groups.json").read_text())
+    def test_registered_town_exits_are_reciprocal_or_controlled(self):
+        town = json.loads((ROOT / "data/maps/NewBarkTown/map.json").read_text(encoding="utf-8"))
+        groups = json.loads((ROOT / "data/maps/map_groups.json").read_text(encoding="utf-8"))
         self.assertIn("NewBarkTown", groups["gMapGroup_Johto"])
         self.assertEqual(town["region"], "REGION_JOHTO")
-        self.assertFalse(town["connections"])
-        self.assertFalse(town["warp_events"])
 
-    def test_both_guides_bind_and_preserve_yes_no_script_contracts(self):
+        map_names = {name for maps in groups.values() for name in maps}
+        maps_by_id = {}
+        for name in map_names:
+            path = ROOT / "data/maps" / name / "map.json"
+            if path.exists():
+                map_data = json.loads(path.read_text(encoding="utf-8"))
+                maps_by_id[map_data["id"]] = map_data
+
+        expected_connections = {
+            ("left", "MAP_ROUTE29", -5),
+            ("right", "MAP_ROUTE27", -11),
+        }
+        self.assertEqual(
+            {(edge["direction"], edge["map"], edge["offset"]) for edge in town["connections"]},
+            expected_connections,
+        )
+        opposite = {"left": "right", "right": "left", "up": "down", "down": "up"}
+        for edge in town["connections"]:
+            with self.subTest(connection=edge["map"]):
+                reverse_edges = maps_by_id[edge["map"]]["connections"]
+                self.assertIn(
+                    {
+                        "map": town["id"],
+                        "offset": -edge["offset"],
+                        "direction": opposite[edge["direction"]],
+                    },
+                    reverse_edges,
+                )
+
+        # Five doors round-trip through their declared destination warp. The
+        # remaining donor-authored roof transition is intentionally one-way,
+        # but still resolves to a registered map and an in-range warp.
+        controlled_one_way = {("MAP_TIN_TOWER_ROOF_DAY", "0")}
+        observed_one_way = set()
+        for index, warp in enumerate(town["warp_events"]):
+            with self.subTest(warp=index):
+                destination = maps_by_id[warp["dest_map"]]
+                destination_index = int(warp["dest_warp_id"])
+                self.assertLess(destination_index, len(destination["warp_events"]))
+                reverse = destination["warp_events"][destination_index]
+                if (reverse["dest_map"], reverse["dest_warp_id"]) != (town["id"], str(index)):
+                    observed_one_way.add((warp["dest_map"], warp["dest_warp_id"]))
+        self.assertEqual(observed_one_way, controlled_one_way)
+
+    def test_pilot_guides_preserve_yes_no_script_contracts(self):
         # Static script contracts only: asynchronous message/warp execution still
         # needs emulator coverage; this does not simulate the event-script engine.
         routes = (
             ("OldaleTown_PokemonCenter_1F", "JohtoGuide", "VisitJohto",
-             "StayInHoenn", (10, 3), "MAP_NEW_BARK_TOWN, 10, 15"),
-            ("NewBarkTown", "Guide", "Return", "Stay", (11, 15),
+             "StayInHoenn", "MAP_NEW_BARK_TOWN, 10, 15"),
+            ("NewBarkTown", "Guide", "Return", "Stay",
              "MAP_OLDALE_TOWN_POKEMON_CENTER_1F, 10, 4"),
         )
-        for map_name, guide, prompt, decline, position, destination in routes:
+        for map_name, guide, prompt, decline, destination in routes:
             with self.subTest(map=map_name):
                 directory = ROOT / "data/maps" / map_name
-                map_data = json.loads((directory / "map.json").read_text())
                 guide_label = f"{map_name}_EventScript_{guide}"
                 decline_label = f"{map_name}_EventScript_{decline}"
-                guides = [obj for obj in map_data["object_events"]
-                          if obj["script"] == guide_label]
-                self.assertEqual(len(guides), 1)
-                self.assertEqual((guides[0]["x"], guides[0]["y"]), position)
-                self.assertEqual(guides[0]["flag"], "0")
 
-                script = (directory / "scripts.inc").read_text()
+                # The Hoenn-side guide remains a live object. Full-world import
+                # replaces New Bark's preview object composition with donor
+                # objects and provides its return paths through world topology.
+                if map_name == "OldaleTown_PokemonCenter_1F":
+                    map_data = json.loads((directory / "map.json").read_text(encoding="utf-8"))
+                    self.assertTrue(any(
+                        obj["script"] == guide_label
+                        and (obj["x"], obj["y"], obj["flag"]) == (10, 3, "0")
+                        for obj in map_data["object_events"]
+                    ))
+
+                script = (directory / "scripts.inc").read_text(encoding="utf-8")
                 for label, expected in (
                     (guide_label, [
                         "lock", "faceplayer",

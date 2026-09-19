@@ -3346,3 +3346,1875 @@
         },
     },
 },
+
+{
+    .mapGroup = 77,
+    .mapNum = 0,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PalletTown_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_PalletTown_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PalletTown_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_PalletTown_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PalletTown_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_PalletTown_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PalletTown_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_PalletTown_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 1,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianCity_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_ViridianCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_ViridianCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_ViridianCity_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianCity_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_ViridianCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_ViridianCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_ViridianCity_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_ViridianCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_ViridianCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_ViridianCity_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_ViridianCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_ViridianCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_ViridianCity_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 2,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PewterCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PewterCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PewterCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_PewterCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 3,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_CeruleanCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCity_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_CeruleanCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCity_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_CeruleanCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCity_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_CeruleanCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCity_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 4,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_VermilionCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_VermilionCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_VermilionCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_VermilionCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 5,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_LavenderTown_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_LavenderTown_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_LavenderTown_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_LavenderTown_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 6,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_CeladonCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeladonCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeladonCity_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_CeladonCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeladonCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeladonCity_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeladonCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeladonCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeladonCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeladonCity_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_CeladonCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeladonCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeladonCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeladonCity_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 7,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_SaffronCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_SaffronCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_SaffronCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_SaffronCity_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 8,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_FuchsiaCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_FuchsiaCity_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_FuchsiaCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_FuchsiaCity_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 9,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_CinnabarIsland_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CinnabarIsland_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_CinnabarIsland_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_CinnabarIsland_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CinnabarIsland_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_CinnabarIsland_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_CinnabarIsland_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CinnabarIsland_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_CinnabarIsland_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_CinnabarIsland_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CinnabarIsland_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_CinnabarIsland_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 10,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route1_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route1_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route1_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route1_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route1_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route1_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route1_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route1_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route1_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route1_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route1_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route1_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route1_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route1_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route1_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route1_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 11,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route2_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route2_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route2_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route2_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route2_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route2_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route2_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route2_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route2_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route2_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route2_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route2_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route2_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route2_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route2_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route2_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 12,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route3_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route3_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route3_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route3_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route3_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route3_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route3_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route3_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route3_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route3_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route3_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route3_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route3_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route3_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route3_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route3_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 13,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route4_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route4_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route4_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route4_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route4_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route4_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route4_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route4_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route4_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route4_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route4_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route4_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route4_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route4_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route4_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route4_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 14,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route5_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route5_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route5_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route5_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route5_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route5_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route5_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route5_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route5_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route5_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route5_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route5_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route5_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route5_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route5_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route5_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 15,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route6_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route6_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route6_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route6_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route6_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route6_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route6_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route6_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route6_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route6_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route6_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route6_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route6_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route6_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route6_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route6_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 16,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route7_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route7_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route7_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route7_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route7_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route7_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route7_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route7_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route7_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route7_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route7_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route7_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route7_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route7_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route7_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route7_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 17,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route8_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route8_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route8_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route8_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route8_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route8_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route8_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route8_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route8_Night_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_Route8_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route8_Night_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = &sJohtoWild_Route8_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 18,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route9_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route9_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route9_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route9_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route9_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route9_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route9_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route9_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route9_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route9_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route9_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route9_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route9_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route9_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route9_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route9_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 19,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route10_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route10_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route10_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route10_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route10_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route10_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route10_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route10_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route10_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route10_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route10_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route10_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route10_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route10_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route10_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route10_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 20,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route11_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route11_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route11_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route11_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route11_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route11_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route11_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route11_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route11_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route11_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route11_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route11_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route11_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route11_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route11_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route11_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 21,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route12_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route12_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route12_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route12_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route12_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route12_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route12_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route12_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route12_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route12_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route12_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route12_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route12_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route12_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route12_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route12_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 22,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route13_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route13_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route13_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route13_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route13_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route13_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route13_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route13_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route13_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route13_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route13_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route13_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route13_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route13_Night_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_Route13_Night_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_Route13_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 23,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route14_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route14_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route14_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route14_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route14_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route14_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route14_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route14_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route14_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route14_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route14_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route14_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 24,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route15_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route15_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route15_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route15_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route15_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route15_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route15_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route15_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route15_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route15_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route15_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route15_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 25,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route16_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route16_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route16_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route16_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route16_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route16_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route16_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route16_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route16_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route16_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route16_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route16_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 26,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route17_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route17_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route17_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route17_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route17_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route17_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route17_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route17_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route17_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route17_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route17_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route17_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 27,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route18_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route18_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route18_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route18_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route18_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route18_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route18_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route18_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route18_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route18_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route18_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route18_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 28,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route19_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route19_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route19_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route19_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route19_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route19_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route19_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route19_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 29,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route20_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route20_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route20_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route20_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route20_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route20_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = NULL,
+            .waterMonsInfo = &sJohtoWild_Route20_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route20_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 30,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route21_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route21_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route21_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route21_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route21_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route21_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route21_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route21_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route21_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route21_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route21_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route21_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 31,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route22_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route22_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route22_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route22_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route22_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route22_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route22_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route22_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route22_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route22_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route22_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route22_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 34,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route24_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route24_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route24_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route24_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route24_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route24_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route24_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route24_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route24_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route24_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route24_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route24_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 35,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route25_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route25_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route25_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_Route25_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route25_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route25_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_Route25_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route25_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route25_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_Route25_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_Route25_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_Route25_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 61,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_PortOutside_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_PortOutside_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_PortOutside_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_PortOutside_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_PortOutside_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_PortOutside_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_PortOutside_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_PortOutside_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_PortOutside_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_VermilionCity_PortOutside_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VermilionCity_PortOutside_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VermilionCity_PortOutside_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 111,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 112,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneBrush_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneBrush_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneBrush_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneBrush_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 113,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 77,
+    .mapNum = 114,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 21,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B2F_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 22,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_B1F_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 23,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_VictoryRoadKanto_1F_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 24,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianForest_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianForest_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianForest_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_ViridianForest_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 25,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_MtMoon_Cave_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_MtMoon_Cave_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_MtMoon_Cave_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_MtMoon_Cave_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_MtMoon_Cave_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_MtMoon_Cave_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_MtMoon_Cave_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_MtMoon_Cave_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_MtMoon_Cave_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_MtMoon_Cave_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_MtMoon_Cave_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_MtMoon_Cave_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 27,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_B1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_B1F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_B1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_B1F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_B1F_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_B1F_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_B1F_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_B1F_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_B1F_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_B1F_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 28,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_1F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_1F_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_1F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_1F_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_1F_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_1F_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_RockTunnel_1F_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_RockTunnel_1F_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_RockTunnel_1F_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 29,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_1F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_1F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_1F_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_1F_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 30,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B1F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B1F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B1F_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B1F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B1F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B1F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B1F_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 31,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B2F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B2F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B2F_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B2F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B2F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B2F_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B2F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B2F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B2F_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_CeruleanCave_B2F_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_CeruleanCave_B2F_water_monsInfo,
+            .rockSmashMonsInfo = &sJohtoWild_CeruleanCave_B2F_rock_smash_monsInfo,
+            .fishingMonsInfo = &sJohtoWild_CeruleanCave_B2F_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 34,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_fishing_monsInfo,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_fishing_monsInfo,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_Night_fishing_monsInfo,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_Night_land_monsInfo,
+            .waterMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_Night_water_monsInfo,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = &sJohtoWild_DiglettsCave_Tunnel_Night_fishing_monsInfo,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 35,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},
+
+{
+    .mapGroup = 78,
+    .mapNum = 37,
+    .encounterTypes =
+    {
+        [TIME_MORNING] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_B1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_DAY] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_B1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_EVENING] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_B1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+        [TIME_NIGHT] =
+        {
+            .landMonsInfo = &sJohtoWild_SeafoamIslands_B1F_land_monsInfo,
+            .waterMonsInfo = NULL,
+            .rockSmashMonsInfo = NULL,
+            .fishingMonsInfo = NULL,
+        },
+    },
+},

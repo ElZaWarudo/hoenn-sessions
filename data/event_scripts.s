@@ -64,6 +64,7 @@
 #include "constants/songs.h"
 #include "constants/sound.h"
 #include "constants/species.h"
+#include "constants/sliding_puzzles.h"
 #include "constants/trade.h"
 #include "constants/trainer_hill.h"
 #include "constants/trainer_tower.h"
@@ -1906,6 +1907,28 @@ Johto_ReceptionGate_Overland_EventScript_ChooseKanto::
 	lock
 	call EventScript_ChooseKantoEra
 	goto_if_eq VAR_RESULT, 0, Johto_ReceptionGate_Overland_EventScript_TravelFailed
+	switch VAR_RESULT
+	case 2, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal
+	case 3, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal::
+	setvar VAR_0x8004, 5
+	goto Johto_ReceptionGate_Overland_EventScript_ChooseKanto_RequestGroupTravel
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater::
+	setvar VAR_0x8004, 6
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_RequestGroupTravel::
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_SoloTravel
+	goto_if_eq VAR_RESULT, 1, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelWaiting
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelWaiting::
+	end
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_SoloTravel::
 	special Johto_RecordCurrentHeal
 	goto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_TravelFailed
 	special Johto_PrepareKantoTravel
@@ -2013,3 +2036,83 @@ KantoOriginal_Route22_Overland_Text_ReturnToJohto:
 
 KantoLater_Route22_Overland_Text_ReturnToJohto:
 	.string "Return through the gate to JOHTO?$"
+
+
+EventScript_CoopGroupTravelOffer::
+	special Special_CoopGroupTravelGetOffer
+	goto_if_ne VAR_RESULT, 2, EventScript_CoopGroupTravelOffer_Invalid
+	switch VAR_0x8004
+	case 1, EventScript_CoopGroupTravelOffer_TrainOriginal
+	case 2, EventScript_CoopGroupTravelOffer_TrainLater
+	case 3, EventScript_CoopGroupTravelOffer_FerryOriginal
+	case 4, EventScript_CoopGroupTravelOffer_FerryLater
+	case 5, EventScript_CoopGroupTravelOffer_GateOriginal
+	case 6, EventScript_CoopGroupTravelOffer_GateLater
+	goto EventScript_CoopGroupTravelOffer_Invalid
+
+EventScript_CoopGroupTravelOffer_TrainOriginal::
+	msgbox Text_CoopGroupTravelOffer_TrainOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_TrainLater::
+	msgbox Text_CoopGroupTravelOffer_TrainLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_FerryOriginal::
+	goto_if_eq VAR_0x8005, 3, EventScript_CoopGroupTravelOffer_AquaOriginal
+	msgbox Text_CoopGroupTravelOffer_FerryOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_FerryLater::
+	goto_if_eq VAR_0x8005, 3, EventScript_CoopGroupTravelOffer_AquaLater
+	msgbox Text_CoopGroupTravelOffer_FerryLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_AquaOriginal::
+	msgbox Text_CoopGroupTravelOffer_AquaOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_AquaLater::
+	msgbox Text_CoopGroupTravelOffer_AquaLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_GateOriginal::
+	msgbox Text_CoopGroupTravelOffer_GateOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_GateLater::
+	msgbox Text_CoopGroupTravelOffer_GateLater, MSGBOX_YESNO
+
+EventScript_CoopGroupTravelOffer_Respond::
+	copyvar VAR_0x8004, VAR_RESULT
+	special Special_CoopGroupTravelRespond
+	end
+
+EventScript_CoopGroupTravelOffer_Invalid::
+	setvar VAR_0x8004, 0
+	special Special_CoopGroupTravelRespond
+	end
+
+Text_CoopGroupTravelOffer_TrainOriginal:
+	.string "Travel together by MAGNET TRAIN\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_TrainLater:
+	.string "Travel together by MAGNET TRAIN\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_FerryOriginal:
+	.string "Travel together by ferry\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_FerryLater:
+	.string "Travel together by ferry\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_AquaOriginal:
+	.string "Travel together aboard S.S. AQUA\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_AquaLater:
+	.string "Travel together aboard S.S. AQUA\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_GateOriginal:
+	.string "Travel together through the gate\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_GateLater:
+	.string "Travel together through the gate\nto KANTO three years later?$"

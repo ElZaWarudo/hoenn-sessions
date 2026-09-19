@@ -2,7 +2,7 @@
   "id": "MAP_GOLDENROD_CITY_UNDERGROUND_SWITCHES",
   "name": "GoldenrodCity_UndergroundSwitches",
   "layout": "LAYOUT_JOHTO_GOLDENROD_CITY_UNDERGROUND_SWITCHES",
-  "music": "MUS_HG_ROCKET_TAKEOVER",
+  "music": "MUS_RG_ROCKET_HIDEOUT",
   "region_map_section": "MAPSEC_JOHTO_GOLDENROD_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 6,
       "y": 3,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "3",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Grunt11",
-      "flag": "FLAG_HIDE_GOLDENROD_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 15,
       "y": 3,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "3",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Grunt20",
-      "flag": "FLAG_HIDE_GOLDENROD_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 20,
       "y": 3,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "3",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Grunt10",
-      "flag": "FLAG_HIDE_GOLDENROD_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BURGLAR",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_BURGLAR",
       "x": 3,
       "y": 9,
       "elevation": 0,
@@ -67,7 +67,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BURGLAR",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_BURGLAR",
       "x": 11,
       "y": 13,
       "elevation": 0,
@@ -80,7 +80,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ROCKET_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
       "x": 28,
       "y": 13,
       "elevation": 0,
@@ -90,10 +90,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "3",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Grunt27",
-      "flag": "FLAG_HIDE_GOLDENROD_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SILVER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SILVER",
       "x": 35,
       "y": 2,
       "elevation": 0,
@@ -103,10 +103,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_GOLDENROD_UNDERGROUND_SILVER"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_UNDERGROUND_SILVER"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 19,
       "y": 9,
       "elevation": 0,
@@ -116,10 +116,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Item_Revive",
-      "flag": "FLAG_ITEM_GOLDENROD_UNDERGROUND_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_GOLDENROD_UNDERGROUND_REVIVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 20,
       "y": 13,
       "elevation": 0,
@@ -129,10 +129,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Item_MaxPotion",
-      "flag": "FLAG_ITEM_GOLDENROD_UNDERGROUND_MAX_POTION"
+      "flag": "JOHTO_FLAG_ITEM_GOLDENROD_UNDERGROUND_MAX_POTION"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 3,
       "y": 13,
       "elevation": 0,
@@ -142,7 +142,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_Item_SmokeBall",
-      "flag": "FLAG_ITEM_GOLDENROD_UNDERGROUND_SMOKE_BALL"
+      "flag": "JOHTO_FLAG_ITEM_GOLDENROD_UNDERGROUND_SMOKE_BALL"
     }
   ],
   "warp_events": [
@@ -167,7 +167,7 @@
       "x": 26,
       "y": 5,
       "elevation": 0,
-      "var": "VAR_GOLDENROD_CITY_STATE",
+      "var": "JOHTO_VAR_GOLDENROD_CITY_STATE",
       "var_value": "8",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_SilverTriggerTop"
     },
@@ -176,7 +176,7 @@
       "x": 26,
       "y": 6,
       "elevation": 0,
-      "var": "VAR_GOLDENROD_CITY_STATE",
+      "var": "JOHTO_VAR_GOLDENROD_CITY_STATE",
       "var_value": "8",
       "script": "Johto_GoldenrodCity_UndergroundSwitches_GoldenrodCity_UndergroundSwitches_EventScript_SilverTriggerBot"
     }

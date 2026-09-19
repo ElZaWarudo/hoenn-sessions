@@ -26,11 +26,11 @@
     "effects": "Native requests SCREFF_V1 before VAR_RESULT; no saved mutations or tree removal."
   },
   "source_correction": "Adapt the donor object animation to persistent metatile interaction with non-destructive camera feedback.",
-  "campaign_ready": false,
-  "pending_binding": "Map registration and campaign script import remain outside this unit.",
+  "campaign_ready": true,
+  "pending_binding": null,
   "verification": {
     "python": "Pinned donor intent, exact feedback/branch ordering, real metatile linkage, native bounds and Whirlpool regression.",
     "engine": "test/johto/headbutt.c uses actual Pokemon data, native effects, reserved selector values, ShakeCamera waiting/resumption and ordinary wild-return callbacks/tasks. Root owns execution and ROM linkage.",
-    "emulator": "Full tree traversal remains pending; not claimed."
+    "emulator": "Full tree traversal remains pending validation."
   }
 }

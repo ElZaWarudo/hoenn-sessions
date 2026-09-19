@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE26NORTH",
   "name": "Route26North",
   "layout": "LAYOUT_JOHTO_ROUTE26NORTH",
-  "music": "MUS_HG_ROUTE26",
+  "music": "MUS_EVER_GRANDE",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_26",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SQUIRTLE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SQUIRTLE)",
       "x": 11,
       "y": 22,
       "elevation": 0,
@@ -62,10 +62,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BULBASAUR",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BULBASAUR)",
       "x": 23,
       "y": 17,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHARMANDER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHARMANDER)",
       "x": 20,
       "y": 11,
       "elevation": 0,
@@ -88,7 +88,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_COOLTRAINER_F",
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MURKROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MURKROW)",
       "x": 11,
       "y": 2,
       "elevation": 0,
@@ -114,7 +114,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     }
   ],
   "warp_events": [

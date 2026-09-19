@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE21",
   "name": "Route21",
   "layout": "LAYOUT_KANTO_LATER_ROUTE21",
-  "music": "MUS_HG_ROUTE11",
+  "music": "MUS_RG_ROUTE11",
   "region_map_section": "MAPSEC_ROUTE_21",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -26,7 +26,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_F_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
       "x": 13,
       "y": 78,
       "elevation": 0,
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SWIMMER_M_WATER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_M_WATER",
       "x": 8,
       "y": 50,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FISHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
       "x": 16,
       "y": 26,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MR_MIME",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MR_MIME)",
       "x": 19,
       "y": 1,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TANGELA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TANGELA)",
       "x": 4,
       "y": 11,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TANGELA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TANGELA)",
       "x": 19,
       "y": 7,
       "elevation": 0,
@@ -104,7 +104,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CORPHISH",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CORPHISH)",
       "x": 22,
       "y": 39,
       "elevation": 0,

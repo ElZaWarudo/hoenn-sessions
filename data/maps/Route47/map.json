@@ -2,7 +2,7 @@
   "id": "MAP_ROUTE47",
   "name": "Route47",
   "layout": "LAYOUT_JOHTO_ROUTE47",
-  "music": "MUS_HG_ROUTE47",
+  "music": "MUS_ROUTE119",
   "region_map_section": "MAPSEC_JOHTO_ROUTE_47",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -21,7 +21,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_HIKER",
       "x": 89,
       "y": 39,
       "elevation": 0,
@@ -34,7 +34,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CAMPER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CAMPER",
       "x": 71,
       "y": 37,
       "elevation": 0,
@@ -57,7 +57,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Item_Revive",
-      "flag": "FLAG_ITEM_ROUTE47_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE47_REVIVE"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_COOLTRAINER_F",
@@ -96,10 +96,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Item_WhiteFlute",
-      "flag": "FLAG_ITEM_ROUTE47_WHITE_FLUTE"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE47_WHITE_FLUTE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SAGE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SAGE",
       "x": 40,
       "y": 45,
       "elevation": 0,
@@ -109,10 +109,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Sage",
-      "flag": "FLAG_DEFEATED_VIRIDIAN_GYM"
+      "flag": "JOHTO_FLAG_DEFEATED_VIRIDIAN_GYM"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 57,
       "y": 15,
       "elevation": 0,
@@ -148,7 +148,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Item_Pearl",
-      "flag": "FLAG_ITEM_ROUTE47_PEARL"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE47_PEARL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
@@ -161,10 +161,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Item_Stardust",
-      "flag": "FLAG_ITEM_ROUTE47_STARDUST"
+      "flag": "JOHTO_FLAG_ITEM_ROUTE47_STARDUST"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 82,
       "y": 58,
       "elevation": 0,
@@ -177,7 +177,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 86,
       "y": 58,
       "elevation": 0,
@@ -190,7 +190,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 84,
       "y": 59,
       "elevation": 0,
@@ -203,7 +203,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 35,
       "y": 59,
       "elevation": 0,
@@ -216,7 +216,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 34,
       "y": 58,
       "elevation": 0,
@@ -229,7 +229,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_STARYU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(STARYU)",
       "x": 65,
       "y": 55,
       "elevation": 0,
@@ -242,7 +242,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHINCHOU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHINCHOU)",
       "x": 54,
       "y": 55,
       "elevation": 0,
@@ -255,7 +255,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHINCHOU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHINCHOU)",
       "x": 103,
       "y": 55,
       "elevation": 0,
@@ -268,7 +268,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_LANTURN",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(LANTURN)",
       "x": 115,
       "y": 48,
       "elevation": 0,
@@ -281,7 +281,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FEAROW)",
       "x": 100,
       "y": 31,
       "elevation": 0,
@@ -294,7 +294,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FEAROW)",
       "x": 46,
       "y": 37,
       "elevation": 0,
@@ -307,7 +307,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MILTANK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MILTANK)",
       "x": 86,
       "y": 4,
       "elevation": 0,
@@ -320,7 +320,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MILTANK",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MILTANK)",
       "x": 84,
       "y": 5,
       "elevation": 0,
@@ -333,7 +333,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHANSEY)",
       "x": 82,
       "y": 4,
       "elevation": 0,
@@ -346,7 +346,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_CHANSEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHANSEY)",
       "x": 87,
       "y": 5,
       "elevation": 0,
@@ -359,7 +359,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GLOOM",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GLOOM)",
       "x": 23,
       "y": 21,
       "elevation": 0,
@@ -372,7 +372,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FARFETCHD",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FARFETCHD)",
       "x": 24,
       "y": 23,
       "elevation": 0,
@@ -385,7 +385,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATICATE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATICATE)",
       "x": 37,
       "y": 12,
       "elevation": 0,
@@ -398,7 +398,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DITTO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DITTO)",
       "x": 21,
       "y": 25,
       "elevation": 0,
@@ -411,7 +411,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_FARFETCHD",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(FARFETCHD)",
       "x": 64,
       "y": 24,
       "elevation": 0,
@@ -432,7 +432,7 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_SITRUS_1",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_SITRUS_1",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
@@ -447,7 +447,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route47_Route47_EventScript_Item_LuckyPunch",
-      "flag": "FLAG_ITEM_LUCKY_PUNCH"
+      "flag": "JOHTO_FLAG_ITEM_LUCKY_PUNCH"
     }
   ],
   "warp_events": [

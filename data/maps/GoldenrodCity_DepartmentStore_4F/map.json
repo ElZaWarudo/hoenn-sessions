@@ -2,7 +2,7 @@
   "id": "MAP_GOLDENROD_CITY_DEPARTMENT_STORE_4F",
   "name": "GoldenrodCity_DepartmentStore_4F",
   "layout": "LAYOUT_JOHTO_GOLDENROD_CITY_DEPARTMENT_STORE_4F",
-  "music": "MUS_HG_POKE_MART",
+  "music": "MUS_POKE_MART",
   "region_map_section": "MAPSEC_JOHTO_GOLDENROD_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_BUG_CATCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BUG_CATCHER",
       "x": 20,
       "y": 11,
       "elevation": 0,
@@ -28,7 +28,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 13,
       "y": 6,
       "elevation": 0,
@@ -41,7 +41,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GBA_KID",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GBA_KID",
       "x": 11,
       "y": 5,
       "elevation": 0,
@@ -54,7 +54,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CLERK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CLERK",
       "x": 24,
       "y": 11,
       "elevation": 0,

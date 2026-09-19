@@ -8,6 +8,7 @@ silently accepting a new donor construct would make a future import unsafe.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -20,12 +21,19 @@ ROOT = Path(__file__).resolve().parents[2]
 DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
 DONOR_TREE = "33661709e5368edc01c37ed9bb5e0a7a0cb192c8"
 DONOR_REPOSITORY = "https://github.com/PokemonHnS-Development/pokemonHnS"
-RECORD_COUNT = 284
-MON_COUNT = 687
+RECORD_COUNT = 412
+MON_COUNT = 1103
+TRAINER_IDENTITY_SHA256 = "227dd888679a3b88e4aaf4fc36d64b4b2215b3b92e6803490d42a6c4a05203cb"
 
 # RocketHideout_B2F pairs these opponents against Lance and up to three selected
 # player Pokemon. The host multi-battle policy reads opponent team sizes only.
 HALF_TEAM_OPPONENTS = frozenset({"TRAINER_ARIANA_1", "TRAINER_GRUNT_23"})
+
+# Donor identifiers whose spelling differs from the host constants. Keep these
+# battle-data conversions explicit so an unknown symbol still fails closed.
+MOVE_ALIASES = {
+    "MOVE_SMELLING_SALT": "MOVE_SMELLING_SALTS",
+}
 
 
 class ImportErrorStrict(ValueError):
@@ -218,10 +226,11 @@ def _parse_party_array(type_name: str, body: str, party_name: str) -> tuple[Mon,
 
 
 def _resolve_symbol(source: str, aliases: dict[str, str], host_text: str, kind: str) -> str:
-    if source in aliases:
-        return aliases[source]
-    if re.search(rf"\b{re.escape(source)}\b", host_text):
-        return source
+    target = aliases.get(source, source)
+    if re.search(rf"\b{re.escape(target)}\b", host_text):
+        return target
+    if target != source:
+        raise ImportErrorStrict(f"unmapped {kind} alias target {target} for {source}")
     raise ImportErrorStrict(f"unmapped {kind} {source}")
 
 
@@ -288,10 +297,22 @@ def load_roster(donor_root: Path, repo_root: Path = ROOT) -> tuple[Trainer, ...]
     selected = ledger.get("identities", {}).get("trainers", [])
     if len(selected) != RECORD_COUNT:
         raise ImportErrorStrict(f"ledger trainer count is {len(selected)}, expected {RECORD_COUNT}")
+    symbols = {x["symbol"] for x in selected}
+    if len(symbols) != RECORD_COUNT:
+        raise ImportErrorStrict("duplicate trainer ledger symbols")
     if [x.get("ordinal") for x in selected] != list(range(RECORD_COUNT)):
         raise ImportErrorStrict("trainer ledger ordinals are not append-only and contiguous")
+    ordered_symbols = "\n".join(x.get("symbol", "") for x in selected) + "\n"
+    identity_digest = hashlib.sha256(ordered_symbols.encode("ascii")).hexdigest()
+    if identity_digest != TRAINER_IDENTITY_SHA256:
+        raise ImportErrorStrict(
+            f"trainer ledger identity order drift: {identity_digest}; "
+            f"expected {TRAINER_IDENTITY_SHA256}"
+        )
     if selected[0].get("symbol") != "TRAINER_JOEY" or selected[0].get("ordinal") != 0:
         raise ImportErrorStrict("Joey must remain immutable ordinal zero")
+    if selected[-1].get("symbol") != "TRAINER_ZEKE" or selected[-1].get("ordinal") != RECORD_COUNT - 1:
+        raise ImportErrorStrict("Zeke must remain the terminal trainer identity")
     expected_pin = ledger.get("provenance", {})
     if expected_pin.get("donor_revision") != DONOR_REVISION or expected_pin.get("donor_tree") != DONOR_TREE:
         raise ImportErrorStrict("content ledger donor pin drift")
@@ -305,11 +326,11 @@ def load_roster(donor_root: Path, repo_root: Path = ROOT) -> tuple[Trainer, ...]
     portrait_aliases = presentation.get("portrait_aliases", {})
     music_aliases = presentation.get("music_aliases", {})
     host_constants = (repo_root / "include/constants/trainers.h").read_text(encoding="utf-8")
+    host_species = (repo_root / "include/constants/species.h").read_text(encoding="utf-8")
+    host_items = (repo_root / "include/constants/items.h").read_text(encoding="utf-8")
+    host_moves = (repo_root / "include/constants/moves.h").read_text(encoding="utf-8")
     trainer_source = (donor_root / "src/data/trainers.h").read_text(encoding="utf-8")
     party_source = (donor_root / "src/data/trainer_parties.h").read_text(encoding="utf-8")
-    symbols = {x["symbol"] for x in selected}
-    if len(symbols) != RECORD_COUNT:
-        raise ImportErrorStrict("duplicate trainer ledger symbols")
     records = _record_blocks(trainer_source, symbols)
     if set(records) != symbols:
         raise ImportErrorStrict(f"selected trainer records missing: {sorted(symbols - set(records))}")
@@ -334,6 +355,8 @@ def load_roster(donor_root: Path, repo_root: Path = ROOT) -> tuple[Trainer, ...]
         if len(items) > 4 or any(not re.fullmatch(r"ITEM_[A-Z0-9_]+", x) for x in items):
             raise ImportErrorStrict(f"invalid trainer item list for {symbol}")
         items = items + ("ITEM_NONE",) * (4 - len(items))
+        for item in items:
+            _resolve_symbol(item, {}, host_items, "trainer item")
         double_text = _field(block, "doubleBattle")
         if double_text not in {"FALSE", "TRUE"}:
             raise ImportErrorStrict(f"invalid doubleBattle for {symbol}")
@@ -350,7 +373,21 @@ def load_roster(donor_root: Path, repo_root: Path = ROOT) -> tuple[Trainer, ...]
         if layout not in expected_layout:
             raise ImportErrorStrict(f"unsupported party layout {layout} for {symbol}")
         has_item, custom_moves = expected_layout[layout]
-        party = parsed_arrays[party_name]
+        party = tuple(
+            Mon(
+                mon.iv,
+                mon.level,
+                mon.species,
+                mon.held_item,
+                tuple(MOVE_ALIASES.get(move, move) for move in mon.moves),
+            )
+            for mon in parsed_arrays[party_name]
+        )
+        for mon in party:
+            _resolve_symbol(mon.species, {}, host_species, "species")
+            _resolve_symbol(mon.held_item, {}, host_items, "held item")
+            for move in mon.moves:
+                _resolve_symbol(move, {}, host_moves, "move")
         if not has_item and any(mon.held_item != "ITEM_NONE" for mon in party):
             raise ImportErrorStrict(f"no-item party contains held item: {symbol}")
         if has_item and not any(mon.held_item != "ITEM_NONE" for mon in party):

@@ -2,7 +2,7 @@
   "id": "MAP_VIOLET_CITY",
   "name": "VioletCity",
   "layout": "LAYOUT_JOHTO_VIOLET_CITY",
-  "music": "MUS_HG_VIOLET",
+  "music": "MUS_GSC_PEWTER",
   "region_map_section": "MAPSEC_JOHTO_VIOLET_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -31,7 +31,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_2",
       "x": 32,
       "y": 48,
       "elevation": 0,
@@ -57,7 +57,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_OLD_MAN_2",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_2",
       "x": 28,
       "y": 36,
       "elevation": 0,
@@ -70,7 +70,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_SUPER_NERD",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SUPER_NERD",
       "x": 18,
       "y": 35,
       "elevation": 0,
@@ -80,10 +80,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_VioletCity_EventScript_Earl",
-      "flag": "FLAG_HIDE_VIOLET_CITY_EARL"
+      "flag": "JOHTO_FLAG_HIDE_VIOLET_CITY_EARL"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 10,
       "y": 27,
       "elevation": 0,
@@ -96,7 +96,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 34,
       "y": 12,
       "elevation": 0,
@@ -106,10 +106,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_VioletCity_EventScript_ItemPechaBerry",
-      "flag": "FLAG_ITEM_VIOLET_CITY_PECHA_BERRY"
+      "flag": "JOHTO_FLAG_ITEM_VIOLET_CITY_PECHA_BERRY"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 17,
       "y": 12,
       "elevation": 0,
@@ -119,10 +119,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_VioletCity_EventScript_ItemHyperPotion",
-      "flag": "FLAG_ITEM_VIOLET_CITY_HYPER_POTION"
+      "flag": "JOHTO_FLAG_ITEM_VIOLET_CITY_HYPER_POTION"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_CUTTABLE_TREE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
       "x": 43,
       "y": 38,
       "elevation": 0,
@@ -135,7 +135,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BELLSPROUT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BELLSPROUT)",
       "x": 35,
       "y": 10,
       "elevation": 0,
@@ -148,7 +148,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BELLSPROUT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BELLSPROUT)",
       "x": 20,
       "y": 15,
       "elevation": 0,
@@ -161,7 +161,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BELLSPROUT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BELLSPROUT)",
       "x": 26,
       "y": 10,
       "elevation": 0,
@@ -174,7 +174,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POLIWAG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POLIWAG)",
       "x": 36,
       "y": 27,
       "elevation": 0,
@@ -187,7 +187,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HOOTHOOT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HOOTHOOT)",
       "x": 41,
       "y": 34,
       "elevation": 0,
@@ -197,10 +197,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEOTTO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEOTTO)",
       "x": 22,
       "y": 33,
       "elevation": 0,
@@ -213,7 +213,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BELLSPROUT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BELLSPROUT)",
       "x": 47,
       "y": 33,
       "elevation": 0,
@@ -226,7 +226,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 21,
       "y": 45,
       "elevation": 0,
@@ -236,10 +236,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GASTLY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GASTLY)",
       "x": 9,
       "y": 47,
       "elevation": 0,
@@ -249,10 +249,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_HAUNTER",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(HAUNTER)",
       "x": 19,
       "y": 9,
       "elevation": 0,
@@ -262,10 +262,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POLIWAG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POLIWAG)",
       "x": 44,
       "y": 21,
       "elevation": 0,
@@ -278,7 +278,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POLIWAG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POLIWAG)",
       "x": 45,
       "y": 23,
       "elevation": 0,
@@ -291,7 +291,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PICHU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PICHU)",
       "x": 35,
       "y": 49,
       "elevation": 0,
@@ -301,10 +301,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_VioletCity_EventScript_Pichu",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SPEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SPEAROW)",
       "x": 43,
       "y": 9,
       "elevation": 0,
@@ -317,7 +317,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SPEAROW",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SPEAROW)",
       "x": 38,
       "y": 32,
       "elevation": 0,
@@ -330,7 +330,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATTATA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATTATA)",
       "x": 19,
       "y": 40,
       "elevation": 0,
@@ -343,7 +343,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BELLSPROUT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BELLSPROUT)",
       "x": 7,
       "y": 36,
       "elevation": 0,
@@ -353,10 +353,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_VioletCity_EventScript_Bellsprout",
-      "flag": "FLAG_DAY_POKEMON"
+      "flag": "JOHTO_FLAG_DAY_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_BELLSPROUT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(BELLSPROUT)",
       "x": 34,
       "y": 16,
       "elevation": 0,
@@ -377,12 +377,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_CHERI_2",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_CHERI_2",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 46,
       "y": 33,
       "elevation": 0,
@@ -392,10 +392,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_VioletCity_VioletCity_EventScript_ItemRareCandy",
-      "flag": "FLAG_ITEM_VIOLET_CITY_RARE_CANDY"
+      "flag": "JOHTO_FLAG_ITEM_VIOLET_CITY_RARE_CANDY"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISDREAVUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISDREAVUS)",
       "x": 15,
       "y": 27,
       "elevation": 0,
@@ -405,10 +405,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_MISDREAVUS",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(MISDREAVUS)",
       "x": 45,
       "y": 41,
       "elevation": 0,
@@ -418,10 +418,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_NIGHT_POKEMON"
+      "flag": "JOHTO_FLAG_NIGHT_POKEMON"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_KIMONO_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL",
       "x": 43,
       "y": 48,
       "elevation": 0,
@@ -431,7 +431,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_VIOLET_CITY_KIMONO_GIRL"
+      "flag": "JOHTO_FLAG_HIDE_VIOLET_CITY_KIMONO_GIRL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_LIGHT_SPRITE",
@@ -823,7 +823,7 @@
       "x": 22,
       "y": 37,
       "elevation": 0,
-      "var": "VAR_VIOLET_CITY_STATE",
+      "var": "JOHTO_VAR_VIOLET_CITY_STATE",
       "var_value": "3",
       "script": "Johto_VioletCity_VioletCity_EventScript_ElmCall_Trigger"
     },
@@ -832,7 +832,7 @@
       "x": 23,
       "y": 38,
       "elevation": 0,
-      "var": "VAR_VIOLET_CITY_STATE",
+      "var": "JOHTO_VAR_VIOLET_CITY_STATE",
       "var_value": "3",
       "script": "Johto_VioletCity_VioletCity_EventScript_ElmCall_Trigger"
     },
@@ -841,7 +841,7 @@
       "x": 24,
       "y": 37,
       "elevation": 0,
-      "var": "VAR_VIOLET_CITY_STATE",
+      "var": "JOHTO_VAR_VIOLET_CITY_STATE",
       "var_value": "3",
       "script": "Johto_VioletCity_VioletCity_EventScript_ElmCall_Trigger"
     }

@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_ROUTE1",
   "name": "Route1",
   "layout": "LAYOUT_KANTO_LATER_ROUTE1",
-  "music": "MUS_HG_ROUTE1",
+  "music": "MUS_RG_ROUTE1",
   "region_map_section": "MAPSEC_ROUTE_1",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -39,7 +39,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_LITTLE_BOY",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LITTLE_BOY",
       "x": 8,
       "y": 27,
       "elevation": 0,
@@ -52,7 +52,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEY)",
       "x": 0,
       "y": 17,
       "elevation": 0,
@@ -65,7 +65,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEY)",
       "x": 11,
       "y": 25,
       "elevation": 0,
@@ -78,7 +78,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATTATA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATTATA)",
       "x": 21,
       "y": -1,
       "elevation": 0,
@@ -91,7 +91,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_RATTATA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(RATTATA)",
       "x": 0,
       "y": 7,
       "elevation": 0,
@@ -112,12 +112,12 @@
       "movement_range_x": 0,
       "movement_range_y": 0,
       "trainer_type": "TRAINER_TYPE_NONE",
-      "trainer_sight_or_berry_tree_id": "BERRY_TREE_ROUTE_118_SITRUS_2",
+      "trainer_sight_or_berry_tree_id": "JOHTO_BERRY_TREE_ROUTE_118_SITRUS_2",
       "script": "Johto_BerryTreeScript",
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_POOCHYENA",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(POOCHYENA)",
       "x": 29,
       "y": 15,
       "elevation": 0,

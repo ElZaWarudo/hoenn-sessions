@@ -4,24 +4,24 @@
   "region": "johto",
   "runtime_ready": true,
   "runtime_status": "host_wild_headers_and_rtc_selector_wired",
-  "world_status": "unwired",
-  "limitation": "Map assets, navigation, native adapters, and campaign traversal remain outside this unit.",
+  "world_status": "authoritative_407_map_world",
+  "world_identity": "johto_and_later_kanto",
   "provenance": {
     "accepted_source_path": "data/johto/wild_encounters.json",
-    "accepted_source_sha256": "1dceab02dc174664fc889f94ba8e28cd766a4653c3f2cb0fa99acc03666b5eff",
+    "accepted_source_sha256": "1f491f5e0292159f6f2adf714a4529134239af7f6b710f1931906841fa0eb157",
     "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
     "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
     "donor_source_path": "src/data/wild_encounters.json",
     "donor_source_sha256": "0821f52f969d416df44afa596e7a4249e39a85367a21480d1321aa8bba0de5e3",
     "region_manifest_path": "data/johto/region_manifest.json",
-    "region_manifest_sha256": "af52f3596252f0ffd0fa14862cb13fafc6fc316a4baeeb5c2f29806b199e91f6"
+    "region_manifest_sha256": "b6e86075e617caece5405a9cfbeae0645361ba66ce543b93aa2c161db7c6ddc6"
   },
   "selection": {
-    "approved_map_count": 239,
-    "runtime_header_count": 93,
-    "source_header_count": 149,
-    "source_table_count": 147,
-    "night_fallback_count": 39,
+    "approved_map_count": 407,
+    "runtime_header_count": 145,
+    "source_header_count": 236,
+    "source_table_count": 234,
+    "night_fallback_count": 56,
     "host_time_config_independent": true
   },
   "time_windows": {
@@ -1709,6 +1709,942 @@
       "day": "gSafariZone_Top_Right0",
       "night": "gSafariZone_Top_Right0",
       "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_PALLET_TOWN",
+      "map_linkage": {
+        "ordinal": 239,
+        "source_map": "MAP_PALLET_TOWN",
+        "source_name": "PalletTown",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 31,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_PALLET_TOWN",
+          "group": 77,
+          "index": 0
+        }
+      },
+      "day": "gPalletTown",
+      "night": "gPalletTown",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_VIRIDIAN_CITY",
+      "map_linkage": {
+        "ordinal": 240,
+        "source_map": "MAP_VIRIDIAN_CITY",
+        "source_name": "ViridianCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 32,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VIRIDIAN_CITY",
+          "group": 77,
+          "index": 1
+        }
+      },
+      "day": "gViridianCity",
+      "night": "gViridianCity_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_PEWTER_CITY",
+      "map_linkage": {
+        "ordinal": 241,
+        "source_map": "MAP_PEWTER_CITY",
+        "source_name": "PewterCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 33,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_PEWTER_CITY",
+          "group": 77,
+          "index": 2
+        }
+      },
+      "day": "gPewterCity",
+      "night": "gPewterCity",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_CERULEAN_CITY",
+      "map_linkage": {
+        "ordinal": 242,
+        "source_map": "MAP_CERULEAN_CITY",
+        "source_name": "CeruleanCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 34,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CITY",
+          "group": 77,
+          "index": 3
+        }
+      },
+      "day": "gCeruleanCity",
+      "night": "gCeruleanCity_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_VERMILION_CITY",
+      "map_linkage": {
+        "ordinal": 243,
+        "source_map": "MAP_VERMILION_CITY",
+        "source_name": "VermilionCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 35,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VERMILION_CITY",
+          "group": 77,
+          "index": 4
+        }
+      },
+      "day": "gVermilionCity",
+      "night": "gVermilionCity_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_LAVENDER_TOWN",
+      "map_linkage": {
+        "ordinal": 244,
+        "source_map": "MAP_LAVENDER_TOWN",
+        "source_name": "LavenderTown",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 36,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_LAVENDER_TOWN",
+          "group": 77,
+          "index": 5
+        }
+      },
+      "day": "gLavenderTown",
+      "night": "gLavenderTown",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_CELADON_CITY",
+      "map_linkage": {
+        "ordinal": 245,
+        "source_map": "MAP_CELADON_CITY",
+        "source_name": "CeladonCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 37,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CELADON_CITY",
+          "group": 77,
+          "index": 6
+        }
+      },
+      "day": "gCeladonCity",
+      "night": "gCeladonCity_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_SAFFRON_CITY",
+      "map_linkage": {
+        "ordinal": 246,
+        "source_map": "MAP_SAFFRON_CITY",
+        "source_name": "SaffronCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 38,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_SAFFRON_CITY",
+          "group": 77,
+          "index": 7
+        }
+      },
+      "day": "gSaffronCity",
+      "night": "gSaffronCity",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY",
+      "map_linkage": {
+        "ordinal": 247,
+        "source_map": "MAP_FUCHSIA_CITY",
+        "source_name": "FuchsiaCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 39,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY",
+          "group": 77,
+          "index": 8
+        }
+      },
+      "day": "gFuchsiaCity",
+      "night": "gFuchsiaCity_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_CINNABAR_ISLAND",
+      "map_linkage": {
+        "ordinal": 248,
+        "source_map": "MAP_CINNABAR_ISLAND",
+        "source_name": "CinnabarIsland",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 40,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CINNABAR_ISLAND",
+          "group": 77,
+          "index": 9
+        }
+      },
+      "day": "gCinnabarIsland",
+      "night": "gCinnabarIsland_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE1",
+      "map_linkage": {
+        "ordinal": 249,
+        "source_map": "MAP_ROUTE1",
+        "source_name": "Route1",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 41,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE1",
+          "group": 77,
+          "index": 10
+        }
+      },
+      "day": "gRoute1",
+      "night": "gRoute1_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE2",
+      "map_linkage": {
+        "ordinal": 250,
+        "source_map": "MAP_ROUTE2",
+        "source_name": "Route2",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 42,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE2",
+          "group": 77,
+          "index": 11
+        }
+      },
+      "day": "gRoute2",
+      "night": "gRoute2_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE3",
+      "map_linkage": {
+        "ordinal": 251,
+        "source_map": "MAP_ROUTE3",
+        "source_name": "Route3",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 43,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE3",
+          "group": 77,
+          "index": 12
+        }
+      },
+      "day": "gRoute3",
+      "night": "gRoute3_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE4",
+      "map_linkage": {
+        "ordinal": 252,
+        "source_map": "MAP_ROUTE4",
+        "source_name": "Route4",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 44,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE4",
+          "group": 77,
+          "index": 13
+        }
+      },
+      "day": "gRoute4",
+      "night": "gRoute4_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE5",
+      "map_linkage": {
+        "ordinal": 253,
+        "source_map": "MAP_ROUTE5",
+        "source_name": "Route5",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 45,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE5",
+          "group": 77,
+          "index": 14
+        }
+      },
+      "day": "gRoute5",
+      "night": "gRoute5_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE6",
+      "map_linkage": {
+        "ordinal": 254,
+        "source_map": "MAP_ROUTE6",
+        "source_name": "Route6",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 46,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE6",
+          "group": 77,
+          "index": 15
+        }
+      },
+      "day": "gRoute6",
+      "night": "gRoute6_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE7",
+      "map_linkage": {
+        "ordinal": 255,
+        "source_map": "MAP_ROUTE7",
+        "source_name": "Route7",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 47,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE7",
+          "group": 77,
+          "index": 16
+        }
+      },
+      "day": "gRoute7",
+      "night": "gRoute7_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE8",
+      "map_linkage": {
+        "ordinal": 256,
+        "source_map": "MAP_ROUTE8",
+        "source_name": "Route8",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 48,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE8",
+          "group": 77,
+          "index": 17
+        }
+      },
+      "day": "gRoute8",
+      "night": "gRoute8_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE9",
+      "map_linkage": {
+        "ordinal": 257,
+        "source_map": "MAP_ROUTE9",
+        "source_name": "Route9",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 49,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE9",
+          "group": 77,
+          "index": 18
+        }
+      },
+      "day": "gRoute9",
+      "night": "gRoute9_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE10",
+      "map_linkage": {
+        "ordinal": 258,
+        "source_map": "MAP_ROUTE10",
+        "source_name": "Route10",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 50,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE10",
+          "group": 77,
+          "index": 19
+        }
+      },
+      "day": "gRoute10",
+      "night": "gRoute10_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE11",
+      "map_linkage": {
+        "ordinal": 259,
+        "source_map": "MAP_ROUTE11",
+        "source_name": "Route11",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 51,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE11",
+          "group": 77,
+          "index": 20
+        }
+      },
+      "day": "gRoute11",
+      "night": "gRoute11_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE12",
+      "map_linkage": {
+        "ordinal": 260,
+        "source_map": "MAP_ROUTE12",
+        "source_name": "Route12",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 52,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE12",
+          "group": 77,
+          "index": 21
+        }
+      },
+      "day": "gRoute12",
+      "night": "gRoute12_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE13",
+      "map_linkage": {
+        "ordinal": 261,
+        "source_map": "MAP_ROUTE13",
+        "source_name": "Route13",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 53,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE13",
+          "group": 77,
+          "index": 22
+        }
+      },
+      "day": "gRoute13",
+      "night": "gRoute13_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE14",
+      "map_linkage": {
+        "ordinal": 262,
+        "source_map": "MAP_ROUTE14",
+        "source_name": "Route14",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 54,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE14",
+          "group": 77,
+          "index": 23
+        }
+      },
+      "day": "gRoute14",
+      "night": "gRoute14_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE15",
+      "map_linkage": {
+        "ordinal": 263,
+        "source_map": "MAP_ROUTE15",
+        "source_name": "Route15",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 55,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE15",
+          "group": 77,
+          "index": 24
+        }
+      },
+      "day": "gRoute15",
+      "night": "gRoute15_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE16",
+      "map_linkage": {
+        "ordinal": 264,
+        "source_map": "MAP_ROUTE16",
+        "source_name": "Route16",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 56,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE16",
+          "group": 77,
+          "index": 25
+        }
+      },
+      "day": "gRoute16",
+      "night": "gRoute16_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE17",
+      "map_linkage": {
+        "ordinal": 265,
+        "source_map": "MAP_ROUTE17",
+        "source_name": "Route17",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 57,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE17",
+          "group": 77,
+          "index": 26
+        }
+      },
+      "day": "gRoute17",
+      "night": "gRoute17_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE18",
+      "map_linkage": {
+        "ordinal": 266,
+        "source_map": "MAP_ROUTE18",
+        "source_name": "Route18",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 58,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE18",
+          "group": 77,
+          "index": 27
+        }
+      },
+      "day": "gRoute18",
+      "night": "gRoute18_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE19",
+      "map_linkage": {
+        "ordinal": 267,
+        "source_map": "MAP_ROUTE19",
+        "source_name": "Route19",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 59,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE19",
+          "group": 77,
+          "index": 28
+        }
+      },
+      "day": "gRoute19",
+      "night": "gRoute19_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE20",
+      "map_linkage": {
+        "ordinal": 268,
+        "source_map": "MAP_ROUTE20",
+        "source_name": "Route20",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 60,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE20",
+          "group": 77,
+          "index": 29
+        }
+      },
+      "day": "gRoute20",
+      "night": "gRoute20_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE21",
+      "map_linkage": {
+        "ordinal": 269,
+        "source_map": "MAP_ROUTE21",
+        "source_name": "Route21",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 61,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE21",
+          "group": 77,
+          "index": 30
+        }
+      },
+      "day": "gRoute21",
+      "night": "gRoute21_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE22",
+      "map_linkage": {
+        "ordinal": 270,
+        "source_map": "MAP_ROUTE22",
+        "source_name": "Route22",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 62,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE22",
+          "group": 77,
+          "index": 31
+        }
+      },
+      "day": "gRoute22",
+      "night": "gRoute22_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE24",
+      "map_linkage": {
+        "ordinal": 273,
+        "source_map": "MAP_ROUTE24",
+        "source_name": "Route24",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 65,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE24",
+          "group": 77,
+          "index": 34
+        }
+      },
+      "day": "gRoute24",
+      "night": "gRoute24_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE25",
+      "map_linkage": {
+        "ordinal": 274,
+        "source_map": "MAP_ROUTE25",
+        "source_name": "Route25",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 66,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE25",
+          "group": 77,
+          "index": 35
+        }
+      },
+      "day": "gRoute25",
+      "night": "gRoute25_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_VERMILION_CITY_PORT_OUTSIDE",
+      "map_linkage": {
+        "ordinal": 300,
+        "source_map": "MAP_VERMILION_CITY_PORT_OUTSIDE",
+        "source_name": "VermilionCity_PortOutside",
+        "source_group": "gMapGroup_IndoorVermilion",
+        "source_index": 2,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VERMILION_CITY_PORT_OUTSIDE",
+          "group": 77,
+          "index": 61
+        }
+      },
+      "day": "gVermilionCity_PortOutside",
+      "night": "gVermilionCity_PortOutside_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+      "map_linkage": {
+        "ordinal": 350,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+        "source_name": "FuchsiaCity_SafariZoneBeach",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 8,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+          "group": 77,
+          "index": 111
+        }
+      },
+      "day": "gFuchsiaCitySafariZoneBeach",
+      "night": "gFuchsiaCitySafariZoneBeach",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+      "map_linkage": {
+        "ordinal": 351,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+        "source_name": "FuchsiaCity_SafariZoneBrush",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 9,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+          "group": 77,
+          "index": 112
+        }
+      },
+      "day": "gFuchsiaCity_SafariZoneBrush",
+      "night": "gFuchsiaCity_SafariZoneBrush",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+      "map_linkage": {
+        "ordinal": 352,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+        "source_name": "FuchsiaCity_SafariZoneMountain",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 10,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+          "group": 77,
+          "index": 113
+        }
+      },
+      "day": "gFuchsiaCity_SafariZoneMountain",
+      "night": "gFuchsiaCity_SafariZoneMountain",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_CAVE",
+      "map_linkage": {
+        "ordinal": 353,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_CAVE",
+        "source_name": "FuchsiaCity_SafariZoneCave",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 11,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_CAVE",
+          "group": 77,
+          "index": 114
+        }
+      },
+      "day": "gFuchsiaCity_SafariZoneCave",
+      "night": "gFuchsiaCity_SafariZoneCave",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_VICTORY_ROAD_KANTO_B2F",
+      "map_linkage": {
+        "ordinal": 388,
+        "source_map": "MAP_VICTORY_ROAD_KANTO_B2F",
+        "source_name": "VictoryRoadKanto_B2F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 53,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_B2F",
+          "group": 78,
+          "index": 21
+        }
+      },
+      "day": "gVictoryRoadKanto_B2F",
+      "night": "gVictoryRoadKanto_B2F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_VICTORY_ROAD_KANTO_B1F",
+      "map_linkage": {
+        "ordinal": 389,
+        "source_map": "MAP_VICTORY_ROAD_KANTO_B1F",
+        "source_name": "VictoryRoadKanto_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 54,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_B1F",
+          "group": 78,
+          "index": 22
+        }
+      },
+      "day": "gVictoryRoadKanto_B1F",
+      "night": "gVictoryRoadKanto_B1F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_VICTORY_ROAD_KANTO_1F",
+      "map_linkage": {
+        "ordinal": 390,
+        "source_map": "MAP_VICTORY_ROAD_KANTO_1F",
+        "source_name": "VictoryRoadKanto_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 55,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_1F",
+          "group": 78,
+          "index": 23
+        }
+      },
+      "day": "gVictoryRoadKanto_1F",
+      "night": "gVictoryRoadKanto_1F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_VIRIDIAN_FOREST",
+      "map_linkage": {
+        "ordinal": 391,
+        "source_map": "MAP_VIRIDIAN_FOREST",
+        "source_name": "ViridianForest",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 56,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VIRIDIAN_FOREST",
+          "group": 78,
+          "index": 24
+        }
+      },
+      "day": "gViridianForest",
+      "night": "gViridianForest",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_MT_MOON_CAVE",
+      "map_linkage": {
+        "ordinal": 392,
+        "source_map": "MAP_MT_MOON_CAVE",
+        "source_name": "MtMoon_Cave",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 57,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_MT_MOON_CAVE",
+          "group": 78,
+          "index": 25
+        }
+      },
+      "day": "gMtMoon_Cave",
+      "night": "gMtMoon_Cave_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROCK_TUNNEL_B1F",
+      "map_linkage": {
+        "ordinal": 394,
+        "source_map": "MAP_ROCK_TUNNEL_B1F",
+        "source_name": "RockTunnel_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 59,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROCK_TUNNEL_B1F",
+          "group": 78,
+          "index": 27
+        }
+      },
+      "day": "gRockTunnel_B1F",
+      "night": "gRockTunnel_B1F_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_ROCK_TUNNEL_1F",
+      "map_linkage": {
+        "ordinal": 395,
+        "source_map": "MAP_ROCK_TUNNEL_1F",
+        "source_name": "RockTunnel_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 60,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROCK_TUNNEL_1F",
+          "group": 78,
+          "index": 28
+        }
+      },
+      "day": "gRockTunnel_1F",
+      "night": "gRockTunnel_1F_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_CERULEAN_CAVE_1F",
+      "map_linkage": {
+        "ordinal": 396,
+        "source_map": "MAP_CERULEAN_CAVE_1F",
+        "source_name": "CeruleanCave_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 61,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CAVE_1F",
+          "group": 78,
+          "index": 29
+        }
+      },
+      "day": "gCeruleanCave_1F",
+      "night": "gCeruleanCave_1F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_CERULEAN_CAVE_B1F",
+      "map_linkage": {
+        "ordinal": 397,
+        "source_map": "MAP_CERULEAN_CAVE_B1F",
+        "source_name": "CeruleanCave_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 62,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CAVE_B1F",
+          "group": 78,
+          "index": 30
+        }
+      },
+      "day": "gCeruleanCave_B1F",
+      "night": "gCeruleanCave_B1F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_CERULEAN_CAVE_B2F",
+      "map_linkage": {
+        "ordinal": 398,
+        "source_map": "MAP_CERULEAN_CAVE_B2F",
+        "source_name": "CeruleanCave_B2F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 63,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CAVE_B2F",
+          "group": 78,
+          "index": 31
+        }
+      },
+      "day": "gCeruleanCave_B2F",
+      "night": "gCeruleanCave_B2F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_DIGLETTS_CAVE_TUNNEL",
+      "map_linkage": {
+        "ordinal": 401,
+        "source_map": "MAP_DIGLETTS_CAVE_TUNNEL",
+        "source_name": "DiglettsCave_Tunnel",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 66,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_DIGLETTS_CAVE_TUNNEL",
+          "group": 78,
+          "index": 34
+        }
+      },
+      "day": "gDiglettsCave_Tunnel",
+      "night": "gDiglettsCave_Tunnel_Night",
+      "night_selection": "night"
+    },
+    {
+      "map": "MAP_SEAFOAM_ISLANDS_1F",
+      "map_linkage": {
+        "ordinal": 402,
+        "source_map": "MAP_SEAFOAM_ISLANDS_1F",
+        "source_name": "SeafoamIslands_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 67,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_SEAFOAM_ISLANDS_1F",
+          "group": 78,
+          "index": 35
+        }
+      },
+      "day": "gSeafoamIslands_1F",
+      "night": "gSeafoamIslands_1F",
+      "night_selection": "day_fallback"
+    },
+    {
+      "map": "MAP_SEAFOAM_ISLANDS_B1F",
+      "map_linkage": {
+        "ordinal": 404,
+        "source_map": "MAP_SEAFOAM_ISLANDS_B1F",
+        "source_name": "SeafoamIslands_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 69,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_SEAFOAM_ISLANDS_B1F",
+          "group": 78,
+          "index": 37
+        }
+      },
+      "day": "gSeafoamIslands_B1F",
+      "night": "gSeafoamIslands_B1F",
+      "night_selection": "day_fallback"
     }
   ],
   "tables": [
@@ -1738,7 +2674,25 @@
           "index": 0
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_NEW_BARK_TOWN",
@@ -1766,7 +2720,25 @@
           "index": 0
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_CHERRYGROVE_CITY",
@@ -1794,7 +2766,25 @@
           "index": 1
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_CHERRYGROVE_CITY",
@@ -1822,7 +2812,25 @@
           "index": 1
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_VIOLET_CITY",
@@ -1850,7 +2858,25 @@
           "index": 2
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_VIOLET_CITY",
@@ -1878,7 +2904,25 @@
           "index": 2
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_AZALEA_TOWN",
@@ -1962,7 +3006,25 @@
           "index": 5
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ECRUTEAK_CITY",
@@ -1990,7 +3052,25 @@
           "index": 5
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_OLIVINE_CITY",
@@ -2018,7 +3098,25 @@
           "index": 6
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_OLIVINE_CITY",
@@ -2046,7 +3144,25 @@
           "index": 6
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_CIANWOOD_CITY",
@@ -2074,7 +3190,25 @@
           "index": 7
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_CIANWOOD_CITY",
@@ -2102,7 +3236,25 @@
           "index": 7
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SAFARI_ZONE_GATE",
@@ -2186,7 +3338,25 @@
           "index": 10
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_BLACKTHORN_CITY",
@@ -2214,7 +3384,25 @@
           "index": 10
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE29",
@@ -2298,7 +3486,18 @@
           "index": 12
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE30",
@@ -2326,7 +3525,18 @@
           "index": 12
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE31",
@@ -2354,7 +3564,18 @@
           "index": 13
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE31",
@@ -2382,7 +3603,18 @@
           "index": 13
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE32",
@@ -2410,7 +3642,18 @@
           "index": 14
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE32",
@@ -2438,7 +3681,18 @@
           "index": 14
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE33",
@@ -2522,7 +3776,18 @@
           "index": 16
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE34",
@@ -2550,7 +3815,18 @@
           "index": 16
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE35",
@@ -2578,7 +3854,18 @@
           "index": 17
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE35",
@@ -2606,7 +3893,18 @@
           "index": 17
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE36",
@@ -2858,7 +4156,18 @@
           "index": 22
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE41",
@@ -2886,7 +4195,18 @@
           "index": 23
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE42",
@@ -2914,7 +4234,18 @@
           "index": 24
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE42",
@@ -2942,7 +4273,18 @@
           "index": 24
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE43",
@@ -2970,7 +4312,18 @@
           "index": 25
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE43",
@@ -2998,7 +4351,18 @@
           "index": 25
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE44",
@@ -3026,7 +4390,18 @@
           "index": 26
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE44",
@@ -3054,7 +4429,18 @@
           "index": 26
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE45",
@@ -3082,7 +4468,25 @@
           "index": 27
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE46",
@@ -3166,7 +4570,18 @@
           "index": 29
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE48",
@@ -3222,7 +4637,18 @@
           "index": 31
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE26",
@@ -3250,7 +4676,18 @@
           "index": 31
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE27",
@@ -3278,7 +4715,18 @@
           "index": 33
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE27",
@@ -3306,7 +4754,18 @@
           "index": 33
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE28",
@@ -3334,7 +4793,25 @@
           "index": 34
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ROUTE28",
@@ -3362,7 +4839,25 @@
           "index": 34
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_OLIVINE_CITY_PORT_OUTSIDE",
@@ -3390,7 +4885,25 @@
           "index": 101
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_OLIVINE_CITY_PORT_OUTSIDE",
@@ -3418,7 +4931,25 @@
           "index": 101
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_DARK_CAVE_SOUTH_SIDE",
@@ -3446,7 +4977,18 @@
           "index": 21
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_DARK_CAVE_NORTH_SIDE",
@@ -3474,7 +5016,18 @@
           "index": 22
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_DARK_CAVE_NORTH_SIDE",
@@ -3502,7 +5055,18 @@
           "index": 22
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SPROUT_TOWER_2F",
@@ -3642,7 +5206,18 @@
           "index": 26
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_RUINS_OF_ALPH_OUTSIDE",
@@ -3670,7 +5245,18 @@
           "index": 26
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_RUINS_OF_ALPH_B1F",
@@ -3726,7 +5312,18 @@
           "index": 29
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_UNION_CAVE_B1F",
@@ -3754,7 +5351,18 @@
           "index": 30
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_UNION_CAVE_B2F",
@@ -3782,7 +5390,18 @@
           "index": 31
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SLOWPOKE_WELL_B1F",
@@ -3810,7 +5429,18 @@
           "index": 32
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SLOWPOKE_WELL_B2F",
@@ -3838,7 +5468,18 @@
           "index": 33
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ILEX_FOREST",
@@ -3866,7 +5507,18 @@
           "index": 34
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ILEX_FOREST",
@@ -3894,7 +5546,18 @@
           "index": 34
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_NATIONAL_PARK_NORMAL",
@@ -4118,7 +5781,18 @@
           "index": 39
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_1F_SOUTH",
@@ -4146,7 +5820,18 @@
           "index": 40
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_1F_SOUTH",
@@ -4174,7 +5859,18 @@
           "index": 40
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_1F_NORTH",
@@ -4202,7 +5898,18 @@
           "index": 41
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_1F_NORTH",
@@ -4230,7 +5937,18 @@
           "index": 41
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_2F",
@@ -4258,7 +5976,18 @@
           "index": 42
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_2F",
@@ -4286,7 +6015,18 @@
           "index": 42
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_B1F",
@@ -4314,7 +6054,18 @@
           "index": 43
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_MORTAR_B1F",
@@ -4342,7 +6093,18 @@
           "index": 43
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_LAKE_OF_RAGE",
@@ -4370,7 +6132,25 @@
           "index": 44
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_ICE_PATH_1F",
@@ -4678,7 +6458,18 @@
           "index": 52
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_DRAGONS_DEN_CAVERN",
@@ -4706,7 +6497,18 @@
           "index": 52
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_1F",
@@ -4734,7 +6536,18 @@
           "index": 54
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_1F",
@@ -4762,7 +6575,18 @@
           "index": 54
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_B1F",
@@ -4790,7 +6614,18 @@
           "index": 55
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_B1F",
@@ -4818,7 +6653,18 @@
           "index": 55
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_B1F_INNER",
@@ -4874,7 +6720,18 @@
           "index": 57
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_B2F",
@@ -4902,7 +6759,18 @@
           "index": 57
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_B3F",
@@ -4930,7 +6798,18 @@
           "index": 58
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_WHIRL_ISLANDS_DESCENT",
@@ -4958,7 +6837,18 @@
           "index": 59
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_TIN_TOWER_3F",
@@ -5182,7 +7072,18 @@
           "index": 72
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_TOHJO_FALLS_CAVERN",
@@ -5210,7 +7111,18 @@
           "index": 72
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_OUTSIDE",
@@ -5238,7 +7150,18 @@
           "index": 74
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_OUTSIDE",
@@ -5266,7 +7189,18 @@
           "index": 74
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_1F_ITEM_ROOM",
@@ -5294,7 +7228,18 @@
           "index": 75
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_1F_ITEM_ROOM",
@@ -5322,7 +7267,18 @@
           "index": 75
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_1F_WATERFALL_ROOM",
@@ -5350,7 +7306,18 @@
           "index": 76
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_1F_WATERFALL_ROOM",
@@ -5378,7 +7345,18 @@
           "index": 76
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_1F_MOLTRES_ROOM",
@@ -5406,7 +7384,18 @@
           "index": 77
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_1F_MOLTRES_ROOM",
@@ -5434,7 +7423,18 @@
           "index": 77
         }
       },
-      "selection": "night"
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_MOUNTAIN_SIDE",
@@ -5462,7 +7462,18 @@
           "index": 78
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_MOUNTAIN_SIDE",
@@ -5518,7 +7529,18 @@
           "index": 79
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_MT_SILVER_3F",
@@ -5716,7 +7738,18 @@
           "index": 105
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SAFARI_ZONE_LOW_LEFT",
@@ -5772,7 +7805,18 @@
           "index": 108
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SAFARI_ZONE_TOP_MID",
@@ -5800,7 +7844,18 @@
           "index": 109
         }
       },
-      "selection": "day"
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
     },
     {
       "map": "MAP_SAFARI_ZONE_TOP_RIGHT",
@@ -5826,6 +7881,3545 @@
           "map_id": "MAP_SAFARI_ZONE_TOP_RIGHT",
           "group": 76,
           "index": 110
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_PALLET_TOWN",
+      "source_labels": [
+        "gPalletTown"
+      ],
+      "canonical_label": "gPalletTown",
+      "time_of_day": "day",
+      "symbol": "gPalletTown",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "NULL",
+        "rock_smash_mons": "&sJohtoWild_PalletTown_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_PalletTown_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 239,
+        "source_map": "MAP_PALLET_TOWN",
+        "source_name": "PalletTown",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 31,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_PALLET_TOWN",
+          "group": 77,
+          "index": 0
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_VIRIDIAN_CITY",
+      "source_labels": [
+        "gViridianCity"
+      ],
+      "canonical_label": "gViridianCity",
+      "time_of_day": "day",
+      "symbol": "gViridianCity",
+      "pointers": {
+        "land_mons": "&sJohtoWild_ViridianCity_land_monsInfo",
+        "water_mons": "&sJohtoWild_ViridianCity_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_ViridianCity_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_ViridianCity_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 240,
+        "source_map": "MAP_VIRIDIAN_CITY",
+        "source_name": "ViridianCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 32,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VIRIDIAN_CITY",
+          "group": 77,
+          "index": 1
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VIRIDIAN_CITY",
+      "source_labels": [
+        "gViridianCity_Night"
+      ],
+      "canonical_label": "gViridianCity_Night",
+      "time_of_day": "night",
+      "symbol": "gViridianCity_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_ViridianCity_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_ViridianCity_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_ViridianCity_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_ViridianCity_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 240,
+        "source_map": "MAP_VIRIDIAN_CITY",
+        "source_name": "ViridianCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 32,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VIRIDIAN_CITY",
+          "group": 77,
+          "index": 1
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_PEWTER_CITY",
+      "source_labels": [
+        "gPewterCity"
+      ],
+      "canonical_label": "gPewterCity",
+      "time_of_day": "day",
+      "symbol": "gPewterCity",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "NULL",
+        "rock_smash_mons": "&sJohtoWild_PewterCity_rock_smash_monsInfo",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 241,
+        "source_map": "MAP_PEWTER_CITY",
+        "source_name": "PewterCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 33,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_PEWTER_CITY",
+          "group": 77,
+          "index": 2
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_CERULEAN_CITY",
+      "source_labels": [
+        "gCeruleanCity"
+      ],
+      "canonical_label": "gCeruleanCity",
+      "time_of_day": "day",
+      "symbol": "gCeruleanCity",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_CeruleanCity_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeruleanCity_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeruleanCity_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 242,
+        "source_map": "MAP_CERULEAN_CITY",
+        "source_name": "CeruleanCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 34,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CITY",
+          "group": 77,
+          "index": 3
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CERULEAN_CITY",
+      "source_labels": [
+        "gCeruleanCity_Night"
+      ],
+      "canonical_label": "gCeruleanCity_Night",
+      "time_of_day": "night",
+      "symbol": "gCeruleanCity_Night",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_CeruleanCity_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeruleanCity_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeruleanCity_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 242,
+        "source_map": "MAP_CERULEAN_CITY",
+        "source_name": "CeruleanCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 34,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CITY",
+          "group": 77,
+          "index": 3
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VERMILION_CITY",
+      "source_labels": [
+        "gVermilionCity"
+      ],
+      "canonical_label": "gVermilionCity",
+      "time_of_day": "day",
+      "symbol": "gVermilionCity",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VermilionCity_land_monsInfo",
+        "water_mons": "&sJohtoWild_VermilionCity_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_VermilionCity_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_VermilionCity_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 243,
+        "source_map": "MAP_VERMILION_CITY",
+        "source_name": "VermilionCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 35,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VERMILION_CITY",
+          "group": 77,
+          "index": 4
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VERMILION_CITY",
+      "source_labels": [
+        "gVermilionCity_Night"
+      ],
+      "canonical_label": "gVermilionCity_Night",
+      "time_of_day": "night",
+      "symbol": "gVermilionCity_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VermilionCity_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_VermilionCity_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_VermilionCity_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_VermilionCity_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 243,
+        "source_map": "MAP_VERMILION_CITY",
+        "source_name": "VermilionCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 35,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VERMILION_CITY",
+          "group": 77,
+          "index": 4
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_LAVENDER_TOWN",
+      "source_labels": [
+        "gLavenderTown"
+      ],
+      "canonical_label": "gLavenderTown",
+      "time_of_day": "day",
+      "symbol": "gLavenderTown",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "NULL",
+        "rock_smash_mons": "&sJohtoWild_LavenderTown_rock_smash_monsInfo",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 244,
+        "source_map": "MAP_LAVENDER_TOWN",
+        "source_name": "LavenderTown",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 36,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_LAVENDER_TOWN",
+          "group": 77,
+          "index": 5
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_CELADON_CITY",
+      "source_labels": [
+        "gCeladonCity"
+      ],
+      "canonical_label": "gCeladonCity",
+      "time_of_day": "day",
+      "symbol": "gCeladonCity",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_CeladonCity_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeladonCity_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeladonCity_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 245,
+        "source_map": "MAP_CELADON_CITY",
+        "source_name": "CeladonCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 37,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CELADON_CITY",
+          "group": 77,
+          "index": 6
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CELADON_CITY",
+      "source_labels": [
+        "gCeladonCity_Night"
+      ],
+      "canonical_label": "gCeladonCity_Night",
+      "time_of_day": "night",
+      "symbol": "gCeladonCity_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_CeladonCity_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_CeladonCity_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeladonCity_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeladonCity_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 245,
+        "source_map": "MAP_CELADON_CITY",
+        "source_name": "CeladonCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 37,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CELADON_CITY",
+          "group": 77,
+          "index": 6
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_SAFFRON_CITY",
+      "source_labels": [
+        "gSaffronCity"
+      ],
+      "canonical_label": "gSaffronCity",
+      "time_of_day": "day",
+      "symbol": "gSaffronCity",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "NULL",
+        "rock_smash_mons": "&sJohtoWild_SaffronCity_rock_smash_monsInfo",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 246,
+        "source_map": "MAP_SAFFRON_CITY",
+        "source_name": "SaffronCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 38,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_SAFFRON_CITY",
+          "group": 77,
+          "index": 7
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY",
+      "source_labels": [
+        "gFuchsiaCity"
+      ],
+      "canonical_label": "gFuchsiaCity",
+      "time_of_day": "day",
+      "symbol": "gFuchsiaCity",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_FuchsiaCity_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_FuchsiaCity_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_FuchsiaCity_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 247,
+        "source_map": "MAP_FUCHSIA_CITY",
+        "source_name": "FuchsiaCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 39,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY",
+          "group": 77,
+          "index": 8
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY",
+      "source_labels": [
+        "gFuchsiaCity_Night"
+      ],
+      "canonical_label": "gFuchsiaCity_Night",
+      "time_of_day": "night",
+      "symbol": "gFuchsiaCity_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_FuchsiaCity_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_FuchsiaCity_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_FuchsiaCity_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_FuchsiaCity_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 247,
+        "source_map": "MAP_FUCHSIA_CITY",
+        "source_name": "FuchsiaCity",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 39,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY",
+          "group": 77,
+          "index": 8
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CINNABAR_ISLAND",
+      "source_labels": [
+        "gCinnabarIsland"
+      ],
+      "canonical_label": "gCinnabarIsland",
+      "time_of_day": "day",
+      "symbol": "gCinnabarIsland",
+      "pointers": {
+        "land_mons": "&sJohtoWild_CinnabarIsland_land_monsInfo",
+        "water_mons": "&sJohtoWild_CinnabarIsland_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_CinnabarIsland_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 248,
+        "source_map": "MAP_CINNABAR_ISLAND",
+        "source_name": "CinnabarIsland",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 40,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CINNABAR_ISLAND",
+          "group": 77,
+          "index": 9
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CINNABAR_ISLAND",
+      "source_labels": [
+        "gCinnabarIsland_Night"
+      ],
+      "canonical_label": "gCinnabarIsland_Night",
+      "time_of_day": "night",
+      "symbol": "gCinnabarIsland_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_CinnabarIsland_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_CinnabarIsland_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_CinnabarIsland_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 248,
+        "source_map": "MAP_CINNABAR_ISLAND",
+        "source_name": "CinnabarIsland",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 40,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CINNABAR_ISLAND",
+          "group": 77,
+          "index": 9
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE1",
+      "source_labels": [
+        "gRoute1"
+      ],
+      "canonical_label": "gRoute1",
+      "time_of_day": "day",
+      "symbol": "gRoute1",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route1_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route1_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route1_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route1_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 249,
+        "source_map": "MAP_ROUTE1",
+        "source_name": "Route1",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 41,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE1",
+          "group": 77,
+          "index": 10
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE1",
+      "source_labels": [
+        "gRoute1_Night"
+      ],
+      "canonical_label": "gRoute1_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute1_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route1_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route1_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route1_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route1_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 249,
+        "source_map": "MAP_ROUTE1",
+        "source_name": "Route1",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 41,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE1",
+          "group": 77,
+          "index": 10
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE2",
+      "source_labels": [
+        "gRoute2"
+      ],
+      "canonical_label": "gRoute2",
+      "time_of_day": "day",
+      "symbol": "gRoute2",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route2_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route2_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route2_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route2_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 250,
+        "source_map": "MAP_ROUTE2",
+        "source_name": "Route2",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 42,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE2",
+          "group": 77,
+          "index": 11
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE2",
+      "source_labels": [
+        "gRoute2_Night"
+      ],
+      "canonical_label": "gRoute2_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute2_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route2_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route2_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route2_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route2_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 250,
+        "source_map": "MAP_ROUTE2",
+        "source_name": "Route2",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 42,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE2",
+          "group": 77,
+          "index": 11
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE3",
+      "source_labels": [
+        "gRoute3"
+      ],
+      "canonical_label": "gRoute3",
+      "time_of_day": "day",
+      "symbol": "gRoute3",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route3_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route3_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route3_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route3_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 251,
+        "source_map": "MAP_ROUTE3",
+        "source_name": "Route3",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 43,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE3",
+          "group": 77,
+          "index": 12
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE3",
+      "source_labels": [
+        "gRoute3_Night"
+      ],
+      "canonical_label": "gRoute3_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute3_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route3_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route3_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route3_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route3_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 251,
+        "source_map": "MAP_ROUTE3",
+        "source_name": "Route3",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 43,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE3",
+          "group": 77,
+          "index": 12
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE4",
+      "source_labels": [
+        "gRoute4"
+      ],
+      "canonical_label": "gRoute4",
+      "time_of_day": "day",
+      "symbol": "gRoute4",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route4_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route4_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route4_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route4_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 252,
+        "source_map": "MAP_ROUTE4",
+        "source_name": "Route4",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 44,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE4",
+          "group": 77,
+          "index": 13
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE4",
+      "source_labels": [
+        "gRoute4_Night"
+      ],
+      "canonical_label": "gRoute4_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute4_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route4_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route4_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route4_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route4_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 252,
+        "source_map": "MAP_ROUTE4",
+        "source_name": "Route4",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 44,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE4",
+          "group": 77,
+          "index": 13
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE5",
+      "source_labels": [
+        "gRoute5"
+      ],
+      "canonical_label": "gRoute5",
+      "time_of_day": "day",
+      "symbol": "gRoute5",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route5_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route5_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route5_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route5_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 253,
+        "source_map": "MAP_ROUTE5",
+        "source_name": "Route5",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 45,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE5",
+          "group": 77,
+          "index": 14
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE5",
+      "source_labels": [
+        "gRoute5_Night"
+      ],
+      "canonical_label": "gRoute5_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute5_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route5_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route5_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route5_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route5_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 253,
+        "source_map": "MAP_ROUTE5",
+        "source_name": "Route5",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 45,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE5",
+          "group": 77,
+          "index": 14
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE6",
+      "source_labels": [
+        "gRoute6"
+      ],
+      "canonical_label": "gRoute6",
+      "time_of_day": "day",
+      "symbol": "gRoute6",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route6_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route6_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route6_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route6_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 254,
+        "source_map": "MAP_ROUTE6",
+        "source_name": "Route6",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 46,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE6",
+          "group": 77,
+          "index": 15
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE6",
+      "source_labels": [
+        "gRoute6_Night"
+      ],
+      "canonical_label": "gRoute6_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute6_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route6_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route6_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route6_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route6_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 254,
+        "source_map": "MAP_ROUTE6",
+        "source_name": "Route6",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 46,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE6",
+          "group": 77,
+          "index": 15
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE7",
+      "source_labels": [
+        "gRoute7"
+      ],
+      "canonical_label": "gRoute7",
+      "time_of_day": "day",
+      "symbol": "gRoute7",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route7_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route7_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route7_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route7_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 255,
+        "source_map": "MAP_ROUTE7",
+        "source_name": "Route7",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 47,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE7",
+          "group": 77,
+          "index": 16
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE7",
+      "source_labels": [
+        "gRoute7_Night"
+      ],
+      "canonical_label": "gRoute7_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute7_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route7_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route7_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route7_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route7_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 255,
+        "source_map": "MAP_ROUTE7",
+        "source_name": "Route7",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 47,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE7",
+          "group": 77,
+          "index": 16
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE8",
+      "source_labels": [
+        "gRoute8"
+      ],
+      "canonical_label": "gRoute8",
+      "time_of_day": "day",
+      "symbol": "gRoute8",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route8_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route8_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route8_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route8_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 256,
+        "source_map": "MAP_ROUTE8",
+        "source_name": "Route8",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 48,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE8",
+          "group": 77,
+          "index": 17
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE8",
+      "source_labels": [
+        "gRoute8_Night"
+      ],
+      "canonical_label": "gRoute8_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute8_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route8_Night_land_monsInfo",
+        "water_mons": "NULL",
+        "rock_smash_mons": "&sJohtoWild_Route8_Night_rock_smash_monsInfo",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 256,
+        "source_map": "MAP_ROUTE8",
+        "source_name": "Route8",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 48,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE8",
+          "group": 77,
+          "index": 17
+        }
+      },
+      "selection": "night"
+    },
+    {
+      "map": "MAP_ROUTE9",
+      "source_labels": [
+        "gRoute9"
+      ],
+      "canonical_label": "gRoute9",
+      "time_of_day": "day",
+      "symbol": "gRoute9",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route9_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route9_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route9_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route9_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 257,
+        "source_map": "MAP_ROUTE9",
+        "source_name": "Route9",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 49,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE9",
+          "group": 77,
+          "index": 18
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE9",
+      "source_labels": [
+        "gRoute9_Night"
+      ],
+      "canonical_label": "gRoute9_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute9_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route9_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route9_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route9_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route9_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 257,
+        "source_map": "MAP_ROUTE9",
+        "source_name": "Route9",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 49,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE9",
+          "group": 77,
+          "index": 18
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE10",
+      "source_labels": [
+        "gRoute10"
+      ],
+      "canonical_label": "gRoute10",
+      "time_of_day": "day",
+      "symbol": "gRoute10",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route10_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route10_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route10_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route10_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 258,
+        "source_map": "MAP_ROUTE10",
+        "source_name": "Route10",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 50,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE10",
+          "group": 77,
+          "index": 19
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE10",
+      "source_labels": [
+        "gRoute10_Night"
+      ],
+      "canonical_label": "gRoute10_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute10_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route10_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route10_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route10_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route10_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 258,
+        "source_map": "MAP_ROUTE10",
+        "source_name": "Route10",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 50,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE10",
+          "group": 77,
+          "index": 19
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE11",
+      "source_labels": [
+        "gRoute11"
+      ],
+      "canonical_label": "gRoute11",
+      "time_of_day": "day",
+      "symbol": "gRoute11",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route11_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route11_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route11_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route11_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 259,
+        "source_map": "MAP_ROUTE11",
+        "source_name": "Route11",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 51,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE11",
+          "group": 77,
+          "index": 20
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE11",
+      "source_labels": [
+        "gRoute11_Night"
+      ],
+      "canonical_label": "gRoute11_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute11_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route11_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route11_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route11_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route11_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 259,
+        "source_map": "MAP_ROUTE11",
+        "source_name": "Route11",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 51,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE11",
+          "group": 77,
+          "index": 20
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE12",
+      "source_labels": [
+        "gRoute12"
+      ],
+      "canonical_label": "gRoute12",
+      "time_of_day": "day",
+      "symbol": "gRoute12",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route12_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route12_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route12_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route12_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 260,
+        "source_map": "MAP_ROUTE12",
+        "source_name": "Route12",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 52,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE12",
+          "group": 77,
+          "index": 21
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE12",
+      "source_labels": [
+        "gRoute12_Night"
+      ],
+      "canonical_label": "gRoute12_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute12_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route12_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route12_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route12_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route12_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 260,
+        "source_map": "MAP_ROUTE12",
+        "source_name": "Route12",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 52,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE12",
+          "group": 77,
+          "index": 21
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE13",
+      "source_labels": [
+        "gRoute13"
+      ],
+      "canonical_label": "gRoute13",
+      "time_of_day": "day",
+      "symbol": "gRoute13",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route13_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route13_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route13_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route13_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 261,
+        "source_map": "MAP_ROUTE13",
+        "source_name": "Route13",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 53,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE13",
+          "group": 77,
+          "index": 22
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE13",
+      "source_labels": [
+        "gRoute13_Night"
+      ],
+      "canonical_label": "gRoute13_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute13_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route13_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route13_Night_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_Route13_Night_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_Route13_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 261,
+        "source_map": "MAP_ROUTE13",
+        "source_name": "Route13",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 53,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE13",
+          "group": 77,
+          "index": 22
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE14",
+      "source_labels": [
+        "gRoute14"
+      ],
+      "canonical_label": "gRoute14",
+      "time_of_day": "day",
+      "symbol": "gRoute14",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route14_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route14_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route14_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 262,
+        "source_map": "MAP_ROUTE14",
+        "source_name": "Route14",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 54,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE14",
+          "group": 77,
+          "index": 23
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE14",
+      "source_labels": [
+        "gRoute14_Night"
+      ],
+      "canonical_label": "gRoute14_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute14_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route14_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route14_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route14_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 262,
+        "source_map": "MAP_ROUTE14",
+        "source_name": "Route14",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 54,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE14",
+          "group": 77,
+          "index": 23
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE15",
+      "source_labels": [
+        "gRoute15"
+      ],
+      "canonical_label": "gRoute15",
+      "time_of_day": "day",
+      "symbol": "gRoute15",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route15_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route15_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route15_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 263,
+        "source_map": "MAP_ROUTE15",
+        "source_name": "Route15",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 55,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE15",
+          "group": 77,
+          "index": 24
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE15",
+      "source_labels": [
+        "gRoute15_Night"
+      ],
+      "canonical_label": "gRoute15_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute15_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route15_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route15_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route15_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 263,
+        "source_map": "MAP_ROUTE15",
+        "source_name": "Route15",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 55,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE15",
+          "group": 77,
+          "index": 24
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE16",
+      "source_labels": [
+        "gRoute16"
+      ],
+      "canonical_label": "gRoute16",
+      "time_of_day": "day",
+      "symbol": "gRoute16",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route16_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route16_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route16_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 264,
+        "source_map": "MAP_ROUTE16",
+        "source_name": "Route16",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 56,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE16",
+          "group": 77,
+          "index": 25
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE16",
+      "source_labels": [
+        "gRoute16_Night"
+      ],
+      "canonical_label": "gRoute16_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute16_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route16_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route16_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route16_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 264,
+        "source_map": "MAP_ROUTE16",
+        "source_name": "Route16",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 56,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE16",
+          "group": 77,
+          "index": 25
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE17",
+      "source_labels": [
+        "gRoute17"
+      ],
+      "canonical_label": "gRoute17",
+      "time_of_day": "day",
+      "symbol": "gRoute17",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route17_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route17_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route17_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 265,
+        "source_map": "MAP_ROUTE17",
+        "source_name": "Route17",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 57,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE17",
+          "group": 77,
+          "index": 26
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE17",
+      "source_labels": [
+        "gRoute17_Night"
+      ],
+      "canonical_label": "gRoute17_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute17_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route17_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route17_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route17_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 265,
+        "source_map": "MAP_ROUTE17",
+        "source_name": "Route17",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 57,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE17",
+          "group": 77,
+          "index": 26
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE18",
+      "source_labels": [
+        "gRoute18"
+      ],
+      "canonical_label": "gRoute18",
+      "time_of_day": "day",
+      "symbol": "gRoute18",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route18_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route18_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route18_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 266,
+        "source_map": "MAP_ROUTE18",
+        "source_name": "Route18",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 58,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE18",
+          "group": 77,
+          "index": 27
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE18",
+      "source_labels": [
+        "gRoute18_Night"
+      ],
+      "canonical_label": "gRoute18_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute18_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route18_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route18_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route18_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 266,
+        "source_map": "MAP_ROUTE18",
+        "source_name": "Route18",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 58,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE18",
+          "group": 77,
+          "index": 27
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE19",
+      "source_labels": [
+        "gRoute19"
+      ],
+      "canonical_label": "gRoute19",
+      "time_of_day": "day",
+      "symbol": "gRoute19",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_Route19_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route19_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 267,
+        "source_map": "MAP_ROUTE19",
+        "source_name": "Route19",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 59,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE19",
+          "group": 77,
+          "index": 28
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE19",
+      "source_labels": [
+        "gRoute19_Night"
+      ],
+      "canonical_label": "gRoute19_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute19_Night",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_Route19_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route19_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 267,
+        "source_map": "MAP_ROUTE19",
+        "source_name": "Route19",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 59,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE19",
+          "group": 77,
+          "index": 28
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE20",
+      "source_labels": [
+        "gRoute20"
+      ],
+      "canonical_label": "gRoute20",
+      "time_of_day": "day",
+      "symbol": "gRoute20",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_Route20_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route20_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 268,
+        "source_map": "MAP_ROUTE20",
+        "source_name": "Route20",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 60,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE20",
+          "group": 77,
+          "index": 29
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE20",
+      "source_labels": [
+        "gRoute20_Night"
+      ],
+      "canonical_label": "gRoute20_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute20_Night",
+      "pointers": {
+        "land_mons": "NULL",
+        "water_mons": "&sJohtoWild_Route20_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route20_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 268,
+        "source_map": "MAP_ROUTE20",
+        "source_name": "Route20",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 60,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE20",
+          "group": 77,
+          "index": 29
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE21",
+      "source_labels": [
+        "gRoute21"
+      ],
+      "canonical_label": "gRoute21",
+      "time_of_day": "day",
+      "symbol": "gRoute21",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route21_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route21_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route21_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 269,
+        "source_map": "MAP_ROUTE21",
+        "source_name": "Route21",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 61,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE21",
+          "group": 77,
+          "index": 30
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE21",
+      "source_labels": [
+        "gRoute21_Night"
+      ],
+      "canonical_label": "gRoute21_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute21_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route21_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route21_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route21_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 269,
+        "source_map": "MAP_ROUTE21",
+        "source_name": "Route21",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 61,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE21",
+          "group": 77,
+          "index": 30
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE22",
+      "source_labels": [
+        "gRoute22"
+      ],
+      "canonical_label": "gRoute22",
+      "time_of_day": "day",
+      "symbol": "gRoute22",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route22_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route22_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route22_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 270,
+        "source_map": "MAP_ROUTE22",
+        "source_name": "Route22",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 62,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE22",
+          "group": 77,
+          "index": 31
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE22",
+      "source_labels": [
+        "gRoute22_Night"
+      ],
+      "canonical_label": "gRoute22_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute22_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route22_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route22_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route22_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 270,
+        "source_map": "MAP_ROUTE22",
+        "source_name": "Route22",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 62,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE22",
+          "group": 77,
+          "index": 31
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE24",
+      "source_labels": [
+        "gRoute24"
+      ],
+      "canonical_label": "gRoute24",
+      "time_of_day": "day",
+      "symbol": "gRoute24",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route24_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route24_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route24_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 273,
+        "source_map": "MAP_ROUTE24",
+        "source_name": "Route24",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 65,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE24",
+          "group": 77,
+          "index": 34
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE24",
+      "source_labels": [
+        "gRoute24_Night"
+      ],
+      "canonical_label": "gRoute24_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute24_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route24_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route24_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route24_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 273,
+        "source_map": "MAP_ROUTE24",
+        "source_name": "Route24",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 65,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE24",
+          "group": 77,
+          "index": 34
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE25",
+      "source_labels": [
+        "gRoute25"
+      ],
+      "canonical_label": "gRoute25",
+      "time_of_day": "day",
+      "symbol": "gRoute25",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route25_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route25_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route25_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 274,
+        "source_map": "MAP_ROUTE25",
+        "source_name": "Route25",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 66,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE25",
+          "group": 77,
+          "index": 35
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROUTE25",
+      "source_labels": [
+        "gRoute25_Night"
+      ],
+      "canonical_label": "gRoute25_Night",
+      "time_of_day": "night",
+      "symbol": "gRoute25_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_Route25_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_Route25_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_Route25_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 274,
+        "source_map": "MAP_ROUTE25",
+        "source_name": "Route25",
+        "source_group": "gMapGroup_TownsAndRoutes",
+        "source_index": 66,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROUTE25",
+          "group": 77,
+          "index": 35
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 10,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VERMILION_CITY_PORT_OUTSIDE",
+      "source_labels": [
+        "gVermilionCity_PortOutside"
+      ],
+      "canonical_label": "gVermilionCity_PortOutside",
+      "time_of_day": "day",
+      "symbol": "gVermilionCity_PortOutside",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VermilionCity_PortOutside_land_monsInfo",
+        "water_mons": "&sJohtoWild_VermilionCity_PortOutside_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_VermilionCity_PortOutside_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 300,
+        "source_map": "MAP_VERMILION_CITY_PORT_OUTSIDE",
+        "source_name": "VermilionCity_PortOutside",
+        "source_group": "gMapGroup_IndoorVermilion",
+        "source_index": 2,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VERMILION_CITY_PORT_OUTSIDE",
+          "group": 77,
+          "index": 61
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VERMILION_CITY_PORT_OUTSIDE",
+      "source_labels": [
+        "gVermilionCity_PortOutside_Night"
+      ],
+      "canonical_label": "gVermilionCity_PortOutside_Night",
+      "time_of_day": "night",
+      "symbol": "gVermilionCity_PortOutside_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VermilionCity_PortOutside_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_VermilionCity_PortOutside_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_VermilionCity_PortOutside_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 300,
+        "source_map": "MAP_VERMILION_CITY_PORT_OUTSIDE",
+        "source_name": "VermilionCity_PortOutside",
+        "source_group": "gMapGroup_IndoorVermilion",
+        "source_index": 2,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VERMILION_CITY_PORT_OUTSIDE",
+          "group": 77,
+          "index": 61
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 12,
+        "mode": "uniform_explicit_slots",
+        "weights": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+      "source_labels": [
+        "gFuchsiaCitySafariZoneBeach"
+      ],
+      "canonical_label": "gFuchsiaCitySafariZoneBeach",
+      "time_of_day": "day",
+      "symbol": "gFuchsiaCitySafariZoneBeach",
+      "pointers": {
+        "land_mons": "&sJohtoWild_FuchsiaCitySafariZoneBeach_land_monsInfo",
+        "water_mons": "&sJohtoWild_FuchsiaCitySafariZoneBeach_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_FuchsiaCitySafariZoneBeach_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 350,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+        "source_name": "FuchsiaCity_SafariZoneBeach",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 8,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BEACH",
+          "group": 77,
+          "index": 111
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+      "source_labels": [
+        "gFuchsiaCity_SafariZoneBrush"
+      ],
+      "canonical_label": "gFuchsiaCity_SafariZoneBrush",
+      "time_of_day": "day",
+      "symbol": "gFuchsiaCity_SafariZoneBrush",
+      "pointers": {
+        "land_mons": "&sJohtoWild_FuchsiaCity_SafariZoneBrush_land_monsInfo",
+        "water_mons": "NULL",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 351,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+        "source_name": "FuchsiaCity_SafariZoneBrush",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 9,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_BRUSH",
+          "group": 77,
+          "index": 112
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+      "source_labels": [
+        "gFuchsiaCity_SafariZoneMountain"
+      ],
+      "canonical_label": "gFuchsiaCity_SafariZoneMountain",
+      "time_of_day": "day",
+      "symbol": "gFuchsiaCity_SafariZoneMountain",
+      "pointers": {
+        "land_mons": "&sJohtoWild_FuchsiaCity_SafariZoneMountain_land_monsInfo",
+        "water_mons": "&sJohtoWild_FuchsiaCity_SafariZoneMountain_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_FuchsiaCity_SafariZoneMountain_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 352,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+        "source_name": "FuchsiaCity_SafariZoneMountain",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 10,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_MOUNTAIN",
+          "group": 77,
+          "index": 113
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_CAVE",
+      "source_labels": [
+        "gFuchsiaCity_SafariZoneCave"
+      ],
+      "canonical_label": "gFuchsiaCity_SafariZoneCave",
+      "time_of_day": "day",
+      "symbol": "gFuchsiaCity_SafariZoneCave",
+      "pointers": {
+        "land_mons": "&sJohtoWild_FuchsiaCity_SafariZoneCave_land_monsInfo",
+        "water_mons": "&sJohtoWild_FuchsiaCity_SafariZoneCave_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_FuchsiaCity_SafariZoneCave_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 353,
+        "source_map": "MAP_FUCHSIA_CITY_SAFARI_ZONE_CAVE",
+        "source_name": "FuchsiaCity_SafariZoneCave",
+        "source_group": "gMapGroup_IndoorFuchsia",
+        "source_index": 11,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_FUCHSIA_CITY_SAFARI_ZONE_CAVE",
+          "group": 77,
+          "index": 114
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VICTORY_ROAD_KANTO_B2F",
+      "source_labels": [
+        "gVictoryRoadKanto_B2F"
+      ],
+      "canonical_label": "gVictoryRoadKanto_B2F",
+      "time_of_day": "day",
+      "symbol": "gVictoryRoadKanto_B2F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VictoryRoadKanto_B2F_land_monsInfo",
+        "water_mons": "&sJohtoWild_VictoryRoadKanto_B2F_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_VictoryRoadKanto_B2F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 388,
+        "source_map": "MAP_VICTORY_ROAD_KANTO_B2F",
+        "source_name": "VictoryRoadKanto_B2F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 53,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_B2F",
+          "group": 78,
+          "index": 21
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VICTORY_ROAD_KANTO_B1F",
+      "source_labels": [
+        "gVictoryRoadKanto_B1F"
+      ],
+      "canonical_label": "gVictoryRoadKanto_B1F",
+      "time_of_day": "day",
+      "symbol": "gVictoryRoadKanto_B1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VictoryRoadKanto_B1F_land_monsInfo",
+        "water_mons": "&sJohtoWild_VictoryRoadKanto_B1F_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_VictoryRoadKanto_B1F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 389,
+        "source_map": "MAP_VICTORY_ROAD_KANTO_B1F",
+        "source_name": "VictoryRoadKanto_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 54,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_B1F",
+          "group": 78,
+          "index": 22
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VICTORY_ROAD_KANTO_1F",
+      "source_labels": [
+        "gVictoryRoadKanto_1F"
+      ],
+      "canonical_label": "gVictoryRoadKanto_1F",
+      "time_of_day": "day",
+      "symbol": "gVictoryRoadKanto_1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_VictoryRoadKanto_1F_land_monsInfo",
+        "water_mons": "&sJohtoWild_VictoryRoadKanto_1F_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_VictoryRoadKanto_1F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 390,
+        "source_map": "MAP_VICTORY_ROAD_KANTO_1F",
+        "source_name": "VictoryRoadKanto_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 55,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VICTORY_ROAD_KANTO_1F",
+          "group": 78,
+          "index": 23
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_VIRIDIAN_FOREST",
+      "source_labels": [
+        "gViridianForest"
+      ],
+      "canonical_label": "gViridianForest",
+      "time_of_day": "day",
+      "symbol": "gViridianForest",
+      "pointers": {
+        "land_mons": "&sJohtoWild_ViridianForest_land_monsInfo",
+        "water_mons": "NULL",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 391,
+        "source_map": "MAP_VIRIDIAN_FOREST",
+        "source_name": "ViridianForest",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 56,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_VIRIDIAN_FOREST",
+          "group": 78,
+          "index": 24
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_MT_MOON_CAVE",
+      "source_labels": [
+        "gMtMoon_Cave"
+      ],
+      "canonical_label": "gMtMoon_Cave",
+      "time_of_day": "day",
+      "symbol": "gMtMoon_Cave",
+      "pointers": {
+        "land_mons": "&sJohtoWild_MtMoon_Cave_land_monsInfo",
+        "water_mons": "&sJohtoWild_MtMoon_Cave_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_MtMoon_Cave_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 392,
+        "source_map": "MAP_MT_MOON_CAVE",
+        "source_name": "MtMoon_Cave",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 57,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_MT_MOON_CAVE",
+          "group": 78,
+          "index": 25
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_MT_MOON_CAVE",
+      "source_labels": [
+        "gMtMoon_Cave_Night"
+      ],
+      "canonical_label": "gMtMoon_Cave_Night",
+      "time_of_day": "night",
+      "symbol": "gMtMoon_Cave_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_MtMoon_Cave_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_MtMoon_Cave_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_MtMoon_Cave_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 392,
+        "source_map": "MAP_MT_MOON_CAVE",
+        "source_name": "MtMoon_Cave",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 57,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_MT_MOON_CAVE",
+          "group": 78,
+          "index": 25
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROCK_TUNNEL_B1F",
+      "source_labels": [
+        "gRockTunnel_B1F"
+      ],
+      "canonical_label": "gRockTunnel_B1F",
+      "time_of_day": "day",
+      "symbol": "gRockTunnel_B1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_RockTunnel_B1F_land_monsInfo",
+        "water_mons": "&sJohtoWild_RockTunnel_B1F_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_RockTunnel_B1F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 394,
+        "source_map": "MAP_ROCK_TUNNEL_B1F",
+        "source_name": "RockTunnel_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 59,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROCK_TUNNEL_B1F",
+          "group": 78,
+          "index": 27
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROCK_TUNNEL_B1F",
+      "source_labels": [
+        "gRockTunnel_B1F_Night"
+      ],
+      "canonical_label": "gRockTunnel_B1F_Night",
+      "time_of_day": "night",
+      "symbol": "gRockTunnel_B1F_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_RockTunnel_B1F_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_RockTunnel_B1F_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_RockTunnel_B1F_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 394,
+        "source_map": "MAP_ROCK_TUNNEL_B1F",
+        "source_name": "RockTunnel_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 59,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROCK_TUNNEL_B1F",
+          "group": 78,
+          "index": 27
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROCK_TUNNEL_1F",
+      "source_labels": [
+        "gRockTunnel_1F"
+      ],
+      "canonical_label": "gRockTunnel_1F",
+      "time_of_day": "day",
+      "symbol": "gRockTunnel_1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_RockTunnel_1F_land_monsInfo",
+        "water_mons": "&sJohtoWild_RockTunnel_1F_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_RockTunnel_1F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 395,
+        "source_map": "MAP_ROCK_TUNNEL_1F",
+        "source_name": "RockTunnel_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 60,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROCK_TUNNEL_1F",
+          "group": 78,
+          "index": 28
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_ROCK_TUNNEL_1F",
+      "source_labels": [
+        "gRockTunnel_1F_Night"
+      ],
+      "canonical_label": "gRockTunnel_1F_Night",
+      "time_of_day": "night",
+      "symbol": "gRockTunnel_1F_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_RockTunnel_1F_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_RockTunnel_1F_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_RockTunnel_1F_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 395,
+        "source_map": "MAP_ROCK_TUNNEL_1F",
+        "source_name": "RockTunnel_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 60,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_ROCK_TUNNEL_1F",
+          "group": 78,
+          "index": 28
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CERULEAN_CAVE_1F",
+      "source_labels": [
+        "gCeruleanCave_1F"
+      ],
+      "canonical_label": "gCeruleanCave_1F",
+      "time_of_day": "day",
+      "symbol": "gCeruleanCave_1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_CeruleanCave_1F_land_monsInfo",
+        "water_mons": "&sJohtoWild_CeruleanCave_1F_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeruleanCave_1F_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeruleanCave_1F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 396,
+        "source_map": "MAP_CERULEAN_CAVE_1F",
+        "source_name": "CeruleanCave_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 61,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CAVE_1F",
+          "group": 78,
+          "index": 29
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CERULEAN_CAVE_B1F",
+      "source_labels": [
+        "gCeruleanCave_B1F"
+      ],
+      "canonical_label": "gCeruleanCave_B1F",
+      "time_of_day": "day",
+      "symbol": "gCeruleanCave_B1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_CeruleanCave_B1F_land_monsInfo",
+        "water_mons": "&sJohtoWild_CeruleanCave_B1F_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeruleanCave_B1F_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeruleanCave_B1F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 397,
+        "source_map": "MAP_CERULEAN_CAVE_B1F",
+        "source_name": "CeruleanCave_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 62,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CAVE_B1F",
+          "group": 78,
+          "index": 30
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_CERULEAN_CAVE_B2F",
+      "source_labels": [
+        "gCeruleanCave_B2F"
+      ],
+      "canonical_label": "gCeruleanCave_B2F",
+      "time_of_day": "day",
+      "symbol": "gCeruleanCave_B2F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_CeruleanCave_B2F_land_monsInfo",
+        "water_mons": "&sJohtoWild_CeruleanCave_B2F_water_monsInfo",
+        "rock_smash_mons": "&sJohtoWild_CeruleanCave_B2F_rock_smash_monsInfo",
+        "fishing_mons": "&sJohtoWild_CeruleanCave_B2F_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 398,
+        "source_map": "MAP_CERULEAN_CAVE_B2F",
+        "source_name": "CeruleanCave_B2F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 63,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_CERULEAN_CAVE_B2F",
+          "group": 78,
+          "index": 31
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_DIGLETTS_CAVE_TUNNEL",
+      "source_labels": [
+        "gDiglettsCave_Tunnel"
+      ],
+      "canonical_label": "gDiglettsCave_Tunnel",
+      "time_of_day": "day",
+      "symbol": "gDiglettsCave_Tunnel",
+      "pointers": {
+        "land_mons": "&sJohtoWild_DiglettsCave_Tunnel_land_monsInfo",
+        "water_mons": "&sJohtoWild_DiglettsCave_Tunnel_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_DiglettsCave_Tunnel_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 401,
+        "source_map": "MAP_DIGLETTS_CAVE_TUNNEL",
+        "source_name": "DiglettsCave_Tunnel",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 66,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_DIGLETTS_CAVE_TUNNEL",
+          "group": 78,
+          "index": 34
+        }
+      },
+      "selection": "day",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_DIGLETTS_CAVE_TUNNEL",
+      "source_labels": [
+        "gDiglettsCave_Tunnel_Night"
+      ],
+      "canonical_label": "gDiglettsCave_Tunnel_Night",
+      "time_of_day": "night",
+      "symbol": "gDiglettsCave_Tunnel_Night",
+      "pointers": {
+        "land_mons": "&sJohtoWild_DiglettsCave_Tunnel_Night_land_monsInfo",
+        "water_mons": "&sJohtoWild_DiglettsCave_Tunnel_Night_water_monsInfo",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "&sJohtoWild_DiglettsCave_Tunnel_Night_fishing_monsInfo"
+      },
+      "map_linkage": {
+        "ordinal": 401,
+        "source_map": "MAP_DIGLETTS_CAVE_TUNNEL",
+        "source_name": "DiglettsCave_Tunnel",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 66,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_DIGLETTS_CAVE_TUNNEL",
+          "group": 78,
+          "index": 34
+        }
+      },
+      "selection": "night",
+      "water_selection": {
+        "slot_count": 5,
+        "mode": "weighted",
+        "weights": [
+          60,
+          30,
+          5,
+          4,
+          1
+        ]
+      }
+    },
+    {
+      "map": "MAP_SEAFOAM_ISLANDS_1F",
+      "source_labels": [
+        "gSeafoamIslands_1F"
+      ],
+      "canonical_label": "gSeafoamIslands_1F",
+      "time_of_day": "day",
+      "symbol": "gSeafoamIslands_1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_SeafoamIslands_1F_land_monsInfo",
+        "water_mons": "NULL",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 402,
+        "source_map": "MAP_SEAFOAM_ISLANDS_1F",
+        "source_name": "SeafoamIslands_1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 67,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_SEAFOAM_ISLANDS_1F",
+          "group": 78,
+          "index": 35
+        }
+      },
+      "selection": "day"
+    },
+    {
+      "map": "MAP_SEAFOAM_ISLANDS_B1F",
+      "source_labels": [
+        "gSeafoamIslands_B1F"
+      ],
+      "canonical_label": "gSeafoamIslands_B1F",
+      "time_of_day": "day",
+      "symbol": "gSeafoamIslands_B1F",
+      "pointers": {
+        "land_mons": "&sJohtoWild_SeafoamIslands_B1F_land_monsInfo",
+        "water_mons": "NULL",
+        "rock_smash_mons": "NULL",
+        "fishing_mons": "NULL"
+      },
+      "map_linkage": {
+        "ordinal": 404,
+        "source_map": "MAP_SEAFOAM_ISLANDS_B1F",
+        "source_name": "SeafoamIslands_B1F",
+        "source_group": "gMapGroup_Dungeons",
+        "source_index": 69,
+        "host": {
+          "map_id": "MAP_KANTO_LATER_SEAFOAM_ISLANDS_B1F",
+          "group": 78,
+          "index": 37
         }
       },
       "selection": "day"

@@ -2,7 +2,7 @@
   "id": "MAP_WHIRL_ISLANDS_DESCENT",
   "name": "WhirlIslands_Descent",
   "layout": "LAYOUT_JOHTO_WHIRL_ISLANDS_DESCENT",
-  "music": "MUS_HG_UNION_CAVE",
+  "music": "MUS_PETALBURG_WOODS",
   "region_map_section": "MAPSEC_JOHTO_WHIRL_ISLANDS",
   "requires_flash": false,
   "weather": "WEATHER_SHADE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 59,
       "y": 55,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_WhirlIslands_Descent_WhirlIslands_Descent_EventScript_Item_PP_Max",
-      "flag": "FLAG_ITEM_WHIRL_ISLANDS_B1F_PP_MAX"
+      "flag": "JOHTO_FLAG_ITEM_WHIRL_ISLANDS_B1F_PP_MAX"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 47,
       "y": 29,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_WhirlIslands_Descent_WhirlIslands_Descent_EventScript_Item_Full_Restore",
-      "flag": "FLAG_ITEM_WHIRL_ISLANDS_B1F_FULL_RESTORE"
+      "flag": "JOHTO_FLAG_ITEM_WHIRL_ISLANDS_B1F_FULL_RESTORE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
       "x": 27,
       "y": 10,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_WhirlIslands_Descent_WhirlIslands_Descent_EventScript_Item_Max_Revive",
-      "flag": "FLAG_ITEM_WHIRL_ISLANDS_B1F_MAX_REVIVE"
+      "flag": "JOHTO_FLAG_ITEM_WHIRL_ISLANDS_B1F_MAX_REVIVE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 35,
       "y": 86,
       "elevation": 0,
@@ -64,7 +64,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_Route41_Route41_EventScript_Tentacruel1",
-      "flag": "FLAG_HIDE_WHIRL_ISLANDS_TENTACRUEL"
+      "flag": "JOHTO_FLAG_HIDE_WHIRL_ISLANDS_TENTACRUEL"
     },
     {
       "graphics_id": "OBJ_EVENT_GFX_LIGHT_SPRITE",
@@ -353,7 +353,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_XATU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(XATU)",
       "x": 51,
       "y": 50,
       "elevation": 0,
@@ -366,7 +366,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 50,
       "y": 10,
       "elevation": 0,
@@ -379,7 +379,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 5,
       "y": 9,
       "elevation": 0,
@@ -392,7 +392,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SEEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SEEL)",
       "x": 4,
       "y": 10,
       "elevation": 0,
@@ -405,7 +405,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 47,
       "y": 12,
       "elevation": 0,
@@ -418,7 +418,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_XATU",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(XATU)",
       "x": 53,
       "y": 52,
       "elevation": 0,
@@ -431,7 +431,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 17,
       "y": 26,
       "elevation": 0,
@@ -444,7 +444,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_DEWGONG",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DEWGONG)",
       "x": 20,
       "y": 30,
       "elevation": 0,
@@ -457,7 +457,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 51,
       "y": 26,
       "elevation": 0,
@@ -470,7 +470,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 49,
       "y": 40,
       "elevation": 0,
@@ -483,7 +483,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 60,
       "y": 45,
       "elevation": 0,
@@ -496,7 +496,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 16,
       "y": 48,
       "elevation": 0,
@@ -509,7 +509,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 18,
       "y": 46,
       "elevation": 0,
@@ -522,7 +522,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 23,
       "y": 69,
       "elevation": 0,
@@ -535,7 +535,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 19,
       "y": 68,
       "elevation": 0,
@@ -548,7 +548,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 47,
       "y": 69,
       "elevation": 0,
@@ -561,7 +561,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GOLBAT",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GOLBAT)",
       "x": 61,
       "y": 82,
       "elevation": 0,
@@ -574,7 +574,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_OMANYTE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(OMANYTE)",
       "x": 23,
       "y": 79,
       "elevation": 0,
@@ -587,7 +587,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_OMANYTE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(OMANYTE)",
       "x": 18,
       "y": 78,
       "elevation": 0,
@@ -600,7 +600,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 28,
       "y": 96,
       "elevation": 0,
@@ -613,7 +613,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_TENTACRUEL",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(TENTACRUEL)",
       "x": 61,
       "y": 91,
       "elevation": 0,
@@ -626,7 +626,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KABUTO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KABUTO)",
       "x": 17,
       "y": 92,
       "elevation": 0,

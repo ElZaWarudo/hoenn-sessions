@@ -90,14 +90,14 @@ class JohtoBugContestSaveFenceTests(unittest.TestCase):
         self.assertIn("sProgramCalls, 0", self.fixture)
         self.assertGreaterEqual(self.fixture.count("TEST("), 2)
 
-    def test_provenance_tracks_normalized_core_and_keeps_campaign_pending(self):
+    def test_provenance_tracks_normalized_core_and_completed_campaign_hooks(self):
         provenance = json.loads((ROOT / "data/johto/bug_contest.json").read_text())
         donor = DONOR / "src/bug_contest.c"
         self.assertEqual(provenance["provenance"]["donor_revision"], "751823abaf677020bcd72c45fe3e7cb2b8a576e4")
         self.assertEqual(provenance["provenance"]["donor_source_sha256"], hashlib.sha256(donor.read_bytes()).hexdigest())
         self.assertEqual(provenance["provenance"]["target_source_sha256"], normalized_sha256(ROOT / "src/johto/bug_contest.c"))
-        self.assertFalse(provenance["engine_hooks_ready"])
-        self.assertFalse(provenance["campaign_ready"])
+        self.assertTrue(provenance["engine_hooks_ready"])
+        self.assertTrue(provenance["campaign_ready"])
         self.assertTrue(any("Serialization fence" in item for item in provenance["adaptations"]))
 
 

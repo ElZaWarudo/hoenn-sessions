@@ -1,6 +1,7 @@
 #include "global.h"
 #include "event_data.h"
 #include "field_specials.h"
+#include "move.h"
 #include "pokemon.h"
 #include "string_util.h"
 #include "test/test.h"

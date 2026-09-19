@@ -113,6 +113,79 @@ HOST_SYMBOL_ALIASES = {
     "Route121_SafariZoneGate_SafariZoneEntrance_Text_YouNeedPokeblockCase": "Route121_SafariZoneEntrance_Text_YouNeedPokeblockCase",
 }
 
+# Unlike the label aliases above, these donor symbols are typed constants.
+# Keep them out of HOST_SYMBOL_ALIASES so operand validation does not classify
+# a trade ID as an event-script label.
+HOST_CONSTANT_ALIASES = {
+    # Donor-only script constants whose host runtime uses a different ABI.
+    # The Johto quest adapter returns 1 for an ordinary Magikarp and 2 for a
+    # level-100 Magikarp, matching the donor's unsatisfactory/satisfactory
+    # branch values.  The host move-tutor menu consumes a move id directly,
+    # and multi_2_vs_2 selects SPECIAL_BATTLE_MULTI itself.
+    "MON_UNSATISFACTORY": "1",
+    "MON_SATISFACTORY": "2",
+    "TUTOR_MOVE_HEADBUTT": "MOVE_HEADBUTT",
+    "SPECIAL_BATTLE_LANCE": "SPECIAL_BATTLE_MULTI",
+    "INGAME_TRADE_ONIX": "INGAME_TRADE_JOHTO_ONIX",
+    "INGAME_TRADE_MACHOP": "INGAME_TRADE_JOHTO_MACHOP",
+    "INGAME_TRADE_VOLTORB": "INGAME_TRADE_JOHTO_VOLTORB",
+    "INGAME_TRADE_MR_MIME": "INGAME_TRADE_JOHTO_MR_MIME",
+    "FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR": "JOHTO_FLAG_MET_FRONTIER_ELEMENTAL_MOVE_TUTOR",
+    "HEAL_LOCATION_NEW_BARK_TOWN": "HEAL_LOCATION_JOHTO_NEW_BARK_TOWN",
+    "HEAL_LOCATION_CHERRYGROVE_CITY": "HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY",
+    "HEAL_LOCATION_VIOLET_CITY": "HEAL_LOCATION_JOHTO_VIOLET_CITY",
+    "HEAL_LOCATION_AZALEA_TOWN": "HEAL_LOCATION_JOHTO_AZALEA_TOWN",
+    "HEAL_LOCATION_GOLDENROD_CITY": "HEAL_LOCATION_JOHTO_GOLDENROD_CITY",
+    "HEAL_LOCATION_ECRUTEAK_CITY": "HEAL_LOCATION_JOHTO_ECRUTEAK_CITY",
+    "HEAL_LOCATION_OLIVINE_CITY": "HEAL_LOCATION_JOHTO_OLIVINE_CITY",
+    "HEAL_LOCATION_CIANWOOD_CITY": "HEAL_LOCATION_JOHTO_CIANWOOD_CITY",
+    "HEAL_LOCATION_MAHOGANYTOWN": "HEAL_LOCATION_JOHTO_MAHOGANY_TOWN",
+    "HEAL_LOCATION_BLACKTHORN_CITY": "HEAL_LOCATION_JOHTO_BLACKTHORN_CITY",
+    # These three additions are enum-only C constants. Assembly does not see
+    # enum members, so lower them to their exact stable host enum values.
+    "HEAL_LOCATION_ROUTE_32": "53",
+    "HEAL_LOCATION_SAFARI_ZONE_GATE": "54",
+    "HEAL_LOCATION_MT_SILVER": "55",
+    "ITEM_LOST_ITEM": "ITEM_JOHTO_LOST_ITEM",
+    "ITEM_MACHINE_PART": "ITEM_JOHTO_MACHINE_PART",
+    "ITEM_RADIO": "ITEM_JOHTO_RADIO",
+    "ITEM_SQUIRT_BOTTLE": "ITEM_JOHTO_SQUIRT_BOTTLE",
+    "MULTI_5FLOORS": "MULTI_JOHTO_5FLOORS",
+    "MULTI_7FLOORS": "MULTI_JOHTO_7FLOORS",
+    "MULTI_DAYS_OF_WEEK": "MULTI_JOHTO_DAYS_OF_WEEK",
+    "MULTI_ELDERQUIIZ1": "MULTI_JOHTO_ELDER_QUIZ_1",
+    "MULTI_ELDERQUIIZ2": "MULTI_JOHTO_ELDER_QUIZ_2",
+    "MULTI_ELDERQUIIZ3": "MULTI_JOHTO_ELDER_QUIZ_3",
+    "MULTI_ELDERQUIIZ4": "MULTI_JOHTO_ELDER_QUIZ_4",
+    "MULTI_ELDERQUIIZ5": "MULTI_JOHTO_ELDER_QUIZ_5",
+    "MULTI_GOLDSILVER": "MULTI_JOHTO_GOLD_SILVER",
+    "MULTI_HOENN_STARTERS": "MULTI_JOHTO_HOENN_STARTERS",
+    "MULTI_KURT_BALLS": "MULTI_JOHTO_KURT_BALLS",
+    "MULTI_OLIVINE_HARBOR": "MULTI_JOHTO_OLIVINE_HARBOR",
+    "MULTI_PRIZE_MONS": "MULTI_JOHTO_PRIZE_MONS",
+    "MULTI_VERMILION_HARBOR": "MULTI_JOHTO_VERMILION_HARBOR",
+    "METATILE_R26_21_Broken_Window": "0x32B",
+    # The imported theater beam owns its appearance; the host movement ABI has
+    # no beam callback, so keep that visual object stationary and invisible.
+    "MOVEMENT_TYPE_TOWER_BEAM": "MOVEMENT_TYPE_INVISIBLE",
+    "MUS_HG_ENCOUNTER_RIVAL": "MUS_RG_ENCOUNTER_RIVAL",
+    "MUS_HG_EUSINE": "MUS_C_VS_LEGEND_BEAST",
+    "MUS_HG_FOLLOW_ME_1": "MUS_FOLLOW_ME",
+    "MUS_HG_GOLDENROD": "MUS_RUSTBORO",
+    "MUS_HG_KIMONO_GIRL": "MUS_VERDANTURF",
+    "MUS_HG_KIMONO_GIRL_DANCE": "MUS_SCHOOL",
+    "MUS_HG_NEW_BARK": "MUS_LITTLEROOT",
+    "MUS_HG_OAK": "MUS_RG_OAK",
+    "MUS_HG_POKEGEAR_REGISTERED": "MUS_REGISTER_MATCH_CALL",
+    "MUS_HG_RADIO_POKE_FLUTE": "MUS_RG_POKE_FLUTE",
+    "MUS_HG_RADIO_ROCKET": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_RIVAL_EXIT": "MUS_RG_RIVAL_EXIT",
+    "MUS_HG_ROCKET_TAKEOVER": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_TEAM_ROCKET_HQ": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_VS_HO_OH": "MUS_VS_KYOGRE_GROUDON",
+    "MUS_HG_VS_LUGIA": "MUS_VS_KYOGRE_GROUDON",
+}
+
 # Constants supplied by the other authenticated Johto/Kanto world units.  The
 # list is intentionally finite and role-specific; an arbitrary unknown upper-
 # case token is still rejected.
@@ -552,6 +625,78 @@ def _replace_required_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def _group_travel_request(
+    label: str,
+    original_route: int,
+    later_route: int,
+    departure_context: int,
+    failure_label: str,
+) -> str:
+    """Branch an era choice through co-op consent before the solo travel path."""
+    return (
+        "\tswitch JOHTO_VAR_RESULT\n"
+        f"\tcase 2, {label}_GroupTravelOriginal\n"
+        f"\tcase 3, {label}_GroupTravelLater\n"
+        f"\tgoto {failure_label}\n\n"
+        f"{label}_GroupTravelOriginal::\n"
+        f"\tsetvar VAR_0x8004, {original_route}\n"
+        f"\tgoto {label}_RequestGroupTravel\n\n"
+        f"{label}_GroupTravelLater::\n"
+        f"\tsetvar VAR_0x8004, {later_route}\n\n"
+        f"{label}_RequestGroupTravel::\n"
+        f"\tsetvar VAR_0x8005, {departure_context}\n"
+        "\tspecial Special_CoopGroupTravelBegin\n"
+        f"\tgoto_if_eq VAR_RESULT, 0, {label}_SoloTravel\n"
+        f"\tgoto_if_eq VAR_RESULT, 1, {label}_GroupTravelWaiting\n"
+        f"\tgoto {failure_label}\n\n"
+        f"{label}_GroupTravelWaiting::\n"
+        "\tend\n\n"
+        f"{label}_SoloTravel::\n"
+    )
+
+
+def _apply_trade_abi_overrides(text: str) -> str:
+    """Translate the donor trade scratch variables to the host trade ABI."""
+    trade_ids = (
+        "INGAME_TRADE_JOHTO_ONIX",
+        "INGAME_TRADE_JOHTO_MACHOP",
+        "INGAME_TRADE_JOHTO_VOLTORB",
+        "INGAME_TRADE_JOHTO_MR_MIME",
+    )
+    present = [trade_id for trade_id in trade_ids if f"setvar VAR_0x8008, {trade_id}" in text]
+    if not present:
+        return text
+    if len(present) != len(trade_ids):
+        missing = ", ".join(sorted(set(trade_ids) - set(present)))
+        raise ScriptError(f"incomplete Johto in-game trade source set: {missing}")
+
+    for trade_id in trade_ids:
+        text = _replace_required_once(
+            text,
+            f"\tsetvar VAR_0x8008, {trade_id}\n"
+            "\tcopyvar VAR_0x8004, VAR_0x8008\n"
+            "\tspecialvar JOHTO_VAR_RESULT, GetInGameTradeSpeciesInfo\n",
+            f"\tsetvar VAR_0x8008, {trade_id}\n"
+            "\tcopyvar VAR_0x8005, VAR_0x8008\n"
+            "\tspecialvar JOHTO_VAR_RESULT, GetInGameTradeSpeciesInfo\n",
+            trade_id,
+        )
+
+    donor_create = (
+        "\tcopyvar VAR_0x8004, VAR_0x8008\n"
+        "\tcopyvar VAR_0x8005, VAR_0x800A\n"
+        "\tspecial CreateInGameTradePokemon\n"
+    )
+    if text.count(donor_create) != len(trade_ids):
+        raise ScriptError("Johto in-game trade creation ABI shape drifted")
+    return text.replace(
+        donor_create,
+        "\tcopyvar VAR_0x8004, VAR_0x800A\n"
+        "\tcopyvar VAR_0x8005, VAR_0x8008\n"
+        "\tspecial CreateInGameTradePokemon\n",
+    )
+
+
 def _apply_transport_overrides(text: str) -> str:
     """Install the reviewed cross-region transport state machine.
 
@@ -591,7 +736,8 @@ def _apply_transport_overrides(text: str) -> str:
     train_body = (
         "\tcall EventScript_ChooseKantoEra\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, 0, {goldenrod}_Cancel\n"
-        "\tspecial Johto_RecordCurrentHeal\n"
+        + _group_travel_request(goldenrod, 1, 2, 1, f"{goldenrod}_TravelFailed")
+        + "\tspecial Johto_RecordCurrentHeal\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {goldenrod}_TravelFailed\n"
         "\tspecial Johto_PrepareKantoTravel\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {goldenrod}_TravelFailed\n"
@@ -624,7 +770,8 @@ def _apply_transport_overrides(text: str) -> str:
         "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_NoCredentials\n"
         "\tcall EventScript_ChooseKantoEra\n"
         "\tgoto_if_eq JOHTO_VAR_RESULT, 0, Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_Refused\n"
-        "\tspecial Johto_RecordCurrentHeal\n"
+        + _group_travel_request(olivine, 3, 4, 2, f"{olivine}_TravelFailed")
+        + "\tspecial Johto_RecordCurrentHeal\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {olivine}_TravelFailed\n"
         "\tspecial Johto_PrepareKantoTravel\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {olivine}_TravelFailed\n"
@@ -649,7 +796,8 @@ def _apply_transport_overrides(text: str) -> str:
         "\tmsgbox Johto_OlivineCity_PortInside_OlivinePort_Text_FlashTicket, MSGBOX_DEFAULT\n"
         "\tcall EventScript_ChooseKantoEra\n"
         "\tgoto_if_eq JOHTO_VAR_RESULT, 0, Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_Refused\n"
-        "\tspecial Johto_RecordCurrentHeal\n"
+        + _group_travel_request(maiden, 3, 4, 3, f"{maiden}_TravelFailed")
+        + "\tspecial Johto_RecordCurrentHeal\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden}_TravelFailed\n"
         "\tspecial Johto_PrepareKantoTravel\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden}_TravelFailed\n"
@@ -905,6 +1053,85 @@ def _strip_comment(line: str) -> str:
         result.append(ch)
         i += 1
     return "".join(result)
+
+
+def _strip_c_comments(text: str) -> str:
+    """Remove C comments while preserving strings, character literals, and lines."""
+    result: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote is not None:
+            result.append(ch)
+            if ch == "\\" and i + 1 < len(text):
+                result.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            result.append(ch)
+            i += 1
+            continue
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            if end < 0:
+                result.extend(" " * (len(text) - i))
+                break
+            result.extend(" " * (end - i))
+            i = end
+            continue
+        if text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            if end < 0:
+                result.extend("\n" if item == "\n" else " " for item in text[i:])
+                break
+            end += 2
+            result.extend("\n" if item == "\n" else " " for item in text[i:end])
+            i = end
+            continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+
+def _c_function_body(text: str, symbol: str) -> str | None:
+    """Return a comment-free C function body, or None when it cannot be parsed."""
+    clean = _strip_c_comments(text)
+    definition = re.search(
+        rf"(?m)^\s*(?:(?:static|inline|extern|const|volatile)\s+)*"
+        rf"[A-Za-z_][A-Za-z0-9_ \t\*]*\b{re.escape(symbol)}\s*"
+        rf"\([^;{{}}]*\)\s*\{{",
+        clean,
+    )
+    if definition is None:
+        return None
+    start = definition.end() - 1
+    depth = 0
+    quote: str | None = None
+    i = start
+    while i < len(clean):
+        ch = clean[i]
+        if quote is not None:
+            if ch == "\\" and i + 1 < len(clean):
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in ('"', "'"):
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return clean[start + 1:i]
+        i += 1
+    return None
 
 
 def _label_definition(line: str) -> tuple[str, str] | None:
@@ -1367,6 +1594,26 @@ def _normalized_donor_operands(command: str, body: str, contract: MacroContract)
     return operands
 
 
+def _canonicalize_macro_operands(raw: str, command: str, body: str,
+                                 contract: MacroContract) -> str:
+    """Render accepted donor operand variants with host-safe comma separators."""
+    original = _split_operands(body)
+    normalized = _normalized_donor_operands(command, body, contract)
+    if normalized == original:
+        return raw
+    indent = raw[:len(raw) - len(raw.lstrip())]
+    newline = "\r\n" if raw.endswith("\r\n") else "\n" if raw.endswith("\n") else ""
+    return f"{indent}{command} {', '.join(normalized)}{newline}"
+
+
+def _canonicalize_trainerbattle_single(raw: str, command: str, body: str,
+                                       contract: MacroContract) -> str:
+    """Compatibility wrapper for callers that exercise the historic helper."""
+    if command.lower() != "trainerbattle_single":
+        return raw
+    return _canonicalize_macro_operands(raw, command, body, contract)
+
+
 def _operand_identifier(operand: str) -> str | None:
     match = re.match(r"(?:\s*)([A-Za-z_][A-Za-z0-9_]*|[-+]?\d+)", operand)
     return match.group(1) if match else None
@@ -1509,6 +1756,8 @@ class ScriptCompiler:
         self.constants.update(self.manifest_symbol_map)
         self.constants.update(self.manifest_symbol_map.values())
         self.constants.update(CAMPAIGN_ABI_CONSTANTS)
+        self.constants.update(HOST_CONSTANT_ALIASES)
+        self.constants.update(HOST_CONSTANT_ALIASES.values())
         # The ledger is a second authoritative constant source for the
         # generated Johto flag/var/trainer namespaces.  Keep these out of the
         # label role so `call VAR_RESULT` cannot pass closure by spelling.
@@ -1807,6 +2056,7 @@ class ScriptCompiler:
         self.closure_diagnostics: list[Diagnostic] = []
         replacements = dict(self.imported_symbol_map)
         replacements.update(HOST_SYMBOL_ALIASES)
+        replacements.update(HOST_CONSTANT_ALIASES)
         replacements.update(self.symbol_map)
         replacements.update(getattr(self, "runtime_symbols", {}))
         closure_labels = set(self.imported_symbol_map)
@@ -1867,6 +2117,11 @@ class ScriptCompiler:
                         raw = f"{indent}setvar {body}\n"
                 if translated_command != command:
                     raw = re.sub(r"^(\s*)" + re.escape(command) + r"\b", r"\1" + translated_command, raw, count=1)
+                if translated_command == "johto_buffermoncategory":
+                    # This adapter writes a raw string-buffer index byte.  The
+                    # donor's STR_VAR_2 token is meaningful only to host event
+                    # macros that perform their own token-to-index conversion.
+                    raw = re.sub(r"(johto_buffermoncategory\s+)STR_VAR_2\b", r"\g<1>1", raw, count=1)
                 self.closure_diagnostics.extend(self._reference_diagnostics(
                     None, line_number, translated_command, body, closure_labels,
                     replacements, known, source_override=source, alias_roles=alias_roles
@@ -1927,6 +2182,40 @@ class ScriptCompiler:
             implementation = self.root / "src/johto/field_moves.c"
             available = self._linked_script(script, "Johto_EventScript_Whirlpool") and self._linked_native_source(
                 implementation, ("Script_JohtoCheckWhirlpool",)
+            )
+        elif dependency_id == "trainer-hill-elemental-tutor":
+            implementation = self.root / "src/field_specials.c"
+            constants = self.root / "include/constants/field_specials.h"
+            constant_text = (constants.read_text(encoding="utf-8", errors="ignore")
+                             if constants.is_file() else "")
+            implementation_text = (implementation.read_text(encoding="utf-8", errors="ignore")
+                                   if implementation.is_file() else "")
+            constant_code = _strip_c_comments(constant_text)
+            implementation_code = _strip_c_comments(implementation_text)
+            special_body = _c_function_body(
+                implementation_text, "GetBattleFrontierTutorMoveIndex"
+            )
+            available = (
+                "GetBattleFrontierTutorMoveIndex" in getattr(self, "specials", set())
+                and re.search(r"(?m)^\s*SCROLL_MULTI_BF_MOVE_TUTOR_3\s*,?\s*$", constant_code) is not None
+                and special_body is not None
+                and re.search(
+                    r"\bGetBattleFrontierTutorMove\s*\(\s*"
+                    r"VarGet\s*\(\s*VAR_TEMP_FRONTIER_TUTOR_ID\s*\)\s*,\s*"
+                    r"VarGet\s*\(\s*VAR_TEMP_FRONTIER_TUTOR_SELECTION\s*\)\s*\)",
+                    special_body,
+                ) is not None
+                and re.search(
+                    r"(?m)^\s*case\s+SCROLL_MULTI_BF_MOVE_TUTOR_3\s*:",
+                    implementation_code,
+                ) is not None
+                and re.search(
+                    r"(?m)^\s*\[\s*SCROLL_MULTI_BF_MOVE_TUTOR_3\s*\]\s*=",
+                    implementation_code,
+                ) is not None
+                and self._linked_native_source(
+                    implementation, ("GetBattleFrontierTutorMoveIndex",)
+                )
             )
         elif dependency_id == "azalea-gym-trainers":
             available = ("AzaleaTown_Gym_SetGymTrainers" in getattr(self, "imported_symbols", set())
@@ -2113,6 +2402,7 @@ class ScriptCompiler:
             replacements[key] = value
         replacements.update(getattr(self, "imported_symbol_map", {}))
         replacements.update(HOST_SYMBOL_ALIASES)
+        replacements.update(HOST_CONSTANT_ALIASES)
         replacements.update(getattr(self, "runtime_symbols", {}))
         text = self._map_text[name]
         for line in text.splitlines():
@@ -2635,6 +2925,8 @@ class ScriptCompiler:
                                                f"command {command} is not present in the tracked host macro ABI"))
             elif translated_command != command:
                 raw = re.sub(r"^(\s*)" + re.escape(command) + r"\b", r"\1" + translated_command, raw, count=1)
+            if translated_command == "johto_buffermoncategory":
+                raw = re.sub(r"(johto_buffermoncategory\s+)STR_VAR_2\b", r"\g<1>1", raw, count=1)
             if command_key in {"remove5mons", "enterbugcontestmode"}:
                 diagnostics.append(Diagnostic("missing-runtime", source_path, line_number,
                                                "contest transaction adapter is mandatory and not yet tracked"))
@@ -2650,6 +2942,16 @@ class ScriptCompiler:
                 else:
                     diagnostics.append(Diagnostic("missing-runtime", source_path, line_number,
                                                    "Johto_EventScript_Whirlpool badge/field adapter is mandatory and not yet tracked"))
+            contract = self._command_contract((translated_command or command_key).lower())
+            if contract is not None:
+                canonical = _canonicalize_macro_operands(
+                    raw, translated_command or command, body, contract
+                )
+                if canonical != raw:
+                    adaptations.append(
+                        f"{name}:{line_number}: normalized {command_key} donor operands"
+                    )
+                    raw = canonical
             diagnostics.extend(self._reference_diagnostics(
                 name, line_number, translated_command or command_key, body, local_labels,
                 replacements, known_symbols, alias_roles=alias_roles,
@@ -2803,6 +3105,7 @@ class ScriptCompiler:
             raise ScriptError(f"incomplete campaign transport source set: {missing}")
         if transport_sources:
             rendered = _apply_transport_overrides(rendered)
+        rendered = _apply_trade_abi_overrides(rendered)
         return "\n".join(line.rstrip(" \t") for line in rendered.split("\n"))
 
     @staticmethod

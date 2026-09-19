@@ -6,6 +6,7 @@
 #include "constants/flags.h"
 #include "constants/maps.h"
 #include "constants/region_map_sections.h"
+#include "johto/save.h"
 #include "save.h"
 #include "test/test.h"
 
@@ -126,6 +127,7 @@ TEST("Later Kanto Flight filters every city to its later heal location")
 
 TEST("Johto Flight selection eligibility uses the Johto visit flag")
 {
+    JohtoSave_InitializeCurrent();
     SetForcedFlightRegion(REGION_MAP_JOHTO);
     FlagClear(JOHTO_FLAG_VISITED_NEWBARK_TOWN);
     EXPECT_EQ(CanFlyToRegionMapSection(MAPSEC_NEW_BARK_TOWN), FALSE);
@@ -137,6 +139,7 @@ TEST("Johto Flight selection eligibility uses the Johto visit flag")
 
 TEST("Later Kanto Flight selection eligibility uses the later visit flag")
 {
+    JohtoSave_InitializeCurrent();
     SetForcedFlightRegionWithKantoEra(REGION_MAP_KANTO, KANTO_ERA_LATER);
     FlagSet(FLAG_WORLD_MAP_PALLET_TOWN);
     FlagClear(JOHTO_FLAG_VISITED_PALLET_TOWN);

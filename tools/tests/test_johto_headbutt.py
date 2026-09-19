@@ -34,18 +34,19 @@ class HeadbuttTests(unittest.TestCase):
 
     def test_pinned_donor_and_provenance(self):
         donor_path = DONOR / self.ledger["donor"]["path"]
-        donor_source = donor_path.read_text()
+        donor_source = donor_path.read_text(encoding="utf-8")
         self.assertEqual(hashlib.sha256(donor_source.encode()).hexdigest(),
                          self.ledger["donor"]["normalized_sha256"])
         self.assertEqual(self.ledger["donor"]["lines"], [114, 164])
         self.assertEqual(self.ledger["donor"]["revision"],
                          "751823abaf677020bcd72c45fe3e7cb2b8a576e4")
-        self.assertFalse(self.ledger["campaign_ready"])
+        self.assertTrue(self.ledger["campaign_ready"])
+        self.assertIsNone(self.ledger["pending_binding"])
         self.assertEqual(self.ledger["policy"]["unlock"], "JOHTO_FLAG_GET_HEADBUTT")
         self.assertEqual(self.ledger["policy"]["move"], "MOVE_HEADBUTT")
 
     def test_donor_intent_is_adapted_without_destructive_object_movement(self):
-        donor = blocks((DONOR / self.ledger["donor"]["path"]).read_text())
+        donor = blocks((DONOR / self.ledger["donor"]["path"]).read_text(encoding="utf-8"))
         self.assertEqual(donor["EventScript_Headbutt"][:5], [
             "lockall",
             "goto_if_unset FLAG_GET_HEADBUTT, EventScript_CantHeadbuttTree",
@@ -106,6 +107,9 @@ class HeadbuttTests(unittest.TestCase):
         self.assertLess(interaction.index("GetInteractedMetatileScript"),
                         interaction.index("GetInteractedWaterScript"))
         self.assertNotIn("JohtoFieldMoves_GetHeadbuttScript", interaction)
+        runtime = json.loads((ROOT / "data/johto/metatile_runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(runtime["semantics"]["MB_JOHTO_HEADBUTT_TREE"]["consumer"],
+                         "JohtoFieldMoves_GetHeadbuttScript")
 
     def test_native_and_selector_boundaries_are_source_grounded(self):
         for required in (
@@ -145,7 +149,7 @@ class HeadbuttTests(unittest.TestCase):
             self.assertIn(required, fixture)
 
     def test_script_is_linked_once_and_whirlpool_alias_remains_untouched(self):
-        assembly = (ROOT / "data/event_scripts.s").read_text()
+        assembly = (ROOT / "data/event_scripts.s").read_text(encoding="utf-8")
         self.assertEqual(assembly.count('.include "data/scripts/johto_field_moves.inc"'), 1)
         field_moves = (ROOT / "data/johto/field_moves.json").read_text()
         self.assertIn('"EventScript_Whirlpool": "Johto_EventScript_Whirlpool"', field_moves)

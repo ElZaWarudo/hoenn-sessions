@@ -2,7 +2,7 @@
   "id": "MAP_CIANWOOD_CITY",
   "name": "CianwoodCity",
   "layout": "LAYOUT_JOHTO_CIANWOOD_CITY",
-  "music": "MUS_HG_CIANWOOD",
+  "music": "MUS_DEWFORD",
   "region_map_section": "MAPSEC_JOHTO_CIANWOOD_CITY",
   "requires_flash": false,
   "weather": "WEATHER_RAIN",
@@ -21,7 +21,7 @@
   ],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SUICUNE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SUICUNE)",
       "x": 17,
       "y": 20,
       "elevation": 0,
@@ -31,10 +31,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_CIANWOOD_SUICUNE"
+      "flag": "JOHTO_FLAG_HIDE_CIANWOOD_SUICUNE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_EUSINE",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_EUSINE",
       "x": 18,
       "y": 29,
       "elevation": 0,
@@ -44,10 +44,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_CIANWOOD_EUSINE"
+      "flag": "JOHTO_FLAG_HIDE_CIANWOOD_EUSINE"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_FAT_MAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
       "x": 20,
       "y": 36,
       "elevation": 0,
@@ -60,7 +60,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
       "x": 27,
       "y": 41,
       "elevation": 0,
@@ -73,7 +73,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BATTLE_GIRL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_BATTLE_GIRL",
       "x": 20,
       "y": 54,
       "elevation": 0,
@@ -86,7 +86,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WOMAN_3",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_3",
       "x": 18,
       "y": 47,
       "elevation": 0,
@@ -99,7 +99,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 26,
       "y": 54,
       "elevation": 0,
@@ -112,7 +112,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 32,
       "y": 58,
       "elevation": 0,
@@ -125,7 +125,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_KRABBY",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(KRABBY)",
       "x": 25,
       "y": 55,
       "elevation": 0,
@@ -138,7 +138,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SHUCKLE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SHUCKLE)",
       "x": 5,
       "y": 57,
       "elevation": 0,
@@ -151,7 +151,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_SHUCKLE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(SHUCKLE)",
       "x": 5,
       "y": 48,
       "elevation": 0,
@@ -164,7 +164,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GEODUDE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GEODUDE)",
       "x": 6,
       "y": 34,
       "elevation": 0,
@@ -177,7 +177,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_GEODUDE",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GEODUDE)",
       "x": 5,
       "y": 17,
       "elevation": 0,
@@ -190,7 +190,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_MON_BASE+SPECIES_PIDGEOTTO",
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(PIDGEOTTO)",
       "x": 15,
       "y": 49,
       "elevation": 0,
@@ -203,7 +203,7 @@
       "flag": "0"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 10,
       "y": 26,
       "elevation": 0,
@@ -216,7 +216,7 @@
       "flag": "FLAG_TEMP_1"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 10,
       "y": 27,
       "elevation": 0,
@@ -229,7 +229,7 @@
       "flag": "FLAG_TEMP_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 11,
       "y": 27,
       "elevation": 0,
@@ -242,7 +242,7 @@
       "flag": "FLAG_TEMP_3"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 12,
       "y": 31,
       "elevation": 0,
@@ -255,7 +255,7 @@
       "flag": "FLAG_TEMP_5"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 13,
       "y": 31,
       "elevation": 0,
@@ -268,7 +268,7 @@
       "flag": "FLAG_TEMP_4"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
       "x": 12,
       "y": 30,
       "elevation": 0,
@@ -281,7 +281,7 @@
       "flag": "FLAG_TEMP_6"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ENGINEER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ENGINEER",
       "x": 0,
       "y": 34,
       "elevation": 0,
@@ -291,7 +291,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_CianwoodCity_CianwoodCity_EventScript_Engineer",
-      "flag": "FLAG_AMPHAROS_HEALED"
+      "flag": "JOHTO_FLAG_AMPHAROS_HEALED"
     }
   ],
   "warp_events": [
@@ -351,7 +351,7 @@
       "x": 18,
       "y": 22,
       "elevation": 0,
-      "var": "VAR_SUICUNE_ENCOUNTERS",
+      "var": "JOHTO_VAR_SUICUNE_ENCOUNTERS",
       "var_value": "1",
       "script": "Johto_CianwoodCity_CianwoodCity_EventScript_SuicuneTrigger"
     }

@@ -118,7 +118,7 @@ class JohtoSlidingPuzzleTests(unittest.TestCase):
 
     def test_provenance_binds_all_owned_source_art(self):
         provenance = json.loads((ROOT / "data/johto/sliding_puzzle.json").read_text())
-        self.assertFalse(provenance["campaign_ready"])
+        self.assertTrue(provenance["campaign_ready"])
         self.assertEqual(provenance["source_revision"], "751823abaf677020bcd72c45fe3e7cb2b8a576e4")
         self.assertEqual(set(provenance["assets"]), set(ASSET_NAMES))
         for name in ASSET_NAMES:
@@ -130,6 +130,24 @@ class JohtoSlidingPuzzleTests(unittest.TestCase):
         self.assertIn("return CheckSolutionAgainst(&puzzle, sprites);", source)
         self.assertIn("tileId == __", source)
         self.assertIn("spriteId == SPRITE_NONE || spriteId >= MAX_SPRITES", source)
+
+    def test_four_materialized_chamber_events_call_the_special_with_exact_ids(self):
+        campaign = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+        chamber = json.loads((ROOT / "data/maps/RuinsOfAlph_PuzzleAndRewardChambers/map.json").read_text(encoding="utf-8"))
+        scripts = {event["script"] for event in chamber["bg_events"]}
+        cases = (
+            ("Kabuto", "KABUTO"),
+            ("Omanyte", "OMANYTE"),
+            ("Aerodactyl", "AERODACTYL"),
+            ("HooH", "HO_OH"),
+        )
+        prefix = "Johto_RuinsOfAlph_PuzzleAndRewardChambers_RuinsOfAlph_PuzzleAndRewardChambers_EventScript_"
+        for label, constant in cases:
+            symbol = prefix + label + "Puzzle"
+            self.assertIn(symbol, scripts)
+            block = campaign.split(symbol + "::", 1)[1].split("\n\n", 1)[0]
+            self.assertLess(block.index(f"setvar VAR_0x8004, SLIDING_PUZZLE_{constant}"), block.index("special DoSlidingPuzzle"))
+            self.assertLess(block.index("special DoSlidingPuzzle"), block.index("waitstate"))
 
 
 if __name__ == "__main__":

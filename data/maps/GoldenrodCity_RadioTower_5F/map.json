@@ -2,7 +2,7 @@
   "id": "MAP_GOLDENROD_CITY_RADIO_TOWER_5F",
   "name": "GoldenrodCity_RadioTower_5F",
   "layout": "LAYOUT_JOHTO_GOLDENROD_CITY_RADIO_TOWER_5F",
-  "music": "MUS_HG_GOLDENROD",
+  "music": "MUS_SLATEPORT",
   "region_map_section": "MAPSEC_JOHTO_GOLDENROD_CITY",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 11,
       "y": 9,
       "elevation": 0,
@@ -25,10 +25,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_RadioTower_5F_GoldenrodCity_RadioTower_5F_EventScript_Petrel",
-      "flag": "FLAG_HIDE_GOLDENROD_RADIOTOWER_DIRECTOR"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_RADIOTOWER_DIRECTOR"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARCHER",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARCHER",
       "x": 25,
       "y": 12,
       "elevation": 0,
@@ -38,10 +38,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_RadioTower_5F_GoldenrodCity_RadioTower_5F_EventScript_Archer",
-      "flag": "FLAG_HIDE_GOLDENROD_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_ARIANA",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_ARIANA",
       "x": 28,
       "y": 10,
       "elevation": 0,
@@ -51,10 +51,10 @@
       "trainer_type": "TRAINER_TYPE_NORMAL",
       "trainer_sight_or_berry_tree_id": "4",
       "script": "Johto_GoldenrodCity_RadioTower_5F_GoldenrodRaidoTower4_EventScript_ARIANA",
-      "flag": "FLAG_HIDE_GOLDENROD_ROCKETS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_ROCKETS"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_PETREL",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_PETREL",
       "x": 11,
       "y": 9,
       "elevation": 0,
@@ -64,10 +64,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_RadioTower_5F_GoldenrodCity_RadioTower_5F_EventScript_Petrel2",
-      "flag": "FLAG_HIDE_GOLDENROD_RADIOTOWER_PETREL"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_RADIOTOWER_PETREL"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_GENTLEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
       "x": 29,
       "y": 5,
       "elevation": 0,
@@ -77,10 +77,10 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "NULL",
-      "flag": "FLAG_HIDE_GOLDENROD_RADIOTOWER_DIRECTOR_2"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_RADIOTOWER_DIRECTOR_2"
     },
     {
-      "graphics_id": "OBJ_EVENT_GFX_WORKER_M",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
       "x": 20,
       "y": 12,
       "elevation": 0,
@@ -90,7 +90,7 @@
       "trainer_type": "TRAINER_TYPE_NONE",
       "trainer_sight_or_berry_tree_id": "0",
       "script": "Johto_GoldenrodCity_RadioTower_5F_GoldenrodCity_RadioTower_5F_EventScript_Ben",
-      "flag": "FLAG_HIDE_GOLDENROD_NPCS"
+      "flag": "JOHTO_FLAG_HIDE_GOLDENROD_NPCS"
     }
   ],
   "warp_events": [

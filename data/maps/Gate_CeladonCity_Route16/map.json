@@ -2,7 +2,7 @@
   "id": "MAP_KANTO_LATER_GATE_CELADON_CITY_ROUTE16",
   "name": "Gate_CeladonCity_Route16",
   "layout": "LAYOUT_KANTO_LATER_GATE_CELADON_CITY_ROUTE16",
-  "music": "MUS_HG_ROUTE11",
+  "music": "MUS_RG_ROUTE11",
   "region_map_section": "MAPSEC_ROUTE_16",
   "requires_flash": false,
   "weather": "WEATHER_NONE",
@@ -15,7 +15,7 @@
   "connections": [],
   "object_events": [
     {
-      "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+      "graphics_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
       "x": 6,
       "y": 2,
       "elevation": 0,
