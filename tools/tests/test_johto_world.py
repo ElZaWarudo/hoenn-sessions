@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -21,6 +22,14 @@ SPEC.loader.exec_module(world)
 
 def load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def script_block(raw: bytes, label: str) -> bytes:
+    marker = (label + "::").encode("ascii")
+    start = raw.index(marker)
+    following = re.search(rb"(?m)^[A-Za-z_][A-Za-z0-9_]*::", raw[start + len(marker):])
+    end = len(raw) if following is None else start + len(marker) + following.start()
+    return raw[start:end]
 
 
 class JohtoWorldPlannerTest(unittest.TestCase):
@@ -151,8 +160,10 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             for edge in item["edges"]
         )
         self.assertEqual(dict(event_totals), plan["source_event_totals"])
-        self.assertEqual(plan["event_totals"]["warp_events"], 1175)
-        self.assertEqual(plan["event_totals"]["bg_events"], 758)
+        self.assertEqual(
+            plan["event_totals"],
+            {"object_events": 3358, "warp_events": 1174, "coord_events": 408, "bg_events": 758},
+        )
         self.assertEqual(
             plan["event_totals"]["warp_events"],
             sum(len(item["warp_targets"]) for item in plan["maps"]),
@@ -186,30 +197,53 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(len(by_source["MAP_CINNABAR_ISLAND"]["warp_targets"]), 1)
         self.assertEqual(len(by_source["MAP_ROUTE40"]["connections"]), 2)
         self.assertEqual(len(by_source["MAP_VERMILION_CITY"]["connections"]), 3)
+        self.assertEqual(len(by_source["MAP_ROUTE22"]["warp_targets"]), 0)
+        self.assertEqual(
+            [connection["map"] for connection in by_source["MAP_ROUTE22"]["connections"]],
+            ["MAP_VIRIDIAN_CITY"],
+        )
+        self.assertEqual(
+            [connection["map"] for connection in by_source["MAP_ROUTE26NORTH"]["connections"]],
+            ["MAP_ROUTE26", "MAP_ROUTE28"],
+        )
+        reception = warp("MAP_RECEPTION_GATE", 4)
+        self.assertEqual(
+            (reception["dest_map"], reception["dest_warp_id"], reception["classification"], reception["target_map_id"]),
+            ("MAP_DYNAMIC", "WARP_ID_DYNAMIC", "required_host_adapter", None),
+        )
         self.assertEqual(
             plan["external_edges"],
-            [{
-                "source_map": "MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR",
-                "kind": "warp",
-                "index": 0,
-                "target": "MAP_DYNAMIC",
-                "classification": "required_host_adapter",
-            }],
+            [
+                {
+                    "source_map": "MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR",
+                    "kind": "warp",
+                    "index": 0,
+                    "target": "MAP_DYNAMIC",
+                    "classification": "required_host_adapter",
+                },
+                {
+                    "source_map": "MAP_RECEPTION_GATE",
+                    "kind": "warp",
+                    "index": 4,
+                    "target": "MAP_DYNAMIC",
+                    "classification": "required_host_adapter",
+                },
+            ],
         )
         elevator = by_source["MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR"]["edges"][0]
         self.assertEqual(
             (elevator["target"], elevator["warp_id"], elevator["classification"]),
             ("MAP_DYNAMIC", "WARP_ID_DYNAMIC", "required_host_adapter"),
         )
-        self.assertEqual(plan["external_edge_counts"], {"excluded_debug": 0, "host_adapter": 1, "runtime_policy": 0, "era_boundary": 0})
+        self.assertEqual(plan["external_edge_counts"], {"excluded_debug": 0, "host_adapter": 2, "runtime_policy": 0, "era_boundary": 0})
         self.assertEqual(plan["topology_notes"][0]["status"], "none")
 
     def test_normalized_topology_keeps_warp_and_edge_views_identical(self):
         plan = world.build_plan(ROOT, DONOR)
         for record in plan["maps"]:
             world._cross_validate_world_representations(record)
-        self.assertEqual(plan["selected_warp_count"], 1174)
-        self.assertEqual(plan["selected_connection_count"], 191)
+        self.assertEqual(plan["selected_warp_count"], 1172)
+        self.assertEqual(plan["selected_connection_count"], 189)
 
     def test_reviewed_external_script_destinations_are_preserved_exactly(self):
         plan = world.build_plan(ROOT, DONOR)
@@ -454,7 +488,7 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(plan["external_edges"], expected)
         self.assertEqual(
             plan["external_edge_counts"],
-            {"excluded_debug": 0, "host_adapter": 1, "runtime_policy": 0, "era_boundary": 0},
+            {"excluded_debug": 0, "host_adapter": 2, "runtime_policy": 0, "era_boundary": 0},
         )
         for edge in self.manifest["external_edges"]:
             source_name = next(
@@ -504,9 +538,33 @@ class JohtoWorldPlannerTest(unittest.TestCase):
         self.assertEqual(rendered.count(world.LEGACY_NEW_BARK_INCLUDE), 0)
         self.assertEqual(rendered.count(world.CAMPAIGN_INCLUDE), 1)
 
+    def test_event_script_assembly_preserves_authenticated_runtime_prefix(self):
+        current = (ROOT / world.EVENT_SCRIPTS_PATH).read_bytes().replace(b"\r\n", b"\n")
+        injected = current.replace(
+            world.CAMPAIGN_INCLUDE,
+            b"J15_RuntimeSelector_Preserved::\n\tend\n" + world.CAMPAIGN_INCLUDE,
+            1,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / world.EVENT_SCRIPTS_PATH
+            target.parent.mkdir(parents=True)
+            target.write_bytes(injected)
+            rendered = world._render_event_script_assembly(root)
+            self.assertIn(b"J15_RuntimeSelector_Preserved::", rendered)
+            self.assertEqual(rendered.count(world.REGISTERED_ADAPTER_MARKER), 1)
+            self.assertIn(b"Johto_ReceptionGate_Overland_MapScripts::", rendered)
+
+            target.write_bytes(rendered)
+            self.assertEqual(world._render_event_script_assembly(root), rendered)
+
+            target.write_bytes(injected.replace(b"Sail back to JOHTO?", b"Sail elsewhere now?", 1))
+            with self.assertRaisesRegex(world.WorldPlanError, "cannot authenticate pinned"):
+                world._render_event_script_assembly(root)
+
     def test_registration_outputs_use_one_aggregate_campaign_and_remove_debug_events(self):
         outputs = world._registration_outputs(ROOT, DONOR, world.build_plan(ROOT, DONOR))
-        self.assertEqual(len(outputs), 413)
+        self.assertEqual(len(outputs), 414)
         self.assertFalse(any(path.name == "scripts.inc" for path in outputs))
         event_scripts = outputs[world.EVENT_SCRIPTS_PATH]
         self.assertEqual(event_scripts.count(world.LEGACY_NEW_BARK_INCLUDE), 0)
@@ -595,6 +653,126 @@ class JohtoWorldPlannerTest(unittest.TestCase):
             (saffron["warp_events"][15]["x"], saffron["warp_events"][15]["y"]),
             (world.SAFFRON_KIOSK["return_x"], world.SAFFRON_KIOSK["return_y"]),
         )
+
+    def test_overland_boundary_materializes_controlled_round_trips(self):
+        outputs = world._registration_outputs(ROOT, DONOR, world.build_plan(ROOT, DONOR))
+
+        reception = json.loads(outputs[Path("data/maps/ReceptionGate/map.json")])
+        self.assertEqual(reception["shared_scripts_map"], "Johto_ReceptionGate_Overland")
+        self.assertEqual(
+            reception["warp_events"][4],
+            {
+                "x": 20,
+                "y": 9,
+                "elevation": 0,
+                "dest_map": "MAP_DYNAMIC",
+                "dest_warp_id": "WARP_ID_DYNAMIC",
+            },
+        )
+        self.assertEqual(
+            reception["coord_events"][-1],
+            {
+                "type": "trigger",
+                "x": 19,
+                "y": 9,
+                "elevation": 0,
+                "var": "VAR_TEMP_0",
+                "var_value": "0",
+                "script": "Johto_ReceptionGate_Overland_EventScript_ChooseKanto",
+            },
+        )
+
+        route26 = json.loads(outputs[Path("data/maps/Route26North/map.json")])
+        self.assertEqual(
+            [connection["map"] for connection in route26["connections"]],
+            ["MAP_ROUTE26", "MAP_ROUTE28"],
+        )
+
+        later = json.loads(outputs[Path("data/maps/Route22/map.json")])
+        self.assertEqual(later["shared_scripts_map"], "KantoLater_Route22_Overland")
+        self.assertEqual(later["warp_events"], [])
+        self.assertEqual(
+            [connection["map"] for connection in later["connections"]],
+            ["MAP_KANTO_LATER_VIRIDIAN_CITY"],
+        )
+        self.assertEqual(
+            (
+                later["object_events"][-1]["x"],
+                later["object_events"][-1]["y"],
+                later["object_events"][-1]["script"],
+            ),
+            (12, 10, "KantoLater_Route22_Overland_EventScript_Attendant"),
+        )
+
+        original_predecessor = json.loads(world._base_bytes(ROOT, world.ORIGINAL_ROUTE22_GATE["path"]))
+        original = json.loads(outputs[world.ORIGINAL_ROUTE22_GATE["path"]])
+        self.assertEqual(original["shared_scripts_map"], "KantoOriginal_Route22_Overland")
+        self.assertEqual(original["connections"], original_predecessor["connections"])
+        self.assertEqual(original["warp_events"], original_predecessor["warp_events"])
+        self.assertEqual(original["coord_events"], original_predecessor["coord_events"])
+        self.assertEqual(original["bg_events"], original_predecessor["bg_events"])
+        self.assertEqual(original["object_events"][:-1], original_predecessor["object_events"])
+        self.assertEqual(
+            (
+                original["object_events"][-1]["x"],
+                original["object_events"][-1]["y"],
+                original["object_events"][-1]["script"],
+            ),
+            (8, 12, "KantoOriginal_Route22_Overland_EventScript_Attendant"),
+        )
+
+    def test_overland_scripts_prepare_before_departure_and_commit_only_on_matching_arrival(self):
+        assembly = world._render_event_script_assembly(ROOT)
+        selector = script_block(assembly, "Johto_ReceptionGate_Overland_EventScript_ChooseKanto")
+        lifecycle = (
+            b"call EventScript_ChooseKantoEra",
+            b"special Johto_RecordCurrentHeal",
+            b"special Johto_PrepareKantoTravel",
+            b"switch JOHTO_VAR_PENDING_KANTO_DESTINATION",
+        )
+        positions = [selector.index(command) for command in lifecycle]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn(b"setdynamicwarp MAP_ROUTE22, 255, 9, 12", assembly)
+        self.assertIn(b"setdynamicwarp MAP_KANTO_LATER_ROUTE22, 255, 13, 10", assembly)
+        self.assertNotIn(b"special Johto_CommitKantoTravel", selector)
+        failed = script_block(assembly, "Johto_ReceptionGate_Overland_EventScript_TravelFailed")
+        self.assertIn(b"special Johto_CancelKantoTravel", failed)
+        self.assertIn(b"applymovement OBJ_EVENT_ID_PLAYER, Common_Movement_WalkLeft", failed)
+
+        for label, destination in (
+            ("KantoOriginal_Route22_Overland_EventScript_Arrive", b"2"),
+            ("KantoLater_Route22_Overland_EventScript_Arrive", b"3"),
+            ("Johto_ReceptionGate_Overland_EventScript_ArriveFromKanto", b"1"),
+            ("KantoOriginal_Transport_EventScript_Arrive", b"2"),
+        ):
+            with self.subTest(label=label):
+                block = script_block(assembly, label)
+                target_check = b"goto_if_ne JOHTO_VAR_PENDING_KANTO_DESTINATION, " + destination
+                self.assertLess(block.index(target_check), block.index(b"special Johto_CommitKantoTravel"))
+                self.assertIn(b"goto_if_eq VAR_RESULT, FALSE", block)
+
+        later_arrival = script_block(assembly, "KantoLater_Route22_Overland_EventScript_Arrive")
+        self.assertLess(
+            later_arrival.index(b"special Johto_CommitKantoTravel"),
+            later_arrival.index(b"call Johto_EventScript_InitializeLaterKantoOnce"),
+        )
+
+        for label in (
+            "KantoOriginal_VermilionCity_PortInside_EventScript_Sailor",
+            "KantoOriginal_SaffronCity_TrainStation_EventScript_Attendant",
+            "Kanto_Overland_EventScript_ReturnToJohto",
+        ):
+            with self.subTest(label=label):
+                block = script_block(assembly, label)
+                lifecycle = (
+                    b"special Johto_ChooseJohto",
+                    b"special Johto_RecordCurrentHeal",
+                    b"special Johto_PrepareKantoTravel",
+                    b"warp",
+                )
+                positions = [block.index(command) for command in lifecycle]
+                self.assertEqual(positions, sorted(positions))
+                self.assertNotIn(b"special Johto_CommitKantoTravel", block)
 
     def test_consistent_host_baseline_and_group_mutation_is_rejected(self):
         temporary, root = self._minimal_registration_root()
