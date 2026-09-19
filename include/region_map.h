@@ -149,6 +149,7 @@ enum KantoEra GetKantoEraByMap(u8 mapGroup, u8 mapNum, u32 mapSecId);
 void SetForcedFlightRegion(u8 region);
 void SetForcedFlightRegionWithKantoEra(enum RegionMapType region, enum KantoEra era);
 void ClearForcedFlightRegion(void);
+void CancelFlightCall(void);
 bool32 CanFlyToRegionMapSection(mapsec_u16_t mapSecId);
 
 //Pokenav Fly funcs

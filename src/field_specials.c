@@ -19,11 +19,13 @@
 #include "field_specials.h"
 #include "field_weather.h"
 #include "graphics.h"
+#include "heal_location.h"
 #include "international_string_util.h"
 #include "item.h"
 #include "item_icon.h"
 #include "item_menu.h"
 #include "johto/bug_contest.h"
+#include "johto/kanto_travel.h"
 #include "link.h"
 #include "list_menu.h"
 #include "load_save.h"
@@ -90,7 +92,79 @@
 #define ELEVATOR_WINDOW_HEIGHT 3
 #define ELEVATOR_LIGHT_STAGES  3
 
-void SetForcedFlightRegion(s8 region);
+static void OpenFlightMap(enum RegionMapType region, enum KantoEra kantoEra)
+{
+    if (region == REGION_MAP_KANTO)
+        SetForcedFlightRegionWithKantoEra(region, kantoEra);
+    else
+        SetForcedFlightRegion(region);
+    CleanupOverworldWindowsAndTilemaps();
+    SetMainCallback2(CB2_OpenFlyMap);
+}
+
+void Johto_GetCurrentTravelContext(void)
+{
+    gSpecialVar_Result = JohtoTravel_GetCurrentContext();
+}
+
+static void SelectTravelDestination(enum JohtoTravelDestination destination)
+{
+    if (!JohtoTravel_SetPendingDestination(destination))
+    {
+        (void)JohtoTravel_Cancel();
+        gSpecialVar_Result = JOHTO_TRAVEL_DESTINATION_NONE;
+        return;
+    }
+    gSpecialVar_Result = destination;
+}
+
+void Johto_SelectOriginalKanto(void)
+{
+    SelectTravelDestination(JOHTO_TRAVEL_DESTINATION_KANTO_ORIGINAL);
+}
+
+void Johto_SelectLaterKanto(void)
+{
+    SelectTravelDestination(JOHTO_TRAVEL_DESTINATION_KANTO_LATER);
+}
+
+void Johto_ChooseJohto(void)
+{
+    SelectTravelDestination(JOHTO_TRAVEL_DESTINATION_JOHTO);
+}
+
+void Johto_CancelKantoTravel(void)
+{
+    CancelFlightCall();
+    gSpecialVar_Result = JOHTO_TRAVEL_DESTINATION_NONE;
+}
+
+void Johto_RecordCurrentHeal(void)
+{
+    u16 healLocationId = GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation);
+
+    gSpecialVar_Result = JohtoTravel_RecordCurrentHeal(healLocationId);
+}
+
+void Johto_PrepareKantoTravel(void)
+{
+    gSpecialVar_Result = JohtoTravel_PrepareCrossing();
+}
+
+void Johto_CommitKantoTravel(void)
+{
+    gSpecialVar_Result = JohtoTravel_TryCommitArrival();
+}
+
+void Johto_NeedsLaterKantoInitialization(void)
+{
+    gSpecialVar_Result = JohtoTravel_NeedsLaterKantoInitialization();
+}
+
+void Johto_MarkLaterKantoInitialized(void)
+{
+    gSpecialVar_Result = JohtoTravel_MarkLaterKantoInitialized();
+}
 
 void Johto_BeginBugContestAdmission(void)
 {
@@ -5943,19 +6017,66 @@ void UpdateTrainerCardPhotoIcons(void)
     VarSet(VAR_TRAINER_CARD_MON_ICON_TINT_IDX, gSpecialVar_0x8004);
 }
 
-//Flight Call function
+// Flight Call functions
 void Special_FlightCallKanto(void)
 {
-    SetForcedFlightRegion(REGION_MAP_KANTO);
-    CleanupOverworldWindowsAndTilemaps();
-    SetMainCallback2(CB2_OpenFlyMap);
+    enum KantoEra era = JohtoTravel_GetCurrentContext() == JOHTO_TRAVEL_CONTEXT_KANTO_LATER
+        ? KANTO_ERA_LATER : KANTO_ERA_ORIGINAL;
+
+    (void)JohtoTravel_Cancel();
+    OpenFlightMap(REGION_MAP_KANTO, era);
+    gSpecialVar_Result = TRUE;
+}
+
+void Special_FlightCallSelectedKantoEra(void)
+{
+    enum JohtoTravelDestination destination = JohtoTravel_GetPendingDestination();
+    enum KantoEra era;
+
+    if (destination == JOHTO_TRAVEL_DESTINATION_KANTO_ORIGINAL)
+        era = KANTO_ERA_ORIGINAL;
+    else if (destination == JOHTO_TRAVEL_DESTINATION_KANTO_LATER)
+        era = KANTO_ERA_LATER;
+    else
+        goto fail;
+
+    OpenFlightMap(REGION_MAP_KANTO, era);
+    gSpecialVar_Result = TRUE;
+    return;
+
+fail:
+    Johto_CancelKantoTravel();
+    gSpecialVar_Result = FALSE;
+}
+
+void Special_FlightCallJohto(void)
+{
+    enum JohtoTravelContext context = JohtoTravel_GetCurrentContext();
+
+    if (context == JOHTO_TRAVEL_CONTEXT_KANTO_ORIGINAL
+        || context == JOHTO_TRAVEL_CONTEXT_KANTO_LATER)
+    {
+        if (!JohtoTravel_SetPendingDestination(JOHTO_TRAVEL_DESTINATION_JOHTO))
+        {
+            Johto_CancelKantoTravel();
+            gSpecialVar_Result = FALSE;
+            return;
+        }
+    }
+    else
+    {
+        (void)JohtoTravel_Cancel();
+    }
+
+    OpenFlightMap(REGION_MAP_JOHTO, KANTO_ERA_NONE);
+    gSpecialVar_Result = TRUE;
 }
 
 void Special_FlightCallHoenn(void)
 {
-    SetForcedFlightRegion(REGION_MAP_HOENN);
-    CleanupOverworldWindowsAndTilemaps();
-    SetMainCallback2(CB2_OpenFlyMap);
+    (void)JohtoTravel_Cancel();
+    OpenFlightMap(REGION_MAP_HOENN, KANTO_ERA_NONE);
+    gSpecialVar_Result = TRUE;
 }
 
 u16 StickerManGetBragFlags(void)

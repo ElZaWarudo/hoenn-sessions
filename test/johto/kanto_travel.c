@@ -11,6 +11,8 @@
 #include "constants/region_map_sections.h"
 #include "test/test.h"
 
+extern bool8 gFlightCallFromBag;
+
 static void SetCurrentMap(u16 map, u16 mapSecId)
 {
     gSaveBlock1Ptr->location.mapGroup = MAP_GROUP(map);
@@ -43,6 +45,10 @@ static void ExpectActiveHeal(u16 healLocationId)
 
 TEST("Travel runtime allocations are stable and inside the reserved save window")
 {
+    EXPECT_EQ(JOHTO_TRAVEL_DESTINATION_NONE, 0);
+    EXPECT_EQ(JOHTO_TRAVEL_DESTINATION_JOHTO, 1);
+    EXPECT_EQ(JOHTO_TRAVEL_DESTINATION_KANTO_ORIGINAL, 2);
+    EXPECT_EQ(JOHTO_TRAVEL_DESTINATION_KANTO_LATER, 3);
     EXPECT_EQ(JOHTO_FLAG_KANTO_LATER_INITIALIZED, JOHTO_FLAG_END);
     EXPECT_EQ(JOHTO_VAR_PENDING_KANTO_DESTINATION, JOHTO_VAR_END - 3);
     EXPECT_EQ(JOHTO_VAR_LAST_HEAL_JOHTO, JOHTO_VAR_END - 2);
@@ -63,6 +69,52 @@ TEST("Prepare validates a crossing without mutating heal or Johto bytes")
     EXPECT(JohtoTravel_PrepareCrossing());
     EXPECT_EQ(memcmp(&before, &gSaveblock1.johto, sizeof(before)), 0);
     EXPECT_EQ(memcmp(&healBefore, &gSaveBlock1Ptr->lastHealLocation, sizeof(healBefore)), 0);
+}
+
+TEST("Arrival hook preserves a Flight crossing through intermediate worlds")
+{
+    struct WarpData healBefore;
+
+    JohtoSave_InitializeCurrent();
+    SetCurrentMap(MAP_NEW_BARK_TOWN, MAPSEC_NEW_BARK_TOWN);
+    SetActiveHeal(HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY);
+    EXPECT(JohtoTravel_SetPendingDestination(JOHTO_TRAVEL_DESTINATION_KANTO_LATER));
+    EXPECT(JohtoTravel_RecordCurrentHeal(HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY));
+    EXPECT(JohtoTravel_PrepareCrossing());
+    healBefore = gSaveBlock1Ptr->lastHealLocation;
+
+    SetCurrentMap(MAP_LITTLEROOT_TOWN, MAPSEC_LITTLEROOT_TOWN);
+    EXPECT(!JohtoTravel_TryCommitArrival());
+    EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_KANTO_LATER);
+    EXPECT_EQ(memcmp(&healBefore, &gSaveBlock1Ptr->lastHealLocation, sizeof(healBefore)), 0);
+
+    SetCurrentMap(MAP_PALLET_TOWN, MAPSEC_PALLET_TOWN);
+    EXPECT(!JohtoTravel_TryCommitArrival());
+    EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_KANTO_LATER);
+    EXPECT_EQ(memcmp(&healBefore, &gSaveBlock1Ptr->lastHealLocation, sizeof(healBefore)), 0);
+
+    SetCurrentMap(MAP_KANTO_LATER_PALLET_TOWN, MAPSEC_PALLET_TOWN);
+    EXPECT(JohtoTravel_TryCommitArrival());
+    EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
+    ExpectActiveHeal(HEAL_LOCATION_KANTO_LATER_PALLET_TOWN);
+    EXPECT(!JohtoTravel_TryCommitArrival());
+}
+
+TEST("Cancelling Flight Call clears its bag and forced-era state")
+{
+    struct RegionMap regionMap = { .mapSecId = MAPSEC_PALLET_TOWN };
+
+    JohtoSave_InitializeCurrent();
+    SetCurrentMap(MAP_PALLET_TOWN, MAPSEC_PALLET_TOWN);
+    EXPECT(JohtoTravel_SetPendingDestination(JOHTO_TRAVEL_DESTINATION_KANTO_LATER));
+    SetForcedFlightRegionWithKantoEra(REGION_MAP_KANTO, KANTO_ERA_LATER);
+    gFlightCallFromBag = TRUE;
+
+    CancelFlightCall();
+
+    EXPECT(!gFlightCallFromBag);
+    EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
+    EXPECT_EQ(FilterFlyDestination(&regionMap), HEAL_LOCATION_PALLET_TOWN);
 }
 
 TEST("Johto and both Kanto eras restore independent heals on round trips")

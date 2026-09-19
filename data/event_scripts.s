@@ -1741,6 +1741,37 @@ EventScript_PalletTown_PlayersHouse_2F_TurnOnPC::
 Text_WhereWouldYouLikeToFly::
     .string "Where would you like to fly?$"
 
+Text_WhichKantoEra::
+    .string "Which KANTO do you want to visit?$"
+
+@ Reusable Kanto-era selector. Returns a JohtoTravelDestination in VAR_RESULT:
+@ 2 = original Kanto, 3 = Kanto three years later, 0 = cancel/B/failure.
+EventScript_ChooseKantoEra::
+    message Text_WhichKantoEra
+    waitmessage
+    multichoice 0, 0, MULTI_KANTO_ERAS, FALSE
+    switch VAR_RESULT
+    case 0, EventScript_ChooseKantoEra_Original
+    case 1, EventScript_ChooseKantoEra_Later
+    case 2, EventScript_ChooseKantoEra_Cancel
+    case MULTI_B_PRESSED, EventScript_ChooseKantoEra_Cancel
+    goto EventScript_ChooseKantoEra_Cancel
+
+EventScript_ChooseKantoEra_Original::
+    closemessage
+    special Johto_SelectOriginalKanto
+    return
+
+EventScript_ChooseKantoEra_Later::
+    closemessage
+    special Johto_SelectLaterKanto
+    return
+
+EventScript_ChooseKantoEra_Cancel::
+    closemessage
+    special Johto_CancelKantoTravel
+    return
+
 EventScript_UseFlightCall::
     lockall
     message Text_WhereWouldYouLikeToFly
@@ -1748,12 +1779,32 @@ EventScript_UseFlightCall::
     multichoice 0, 0, MULTI_FLIGHTCALL_REGIONS, FALSE
     switch VAR_RESULT
     case 0, EventScript_FlightCall_Kanto
-    case 1, EventScript_FlightCall_Hoenn
-    case 2, EventScript_FlightCall_Cancel
-    end
+    case 1, EventScript_FlightCall_Johto
+    case 2, EventScript_FlightCall_Hoenn
+    case 3, EventScript_FlightCall_Cancel
+    case MULTI_B_PRESSED, EventScript_FlightCall_Cancel
+    goto EventScript_FlightCall_Cancel
 
 EventScript_FlightCall_Kanto::
+    special Johto_GetCurrentTravelContext
+    goto_if_ne VAR_RESULT, 1, EventScript_FlightCall_CurrentKantoEra
+    call EventScript_ChooseKantoEra
+    goto_if_eq VAR_RESULT, 0, EventScript_FlightCall_Cancel
+    special Special_FlightCallSelectedKantoEra
+    goto_if_eq VAR_RESULT, FALSE, EventScript_FlightCall_Cancel
+    waitstate
+    releaseall
+    end
+
+EventScript_FlightCall_CurrentKantoEra::
     special Special_FlightCallKanto
+    waitstate
+    releaseall
+    end
+
+EventScript_FlightCall_Johto::
+    special Special_FlightCallJohto
+    goto_if_eq VAR_RESULT, FALSE, EventScript_FlightCall_Cancel
     waitstate
     releaseall
     end
@@ -1765,6 +1816,7 @@ EventScript_FlightCall_Hoenn::
     end
 
 EventScript_FlightCall_Cancel::
+    special Johto_CancelKantoTravel
     releaseall
     end
 

@@ -652,7 +652,19 @@ gSpecials::
 	def_special StickerManGetBragFlags
 	def_special CheckAddCoins
 	def_special Special_FlightCallKanto
+	def_special Special_FlightCallSelectedKantoEra
+	def_special Special_FlightCallJohto
 	def_special Special_FlightCallHoenn
+	def_special Johto_GetCurrentTravelContext
+	def_special Johto_SelectOriginalKanto
+	def_special Johto_SelectLaterKanto
+	def_special Johto_ChooseJohto
+	def_special Johto_CancelKantoTravel
+	def_special Johto_RecordCurrentHeal
+	def_special Johto_PrepareKantoTravel
+	def_special Johto_CommitKantoTravel
+	def_special Johto_NeedsLaterKantoInitialization
+	def_special Johto_MarkLaterKantoInitialized
 	def_special Johto_CheckHooh, requests_effects=1
 	def_special Johto_CheckAerodactyl, requests_effects=1
 	def_special Johto_CheckKabuto, requests_effects=1

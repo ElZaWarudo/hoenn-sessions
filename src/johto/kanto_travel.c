@@ -232,6 +232,17 @@ bool8 JohtoTravel_CommitCrossing(void)
     return TRUE;
 }
 
+bool8 JohtoTravel_TryCommitArrival(void)
+{
+    enum JohtoTravelDestination destination = JohtoTravel_GetPendingDestination();
+    enum JohtoTravelContext targetContext = ContextForDestination(destination);
+
+    if (!IsWorldContext(targetContext)
+        || JohtoTravel_GetCurrentContext() != targetContext)
+        return FALSE;
+    return JohtoTravel_CommitCrossing();
+}
+
 bool8 JohtoTravel_IsLaterInitialized(void)
 {
     return JohtoEvent_GetFlag(JOHTO_FLAG_KANTO_LATER_INITIALIZED);

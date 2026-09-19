@@ -1137,7 +1137,15 @@ struct MultichoiceListStruct
 static const struct MenuAction sMultichoiceList_FlightCallRegions[] =
 {
     { COMPOUND_STRING("Kanto") },
+    { COMPOUND_STRING("Johto") },
     { COMPOUND_STRING("Hoenn") },
+    { COMPOUND_STRING("Cancel") },
+};
+
+static const struct MenuAction sMultichoiceList_KantoEras[] =
+{
+    { COMPOUND_STRING("Original Kanto") },
+    { COMPOUND_STRING("Three Years Later") },
     { COMPOUND_STRING("Cancel") },
 };
 
@@ -1303,6 +1311,7 @@ static const struct MultichoiceListStruct sMultichoiceLists[] =
     [MULTI_EGGS_VICTORIES_QUIT]                        = MULTICHOICE(sMultichoiceList_Eggs_Victories_Quit),
     [MULTI_HOF_EGGS_VICTORIES_QUIT]                    = MULTICHOICE(sMultichoiceList_HOF_Eggs_Victories_Quit),
 	[MULTI_FLIGHTCALL_REGIONS]                           = MULTICHOICE(sMultichoiceList_FlightCallRegions),
+    [MULTI_KANTO_ERAS]                                  = MULTICHOICE(sMultichoiceList_KantoEras),
 };
 
 const u8 *const gStdStrings[] =

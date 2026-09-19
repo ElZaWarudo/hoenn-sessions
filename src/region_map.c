@@ -30,6 +30,7 @@
 #include "constants/rgb.h"
 #include "constants/weather.h"
 #include "item_menu.h"
+#include "johto/kanto_travel.h"
 
 extern bool8 gFlightCallFromBag;
 extern bool8 gSkipShowMonAnim;
@@ -99,6 +100,13 @@ void ClearForcedFlightRegion(void)
     sForcedFlightRegion = 0;
     sForcedFlightKantoEra = KANTO_ERA_NONE;
     sUseForcedFlightRegion = FALSE;
+}
+
+void CancelFlightCall(void)
+{
+    gFlightCallFromBag = FALSE;
+    (void)JohtoTravel_Cancel();
+    ClearForcedFlightRegion();
 }
 
 static u8 GetActiveRegionMapType(void)
@@ -2158,6 +2166,7 @@ void CB2_OpenFlyMap(void)
         sFlyMap = Alloc(sizeof(*sFlyMap));
         if (sFlyMap == NULL)
         {
+            CancelFlightCall();
             SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
         }
         else
@@ -2786,6 +2795,15 @@ static void CB_ExitFlyMap(void)
         {
             FreeRegionMapIconResources();
 
+            if (sFlyMap->choseFlyLocation
+                && JohtoTravel_GetPendingDestination() != JOHTO_TRAVEL_DESTINATION_NONE
+                && (!JohtoTravel_RecordCurrentHeal(
+                        GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation))
+                    || !JohtoTravel_PrepareCrossing()))
+            {
+                sFlyMap->choseFlyLocation = FALSE;
+            }
+
             if (sFlyMap->choseFlyLocation)
             {
                 struct RegionMap *tempRegionMap = &sFlyMap->regionMap;
@@ -2799,9 +2817,11 @@ static void CB_ExitFlyMap(void)
             }
             else
             {
-                if (gFlightCallFromBag)
+                bool8 returnToBag = gFlightCallFromBag;
+
+                CancelFlightCall();
+                if (returnToBag)
                 {
-                    gFlightCallFromBag = FALSE;
                     SetMainCallback2(CB2_ReturnToBagMenuPocket);
                 }
                 else
