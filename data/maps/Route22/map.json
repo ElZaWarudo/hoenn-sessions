@@ -17,11 +17,6 @@
       "map": "MAP_KANTO_LATER_VIRIDIAN_CITY",
       "offset": -6,
       "direction": "right"
-    },
-    {
-      "map": "MAP_ROUTE26NORTH",
-      "offset": 28,
-      "direction": "left"
     }
   ],
   "object_events": [
@@ -167,17 +162,22 @@
       "trainer_sight_or_berry_tree_id": "3",
       "script": "NULL",
       "flag": "0"
-    }
-  ],
-  "warp_events": [
+    },
     {
+      "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
       "x": 12,
-      "y": 9,
+      "y": 10,
       "elevation": 0,
-      "dest_map": "MAP_RECEPTION_GATE",
-      "dest_warp_id": "4"
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "KantoLater_Route22_Overland_EventScript_Attendant",
+      "flag": "0"
     }
   ],
+  "warp_events": [],
   "coord_events": [
     {
       "type": "trigger",
@@ -227,5 +227,5 @@
     }
   ],
   "region": "REGION_KANTO",
-  "shared_scripts_map": "KantoLater_Route22_Route22"
+  "shared_scripts_map": "KantoLater_Route22_Overland"
 }

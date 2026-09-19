@@ -2,14 +2,14 @@
   "blockers": [],
   "event_totals": {
     "bg_events": 758,
-    "coord_events": 407,
-    "object_events": 3357,
-    "warp_events": 1175
+    "coord_events": 408,
+    "object_events": 3358,
+    "warp_events": 1174
   },
   "external_edge_counts": {
     "era_boundary": 0,
     "excluded_debug": 0,
-    "host_adapter": 1,
+    "host_adapter": 2,
     "runtime_policy": 0
   },
   "external_edges": [
@@ -18,6 +18,13 @@
       "index": 0,
       "kind": "warp",
       "source_map": "MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR",
+      "target": "MAP_DYNAMIC"
+    },
+    {
+      "classification": "required_host_adapter",
+      "index": 4,
+      "kind": "warp",
+      "source_map": "MAP_RECEPTION_GATE",
       "target": "MAP_DYNAMIC"
     }
   ],
@@ -5764,11 +5771,6 @@
           "direction": "left",
           "map": "MAP_ROUTE28",
           "offset": -29
-        },
-        {
-          "direction": "right",
-          "map": "MAP_ROUTE22",
-          "offset": -28
         }
       ],
       "edges": [
@@ -5789,15 +5791,6 @@
           "offset": -29,
           "target": "MAP_ROUTE28",
           "target_map_id": "MAP_ROUTE28"
-        },
-        {
-          "classification": "selected",
-          "direction": "right",
-          "edge_index": 2,
-          "kind": "connection",
-          "offset": -28,
-          "target": "MAP_ROUTE22",
-          "target_map_id": "MAP_KANTO_LATER_ROUTE22"
         },
         {
           "classification": "selected",
@@ -17158,12 +17151,12 @@
           "warp_id": "0"
         },
         {
-          "classification": "selected",
+          "classification": "required_host_adapter",
           "index": 4,
           "kind": "warp",
-          "target": "MAP_ROUTE22",
-          "target_map_id": "MAP_KANTO_LATER_ROUTE22",
-          "warp_id": "0"
+          "target": "MAP_DYNAMIC",
+          "target_map_id": null,
+          "warp_id": "WARP_ID_DYNAMIC"
         }
       ],
       "era": "JOHTO",
@@ -17256,12 +17249,12 @@
           "y": 9
         },
         {
-          "classification": "selected",
-          "dest_map": "MAP_ROUTE22",
-          "dest_warp_id": "0",
+          "classification": "required_host_adapter",
+          "dest_map": "MAP_DYNAMIC",
+          "dest_warp_id": "WARP_ID_DYNAMIC",
           "elevation": 0,
           "index": 4,
-          "target_map_id": "MAP_KANTO_LATER_ROUTE22",
+          "target_map_id": null,
           "x": 20,
           "y": 9
         }
@@ -34064,11 +34057,6 @@
           "direction": "right",
           "map": "MAP_VIRIDIAN_CITY",
           "offset": -6
-        },
-        {
-          "direction": "left",
-          "map": "MAP_ROUTE26NORTH",
-          "offset": 28
         }
       ],
       "edges": [
@@ -34080,23 +34068,6 @@
           "offset": -6,
           "target": "MAP_VIRIDIAN_CITY",
           "target_map_id": "MAP_KANTO_LATER_VIRIDIAN_CITY"
-        },
-        {
-          "classification": "selected",
-          "direction": "left",
-          "edge_index": 1,
-          "kind": "connection",
-          "offset": 28,
-          "target": "MAP_ROUTE26NORTH",
-          "target_map_id": "MAP_ROUTE26NORTH"
-        },
-        {
-          "classification": "selected",
-          "index": 0,
-          "kind": "warp",
-          "target": "MAP_RECEPTION_GATE",
-          "target_map_id": "MAP_RECEPTION_GATE",
-          "warp_id": "4"
         }
       ],
       "era": "KANTO_LATER",
@@ -34147,18 +34118,7 @@
         "map_json": "91433a8519ec84a74e11a0bd040a0b634562d3ca5b65c5c8bb40305ce2f91c85",
         "script": "80e8007ae7631c684cedf3b1b7a61251e1a5f19d113728413df4e4100d64eba4"
       },
-      "warp_targets": [
-        {
-          "classification": "selected",
-          "dest_map": "MAP_RECEPTION_GATE",
-          "dest_warp_id": "4",
-          "elevation": 0,
-          "index": 0,
-          "target_map_id": "MAP_RECEPTION_GATE",
-          "x": 12,
-          "y": 9
-        }
-      ],
+      "warp_targets": [],
       "world_era": "KANTO_LATER"
     },
     {
@@ -47224,9 +47184,9 @@
   "production_map_count": 409,
   "production_write_ready": true,
   "schema": "johto-world-plan-v1",
-  "selected_connection_count": 191,
+  "selected_connection_count": 189,
   "selected_map_count": 407,
-  "selected_warp_count": 1174,
+  "selected_warp_count": 1172,
   "source_event_totals": {
     "bg_events": 760,
     "coord_events": 407,
@@ -47291,6 +47251,13 @@
       "source_map": "MAP_ROUTE40"
     },
     {
+      "action": "remove",
+      "index": 2,
+      "kind": "connection",
+      "reason": "reviewed debug edge",
+      "source_map": "MAP_ROUTE26NORTH"
+    },
+    {
       "action": "rewrite",
       "after": {
         "dest_warp_id": "5"
@@ -47301,6 +47268,24 @@
       "index": 1,
       "kind": "warp",
       "source_map": "MAP_NEW_BARK_TOWN_LAB"
+    },
+    {
+      "action": "rewrite",
+      "after": {
+        "classification": "required_host_adapter",
+        "dest_map": "MAP_DYNAMIC",
+        "dest_warp_id": "WARP_ID_DYNAMIC",
+        "target_map_id": null
+      },
+      "before": {
+        "classification": "selected",
+        "dest_map": "MAP_ROUTE22",
+        "dest_warp_id": "0",
+        "target_map_id": "MAP_KANTO_LATER_ROUTE22"
+      },
+      "index": 4,
+      "kind": "warp",
+      "source_map": "MAP_RECEPTION_GATE"
     },
     {
       "action": "rewrite",
@@ -47363,6 +47348,20 @@
       "kind": "warp",
       "reason": "reviewed debug or adapter edge",
       "source_map": "MAP_CINNABAR_ISLAND"
+    },
+    {
+      "action": "remove",
+      "index": 0,
+      "kind": "warp",
+      "reason": "reviewed debug or adapter edge",
+      "source_map": "MAP_ROUTE22"
+    },
+    {
+      "action": "remove",
+      "index": 1,
+      "kind": "connection",
+      "reason": "reviewed debug edge",
+      "source_map": "MAP_ROUTE22"
     },
     {
       "action": "rewrite",

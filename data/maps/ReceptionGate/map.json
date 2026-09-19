@@ -100,8 +100,8 @@
       "x": 20,
       "y": 9,
       "elevation": 0,
-      "dest_map": "MAP_KANTO_LATER_ROUTE22",
-      "dest_warp_id": "0"
+      "dest_map": "MAP_DYNAMIC",
+      "dest_warp_id": "WARP_ID_DYNAMIC"
     }
   ],
   "coord_events": [
@@ -113,9 +113,18 @@
       "var": "VAR_ROUTE27_STATE",
       "var_value": "1",
       "script": "Johto_ReceptionGate_ReceptionGate_Trigger"
+    },
+    {
+      "type": "trigger",
+      "x": 19,
+      "y": 9,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Johto_ReceptionGate_Overland_EventScript_ChooseKanto"
     }
   ],
   "bg_events": [],
   "region": "REGION_KANTO",
-  "shared_scripts_map": "Johto_ReceptionGate_ReceptionGate"
+  "shared_scripts_map": "Johto_ReceptionGate_Overland"
 }
