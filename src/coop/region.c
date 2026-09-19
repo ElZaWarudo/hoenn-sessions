@@ -13,6 +13,13 @@ static bool8 IsKnownMapSection(u32 section_id)
     return section_id < MAPSEC_COUNT && section_id != MAPSEC_NONE;
 }
 
+static bool8 IsGeographicKantoJohtoSection(u32 section_id)
+{
+    return section_id == MAPSEC_JOHTO_ROUTE_26
+        || section_id == MAPSEC_JOHTO_ROUTE_27
+        || section_id == MAPSEC_JOHTO_ROUTE_28;
+}
+
 static enum Region EngineRegion_FromMapHeaderValue(u8 value)
 {
     switch (value)
@@ -54,6 +61,11 @@ enum CoopRegion CoopRegion_FromSectionId(u32 section_id)
 {
     if (!IsKnownMapSection(section_id))
         return COOP_REGION_UNSPECIFIED;
+
+    /* Routes 26-28 use Johto campaign map-section labels, but live on the
+     * geographic Kanto side of the regional boundary. */
+    if (IsGeographicKantoJohtoSection(section_id))
+        return COOP_REGION_KANTO;
 
     if (GetRegionForSectionId(section_id) == REGION_KANTO)
     {

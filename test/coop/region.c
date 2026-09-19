@@ -95,6 +95,26 @@ TEST("Cloud Coop normalization rejects contradictory engine and map regions")
     EXPECT(!CoopRegion_Normalize(NULL, REGION_HOENN, MAPSEC_LITTLEROOT_TOWN));
 }
 
+TEST("Cloud Coop treats Routes 26 through 28 as geographic Kanto")
+{
+    enum CoopRegion region = COOP_REGION_UNSPECIFIED;
+
+    EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_JOHTO_ROUTE_26), COOP_REGION_KANTO);
+    EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_JOHTO_ROUTE_27), COOP_REGION_KANTO);
+    EXPECT_EQ(CoopRegion_FromSectionId(MAPSEC_JOHTO_ROUTE_28), COOP_REGION_KANTO);
+
+    EXPECT(CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_JOHTO_ROUTE_26));
+    EXPECT_EQ(region, COOP_REGION_KANTO);
+    EXPECT(CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_JOHTO_ROUTE_27));
+    EXPECT_EQ(region, COOP_REGION_KANTO);
+    EXPECT(CoopRegion_Normalize(&region, REGION_KANTO, MAPSEC_JOHTO_ROUTE_28));
+    EXPECT_EQ(region, COOP_REGION_KANTO);
+
+    EXPECT(!CoopRegion_Normalize(&region, REGION_JOHTO, MAPSEC_JOHTO_ROUTE_26));
+    EXPECT(!CoopRegion_Normalize(&region, REGION_HOENN, MAPSEC_JOHTO_ROUTE_27));
+    EXPECT_EQ(region, COOP_REGION_KANTO);
+}
+
 TEST("Cloud Coop active region derives Kanto and Sevii from the current map")
 {
     enum CoopRegion region = COOP_REGION_UNSPECIFIED;
