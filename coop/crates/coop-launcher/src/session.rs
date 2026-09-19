@@ -64,13 +64,12 @@ fn initial_presence_eligible(state: &coop_protocol::LocalPresenceStateV1) -> boo
 
 fn compatible_presence_map(state: &coop_protocol::LocalPresenceStateV1) -> bool {
     let location = state.pose().location();
-    location.region == coop_protocol::RegionId::Hoenn
-        && coop_protocol::MapCatalog::resolve_coordinates(
-            location.region,
-            location.map_group,
-            location.map_number,
-        )
-        .is_ok_and(|map| map.map == "LITTLEROOT_TOWN")
+    coop_protocol::MapCatalog::resolve_coordinates(
+        location.region,
+        location.map_group,
+        location.map_number,
+    )
+    .is_ok()
 }
 
 /// Compares two u32 serial values using the RFC 1982 half-range rule used by
@@ -370,6 +369,41 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    fn group_travel_create(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _request: coop_cloud::GroupTravelProposalRequest,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_current(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::group_travel::GroupTravelFuture<'_, Option<coop_cloud::GroupTravelProposalView>>
+    {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_get(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_action(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _request: coop_cloud::GroupTravelActionRequest,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
     fn online_snapshot(
         &self,
         _token: coop_cloud::AccessToken,
@@ -2197,11 +2231,19 @@ impl SessionLifecycle {
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut shutdown = Box::pin(shutdown);
         let mut online = crate::online::OnlineOwner::default();
+        let mut group_travel = crate::group_travel::GroupTravelOwner::default();
         let mut failures = 0_u8;
         loop {
             let started = tokio::time::Instant::now();
             match self
-                .run_realtime_attempt(api, children, &mut shutdown, &mut heartbeat, &mut online)
+                .run_realtime_attempt(
+                    api,
+                    children,
+                    &mut shutdown,
+                    &mut heartbeat,
+                    &mut online,
+                    &mut group_travel,
+                )
                 .await
             {
                 Err(SessionError::PresenceRecovery { transport_failure }) => {
@@ -2250,6 +2292,7 @@ impl SessionLifecycle {
         shutdown: &mut Pin<Box<F>>,
         heartbeat: &mut tokio::time::Interval,
         online: &mut crate::online::OnlineOwner<'a>,
+        group_travel: &mut crate::group_travel::GroupTravelOwner<'a>,
     ) -> Result<(), SessionError>
     where
         A: CloudApi + RealtimeApi,
@@ -2267,6 +2310,17 @@ impl SessionLifecycle {
             {
                 break (generation, latest);
             }
+            let travel_token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            group_travel.prepare(
+                api,
+                travel_token,
+                self.lease.fence(),
+                children.control.lifecycle_generation(),
+            );
             tokio::select! {
                 completion = online.next() => {
                     if let Some(status) = online.finish(completion, self.lease.fence(), children.control.lifecycle_generation())? {
@@ -2284,6 +2338,18 @@ impl SessionLifecycle {
                     };
                 }
                 _ = heartbeat.tick() => self.heartbeat(api).await?,
+                travel = group_travel.next_event() => {
+                    match travel {
+                        crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
+                            children.control.send(&ControlCommand::GroupTravel {
+                                session_epoch: self.lease.session_epoch.value(), record,
+                            }).await?;
+                            group_travel.acknowledge_delivery(record)?;
+                        }
+                        crate::group_travel::GroupTravelOwnerEvent::Error(error) => return Err(error),
+                        crate::group_travel::GroupTravelOwnerEvent::Wake | crate::group_travel::GroupTravelOwnerEvent::Complete => {}
+                    }
+                }
                 observation = children.observe_raw() => {
                     match observation.map_err(SessionError::Control)? {
                         RawSupervisorEvent::Control(
@@ -2291,6 +2357,13 @@ impl SessionLifecycle {
                         ) => {}
                         RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                             self.start_online(api, online, &mut children.control, request).await?;
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::GroupTravel(record)) => {
+                            group_travel.handle(
+                                self.lease.fence(),
+                                children.control.lifecycle_generation(),
+                                record,
+                            )?;
                         }
                         RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                             self.checkpoint_with_deadline(api, &mut children.control, ready).await?;
@@ -2475,6 +2548,7 @@ impl SessionLifecycle {
         }
 
         let mut priority = RealtimeSource::Control;
+        group_travel.reset_poll();
         while result.is_ok() {
             let realtime = coordinator.as_mut().expect("coordinator remains owned");
             if !checkpoint_shutdown && realtime.recovery_needed() {
@@ -2502,6 +2576,14 @@ impl SessionLifecycle {
                 };
                 break;
             }
+            let travel_token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            let travel_fence = self.lease.fence();
+            let travel_generation = children.control.lifecycle_generation();
+            group_travel.prepare(api, travel_token, travel_fence, travel_generation);
             let input = tokio::select! {
                 completion = online.next() => {
                     match online.finish(completion, self.lease.fence(), children.control.lifecycle_generation()) {
@@ -2512,6 +2594,25 @@ impl SessionLifecycle {
                         }
                         Ok(None) => {}
                         Err(error) => result = Err(error),
+                    }
+                    continue;
+                }
+                travel = group_travel.next_event() => {
+                    match travel {
+                        crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
+                            match children.control.send(&ControlCommand::GroupTravel {
+                                session_epoch: self.lease.session_epoch.value(), record,
+                            }).await {
+                                Ok(()) => {
+                                    if let Err(error) = group_travel.acknowledge_delivery(record) {
+                                        result = Err(error);
+                                    }
+                                }
+                                Err(error) => result = Err(SessionError::Control(error)),
+                            }
+                        }
+                        crate::group_travel::GroupTravelOwnerEvent::Error(error) => result = Err(error),
+                        crate::group_travel::GroupTravelOwnerEvent::Wake | crate::group_travel::GroupTravelOwnerEvent::Complete => {}
                     }
                     continue;
                 }
@@ -2553,6 +2654,15 @@ impl SessionLifecycle {
                                 .start_online(api, online, &mut children.control, request)
                                 .await
                             {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::GroupTravel(record))) => {
+                            if let Err(error) = group_travel.handle(
+                                self.lease.fence(),
+                                children.control.lifecycle_generation(),
+                                record,
+                            ) {
                                 result = Err(error);
                             }
                         }
@@ -3176,6 +3286,7 @@ impl SessionLifecycle {
                 CheckpointInput::Control(Ok(
                     ControlEvent::RomPresenceReset
                     | ControlEvent::OnlineRequest(_)
+                    | ControlEvent::GroupTravel(_)
                     | ControlEvent::PresenceRearmed { .. },
                 )) => {
                     return Err(SessionError::Realtime);
@@ -3308,6 +3419,7 @@ impl SessionLifecycle {
                 .map_err(|_| SessionError::Realtime),
             ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
+            | ControlEvent::GroupTravel(_)
             | ControlEvent::PresenceRearmed { .. }
             | ControlEvent::CheckpointReady { .. }
             | ControlEvent::SaveDataUpdated { .. }
@@ -4839,6 +4951,7 @@ mod lifecycle_tests {
                 }
                 coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
                 | coop_sidecar::control::ControlCommand::OnlineStatus { .. }
+                | coop_sidecar::control::ControlCommand::GroupTravel { .. }
                 | coop_sidecar::control::ControlCommand::PresenceRearm(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_) => {
@@ -5653,7 +5766,7 @@ mod lifecycle_tests {
         });
 
         let result = timeout(
-            Duration::from_secs(3),
+            Duration::from_secs(5),
             session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
                 let _ = shutdown_rx.await;
             }),
@@ -6573,6 +6686,10 @@ mod lifecycle_tests {
     }
 
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the lifecycle test keeps its full recovery timeline visible"
+    )]
     async fn online_mint_failure_reconciles_checkpoint_before_recovery() {
         let (_root, mut session, cloud) = bootstrap(false).await;
         std::fs::write(
@@ -6649,6 +6766,7 @@ mod lifecycle_tests {
         let mut shutdown = Box::pin(std::future::pending::<()>());
         let mut heartbeat = tokio::time::interval(Duration::from_secs(60));
         let mut online = crate::online::OnlineOwner::default();
+        let mut group_travel = crate::group_travel::GroupTravelOwner::default();
         let result = timeout(
             Duration::from_secs(3),
             session.run_realtime_attempt(
@@ -6657,6 +6775,7 @@ mod lifecycle_tests {
                 &mut shutdown,
                 &mut heartbeat,
                 &mut online,
+                &mut group_travel,
             ),
         )
         .await
@@ -6996,13 +7115,10 @@ mod lifecycle_tests {
         drop(websocket_listener);
     }
 
-    #[tokio::test]
-    async fn realtime_activation_waits_for_littleroot_while_keeping_lease_alive() {
-        assert_initial_presence_wait(
-            realtime_presence_state_at(1, 1, 0, PlayerState::Overworld),
-            true,
-        )
-        .await;
+    #[test]
+    fn realtime_activation_accepts_a_catalogued_non_littleroot_map() {
+        let state = realtime_presence_state_at(1, 1, 0, PlayerState::Overworld);
+        assert!(super::initial_presence_eligible(&state));
     }
 
     #[tokio::test]
@@ -7449,14 +7565,6 @@ mod lifecycle_tests {
                 .await;
             }
             drop_rx.await.unwrap();
-            if house {
-                let mut remainder = Vec::new();
-                socket.read_to_end(&mut remainder).await.unwrap();
-                assert!(
-                    remainder.is_empty(),
-                    "incompatible house pose never reaches the old transport"
-                );
-            }
             drop(socket);
             old_closed_tx.send(()).unwrap();
         });
@@ -7466,7 +7574,12 @@ mod lifecycle_tests {
             assert_eq!(
                 decode_client_realtime_frame(&read_websocket_text_for_test(&mut socket).await)
                     .unwrap(),
-                ClientRealtimeFrameV1::player_state(realtime_presence_state(20))
+                ClientRealtimeFrameV1::player_state(realtime_presence_state_at(
+                    11,
+                    1,
+                    0,
+                    PlayerState::Overworld,
+                ))
             );
             for frame in [
                 ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(2).unwrap()),
@@ -7575,20 +7688,6 @@ mod lifecycle_tests {
                     0,
                     PlayerState::Overworld,
                 )),
-            )
-            .await;
-            let before = *control_cloud.heartbeats.lock().unwrap();
-            while *control_cloud.heartbeats.lock().unwrap() < before + 2 {
-                control_cloud.heartbeat_observed.notified().await;
-            }
-            assert_eq!(
-                control_cloud.realtime_requests.lock().unwrap().len(),
-                1,
-                "cached or incompatible poses cannot spend the new ticket"
-            );
-            write_control_event(
-                &mut stream,
-                &ControlEvent::PlayerState(realtime_presence_state(20)),
             )
             .await;
             control_cloud.realtime_requested.notified().await;

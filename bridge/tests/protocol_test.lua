@@ -35,4 +35,46 @@ local session_ready = assert(protocol.encode({
 assert(protocol.decode(session_ready, "outbound") == nil)
 assert(protocol.decode(session_ready, "inbound") ~= nil)
 
+local proposal = string.rep("\xA5", 16)
+for route = 1, 6 do
+  local departure = route <= 2 and 1 or (route <= 4 and 2 or 4)
+  local request = assert(protocol.encode_group_travel({
+    kind = 1, route = route, request_id = route, proposal_id = string.rep("\0", 16),
+    departure = departure, result = 0, reason = 0,
+  }, "outbound"))
+  assert(#request == 32)
+  assert(assert(protocol.decode_group_travel(request, "outbound")).route == route)
+  assert(assert(protocol.decode_group_travel(request, "outbound")).departure == departure)
+end
+for route = 3, 4 do
+  local maiden = assert(protocol.encode_group_travel({
+    kind = 1, route = route, request_id = route + 10, proposal_id = string.rep("\0", 16),
+    departure = 3, result = 0, reason = 0,
+  }, "outbound"))
+  local decoded_maiden = assert(protocol.decode_group_travel(maiden, "outbound"))
+  assert(decoded_maiden.route == route)
+  assert(decoded_maiden.departure == 3)
+end
+for _, route in ipairs({1, 2, 5, 6}) do
+  local rejected = protocol.encode_group_travel({
+    kind = 1, route = route, request_id = route + 20, proposal_id = string.rep("\0", 16),
+    departure = 3, result = 0, reason = 0,
+  }, "outbound")
+  assert(rejected == nil)
+end
+local commit = assert(protocol.encode_group_travel({
+  kind = 3, route = 6, request_id = 9, proposal_id = proposal, result = 0, reason = 0,
+  departure = 4,
+}, "inbound"))
+assert(protocol.decode_group_travel(commit, "outbound") == nil)
+assert(protocol.decode_group_travel(commit:sub(1, 28) .. "\1\0\0\0", "inbound") == nil)
+assert(protocol.decode_group_travel(commit:sub(1, 7) .. "\1" .. commit:sub(9), "inbound") == nil)
+assert(protocol.decode_group_travel(commit:sub(1, 6) .. "\0" .. commit:sub(8), "inbound") == nil)
+local travel_frame = assert(protocol.encode({
+  type = protocol.types.GROUP_TRAVEL_SERVER, sequence = 2, session_epoch = 1,
+  payload = commit,
+}))
+assert(protocol.decode(travel_frame, "inbound"))
+assert(protocol.decode(travel_frame, "outbound") == nil)
+
 print("bridge protocol tests passed")

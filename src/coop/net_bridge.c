@@ -1,5 +1,6 @@
 #include "global.h"
 #include "coop/net_bridge.h"
+#include "coop/group_travel.h"
 #include "coop/presence_runtime.h"
 #include "coop/progress.h"
 #include "coop/save.h"
@@ -41,13 +42,13 @@ static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
 static bool8 IsOutboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_ROM_READY
-        && type <= COOP_BRIDGE_MESSAGE_ONLINE_REQUEST;
+        && type <= COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_CLIENT;
 }
 
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_ONLINE_STATUS;
+        && type <= COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_SERVER;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -503,6 +504,12 @@ bool8 CoopNetBridge_GetOnlineStatus(struct CoopOnlineStatus *status)
     return TRUE;
 }
 
+bool8 CoopNetBridge_IsGrouped(void)
+{
+    return IsCloudSessionActive() && sCoopNetRuntime.online_status_valid
+        && (sCoopNetRuntime.online_status.flags & COOP_ONLINE_GROUPED) != 0;
+}
+
 static bool8 DecodeOnlineName(u8 *out, const u8 *in)
 {
     u32 i;
@@ -757,6 +764,10 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
                                         | COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_SEEN;
             if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0))
                 gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_ROM_READY_SENT;
+            /* ROM_READY must be the first ROM frame of a replacement bridge.
+             * Semantic replay before it is treated as an unauthenticated
+             * startup frame by the sidecar and tears the reconnect down. */
+            CoopGroupTravel_OnSessionReady();
             return TRUE;
         }
         else if (sCoopNetRuntime.session_epoch != 0
@@ -787,6 +798,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
                                     | COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_SEEN;
         if (CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_ROM_READY, NULL, 0))
             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_ROM_READY_SENT;
+        CoopGroupTravel_OnSessionReady();
         return TRUE;
     }
 
@@ -855,6 +867,31 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_SERVER)
+    {
+        u32 i;
+        const struct CoopGroupTravelRecord *record;
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence)
+         || message->length != COOP_GROUP_TRAVEL_RECORD_SIZE)
+            return FALSE;
+        for (i = message->length; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+            if (message->payload[i] != 0)
+            {
+                gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+                return FALSE;
+            }
+        record = (const struct CoopGroupTravelRecord *)message->payload;
+        if (!CoopGroupTravel_ReceiveServer(record))
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        return FALSE;
+    }
+
     /* Later milestones add handlers for the remaining documented inbound
      * messages. Until then, do not advance the receive sequence for one. */
     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
@@ -884,6 +921,7 @@ static void ObserveSidecarHeartbeat(void)
             gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_SESSION_READY;
             gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_SIDECAR_HEARTBEAT_STALE;
             CoopPresenceRuntime_TransportLost();
+            CoopGroupTravel_OnTransportLost();
             CancelCheckpointAuthorization();
         }
     }
@@ -905,6 +943,7 @@ void CoopNetBridge_Init(void)
     sCoopNetRuntime.checkpoint_state = COOP_CHECKPOINT_STATE_OFFLINE;
     gCoopNetBridge.status_flags = COOP_BRIDGE_STATUS_INITIALIZED;
     CoopPresenceRuntime_Init();
+    CoopGroupTravel_Init();
 
     TryAnnounceRomReady();
 }
@@ -920,6 +959,7 @@ void CoopNetBridge_Poll(void)
 
     sCoopNetRuntime.frame_counter++;
     CoopPresenceRuntime_AdvanceFrame();
+    CoopGroupTravel_Poll();
     /* AgbMain initializes the bridge before flash is loaded. Do not invite a
      * cloud session until the save layer has classified and validated V1. */
     TryAnnounceRomReady();

@@ -8,6 +8,7 @@
 #include "coop/presence.h"
 #include "coop/region.h"
 #include "coop/online_protocol.h"
+#include "coop/group_travel_protocol.h"
 
 #define COOP_NET_BRIDGE_MAGIC 0x504B434Fu
 #define COOP_NET_BRIDGE_ABI_VERSION 1
@@ -34,6 +35,7 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_CHECKPOINT_READY = 12,
     COOP_BRIDGE_MESSAGE_SAVE_DATA_UPDATED = 13,
     COOP_BRIDGE_MESSAGE_ONLINE_REQUEST = 14,
+    COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_CLIENT = 15,
 
     COOP_BRIDGE_MESSAGE_SESSION_READY = 0x0100,
     COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN = 0x0101,
@@ -49,6 +51,7 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_ABORT_BATTLE = 0x010B,
     COOP_BRIDGE_MESSAGE_CHECKPOINT_GRANTED = 0x010C,
     COOP_BRIDGE_MESSAGE_ONLINE_STATUS = 0x010D,
+    COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_SERVER = 0x010E,
 };
 
 enum CoopBridgeStatus
@@ -182,6 +185,7 @@ void CoopNetBridge_Poll(void);
 u32 CoopNetBridge_GetSessionEpoch(void);
 bool8 CoopNetBridge_SendOnlineRequest(const struct CoopOnlineRequest *request);
 bool8 CoopNetBridge_GetOnlineStatus(struct CoopOnlineStatus *status);
+bool8 CoopNetBridge_IsGrouped(void);
 enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);

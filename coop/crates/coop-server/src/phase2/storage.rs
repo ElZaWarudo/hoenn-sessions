@@ -7,14 +7,15 @@ use argon2::{
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use coop_cloud::{
     CharacterCloudState, CharacterId, ClientInstanceId, CommitId, Group, GroupId,
-    GroupInvitationId, IdempotencyKey, LeaseContract, RefreshFamilyId, Revision, RuntimeLeaseFence,
-    SessionId, SigningPrivateKey, SnapshotFile, SnapshotFinalizeRequest, SnapshotId,
-    SnapshotPrepareRequest, SnapshotRecord, SnapshotRestoreRequest, StableRuntimeSession,
-    UnixTimestampMillis, UploadTarget, UserId,
+    GroupInvitationId, GroupTravelProposalId, GroupTravelProposalView, IdempotencyKey,
+    LeaseContract, RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId, SigningPrivateKey,
+    SnapshotFile, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
+    SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
 };
 use coop_protocol::{RegionId, RegionalProgress, WorldZone};
 use getrandom::fill as random_fill;
 use hmac::Mac;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
@@ -657,17 +658,33 @@ pub(crate) struct CharacterRecord {
     pub last_session_epoch: u32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) enum GroupStatus {
     Active,
     Closed,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct GroupRecord {
     pub group: Group,
     pub zone: WorldZone,
     pub status: GroupStatus,
+    #[serde(default)]
+    pub zone_revision: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct GroupTravelProposalRecord {
+    pub view: GroupTravelProposalView,
+    pub retain_until: Option<u64>,
+}
+
+#[derive(Clone)]
+pub(crate) struct GroupTravelProposalIdempotencyRecord {
+    pub fingerprint: [u8; 32],
+    pub response: GroupTravelProposalView,
+    pub expires_at: u64,
+    pub lifecycle: bool,
 }
 
 #[derive(Clone)]
@@ -817,6 +834,11 @@ pub struct State {
     pub(crate) group_invitations: HashMap<GroupInvitationId, GroupInvitationRecord>,
     pub(crate) group_idempotency:
         HashMap<(CharacterId, String, IdempotencyKey), GroupIdempotencyRecord>,
+    pub(crate) group_travel_proposals: HashMap<GroupTravelProposalId, GroupTravelProposalRecord>,
+    pub(crate) live_group_travel_by_group: HashMap<GroupId, GroupTravelProposalId>,
+    pub(crate) live_group_travel_by_member: HashMap<CharacterId, GroupTravelProposalId>,
+    pub(crate) group_travel_proposal_idempotency:
+        HashMap<(CharacterId, String, IdempotencyKey), GroupTravelProposalIdempotencyRecord>,
 }
 #[derive(Clone)]
 pub(crate) struct Store {

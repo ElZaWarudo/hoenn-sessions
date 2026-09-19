@@ -15,6 +15,8 @@ pub mod presence;
 pub use presence::*;
 pub mod online;
 pub use online::*;
+pub mod group_travel;
+pub use group_travel::*;
 
 pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
 pub use identity_catalog::{

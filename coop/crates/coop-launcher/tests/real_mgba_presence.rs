@@ -36,6 +36,7 @@ use uuid::Uuid;
 type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const ACCEPTANCE: &str = "Both Lua scripts authenticated.\nBoth remote avatars were visible in Littleroot.\nEach player's movement appeared on the other screen.\nRemote avatars did not block local movement.\n";
 const ONLINE_ACCEPTANCE: &str = "Both Lua scripts authenticated.\nBoth remote avatars were visible and moved reciprocally.\nEach player changed character through the appearance menu and both screens showed the selected sprite.\nCancelling character selection preserved the previous appearance.\nOnline invitations were accepted and both members saw their group.\nEach member could leave and both became ungrouped without losing nearby avatars.\nDeclined and expired invitations could not create a group.\nAfter the requested socket interruption both games recovered reciprocal movement.\nEach player entered a house and returned with reciprocal presence and selected appearance restored.\nOnline loading and injected unavailable states allowed Back and subsequent Refresh recovered.\nThe fully unlocked pause menu did not clip and ordinary menus and dialogue rendered after Online.\n";
+const GROUP_TRAVEL_ACCEPTANCE: &str = "Both Lua scripts authenticated.\nBoth players joined the same two-member group.\nThe responder declined one travel proposal and neither ROM changed location.\nThe requester cancelled one travel proposal and neither ROM changed location.\nBoth ROMs applied an accepted Original Kanto proposal and acknowledged APPLIED.\nBoth ROMs applied an accepted Three Years Later Kanto proposal and acknowledged APPLIED.\nDisconnecting one ROM before acceptance caused no travel mutation.\nDisconnecting one ROM after commit replayed the same commit after reconnect and both ROMs acknowledged APPLIED.\n";
 const KEY_ID: &str = "real-mgba-local-only";
 
 // HTTP faults live behind the TCP proxy, at request boundaries. Classifying only
@@ -414,6 +415,7 @@ async fn observe(
     stop: watch::Sender<bool>,
     presence: Option<coop_server::PresenceService>,
     online: Option<OnlineObservation>,
+    group_travel: bool,
 ) -> TestResult<()> {
     let abort = path.with_file_name("abort.txt");
     let mut stopped = stop.subscribe();
@@ -422,7 +424,9 @@ async fn observe(
     }
     let deadline = Instant::now() + duration;
     let mut last_connections = None;
-    let acceptance = if online.is_some() {
+    let acceptance = if group_travel {
+        GROUP_TRAVEL_ACCEPTANCE
+    } else if online.is_some() {
         ONLINE_ACCEPTANCE
     } else {
         ACCEPTANCE
@@ -517,10 +521,11 @@ async fn two_stock_mgba_players_manual_presence() -> TestResult<()> {
         .canonicalize()?;
     let seconds =
         parse_observation_seconds(std::env::var("COOP_REAL_DURATION_SECONDS").ok().as_deref())?;
-    let online = match std::env::var("COOP_REAL_SCENARIO").as_deref() {
-        Ok("online") => true,
-        Ok("walking") | Err(std::env::VarError::NotPresent) => false,
-        _ => return Err("COOP_REAL_SCENARIO must be walking or online".into()),
+    let (online, group_travel) = match std::env::var("COOP_REAL_SCENARIO").as_deref() {
+        Ok("group-travel") => (true, true),
+        Ok("online") => (true, false),
+        Ok("walking") | Err(std::env::VarError::NotPresent) => (false, false),
+        _ => return Err("COOP_REAL_SCENARIO must be walking, online, or group-travel".into()),
     };
     let mut key = [0; 32];
     getrandom::fill(&mut key).map_err(|_| "local signing key generation failed")?;
@@ -540,6 +545,16 @@ async fn two_stock_mgba_players_manual_presence() -> TestResult<()> {
             .to_bytes(),
         repository,
     };
+    BuildCompatibility::validate(
+        inputs.repository.join("dist/bridge_manifest.json"),
+        &inputs.rom,
+        &inputs.mgba,
+    )
+    .map_err(|error| {
+        format!(
+            "real mGBA harness requires the pinned mGBA executable hash; artifact absent or mismatched: {error}"
+        )
+    })?;
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
     let upstream = listener.local_addr()?;
     let proxy_listener = TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -586,7 +601,9 @@ async fn two_stock_mgba_players_manual_presence() -> TestResult<()> {
     eprintln!(
         "Manual observation window: {seconds} seconds. Start new games, then meet in Littleroot."
     );
-    let checklist = if online {
+    let checklist = if group_travel {
+        GROUP_TRAVEL_ACCEPTANCE
+    } else if online {
         ONLINE_ACCEPTANCE
     } else {
         ACCEPTANCE
@@ -606,6 +623,11 @@ async fn two_stock_mgba_players_manual_presence() -> TestResult<()> {
                 .path()
                 .join("interrupt-websockets.txt")
                 .display()
+        );
+    }
+    if group_travel {
+        eprintln!(
+            "Group-travel scenario: exercise decline, requester cancel, Original Kanto, Three Years Later Kanto, precommit disconnect, and postcommit reconnect/replay. Confirm both ROMs finish each committed transfer before writing acceptance."
         );
     }
     eprintln!(
@@ -637,7 +659,8 @@ async fn two_stock_mgba_players_manual_presence() -> TestResult<()> {
             Duration::from_secs(seconds),
             stop,
             Some(presence),
-            online.then_some(OnlineObservation { interrupt, dropped })
+            online.then_some(OnlineObservation { interrupt, dropped }),
+            group_travel,
         ),
     );
     let _ = server_stop.send(());
@@ -658,9 +681,15 @@ async fn two_stock_mgba_players_manual_presence() -> TestResult<()> {
     observed?;
     server_result?;
     proxy_result.map_err(|_| "local interruption proxy task failed")??;
-    eprintln!(
-        "Manual scenario checklist accepted; both lifecycle cleanups passed. Saving, resume and group travel are not certified by this harness."
-    );
+    if group_travel {
+        eprintln!(
+            "Manual group-travel checklist accepted; both lifecycle cleanups passed. Saving and resume are not certified by this harness."
+        );
+    } else {
+        eprintln!(
+            "Manual scenario checklist accepted; both lifecycle cleanups passed. Saving, resume and group travel are not certified by this harness."
+        );
+    }
     Ok(())
 }
 
@@ -678,6 +707,7 @@ async fn observation_does_not_wait_after_players_already_stopped() {
             stop,
             None,
             None,
+            false,
         ),
     )
     .await
@@ -701,6 +731,7 @@ async fn online_acceptance_requires_observed_socket_interruption() {
             interrupt,
             dropped: Arc::new(AtomicUsize::new(0)),
         }),
+        false,
     )
     .await;
     assert!(

@@ -233,10 +233,7 @@ fn terminate(
                 OnlineActionResponse::Declined
             }
             OnlineAction::Leave { group_id } => {
-                let group = state
-                    .groups
-                    .get_mut(&group_id)
-                    .ok_or(Phase2Error::NotFound)?;
+                let group = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
                 if group.status != GroupStatus::Active || !group.group.contains(actor.character_id)
                 {
                     return Err(Phase2Error::NotFound);
@@ -248,7 +245,12 @@ fn terminate(
                 {
                     return Err(Phase2Error::Internal);
                 }
-                group.status = GroupStatus::Closed;
+                groups::cancel_pending_for_member(state, actor.character_id);
+                state
+                    .groups
+                    .get_mut(&group_id)
+                    .expect("validated group exists")
+                    .status = GroupStatus::Closed;
                 for member in members {
                     state.active_group_by_member.remove(&member);
                 }

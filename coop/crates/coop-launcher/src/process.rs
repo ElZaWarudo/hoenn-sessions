@@ -1839,6 +1839,7 @@ async fn run_control_reader(
             ControlEvent::CheckpointReady { .. }
             | ControlEvent::SaveDataUpdated { .. }
             | ControlEvent::CheckpointExpired { .. }
+            | ControlEvent::GroupTravel(_)
             | ControlEvent::CommandResult { .. } => {
                 let sent = tokio::select! {
                     biased;
@@ -3022,7 +3023,10 @@ impl SupervisedChildren {
                 | ControlEvent::InteractRemotePlayer(_)
                 | ControlEvent::OnlineRequest(_)
                 | ControlEvent::PresenceRearmed { .. } => {}
-                ControlEvent::RomPresenceReset => return false,
+                // A semantic travel record cannot be discarded to reach a
+                // shutdown ACK. Force the recovery path; a committed proposal
+                // remains server-owned and is replayed on the next session.
+                ControlEvent::GroupTravel(_) | ControlEvent::RomPresenceReset => return false,
             }
         }
     }
