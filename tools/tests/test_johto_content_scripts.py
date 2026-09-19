@@ -16,6 +16,7 @@ from tools.johto.content_scripts import (
     ScriptCompiler,
     ScriptError,
     _approved_host_labels,
+    _apply_transport_overrides,
     _label_definition,
     _normalize_sha256,
     _normalized_donor_operands,
@@ -109,6 +110,149 @@ def fixture_compiler(name: str, source: str, *, symbols: dict[str, str] | None =
 
 
 class ContentScriptTests(unittest.TestCase):
+    def test_transport_overrides_require_every_reviewed_script(self):
+        with self.assertRaisesRegex(ScriptError, "missing campaign transport label"):
+            _apply_transport_overrides("Unrelated::\n\tend\n")
+
+    def test_transport_overrides_prompt_before_mutation_and_initialize_later_once(self):
+        generated = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+
+        rendered = generated
+
+        train = rendered.index(
+            "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_BoardTrain::"
+        )
+        train_animation = rendered.index("\tapplymovement Johto_GoldenrodCity_TrainStation_", train)
+        self.assertLess(rendered.index("\tcall EventScript_ChooseKantoEra", train), train_animation)
+        self.assertLess(rendered.index("\tspecial Johto_RecordCurrentHeal", train), train_animation)
+        self.assertIn("\twarp MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION, 140, 16", rendered)
+        self.assertIn("\twarp MAP_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION, 1", rendered)
+        train_departure = rendered[train:rendered.index(
+            "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_ExitTrain::",
+            train,
+        )]
+        self.assertNotIn("Johto_EventScript_InitializeLaterKantoOnce", train_departure)
+
+        ship = rendered.index(
+            "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseVermilion::"
+        )
+        ship_animation = rendered.index(
+            "\tcall Johto_OlivineCity_PortInside_OlivinePort_EventScript_EnterShip", ship
+        )
+        self.assertLess(rendered.index("\tcall EventScript_ChooseKantoEra", ship), ship_animation)
+        self.assertLess(rendered.index("\tspecial Johto_RecordCurrentHeal", ship), ship_animation)
+        self.assertIn("\twarpsilent MAP_KANTO_ORIGINAL_VERMILION_CITY_PORT_INSIDE, 8, 9", rendered)
+        self.assertIn("\twarpsilent MAP_KANTO_LATER_VERMILION_CITY_PORT_INSIDE, 8, 9", rendered)
+        ship_departure = rendered[ship:rendered.index(
+            "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseSouthernIsland::",
+            ship,
+        )]
+        self.assertNotIn("Johto_EventScript_InitializeLaterKantoOnce", ship_departure)
+
+        leave_boat = rendered.index("Johto_SSAqua_1F_SSAqua_1F_EventScript_LeaveBoat::")
+        next_script = rendered.index("@ source map: SSAqua_B1F", leave_boat)
+        arrival = rendered[leave_boat:next_script]
+        self.assertEqual(arrival.count("\tspecial Johto_NeedsLaterKantoInitialization"), 1)
+        self.assertEqual(arrival.count("\tspecial Johto_MarkLaterKantoInitialized"), 1)
+        self.assertLess(
+            arrival.index("\tspecial Johto_NeedsLaterKantoInitialization"),
+            arrival.index("\t@Kanto FLAGHEAP"),
+        )
+        self.assertLess(
+            arrival.index("\t@end flagheap"),
+            arrival.index("\tspecial Johto_MarkLaterKantoInitialized"),
+        )
+        self.assertEqual(arrival.count("\tclearflag JOHTO_FLAG_BADGE09_GET"), 1)
+        self.assertEqual(rendered.count("\tspecial Johto_NeedsLaterKantoInitialization"), 1)
+        self.assertEqual(rendered.count("\tspecial Johto_MarkLaterKantoInitialized"), 1)
+        self.assertEqual(arrival.count("\tcall Johto_EventScript_InitializeLaterKantoOnce"), 0)
+
+        for map_label in (
+            "KantoLater_VermilionCity_PortInside_VermilionCity_PortInside_MapScripts",
+            "KantoLater_SaffronCity_TrainStation_SaffronCity_TrainStation_MapScripts",
+        ):
+            callback = f"{map_label}_OnTransition::"
+            start = rendered.index(callback)
+            end = rendered.index("\tend\n", start) + len("\tend\n")
+            body = rendered[start:end]
+            self.assertIn("\tcall Johto_EventScript_InitializeLaterKantoOnce", body)
+            self.assertLess(
+                body.index("\tcall Johto_EventScript_InitializeLaterKantoOnce"),
+                body.index("\tspecial Johto_CommitKantoTravel"),
+            )
+        self.assertEqual(rendered.count("\tcall Johto_EventScript_InitializeLaterKantoOnce"), 2)
+
+    def test_transport_overrides_persist_return_to_johto_and_commit_arrivals(self):
+        generated = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+
+        rendered = generated
+
+        self.assertEqual(rendered.count("\tspecial Johto_CommitKantoTravel"), 4)
+        self.assertIn(
+            "\tspecial Johto_ChooseJohto\n"
+            "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseOlivine_TravelFailed\n"
+            "\tspecial Johto_RecordCurrentHeal\n"
+            "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseOlivine_TravelFailed",
+            rendered,
+        )
+        self.assertIn(
+            "\tspecial Johto_ChooseJohto\n"
+            "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, KantoLater_SaffronCity_TrainStation_SaffronStation_EventScript_BoardTrain_TravelFailed\n"
+            "\tspecial Johto_RecordCurrentHeal\n"
+            "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, KantoLater_SaffronCity_TrainStation_SaffronStation_EventScript_BoardTrain_TravelFailed",
+            rendered,
+        )
+        maiden_label = (
+            "KantoLater_VermilionCity_PortInside_"
+            "VermilionPort_EventScript_Sailor_MaidenVoyage"
+        )
+        maiden_start = rendered.index(f"{maiden_label}::")
+        maiden_end = rendered.index(
+            "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_EnterShip::",
+            maiden_start,
+        )
+        maiden = rendered[maiden_start:maiden_end]
+        staging = (
+            "\tspecial Johto_ChooseJohto\n"
+            f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden_label}_TravelFailed\n"
+            "\tspecial Johto_RecordCurrentHeal\n"
+            f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden_label}_TravelFailed\n"
+            "\tspecial Johto_PrepareKantoTravel\n"
+            f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden_label}_TravelFailed\n"
+        )
+        self.assertIn(staging, maiden)
+        self.assertLess(maiden.index(staging), maiden.index("\tcall KantoLater_"))
+        self.assertLess(maiden.index(staging), maiden.index("\tsetvar JOHTO_VAR_SSAQUA_STATE, 1"))
+        self.assertLess(maiden.index(staging), maiden.index("\twarpsilent MAP_SSAQUA_1F, 29, 3"))
+        self.assertIn(
+            f"{maiden_label}_TravelFailed::\n"
+            "\tspecial Johto_CancelKantoTravel\n"
+            "\trelease\n"
+            "\tend\n",
+            maiden,
+        )
+        for map_label in (
+            "Johto_OlivineCity_PortInside_OlivineCity_PortInside_MapScripts",
+            "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_MapScripts",
+        ):
+            callback = f"{map_label}_OnTransition::"
+            start = rendered.index(callback)
+            end = rendered.index("\tend\n", start) + len("\tend\n")
+            self.assertIn("\tspecial Johto_CommitKantoTravel", rendered[start:end])
+
+    def test_transport_overrides_do_not_put_arrival_work_after_warp(self):
+        generated = (ROOT / "data/johto/campaign_scripts.inc").read_text(encoding="utf-8")
+
+        self.assertNotRegex(
+            generated,
+            r"(?m)^\twarpsilent? MAP_(?:KANTO_(?:ORIGINAL|LATER)|OLIVINE)[^\n]*\n"
+            r"\tspecial Johto_(?:CommitKantoTravel|NeedsLaterKantoInitialization)",
+        )
+        self.assertNotRegex(
+            generated,
+            r"(?m)^\twarp MAP_(?:KANTO_(?:ORIGINAL|LATER)|GOLDENROD)[^\n]*\n"
+            r"\tspecial Johto_(?:CommitKantoTravel|NeedsLaterKantoInitialization)",
+        )
     def test_host_label_catalog_follows_only_linked_in_repo_includes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -533,6 +533,290 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _campaign_script_body(text: str, label: str) -> tuple[int, int, str]:
+    marker = f"{label}::\n"
+    start = text.find(marker)
+    if start < 0:
+        raise ScriptError(f"missing campaign transport label: {label}")
+    if text.find(marker, start + len(marker)) >= 0:
+        raise ScriptError(f"duplicate campaign transport label: {label}")
+    body_start = start + len(marker)
+    next_label = re.search(r"(?m)^[A-Za-z_][A-Za-z0-9_]*::\n", text[body_start:])
+    body_end = body_start + (next_label.start() if next_label else len(text) - body_start)
+    return body_start, body_end, text[body_start:body_end]
+
+
+def _replace_required_once(text: str, old: str, new: str, label: str) -> str:
+    if text.count(old) != 1:
+        raise ScriptError(f"campaign transport source drift in {label}: expected one reviewed sequence")
+    return text.replace(old, new, 1)
+
+
+def _apply_transport_overrides(text: str) -> str:
+    """Install the reviewed cross-region transport state machine.
+
+    The donor scripts remain the source for their long animations and for the
+    Later-Kanto initialization payload.  These label-scoped overrides fail
+    closed if a reviewed body drifts, so regeneration cannot silently restore
+    the old fixed-Later destinations or repeat the initialization on every
+    voyage.
+    """
+    goldenrod = "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_EventScript_BoardTrain"
+    goldenrod_map = "Johto_GoldenrodCity_TrainStation_GoldenrodCity_TrainStation_MapScripts"
+    olivine = "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseVermilion"
+    olivine_map = "Johto_OlivineCity_PortInside_OlivineCity_PortInside_MapScripts"
+    maiden = "Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_MaidenVoyage"
+    leave_boat = "Johto_SSAqua_1F_SSAqua_1F_EventScript_LeaveBoat"
+    vermilion_return = "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseOlivine"
+    vermilion_maiden = "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_Sailor_MaidenVoyage"
+    vermilion_map = "KantoLater_VermilionCity_PortInside_VermilionCity_PortInside_MapScripts"
+    saffron_return = "KantoLater_SaffronCity_TrainStation_SaffronStation_EventScript_BoardTrain"
+    saffron_map = "KantoLater_SaffronCity_TrainStation_SaffronCity_TrainStation_MapScripts"
+    labels = (
+        goldenrod_map,
+        goldenrod,
+        olivine_map,
+        olivine,
+        maiden,
+        leave_boat,
+        vermilion_map,
+        vermilion_return,
+        vermilion_maiden,
+        saffron_map,
+        saffron_return,
+    )
+    spans = {label: _campaign_script_body(text, label) for label in labels}
+    bodies = {label: span[2] for label, span in spans.items()}
+
+    train_body = (
+        "\tcall EventScript_ChooseKantoEra\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, 0, {goldenrod}_Cancel\n"
+        "\tspecial Johto_RecordCurrentHeal\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {goldenrod}_TravelFailed\n"
+        "\tspecial Johto_PrepareKantoTravel\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {goldenrod}_TravelFailed\n"
+        f"\tgoto {goldenrod}_BeginTravel\n\n"
+        f"{goldenrod}_BeginTravel::\n"
+        + bodies[goldenrod]
+    )
+    train_body = _replace_required_once(
+        train_body,
+        "\twarp MAP_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION, 1\n\tdelay 60\n\tend\n",
+        f"\tswitch JOHTO_VAR_PENDING_KANTO_DESTINATION\n"
+        f"\tcase 2, {goldenrod}_WarpOriginal\n"
+        f"\tcase 3, {goldenrod}_WarpLater\n"
+        f"\tgoto {goldenrod}_TravelFailed\n\n"
+        f"{goldenrod}_WarpOriginal::\n"
+        "\twarp MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION, 140, 16\n"
+        "\tdelay 60\n\tend\n\n"
+        f"{goldenrod}_WarpLater::\n"
+        "\twarp MAP_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION, 1\n"
+        "\tdelay 60\n\tend\n\n"
+        f"{goldenrod}_Cancel::\n\trelease\n\tend\n\n"
+        f"{goldenrod}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n",
+        goldenrod,
+    )
+
+    olivine_body = (
+        "\tclosemessage\n\tdelay 20\n\tcheckitem ITEM_SS_TICKET\n"
+        "\tbufferitemname STR_VAR_1, ITEM_SS_TICKET\n"
+        "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_NoCredentials\n"
+        "\tcall EventScript_ChooseKantoEra\n"
+        "\tgoto_if_eq JOHTO_VAR_RESULT, 0, Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_Refused\n"
+        "\tspecial Johto_RecordCurrentHeal\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {olivine}_TravelFailed\n"
+        "\tspecial Johto_PrepareKantoTravel\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {olivine}_TravelFailed\n"
+        f"\tgoto {olivine}_BeginTravel\n\n"
+        f"{olivine}_BeginTravel::\n"
+        "\tcall Johto_OlivineCity_PortInside_OlivinePort_EventScript_EnterShip\n"
+        "\tswitch JOHTO_VAR_PENDING_KANTO_DESTINATION\n"
+        f"\tcase 2, {olivine}_WarpOriginal\n"
+        f"\tcase 3, {olivine}_WarpLater\n"
+        f"\tgoto {olivine}_TravelFailed\n\n"
+        f"{olivine}_WarpOriginal::\n"
+        "\twarpsilent MAP_KANTO_ORIGINAL_VERMILION_CITY_PORT_INSIDE, 8, 9\n"
+        "\trelease\n\tend\n\n"
+        f"{olivine}_WarpLater::\n"
+        "\twarpsilent MAP_KANTO_LATER_VERMILION_CITY_PORT_INSIDE, 8, 9\n"
+        "\trelease\n\tend\n\n"
+        f"{olivine}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n"
+    )
+
+    maiden_body = (
+        "\tmsgbox Johto_OlivineCity_PortInside_OlivinePort_Text_FlashTicket, MSGBOX_DEFAULT\n"
+        "\tcall EventScript_ChooseKantoEra\n"
+        "\tgoto_if_eq JOHTO_VAR_RESULT, 0, Johto_OlivineCity_PortInside_OlivinePort_EventScript_Sailor_Refused\n"
+        "\tspecial Johto_RecordCurrentHeal\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden}_TravelFailed\n"
+        "\tspecial Johto_PrepareKantoTravel\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {maiden}_TravelFailed\n"
+        f"\tgoto {maiden}_BeginTravel\n\n"
+        f"{maiden}_BeginTravel::\n"
+        "\tcall Johto_OlivineCity_PortInside_OlivinePort_EventScript_EnterShip\n"
+        "\tsetvar JOHTO_VAR_SSAQUA_STATE, 1\n"
+        "\tclearflag JOHTO_FLAG_HIDE_SSAQUA_1F_GRANDPA\n"
+        "\tsetflag JOHTO_FLAG_HIDE_SSAQUA_ROOM_SSE_GRANDDAUGHTER\n\n"
+        "\tclearflag JOHTO_FLAG_HIDE_SSAQUA_SAILOR\n"
+        "\tclearflag JOHTO_FLAG_HIDE_SSAQUA_CAPTAINS_ROOM_GRANDDAUGHTER\n\n"
+        "\twarpsilent MAP_SSAQUA_1F, 29, 3\n\trelease\n\tend\n\n"
+        f"{maiden}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n"
+    )
+
+    flagheap_match = re.search(r"(?ms)^\t@Kanto FLAGHEAP\n.*?^\t@end flagheap\n", bodies[leave_boat])
+    if flagheap_match is None:
+        raise ScriptError(f"campaign transport source drift in {leave_boat}: missing Later-Kanto initialization")
+    flagheap = flagheap_match.group(0)
+    leave_body = (
+        "\tfadescreenswapbuffers FADE_TO_BLACK\n"
+        "\tswitch JOHTO_VAR_PENDING_KANTO_DESTINATION\n"
+        f"\tcase 2, {leave_boat}_ArriveOriginal\n"
+        f"\tcase 3, {leave_boat}_ArriveLater\n"
+        f"\tgoto {leave_boat}_TravelFailed\n\n"
+        f"{leave_boat}_ArriveLater::\n"
+        "\tsetvar JOHTO_VAR_SSAQUA_STATE, 7\n"
+        "\twarp MAP_KANTO_LATER_VERMILION_CITY_PORT_INSIDE, 8, 9\n"
+        "\trelease\n\tend\n\n"
+        f"{leave_boat}_ArriveOriginal::\n"
+        "\tsetvar JOHTO_VAR_SSAQUA_STATE, 7\n"
+        "\twarp MAP_KANTO_ORIGINAL_VERMILION_CITY_PORT_INSIDE, 8, 9\n"
+        "\trelease\n\tend\n\n"
+        f"{leave_boat}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n"
+        "\tfadescreenswapbuffers FADE_FROM_BLACK\n\trelease\n\tend\n\n"
+        "Johto_EventScript_InitializeLaterKantoOnce::\n"
+        "\tspecial Johto_NeedsLaterKantoInitialization\n"
+        "\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, Johto_EventScript_InitializeLaterKantoOnce_AlreadyInitialized\n"
+        + flagheap
+        + "\tspecial Johto_MarkLaterKantoInitialized\n"
+        "\treturn\n\n"
+        "Johto_EventScript_InitializeLaterKantoOnce_AlreadyInitialized::\n"
+        "\tsetvar JOHTO_VAR_RESULT, TRUE\n\treturn\n"
+    )
+
+    vermilion_body = _replace_required_once(
+        bodies[vermilion_return],
+        "\tcall KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_EnterShip\n",
+        "\tspecial Johto_ChooseJohto\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_return}_TravelFailed\n"
+        "\tspecial Johto_RecordCurrentHeal\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_return}_TravelFailed\n"
+        "\tspecial Johto_PrepareKantoTravel\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_return}_TravelFailed\n"
+        "\tcall KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_EnterShip\n",
+        vermilion_return,
+    )
+
+    vermilion_maiden_body = (
+        "\tmsgbox KantoLater_VermilionCity_PortInside_VermilionPort_Text_FlashTicket, MSGBOX_DEFAULT\n"
+        "\tspecial Johto_ChooseJohto\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_maiden}_TravelFailed\n"
+        "\tspecial Johto_RecordCurrentHeal\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_maiden}_TravelFailed\n"
+        "\tspecial Johto_PrepareKantoTravel\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_maiden}_TravelFailed\n"
+        "\tcall KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_EnterShip\n"
+        "\tsetvar JOHTO_VAR_SSAQUA_STATE, 1\n"
+        "\twarpsilent MAP_SSAQUA_1F, 29, 3\n"
+        "\trelease\n"
+        "\tend\n\n"
+        f"{vermilion_maiden}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n"
+        "\trelease\n"
+        "\tend\n"
+    )
+    vermilion_body = _replace_required_once(
+        vermilion_body,
+        "\twarpsilent MAP_OLIVINE_CITY_PORT_INSIDE, 8, 16\n\trelease\n\tend\n",
+        "\twarpsilent MAP_OLIVINE_CITY_PORT_INSIDE, 8, 16\n"
+        "\trelease\n\tend\n\n"
+        f"{vermilion_return}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n",
+        vermilion_return,
+    )
+
+    saffron_body = (
+        "\tspecial Johto_ChooseJohto\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {saffron_return}_TravelFailed\n"
+        "\tspecial Johto_RecordCurrentHeal\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {saffron_return}_TravelFailed\n"
+        "\tspecial Johto_PrepareKantoTravel\n"
+        f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {saffron_return}_TravelFailed\n"
+        + bodies[saffron_return]
+    )
+    saffron_body = _replace_required_once(
+        saffron_body,
+        "\twarp MAP_GOLDENROD_CITY_TRAIN_STATION, 19, 16\n\tdelay 60\n\tend\n",
+        "\twarp MAP_GOLDENROD_CITY_TRAIN_STATION, 19, 16\n"
+        "\tdelay 60\n\tend\n\n"
+        f"{saffron_return}_TravelFailed::\n"
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n",
+        saffron_return,
+    )
+
+    goldenrod_map_body = (
+        f"\tmap_script MAP_SCRIPT_ON_TRANSITION, {goldenrod_map}_OnTransition\n"
+        + bodies[goldenrod_map]
+        + f"\n{goldenrod_map}_OnTransition::\n"
+        "\tspecial Johto_CommitKantoTravel\n\tend\n"
+    )
+    olivine_map_body = (
+        f"\tmap_script MAP_SCRIPT_ON_TRANSITION, {olivine_map}_OnTransition\n"
+        "\t.byte 0\n\n"
+        f"{olivine_map}_OnTransition::\n"
+        "\tspecial Johto_CommitKantoTravel\n\tend\n"
+    )
+
+    def later_arrival_map_body(map_label: str, original_body: str) -> str:
+        if "\t.byte 0\n" not in original_body:
+            raise ScriptError(f"campaign transport source drift in {map_label}: missing map-script terminator")
+        scripts = original_body.replace(
+            "\t.byte 0\n",
+            f"\tmap_script MAP_SCRIPT_ON_TRANSITION, {map_label}_OnTransition\n\t.byte 0\n",
+            1,
+        )
+        return (
+            scripts
+            + f"\n{map_label}_OnTransition::\n"
+            "\tcall Johto_EventScript_InitializeLaterKantoOnce\n"
+            f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {map_label}_ArrivalFailed\n"
+            "\tspecial Johto_CommitKantoTravel\n"
+            "\tend\n\n"
+            f"{map_label}_ArrivalFailed::\n"
+            "\tspecial Johto_CancelKantoTravel\n"
+            "\tend\n"
+        )
+
+    replacements = {
+        goldenrod_map: goldenrod_map_body,
+        goldenrod: train_body,
+        olivine_map: olivine_map_body,
+        olivine: olivine_body,
+        maiden: maiden_body,
+        leave_boat: leave_body,
+        vermilion_map: later_arrival_map_body(vermilion_map, bodies[vermilion_map]),
+        vermilion_return: vermilion_body,
+        vermilion_maiden: vermilion_maiden_body,
+        saffron_map: later_arrival_map_body(saffron_map, bodies[saffron_map]),
+        saffron_return: saffron_body,
+    }
+    for label, (start, end, _) in sorted(spans.items(), key=lambda item: item[1][0], reverse=True):
+        text = text[:start] + replacements[label] + text[end:]
+    return text
+
+
+TRANSPORT_SOURCE_MAPS = {
+    "GoldenrodCity_TrainStation",
+    "OlivineCity_PortInside",
+    "SSAqua_1F",
+    "VermilionCity_PortInside",
+    "SaffronCity_TrainStation",
+}
+
+
 def _identifiers(text: str) -> set[str]:
     return set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", text))
 
@@ -2513,6 +2797,12 @@ class ScriptCompiler:
             chunks.append(f"\n@ source map: {name}\n")
             chunks.append(str(preflight["translated_sources"][name]))
         rendered = "".join(chunks).replace("\r\n", "\n").replace("\r", "\n")
+        transport_sources = TRANSPORT_SOURCE_MAPS & set(self._map_text)
+        if transport_sources and transport_sources != TRANSPORT_SOURCE_MAPS:
+            missing = ", ".join(sorted(TRANSPORT_SOURCE_MAPS - transport_sources))
+            raise ScriptError(f"incomplete campaign transport source set: {missing}")
+        if transport_sources:
+            rendered = _apply_transport_overrides(rendered)
         return "\n".join(line.rstrip(" \t") for line in rendered.split("\n"))
 
     @staticmethod
