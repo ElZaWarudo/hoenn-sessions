@@ -22,9 +22,6 @@ static const u16 sSilphCoFrame0[] = INCBIN_U16("data/tilesets/secondary/silph_co
 static const u16 sSilphCoFrame1[] = INCBIN_U16("data/tilesets/secondary/silph_co_frlg/anim/fountain/1.4bpp");
 static const u16 sSilphCoFrame3[] = INCBIN_U16("data/tilesets/secondary/silph_co_frlg/anim/fountain/3.4bpp");
 
-static const u16 sGeneralLandFrame0[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/0.4bpp");
-static const u16 sGeneralLandFrame3[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/3.4bpp");
-
 static void RestoreAnimationFixture(const struct MapLayout *layout, u16 dispcnt)
 {
     const struct MapLayout emptyLayout = {0};
@@ -74,7 +71,16 @@ static void ExpectVramSentinels(void)
     EXPECT_EQ(*(const u16 *)(BG_VRAM + BG_VRAM_SIZE), 0xA55A);
 }
 
-TEST("Johto general animation copies exact frames, cadence, offset, and wraps")
+static void ExpectJohtoFoliageTilesUntouched(void)
+{
+    const u16 *tiles = (const u16 *)(BG_VRAM + TILE_OFFSET_4BPP(480));
+    u32 i;
+
+    for (i = 0; i < 10 * TILE_SIZE_4BPP / sizeof(*tiles); i++)
+        EXPECT_EQ(tiles[i], 0xA55A);
+}
+
+TEST("Johto general animation preserves foliage while animating valid streams")
 {
     struct MapLayout layout;
     struct Tileset primary;
@@ -84,7 +90,7 @@ TEST("Johto general animation copies exact frames, cadence, offset, and wraps")
 
     PrepareAnimationFixture(&layout, &primary, &secondary, InitTilesetAnim_JohtoGeneral, NULL);
     RunAnimationFrames(1);
-    ExpectCopy(480, sGeneralLandFrame0, 320);
+    ExpectJohtoFoliageTilesUntouched();
     RunAnimationFrames(1);
     ExpectCopy(508, sGeneralFlowerFrame0, 128);
     ExpectVramSentinels();
@@ -92,9 +98,9 @@ TEST("Johto general animation copies exact frames, cadence, offset, and wraps")
     RunAnimationFrames(6);
     ExpectCopy(416, sGeneralSandFrame1, 576);
     RunAnimationFrames(41);
-    ExpectCopy(480, sGeneralLandFrame3, 320);
+    ExpectJohtoFoliageTilesUntouched();
     RunAnimationFrames(16);
-    ExpectCopy(480, sGeneralLandFrame0, 320);
+    ExpectJohtoFoliageTilesUntouched();
     RunAnimationFrames(1);
     ExpectCopy(508, sGeneralFlowerFrame4, 128);
     RunAnimationFrames(16);

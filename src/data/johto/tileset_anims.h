@@ -19,13 +19,6 @@ static const u16 sJohtoGeneralSandFrame7[] = INCBIN_U16("graphics/johto/tileset_
 
 static const u16 *const sJohtoGeneralSand[] = { sJohtoGeneralSandFrame0, sJohtoGeneralSandFrame1, sJohtoGeneralSandFrame2, sJohtoGeneralSandFrame3, sJohtoGeneralSandFrame4, sJohtoGeneralSandFrame5, sJohtoGeneralSandFrame6, sJohtoGeneralSandFrame7 };
 
-static const u16 sJohtoGeneralLandFrame0[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/0.4bpp");
-static const u16 sJohtoGeneralLandFrame1[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/1.4bpp");
-static const u16 sJohtoGeneralLandFrame2[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/2.4bpp");
-static const u16 sJohtoGeneralLandFrame3[] = INCBIN_U16("graphics/johto/tileset_anims/general_land/3.4bpp");
-
-static const u16 *const sJohtoGeneralLand[] = { sJohtoGeneralLandFrame0, sJohtoGeneralLandFrame1, sJohtoGeneralLandFrame2, sJohtoGeneralLandFrame3 };
-
 static const u16 sJohtoGeneralWaterfallFrame0[] = INCBIN_U16("graphics/johto/tileset_anims/general_waterfall/0.4bpp");
 static const u16 sJohtoGeneralWaterfallFrame1[] = INCBIN_U16("graphics/johto/tileset_anims/general_waterfall/1.4bpp");
 static const u16 sJohtoGeneralWaterfallFrame2[] = INCBIN_U16("graphics/johto/tileset_anims/general_waterfall/2.4bpp");
@@ -100,11 +93,6 @@ static void TilesetAnim_JohtoGeneral(u16 timer)
     {
         const u16 *frame = sJohtoGeneralSand[timer / 8 % ARRAY_COUNT(sJohtoGeneralSand)];
         AppendTilesetAnimToBuffer(frame, (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(416)), 576);
-    }
-    if (timer % 16 == 1)
-    {
-        const u16 *frame = sJohtoGeneralLand[timer / 16 % ARRAY_COUNT(sJohtoGeneralLand)];
-        AppendTilesetAnimToBuffer(frame, (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(480)), 320);
     }
     if (timer % 16 == 3)
     {
