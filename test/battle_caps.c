@@ -5,6 +5,7 @@
 #include "config_changes.h"
 #include "constants/johto_content.h"
 #include "event_data.h"
+#include "johto/save.h"
 #include "mastery.h"
 #include "test/test.h"
 
@@ -54,6 +55,7 @@ TEST("Badge caps count only victories from the active region")
     EXPECT_EQ(GetBadgeBattleLevelCap(), 100); // Legacy champion save.
 
     gMapHeader.regionMapSectionId = MAPSEC_NEW_BARK_TOWN;
+    JohtoSave_InitializeCurrent();
     for (u32 flag = JOHTO_FLAG_BADGE01_GET; flag <= JOHTO_FLAG_BADGE08_GET; flag++)
         FlagClear(flag);
     FlagClear(JOHTO_FLAG_IS_CHAMPION);
