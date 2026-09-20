@@ -1,4 +1,5 @@
 #include "global.h"
+#include "mastery.h"
 #include "battle.h"
 #include "battle_anim.h"
 #include "battle_arena.h"
@@ -2207,6 +2208,9 @@ void PlayerHandleExpUpdate(enum BattlerId battler)
 
     if (GetMonData(&gParties[B_TRAINER_0][monId], MON_DATA_LEVEL) >= MAX_LEVEL)
     {
+        AddMonExperience(&gParties[B_TRAINER_0][monId], T1_READ_32(&gBattleResources->bufferA[battler][2]));
+        if (monId == gBattlerPartyIndexes[battler])
+            UpdateHealthboxAttribute(gHealthboxSpriteIds[battler], &gParties[B_TRAINER_0][monId], HEALTHBOX_EXP_BAR);
         BtlController_Complete(battler);
     }
     else

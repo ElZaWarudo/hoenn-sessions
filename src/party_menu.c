@@ -1,4 +1,5 @@
 #include "global.h"
+#include "mastery.h"
 #include "malloc.h"
 #include "battle.h"
 #include "battle_anim.h"
@@ -2600,7 +2601,16 @@ static void DisplayPartyPokemonLevelCheck(struct Pokemon *mon, struct PartyMenuB
             if (c != 0)
                 menuBox->infoRects->blitFunc(menuBox->windowId, menuBox->infoRects->dimensions[4] >> 3, (menuBox->infoRects->dimensions[5] >> 3) + 1, menuBox->infoRects->dimensions[6] >> 3, menuBox->infoRects->dimensions[7] >> 3, FALSE);
             if (c != 2)
-                DisplayPartyPokemonLevel(GetMonData(mon, MON_DATA_LEVEL), menuBox);
+            {
+                u32 masteryLevel = GetMonMasteryLevel(mon);
+                if (masteryLevel != 0)
+                {
+                    FormatMasteryLevel(gStringVar1, masteryLevel, TRUE);
+                    DisplayPartyPokemonBarDetail(menuBox->windowId, gStringVar1, 0, &menuBox->infoRects->dimensions[4]);
+                }
+                else
+                    DisplayPartyPokemonLevel(GetMonData(mon, MON_DATA_LEVEL), menuBox);
+            }
         }
     }
 }
@@ -5801,6 +5811,12 @@ static void UNUSED DisplayExpPoints(u8 taskId, TaskFunc task, u8 holdEffectParam
     gTasks[taskId].func = task;
 }
 
+static void Task_TryCandyEvolutionAfterText(u8 taskId)
+{
+    if (!IsPartyMenuTextPrinterActive())
+        PartyMenuTryEvolution(taskId);
+}
+
 void ItemUseCB_RareCandy(u8 taskId, TaskFunc task)
 {
     struct Pokemon *mon = &gParties[B_TRAINER_0][gPartyMenu.slotId];
@@ -5809,6 +5825,7 @@ void ItemUseCB_RareCandy(u8 taskId, TaskFunc task)
     u16 *itemPtr = &gSpecialVar_ItemId;
     bool8 cannotUseEffect;
     u8 holdEffectParam = GetItemHoldEffectParam(*itemPtr);
+    u32 initialExp = GetMonData(mon, MON_DATA_EXP);
 
     sInitialLevel = GetMonData(mon, MON_DATA_LEVEL);
     if (!(B_RARE_CANDY_CAP && sInitialLevel >= GetCurrentLevelCap()))
@@ -5883,11 +5900,11 @@ void ItemUseCB_RareCandy(u8 taskId, TaskFunc task)
         {
             PlaySE(SE_USE_ITEM);
             gPartyMenuUseExitCallback = FALSE;
-            ConvertIntToDecimalStringN(gStringVar2, sExpCandyExperienceTable[holdEffectParam - 1], STR_CONV_MODE_LEFT_ALIGN, 6);
+            ConvertIntToDecimalStringN(gStringVar2, GetMonData(mon, MON_DATA_EXP) - initialExp, STR_CONV_MODE_LEFT_ALIGN, 6);
             StringExpandPlaceholders(gStringVar4, gText_PkmnGainedExp);
             DisplayPartyMenuMessage(gStringVar4, FALSE);
             ScheduleBgCopyTilemapToVram(2);
-            gTasks[taskId].func = task;
+            gTasks[taskId].func = holdEffectParam == 0 ? Task_TryCandyEvolutionAfterText : task;
         }
     }
 }

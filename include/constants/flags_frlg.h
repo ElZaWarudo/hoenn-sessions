@@ -3,6 +3,7 @@
 
 
 #define FLAG_0x020               0x020
+#define FLAG_KANTO_MASTERY_CHAMPION FLAG_0x020
 #define FLAG_0x021               0x021
 #define FLAG_0x022               0x022
 #define FLAG_0x023               0x023

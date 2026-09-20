@@ -1,4 +1,5 @@
 #include "global.h"
+#include "mastery.h"
 #include "malloc.h"
 #include "bg.h"
 #include "data.h"
@@ -486,6 +487,7 @@ struct PokemonStorageSystemData
     bool8 setMosaic;
     u8 displayMonMarkings;
     u8 displayMonLevel;
+    u16 displayMonMasteryLevel;
     bool8 displayMonIsEgg;
     u8 displayMonName[POKEMON_NAME_LENGTH + 1];
     u8 displayMonNameText[36];
@@ -6975,6 +6977,7 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
             GetMonData(mon, MON_DATA_NICKNAME, sStorage->displayMonName);
             StringGet_Nickname(sStorage->displayMonName);
             sStorage->displayMonLevel = GetMonData(mon, MON_DATA_LEVEL);
+            sStorage->displayMonMasteryLevel = GetMonMasteryLevel(mon);
             sStorage->displayMonMarkings = GetMonData(mon, MON_DATA_MARKINGS);
             sStorage->displayMonPersonality = GetMonData(mon, MON_DATA_PERSONALITY);
             sStorage->displayMonPalette = GetMonFrontSpritePal(mon);
@@ -6999,6 +7002,7 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
             GetBoxMonData(boxMon, MON_DATA_NICKNAME, sStorage->displayMonName);
             StringGet_Nickname(sStorage->displayMonName);
             sStorage->displayMonLevel = GetLevelFromBoxMonExp(boxMon);
+            sStorage->displayMonMasteryLevel = GetMasteryLevel(sStorage->displayMonSpecies, GetBoxMonData(boxMon, MON_DATA_EXP));
             sStorage->displayMonMarkings = GetBoxMonData(boxMon, MON_DATA_MARKINGS);
             sStorage->displayMonPersonality = GetBoxMonData(boxMon, MON_DATA_PERSONALITY);
             sStorage->displayMonIsEgg = GetBoxMonData(boxMon, MON_DATA_IS_EGG);
@@ -7077,10 +7081,17 @@ static void SetDisplayMonData(void *pokemon, u8 mode)
         *(txtPtr++) = TEXT_COLOR_LIGHT_GRAY;
         *(txtPtr++) = TEXT_COLOR_WHITE;
         *(txtPtr++) = CHAR_SPACE;
-        *(txtPtr++) = CHAR_EXTRA_SYMBOL;
-        *(txtPtr++) = CHAR_LV_2;
-
-        txtPtr = ConvertIntToDecimalStringN(txtPtr, sStorage->displayMonLevel, STR_CONV_MODE_LEFT_ALIGN, 3);
+        if (sStorage->displayMonMasteryLevel != 0)
+        {
+            FormatMasteryLevel(txtPtr, sStorage->displayMonMasteryLevel, TRUE);
+            txtPtr += StringLength(txtPtr);
+        }
+        else
+        {
+            *(txtPtr++) = CHAR_EXTRA_SYMBOL;
+            *(txtPtr++) = CHAR_LV_2;
+            txtPtr = ConvertIntToDecimalStringN(txtPtr, sStorage->displayMonLevel, STR_CONV_MODE_LEFT_ALIGN, 3);
+        }
         txtPtr[0] = CHAR_SPACE;
         txtPtr[1] = EOS;
 

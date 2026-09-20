@@ -289,6 +289,9 @@ static void BattleTest_SetUp(void *data)
     const struct BattleTest *test = data;
     memset(STATE, 0, sizeof(*STATE));
     TestInitConfigData();
+    // Mechanics fixtures specify their own levels and stats. Campaign cap
+    // tests opt into the production rule with WITH_CONFIG.
+    SetConfig(CONFIG_B_BADGE_BATTLE_CAP, FALSE);
     InvokeTestFunction(test);
     STATE->parameters = STATE->parametersCount;
     if (STATE->parametersCount == 0 && test->resultsSize > 0)

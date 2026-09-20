@@ -1,4 +1,5 @@
 #include "global.h"
+#include "mastery.h"
 #include "pokemon.h"
 #include "battle.h"
 #include "daycare.h"
@@ -345,6 +346,8 @@ static void ApplyDaycareExperience(struct Pokemon *mon)
 
 static u32 GetExpAtLevelCap(struct Pokemon *mon)
 {
+    if (GetCurrentLevelCap() == MAX_LEVEL)
+        return GetMaxMonExperience(GetMonData(mon, MON_DATA_SPECIES));
     return gExperienceTables[gSpeciesInfo[GetMonData(mon, MON_DATA_SPECIES)].growthRate][GetCurrentLevelCap()];
 }
 
@@ -358,12 +361,12 @@ static u16 TakeSelectedPokemonFromDaycare(struct DaycareMon *daycareMon)
 
     TryFormChange(&pokemon, FORM_CHANGE_WITHDRAW, B_TRAINER_0);
 
-    if (GetMonData(&pokemon, MON_DATA_LEVEL) < GetCurrentLevelCap())
+    if (GetMonData(&pokemon, MON_DATA_LEVEL) < GetCurrentLevelCap()
+     || (GetCurrentLevelCap() == MAX_LEVEL && CanMonGainExperience(&pokemon)))
     {
-        experience = GetMonData(&pokemon, MON_DATA_EXP) + daycareMon->steps;
         u32 maxExp = GetExpAtLevelCap(&pokemon);
-        if (experience > maxExp)
-            experience = maxExp;
+        experience = min(GetMonData(&pokemon, MON_DATA_EXP), maxExp);
+        experience += min(daycareMon->steps, maxExp - experience);
         SetMonData(&pokemon, MON_DATA_EXP, &experience);
         ApplyDaycareExperience(&pokemon);
     }

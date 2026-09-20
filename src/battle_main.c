@@ -1,4 +1,5 @@
 #include "global.h"
+#include "battle_caps.h"
 #include "battle.h"
 #include "battle_anim.h"
 #include "battle_ai_main.h"
@@ -2992,6 +2993,7 @@ void BeginBattleIntroDummy(void)
 void BeginBattleIntro(void)
 {
     BattleStartClearSetData();
+    BeginBattleLevelCaps();
     gBattleCommunication[1] = 0;
     gBattleStruct->eventState.battleIntro = 0;
     gBattleMainFunc = DoBattleIntro;
@@ -5555,6 +5557,7 @@ static void HandleEndTurn_FinishBattle(void)
             if (!changedForm && B_RECALCULATE_STATS >= GEN_5)
                 CalculateMonStats(&gParties[B_TRAINER_0][i]);
         }
+        EndBattleLevelCaps();
         RecordedBattle_SetPlaybackFinished();
         if (gTestRunnerEnabled)
             TestRunner_Battle_AfterLastTurn();

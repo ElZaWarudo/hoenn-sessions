@@ -19,6 +19,7 @@
     F(B_UNEVOLVED_EXP_MULTIPLIER,  unevolvedExpMultiplier,  (u32, GEN_COUNT - 1)) /* TODO: use in tests */ \
     F(B_LEVEL_UP_NOTIFICATION,     levelUpNotification,     (u32, GEN_COUNT - 1)) /* TODO: use in tests */ \
     /* Stat settings */ \
+    F(B_BADGE_BATTLE_CAP,          badgeBattleCap,          (u32, 1)) \
     F(B_BADGE_BOOST,               badgeBoost,              (u32, GEN_COUNT - 1)) \
     F(B_FRIENDSHIP_BOOST,          friendshipBoost,         (u32, GEN_COUNT - 1)) /* TODO: use in tests */ \
     F(B_MAX_LEVEL_EV_GAINS,        maxLevelEvGains,         (u32, GEN_COUNT - 1)) /* TODO: use in tests */ \
