@@ -228,8 +228,15 @@ async fn run(
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| "Reloj del dispositivo inválido")?
             .as_millis() as u64;
-        let wait_ms = session.lease.expires_at.value().saturating_sub(now).saturating_add(250);
-        let _ = events.send(json!({"type":"reconnect_wait","wait_ms":wait_ms})).await;
+        let wait_ms = session
+            .lease
+            .expires_at
+            .value()
+            .saturating_sub(now)
+            .saturating_add(250);
+        let _ = events
+            .send(json!({"type":"reconnect_wait","wait_ms":wait_ms}))
+            .await;
         tokio::select! {
             () = tokio::time::sleep(std::time::Duration::from_millis(wait_ms)) => {},
             () = async {

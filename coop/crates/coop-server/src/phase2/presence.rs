@@ -22,8 +22,8 @@ use coop_protocol::{
 };
 use thiserror::Error;
 
-use super::storage::{State, StorageError, Store};
 use super::AuthenticatedActor;
+use super::storage::{State, StorageError, Store};
 
 /// The fixed runtime shard used by the first online presence slice.
 pub const PRESENCE_SHARD_ID: u16 = 1;
@@ -1437,8 +1437,8 @@ mod tests {
         PresenceInteractionV1, PresencePoseV1, RegionId, WorldLocation,
     };
     use std::sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Barrier,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     };
     use std::thread;
     use uuid::Uuid;
@@ -3391,10 +3391,12 @@ mod tests {
             .join()
             .expect("connect thread must not panic")
             .expect("connect should linearize before lease release");
-        assert!(release_thread
-            .join()
-            .expect("release thread must not panic")
-            .is_ok());
+        assert!(
+            release_thread
+                .join()
+                .expect("release thread must not panic")
+                .is_ok()
+        );
         assert_eq!(service.connection_count(), Ok(0));
         assert_eq!(
             service.drain(connected),
@@ -3792,13 +3794,15 @@ mod tests {
             })
             .unwrap();
         let service = app.presence();
-        assert!(service
-            .connect(
-                actor,
-                runtime_fence(&lease),
-                pose(1, 1, 1, PlayerState::Overworld)
-            )
-            .is_ok());
+        assert!(
+            service
+                .connect(
+                    actor,
+                    runtime_fence(&lease),
+                    pose(1, 1, 1, PlayerState::Overworld)
+                )
+                .is_ok()
+        );
     }
 
     #[test]
@@ -4079,9 +4083,11 @@ mod tests {
             sorted
         });
         assert!(handles.iter().all(|handle| *handle != newcomer.handle()));
-        assert!(newcomer_events
-            .iter()
-            .all(|event| matches!(event, PresenceOutboundV1::Spawn(_))));
+        assert!(
+            newcomer_events
+                .iter()
+                .all(|event| matches!(event, PresenceOutboundV1::Spawn(_)))
+        );
     }
 
     #[test]

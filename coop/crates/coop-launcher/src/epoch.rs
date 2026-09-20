@@ -468,14 +468,15 @@ impl FileLock {
 fn try_lock_file(file: &File) -> Result<(), std::fs::TryLockError> {
     #[cfg(target_os = "android")]
     {
-        rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive)
-            .map_err(|error| {
+        rustix::fs::flock(file, rustix::fs::FlockOperation::NonBlockingLockExclusive).map_err(
+            |error| {
                 if error == rustix::io::Errno::WOULDBLOCK {
                     std::fs::TryLockError::WouldBlock
                 } else {
                     std::fs::TryLockError::Error(error.into())
                 }
-            })
+            },
+        )
     }
     #[cfg(not(target_os = "android"))]
     file.try_lock()
