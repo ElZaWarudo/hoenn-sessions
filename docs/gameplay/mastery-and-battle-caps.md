@@ -37,12 +37,14 @@ are retained. Types and species abilities follow the temporary species.
 | 8, before the regional championship | 58 |
 | 8, after the regional championship | 100 |
 
-The ROM uses region-specific Gym victories because Crossroads shares its generic
-badge flags. Hoenn uses its Gym trainer victories, and Kanto uses its defeated
-Gym Leader flags. Sevii follows Kanto's campaign progression. Kanto championship
+The ROM uses campaign-specific Gym victories because Crossroads shares its generic
+badge flags. Hoenn uses its Gym trainer victories, Johto uses its first eight
+native badge flags, and original Kanto uses its defeated Gym Leader flags. Sevii
+follows original Kanto's campaign progression. Original Kanto championship
 completion has a persistent flag; Oak's existing post-League scene also recognizes
 older champion saves. An older save that unlocked the National Pokédex before
 winning Kanto and never ran that scene acquires the flag on its next League win.
+Three-years-later Kanto is postgame and does not apply battle level caps.
 
 Evolution edges without a numeric level requirement (such as stones or trading)
 have no invented minimum level. An earlier numeric requirement in the same
