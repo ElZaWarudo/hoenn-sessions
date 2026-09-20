@@ -8,6 +8,7 @@
 #include "config_changes.h"
 #include "constants/johto_content.h"
 #include "event_data.h"
+#include "region_map.h"
 #include "regions.h"
 #include "test_runner.h"
 
@@ -44,12 +45,22 @@ u32 GetBadgeBattleLevelCap(void)
         JOHTO_FLAG_BADGE01_GET, JOHTO_FLAG_BADGE02_GET, JOHTO_FLAG_BADGE03_GET, JOHTO_FLAG_BADGE04_GET,
         JOHTO_FLAG_BADGE05_GET, JOHTO_FLAG_BADGE06_GET, JOHTO_FLAG_BADGE07_GET, JOHTO_FLAG_BADGE08_GET,
     };
+    static const u16 laterKantoBadges[] = {
+        JOHTO_FLAG_BADGE09_GET, JOHTO_FLAG_BADGE10_GET, JOHTO_FLAG_BADGE11_GET, JOHTO_FLAG_BADGE12_GET,
+        JOHTO_FLAG_BADGE13_GET, JOHTO_FLAG_BADGE14_GET, JOHTO_FLAG_BADGE15_GET, JOHTO_FLAG_BADGE16_GET,
+    };
     u32 badges = 0;
     enum Region region = GetCurrentRegion();
+    bool32 laterKanto = region == REGION_KANTO
+                     && GetKantoEraByMap(gSaveBlock1Ptr->location.mapGroup,
+                                         gSaveBlock1Ptr->location.mapNum,
+                                         gMapHeader.regionMapSectionId) == KANTO_ERA_LATER;
 
     for (u32 i = 0; i < NUM_BADGES; i++)
     {
-        if (region == REGION_KANTO)
+        if (laterKanto)
+            badges += FlagGet(laterKantoBadges[i]);
+        else if (region == REGION_KANTO)
             badges += FlagGet(kantoLeaders[i]);
         else if (region == REGION_JOHTO)
             badges += FlagGet(johtoBadges[i]);
@@ -57,7 +68,9 @@ u32 GetBadgeBattleLevelCap(void)
             badges += HasTrainerBeenFought(hoennLeaders[i]);
     }
     bool32 champion;
-    if (region == REGION_KANTO)
+    if (laterKanto)
+        champion = FlagGet(JOHTO_FLAG_IS_KANTO_CHAMPION);
+    else if (region == REGION_KANTO)
         champion = FlagGet(FLAG_KANTO_MASTERY_CHAMPION) || VarGet(VAR_MAP_SCENE_PALLET_TOWN_OAK) >= 2;
     else if (region == REGION_JOHTO)
         champion = FlagGet(JOHTO_FLAG_IS_CHAMPION);
