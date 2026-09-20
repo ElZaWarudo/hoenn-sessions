@@ -693,13 +693,13 @@ pub(crate) struct GroupRecord {
     pub zone_revision: u64,
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct GroupTravelProposalRecord {
     pub view: GroupTravelProposalView,
     pub retain_until: Option<u64>,
 }
 
-#[derive(Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct GroupTravelProposalIdempotencyRecord {
     pub fingerprint: [u8; 32],
     pub response: GroupTravelProposalView,
@@ -854,9 +854,13 @@ pub struct State {
     pub(crate) group_invitations: HashMap<GroupInvitationId, GroupInvitationRecord>,
     pub(crate) group_idempotency:
         HashMap<(CharacterId, String, IdempotencyKey), GroupIdempotencyRecord>,
+    #[serde(default)]
     pub(crate) group_travel_proposals: HashMap<GroupTravelProposalId, GroupTravelProposalRecord>,
+    #[serde(default)]
     pub(crate) live_group_travel_by_group: HashMap<GroupId, GroupTravelProposalId>,
+    #[serde(default)]
     pub(crate) live_group_travel_by_member: HashMap<CharacterId, GroupTravelProposalId>,
+    #[serde(default)]
     pub(crate) group_travel_proposal_idempotency:
         HashMap<(CharacterId, String, IdempotencyKey), GroupTravelProposalIdempotencyRecord>,
 }
