@@ -27,8 +27,14 @@ enum DifficultyLevel GetBattlePartnerDifficultyLevel(u16 partnerId)
 {
     enum DifficultyLevel difficulty = GetCurrentDifficultyLevel();
 
-    if (partnerId > TRAINER_PARTNER(PARTNER_NONE))
-        partnerId -= TRAINER_PARTNER(PARTNER_NONE);
+    if (difficulty < DIFFICULTY_MIN || difficulty > DIFFICULTY_MAX)
+        return DIFFICULTY_NORMAL;
+
+    if (partnerId <= TRAINER_PARTNER(PARTNER_NONE)
+     || partnerId >= TRAINER_PARTNER(PARTNER_COUNT))
+        return DIFFICULTY_NORMAL;
+
+    partnerId -= TRAINER_PARTNER(PARTNER_NONE);
 
     if (difficulty == DIFFICULTY_NORMAL)
         return DIFFICULTY_NORMAL;
@@ -43,7 +49,20 @@ enum DifficultyLevel GetTrainerDifficultyLevel(u16 trainerId)
 {
     enum DifficultyLevel difficulty = GetCurrentDifficultyLevel();
 
+    if (difficulty < DIFFICULTY_MIN || difficulty > DIFFICULTY_MAX)
+        return DIFFICULTY_NORMAL;
+
     if (difficulty == DIFFICULTY_NORMAL)
+        return DIFFICULTY_NORMAL;
+
+    if (JohtoTrainer_IsId(trainerId))
+    {
+        if (JohtoTrainer_GetStructAtDifficulty(difficulty, trainerId) == NULL)
+            return DIFFICULTY_NORMAL;
+        return difficulty;
+    }
+
+    if (trainerId >= TRAINERS_COUNT)
         return DIFFICULTY_NORMAL;
 
     if (gTrainers[difficulty][trainerId].party == NULL)

@@ -3,6 +3,25 @@
 #include "constants/map_groups.h"
 #include "test/test.h"
 
+TEST("Cloud Coop presence admits New Bark Town only with its Johto identity")
+{
+    struct CoopPresenceReducer reducer;
+    struct WorldLocation location = {
+        .region = COOP_REGION_JOHTO,
+        .map_group = MAP_GROUP(MAP_NEW_BARK_TOWN),
+        .map_number = MAP_NUM(MAP_NEW_BARK_TOWN),
+        .x = 10,
+        .y = 10,
+    };
+
+    CoopPresenceReducer_Reset(&reducer);
+    EXPECT(CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
+    location.region = COOP_REGION_HOENN;
+    EXPECT(!CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
+    location.region = COOP_REGION_KANTO;
+    EXPECT(!CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
+}
+
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_REGION_OFFSET == 0, "location region offset");
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_MAP_GROUP_OFFSET == 1, "location map group offset");
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_MAP_NUMBER_OFFSET == 3, "location map number offset");

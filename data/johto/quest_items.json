@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "region": "johto",
+  "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
+  "items": [
+    {
+      "symbol": "ITEM_CLEAR_BELL",
+      "id": 875,
+      "name": "Clear Bell",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A clear-sounding / bell with a gentle / ring.",
+      "icon": {
+        "source": "graphics/items/icons/clearbell.png",
+        "target": "graphics/johto/items/icons/clear_bell.png",
+        "sha256": "a8bdc497aaba93b7ac838ed36515af7fbcdf3ea5aee99eb6e2d23517ce258ae9",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/clearbell.pal",
+        "target": "graphics/johto/items/icon_palettes/clear_bell.pal",
+        "sha256": "b6998e681005fa49ed95971fae340820e7c0399c20ffca777d3d9644ce8c7fe0",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_GS_BALL",
+      "id": 876,
+      "name": "GS Ball",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": true,
+      "description": "A strange Ball / with a special / purpose.",
+      "icon": {
+        "source": "graphics/items/icons/gs_ball.png",
+        "target": "graphics/johto/items/icons/gs_ball.png",
+        "sha256": "7eda593aebeed7631dd3db43a79f0f5f280f1855c749410f69644064d2e01378",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/gs_ball.pal",
+        "target": "graphics/johto/items/icon_palettes/gs_ball.pal",
+        "sha256": "b06846024d1d8ac4dc8d90e7e37a819e640b261499b9f2e2a8007aefbff7dce0",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_MYSTERY_EGG",
+      "id": 877,
+      "name": "Mystery Egg",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A mysterious Egg / obtained from a / Pokemon Day Care.",
+      "icon": {
+        "source": "graphics/items/icons/mysteryegg.png",
+        "target": "graphics/johto/items/icons/mystery_egg.png",
+        "sha256": "4cd6c00a003049bc4fffa2ebdf05071d8e70fbe176278bf9d452ec4930dd3dae",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/mysteryegg.pal",
+        "target": "graphics/johto/items/icon_palettes/mystery_egg.pal",
+        "sha256": "70862b41396890f0c3d07f3d54c5545cef5e0a9cf095cc8aae6719071ece1a27",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_PASS",
+      "id": 878,
+      "name": "Pass",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A pass for the / Magnet Train to / Kanto and Johto.",
+      "icon": {
+        "source": "graphics/items/icons/pass.png",
+        "target": "graphics/johto/items/icons/pass.png",
+        "sha256": "37d76343cb43820a509e4aa942d06668b2e9e6f01fb36d243e03cdd1f045c864",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/pass.pal",
+        "target": "graphics/johto/items/icon_palettes/pass.pal",
+        "sha256": "5faa1295d9e6c7a66b4e379efa09bac7a3afb15c4a10ac70e005667393458941",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_RAINBOW_WING",
+      "id": 879,
+      "name": "Rainbow Wing",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A shining feather / said to come from a / rainbow bird.",
+      "icon": {
+        "source": "graphics/items/icons/rainbowwing.png",
+        "target": "graphics/johto/items/icons/rainbow_wing.png",
+        "sha256": "28d09d5e3b55ee64e0e0bf2f8d70da471d0dd6b5cee947b38cbbcc43262e04da",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/rainbowwing.pal",
+        "target": "graphics/johto/items/icon_palettes/rainbow_wing.pal",
+        "sha256": "f31b5c5cc33b767449c279bafc59b0b830e78dffa884732f13a738285ea93bc6",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_RED_SCALE",
+      "id": 880,
+      "name": "Red Scale",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A large red scale / from the red / Gyarados.",
+      "icon": {
+        "source": "graphics/items/icons/redscale.png",
+        "target": "graphics/johto/items/icons/red_scale.png",
+        "sha256": "998518be342cf51b8fc9e3f77c7d91416324e371e0df13af835041a1d237f9c6",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/redscale.pal",
+        "target": "graphics/johto/items/icon_palettes/red_scale.pal",
+        "sha256": "0cfe61d6bc45c76a319d3bfbbb7cf34f8158a400715ffe8dcaa782442a410c4b",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_SECRET_POTION",
+      "id": 881,
+      "name": "Secret Potion",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A potent medicine / for a Pokemon that / is badly injured.",
+      "icon": {
+        "source": "graphics/items/icons/secretpotion.png",
+        "target": "graphics/johto/items/icons/secret_potion.png",
+        "sha256": "3c4c9e030c6bc8c6ea5978eb460c665b76e688c872377093cd64e3b7bf6a3f91",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/secretpotion.pal",
+        "target": "graphics/johto/items/icon_palettes/secret_potion.pal",
+        "sha256": "6796905a001b6d53fd2c5eb8a983677f16d274dc32aa7d1a3a3dcfd9e09ed46b",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_SILVER_WING",
+      "id": 882,
+      "name": "Silver Wing",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A strange feather / that gleams like / silver.",
+      "icon": {
+        "source": "graphics/items/icons/silverwing.png",
+        "target": "graphics/johto/items/icons/silver_wing.png",
+        "sha256": "5b2e7409e290e68ab6d1053f795268171c84f7f1fbda28ed4d964173ce1dafea",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/silverwing.pal",
+        "target": "graphics/johto/items/icon_palettes/silver_wing.pal",
+        "sha256": "99a0674454e5c05a022a9b2fde26337d81a996794c35641d297b3ee0d3cdd178",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    },
+    {
+      "symbol": "ITEM_TIDAL_BELL",
+      "id": 883,
+      "name": "Tidal Bell",
+      "price": 0,
+      "importance": 1,
+      "pocket": "POCKET_KEY_ITEMS",
+      "type": "ITEM_USE_BAG_MENU",
+      "field_use": "ItemUseOutOfBattle_CannotUse",
+      "battle_usage": null,
+      "hold_effect": null,
+      "nonthrowable": false,
+      "description": "A bell said to call / Lugia with a gentle / sound.",
+      "icon": {
+        "source": "graphics/items/icons/tidalbell.png",
+        "target": "graphics/johto/items/icons/tidal_bell.png",
+        "sha256": "f0c8b8d49fff65d2d5557d3137465b8919cae7cb18b171768e1621545c4fca60",
+        "format": "4bpp.smol (host 32-bit compressed tiles)"
+      },
+      "palette": {
+        "source": "graphics/items/icon_palettes/tidalbell.pal",
+        "target": "graphics/johto/items/icon_palettes/tidal_bell.pal",
+        "sha256": "1490b3da26990f07a6bef3bce05227ab74666076486034031256e214226acba4",
+        "format": "gbapal (host 16-bit raw palette)"
+      }
+    }
+  ],
+  "held_item": {
+    "symbol": "ITEM_EXP_SHARE_SMALL",
+    "id": 884,
+    "name": "Exp. Share S",
+    "price": 6000,
+    "importance": 0,
+    "pocket": "POCKET_ITEMS",
+    "sort_type": "ITEM_TYPE_HELD_ITEM",
+    "type": "ITEM_USE_BAG_MENU",
+    "field_use": "ItemUseOutOfBattle_CannotUse",
+    "hold_effect": "HOLD_EFFECT_EXP_SHARE",
+    "description": "A hold item that / shares Exp. points / from battles.",
+    "icon": "gItemIcon_ExpShare",
+    "palette": "gItemIconPalette_ExpShare",
+    "independent_of_normal_exp_share_config": true
+  },
+  "exclusions": {
+    "items": [
+      "Radio",
+      "SquirtBottle",
+      "HM Whirlpool"
+    ],
+    "reason": "Field behavior is owned by subsequent work; this ledger makes no full item closure claim."
+  }
+}

@@ -14,6 +14,8 @@
 #include "constants/game_stat.h"
 #include "coop/net_bridge.h"
 #include "coop/save.h"
+#include "johto/bug_contest.h"
+#include "johto/save.h"
 
 static u16 CalculateChecksum(void *, u16);
 static bool8 ReadFlashSector(u8, struct SaveSector *);
@@ -65,7 +67,7 @@ struct
     SAVEBLOCK_CHUNK(struct SaveBlock1, 1),
     SAVEBLOCK_CHUNK(struct SaveBlock1, 2),
     SAVEBLOCK_CHUNK(struct SaveBlock1, 3),
-    SAVEBLOCK_CHUNK(struct SaveBlock1, 4), // SECTOR_ID_SAVEBLOCK1_END
+    { 4 * SECTOR_DATA_SIZE, JOHTO_SAVE_SERIALIZED_TAIL_SIZE }, // SECTOR_ID_SAVEBLOCK1_END
 
     SAVEBLOCK_CHUNK(struct PokemonStorage, 0), // SECTOR_ID_PKMN_STORAGE_START
     SAVEBLOCK_CHUNK(struct PokemonStorage, 1),
@@ -88,6 +90,12 @@ STATIC_ASSERT(offsetof(struct SaveBlock2, playerGender) == 16, SaveBlock2PlayerG
 STATIC_ASSERT(offsetof(struct SaveBlock2, playerRegion) == 17, SaveBlock2PlayerRegionOffset);
 STATIC_ASSERT(offsetof(struct SaveBlock2, playerTrainerId) == 19, SaveBlock2TrainerIdOffset);
 STATIC_ASSERT(sizeof(struct SaveBlock1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), SaveBlock1FreeSpace);
+STATIC_ASSERT(sizeof(struct SaveBlock1) == 0x3F08, SaveBlock1SizeUnchanged);
+STATIC_ASSERT(sizeof(struct SaveBlock1) - 4 * SECTOR_DATA_SIZE == JOHTO_SAVE_LEGACY_TAIL_SIZE, SaveBlock1LegacyTailSize);
+STATIC_ASSERT(offsetof(struct SaveBlock1ASLR, johto) == sizeof(struct SaveBlock1), JohtoSaveOffset);
+STATIC_ASSERT(offsetof(struct SaveBlock1ASLR, aslr) == sizeof(struct SaveBlock1) + sizeof(struct JohtoSaveV1), JohtoSaveBeforeAslr);
+STATIC_ASSERT(JOHTO_SAVE_LEGACY_TAIL_SIZE + sizeof(struct JohtoSaveV1) == JOHTO_SAVE_SERIALIZED_TAIL_SIZE, JohtoSaveSerializedTailSize);
+STATIC_ASSERT(sizeof(struct SaveBlock1) + sizeof(struct JohtoSaveV1) <= SECTOR_DATA_SIZE * (SECTOR_ID_SAVEBLOCK1_END - SECTOR_ID_SAVEBLOCK1_START + 1), JohtoSaveFreeSpace);
 STATIC_ASSERT(sizeof(struct PokemonStorage) <= SECTOR_DATA_SIZE * (SECTOR_ID_PKMN_STORAGE_END - SECTOR_ID_PKMN_STORAGE_START + 1), PokemonStorageFreeSpace);
 
 COMMON_DATA u16 gLastWrittenSector = 0;
@@ -110,6 +118,27 @@ EWRAM_DATA struct SaveSector gSaveDataBuffer = {0}; // Buffer used for reading/w
 static bool8 sSaveOperationBlocked;
 static EWRAM_DATA struct CoopSaveV1 sCoopSaveBeforeWrite;
 static bool8 sCoopSaveSnapshotValid;
+static EWRAM_DATA struct JohtoSaveV1 sJohtoSaveBeforeWrite;
+static bool8 sJohtoSaveSnapshotValid;
+static bool8 sLinkSaveInProgress;
+
+#if TESTING
+typedef void (*SaveTestReadFlashCallback)(u16, u32, u8 *, u32);
+typedef u16 (*SaveTestProgramFlashSectorCallback)(u16, u8 *);
+
+static SaveTestReadFlashCallback sSaveTestReadFlashCallback;
+static SaveTestProgramFlashSectorCallback sSaveTestProgramFlashSectorCallback;
+
+void Save_TestSetFlashReadCallback(SaveTestReadFlashCallback callback)
+{
+    sSaveTestReadFlashCallback = callback;
+}
+
+void Save_TestSetFlashProgramCallback(SaveTestProgramFlashSectorCallback callback)
+{
+    sSaveTestProgramFlashSectorCallback = callback;
+}
+#endif
 
 static bool8 IsValidSaveSectorId(u16 sectorId)
 {
@@ -121,6 +150,30 @@ static void RestorePreparedCoopSave(bool8 saveSucceeded)
     if (sCoopSaveSnapshotValid && !saveSucceeded && gSaveBlock3Ptr != NULL)
         gSaveBlock3Ptr->coop = sCoopSaveBeforeWrite;
     sCoopSaveSnapshotValid = FALSE;
+    sLinkSaveInProgress = FALSE;
+}
+
+static void RestorePreparedJohtoSave(bool8 saveSucceeded)
+{
+    if (sJohtoSaveSnapshotValid && !saveSucceeded)
+        gSaveblock1.johto = sJohtoSaveBeforeWrite;
+    sJohtoSaveSnapshotValid = FALSE;
+}
+
+static bool8 CancelSaveForContest(void)
+{
+    if (!JohtoBugContest_IsSerializationBlocked())
+        return FALSE;
+    if (sLinkSaveInProgress)
+    {
+        gLastWrittenSector = gLastKnownGoodSector;
+        gSaveCounter = gLastSaveCounter;
+    }
+    sSaveOperationBlocked = TRUE;
+    RestorePreparedJohtoSave(FALSE);
+    RestorePreparedCoopSave(FALSE);
+    CoopNetBridge_NotifySaveResult(FALSE);
+    return TRUE;
 }
 
 static bool8 IsCloudSaveAuthorized(void)
@@ -137,10 +190,20 @@ static bool8 SaveTypeWritesCanonicalCoopSave(u8 saveType)
 static bool8 PrepareCanonicalSave(void)
 {
     sCoopSaveSnapshotValid = FALSE;
+    sJohtoSaveSnapshotValid = FALSE;
     if (gSaveBlock3Ptr != NULL)
     {
         sCoopSaveBeforeWrite = gSaveBlock3Ptr->coop;
         sCoopSaveSnapshotValid = TRUE;
+    }
+    sJohtoSaveBeforeWrite = gSaveblock1.johto;
+    sJohtoSaveSnapshotValid = TRUE;
+
+    if (!JohtoSave_PrepareForWrite() && CoopNetBridge_IsCloudMode())
+    {
+        RestorePreparedJohtoSave(FALSE);
+        RestorePreparedCoopSave(FALSE);
+        return FALSE;
     }
 
     if (CoopSave_PrepareForWrite())
@@ -150,6 +213,7 @@ static bool8 PrepareCanonicalSave(void)
      * offline save path. A negotiated cloud session must never write a save
      * whose generation and registry body were not prepared atomically. */
     RestorePreparedCoopSave(FALSE);
+    RestorePreparedJohtoSave(FALSE);
     return !CoopNetBridge_IsCloudMode();
 }
 
@@ -294,7 +358,16 @@ static u8 HandleWriteSectorNBytes(u8 sectorId, u8 *data, u16 size)
 
 static u8 TryWriteSector(u8 sector, u8 *data)
 {
-    if (ProgramFlashSectorAndVerify(sector, data)) // is damaged?
+    u32 result;
+
+#if TESTING
+    if (sSaveTestProgramFlashSectorCallback != NULL)
+        result = sSaveTestProgramFlashSectorCallback(sector, data);
+    else
+#endif
+        result = ProgramFlashSectorAndVerify(sector, data);
+
+    if (result) // is damaged?
     {
         // Failed
         SetDamagedSectorBits(ENABLE, sector);
@@ -759,6 +832,13 @@ static u8 TryLoadSaveSector(u8 sectorId, u8 *data, u16 size)
 // Return value always ignored
 static bool8 ReadFlashSector(u8 sectorId, struct SaveSector *sector)
 {
+#if TESTING
+    if (sSaveTestReadFlashCallback != NULL)
+    {
+        sSaveTestReadFlashCallback(sectorId, 0, sector->data, SECTOR_SIZE);
+        return TRUE;
+    }
+#endif
     ReadFlash(sectorId, 0, sector->data, SECTOR_SIZE);
     return TRUE;
 }
@@ -799,9 +879,15 @@ static void UpdateSaveAddresses(void)
 u8 HandleSavingData(u8 saveType)
 {
     u8 i;
+    bool8 canonicalSaveReady = TRUE;
     u32 *backupVar = gTrainerHillVBlankCounter;
 
     sSaveOperationBlocked = FALSE;
+    /* The contest owns a temporary party until Exit/Abort restores the
+     * snapshot.  Check before the party-to-save copy so the cached save
+     * party and the original in-memory party both remain untouched. */
+    if (CancelSaveForContest())
+        return 0;
     /* This function is also called directly by SaveFailedScreen after the
      * original TrySavingData callback has already reported failure. Recheck
      * the cloud fence here so that that recovery path cannot write after its
@@ -812,13 +898,31 @@ u8 HandleSavingData(u8 saveType)
       && (!IsCloudSaveAuthorized() || !SaveTypeWritesCanonicalCoopSave(saveType))))
     {
         sSaveOperationBlocked = TRUE;
+        RestorePreparedJohtoSave(FALSE);
         RestorePreparedCoopSave(FALSE);
         return 0;
     }
     gTrainerHillVBlankCounter = NULL;
     UpdateSaveAddresses();
-    switch (saveType)
+
+    /* Prepare every canonical record before any save type can erase special
+     * sectors.  A rejected cloud record must leave both flash and the
+     * cooperative generation untouched. */
+    if (SaveTypeWritesCanonicalCoopSave(saveType))
     {
+        CopyPartyAndObjectsToSave();
+        if (!PrepareCanonicalSave())
+        {
+            sSaveOperationBlocked = TRUE;
+            gDamagedSaveSectors = 1;
+            canonicalSaveReady = FALSE;
+        }
+    }
+
+    if (canonicalSaveReady)
+    {
+        switch (saveType)
+        {
     case SAVE_HALL_OF_FAME_ERASE_BEFORE:
         // Unused. Erases the special save sectors (HOF, Trainer Hill, Recorded Battle)
         // before overwriting HOF.
@@ -830,13 +934,6 @@ u8 HandleSavingData(u8 saveType)
             IncrementGameStat(GAME_STAT_ENTERED_HOF);
 
         // Write the full save slot first
-        CopyPartyAndObjectsToSave();
-        if (!PrepareCanonicalSave())
-        {
-            sSaveOperationBlocked = TRUE;
-            gDamagedSaveSectors = 1;
-            break;
-        }
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
 
         // Save the Hall of Fame
@@ -849,13 +946,6 @@ u8 HandleSavingData(u8 saveType)
         break;
     case SAVE_NORMAL:
     default:
-        CopyPartyAndObjectsToSave();
-        if (!PrepareCanonicalSave())
-        {
-            sSaveOperationBlocked = TRUE;
-            gDamagedSaveSectors = 1;
-            break;
-        }
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         break;
     case SAVE_LINK:
@@ -863,6 +953,9 @@ u8 HandleSavingData(u8 saveType)
         // Used by link / Battle Frontier
         // Write only SaveBlocks 1 and 2 (skips the PC)
         CopyPartyAndObjectsToSave();
+        /* SaveBlock1 sector 5 now carries the Johto record.  Seal it before
+         * the incremental link path writes the legacy block sectors. */
+        (void)JohtoSave_PrepareForWrite();
         for (i = SECTOR_ID_SAVEBLOCK2; i <= SECTOR_ID_SAVEBLOCK1_END; i++)
             HandleReplaceSector(i, gRamSaveSectorLocations);
         for (i = SECTOR_ID_SAVEBLOCK2; i <= SECTOR_ID_SAVEBLOCK1_END; i++)
@@ -874,16 +967,11 @@ u8 HandleSavingData(u8 saveType)
             EraseFlashSector(i);
 
         // Overwrite save slot
-        CopyPartyAndObjectsToSave();
-        if (!PrepareCanonicalSave())
-        {
-            sSaveOperationBlocked = TRUE;
-            gDamagedSaveSectors = 1;
-            break;
-        }
         WriteSaveSectorOrSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         break;
+        }
     }
+    RestorePreparedJohtoSave(!gDamagedSaveSectors && !sSaveOperationBlocked);
     RestorePreparedCoopSave(!gDamagedSaveSectors && !sSaveOperationBlocked);
     gTrainerHillVBlankCounter = backupVar;
     return 0;
@@ -891,6 +979,13 @@ u8 HandleSavingData(u8 saveType)
 
 u8 TrySavingData(u8 saveType)
 {
+    /* Direct callers must fail closed without entering SaveFailedScreen,
+     * whose retry path would otherwise repeatedly rediscover the fence. */
+    if (CancelSaveForContest())
+    {
+        gSaveAttemptStatus = SAVE_STATUS_ERROR;
+        return SAVE_STATUS_ERROR;
+    }
     if (gFlashMemoryPresent != TRUE || !IsCloudSaveAuthorized())
     {
         gSaveAttemptStatus = SAVE_STATUS_ERROR;
@@ -917,6 +1012,9 @@ u8 TrySavingData(u8 saveType)
 bool8 LinkFullSave_Init(void)
 {
     sSaveOperationBlocked = FALSE;
+    if (CancelSaveForContest())
+        return TRUE;
+    RestorePreparedJohtoSave(FALSE);
     RestorePreparedCoopSave(FALSE);
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
@@ -935,6 +1033,7 @@ bool8 LinkFullSave_Init(void)
         return TRUE;
     }
     RestoreSaveBackupVarsAndIncrement(gRamSaveSectorLocations);
+    sLinkSaveInProgress = TRUE;
     return FALSE;
 }
 
@@ -942,13 +1041,17 @@ bool8 LinkFullSave_WriteSector(void)
 {
     u8 status;
 
-    if (sSaveOperationBlocked)
+    if (CancelSaveForContest() || sSaveOperationBlocked)
+    {
+        sSaveOperationBlocked = TRUE;
         return TRUE;
+    }
     status = HandleWriteIncrementalSector(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
     {
         DoSaveFailedScreen(SAVE_NORMAL);
         sSaveOperationBlocked = TRUE;
+        RestorePreparedJohtoSave(FALSE);
         RestorePreparedCoopSave(FALSE);
         CoopNetBridge_NotifySaveResult(FALSE);
     }
@@ -964,13 +1067,17 @@ bool8 LinkFullSave_WriteSector(void)
 
 bool8 LinkFullSave_ReplaceLastSector(void)
 {
-    if (sSaveOperationBlocked)
+    if (CancelSaveForContest() || sSaveOperationBlocked)
+    {
+        sSaveOperationBlocked = TRUE;
         return FALSE;
+    }
     HandleReplaceSectorAndVerify(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
     {
         DoSaveFailedScreen(SAVE_NORMAL);
         sSaveOperationBlocked = TRUE;
+        RestorePreparedJohtoSave(FALSE);
         RestorePreparedCoopSave(FALSE);
         CoopNetBridge_NotifySaveResult(FALSE);
     }
@@ -979,18 +1086,23 @@ bool8 LinkFullSave_ReplaceLastSector(void)
 
 bool8 LinkFullSave_SetLastSectorSignature(void)
 {
-    if (sSaveOperationBlocked)
+    if (CancelSaveForContest() || sSaveOperationBlocked)
+    {
+        sSaveOperationBlocked = TRUE;
         return FALSE;
+    }
     CopySectorSignatureByte(NUM_SECTORS_PER_SLOT, gRamSaveSectorLocations);
     if (gDamagedSaveSectors)
     {
         DoSaveFailedScreen(SAVE_NORMAL);
         sSaveOperationBlocked = TRUE;
+        RestorePreparedJohtoSave(FALSE);
         RestorePreparedCoopSave(FALSE);
         CoopNetBridge_NotifySaveResult(FALSE);
     }
     else
     {
+        RestorePreparedJohtoSave(TRUE);
         RestorePreparedCoopSave(TRUE);
         CoopNetBridge_NotifySaveResult(TRUE);
     }
@@ -1000,6 +1112,12 @@ bool8 LinkFullSave_SetLastSectorSignature(void)
 bool8 WriteSaveBlock2(void)
 {
     sSaveOperationBlocked = FALSE;
+    if (CancelSaveForContest())
+    {
+        sSaveOperationBlocked = TRUE;
+        CoopNetBridge_NotifySaveResult(FALSE);
+        return TRUE;
+    }
     if (gFlashMemoryPresent != TRUE)
         return TRUE;
     /* This incremental path deliberately excludes SaveBlock3. It therefore
@@ -1034,16 +1152,21 @@ bool8 WriteSaveBlock2(void)
 bool8 WriteSaveBlock1Sector(void)
 {
     bool32 finished = FALSE;
-    u16 sectorId = ++gIncrementalSectorId; // Because WriteSaveBlock2 will have been called prior, this will be SECTOR_ID_SAVEBLOCK1_START
+    u16 sectorId;
 
-    if (sSaveOperationBlocked || CoopNetBridge_IsCloudMode())
+    if (CancelSaveForContest() || sSaveOperationBlocked
+     || CoopNetBridge_IsCloudMode())
     {
         sSaveOperationBlocked = TRUE;
         return TRUE;
     }
+    // Because WriteSaveBlock2 will have been called prior, this will be SECTOR_ID_SAVEBLOCK1_START.
+    sectorId = ++gIncrementalSectorId;
     if (sectorId <= SECTOR_ID_SAVEBLOCK1_END)
     {
         // Write a single sector of SaveBlock1
+        if (sectorId == SECTOR_ID_SAVEBLOCK1_START)
+            (void)JohtoSave_PrepareForWrite();
         HandleReplaceSectorAndVerify(gIncrementalSectorId + 1, gRamSaveSectorLocations);
         WriteSectorSignatureByte(sectorId, gRamSaveSectorLocations);
     }
@@ -1088,6 +1211,7 @@ u8 LoadGameSave(u8 saveType)
     default:
         status = TryLoadSaveSlot(FULL_SAVE_SLOT, gRamSaveSectorLocations);
         CopyPartyAndObjectsFromSave();
+        (void)JohtoSave_Load();
         gSaveFileStatus = status;
         gGameContinueCallback = NULL;
         break;

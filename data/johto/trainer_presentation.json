@@ -1,0 +1,418 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "donor_repository": "https://github.com/PokemonHnS-Development/pokemonHnS",
+    "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
+    "input_manifest": "docs/orchestration/runs/johto-region-20260908/j3-roster-portrait-inputs.json",
+    "input_manifest_sha256": "37c9ffe14dcc3f1d2e8d8effc46fd038a9aad0f19b8222675429e7c0b1a68f82",
+    "source_hashes": [
+      {
+        "id": "TRAINER_PIC_ARCHER",
+        "path": "graphics/trainers/front_pics/archer.png",
+        "sha256": "13e418958cb1ae233b1300628babb5161f2b195ae03f75a01c7b3f1f6ad5b37d"
+      },
+      {
+        "id": "TRAINER_PIC_ARIANA",
+        "path": "graphics/trainers/front_pics/ariana.png",
+        "sha256": "0a04e469c28474676921b525b541515ed57a4b78a08634aea1ca2686d0b8191a"
+      },
+      {
+        "id": "TRAINER_PIC_EUSINE",
+        "path": "graphics/trainers/front_pics/eusine.png",
+        "sha256": "5942a989e67ac58ad1272a8bf778c2eb8e79b87dd08bfeb40fa4c40adb2b95d9"
+      },
+      {
+        "id": "TRAINER_PIC_FIREBREATHER",
+        "path": "graphics/trainers/front_pics/firebreather.png",
+        "sha256": "1118b02d4cdcd0a7fb1b2a798455ee2795a23ee2299a963cca9e0fcf184e7900"
+      },
+      {
+        "id": "TRAINER_PIC_KIMONO_GIRL",
+        "path": "graphics/trainers/front_pics/kimono_girl.png",
+        "sha256": "ed86f99bdde58938fa08d1a2e2a906eb907a0d0e94d7de5e22d3aa32bb1a2e29"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_BUGSY",
+        "path": "graphics/trainers/front_pics/leader_bugsy.png",
+        "sha256": "05b6883791404b675cb0938aa2f662532ed69f5d0104005113e409e7844d4493"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_CHUCK",
+        "path": "graphics/trainers/front_pics/leader_chuck.png",
+        "sha256": "b63622d9b10fc375e789d3f495964e69585daab2f5383d34e149058d8e4f3b80"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_CLAIR",
+        "path": "graphics/trainers/front_pics/leader_clair.png",
+        "sha256": "29156de8511986af9bcde6e79bd6d3ac5a442365a67d136d936baa386abc1f90"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_FALKNER",
+        "path": "graphics/trainers/front_pics/leader_falkner.png",
+        "sha256": "c1d25cb2fd743fb23a3ef42a8a02a3c839e6ba9e90492de4f3660a5ad5a0c92e"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_JASMINE",
+        "path": "graphics/trainers/front_pics/leader_jasmine.png",
+        "sha256": "3e05b5f1cce58d72425ce9cc857da2e3be929c189c1e6e1fcdf70dad23e4dc04"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_MORTY",
+        "path": "graphics/trainers/front_pics/leader_morty.png",
+        "sha256": "f9e681220a93ba698cf6720bcf339bc9355da9de048f9049e87e682f1c50cb72"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_PRYCE",
+        "path": "graphics/trainers/front_pics/pryce_2.png",
+        "sha256": "d5a570f33f7b163e1cc5dc63b01fb7fea36801b71fe025b764e27e469e90ce13"
+      },
+      {
+        "id": "TRAINER_PIC_LEADER_WHITNEY",
+        "path": "graphics/trainers/front_pics/leader_whitney.png",
+        "sha256": "91acc4e1fc3e93318024b29249a3e7dc45199c57f5da997dcffad1baa9cd64ef"
+      },
+      {
+        "id": "TRAINER_PIC_MR_FUJI",
+        "path": "graphics/trainers/front_pics/sage_leader.png",
+        "sha256": "a05c45483a618da4aa2651e27557ef3ca09dbd42108c9ba2d8e94bd0d60f9805"
+      },
+      {
+        "id": "TRAINER_PIC_PETREL",
+        "path": "graphics/trainers/front_pics/petrel.png",
+        "sha256": "f1fcc4832c6a94f08fae9cefc47a18f57f53d7c47b4a99e2c38806c1c0e063ab"
+      },
+      {
+        "id": "TRAINER_PIC_POLICEMAN",
+        "path": "graphics/trainers/front_pics/officer.png",
+        "sha256": "7f1874ec2dd16b12650799cf873f7ac73478e7b41e065edaee89b8b3a826767e"
+      },
+      {
+        "id": "TRAINER_PIC_PROTON",
+        "path": "graphics/trainers/front_pics/proton.png",
+        "sha256": "44451ea853b921bc2a753bfa9ed2c031d1a76456b4e72293dfc8aac777bdf759"
+      },
+      {
+        "id": "TRAINER_PIC_SAGE",
+        "path": "graphics/trainers/front_pics/sage.png",
+        "sha256": "343f0b9c6967cbcf1d31c4e9cddfeb9dd157137ab5427df2ef7bdd999c3ff218"
+      },
+      {
+        "id": "TRAINER_PIC_SILVER",
+        "path": "graphics/trainers/front_pics/wally.png",
+        "sha256": "aaa82615a4d4182af464a8034ae8d1ab0a0ca10beb2a11bef001679092e47fca"
+      },
+      {
+        "id": "TRAINER_PIC_SILVER_PALETTE",
+        "path": "graphics/trainers/palettes/wally.pal",
+        "sha256": "5c202eae701ea3fd1d0ecb104cd258affeffb993864b5195e9b264ca38aeb642"
+      }
+    ]
+  },
+  "portrait_aliases": {
+    "TRAINER_PIC_BIKER": "TRAINER_PIC_BIKER_FRLG",
+    "TRAINER_PIC_BURGLAR": "TRAINER_PIC_BURGLAR_FRLG",
+    "TRAINER_PIC_CHAMPION_LANCE": "TRAINER_PIC_ELITE_FOUR_LANCE_FRLG",
+    "TRAINER_PIC_ELITE_FOUR_BRUNO": "TRAINER_PIC_ELITE_FOUR_BRUNO_FRLG",
+    "TRAINER_PIC_ELITE_FOUR_KAREN": "TRAINER_PIC_COOLTRAINER_F",
+    "TRAINER_PIC_ELITE_FOUR_KOGA": "TRAINER_PIC_LEADER_KOGA_FRLG",
+    "TRAINER_PIC_ELITE_FOUR_WILL": "TRAINER_PIC_PSYCHIC_M",
+    "TRAINER_PIC_JUGGLER": "TRAINER_PIC_JUGGLER_FRLG",
+    "TRAINER_PIC_LEADER_BLAINE": "TRAINER_PIC_LEADER_BLAINE_FRLG",
+    "TRAINER_PIC_LEADER_BLUE": "TRAINER_PIC_CHAMPION_RIVAL_FRLG",
+    "TRAINER_PIC_LEADER_BROCK": "TRAINER_PIC_LEADER_BROCK_FRLG",
+    "TRAINER_PIC_LEADER_ERIKA": "TRAINER_PIC_LEADER_ERIKA_FRLG",
+    "TRAINER_PIC_LEADER_JANINE": "TRAINER_PIC_NINJA_BOY",
+    "TRAINER_PIC_LEADER_MISTY": "TRAINER_PIC_LEADER_MISTY_FRLG",
+    "TRAINER_PIC_LEADER_SABRINA": "TRAINER_PIC_LEADER_SABRINA_FRLG",
+    "TRAINER_PIC_LEADER_SURGE": "TRAINER_PIC_LEADER_LT_SURGE_FRLG",
+    "TRAINER_PIC_SUPER_NERD": "TRAINER_PIC_SUPER_NERD_FRLG",
+    "TRAINER_PIC_ROCKET_GRUNT_F": "TRAINER_PIC_ROCKET_GRUNT_F_FRLG",
+    "TRAINER_PIC_ROCKET_GRUNT_M": "TRAINER_PIC_ROCKET_GRUNT_M_FRLG",
+    "TRAINER_PIC_GIOVANNI": "TRAINER_PIC_LEADER_GIOVANNI_FRLG"
+  },
+  "new_portraits": [
+    {
+      "id": "TRAINER_PIC_ARCHER",
+      "source": "graphics/trainers/front_pics/archer.png",
+      "sha256": "13e418958cb1ae233b1300628babb5161f2b195ae03f75a01c7b3f1f6ad5b37d",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/archer.png",
+      "host_image_symbol": "gJohtoTrainerPic_ARCHER",
+      "host_palette_symbol": "gJohtoTrainerPalette_ARCHER"
+    },
+    {
+      "id": "TRAINER_PIC_ARIANA",
+      "source": "graphics/trainers/front_pics/ariana.png",
+      "sha256": "0a04e469c28474676921b525b541515ed57a4b78a08634aea1ca2686d0b8191a",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/ariana.png",
+      "host_image_symbol": "gJohtoTrainerPic_ARIANA",
+      "host_palette_symbol": "gJohtoTrainerPalette_ARIANA"
+    },
+    {
+      "id": "TRAINER_PIC_EUSINE",
+      "source": "graphics/trainers/front_pics/eusine.png",
+      "sha256": "5942a989e67ac58ad1272a8bf778c2eb8e79b87dd08bfeb40fa4c40adb2b95d9",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/eusine.png",
+      "host_image_symbol": "gJohtoTrainerPic_EUSINE",
+      "host_palette_symbol": "gJohtoTrainerPalette_EUSINE"
+    },
+    {
+      "id": "TRAINER_PIC_FIREBREATHER",
+      "source": "graphics/trainers/front_pics/firebreather.png",
+      "sha256": "1118b02d4cdcd0a7fb1b2a798455ee2795a23ee2299a963cca9e0fcf184e7900",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/firebreather.png",
+      "host_image_symbol": "gJohtoTrainerPic_FIREBREATHER",
+      "host_palette_symbol": "gJohtoTrainerPalette_FIREBREATHER"
+    },
+    {
+      "id": "TRAINER_PIC_KIMONO_GIRL",
+      "source": "graphics/trainers/front_pics/kimono_girl.png",
+      "sha256": "ed86f99bdde58938fa08d1a2e2a906eb907a0d0e94d7de5e22d3aa32bb1a2e29",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 8,
+      "target": "graphics/johto/trainers/kimono_girl.png",
+      "host_image_symbol": "gJohtoTrainerPic_KIMONO_GIRL",
+      "host_palette_symbol": "gJohtoTrainerPalette_KIMONO_GIRL"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_BUGSY",
+      "source": "graphics/trainers/front_pics/leader_bugsy.png",
+      "sha256": "05b6883791404b675cb0938aa2f662532ed69f5d0104005113e409e7844d4493",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_bugsy.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_BUGSY",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_BUGSY"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_CHUCK",
+      "source": "graphics/trainers/front_pics/leader_chuck.png",
+      "sha256": "b63622d9b10fc375e789d3f495964e69585daab2f5383d34e149058d8e4f3b80",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_chuck.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_CHUCK",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_CHUCK"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_CLAIR",
+      "source": "graphics/trainers/front_pics/leader_clair.png",
+      "sha256": "29156de8511986af9bcde6e79bd6d3ac5a442365a67d136d936baa386abc1f90",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_clair.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_CLAIR",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_CLAIR"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_FALKNER",
+      "source": "graphics/trainers/front_pics/leader_falkner.png",
+      "sha256": "c1d25cb2fd743fb23a3ef42a8a02a3c839e6ba9e90492de4f3660a5ad5a0c92e",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_falkner.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_FALKNER",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_FALKNER"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_JASMINE",
+      "source": "graphics/trainers/front_pics/leader_jasmine.png",
+      "sha256": "3e05b5f1cce58d72425ce9cc857da2e3be929c189c1e6e1fcdf70dad23e4dc04",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_jasmine.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_JASMINE",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_JASMINE"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_MORTY",
+      "source": "graphics/trainers/front_pics/leader_morty.png",
+      "sha256": "f9e681220a93ba698cf6720bcf339bc9355da9de048f9049e87e682f1c50cb72",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_morty.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_MORTY",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_MORTY"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_PRYCE",
+      "source": "graphics/trainers/front_pics/pryce_2.png",
+      "sha256": "d5a570f33f7b163e1cc5dc63b01fb7fea36801b71fe025b764e27e469e90ce13",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 8,
+      "target": "graphics/johto/trainers/leader_pryce.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_PRYCE",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_PRYCE"
+    },
+    {
+      "id": "TRAINER_PIC_LEADER_WHITNEY",
+      "source": "graphics/trainers/front_pics/leader_whitney.png",
+      "sha256": "91acc4e1fc3e93318024b29249a3e7dc45199c57f5da997dcffad1baa9cd64ef",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/leader_whitney.png",
+      "host_image_symbol": "gJohtoTrainerPic_LEADER_WHITNEY",
+      "host_palette_symbol": "gJohtoTrainerPalette_LEADER_WHITNEY"
+    },
+    {
+      "id": "TRAINER_PIC_MR_FUJI",
+      "source": "graphics/trainers/front_pics/sage_leader.png",
+      "sha256": "a05c45483a618da4aa2651e27557ef3ca09dbd42108c9ba2d8e94bd0d60f9805",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/mr_fuji.png",
+      "host_image_symbol": "gJohtoTrainerPic_MR_FUJI",
+      "host_palette_symbol": "gJohtoTrainerPalette_MR_FUJI"
+    },
+    {
+      "id": "TRAINER_PIC_PETREL",
+      "source": "graphics/trainers/front_pics/petrel.png",
+      "sha256": "f1fcc4832c6a94f08fae9cefc47a18f57f53d7c47b4a99e2c38806c1c0e063ab",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/petrel.png",
+      "host_image_symbol": "gJohtoTrainerPic_PETREL",
+      "host_palette_symbol": "gJohtoTrainerPalette_PETREL"
+    },
+    {
+      "id": "TRAINER_PIC_POLICEMAN",
+      "source": "graphics/trainers/front_pics/officer.png",
+      "sha256": "7f1874ec2dd16b12650799cf873f7ac73478e7b41e065edaee89b8b3a826767e",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/policeman.png",
+      "host_image_symbol": "gJohtoTrainerPic_POLICEMAN",
+      "host_palette_symbol": "gJohtoTrainerPalette_POLICEMAN"
+    },
+    {
+      "id": "TRAINER_PIC_PROTON",
+      "source": "graphics/trainers/front_pics/proton.png",
+      "sha256": "44451ea853b921bc2a753bfa9ed2c031d1a76456b4e72293dfc8aac777bdf759",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/proton.png",
+      "host_image_symbol": "gJohtoTrainerPic_PROTON",
+      "host_palette_symbol": "gJohtoTrainerPalette_PROTON"
+    },
+    {
+      "id": "TRAINER_PIC_SAGE",
+      "source": "graphics/trainers/front_pics/sage.png",
+      "sha256": "343f0b9c6967cbcf1d31c4e9cddfeb9dd157137ab5427df2ef7bdd999c3ff218",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 8,
+      "target": "graphics/johto/trainers/sage.png",
+      "host_image_symbol": "gJohtoTrainerPic_SAGE",
+      "host_palette_symbol": "gJohtoTrainerPalette_SAGE"
+    },
+    {
+      "id": "TRAINER_PIC_SILVER",
+      "source": "graphics/trainers/front_pics/wally.png",
+      "sha256": "aaa82615a4d4182af464a8034ae8d1ab0a0ca10beb2a11bef001679092e47fca",
+      "width": 64,
+      "height": 64,
+      "bit_depth": 4,
+      "target": "graphics/johto/trainers/silver.png",
+      "host_image_symbol": "gJohtoTrainerPic_SILVER",
+      "host_palette_symbol": "gJohtoTrainerPalette_SILVER",
+      "palette_source": "graphics/trainers/palettes/wally.pal",
+      "palette_sha256": "5c202eae701ea3fd1d0ecb104cd258affeffb993864b5195e9b264ca38aeb642",
+      "palette_target": "graphics/johto/trainers/silver.pal"
+    }
+  ],
+  "class_aliases": {
+    "TRAINER_CLASS_BIKER": "TRAINER_CLASS_BIKER_FRLG",
+    "TRAINER_CLASS_BURGLAR": "TRAINER_CLASS_BURGLAR_FRLG",
+    "TRAINER_CLASS_JUGGLER": "TRAINER_CLASS_JUGGLER_FRLG",
+    "TRAINER_CLASS_SUPER_NERD": "TRAINER_CLASS_SUPER_NERD_FRLG",
+    "TRAINER_CLASS_TEAM_ROCKET": "TRAINER_CLASS_TEAM_ROCKET_FRLG",
+    "TRAINER_CLASS_PSYCHIC_M": "TRAINER_CLASS_PSYCHIC"
+  },
+  "new_classes": [
+    {
+      "id": "TRAINER_CLASS_FIREBREATHER",
+      "name": "FIREBREATHER",
+      "money": 5,
+      "ball": "BALL_POKE"
+    },
+    {
+      "id": "TRAINER_CLASS_KIMONO_GIRL",
+      "name": "KIMONO GIRL",
+      "money": 5,
+      "ball": "BALL_POKE"
+    },
+    {
+      "id": "TRAINER_CLASS_MYSTERY_MAN",
+      "name": "MYSTERY MAN",
+      "money": 5,
+      "ball": "BALL_POKE"
+    },
+    {
+      "id": "TRAINER_CLASS_POLICEMAN",
+      "name": "OFFICER",
+      "money": 5,
+      "ball": "BALL_POKE"
+    },
+    {
+      "id": "TRAINER_CLASS_ROCKET_ADMIN",
+      "name": "ROCKET ADMIN",
+      "money": 5,
+      "ball": "BALL_POKE"
+    },
+    {
+      "id": "TRAINER_CLASS_SAGE",
+      "name": "SAGE",
+      "money": 5,
+      "ball": "BALL_POKE"
+    }
+  ],
+  "music_aliases": {
+    "TRAINER_ENCOUNTER_MUSIC_HG_BOY_1": "TRAINER_ENCOUNTER_MUSIC_MALE",
+    "TRAINER_ENCOUNTER_MUSIC_HG_BOY_2": "TRAINER_ENCOUNTER_MUSIC_MALE",
+    "TRAINER_ENCOUNTER_MUSIC_HG_GIRL_1": "TRAINER_ENCOUNTER_MUSIC_FEMALE",
+    "TRAINER_ENCOUNTER_MUSIC_HG_GIRL_2": "TRAINER_ENCOUNTER_MUSIC_GIRL",
+    "TRAINER_ENCOUNTER_MUSIC_HG_SUSPICIOUS_1": "TRAINER_ENCOUNTER_MUSIC_SUSPICIOUS",
+    "TRAINER_ENCOUNTER_MUSIC_HG_SUSPICIOUS_2": "TRAINER_ENCOUNTER_MUSIC_SUSPICIOUS",
+    "TRAINER_ENCOUNTER_MUSIC_HG_SAGE": "TRAINER_ENCOUNTER_MUSIC_SUSPICIOUS",
+    "TRAINER_ENCOUNTER_MUSIC_HG_CHAMPION": "TRAINER_ENCOUNTER_MUSIC_ELITE_FOUR",
+    "TRAINER_ENCOUNTER_MUSIC_ROCKET": "TRAINER_ENCOUNTER_MUSIC_ROCKET",
+    "TRAINER_ENCOUNTER_MUSIC_SILVER": "TRAINER_ENCOUNTER_MUSIC_SILVER"
+  },
+  "new_music": [
+    {
+      "id": "TRAINER_ENCOUNTER_MUSIC_ROCKET",
+      "value": 14,
+      "song": "MUS_RG_ENCOUNTER_ROCKET"
+    },
+    {
+      "id": "TRAINER_ENCOUNTER_MUSIC_SILVER",
+      "value": 15,
+      "song": "MUS_RG_ENCOUNTER_RIVAL"
+    }
+  ]
+}

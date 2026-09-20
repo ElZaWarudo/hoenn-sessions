@@ -30,6 +30,7 @@ extern const u8 FarawayIsland_Interior_EventScript_HideMewWhenGrassCut[];
 
 extern const u8 gFieldEffectPic_CutGrass[];
 extern const u16 gFieldEffectPal_CutGrass[];
+extern const struct Tileset gTileset_KantoLaterImported_General;
 
 // cut 'square' defines
 #define CUT_NORMAL_SIDE 3
@@ -58,6 +59,12 @@ static void CutGrassSpriteCallback1(struct Sprite *);
 static void CutGrassSpriteCallback2(struct Sprite *);
 static void CutGrassSpriteCallbackEnd(struct Sprite *);
 static void HandleLongGrassOnHyper(u8, s16, s16);
+
+static bool32 IsKantoLaterImportedGeneralLayout(void)
+{
+    return gMapHeader.mapLayout != NULL
+        && gMapHeader.mapLayout->primaryTileset == &gTileset_KantoLaterImported_General;
+}
 
 // IWRAM variables
 static u8 sCutSquareSide;
@@ -367,6 +374,29 @@ static void SetCutGrassMetatile(s16 x, s16 y)
 {
     s32 metatileId = MapGridGetMetatileIdAt(x, y);
 
+    // The imported General tileset has no FRLG primary extension. Avoid
+    // interpreting its secondary IDs as unrelated native secondary tiles.
+    if (IsKantoLaterImportedGeneralLayout())
+    {
+        switch (metatileId)
+        {
+        case METATILE_General_LongGrass:
+        case METATILE_General_TallGrass:
+            MapGridSetMetatileIdAt(x, y, METATILE_General_Grass);
+            break;
+        case METATILE_General_TallGrass_TreeLeft:
+            MapGridSetMetatileIdAt(x, y, METATILE_General_Grass_TreeLeft);
+            break;
+        case METATILE_General_TallGrass_TreeRight:
+            MapGridSetMetatileIdAt(x, y, METATILE_General_Grass_TreeRight);
+            break;
+        case METATILE_General_TallGrass_TreeUp:
+            MapGridSetMetatileIdAt(x, y, METATILE_General_Grass_TreeUp);
+            break;
+        }
+        return;
+    }
+
     switch (metatileId)
     {
     case METATILE_Fortree_LongGrass_Root:
@@ -432,6 +462,9 @@ static void SetCutGrassMetatiles(s16 x, s16 y)
 {
     s16 i;
     s16 lowerY = y + sCutSquareSide;
+
+    if (IsKantoLaterImportedGeneralLayout())
+        return;
 
     for (i = 0; i < sCutSquareSide; i++)
     {
@@ -603,7 +636,12 @@ static void CutGrassSpriteCallbackEnd(struct Sprite *sprite)
 
 void FixLongGrassMetatilesWindowTop(s16 x, s16 y)
 {
-    u8 metatileBehavior = MapGridGetMetatileBehaviorAt(x, y);
+    u8 metatileBehavior;
+
+    if (IsKantoLaterImportedGeneralLayout())
+        return;
+
+    metatileBehavior = MapGridGetMetatileBehaviorAt(x, y);
     if (MetatileBehavior_IsLongGrass_Duplicate(metatileBehavior))
     {
         switch (GetLongGrassCaseAt(x, y + 1))
@@ -626,6 +664,9 @@ void FixLongGrassMetatilesWindowTop(s16 x, s16 y)
 
 void FixLongGrassMetatilesWindowBottom(s16 x, s16 y)
 {
+    if (IsKantoLaterImportedGeneralLayout())
+        return;
+
     if (MapGridGetMetatileIdAt(x, y) == METATILE_General_Grass)
     {
         u8 metatileBehavior = MapGridGetMetatileBehaviorAt(x, y + 1);
@@ -650,6 +691,20 @@ void FixLongGrassMetatilesWindowBottom(s16 x, s16 y)
         }
     }
 }
+
+#if TESTING
+void Test_RunCutGrassMetatilePass(s16 x, s16 y, u8 side)
+{
+    s16 i;
+    s16 j;
+
+    sCutSquareSide = side;
+    for (i = 0; i < side; i++)
+        for (j = 0; j < side; j++)
+            SetCutGrassMetatile(x + i, y + j);
+    SetCutGrassMetatiles(x, y);
+}
+#endif
 
 static void StartCutTreeFieldEffect(void)
 {

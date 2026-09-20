@@ -40,4 +40,11 @@ void InitTilesetAnim_CeladonGym(void);
 void InitTilesetAnim_SilphCo(void);
 void InitTilesetAnim_MtEmber(void);
 
+// Johto active tileset animations
+void InitTilesetAnim_JohtoGeneral(void);
+void InitTilesetAnim_JohtoNationalPark(void);
+void InitTilesetAnim_JohtoEcruteakTheater(void);
+void InitTilesetAnim_JohtoAzaleaGym(void);
+void InitTilesetAnim_JohtoBlackthornGym(void);
+
 #endif // GUARD_TILESET_ANIMS_H

@@ -265,6 +265,10 @@ uuid_id!(
     /// A server-issued group invitation identifier.
     GroupInvitationId
 );
+uuid_id!(
+    /// A server-issued two-player travel proposal identifier.
+    GroupTravelProposalId
+);
 
 /// A monotonically increasing snapshot or character revision.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

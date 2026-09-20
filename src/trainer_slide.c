@@ -121,13 +121,30 @@ static u32 GetPartyMonCount(u32 lastId, struct Pokemon *party, bool32 onlyAlive)
 
 static const u8* const *GetTrainerSlideArray(enum DifficultyLevel difficulty, u32 trainerId, u32 slideId)
 {
+    if ((u32)difficulty >= DIFFICULTY_COUNT || slideId >= TRAINER_SLIDE_COUNT)
+        return NULL;
+
 #if TESTING
-    return (FlagGet(TESTING_FLAG_TRAINER_SLIDES) ? sTestTrainerSlides[difficulty][trainerId] : NULL);
+    if (!FlagGet(TESTING_FLAG_TRAINER_SLIDES)
+     || trainerId >= ARRAY_COUNT(sTestTrainerSlides[difficulty]))
+        return NULL;
+
+    return sTestTrainerSlides[difficulty][trainerId];
 #else
     if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER)
+    {
+        if (trainerId >= ARRAY_COUNT(sFrontierTrainerSlides[difficulty]))
+            return NULL;
+
         return sFrontierTrainerSlides[difficulty][trainerId];
+    }
     else
+    {
+        if (trainerId >= ARRAY_COUNT(sTrainerSlides[difficulty]))
+            return NULL;
+
         return sTrainerSlides[difficulty][trainerId];
+    }
 #endif // TESTING
 }
 
@@ -139,31 +156,35 @@ static bool32 DoesTrainerHaveSlideMessage(enum DifficultyLevel difficulty, u32 t
 #if TESTING
     if (VarGet(TESTING_VAR_TRAINER_SLIDES) == slideId)
     {
-        if (trainerSlides[slideId] == NULL)
-            return (trainerSlidesNormal[slideId] != NULL);
-        else
-            return TRUE;
+        return ((trainerSlides != NULL && trainerSlides[slideId] != NULL)
+             || (trainerSlidesNormal != NULL && trainerSlidesNormal[slideId] != NULL));
     }
     else
     {
         return FALSE;
     }
 #else
-    if (trainerSlides[slideId] == NULL)
-        return (trainerSlidesNormal[slideId] != NULL);
-    else
-        return TRUE;
+    return ((trainerSlides != NULL && trainerSlides[slideId] != NULL)
+         || (trainerSlidesNormal != NULL && trainerSlidesNormal[slideId] != NULL));
 #endif // TESTING
 }
 
 void SetTrainerSlideMessage(enum DifficultyLevel difficulty, u32 trainerId, u32 slideId)
 {
+    if ((u32)difficulty >= DIFFICULTY_COUNT || slideId >= TRAINER_SLIDE_COUNT)
+    {
+        gBattleStruct->trainerSlideMsg = NULL;
+        return;
+    }
+
     const u8* const *trainerSlides = GetTrainerSlideArray(difficulty, trainerId, slideId);
     const u8* const *trainerSlidesNormal = GetTrainerSlideArray(DIFFICULTY_NORMAL, trainerId, slideId);
 
-    if (trainerSlides[slideId] != NULL)
+    gBattleStruct->trainerSlideMsg = NULL;
+
+    if (trainerSlides != NULL && trainerSlides[slideId] != NULL)
         gBattleStruct->trainerSlideMsg = trainerSlides[slideId];
-    else
+    else if (trainerSlidesNormal != NULL)
         gBattleStruct->trainerSlideMsg = trainerSlidesNormal[slideId];
 }
 
@@ -268,6 +289,9 @@ enum TrainerSlideTargets ShouldDoTrainerSlide(enum BattlerId battler, enum Train
     u32 lastId = PARTY_SIZE, trainerId = TRAINER_BATTLE_PARAM.opponentA;
     u32 retValue = TRAINER_SLIDE_TARGET_TRAINER_A;
     bool32 shouldRun = FALSE;
+
+    if ((u32)slideId >= TRAINER_SLIDE_COUNT)
+        return TRAINER_SLIDE_TARGET_NONE;
 
     if (!(gBattleTypeFlags & BATTLE_TYPE_TRAINER))
         return TRAINER_SLIDE_TARGET_NONE;

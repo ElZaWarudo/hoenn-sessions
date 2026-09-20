@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod compat;
 pub mod epoch;
+pub mod group_travel;
 pub mod keychain;
 pub mod online;
 pub mod process;
@@ -16,6 +17,7 @@ pub mod windows_mgba_supervisor;
 pub use auth::{AuthApi, AuthError, AuthSession};
 pub use compat::{BuildCompatibility, CompatibilityError};
 pub use epoch::{EpochError, EpochRecord, EpochStore};
+pub use group_travel::{GroupTravelError, GroupTravelFuture};
 pub use keychain::{KeychainError, OsKeychain, RefreshTokenStore};
 pub use process::{
     CommandSpec, ControlChannel, ControlShutdownEvidence, DescendantCompletionEvidence,
@@ -288,6 +290,44 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn group_travel_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::GroupTravelProposalRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_create_http(token, group_id, request)
+    }
+
+    fn group_travel_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> group_travel::GroupTravelFuture<'_, Option<coop_cloud::GroupTravelProposalView>> {
+        self.group_travel_current_http(token, group_id, fence)
+    }
+
+    fn group_travel_get(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_get_http(token, group_id, proposal_id, fence)
+    }
+
+    fn group_travel_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelActionRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_action_http(token, group_id, proposal_id, request)
+    }
+
     fn online_snapshot(
         &self,
         token: coop_cloud::AccessToken,

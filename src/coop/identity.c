@@ -2,6 +2,9 @@
 #include "coop/generated_regional_identities.h"
 #include "coop/identity.h"
 #include "coop/save.h"
+#include "constants/opponents.h"
+#include "johto/save.h"
+#include "johto/trainers.h"
 
 _Static_assert(COOP_TRAINER_IDENTITY_COUNT <= COOP_TRAINER_IDENTITY_CAPACITY,
                "trainer registry exceeds persisted capacity");
@@ -65,8 +68,35 @@ static enum CoopIdentityAccessResult ResolveActiveTrainer(u16 legacy_trainer_id,
 {
     enum CoopRegion region;
 
+    if (legacy_trainer_id == COOP_IDENTITY_LEGACY_NONE)
+        return COOP_IDENTITY_ACCESS_REJECTED;
+
+    /* Johto runtime IDs are never valid legacy flag indexes.  An imported
+     * record may use its local ordinal offline; cloud play additionally needs
+     * the active region's qualified registry entry. */
+    if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN)
+    {
+        if (!JohtoTrainer_IsId(legacy_trainer_id)
+         || !JohtoTrainer_GetOrdinal(legacy_trainer_id, ordinal))
+            return COOP_IDENTITY_ACCESS_REJECTED;
+
+        if (!CoopSave_IsOnlineEnabled())
+            return COOP_IDENTITY_ACCESS_HANDLED;
+        if (!CoopRegion_TryGetActive(&region)
+         || region != COOP_REGION_JOHTO
+         || !CoopIdentity_ResolveTrainerOrdinal(region, legacy_trainer_id, ordinal))
+            return COOP_IDENTITY_ACCESS_REJECTED;
+        return COOP_IDENTITY_ACCESS_HANDLED;
+    }
+
     if (!CoopSave_IsOnlineEnabled())
+    {
+        /* Only ordinary opponent IDs may reach the legacy flag adapter.
+         * Partner, special, and reserved values have no trainer flag. */
+        if (legacy_trainer_id >= TRAINERS_COUNT)
+            return COOP_IDENTITY_ACCESS_REJECTED;
         return COOP_IDENTITY_ACCESS_LEGACY;
+    }
     if (!CoopRegion_TryGetActive(&region)
      || !CoopIdentity_ResolveTrainerOrdinal(region, legacy_trainer_id, ordinal))
         return COOP_IDENTITY_ACCESS_REJECTED;
@@ -84,7 +114,13 @@ enum CoopIdentityAccessResult CoopIdentity_GetTrainerDefeated(u16 legacy_trainer
 
     result = ResolveActiveTrainer(legacy_trainer_id, &ordinal);
     if (result == COOP_IDENTITY_ACCESS_HANDLED)
-        *defeated = CoopSave_GetTrainerDefeated(ordinal);
+    {
+        if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN
+         && !CoopSave_IsOnlineEnabled())
+            *defeated = JohtoSave_GetTrainerDefeated(ordinal);
+        else
+            *defeated = CoopSave_GetTrainerDefeated(ordinal);
+    }
     return result;
 }
 
@@ -95,8 +131,17 @@ enum CoopIdentityAccessResult CoopIdentity_SetTrainerDefeated(u16 legacy_trainer
     u16 ordinal;
 
     result = ResolveActiveTrainer(legacy_trainer_id, &ordinal);
-    if (result == COOP_IDENTITY_ACCESS_HANDLED
-     && !CoopSave_SetTrainerDefeated(ordinal, defeated))
-        return COOP_IDENTITY_ACCESS_REJECTED;
+    if (result == COOP_IDENTITY_ACCESS_HANDLED)
+    {
+        bool8 saved;
+
+        if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN
+         && !CoopSave_IsOnlineEnabled())
+            saved = JohtoSave_SetTrainerDefeated(ordinal, defeated);
+        else
+            saved = CoopSave_SetTrainerDefeated(ordinal, defeated);
+        if (!saved)
+            return COOP_IDENTITY_ACCESS_REJECTED;
+    }
     return result;
 }

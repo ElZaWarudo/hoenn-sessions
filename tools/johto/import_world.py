@@ -1,0 +1,2911 @@
+"""Validate and materialize the sealed 407-map Johto/Kanto-Later world plan.
+
+The source ledgers remain donor-authenticated while the generated world plan
+contains the reviewed, runtime-safe topology normalization.
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DONOR = Path("C:/Users/Mayor/Documents/Caribbean/johto-hns")
+MANIFEST_PATH = Path("data/johto/region_manifest.json")
+SCENERY_PATH = Path("data/johto/scenery_registration.json")
+CONTENT_PATH = Path("data/johto/content_symbols.json")
+BERRY_PLOTS_PATH = Path("data/johto/berry_plots.json")
+OBJECT_GRAPHICS_PATH = Path("data/johto/object_graphics.json")
+SHARED_OBJECT_GRAPHICS_PATH = Path("data/johto/shared_object_graphics.json")
+ASSET_MANIFEST_PATH = Path("data/johto/asset_manifest.json")
+WORLD_PLAN_PATH = Path("data/johto/world_plan.json")
+CAMPAIGN_SCRIPTS_PATH = Path("data/johto/campaign_scripts.inc")
+DONOR_REVISION = "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
+DONOR_TREE = "33661709e5368edc01c37ed9bb5e0a7a0cb192c8"
+EXPECTED_REGION_MANIFEST_SHA256 = "cdbcbca025c9635dea5f5e02da19290817c3ead298ab6dd73d7b16d7aaa70e3e"
+EXPECTED_ASSET_MANIFEST_SHA256 = "bfce5360906ad5a6e9f1e1d344c955ffe4caecb84a2838fab900d4b0f3e02419"
+EXPECTED_SCENERY_REGISTRATION_SHA256 = "131089fb4120098c3d1271978b42fcec48b83a0cedea842655fcad4cc0840ea7"
+EXPECTED_CONTENT_SYMBOLS_SHA256 = "b1203927ba04fb10705ce5d299b7f3f49482e52f7a2ba0941d41b9046d8881ca"
+
+# The donor ships HGSS song IDs that are not part of the host sound table.
+# Map headers use the closest existing geographic or functional host track.
+MAP_MUSIC_ALIASES = {
+    "MUS_WEATHER_KYOGRE": "MUS_ABNORMAL_WEATHER",
+    "MUS_HG_AZALEA": "MUS_FALLARBOR",
+    "MUS_HG_BELL_TOWER": "MUS_MT_PYRE",
+    "MUS_HG_BURNED_TOWER": "MUS_MT_PYRE",
+    "MUS_HG_CELADON": "MUS_RG_CELADON",
+    "MUS_HG_CERULEAN": "MUS_RG_FUCHSIA",
+    "MUS_HG_CHERRYGROVE": "MUS_OLDALE",
+    "MUS_HG_CIANWOOD": "MUS_DEWFORD",
+    "MUS_HG_CINNABAR": "MUS_RG_CINNABAR",
+    "MUS_HG_DANCE_THEATER": "MUS_LILYCOVE_MUSEUM",
+    "MUS_HG_DRAGONS_DEN": "MUS_CAVE_OF_ORIGIN",
+    "MUS_HG_ECRUTEAK": "MUS_FALLARBOR",
+    "MUS_HG_ELM_LAB": "MUS_BIRCH_LAB",
+    "MUS_HG_GAME_CORNER": "MUS_GAME_CORNER",
+    "MUS_HG_GOLDENROD": "MUS_SLATEPORT",
+    "MUS_HG_GYM": "MUS_GYM",
+    "MUS_HG_ICE_PATH": "MUS_MT_PYRE",
+    "MUS_HG_LAVENDER": "MUS_RG_LAVENDER",
+    "MUS_HG_LIGHTHOUSE": "MUS_OCEANIC_MUSEUM",
+    "MUS_HG_MT_MOON_SQUARE": "MUS_RG_MT_MOON",
+    "MUS_HG_NATIONAL_PARK": "MUS_SAFARI_ZONE",
+    "MUS_HG_NEW_BARK": "MUS_LITTLEROOT",
+    "MUS_HG_OAK": "MUS_RG_OAK",
+    "MUS_HG_PALLET": "MUS_RG_PALLET",
+    "MUS_HG_PEWTER": "MUS_RG_PEWTER",
+    "MUS_HG_POKEMON_LEAGUE": "MUS_VICTORY_ROAD",
+    "MUS_HG_POKE_CENTER": "MUS_POKE_CENTER",
+    "MUS_HG_POKE_MART": "MUS_POKE_MART",
+    "MUS_HG_ROCKET_TAKEOVER": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_ROCK_TUNNEL": "MUS_RG_MT_MOON",
+    "MUS_HG_ROUTE1": "MUS_RG_ROUTE1",
+    "MUS_HG_ROUTE11": "MUS_RG_ROUTE11",
+    "MUS_HG_ROUTE24": "MUS_RG_ROUTE24",
+    "MUS_HG_ROUTE26": "MUS_EVER_GRANDE",
+    "MUS_HG_ROUTE29": "MUS_ROUTE101",
+    "MUS_HG_ROUTE3": "MUS_RG_ROUTE3",
+    "MUS_HG_ROUTE30": "MUS_ROUTE104",
+    "MUS_HG_ROUTE34": "MUS_ROUTE110",
+    "MUS_HG_ROUTE38": "MUS_GSC_ROUTE38",
+    "MUS_HG_ROUTE42": "MUS_ROUTE120",
+    "MUS_HG_ROUTE47": "MUS_ROUTE119",
+    "MUS_HG_RUINS_OF_ALPH": "MUS_SEALED_CHAMBER",
+    "MUS_HG_SAFARI_ZONE": "MUS_SAFARI_ZONE",
+    "MUS_HG_SAFARI_ZONE_GATE": "MUS_FORTREE",
+    "MUS_HG_SPROUT_TOWER": "MUS_MT_PYRE",
+    "MUS_HG_SS_AQUA": "MUS_SAILING",
+    "MUS_HG_TEAM_ROCKET_HQ": "MUS_RG_ROCKET_HIDEOUT",
+    "MUS_HG_UNION_CAVE": "MUS_PETALBURG_WOODS",
+    "MUS_HG_VERMILION": "MUS_RG_VERMILLION",
+    "MUS_HG_VICTORY_ROAD": "MUS_VICTORY_ROAD",
+    "MUS_HG_VIOLET": "MUS_GSC_PEWTER",
+    "MUS_HG_VIRIDIAN_FOREST": "MUS_RG_VIRIDIAN_FOREST",
+}
+
+MAP_MOVEMENT_TYPE_ALIASES = {
+    "MOVEMENT_TYPE_TOWER_BEAM": "MOVEMENT_TYPE_INVISIBLE",
+}
+
+MAP_BATTLE_SCENE_ALIASES = {
+    "MAP_BATTLE_SCENE_WILL": "MAP_BATTLE_SCENE_SIDNEY",
+    "MAP_BATTLE_SCENE_KOGA": "MAP_BATTLE_SCENE_PHOEBE",
+    "MAP_BATTLE_SCENE_BRUNO": "MAP_BATTLE_SCENE_GLACIA",
+    "MAP_BATTLE_SCENE_KAREN": "MAP_BATTLE_SCENE_DRAKE",
+}
+
+# Donor identities that deliberately reuse an equivalent host presentation.
+MAP_OBJECT_GRAPHICS_ALIASES = {
+    "OBJ_EVENT_GFX_BIG_SNORLAX": "OBJ_EVENT_GFX_SNORLAX",
+    "OBJ_EVENT_GFX_KAREN": "OBJ_EVENT_GFX_GLACIA",
+    "OBJ_EVENT_GFX_SURGE": "OBJ_EVENT_GFX_LT_SURGE",
+    "OBJ_EVENT_GFX_TRAIN_BACK": "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT",
+    "OBJ_EVENT_GFX_WILL": "OBJ_EVENT_GFX_SIDNEY",
+}
+# JSON provenance uses the same canonical semantic identity as the live
+# document anchors, independent of line endings and object-key order.
+ASSET_RECORDED_REGION_MANIFEST_SHA256 = EXPECTED_REGION_MANIFEST_SHA256
+CONTENT_RECORDED_REGION_MANIFEST_SHA256 = EXPECTED_REGION_MANIFEST_SHA256
+EXPECTED_GROUP_COUNTS = {75: 128, 76: 111, 77: 128, 78: 40}
+TARGET_GROUP_NAMES = {
+    75: "gMapGroup_Johto",
+    76: "gMapGroup_Johto_2",
+    77: "gMapGroup_KantoLater",
+    78: "gMapGroup_KantoLater_2",
+}
+HOST_IDENTITY_BASELINE_PATH = Path("data/johto/host_identity_baseline.json")
+EXPECTED_HOST_IDENTITY_BASELINE_SHA256 = "7d0a77ccade7ed9b94a4016763ce4f202b0aa9b3eea5cc343444554935e38e05"
+MAP_GROUPS_PATH = Path("data/maps/map_groups.json")
+EVENT_SCRIPTS_PATH = Path("data/event_scripts.s")
+CAMPAIGN_INCLUDE = b'\t.include "data/johto/campaign_scripts.inc"'
+LEGACY_NEW_BARK_INCLUDE = b'\t.include "data/maps/NewBarkTown/scripts.inc"'
+REGISTERED_ADAPTER_MARKER = b"@ Original-Kanto transport adapters generated by tools/johto/import_world.py."
+EXPECTED_REGISTERED_ADAPTER_SUFFIX_SHA256 = "8eeb174475304e33c44ea9d43d075f22d5560360efa9bac3cc0a4352bdd17276"
+# The immediate predecessor already carried the current adapter inventory; the
+# responder UI was then appended outside that generated block by the runtime slice.
+GROUP_TRAVEL_PREDECESSOR_ADAPTER_SUFFIX_SHA256 = "620b20b93024895bb9b336eeaf06eecfb62884aebd6d0a47c7a9c26ecb413b2d"
+EXPECTED_REGISTERED_OUTPUT_SHA256 = {
+    "data/johto/world_plan.json": "766c7650f50a9584d75d7b309b69a68d2a120e6b275403eaa3e86abaa1c51533",
+    "data/maps/ReceptionGate/map.json": "85268f620987a4d19f4d529cd3b8c831e6a6fca7b2882315e82b0300f1170524",
+    "data/maps/Route22/map.json": "8d083f4e15bee0427b8b39116cc25261afa7d1ef41c7d5e6a95ebe00c75edd04",
+    "data/maps/Route26North/map.json": "96cb37be5729bda82a42ba956c8dea019aba3d4c817ad16599b5561e1a8e8da4",
+}
+REGISTRATION_BASE_REVISION = "6422eddfce54c7ef27e57983a7a20fefa5782074"
+# These are the only pre-existing selected outputs accepted by --write.  New
+# map inputs must not overwrite an unrelated checkout, while the historical
+# New Bark bootstrap is intentionally replaced by the donor-backed target.
+TRUSTED_BOOTSTRAP_SHA256 = {
+    "data/johto/world_plan.json": "acfbe89c80641d0e960b2a3dec11dc59874025f9c147cc0167cb5b6dbe3c7eaf",
+    "data/maps/NewBarkTown/map.json": "d340ba1d8d35f887d684d4105cf9db3abaa17ac4b15084e7d74b3d7d5ce8fef1",
+    "data/maps/NewBarkTown/scripts.inc": "f3f3d849815e229e0a3acedef9aa9fdd55f71f1ac5f4a3fa5b25fb8a5284efc4",
+    "data/maps/map_groups.json": "2c050b7c30219a416f183732aded0e3c66c135198766e0d6528eac18b60eca0c",
+    "data/event_scripts.s": "d0de87c00c49d49f183a45184b6d0a2ce9ce48ea4abdaf10099caf26685b5566",
+    "data/maps/SaffronCity_Frlg/map.json": "981fbaff4ccb35ba22981cc820ba2a0854c42d3bd0739863a2b62839b9364ab0",
+    "data/maps/Route22_Frlg/map.json": "f8aadf4c1f797fc50114fe197b64ca46aad425803bf06a8c72e761e9c24b7de7",
+}
+HOST_ADAPTER_MAPS = (
+    {
+        "id": "MAP_KANTO_ORIGINAL_VERMILION_CITY_PORT_INSIDE",
+        "name": "KantoOriginal_VermilionCity_PortInside",
+        "group": "gMapGroup_IndoorVermilion_Frlg",
+        "index": 8,
+        "layout": "LAYOUT_KANTO_LATER_VERMILION_CITY_PORT_INSIDE",
+        "arrival": [8, 9],
+    },
+    {
+        "id": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION",
+        "name": "KantoOriginal_SaffronCity_TrainStation",
+        "group": "gMapGroup_IndoorSaffron_Frlg",
+        "index": 10,
+        "layout": "LAYOUT_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION",
+        "arrival": [140, 16],
+    },
+)
+SAFFRON_KIOSK = {
+    "path": Path("data/maps/SaffronCity_Frlg/map.json"),
+    "x": 36,
+    "y": 40,
+    "return_x": 36,
+    "return_y": 41,
+    "script": "KantoOriginal_SaffronCity_EventScript_TrainKiosk",
+}
+ORIGINAL_ROUTE22_GATE = {
+    "path": Path("data/maps/Route22_Frlg/map.json"),
+    "attendant_x": 8,
+    "attendant_y": 12,
+    "arrival_x": 9,
+    "arrival_y": 12,
+}
+LATER_ROUTE22_GATE = {
+    "attendant_x": 12,
+    "attendant_y": 10,
+    "arrival_x": 13,
+    "arrival_y": 10,
+}
+OBJECT_EVENT_RANGE_NORMALIZATIONS = {
+    ("MtSilver_MountainSide", 18, "movement_range_y"): (20, 15),
+    ("MtSilver_MountainSide", 19, "movement_range_y"): (20, 15),
+}
+ADAPTER_EVENT_SCRIPTS = b'''
+@ Original-Kanto transport adapters generated by tools/johto/import_world.py.
+KantoOriginal_VermilionCity_PortInside_MapScripts::
+	map_script MAP_SCRIPT_ON_TRANSITION, KantoOriginal_Transport_EventScript_Arrive
+	.byte 0
+
+KantoOriginal_VermilionCity_PortInside_EventScript_Sailor::
+	lock
+	faceplayer
+	msgbox KantoOriginal_Text_ReturnToJohtoByShip, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_ChooseJohto
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_RecordCurrentHeal
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_PrepareKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	closemessage
+	fadescreen FADE_TO_BLACK
+	warpsilent MAP_OLIVINE_CITY_PORT_INSIDE, 8, 16
+	release
+	end
+
+KantoOriginal_SaffronCity_TrainStation_MapScripts::
+	map_script MAP_SCRIPT_ON_TRANSITION, KantoOriginal_Transport_EventScript_Arrive
+	.byte 0
+
+KantoOriginal_SaffronCity_TrainStation_EventScript_Attendant::
+	lock
+	faceplayer
+	msgbox KantoOriginal_Text_ReturnToJohtoByTrain, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_ChooseJohto
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_RecordCurrentHeal
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_PrepareKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	closemessage
+	fadescreen FADE_TO_BLACK
+	warp MAP_GOLDENROD_CITY_TRAIN_STATION, 19, 16
+	release
+	end
+
+KantoOriginal_SaffronCity_EventScript_TrainKiosk::
+	lock
+	faceplayer
+	msgbox KantoOriginal_Text_EnterTrainStation, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	closemessage
+	fadescreen FADE_TO_BLACK
+	warp MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION, 140, 16
+	release
+	end
+
+KantoOriginal_Transport_EventScript_Arrive::
+	goto_if_ne JOHTO_VAR_PENDING_KANTO_DESTINATION, 2, KantoOriginal_Transport_EventScript_ArrivalDone
+	special Johto_CommitKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_Transport_EventScript_ArrivalFailed
+KantoOriginal_Transport_EventScript_ArrivalDone::
+	end
+
+KantoOriginal_Transport_EventScript_ArrivalFailed::
+	special Johto_CancelKantoTravel
+	end
+
+Johto_ReceptionGate_Overland_MapScripts::
+	map_script MAP_SCRIPT_ON_TRANSITION, Johto_ReceptionGate_Overland_EventScript_ArriveFromKanto
+	.byte 0
+
+Johto_ReceptionGate_Overland_EventScript_ArriveFromKanto::
+	goto_if_ne JOHTO_VAR_PENDING_KANTO_DESTINATION, 1, Johto_ReceptionGate_Overland_EventScript_ArrivalDone
+	special Johto_CommitKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_ArrivalFailed
+Johto_ReceptionGate_Overland_EventScript_ArrivalDone::
+	end
+
+Johto_ReceptionGate_Overland_EventScript_ArrivalFailed::
+	special Johto_CancelKantoTravel
+	end
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto::
+	lock
+	call EventScript_ChooseKantoEra
+	goto_if_eq VAR_RESULT, 0, Johto_ReceptionGate_Overland_EventScript_TravelFailed
+	switch VAR_RESULT
+	case 2, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal
+	case 3, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelOriginal::
+	setvar VAR_0x8004, 5
+	goto Johto_ReceptionGate_Overland_EventScript_ChooseKanto_RequestGroupTravel
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelLater::
+	setvar VAR_0x8004, 6
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_RequestGroupTravel::
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_SoloTravel
+	goto_if_eq VAR_RESULT, 1, Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelWaiting
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_GroupTravelWaiting::
+	end
+
+Johto_ReceptionGate_Overland_EventScript_ChooseKanto_SoloTravel::
+	special Johto_RecordCurrentHeal
+	goto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_TravelFailed
+	special Johto_PrepareKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, Johto_ReceptionGate_Overland_EventScript_TravelFailed
+	switch JOHTO_VAR_PENDING_KANTO_DESTINATION
+	case 2, Johto_ReceptionGate_Overland_EventScript_ChooseOriginal
+	case 3, Johto_ReceptionGate_Overland_EventScript_ChooseLater
+	goto Johto_ReceptionGate_Overland_EventScript_TravelFailed
+
+Johto_ReceptionGate_Overland_EventScript_ChooseOriginal::
+	setdynamicwarp MAP_ROUTE22, 255, 9, 12
+	goto Johto_ReceptionGate_Overland_EventScript_EnterKanto
+
+Johto_ReceptionGate_Overland_EventScript_ChooseLater::
+	setdynamicwarp MAP_KANTO_LATER_ROUTE22, 255, 13, 10
+
+Johto_ReceptionGate_Overland_EventScript_EnterKanto::
+	applymovement OBJ_EVENT_ID_PLAYER, Common_Movement_WalkRight
+	waitmovement 0
+	release
+	end
+
+Johto_ReceptionGate_Overland_EventScript_TravelFailed::
+	special Johto_CancelKantoTravel
+	applymovement OBJ_EVENT_ID_PLAYER, Common_Movement_WalkLeft
+	waitmovement 0
+	release
+	end
+
+KantoOriginal_Route22_Overland_MapScripts::
+	map_script MAP_SCRIPT_ON_TRANSITION, KantoOriginal_Route22_Overland_EventScript_Arrive
+	.byte 0
+
+KantoOriginal_Route22_Overland_EventScript_Arrive::
+	goto_if_ne JOHTO_VAR_PENDING_KANTO_DESTINATION, 2, KantoOriginal_Route22_Overland_EventScript_ArrivalDone
+	special Johto_CommitKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_Route22_Overland_EventScript_ArrivalFailed
+KantoOriginal_Route22_Overland_EventScript_ArrivalDone::
+	end
+
+KantoOriginal_Route22_Overland_EventScript_ArrivalFailed::
+	special Johto_CancelKantoTravel
+	end
+
+KantoLater_Route22_Overland_MapScripts::
+	map_script MAP_SCRIPT_ON_TRANSITION, KantoLater_Route22_Overland_EventScript_Arrive
+	.byte 0
+
+KantoLater_Route22_Overland_EventScript_Arrive::
+	goto_if_ne JOHTO_VAR_PENDING_KANTO_DESTINATION, 3, KantoLater_Route22_Overland_EventScript_ArrivalDone
+	special Johto_CommitKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, KantoLater_Route22_Overland_EventScript_ArrivalFailed
+	call Johto_EventScript_InitializeLaterKantoOnce
+	goto_if_eq VAR_RESULT, FALSE, KantoLater_Route22_Overland_EventScript_ArrivalFailed
+KantoLater_Route22_Overland_EventScript_ArrivalDone::
+	end
+
+KantoLater_Route22_Overland_EventScript_ArrivalFailed::
+	special Johto_CancelKantoTravel
+	end
+
+KantoOriginal_Route22_Overland_EventScript_Attendant::
+	lock
+	faceplayer
+	msgbox KantoOriginal_Route22_Overland_Text_ReturnToJohto, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	goto Kanto_Overland_EventScript_ReturnToJohto
+
+KantoLater_Route22_Overland_EventScript_Attendant::
+	lock
+	faceplayer
+	msgbox KantoLater_Route22_Overland_Text_ReturnToJohto, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+
+Kanto_Overland_EventScript_ReturnToJohto::
+	special Johto_ChooseJohto
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_RecordCurrentHeal
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	special Johto_PrepareKantoTravel
+	goto_if_eq VAR_RESULT, FALSE, KantoOriginal_EventScript_Declined
+	closemessage
+	fadescreen FADE_TO_BLACK
+	warp MAP_RECEPTION_GATE, 255, 18, 9
+	release
+	end
+
+KantoOriginal_EventScript_Declined::
+	special Johto_CancelKantoTravel
+	closemessage
+	release
+	end
+
+KantoOriginal_Text_ReturnToJohtoByShip:
+	.string "Sail back to JOHTO?$"
+
+KantoOriginal_Text_ReturnToJohtoByTrain:
+	.string "Take the MAGNET TRAIN to JOHTO?$"
+
+KantoOriginal_Text_EnterTrainStation:
+	.string "Enter the MAGNET TRAIN station?$"
+
+KantoOriginal_Route22_Overland_Text_ReturnToJohto:
+	.string "Return through the gate to JOHTO?$"
+
+KantoLater_Route22_Overland_Text_ReturnToJohto:
+	.string "Return through the gate to JOHTO?$"
+'''
+GROUP_TRAVEL_EVENT_SCRIPTS = b'''
+
+EventScript_CoopGroupTravelOffer::
+	special Special_CoopGroupTravelGetOffer
+	goto_if_ne VAR_RESULT, 2, EventScript_CoopGroupTravelOffer_Invalid
+	switch VAR_0x8004
+	case 1, EventScript_CoopGroupTravelOffer_TrainOriginal
+	case 2, EventScript_CoopGroupTravelOffer_TrainLater
+	case 3, EventScript_CoopGroupTravelOffer_FerryOriginal
+	case 4, EventScript_CoopGroupTravelOffer_FerryLater
+	case 5, EventScript_CoopGroupTravelOffer_GateOriginal
+	case 6, EventScript_CoopGroupTravelOffer_GateLater
+	goto EventScript_CoopGroupTravelOffer_Invalid
+
+EventScript_CoopGroupTravelOffer_TrainOriginal::
+	msgbox Text_CoopGroupTravelOffer_TrainOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_TrainLater::
+	msgbox Text_CoopGroupTravelOffer_TrainLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_FerryOriginal::
+	goto_if_eq VAR_0x8005, 3, EventScript_CoopGroupTravelOffer_AquaOriginal
+	msgbox Text_CoopGroupTravelOffer_FerryOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_FerryLater::
+	goto_if_eq VAR_0x8005, 3, EventScript_CoopGroupTravelOffer_AquaLater
+	msgbox Text_CoopGroupTravelOffer_FerryLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_AquaOriginal::
+	msgbox Text_CoopGroupTravelOffer_AquaOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_AquaLater::
+	msgbox Text_CoopGroupTravelOffer_AquaLater, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_GateOriginal::
+	msgbox Text_CoopGroupTravelOffer_GateOriginal, MSGBOX_YESNO
+	goto EventScript_CoopGroupTravelOffer_Respond
+
+EventScript_CoopGroupTravelOffer_GateLater::
+	msgbox Text_CoopGroupTravelOffer_GateLater, MSGBOX_YESNO
+
+EventScript_CoopGroupTravelOffer_Respond::
+	copyvar VAR_0x8004, VAR_RESULT
+	special Special_CoopGroupTravelRespond
+	end
+
+EventScript_CoopGroupTravelOffer_Invalid::
+	setvar VAR_0x8004, 0
+	special Special_CoopGroupTravelRespond
+	end
+
+Text_CoopGroupTravelOffer_TrainOriginal:
+	.string "Travel together by MAGNET TRAIN\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_TrainLater:
+	.string "Travel together by MAGNET TRAIN\\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_FerryOriginal:
+	.string "Travel together by ferry\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_FerryLater:
+	.string "Travel together by ferry\\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_AquaOriginal:
+	.string "Travel together aboard S.S. AQUA\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_AquaLater:
+	.string "Travel together aboard S.S. AQUA\\nto KANTO three years later?$"
+
+Text_CoopGroupTravelOffer_GateOriginal:
+	.string "Travel together through the gate\\nto original KANTO?$"
+
+Text_CoopGroupTravelOffer_GateLater:
+	.string "Travel together through the gate\\nto KANTO three years later?$"
+'''
+EXPECTED_EVENT_TOTALS = {
+    "object_events": 3357,
+    "warp_events": 1183,
+    "coord_events": 407,
+    "bg_events": 760,
+}
+EVENT_FIELDS = tuple(EXPECTED_EVENT_TOTALS)
+SEALED_BG_EVENT_REMOVALS = {
+    "MAP_GOLDENROD_CITY_HOUSE1": {
+        1: {
+            "type": "sign",
+            "x": 0,
+            "y": 1,
+            "elevation": 0,
+            "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+            "script": "GoldenrodCity_NameRatersHouse_EventScript_ToggleShinies",
+        },
+        2: {
+            "type": "sign",
+            "x": 1,
+            "y": 1,
+            "elevation": 0,
+            "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+            "script": "GoldenrodCity_NameRatersHouse_EventScript_ToggleShinies",
+        },
+    },
+}
+PENDING_GENERAL_LAYOUTS: tuple[str, ...] = ()
+PENDING_GENERAL_MAPS: tuple[str, ...] = ()
+EXPECTED_SOURCE_EXTERNAL_EDGES = (
+    ("MAP_NEW_BARK_TOWN", "warp", 4, "MAP_WORLD_HUB", "excluded_debug_edge"),
+    ("MAP_NEW_BARK_TOWN", "warp", 7, "MAP_WORLD_HUB", "excluded_debug_edge"),
+    ("MAP_ECRUTEAK_CITY", "warp", 14, "MAP_BATTLE_FRONTIER_BATTLE_TOWER_LOBBY", "required_host_adapter"),
+    ("MAP_ROUTE40", "connection", 2, "MAP_TRAINER_HILL_COURTYARD", "excluded_debug_edge"),
+    ("MAP_ROUTE40", "warp", 9, "MAP_GATE_ROUTE40_TRAINER_HILL_COURTYARD", "excluded_debug_edge"),
+    ("MAP_ROUTE40", "warp", 10, "MAP_GATE_ROUTE40_TRAINER_HILL_COURTYARD", "excluded_debug_edge"),
+    ("MAP_ROUTE40", "warp", 11, "MAP_GATE_ROUTE40_TRAINER_HILL_COURTYARD", "excluded_debug_edge"),
+    ("MAP_ROUTE40", "warp", 12, "MAP_GATE_ROUTE40_TRAINER_HILL_COURTYARD", "excluded_debug_edge"),
+    ("MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR", "warp", 0, "MAP_DYNAMIC", "required_host_adapter"),
+    ("MAP_VIRIDIAN_CITY", "warp", 2, "MAP_LILYCOVE_CITY_CONTEST_LOBBY", "pending_runtime_policy"),
+    ("MAP_VERMILION_CITY", "connection", 3, "MAP_TREES", "pending_runtime_policy"),
+    ("MAP_FUCHSIA_CITY", "warp", 2, "MAP_NEW_BARK_TOWN", "pending_era_boundary"),
+    ("MAP_CINNABAR_ISLAND", "warp", 0, "MAP_NEW_BARK_TOWN", "pending_era_boundary"),
+)
+# The source manifest deliberately remains donor-authenticated.  This is the
+# normalized topology consumed by the world plan after removing known debug
+# adapters and resolving the reviewed internal transitions.
+EXPECTED_EXTERNAL_EDGES = (
+    ("MAP_GOLDENROD_CITY_DEPARTMENT_STORE_ELEVATOR", "warp", 0, "MAP_DYNAMIC", "required_host_adapter"),
+    ("MAP_RECEPTION_GATE", "warp", 4, "MAP_DYNAMIC", "required_host_adapter"),
+)
+PRESERVED_EXTERNAL_SCRIPT_DESTINATIONS = (
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseSouthernIsland", "MAP_SOUTHERN_ISLAND_EXTERIOR", 13, 22),
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseBirthIsland", "MAP_BIRTH_ISLAND_EXTERIOR", 13, 23),
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseFarawayIsland", "MAP_FARAWAY_ISLAND_ENTRANCE", 13, 38),
+    ("MAP_OLIVINE_CITY_PORT_INSIDE", "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseBattleFrontier", "MAP_BATTLE_FRONTIER_OUTSIDE_WEST", 20, 67),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseSouthernIsland", "MAP_SOUTHERN_ISLAND_EXTERIOR", 13, 22),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseBirthIsland", "MAP_BIRTH_ISLAND_EXTERIOR", 13, 23),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseFarawayIsland", "MAP_FARAWAY_ISLAND_ENTRANCE", 13, 38),
+    ("MAP_VERMILION_CITY_PORT_INSIDE", "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseBattleFrontier", "MAP_BATTLE_FRONTIER_OUTSIDE_WEST", 20, 67),
+)
+# One authenticated donor map points at a historical label that has no
+# definition in either the donor or host assembly.  The selected map's own
+# compiled campaign block contains the reviewed equivalent; keep this alias
+# explicit so unresolved labels cannot be accepted by a loose spelling rule.
+REVIEWED_EVENT_SCRIPT_ALIASES = {
+    (
+        "MAP_GOLDENROD_CITY_FLOWER_SHOP",
+        "Route104_PrettyPetalFlowerShop_EventScript_MintOwner",
+    ): "Johto_GoldenrodCity_FlowerShop_GoldenrodCity_FlowerShop_EventScript_Owner",
+}
+# These destinations are intentionally outside the selected 407-map identity
+# set.  They are authenticated by the sealed source topology classifications
+# and remain external until their owning runtime adapters are integrated.
+KNOWN_EXTERNAL_MAP_REFERENCES = frozenset(edge[3] for edge in EXPECTED_SOURCE_EXTERNAL_EDGES)
+
+WARP_REMOVALS = {
+    "MAP_NEW_BARK_TOWN": frozenset({4, 7}),
+    "MAP_ECRUTEAK_CITY": frozenset({14}),
+    "MAP_ROUTE40": frozenset({9, 10, 11, 12}),
+    "MAP_CINNABAR_ISLAND": frozenset({0}),
+    "MAP_ROUTE22": frozenset({0}),
+}
+CONNECTION_REMOVALS = {
+    "MAP_ROUTE40": frozenset({2}),
+    "MAP_VERMILION_CITY": frozenset({3}),
+    "MAP_ROUTE26NORTH": frozenset({2}),
+    "MAP_ROUTE22": frozenset({1}),
+}
+WARP_REWRITES = {
+    ("MAP_SSAQUA_1F", 0): {"dest_warp_id": "0"},
+    ("MAP_FUCHSIA_ROUTE19GATE", 0): {
+        "dest_map": "MAP_FUCHSIA_CITY",
+        "dest_warp_id": "2",
+        "classification": "selected",
+        "target_map_id": "MAP_KANTO_LATER_FUCHSIA_CITY",
+    },
+    ("MAP_FUCHSIA_ROUTE19GATE", 1): {"dest_warp_id": "0"},
+    ("MAP_FUCHSIA_CITY", 2): {
+        "dest_map": "MAP_FUCHSIA_ROUTE19GATE",
+        "dest_warp_id": "0",
+        "classification": "selected",
+        "target_map_id": "MAP_KANTO_LATER_FUCHSIA_ROUTE19GATE",
+    },
+    ("MAP_NEW_BARK_TOWN_LAB", 1): {"dest_warp_id": "5"},
+    ("MAP_CINNABAR_ISLAND_POKEMON_CENTER", 0): {"dest_warp_id": "0"},
+    ("MAP_VIRIDIAN_CITY", 2): {
+        "dest_map": "MAP_VIRIDIAN_CITY_HOUSE2",
+        "dest_warp_id": "0",
+        "classification": "selected",
+        "target_map_id": "MAP_KANTO_LATER_VIRIDIAN_CITY_HOUSE2",
+    },
+    ("MAP_RECEPTION_GATE", 4): {
+        "dest_map": "MAP_DYNAMIC",
+        "dest_warp_id": "WARP_ID_DYNAMIC",
+        "classification": "required_host_adapter",
+        "target_map_id": None,
+    },
+}
+
+
+class WorldPlanError(ValueError):
+    """The sealed world plan or its source evidence is inconsistent."""
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise WorldPlanError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _parse_json_document(raw: bytes | str, label: str) -> Any:
+    try:
+        return json.loads(raw, object_pairs_hook=_reject_duplicate_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise WorldPlanError(f"{label} is not valid JSON: {exc}") from exc
+
+
+def _canonical_json_bytes(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+
+
+def _canonical_json_sha256(value: Any) -> str:
+    return _sha256(_canonical_json_bytes(value))
+
+
+def _load(path: Path) -> Any:
+    try:
+        return _parse_json_document(path.read_bytes(), str(path))
+    except OSError as exc:
+        raise WorldPlanError(f"cannot read {path}: {exc}") from exc
+
+
+def _sha256(raw: bytes) -> str:
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _donor_evidence_sha256(raw: bytes) -> str:
+    """Match the sealed hashes made from the donor's CRLF checkout."""
+    checkout_bytes = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    return _sha256(checkout_bytes)
+
+
+def _git(donor: Path, revision: str) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(donor), "rev-parse", revision],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise WorldPlanError(f"cannot authenticate donor repository: {exc}") from exc
+
+
+def _verify_donor(donor: Path) -> None:
+    if not donor.is_dir():
+        raise WorldPlanError(f"donor root does not exist: {donor}")
+    actual = (_git(donor, "HEAD"), _git(donor, "HEAD^{tree}"))
+    if actual != (DONOR_REVISION, DONOR_TREE):
+        raise WorldPlanError(f"donor pin mismatch: {actual[0]}/{actual[1]}")
+
+
+def _donor_object_name(relative: str) -> str:
+    if not isinstance(relative, str):
+        raise WorldPlanError("donor object path must be a string")
+    posix = PurePosixPath(relative)
+    if (
+        not relative
+        or posix.is_absolute()
+        or posix.as_posix() != relative
+        or any(part in {"", ".", ".."} for part in posix.parts)
+        or any(ord(character) <= 0x1F or ord(character) == 0x7F for character in relative)
+        or "\\" in relative
+        or ":" in relative
+    ):
+        raise WorldPlanError(f"unsafe donor object path: {relative!r}")
+    return f"{DONOR_REVISION}:{relative}"
+
+
+def _git_blobs(donor: Path, relatives: list[str]) -> dict[str, bytes]:
+    unique = list(dict.fromkeys(relatives))
+    object_names = [_donor_object_name(relative) for relative in unique]
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(donor), "cat-file", "--batch"],
+            check=True,
+            input=("\n".join(object_names) + "\n").encode(),
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise WorldPlanError(f"cannot read pinned donor blobs: {exc}") from exc
+    stream = io.BytesIO(result.stdout)
+    blobs: dict[str, bytes] = {}
+    for relative in unique:
+        header = stream.readline().decode("utf-8", errors="replace").rstrip("\n")
+        fields = header.split()
+        if len(fields) == 2 and fields[1] == "missing":
+            raise WorldPlanError(f"pinned donor object does not exist: {relative}")
+        if len(fields) != 3 or not fields[2].isdigit():
+            raise WorldPlanError(f"invalid git object response for donor path: {relative}")
+        if fields[1] != "blob":
+            raise WorldPlanError(f"donor object is not a blob: {relative}")
+        size = int(fields[2])
+        raw = stream.read(size)
+        if len(raw) != size or stream.read(1) != b"\n":
+            raise WorldPlanError(f"truncated git blob response for donor path: {relative}")
+        blobs[relative] = raw
+    if stream.read():
+        raise WorldPlanError("unexpected trailing data from git cat-file")
+    return blobs
+
+
+def _git_blob(donor: Path, relative: str) -> bytes:
+    return _git_blobs(donor, [relative])[relative]
+
+
+def _git_json(raw: bytes, relative: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise WorldPlanError(f"pinned donor blob is not JSON: {relative}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise WorldPlanError(f"pinned donor JSON must be an object: {relative}")
+    return value
+
+
+def _strict_int(value: Any, label: str, minimum: int = 0, maximum: int = 255) -> int:
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise WorldPlanError(f"{label} must be an integer in {minimum}..{maximum}")
+    return value
+
+
+def _validate_event_arrays(source: dict[str, Any], source_name: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for field in EVENT_FIELDS:
+        events = source.get(field)
+        if not isinstance(events, list):
+            raise WorldPlanError(f"{source_name}.{field} must be an array")
+        counts[field] = _strict_int(len(events), f"{source_name}.{field} count")
+    return counts
+
+
+def _sealed_bg_event_removals(source_map: str, events: list[Any]) -> frozenset[int]:
+    """Authenticate the exact donor debug events selected for removal."""
+    removals = SEALED_BG_EVENT_REMOVALS.get(source_map)
+    if removals is None:
+        return frozenset()
+    for index, expected in removals.items():
+        if index >= len(events) or events[index] != expected:
+            raise WorldPlanError(f"{source_map} sealed background event {index} drifted")
+    return frozenset(removals)
+
+
+def _validate_source_inventory(maps: list[dict[str, Any]]) -> None:
+    source_maps: set[str] = set()
+    source_names: set[str] = set()
+    for ordinal, record in enumerate(maps):
+        source_map = record.get("source_map")
+        source_name = record.get("source_name")
+        if not isinstance(source_map, str) or not isinstance(source_name, str):
+            raise WorldPlanError(f"malformed source identity at ordinal {ordinal}")
+        if source_map in source_maps:
+            raise WorldPlanError(f"duplicate source_map identity at ordinal {ordinal}: {source_map}")
+        if source_name in source_names:
+            raise WorldPlanError(f"duplicate source_name identity at ordinal {ordinal}: {source_name}")
+        source_maps.add(source_map)
+        source_names.add(source_name)
+
+
+def _edge_identity(edge: dict[str, Any]) -> tuple[str, str, int, str, str]:
+    kind = edge.get("kind")
+    position = edge.get("index") if kind == "warp" else edge.get("edge_index")
+    return (
+        edge.get("source_map"),
+        kind,
+        position,
+        edge.get("target"),
+        edge.get("classification"),
+    )
+
+
+def _cross_validate_world_representations(
+    record: dict[str, Any],
+    source: dict[str, Any] | None = None,
+    target_map_ids: dict[str, str] | None = None,
+) -> None:
+    """Require the manifest's three topology views to describe one graph.
+
+    When ``source`` is supplied, the donor map is the fourth view and every
+    source-backed field is compared before any reviewed normalization occurs.
+    The optional form is used for the generated plan, where the normalized
+    topology no longer has to equal the donor byte-for-byte.
+    """
+    source_map = record.get("source_map", "<unknown>")
+    connections = record.get("connections")
+    warp_targets = record.get("warp_targets")
+    edges = record.get("edges")
+    if not isinstance(connections, list) or not isinstance(warp_targets, list) or not isinstance(edges, list):
+        raise WorldPlanError(f"{source_map} topology representations must be arrays")
+    donor_connections = (source or {}).get("connections") or []
+    donor_warps = (source or {}).get("warp_events") or []
+    if source is not None and connections != donor_connections:
+        raise WorldPlanError(f"{source_map} connections differ from donor topology")
+    if source is not None and len(warp_targets) != len(donor_warps):
+        raise WorldPlanError(f"{source_map} warp_targets differ from donor warp count")
+    if source is not None:
+        for index, (target, donor_warp) in enumerate(zip(warp_targets, donor_warps, strict=True)):
+            if not isinstance(target, dict) or not isinstance(donor_warp, dict):
+                raise WorldPlanError(f"{source_map} warp representation is malformed at index {index}")
+            for field in ("x", "y", "elevation", "dest_map", "dest_warp_id"):
+                if target.get(field) != donor_warp.get(field):
+                    raise WorldPlanError(f"{source_map} warp_targets[{index}] differs from donor {field}")
+    for index, target in enumerate(warp_targets):
+        if not isinstance(target, dict) or target.get("index") != index:
+            raise WorldPlanError(f"{source_map} warp_targets indices are not contiguous")
+    for index, connection in enumerate(connections):
+        if not isinstance(connection, dict):
+            raise WorldPlanError(f"{source_map} connection representation is malformed at index {index}")
+    if len(edges) != len(warp_targets) + len(connections):
+        raise WorldPlanError(f"{source_map} edges do not cover warp_targets and connections exactly")
+    warp_edges: dict[int, dict[str, Any]] = {}
+    connection_edges: dict[int, dict[str, Any]] = {}
+    for edge in edges:
+        if not isinstance(edge, dict) or edge.get("kind") not in {"warp", "connection"}:
+            raise WorldPlanError(f"{source_map} has malformed topology edge")
+        kind = edge["kind"]
+        key = edge.get("index") if kind == "warp" else edge.get("edge_index")
+        if type(key) is not int or key < 0:
+            raise WorldPlanError(f"{source_map} {kind} edge index is malformed")
+        destination = warp_edges if kind == "warp" else connection_edges
+        if key in destination:
+            raise WorldPlanError(f"{source_map} has duplicate {kind} edge index {key}")
+        destination[key] = edge
+    if set(warp_edges) != set(range(len(warp_targets))):
+        raise WorldPlanError(f"{source_map} edges do not cover warp_targets exactly")
+    if set(connection_edges) != set(range(len(connections))):
+        raise WorldPlanError(f"{source_map} edges do not cover connections exactly")
+    for index, target in enumerate(warp_targets):
+        edge = warp_edges[index]
+        for edge_field, target_field in (
+            ("target", "dest_map"),
+            ("warp_id", "dest_warp_id"),
+            ("classification", "classification"),
+            ("target_map_id", "target_map_id"),
+        ):
+            if edge.get(edge_field) != target.get(target_field):
+                raise WorldPlanError(f"{source_map} warp edge {index} differs from warp_targets")
+    for index, connection in enumerate(connections):
+        edge = connection_edges[index]
+        for edge_field, connection_field in (("target", "map"), ("offset", "offset"), ("direction", "direction")):
+            if edge.get(edge_field) != connection.get(connection_field):
+                raise WorldPlanError(f"{source_map} connection edge {index} differs from connections")
+        if target_map_ids is not None:
+            expected_target_map_id = target_map_ids.get(connection.get("map"))
+            if expected_target_map_id is None:
+                if edge.get("classification") == "selected":
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} classification differs from selected-map identity"
+                    )
+                if edge.get("target_map_id") is not None:
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} target_map_id differs from selected-map identity"
+                    )
+            else:
+                if edge.get("classification") != "selected":
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} classification differs from selected-map identity"
+                    )
+                if edge.get("target_map_id") != expected_target_map_id:
+                    raise WorldPlanError(
+                        f"{source_map} connection edge {index} target_map_id differs from selected-map identity"
+                    )
+    if source is not None:
+        for index, (connection, donor_connection) in enumerate(zip(connections, donor_connections, strict=True)):
+            if connection != donor_connection:
+                raise WorldPlanError(f"{source_map} connections[{index}] differs from donor topology")
+
+
+def _apply_topology_corrections(maps: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    corrected: list[dict[str, Any]] = []
+    corrections: list[dict[str, Any]] = []
+    for record in maps:
+        source_map = record["source_map"]
+        item = copy.deepcopy(record)
+        original_warps = item["warp_targets"]
+        removed_warps = WARP_REMOVALS.get(source_map, frozenset())
+        kept_warps: list[dict[str, Any]] = []
+        old_to_new: dict[int, int] = {}
+        for old_index, warp in enumerate(original_warps):
+            if old_index in removed_warps:
+                corrections.append({
+                    "source_map": source_map,
+                    "kind": "warp",
+                    "index": old_index,
+                    "action": "remove",
+                    "reason": "reviewed debug or adapter edge",
+                })
+                continue
+            old_to_new[old_index] = len(kept_warps)
+            kept_warps.append(warp)
+        for old_index, warp in enumerate(kept_warps):
+            original_index = next(index for index, new_index in old_to_new.items() if new_index == old_index)
+            warp["index"] = old_index
+            rewrite = WARP_REWRITES.get((source_map, original_index), {})
+            if rewrite:
+                before = {field: warp.get(field) for field in rewrite}
+                warp.update(copy.deepcopy(rewrite))
+                corrections.append({
+                    "source_map": source_map,
+                    "kind": "warp",
+                    "index": original_index,
+                    "action": "rewrite",
+                    "before": before,
+                    "after": {field: warp.get(field) for field in rewrite},
+                })
+            warp["index"] = old_index
+        item["warp_targets"] = kept_warps
+
+        original_connections = item["connections"]
+        removed_connections = CONNECTION_REMOVALS.get(source_map, frozenset())
+        item["connections"] = []
+        for index, connection in enumerate(original_connections):
+            if index in removed_connections:
+                corrections.append({
+                    "source_map": source_map,
+                    "kind": "connection",
+                    "index": index,
+                    "action": "remove",
+                    "reason": "reviewed debug edge",
+                })
+                continue
+            item["connections"].append(connection)
+
+        warp_edges = {
+            edge["index"]: edge for edge in item["edges"] if edge.get("kind") == "warp"
+        }
+        connection_edges = {
+            edge["edge_index"]: edge for edge in item["edges"] if edge.get("kind") == "connection"
+        }
+        item["edges"] = []
+        for old_index, warp in enumerate(original_warps):
+            if old_index not in old_to_new:
+                continue
+            edge = copy.deepcopy(warp_edges[old_index])
+            edge["index"] = old_to_new[old_index]
+            for edge_field, warp_field in (
+                ("target", "dest_map"),
+                ("warp_id", "dest_warp_id"),
+                ("classification", "classification"),
+                ("target_map_id", "target_map_id"),
+            ):
+                if warp_field in warp:
+                    edge[edge_field] = warp[warp_field]
+                elif edge_field in edge:
+                    edge.pop(edge_field)
+            if warp.get("classification") == "selected":
+                edge.pop("adapter", None)
+            item["edges"].append(edge)
+        for old_index, connection in enumerate(original_connections):
+            if old_index in removed_connections:
+                continue
+            edge = copy.deepcopy(connection_edges[old_index])
+            edge["edge_index"] = len([candidate for candidate in item["edges"] if candidate.get("kind") == "connection"])
+            for edge_field, connection_field in (("target", "map"), ("offset", "offset"), ("direction", "direction")):
+                edge[edge_field] = connection[connection_field]
+            item["edges"].append(edge)
+        item["edges"] = [
+            *[edge for edge in item["edges"] if edge.get("kind") == "connection"],
+            *[edge for edge in item["edges"] if edge.get("kind") == "warp"],
+        ]
+        _cross_validate_world_representations(item)
+        corrected.append(item)
+    return corrected, corrections
+
+
+def _validate_external_source(edge: dict[str, Any], source: dict[str, Any]) -> None:
+    kind = edge["kind"]
+    field = "warp_events" if kind == "warp" else "connections"
+    index_key = "index" if kind == "warp" else "edge_index"
+    index = _strict_int(edge.get(index_key), f"external edge {index_key}", 0, 65535)
+    records = source.get(field)
+    if not isinstance(records, list) or index >= len(records):
+        raise WorldPlanError(f"external edge has no donor {field}[{index}]")
+    record = records[index]
+    target_key = "dest_map" if kind == "warp" else "map"
+    if not isinstance(record, dict) or record.get(target_key) != edge.get("target"):
+        raise WorldPlanError(f"external edge target differs from donor {field}[{index}]")
+    if kind == "warp" and str(record.get("dest_warp_id")) != str(edge.get("warp_id")):
+        raise WorldPlanError(f"external warp id differs from donor {field}[{index}]")
+    if kind == "connection" and (
+        record.get("direction") != edge.get("direction")
+        or record.get("offset") != edge.get("offset")
+    ):
+        raise WorldPlanError(f"external connection geometry differs from donor {field}[{index}]")
+
+
+def _validate_preserved_external_script_destinations(root: Path) -> list[dict[str, Any]]:
+    """Parse the campaign script labels that intentionally retain host exits.
+
+    The script is the independent source of truth for these eight destinations;
+    the expected tuple list only defines which labels are reviewed and what
+    their materialized plan entries must be called.
+    """
+    script_path = root / CAMPAIGN_SCRIPTS_PATH
+    try:
+        script = script_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise WorldPlanError(f"cannot read preserved external script oracle {script_path}: {exc}") from exc
+    parsed: list[dict[str, Any]] = []
+    for source_map, label, target_map, expected_x, expected_y in PRESERVED_EXTERNAL_SCRIPT_DESTINATIONS:
+        block_match = re.search(
+            rf"(?ms)^{re.escape(label)}::(.*?)(?=^\S+::|\Z)",
+            script,
+        )
+        if block_match is None:
+            raise WorldPlanError(f"preserved external script label is missing: {label}")
+        destinations = re.findall(
+            r"(?m)^\s*warpsilent\s+([^,\s]+),\s*(\d+),\s*(\d+)",
+            block_match.group(1),
+        )
+        if len(destinations) != 1:
+            raise WorldPlanError(f"preserved external script label must have one warpsilent destination: {label}")
+        actual_target, actual_x, actual_y = destinations[0]
+        actual = (actual_target, int(actual_x), int(actual_y))
+        expected = (target_map, expected_x, expected_y)
+        if actual != expected:
+            raise WorldPlanError(
+                f"preserved external script destination drift for {label}: {actual!r} != {expected!r}"
+            )
+        parsed.append(
+            {
+                "source_map": source_map,
+                "script": label,
+                "target_map": actual_target,
+                "x": int(actual_x),
+                "y": int(actual_y),
+            }
+        )
+    return parsed
+
+
+def _validate_companion_ledgers(
+    root: Path, donor: Path, maps: list[dict[str, Any]]
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, bytes]]:
+    scenery = _load(root / SCENERY_PATH)
+    content = _load(root / CONTENT_PATH)
+    if _canonical_json_sha256(scenery) != EXPECTED_SCENERY_REGISTRATION_SHA256:
+        raise WorldPlanError("scenery ledger semantics differ from the sealed digest")
+    if _canonical_json_sha256(content) != EXPECTED_CONTENT_SYMBOLS_SHA256:
+        raise WorldPlanError("content-symbol ledger semantics differ from the sealed digest")
+    if (
+        scenery.get("provenance", {}).get("region_manifest_sha256")
+        != ASSET_RECORDED_REGION_MANIFEST_SHA256
+    ):
+        raise WorldPlanError("scenery ledger recorded region-manifest digest drift")
+    if content.get("provenance", {}).get("manifest_sha256") != CONTENT_RECORDED_REGION_MANIFEST_SHA256:
+        raise WorldPlanError("content-symbol ledger recorded region-manifest digest drift")
+    layouts = scenery.get("layouts")
+    if not isinstance(layouts, list) or len(layouts) != 407:
+        raise WorldPlanError("scenery ledger must contain exactly 407 layouts")
+    for record, scenery_record in zip(maps, layouts, strict=True):
+        if not isinstance(scenery_record, dict):
+            raise WorldPlanError("malformed scenery layout record")
+        identity = record["identity_namespace"]
+        expected = (identity["map"], identity["layout"], identity["script"])
+        actual_namespace = scenery_record.get("identity_namespace")
+        identity_matches = (
+            scenery_record.get("source_map") == record["source_map"]
+            and scenery_record.get("target_layout_id") == identity["layout"]
+            and (
+                record["ordinal"] < 239
+                or isinstance(actual_namespace, dict)
+                and (
+                    actual_namespace.get("map"),
+                    actual_namespace.get("layout"),
+                    actual_namespace.get("script"),
+                ) == expected
+            )
+        )
+        if not identity_matches:
+            raise WorldPlanError(f"scenery identity mismatch at ordinal {record['ordinal']}")
+    completeness = content.get("completeness", {})
+    if (
+        completeness.get("selected_map_count"),
+        completeness.get("original_selected_map_count"),
+        completeness.get("later_selected_map_count"),
+    ) != (407, 239, 168):
+        raise WorldPlanError("content-symbol ledger selection differs from world plan")
+    files = content.get("source_files")
+    if not isinstance(files, list) or len(files) != 814:
+        raise WorldPlanError("content-symbol ledger must bind 814 selected sources")
+    if content.get("provenance", {}).get("selected_source_count") != 814:
+        raise WorldPlanError("content-symbol source count provenance drifted")
+    source_paths: list[str] = []
+    for ordinal, record in enumerate(maps):
+        pair = files[ordinal * 2 : ordinal * 2 + 2]
+        expected_pair = (
+            (record["source_map"], record["source_name"], "map_json", record["source_sha256"]["map_json"]),
+            (record["source_map"], record["source_name"], "script", record["source_sha256"]["script"]),
+        )
+        actual_pair = tuple(
+            (item.get("map"), item.get("map_name"), item.get("kind"), item.get("sha256"))
+            for item in pair
+            if isinstance(item, dict)
+        )
+        if actual_pair != expected_pair:
+            raise WorldPlanError(f"content source identity mismatch at ordinal {ordinal}")
+        for item in pair:
+            relative = item.get("path")
+            expected_prefix = f"data/maps/{record['source_name']}/"
+            if not isinstance(relative, str) or not relative.startswith(expected_prefix) or ".." in Path(relative).parts:
+                raise WorldPlanError(f"unsafe content source path at ordinal {ordinal}")
+            source_paths.append(relative)
+    donor_blobs = _git_blobs(donor, source_paths)
+    for ordinal, record in enumerate(maps):
+        for item in files[ordinal * 2 : ordinal * 2 + 2]:
+            relative = item["path"]
+            raw = donor_blobs[relative]
+            if _donor_evidence_sha256(raw) != item["sha256"]:
+                raise WorldPlanError(f"content source hash drift at ordinal {ordinal}: {relative}")
+    pending = scenery.get("runtime_readiness", {}).get("general_pending_layouts")
+    if tuple(pending or ()) != PENDING_GENERAL_LAYOUTS:
+        raise WorldPlanError("General Safari runtime readiness drift")
+    readiness = scenery.get("runtime_readiness", {})
+    if readiness.get("ready") is not True or readiness.get("pending") != []:
+        raise WorldPlanError("scenery ledger runtime readiness closure drift")
+    return scenery, content, donor_blobs
+
+
+def _validate_asset_manifest_anchor(root: Path, manifest_raw: bytes, maps: list[dict[str, Any]]) -> None:
+    asset_path = root / ASSET_MANIFEST_PATH
+    try:
+        asset_raw = asset_path.read_bytes()
+    except OSError as exc:
+        raise WorldPlanError(f"cannot read {asset_path}: {exc}") from exc
+    asset_manifest = _parse_json_document(asset_raw, "sealed asset manifest")
+    if not isinstance(asset_manifest, dict):
+        raise WorldPlanError("sealed asset manifest must be an object")
+    if _canonical_json_sha256(asset_manifest) != EXPECTED_ASSET_MANIFEST_SHA256:
+        raise WorldPlanError("asset manifest semantics differ from the sealed digest")
+    provenance = asset_manifest.get("provenance", {})
+    manifest = _parse_json_document(manifest_raw, "sealed region manifest")
+    if (
+        provenance.get("donor_revision") != DONOR_REVISION
+        or provenance.get("donor_tree") != DONOR_TREE
+        or provenance.get("region_manifest_path") != MANIFEST_PATH.as_posix()
+        or provenance.get("region_manifest_sha256") != ASSET_RECORDED_REGION_MANIFEST_SHA256
+        or _canonical_json_sha256(manifest) != EXPECTED_REGION_MANIFEST_SHA256
+    ):
+        raise WorldPlanError("region manifest differs from the sealed asset-manifest anchor")
+    layouts = asset_manifest.get("layouts")
+    if not isinstance(layouts, list) or len(layouts) != 407:
+        raise WorldPlanError("asset manifest must contain exactly 407 ordered layouts")
+    for ordinal, (record, layout) in enumerate(zip(maps, layouts, strict=True)):
+        if not isinstance(layout, dict):
+            raise WorldPlanError(f"malformed asset layout at ordinal {ordinal}")
+        asset_ordinal = _strict_int(layout.get("ordinal"), f"asset layout ordinal at index {ordinal}", 0, 406)
+        if asset_ordinal != ordinal:
+            raise WorldPlanError("asset layout ordinals must be unique, ordered, and contiguous 0..406")
+        if (layout.get("source_map"), layout.get("symbol")) != (
+            record["source_map"],
+            record["layout"]["symbol"],
+        ):
+            raise WorldPlanError(f"asset layout source identity mismatch at ordinal {ordinal}")
+
+
+def build_plan(repo_root: Path = ROOT, donor_root: Path = DEFAULT_DONOR) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    donor = Path(donor_root).resolve()
+    _verify_donor(donor)
+    manifest_file = root / MANIFEST_PATH
+    try:
+        manifest_raw = manifest_file.read_bytes()
+        manifest = _parse_json_document(manifest_raw, "region manifest")
+    except OSError as exc:
+        raise WorldPlanError(f"cannot read {manifest_file}: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise WorldPlanError("region manifest must be an object")
+    if manifest.get("schema") != "johto-region-manifest-v1":
+        raise WorldPlanError("unsupported region manifest schema")
+    provenance = manifest.get("provenance", {})
+    if (provenance.get("donor_revision"), provenance.get("donor_tree")) != (
+        DONOR_REVISION,
+        DONOR_TREE,
+    ):
+        raise WorldPlanError("region manifest donor pin drift")
+    maps = manifest.get("maps")
+    if not isinstance(maps, list) or len(maps) != 407:
+        raise WorldPlanError("world plan must contain exactly 407 maps")
+    for index, record in enumerate(maps):
+        if not isinstance(record, dict):
+            raise WorldPlanError(f"malformed map record at ordinal {index}")
+        ordinal = _strict_int(record.get("ordinal"), f"map ordinal at index {index}", 0, 406)
+        if ordinal != index:
+            raise WorldPlanError("map ordinals must be unique, ordered, and contiguous 0..406")
+    sections = manifest.get("sections")
+    if not isinstance(sections, dict) or (
+        sections.get("source_count"),
+        sections.get("later_source_count"),
+        sections.get("johto_count"),
+        sections.get("kanto_count"),
+    ) != (99, 43, 41, 43):
+        raise WorldPlanError("section inventory counts drifted")
+    section_entries = sections.get("entries")
+    if not isinstance(section_entries, list) or len(section_entries) != 99:
+        raise WorldPlanError("section inventory must contain exactly 99 source identities")
+    section_by_source: dict[str, dict[str, Any]] = {}
+    section_classes: Counter[str] = Counter()
+    for entry in section_entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("source_symbol"), str):
+            raise WorldPlanError("malformed section inventory entry")
+        if entry["source_symbol"] in section_by_source or not isinstance(entry.get("target_symbol"), str):
+            raise WorldPlanError("duplicate or malformed section identity")
+        _strict_int(entry.get("target_id"), f"section {entry['source_symbol']} id")
+        if not isinstance(entry.get("classification"), str):
+            raise WorldPlanError("malformed section classification")
+        section_by_source[entry["source_symbol"]] = entry
+        section_classes[entry["classification"]] += 1
+    if section_classes != {
+        "new_johto": 40,
+        "johto_alias": 15,
+        "preserved_host": 1,
+        "required_host_adapter": 1,
+        "reviewed_kanto_geography": 42,
+    }:
+        raise WorldPlanError("section classification totals drifted")
+    _validate_source_inventory(maps)
+    target_map_ids = {
+        record["source_map"]: record["identity_namespace"]["map"]
+        for record in maps
+        if isinstance(record, dict)
+        and isinstance(record.get("source_map"), str)
+        and isinstance(record.get("identity_namespace"), dict)
+        and isinstance(record["identity_namespace"].get("map"), str)
+    }
+    _, _, donor_blobs = _validate_companion_ledgers(root, donor, maps)
+
+    groups: Counter[int] = Counter()
+    selected_warps = 0
+    selected_connections = 0
+    event_totals: Counter[str] = Counter()
+    donor_sources: dict[str, dict[str, Any]] = {}
+    map_ids: set[str] = set()
+    namespaces: set[tuple[str, str, str]] = set()
+    pending_maps: list[str] = []
+    regions: Counter[str] = Counter()
+    for ordinal, record in enumerate(maps):
+        if not isinstance(record, dict):
+            raise WorldPlanError(f"malformed map record at ordinal {ordinal}")
+        source_map = record.get("source_map")
+        source_name = record.get("source_name")
+        if not isinstance(source_map, str) or not isinstance(source_name, str):
+            raise WorldPlanError(f"malformed source identity at ordinal {ordinal}")
+        expected_era = "JOHTO" if ordinal < 239 else "KANTO_LATER"
+        expected_campaign = "JOHTO" if ordinal < 239 else "KANTO_LATER"
+        if (record.get("era"), record.get("campaign"), record.get("world_era")) != (
+            expected_era,
+            expected_campaign,
+            expected_era,
+        ):
+            raise WorldPlanError(f"wrong era identity at ordinal {ordinal}")
+        region = record.get("region")
+        geographic = record.get("geographic_region")
+        if region not in {"REGION_JOHTO", "REGION_KANTO"} or geographic != region:
+            raise WorldPlanError(f"invalid geographic region at ordinal {ordinal}")
+        regions[region] += 1
+        section = record.get("resolved_section")
+        if not isinstance(record.get("source_section"), str) or not isinstance(section, dict):
+            raise WorldPlanError(f"invalid section at ordinal {ordinal}")
+        if not isinstance(section.get("symbol"), str):
+            raise WorldPlanError(f"invalid resolved section symbol at ordinal {ordinal}")
+        _strict_int(section.get("id"), f"section id at ordinal {ordinal}")
+        section_entry = section_by_source.get(record["source_section"])
+        if section_entry is None or (
+            section.get("symbol"), section.get("id")
+        ) != (section_entry["target_symbol"], section_entry["target_id"]):
+            raise WorldPlanError(f"map section resolution drift at ordinal {ordinal}")
+        host = record.get("proposed_host")
+        if not isinstance(host, dict):
+            raise WorldPlanError(f"missing host allocation at ordinal {ordinal}")
+        group = _strict_int(host.get("group"), f"group at ordinal {ordinal}")
+        index = _strict_int(host.get("index"), f"group index at ordinal {ordinal}")
+        era_ordinal = ordinal if ordinal < 239 else ordinal - 239
+        expected_group = (75 if ordinal < 239 else 77) + era_ordinal // 128
+        expected_index = era_ordinal % 128
+        if (group, index) != (expected_group, expected_index):
+            raise WorldPlanError(f"non-contiguous host allocation at ordinal {ordinal}")
+        groups[group] += 1
+        identity = record.get("identity_namespace")
+        if not isinstance(identity, dict):
+            raise WorldPlanError(f"missing identity namespace at ordinal {ordinal}")
+        source_layout = record["layout"]["symbol"]
+        expected_map = source_map if ordinal < 239 else "MAP_KANTO_LATER_" + source_map.removeprefix("MAP_")
+        expected_layout = source_layout if ordinal < 239 else "LAYOUT_KANTO_LATER_" + source_layout.removeprefix("LAYOUT_")
+        expected_script = ("Johto_" if ordinal < 239 else "KantoLater_") + source_name
+        namespace = (identity.get("map"), identity.get("layout"), identity.get("script"))
+        original_map_names = {source_map, "MAP_JOHTO_" + source_map.removeprefix("MAP_")}
+        original_layout_names = {source_layout, "LAYOUT_JOHTO_" + source_layout.removeprefix("LAYOUT_")}
+        identity_valid = (
+            namespace[2] == expected_script
+            and (
+                namespace == (expected_map, expected_layout, expected_script)
+                if ordinal >= 239
+                else namespace[0] in original_map_names and namespace[1] in original_layout_names
+            )
+        )
+        if not identity_valid:
+            raise WorldPlanError(f"wrong identity namespace at ordinal {ordinal}")
+        if namespace[0] in map_ids or namespace in namespaces:
+            raise WorldPlanError(f"duplicate target identity at ordinal {ordinal}")
+        map_ids.add(namespace[0])
+        namespaces.add(namespace)
+
+        source_path = f"data/maps/{source_name}/map.json"
+        source_raw = donor_blobs[source_path]
+        source = _git_json(source_raw, source_path)
+        if _donor_evidence_sha256(source_raw) != record.get("source_sha256", {}).get("map_json"):
+            raise WorldPlanError(f"donor map hash drift at ordinal {ordinal}")
+        if (
+            source.get("id"), source.get("name"), source.get("layout"), source.get("region_map_section")
+        ) != (source_map, source_name, record["layout"]["symbol"], record["source_section"]):
+            raise WorldPlanError(f"donor map identity drift at ordinal {ordinal}")
+        _cross_validate_world_representations(record, source, target_map_ids)
+        _sealed_bg_event_removals(source_map, source.get("bg_events", []))
+        donor_sources[source_map] = source
+        for field, count in _validate_event_arrays(source, source_name).items():
+            event_totals[field] += count
+        selected_warps += sum(w.get("classification") == "selected" for w in record.get("warp_targets", []))
+        selected_connections += sum(
+            edge.get("kind") == "connection" and edge.get("classification") == "selected"
+            for edge in record.get("edges", [])
+        )
+        if record["layout"]["symbol"] in PENDING_GENERAL_LAYOUTS:
+            pending_maps.append(identity["map"])
+
+    if dict(groups) != EXPECTED_GROUP_COUNTS:
+        raise WorldPlanError(f"map group counts drifted: {dict(groups)}")
+    if regions != {"REGION_JOHTO": 229, "REGION_KANTO": 178}:
+        raise WorldPlanError(f"geographic region totals drifted: {dict(regions)}")
+    if dict(event_totals) != EXPECTED_EVENT_TOTALS:
+        raise WorldPlanError(f"event totals drifted: {dict(event_totals)}")
+    if (selected_warps, selected_connections) != (1172, 191):
+        raise WorldPlanError("selected edge totals must be 1172 warps and 191 connections")
+
+    external = manifest.get("external_edges")
+    if not isinstance(external, list) or tuple(_edge_identity(edge) for edge in external) != EXPECTED_SOURCE_EXTERNAL_EDGES:
+        raise WorldPlanError("external edge identity or classification drift")
+    categories = Counter(edge["classification"] for edge in external)
+    if categories != {
+        "excluded_debug_edge": 7,
+        "required_host_adapter": 2,
+        "pending_runtime_policy": 2,
+        "pending_era_boundary": 2,
+    }:
+        raise WorldPlanError("external edge category totals drift")
+    for edge in external:
+        _validate_external_source(edge, donor_sources[edge["source_map"]])
+    if tuple(pending_maps) != PENDING_GENERAL_MAPS:
+        raise WorldPlanError("pending General Safari map identity drift")
+    _validate_asset_manifest_anchor(root, manifest_raw, maps)
+    _verify_donor(donor)
+
+    corrected_maps, topology_corrections = _apply_topology_corrections(maps)
+    corrected_by_id = {
+        item["identity_namespace"]["map"]: item for item in corrected_maps
+    }
+    for item in corrected_maps:
+        for warp in item["warp_targets"]:
+            target_map_id = warp.get("target_map_id")
+            destination = warp.get("dest_warp_id")
+            if target_map_id in corrected_by_id and isinstance(destination, str) and destination.isdigit():
+                target = corrected_by_id[target_map_id]
+                if int(destination) >= len(target["warp_targets"]):
+                    raise WorldPlanError(
+                        f"{item['source_map']} warp {warp['index']} has invalid destination warp id {destination}"
+                    )
+        _cross_validate_world_representations(item, target_map_ids=target_map_ids)
+    corrected_selected_warps = sum(
+        warp.get("classification") == "selected"
+        for item in corrected_maps
+        for warp in item["warp_targets"]
+    )
+    corrected_selected_connections = sum(
+        edge.get("kind") == "connection" and edge.get("classification") == "selected"
+        for item in corrected_maps
+        for edge in item["edges"]
+    )
+    if (corrected_selected_warps, corrected_selected_connections) != (1172, 189):
+        raise WorldPlanError("corrected selected edge totals must be 1172 warps and 189 connections")
+    normalized_external = []
+    for item in corrected_maps:
+        for edge in item["edges"]:
+            if edge.get("classification") != "selected":
+                external_edge = copy.deepcopy(edge)
+                external_edge["source_map"] = item["source_map"]
+                normalized_external.append(external_edge)
+    if tuple(_edge_identity(edge) for edge in normalized_external) != EXPECTED_EXTERNAL_EDGES:
+        raise WorldPlanError("corrected external edge identity or classification drift")
+    normalized_categories = Counter(edge["classification"] for edge in normalized_external)
+    source_event_totals = {key: event_totals[key] for key in EVENT_FIELDS}
+    corrected_event_totals = {
+        # Later Route 22 gains one controlled return attendant.  Reception
+        # Gate gains one trigger immediately before its dynamic east exit.
+        "object_events": source_event_totals["object_events"] + 1,
+        "warp_events": sum(len(item["warp_targets"]) for item in corrected_maps),
+        "coord_events": source_event_totals["coord_events"] + 1,
+        "bg_events": source_event_totals["bg_events"] - sum(
+            len(removals) for removals in SEALED_BG_EVENT_REMOVALS.values()
+        ),
+    }
+    if corrected_event_totals != {
+        "object_events": 3358,
+        "warp_events": 1174,
+        "coord_events": 408,
+        "bg_events": 758,
+    }:
+        raise WorldPlanError(f"normalized event totals drifted: {corrected_event_totals}")
+    if corrected_event_totals["warp_events"] != 1174:
+        raise WorldPlanError(
+            "corrected warp event total must be 1174, "
+            f"got {corrected_event_totals['warp_events']}"
+        )
+    if corrected_event_totals["bg_events"] != 758:
+        raise WorldPlanError(
+            "corrected background event total must be 758, "
+            f"got {corrected_event_totals['bg_events']}"
+        )
+    preserved_external_script_destinations = _validate_preserved_external_script_destinations(root)
+    route40_events = donor_sources["MAP_ROUTE40"].get("object_events", [])
+    route40_closure_payload = [
+        event
+        for event in route40_events
+        if isinstance(event, dict)
+        and any(
+            marker in json.dumps(event, sort_keys=True).upper()
+            for marker in ("ENGINEER", "TRAINER_HILL")
+        )
+    ]
+    if route40_closure_payload:
+        raise WorldPlanError(
+            "Route40 Trainer Hill closure payload remains in the donor object events; "
+            "its ownership must be reviewed before removing the entrance"
+        )
+    topology_notes = [
+        {
+            "subject": "Route40 Trainer Hill closure payload",
+            "status": "none",
+            "evidence": (
+                "Pinned donor Route40 object_events contains no OBJ_EVENT_GFX_ENGINEER "
+                "or TrainerHill-specific script, so the removed Trainer Hill entrance "
+                "has no selected Route40 closure NPC to remove."
+            ),
+        }
+    ]
+
+    return {
+        "schema": "johto-world-plan-v1",
+        "mode": "materialized",
+        "selected_map_count": 407,
+        "host_adapter_map_count": len(HOST_ADAPTER_MAPS),
+        "production_map_count": 407 + len(HOST_ADAPTER_MAPS),
+        "host_adapters": copy.deepcopy(HOST_ADAPTER_MAPS),
+        "original_map_count": 239,
+        "later_map_count": 168,
+        "group_counts": {str(key): groups[key] for key in sorted(groups)},
+        "event_totals": corrected_event_totals,
+        "source_event_totals": source_event_totals,
+        "selected_warp_count": corrected_selected_warps,
+        "selected_connection_count": corrected_selected_connections,
+        "external_edge_counts": {
+            "excluded_debug": normalized_categories["excluded_debug_edge"],
+            "host_adapter": normalized_categories["required_host_adapter"],
+            "runtime_policy": normalized_categories["pending_runtime_policy"],
+            "era_boundary": normalized_categories["pending_era_boundary"],
+        },
+        "external_edges": [
+            {"source_map": item[0], "kind": item[1], "index": item[2], "target": item[3], "classification": item[4]}
+            for item in EXPECTED_EXTERNAL_EDGES
+        ],
+        "preserved_external_script_destinations": preserved_external_script_destinations,
+        "topology_notes": topology_notes,
+        "topology_corrections": topology_corrections,
+        "maps": corrected_maps,
+        "pending_general_layouts": list(PENDING_GENERAL_LAYOUTS),
+        "pending_general_maps": pending_maps,
+        "general_runtime_ready_map_count": 407,
+        "production_write_ready": True,
+        "blockers": [],
+    }
+
+
+def render(plan: dict[str, Any]) -> str:
+    return json.dumps(plan, indent=2, sort_keys=True) + "\n"
+
+
+def _assembly_labels(root: Path) -> set[str]:
+    """Return labels from the committed include closure of data/event_scripts.s."""
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise WorldPlanError(f"cannot resolve host assembly revision: {exc}") from exc
+    if re.fullmatch(r"[0-9a-fA-F]{40,64}", revision) is None:
+        raise WorldPlanError("host assembly revision is malformed")
+
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(root), "ls-tree", "-r", "-z", "--name-only", revision],
+            check=True,
+            capture_output=True,
+        ).stdout
+        paths = [
+            value.decode("utf-8")
+            for value in listing.split(b"\0")
+            if value and PurePosixPath(value.decode("utf-8")).suffix in {".inc", ".s"}
+        ]
+        batch = subprocess.run(
+            ["git", "-C", str(root), "cat-file", "--batch"],
+            input=b"".join(f"{revision}:{path}\n".encode("utf-8") for path in paths),
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as exc:
+        raise WorldPlanError(f"cannot read committed assembly inputs: {exc}") from exc
+    blobs: dict[str, bytes] = {}
+    offset = 0
+    for path in paths:
+        header_end = batch.find(b"\n", offset)
+        if header_end < 0:
+            raise WorldPlanError("truncated committed assembly batch")
+        header = batch[offset:header_end].split()
+        if len(header) != 3 or header[1] != b"blob" or not header[2].isdigit():
+            raise WorldPlanError(f"committed assembly input is not a blob: {path}")
+        size = int(header[2])
+        start = header_end + 1
+        end = start + size
+        if end >= len(batch) or batch[end : end + 1] != b"\n":
+            raise WorldPlanError("truncated committed assembly blob")
+        blobs[path] = batch[start:end]
+        offset = end + 1
+
+    labels: set[str] = set()
+    pending = [EVENT_SCRIPTS_PATH.as_posix()]
+    visited: set[str] = set()
+    while pending:
+        relative = pending.pop()
+        if relative in visited:
+            continue
+        path = PurePosixPath(relative)
+        if path.is_absolute() or ".." in path.parts or path.suffix not in {".inc", ".s"}:
+            raise WorldPlanError(f"unsafe host assembly include: {relative}")
+        raw = blobs.get(relative)
+        if raw is None:
+            raise WorldPlanError(f"committed assembly include is missing or untracked: {relative}")
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise WorldPlanError(f"committed assembly include is not UTF-8: {relative}") from exc
+        visited.add(relative)
+        labels.update(re.findall(r"(?m)^([A-Za-z_][A-Za-z0-9_]*)::?(?:\s+.*)?$", text))
+        for include in re.findall(r'(?m)^\s*\.include\s+"([^"]+)"\s*$', text):
+            include_path = PurePosixPath(include)
+            if include_path.suffix in {".inc", ".s"}:
+                pending.append(include_path.as_posix())
+    return labels
+
+
+def _campaign_blocks(raw: bytes) -> tuple[dict[str, str], set[str]]:
+    """Split the compiled campaign unit into source-map blocks and labels."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise WorldPlanError(f"campaign scripts are not UTF-8: {exc}") from exc
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    matches = list(re.finditer(r"(?m)^@ source map: ([A-Za-z0-9_]+)\n", text))
+    if len(matches) != 407:
+        raise WorldPlanError(f"campaign scripts must contain 407 source blocks, got {len(matches)}")
+    blocks: dict[str, str] = {}
+    labels = set(re.findall(r"(?m)^([A-Za-z_][A-Za-z0-9_]*)::?(?:\s+.*)?$", text))
+    for index, match in enumerate(matches):
+        name = match.group(1)
+        if name in blocks:
+            raise WorldPlanError(f"duplicate campaign source block: {name}")
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        block = text[match.end() : end]
+        blocks[name] = block
+    return blocks, labels
+
+
+def _rewrite_event_script(
+    value: Any,
+    script_namespace: str,
+    campaign_labels: set[str],
+    campaign_suffixes: dict[str, tuple[str, ...]],
+    host_labels: set[str],
+    source_map: str,
+) -> str:
+    if not isinstance(value, str):
+        raise WorldPlanError(f"{source_map} event script is not a string")
+    if value in {"NULL", "0", "0x0"}:
+        return value
+    reviewed_alias = REVIEWED_EVENT_SCRIPT_ALIASES.get((source_map, value))
+    if reviewed_alias is not None:
+        if reviewed_alias not in campaign_labels:
+            raise WorldPlanError(f"{source_map} reviewed event script alias is missing: {reviewed_alias}")
+        return reviewed_alias
+    qualified = f"{script_namespace}_{value}"
+    if qualified in campaign_labels:
+        return qualified
+    cross_map = campaign_suffixes.get(value, ())
+    if len(cross_map) == 1:
+        return cross_map[0]
+    if len(cross_map) > 1:
+        raise WorldPlanError(f"{source_map} event script label is ambiguous: {value}")
+    for runtime_prefix in ("Johto_", "KantoLater_"):
+        runtime_label = runtime_prefix + value
+        if runtime_label in campaign_labels or runtime_label in host_labels:
+            return runtime_label
+    # Common host/runtime labels deliberately remain unqualified.  Their
+    # existence is checked against the tracked assembly source tree rather
+    # than accepted by spelling alone.
+    if value in campaign_labels or value in host_labels:
+        return value
+    raise WorldPlanError(f"{source_map} event script label is unresolved: {value}")
+
+
+def _authenticated_map_aliases(records: list[dict[str, Any]]) -> dict[str, str]:
+    """Resolve donor and target map identities from the sealed manifest only."""
+    candidates: dict[str, set[str]] = {}
+    for record in records:
+        source_map = record.get("source_map")
+        identity = record.get("identity_namespace")
+        target_map = identity.get("map") if isinstance(identity, dict) else None
+        if not isinstance(source_map, str) or not isinstance(target_map, str):
+            raise WorldPlanError("selected map identity is malformed during reference preflight")
+        candidates.setdefault(source_map, set()).add(target_map)
+        candidates.setdefault(target_map, set()).add(target_map)
+    ambiguous = sorted(alias for alias, values in candidates.items() if len(values) != 1)
+    if ambiguous:
+        raise WorldPlanError(
+            "ambiguous authenticated map identity: " + ", ".join(ambiguous)
+        )
+    return {alias: next(iter(values)) for alias, values in candidates.items()}
+
+
+def _preflight_map_references(
+    plan: dict[str, Any],
+    sources: dict[str, dict[str, Any]],
+    *,
+    campaign_labels: set[str] | None = None,
+    campaign_suffixes: dict[str, tuple[str, ...]] | None = None,
+    host_labels: set[str] | None = None,
+) -> dict[str, str]:
+    """Authenticate every selected map/warp/script reference before writes.
+
+    The donor uses both historical source IDs and namespaced target IDs.  Only
+    identities present in the selected manifest can bridge those forms; all
+    other names must be one of the sealed external destinations.  Event script
+    pointers are checked in this same pass when the compiled label sets are
+    supplied so one invocation reports the complete unresolved set.
+    """
+    records = plan.get("maps")
+    if not isinstance(records, list) or len(records) != 407:
+        raise WorldPlanError("reference preflight requires 407 selected maps")
+    aliases = _authenticated_map_aliases(records)
+    unresolved: list[str] = []
+    for record in records:
+        source_map = record.get("source_map")
+        source = sources.get(source_map)
+        if not isinstance(source_map, str) or not isinstance(source, dict):
+            unresolved.append(f"{source_map}: missing authenticated donor map")
+            continue
+        connections = source.get("connections") or []
+        if not isinstance(connections, list):
+            unresolved.append(f"{source_map} connections: expected array")
+        else:
+            for index, connection in enumerate(connections):
+                target = connection.get("map") if isinstance(connection, dict) else None
+                if target in aliases:
+                    continue
+                if target in KNOWN_EXTERNAL_MAP_REFERENCES:
+                    continue
+                unresolved.append(f"{source_map} connection[{index}] {target!r}")
+        warps = source.get("warp_events")
+        if not isinstance(warps, list):
+            unresolved.append(f"{source_map} warp_events: expected array")
+        else:
+            for index, warp in enumerate(warps):
+                target = warp.get("dest_map") if isinstance(warp, dict) else None
+                if target in aliases:
+                    continue
+                if target in KNOWN_EXTERNAL_MAP_REFERENCES:
+                    continue
+                unresolved.append(f"{source_map} warp[{index}] {target!r}")
+        if campaign_labels is None or campaign_suffixes is None or host_labels is None:
+            continue
+        for field in ("object_events", "coord_events", "bg_events"):
+            events = source.get(field)
+            if not isinstance(events, list):
+                unresolved.append(f"{source_map}.{field}: expected array")
+                continue
+            namespace = record.get("identity_namespace", {}).get("script")
+            removed = _sealed_bg_event_removals(source_map, events) if field == "bg_events" else frozenset()
+            for index, event in enumerate(events):
+                if index in removed:
+                    continue
+                if not isinstance(event, dict):
+                    unresolved.append(f"{source_map} {field}[{index}]: malformed event")
+                    continue
+                value = event.get("script")
+                if value in {None, "NULL", "0", "0x0"}:
+                    continue
+                try:
+                    _rewrite_event_script(
+                        value,
+                        namespace,
+                        campaign_labels,
+                        campaign_suffixes,
+                        host_labels,
+                        source_map,
+                    )
+                except WorldPlanError:
+                    unresolved.append(f"{source_map} {field}[{index}] {value!r}")
+    if unresolved:
+        raise WorldPlanError(
+            "unresolved authenticated map references: " + "; ".join(unresolved)
+        )
+    return aliases
+
+
+def _materialized_map_name(record: dict[str, Any]) -> str:
+    name = record.get("source_name")
+    if not isinstance(name, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+        raise WorldPlanError("unsafe selected map directory name")
+    return name
+
+
+def _berry_plot_bindings(
+    root: Path, maps: list[dict[str, Any]], donor_sources: dict[str, dict[str, Any]]
+) -> dict[tuple[str, int], str]:
+    ledger = _load(root / BERRY_PLOTS_PATH)
+    plots = ledger.get("plots") if isinstance(ledger, dict) else None
+    if not isinstance(plots, list):
+        raise WorldPlanError("berry plot ledger must contain a plots array")
+    source_names = {record["source_map"]: _materialized_map_name(record) for record in maps}
+    bindings: dict[tuple[str, int], str] = {}
+    runtime_constants: set[str] = set()
+    runtime_ids: set[int] = set()
+    for ordinal, plot in enumerate(plots):
+        if not isinstance(plot, dict):
+            raise WorldPlanError(f"berry plot ledger entry {ordinal} is malformed")
+        source_name = plot.get("map")
+        object_index = plot.get("object_index")
+        source_symbol = plot.get("source_symbol")
+        runtime_constant = plot.get("runtime_constant")
+        runtime_id = plot.get("runtime_id")
+        if (
+            not isinstance(source_name, str)
+            or type(object_index) is not int
+            or object_index < 0
+            or not isinstance(source_symbol, str)
+            or not isinstance(runtime_constant, str)
+            or re.fullmatch(r"JOHTO_BERRY_TREE_[A-Z0-9_]+", runtime_constant) is None
+            or type(runtime_id) is not int
+            or not 0 <= runtime_id < 128
+        ):
+            raise WorldPlanError(f"berry plot ledger entry {ordinal} has invalid identity")
+        source_map = next((key for key, name in source_names.items() if name == source_name), None)
+        if source_map is None:
+            raise WorldPlanError(f"berry plot map is not selected: {source_name}")
+        objects = donor_sources[source_map].get("object_events")
+        if not isinstance(objects, list) or object_index >= len(objects):
+            raise WorldPlanError(f"berry plot has no donor object: {source_name}[{object_index}]")
+        donor_object = objects[object_index]
+        if (
+            not isinstance(donor_object, dict)
+            or donor_object.get("movement_type") != "MOVEMENT_TYPE_BERRY_TREE_GROWTH"
+            or donor_object.get("trainer_sight_or_berry_tree_id") != source_symbol
+        ):
+            raise WorldPlanError(f"berry plot donor identity drifted: {source_name}[{object_index}]")
+        key = (source_name, object_index)
+        if key in bindings or runtime_constant in runtime_constants or runtime_id in runtime_ids:
+            raise WorldPlanError(f"berry plot identity is not unique: {source_name}[{object_index}]")
+        bindings[key] = runtime_constant
+        runtime_constants.add(runtime_constant)
+        runtime_ids.add(runtime_id)
+    donor_growth_objects = {
+        (source_names[source_map], index)
+        for source_map, source in donor_sources.items()
+        for index, event in enumerate(source.get("object_events", []))
+        if isinstance(event, dict)
+        and event.get("movement_type") == "MOVEMENT_TYPE_BERRY_TREE_GROWTH"
+    }
+    if set(bindings) != donor_growth_objects:
+        raise WorldPlanError("berry plot ledger does not cover selected donor growth objects exactly")
+    return bindings
+
+
+def _object_graphics_aliases(root: Path) -> dict[str, str]:
+    aliases: dict[str, str] = dict(MAP_OBJECT_GRAPHICS_ALIASES)
+    public_ids: set[str] = set()
+    for relative in (OBJECT_GRAPHICS_PATH, SHARED_OBJECT_GRAPHICS_PATH):
+        ledger = _load(root / relative)
+        objects = ledger.get("objects") if isinstance(ledger, dict) else None
+        if not isinstance(objects, list):
+            raise WorldPlanError(f"{relative.as_posix()} must contain an objects array")
+        for ordinal, entry in enumerate(objects):
+            if not isinstance(entry, dict):
+                raise WorldPlanError(f"{relative.as_posix()} object {ordinal} is malformed")
+            token = entry.get("token")
+            public_id = entry.get("public_id")
+            if (
+                not isinstance(token, str)
+                or re.fullmatch(r"OBJ_EVENT_GFX_[A-Z0-9_]+", token) is None
+                or not isinstance(public_id, str)
+                or re.fullmatch(r"OBJ_EVENT_GFX_JOHTO_[A-Z0-9_]+", public_id) is None
+            ):
+                raise WorldPlanError(f"{relative.as_posix()} object {ordinal} has invalid graphics identity")
+            if token in aliases or public_id in public_ids:
+                raise WorldPlanError(f"duplicate Johto object graphics identity: {token}")
+            aliases[token] = public_id
+            public_ids.add(public_id)
+    return aliases
+
+
+def _materialize_map_json(
+    root: Path,
+    donor: Path,
+    record: dict[str, Any],
+    source: dict[str, Any],
+    source_raw: bytes,
+    target_map_ids: dict[str, str],
+    campaign_labels: set[str],
+    campaign_suffixes: dict[str, tuple[str, ...]],
+    host_labels: set[str],
+    berry_plot_bindings: dict[tuple[str, int], str],
+    event_symbol_aliases: dict[str, str],
+    object_graphics_aliases: dict[str, str],
+) -> bytes:
+    source_map = record["source_map"]
+    source_name = _materialized_map_name(record)
+    identity = record["identity_namespace"]
+    source_hash = record.get("source_sha256", {}).get("map_json")
+    source_path = f"data/maps/{source_name}/map.json"
+    if _donor_evidence_sha256(source_raw) != source_hash:
+        raise WorldPlanError(f"donor map hash drift while materializing {source_name}")
+    target = copy.deepcopy(source)
+    target["id"] = identity["map"]
+    target["layout"] = identity["layout"]
+    target["region_map_section"] = record["resolved_section"]["symbol"]
+    target["region"] = record["region"]
+    target["shared_scripts_map"] = f"{identity['script']}_{source_name}"
+    source_music = source.get("music")
+    target["music"] = MAP_MUSIC_ALIASES.get(source_music, source_music)
+    if isinstance(source_music, str) and source_music.startswith("MUS_HG_") and target["music"] == source_music:
+        raise WorldPlanError(f"{source_name} has no host music alias for {source_music}")
+    source_battle_scene = source.get("battle_scene")
+    target["battle_scene"] = MAP_BATTLE_SCENE_ALIASES.get(source_battle_scene, source_battle_scene)
+
+    source_connections = source.get("connections")
+    if source_connections is None:
+        target["connections"] = None
+    else:
+        connections: list[dict[str, Any]] = []
+        for connection in record.get("connections", []):
+            if not isinstance(connection, dict):
+                raise WorldPlanError(f"{source_map} has malformed materialized connection")
+            target_source = connection.get("map")
+            target_id = target_map_ids.get(target_source)
+            if target_id is None:
+                raise WorldPlanError(f"{source_map} connection target is not selected: {target_source}")
+            connections.append({
+                "map": target_id,
+                "offset": connection["offset"],
+                "direction": connection["direction"],
+            })
+        target["connections"] = connections
+
+    removed_warps = WARP_REMOVALS.get(source_map, frozenset())
+    source_warps = source.get("warp_events")
+    if not isinstance(source_warps, list):
+        raise WorldPlanError(f"{source_map}.warp_events must be an array")
+    planned_warps = record.get("warp_targets")
+    if not isinstance(planned_warps, list) or len(planned_warps) != len(source_warps) - len(removed_warps):
+        raise WorldPlanError(f"{source_map} corrected warp inventory does not match donor")
+    materialized_warps: list[dict[str, Any]] = []
+    planned_index = 0
+    for source_index, source_warp in enumerate(source_warps):
+        if source_index in removed_warps:
+            continue
+        if not isinstance(source_warp, dict):
+            raise WorldPlanError(f"{source_map} has malformed donor warp")
+        planned = planned_warps[planned_index]
+        planned_index += 1
+        warp = copy.deepcopy(source_warp)
+        target_source = planned.get("target_map_id")
+        if target_source is None:
+            if planned.get("classification") == "selected":
+                raise WorldPlanError(f"{source_map} selected warp has no target identity")
+            destination = planned.get("dest_map")
+        else:
+            destination = target_map_ids.get(target_source)
+            if destination is None:
+                raise WorldPlanError(f"{source_map} warp target is not selected: {target_source}")
+        warp["dest_map"] = destination
+        warp["dest_warp_id"] = planned["dest_warp_id"]
+        for field in ("x", "y", "elevation"):
+            if warp.get(field) != planned.get(field):
+                raise WorldPlanError(f"{source_map} warp {source_index} geometry drift")
+        materialized_warps.append(warp)
+    target["warp_events"] = materialized_warps
+
+    for field in ("object_events", "coord_events", "bg_events"):
+        events = source.get(field)
+        if not isinstance(events, list):
+            raise WorldPlanError(f"{source_map}.{field} must be an array")
+        rewritten: list[dict[str, Any]] = []
+        removed = _sealed_bg_event_removals(source_map, events) if field == "bg_events" else frozenset()
+        for index, event in enumerate(events):
+            if index in removed:
+                continue
+            if not isinstance(event, dict):
+                raise WorldPlanError(f"{source_map}.{field} contains malformed event")
+            item = copy.deepcopy(event)
+            movement_type = item.get("movement_type")
+            if isinstance(movement_type, str) and movement_type in MAP_MOVEMENT_TYPE_ALIASES:
+                item["movement_type"] = MAP_MOVEMENT_TYPE_ALIASES[movement_type]
+            for range_field in ("movement_range_x", "movement_range_y"):
+                source_range = item.get(range_field)
+                normalization = OBJECT_EVENT_RANGE_NORMALIZATIONS.get((source_name, index, range_field))
+                if normalization is not None:
+                    expected_source, target_range = normalization
+                    if source_range != expected_source:
+                        raise WorldPlanError(
+                            f"{source_name}.object_events[{index}].{range_field} drifted from reviewed source"
+                        )
+                    item[range_field] = target_range
+                elif field == "object_events" and (type(source_range) is not int or not 0 <= source_range <= 15):
+                    raise WorldPlanError(
+                        f"{source_name}.object_events[{index}].{range_field} does not fit the host bitfield"
+                    )
+            for symbol_field in ("flag", "var"):
+                symbol = item.get(symbol_field)
+                if isinstance(symbol, str) and symbol in event_symbol_aliases:
+                    item[symbol_field] = event_symbol_aliases[symbol]
+            if field == "object_events":
+                graphics_id = item.get("graphics_id")
+                if isinstance(graphics_id, str) and graphics_id in object_graphics_aliases:
+                    item["graphics_id"] = object_graphics_aliases[graphics_id]
+                    graphics_id = item["graphics_id"]
+                species_graphics = re.fullmatch(
+                    r"OBJ_EVENT_GFX_MON_BASE\+SPECIES_([A-Z0-9_]+)(\+SPECIES_SHINY_TAG)?",
+                    graphics_id or "",
+                )
+                if species_graphics:
+                    macro = "OBJ_EVENT_GFX_SPECIES_SHINY" if species_graphics.group(2) else "OBJ_EVENT_GFX_SPECIES"
+                    item["graphics_id"] = f"{macro}({species_graphics.group(1)})"
+            if field == "object_events" and item.get("movement_type") == "MOVEMENT_TYPE_BERRY_TREE_GROWTH":
+                runtime_constant = berry_plot_bindings.get((source_name, index))
+                if runtime_constant is None:
+                    raise WorldPlanError(f"{source_name}.object_events[{index}] has no berry plot binding")
+                item["trainer_sight_or_berry_tree_id"] = runtime_constant
+            if "script" in item:
+                item["script"] = _rewrite_event_script(
+                    item["script"], identity["script"], campaign_labels, campaign_suffixes, host_labels, source_map
+                )
+            rewritten.append(item)
+        target[field] = rewritten
+
+    if source_map == "MAP_RECEPTION_GATE":
+        boundary = (19, 9)
+        occupied = [
+            (field, event)
+            for field in EVENT_FIELDS
+            for event in target[field]
+            if isinstance(event, dict) and (event.get("x"), event.get("y")) == boundary
+        ]
+        if occupied:
+            raise WorldPlanError("Reception Gate Kanto selector coordinate is occupied")
+        target["shared_scripts_map"] = "Johto_ReceptionGate_Overland"
+        target["coord_events"].append({
+            "type": "trigger",
+            "x": boundary[0],
+            "y": boundary[1],
+            "elevation": 0,
+            "var": "VAR_TEMP_0",
+            "var_value": "0",
+            "script": "Johto_ReceptionGate_Overland_EventScript_ChooseKanto",
+        })
+
+    if source_map == "MAP_ROUTE22":
+        attendant = (LATER_ROUTE22_GATE["attendant_x"], LATER_ROUTE22_GATE["attendant_y"])
+        occupied = [
+            (field, event)
+            for field in EVENT_FIELDS
+            for event in target[field]
+            if isinstance(event, dict) and (event.get("x"), event.get("y")) == attendant
+        ]
+        if occupied:
+            raise WorldPlanError("Later Route 22 return-attendant coordinate is occupied")
+        target["shared_scripts_map"] = "KantoLater_Route22_Overland"
+        target["object_events"].append({
+            "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+            "x": attendant[0],
+            "y": attendant[1],
+            "elevation": 0,
+            "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+            "movement_range_x": 0,
+            "movement_range_y": 0,
+            "trainer_type": "TRAINER_TYPE_NONE",
+            "trainer_sight_or_berry_tree_id": "0",
+            "script": "KantoLater_Route22_Overland_EventScript_Attendant",
+            "flag": "0",
+        })
+    return (json.dumps(target, indent=2, ensure_ascii=False) + "\n").replace("\r\n", "\n").encode("utf-8")
+
+
+def _render_materialized_groups(
+    root: Path, plan: dict[str, Any], *, include_host_adapters: bool = True
+) -> bytes:
+    current = _load(root / MAP_GROUPS_PATH)
+    baseline = _load(root / HOST_IDENTITY_BASELINE_PATH)
+    if _canonical_json_sha256(baseline) != EXPECTED_HOST_IDENTITY_BASELINE_SHA256:
+        raise WorldPlanError("host identity baseline semantics drifted from pinned registration revision")
+    if not isinstance(current, dict) or not isinstance(baseline, dict):
+        raise WorldPlanError("map group registries must be objects")
+    host_order = baseline.get("group_order")
+    current_order = current.get("group_order")
+    baseline_groups = baseline.get("groups")
+    current_groups = current.get("groups", current)
+    if not isinstance(host_order, list) or not isinstance(current_order, list) or not isinstance(baseline_groups, dict) or not isinstance(current_groups, dict):
+        raise WorldPlanError("malformed map group registry")
+    for index, expected_name in (
+        (43, "gMapGroup_IndoorVermilion_Frlg"),
+        (48, "gMapGroup_IndoorSaffron_Frlg"),
+    ):
+        if len(host_order) <= index or host_order[index] != expected_name:
+            raise WorldPlanError(f"pinned host map group identity drifted at index {index}")
+    if current_order[:75] != host_order[:75]:
+        raise WorldPlanError("host map group order prefix drifted")
+    host_groups: dict[str, list[str]] = {}
+    for group_name in host_order[:75]:
+        records = baseline_groups.get(group_name)
+        if not isinstance(records, list) or any(
+            not isinstance(record, dict) or not isinstance(record.get("name"), str)
+            for record in records
+        ):
+            raise WorldPlanError(f"host identity baseline is malformed: {group_name}")
+        host_groups[group_name] = [record["name"] for record in records]
+        group_adapters = [item for item in HOST_ADAPTER_MAPS if item["group"] == group_name]
+        for offset, adapter in enumerate(group_adapters):
+            if adapter["index"] != len(host_groups[group_name]) + offset:
+                raise WorldPlanError(f"host adapter is not append-only: {adapter['id']}")
+        adapters = [item["name"] for item in group_adapters]
+        accepted = (host_groups[group_name], [*host_groups[group_name], *adapters])
+        if current_groups.get(group_name) not in accepted:
+            raise WorldPlanError(f"host map group contents drifted: {group_name}")
+    allowed_order = set(host_order) | set(TARGET_GROUP_NAMES.values())
+    if any(name not in allowed_order for name in current_order):
+        raise WorldPlanError("map group registry contains an unplanned group")
+    records = plan["maps"]
+    groups = {
+        TARGET_GROUP_NAMES[group]: [_materialized_map_name(record) for record in records if record["proposed_host"]["group"] == group]
+        for group in EXPECTED_GROUP_COUNTS
+    }
+    if {group: len(names) for group, names in groups.items()} != {
+        TARGET_GROUP_NAMES[group]: count for group, count in EXPECTED_GROUP_COUNTS.items()
+    }:
+        raise WorldPlanError("materialized map group counts drifted")
+    output: dict[str, Any] = {"group_order": [*host_order[:75], *TARGET_GROUP_NAMES.values()]}
+    for group_name in host_order[:75]:
+        output[group_name] = [
+            *host_groups[group_name],
+            *(
+                item["name"]
+                for item in HOST_ADAPTER_MAPS
+                if include_host_adapters and item["group"] == group_name
+            ),
+        ]
+    output.update(groups)
+    return (json.dumps(output, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def _base_bytes(root: Path, relative: Path) -> bytes | None:
+    expected = TRUSTED_BOOTSTRAP_SHA256.get(relative.as_posix())
+    try:
+        candidate = subprocess.run(
+            ["git", "-C", str(root), "show", f"{REGISTRATION_BASE_REVISION}:{relative.as_posix()}"],
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        candidate = None
+    if candidate is not None:
+        representations = (candidate, candidate.replace(b"\n", b"\r\n"))
+        for representation in representations:
+            if expected is None or _sha256(representation) == expected:
+                return representation
+    return None
+
+
+def _registered_event_script_prefix(raw: bytes) -> bytes | None:
+    """Authenticate a generated adapter suffix without constraining its host prefix."""
+    normalized = raw.replace(b"\r\n", b"\n")
+    if normalized.count(REGISTERED_ADAPTER_MARKER) != 1:
+        return None
+    prefix, suffix_tail = normalized.split(REGISTERED_ADAPTER_MARKER, 1)
+    suffix = REGISTERED_ADAPTER_MARKER + suffix_tail
+    group_scripts = GROUP_TRAVEL_EVENT_SCRIPTS.lstrip(b"\n")
+    if suffix.endswith(GROUP_TRAVEL_EVENT_SCRIPTS):
+        adapter_suffix = suffix[: -len(GROUP_TRAVEL_EVENT_SCRIPTS)]
+    elif suffix.endswith(group_scripts):
+        adapter_suffix = suffix[: -len(group_scripts)]
+    else:
+        adapter_suffix = suffix
+    generated_adapter_suffix = (
+        REGISTERED_ADAPTER_MARKER
+        + ADAPTER_EVENT_SCRIPTS.split(REGISTERED_ADAPTER_MARKER, 1)[1]
+    )
+    accepted_suffixes = {
+        EXPECTED_REGISTERED_ADAPTER_SUFFIX_SHA256,
+        GROUP_TRAVEL_PREDECESSOR_ADAPTER_SUFFIX_SHA256,
+        _sha256(generated_adapter_suffix),
+    }
+    adapter_hashes = {
+        _sha256(adapter_suffix),
+        _sha256(adapter_suffix.rstrip(b"\n") + b"\n"),
+    }
+    if adapter_hashes.isdisjoint(accepted_suffixes):
+        return None
+    if prefix.count(CAMPAIGN_INCLUDE) != 1 or LEGACY_NEW_BARK_INCLUDE in prefix:
+        return None
+    return prefix.rstrip(b"\n") + b"\n"
+
+
+def _render_event_script_assembly(root: Path) -> bytes:
+    try:
+        current = (root / EVENT_SCRIPTS_PATH).read_bytes()
+    except OSError as exc:
+        raise WorldPlanError(f"cannot read event script assembly predecessor: {exc}") from exc
+    newline = b"\r\n" if b"\r\n" in current else b"\n"
+    registered_prefix = _registered_event_script_prefix(current)
+    if registered_prefix is not None:
+        event_raw = registered_prefix.replace(b"\n", newline)
+    else:
+        event_raw = _base_bytes(root, EVENT_SCRIPTS_PATH)
+        if event_raw is None:
+            raise WorldPlanError("cannot authenticate pinned event script assembly predecessor")
+        if event_raw.count(LEGACY_NEW_BARK_INCLUDE) != 1 or CAMPAIGN_INCLUDE in event_raw:
+            raise WorldPlanError("pinned event script assembly include inventory drifted")
+        newline = b"\r\n" if b"\r\n" in event_raw else b"\n"
+        legacy_line = LEGACY_NEW_BARK_INCLUDE + newline
+        if legacy_line not in event_raw:
+            raise WorldPlanError("legacy New Bark include is not a complete assembly line")
+        event_raw = event_raw.replace(legacy_line, b"", 1)
+        event_raw = (
+            event_raw
+            + (b"" if event_raw.endswith((b"\n", b"\r")) else newline)
+            + CAMPAIGN_INCLUDE
+            + newline
+        )
+    event_raw = (
+        event_raw
+        + ADAPTER_EVENT_SCRIPTS.replace(b"\n", newline)
+        + GROUP_TRAVEL_EVENT_SCRIPTS.replace(b"\n", newline)
+    )
+    if event_raw.count(LEGACY_NEW_BARK_INCLUDE) != 0 or event_raw.count(CAMPAIGN_INCLUDE) != 1:
+        raise WorldPlanError("rendered event script assembly include inventory drifted")
+    adapter_labels = re.findall(rb"(?m)^([A-Za-z_][A-Za-z0-9_]*)::?", ADAPTER_EVENT_SCRIPTS)
+    if len(adapter_labels) != len(set(adapter_labels)):
+        raise WorldPlanError("generated original-Kanto adapter script labels are duplicated")
+    return event_raw
+
+
+def _adapter_map_outputs(root: Path) -> dict[Path, bytes]:
+    """Render original-Kanto transport maps, kiosk, and Route 22 return."""
+    layout_document = _load(root / Path("data/layouts/layouts.json"))
+    current_layouts = {
+        item.get("id"): item
+        for item in layout_document.get("layouts", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    } if isinstance(layout_document, dict) else {}
+    asset_manifest = _load(root / ASSET_MANIFEST_PATH)
+    sealed_layouts = {
+        item.get("target_layout"): item
+        for item in asset_manifest.get("layouts", [])
+        if isinstance(item, dict) and isinstance(item.get("target_layout"), str)
+    } if isinstance(asset_manifest, dict) else {}
+    missing = sorted(
+        item["layout"]
+        for item in HOST_ADAPTER_MAPS
+        if item["layout"] not in current_layouts or item["layout"] not in sealed_layouts
+    )
+    if missing:
+        raise WorldPlanError("host adapter layout is unavailable: " + ", ".join(missing))
+    for adapter in HOST_ADAPTER_MAPS:
+        current = current_layouts[adapter["layout"]]
+        sealed = sealed_layouts[adapter["layout"]]
+        expected = {
+            "width": sealed.get("width"),
+            "height": sealed.get("height"),
+            "primary_tileset": sealed.get("target_primary_tileset"),
+            "secondary_tileset": sealed.get("target_secondary_tileset"),
+        }
+        if any(current.get(key) != value for key, value in expected.items()):
+            raise WorldPlanError(f"host adapter layout drifted: {adapter['layout']}")
+
+    common = {
+        "requires_flash": False,
+        "weather": "WEATHER_NONE",
+        "map_type": "MAP_TYPE_INDOOR",
+        "allow_cycling": False,
+        "allow_escaping": False,
+        "allow_running": False,
+        "show_map_name": False,
+        "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+        "connections": [],
+        "coord_events": [],
+        "bg_events": [],
+        "region": "REGION_KANTO",
+    }
+    vermilion = {
+        "id": HOST_ADAPTER_MAPS[0]["id"],
+        "name": HOST_ADAPTER_MAPS[0]["name"],
+        "layout": HOST_ADAPTER_MAPS[0]["layout"],
+        "music": "MUS_RG_VERMILLION",
+        "region_map_section": "MAPSEC_VERMILION_CITY",
+        **common,
+        "object_events": [
+            {
+                "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+                "x": 8, "y": 10, "elevation": 0,
+                "movement_type": "MOVEMENT_TYPE_FACE_UP",
+                "movement_range_x": 0, "movement_range_y": 0,
+                "trainer_type": "TRAINER_TYPE_NONE",
+                "trainer_sight_or_berry_tree_id": "0",
+                "script": "KantoOriginal_VermilionCity_PortInside_EventScript_Sailor",
+                "flag": "0",
+            },
+            {
+                "graphics_id": "OBJ_EVENT_GFX_SS_TIDAL",
+                "x": 8, "y": 13, "elevation": 0,
+                "movement_type": "MOVEMENT_TYPE_FACE_UP",
+                "movement_range_x": 0, "movement_range_y": 0,
+                "trainer_type": "TRAINER_TYPE_NONE",
+                "trainer_sight_or_berry_tree_id": "0",
+                "script": "NULL", "flag": "0",
+            },
+        ],
+        "warp_events": [
+            {"x": 8, "y": 2, "elevation": 0, "dest_map": "MAP_VERMILION_CITY", "dest_warp_id": "0"},
+        ],
+        "shared_scripts_map": "KantoOriginal_VermilionCity_PortInside",
+    }
+    saffron_station = {
+        "id": HOST_ADAPTER_MAPS[1]["id"],
+        "name": HOST_ADAPTER_MAPS[1]["name"],
+        "layout": HOST_ADAPTER_MAPS[1]["layout"],
+        "music": "MUS_RG_PEWTER",
+        "region_map_section": "MAPSEC_SAFFRON_CITY",
+        **common,
+        "object_events": [
+            {
+                "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+                "x": 137, "y": 20, "elevation": 0,
+                "movement_type": "MOVEMENT_TYPE_NONE",
+                "movement_range_x": 0, "movement_range_y": 0,
+                "trainer_type": "TRAINER_TYPE_NONE",
+                "trainer_sight_or_berry_tree_id": "0",
+                "script": "KantoOriginal_SaffronCity_TrainStation_EventScript_Attendant",
+                "flag": "0",
+            },
+            {
+                "graphics_id": "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT",
+                "x": 152, "y": 5, "elevation": 0,
+                "movement_type": "MOVEMENT_TYPE_NONE",
+                "movement_range_x": 0, "movement_range_y": 0,
+                "trainer_type": "TRAINER_TYPE_NONE",
+                "trainer_sight_or_berry_tree_id": "0",
+                "script": "NULL", "flag": "0",
+            },
+        ],
+        "warp_events": [
+            {"x": 137, "y": 26, "elevation": 0, "dest_map": "MAP_SAFFRON_CITY", "dest_warp_id": "15"},
+            {
+                "x": 140, "y": 16, "elevation": 0,
+                "dest_map": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION", "dest_warp_id": "0",
+            },
+        ],
+        "shared_scripts_map": "KantoOriginal_SaffronCity_TrainStation",
+    }
+
+    predecessor = _base_bytes(root, SAFFRON_KIOSK["path"])
+    if predecessor is None:
+        raise WorldPlanError("cannot authenticate original Saffron map predecessor")
+    saffron = _parse_json_document(predecessor, SAFFRON_KIOSK["path"].as_posix())
+    original_warps = copy.deepcopy(saffron.get("warp_events"))
+    objects = saffron.get("object_events")
+    if not isinstance(objects, list) or not isinstance(original_warps, list):
+        raise WorldPlanError("original Saffron event inventory is malformed")
+    if any(
+        item.get("x") == SAFFRON_KIOSK["x"] and item.get("y") == SAFFRON_KIOSK["y"]
+        for item in [*objects, *original_warps] if isinstance(item, dict)
+    ):
+        raise WorldPlanError("original Saffron kiosk coordinate is occupied")
+    objects.append({
+        "graphics_id": "OBJ_EVENT_GFX_POLICEMAN",
+        "x": SAFFRON_KIOSK["x"], "y": SAFFRON_KIOSK["y"], "elevation": 0,
+        "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+        "movement_range_x": 0, "movement_range_y": 0,
+        "trainer_type": "TRAINER_TYPE_NONE",
+        "trainer_sight_or_berry_tree_id": "0",
+        "script": SAFFRON_KIOSK["script"], "flag": "0",
+    })
+    saffron["warp_events"].append({
+        "x": SAFFRON_KIOSK["return_x"], "y": SAFFRON_KIOSK["return_y"], "elevation": 0,
+        "dest_map": "MAP_KANTO_ORIGINAL_SAFFRON_CITY_TRAIN_STATION", "dest_warp_id": "0",
+    })
+    if saffron.get("warp_events", [])[:-1] != original_warps or len(saffron["warp_events"]) != 16:
+        raise WorldPlanError("original Saffron story warps changed while appending station return")
+
+    route22_predecessor = _base_bytes(root, ORIGINAL_ROUTE22_GATE["path"])
+    if route22_predecessor is None:
+        raise WorldPlanError("cannot authenticate original Route 22 map predecessor")
+    route22 = _parse_json_document(
+        route22_predecessor, ORIGINAL_ROUTE22_GATE["path"].as_posix()
+    )
+    attendant = (
+        ORIGINAL_ROUTE22_GATE["attendant_x"],
+        ORIGINAL_ROUTE22_GATE["attendant_y"],
+    )
+    event_fields = ("object_events", "warp_events", "coord_events", "bg_events")
+    if any(
+        (event.get("x"), event.get("y")) == attendant
+        for field in event_fields
+        for event in route22.get(field, [])
+        if isinstance(event, dict)
+    ):
+        raise WorldPlanError("original Route 22 return-attendant coordinate is occupied")
+    route22["shared_scripts_map"] = "KantoOriginal_Route22_Overland"
+    route22["object_events"].append({
+        "graphics_id": "OBJ_EVENT_GFX_BLACK_BELT",
+        "x": attendant[0],
+        "y": attendant[1],
+        "elevation": 0,
+        "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+        "movement_range_x": 0,
+        "movement_range_y": 0,
+        "trainer_type": "TRAINER_TYPE_NONE",
+        "trainer_sight_or_berry_tree_id": "0",
+        "script": "KantoOriginal_Route22_Overland_EventScript_Attendant",
+        "flag": "0",
+    })
+
+    def encode(document: dict[str, Any]) -> bytes:
+        return (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+    return {
+        Path("data/maps") / vermilion["name"] / "map.json": encode(vermilion),
+        Path("data/maps") / saffron_station["name"] / "map.json": encode(saffron_station),
+        SAFFRON_KIOSK["path"]: encode(saffron),
+        ORIGINAL_ROUTE22_GATE["path"]: encode(route22),
+    }
+
+
+def _registration_outputs(root: Path, donor: Path, plan: dict[str, Any]) -> dict[Path, bytes]:
+    maps = plan.get("maps")
+    if not isinstance(maps, list) or len(maps) != 407:
+        raise WorldPlanError("registration plan must contain 407 maps")
+    campaign_path = root / CAMPAIGN_SCRIPTS_PATH
+    try:
+        campaign_raw = campaign_path.read_bytes()
+    except OSError as exc:
+        raise WorldPlanError(f"cannot read compiled campaign scripts: {exc}") from exc
+    blocks, campaign_labels = _campaign_blocks(campaign_raw)
+    suffixes: dict[str, list[str]] = {}
+    for label in campaign_labels:
+        parts = label.split("_")
+        for index in range(1, len(parts)):
+            suffixes.setdefault("_".join(parts[index:]), []).append(label)
+    campaign_suffixes = {key: tuple(sorted(values)) for key, values in suffixes.items()}
+    host_labels = _assembly_labels(root) - campaign_labels
+    source_map_ids = _authenticated_map_aliases(maps)
+    source_paths = [f"data/maps/{record['source_name']}/map.json" for record in maps]
+    donor_blobs = _git_blobs(donor, source_paths)
+    donor_sources = {
+        record["source_map"]: _git_json(
+            donor_blobs[f"data/maps/{record['source_name']}/map.json"],
+            f"data/maps/{record['source_name']}/map.json",
+        )
+        for record in maps
+    }
+    berry_plot_bindings = _berry_plot_bindings(root, maps, donor_sources)
+    object_graphics_aliases = _object_graphics_aliases(root)
+    content = _load(root / CONTENT_PATH)
+    identities = content.get("identities")
+    if not isinstance(identities, dict):
+        raise WorldPlanError("content-symbol identity ledger is malformed")
+    event_symbol_aliases: dict[str, str] = {}
+    for category in ("flags", "vars"):
+        entries = identities.get(category)
+        if not isinstance(entries, list):
+            raise WorldPlanError(f"content-symbol {category} ledger is malformed")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise WorldPlanError(f"content-symbol {category} entry is malformed")
+            source_symbol = entry.get("symbol")
+            qualified = entry.get("qualified")
+            if not isinstance(source_symbol, str) or not isinstance(qualified, str):
+                raise WorldPlanError(f"content-symbol {category} alias is malformed")
+            event_symbol_aliases[source_symbol] = qualified
+    _preflight_map_references(
+        plan,
+        donor_sources,
+        campaign_labels=campaign_labels,
+        campaign_suffixes=campaign_suffixes,
+        host_labels=host_labels,
+    )
+    outputs: dict[Path, bytes] = {}
+    for record in maps:
+        source_name = _materialized_map_name(record)
+        source_path = f"data/maps/{source_name}/map.json"
+        source = donor_sources[record["source_map"]]
+        map_relative = Path("data/maps") / source_name / "map.json"
+        outputs[map_relative] = _materialize_map_json(
+            root,
+            donor,
+            record,
+            source,
+            donor_blobs[source_path],
+            source_map_ids,
+            campaign_labels,
+            campaign_suffixes,
+            host_labels,
+            berry_plot_bindings,
+            event_symbol_aliases,
+            object_graphics_aliases,
+        )
+        block = blocks.get(source_name)
+        if block is None:
+            raise WorldPlanError(f"campaign source block is missing: {source_name}")
+        expected_script_label = f"{record['identity_namespace']['script']}_{source_name}_MapScripts"
+        if not re.search(rf"(?m)^{re.escape(expected_script_label)}::", block):
+            raise WorldPlanError(f"campaign map script label is missing: {expected_script_label}")
+    outputs[MAP_GROUPS_PATH] = _render_materialized_groups(root, plan)
+    outputs[EVENT_SCRIPTS_PATH] = _render_event_script_assembly(root)
+    outputs[WORLD_PLAN_PATH] = render(plan).encode("utf-8")
+    outputs.update(_adapter_map_outputs(root))
+    return outputs
+
+
+def _same_output_contents(current: bytes, expected: bytes) -> bool:
+    """Accept Git's CRLF checkout representation without hiding other drift."""
+    return current == expected or current.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
+
+
+def _is_pre_normalization_berry_map(root: Path, relative: Path, current: bytes, expected: bytes) -> bool:
+    if len(relative.parts) != 4 or relative.parts[:2] != ("data", "maps") or relative.name != "map.json":
+        return False
+    source_name = relative.parts[2]
+    ledger = _load(root / BERRY_PLOTS_PATH)
+    plots = ledger.get("plots") if isinstance(ledger, dict) else None
+    if not isinstance(plots, list):
+        return False
+    selected = [plot for plot in plots if isinstance(plot, dict) and plot.get("map") == source_name]
+    if not selected:
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    for plot in selected:
+        index = plot.get("object_index")
+        if type(index) is not int or index < 0 or index >= len(objects) or not isinstance(objects[index], dict):
+            return False
+        if objects[index].get("trainer_sight_or_berry_tree_id") != plot.get("runtime_constant"):
+            return False
+        objects[index]["trainer_sight_or_berry_tree_id"] = plot.get("source_symbol")
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_event_namespace_map(root: Path, relative: Path, current: bytes, expected: bytes) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    content = _load(root / CONTENT_PATH)
+    identities = content.get("identities") if isinstance(content, dict) else None
+    if not isinstance(identities, dict):
+        return False
+    reverse_aliases: dict[str, str] = {}
+    for category in ("flags", "vars"):
+        entries = identities.get(category)
+        if not isinstance(entries, list):
+            return False
+        for entry in entries:
+            if not isinstance(entry, dict):
+                return False
+            source_symbol = entry.get("symbol")
+            qualified = entry.get("qualified")
+            if not isinstance(source_symbol, str) or not isinstance(qualified, str):
+                return False
+            reverse_aliases[qualified] = source_symbol
+    for field in ("object_events", "coord_events", "bg_events"):
+        events = predecessor.get(field)
+        if not isinstance(events, list):
+            return False
+        for event in events:
+            if not isinstance(event, dict):
+                return False
+            for symbol_field in ("flag", "var"):
+                symbol = event.get(symbol_field)
+                if isinstance(symbol, str) and symbol in reverse_aliases:
+                    event[symbol_field] = reverse_aliases[symbol]
+            if field == "object_events":
+                graphics_id = event.get("graphics_id")
+                species_graphics = re.fullmatch(
+                    r"OBJ_EVENT_GFX_SPECIES(_SHINY)?\(([A-Z0-9_]+)\)",
+                    graphics_id or "",
+                )
+                if species_graphics:
+                    shiny_suffix = "+SPECIES_SHINY_TAG" if species_graphics.group(1) else ""
+                    event["graphics_id"] = (
+                        f"OBJ_EVENT_GFX_MON_BASE+SPECIES_{species_graphics.group(2)}{shiny_suffix}"
+                    )
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_shiny_graphics_map(relative: Path, current: bytes, expected: bytes) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    changed = False
+    for event in objects:
+        if not isinstance(event, dict):
+            return False
+        graphics_id = event.get("graphics_id")
+        species_graphics = re.fullmatch(
+            r"OBJ_EVENT_GFX_SPECIES_SHINY\(([A-Z0-9_]+)\)",
+            graphics_id or "",
+        )
+        if species_graphics:
+            event["graphics_id"] = (
+                f"OBJ_EVENT_GFX_MON_BASE+SPECIES_{species_graphics.group(1)}+SPECIES_SHINY_TAG"
+            )
+            changed = True
+    if not changed:
+        return False
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_movement_range_map(relative: Path, current: bytes, expected: bytes) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    source_name = relative.parts[2]
+    selected = [
+        (index, field, source_range, target_range)
+        for (name, index, field), (source_range, target_range) in OBJECT_EVENT_RANGE_NORMALIZATIONS.items()
+        if name == source_name
+    ]
+    if not selected:
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    for index, field, source_range, target_range in selected:
+        if index >= len(objects) or not isinstance(objects[index], dict):
+            return False
+        if objects[index].get(field) != target_range:
+            return False
+        objects[index][field] = source_range
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_map_field_alias_map(
+    donor: Path, relative: Path, current: bytes, expected: bytes
+) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    source_name = relative.parts[2]
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+        donor_map = _parse_json_document(
+            _git_blob(donor, f"data/maps/{source_name}/map.json"),
+            f"data/maps/{source_name}/map.json",
+        )
+    except WorldPlanError:
+        return False
+    source_music = donor_map.get("music")
+    if source_music == "MUS_WEATHER_KYOGRE" and MAP_MUSIC_ALIASES.get(source_music) == predecessor.get("music"):
+        predecessor["music"] = source_music
+    source_objects = donor_map.get("object_events")
+    objects = predecessor.get("object_events")
+    if not isinstance(source_objects, list) or not isinstance(objects, list) or len(objects) < len(source_objects):
+        return False
+    changed = predecessor.get("music") == source_music and source_music == "MUS_WEATHER_KYOGRE"
+    for index, source_event in enumerate(source_objects):
+        if not isinstance(source_event, dict) or not isinstance(objects[index], dict):
+            return False
+        source_movement = source_event.get("movement_type")
+        if MAP_MOVEMENT_TYPE_ALIASES.get(source_movement) == objects[index].get("movement_type"):
+            objects[index]["movement_type"] = source_movement
+            changed = True
+    if not changed:
+        return False
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_pre_linker_closure_map(
+    root: Path, donor: Path, relative: Path, current: bytes, expected: bytes
+) -> bool:
+    if relative.parent.parent != Path("data/maps") or relative.name != "map.json":
+        return False
+    try:
+        predecessor = _parse_json_document(expected, relative.as_posix())
+    except WorldPlanError:
+        return False
+    source_name = relative.parts[2]
+    reverse_graphics = {target: source for source, target in _object_graphics_aliases(root).items()}
+    recent_predecessor = copy.deepcopy(predecessor)
+    recent_objects = recent_predecessor.get("object_events")
+    if not isinstance(recent_objects, list):
+        return False
+    reverse_fallbacks = {target: source for source, target in MAP_OBJECT_GRAPHICS_ALIASES.items()}
+    for event in recent_objects:
+        if not isinstance(event, dict):
+            return False
+        graphics_id = event.get("graphics_id")
+        if isinstance(graphics_id, str) and graphics_id in reverse_fallbacks:
+            if graphics_id == "OBJ_EVENT_GFX_JOHTO_TRAIN_FRONT" and source_name not in {
+                "SaffronCity_TrainStation",
+                "KantoOriginal_SaffronCity_TrainStation",
+            }:
+                continue
+            event["graphics_id"] = reverse_fallbacks[graphics_id]
+    recent_encoded = (json.dumps(recent_predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    if _same_output_contents(current, recent_encoded):
+        return True
+    # Several donor tracks intentionally share one host fallback, so recover the
+    # exact source token from the authenticated donor map rather than guessing.
+    try:
+        donor_map = _parse_json_document(
+            _git_blob(donor, f"data/maps/{source_name}/map.json"),
+            f"data/maps/{source_name}/map.json",
+        )
+    except WorldPlanError:
+        return False
+    expected_music = predecessor.get("music")
+    source_music = donor_map.get("music")
+    if MAP_MUSIC_ALIASES.get(source_music, source_music) == expected_music:
+        predecessor["music"] = source_music
+    reverse_battle = {target: source for source, target in MAP_BATTLE_SCENE_ALIASES.items()}
+    battle_scene = predecessor.get("battle_scene")
+    if battle_scene in reverse_battle:
+        predecessor["battle_scene"] = reverse_battle[battle_scene]
+    objects = predecessor.get("object_events")
+    if not isinstance(objects, list):
+        return False
+    for event in objects:
+        if not isinstance(event, dict):
+            return False
+        graphics_id = event.get("graphics_id")
+        if isinstance(graphics_id, str) and graphics_id in reverse_graphics:
+            event["graphics_id"] = reverse_graphics[graphics_id]
+    encoded = (json.dumps(predecessor, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    return _same_output_contents(current, encoded)
+
+
+def _is_trusted_registration_predecessor(
+    root: Path, donor: Path, relative: Path, current: bytes, expected: bytes
+) -> bool:
+    registered = EXPECTED_REGISTERED_OUTPUT_SHA256.get(relative.as_posix())
+    if registered is not None and _sha256(current.replace(b"\r\n", b"\n")) == registered:
+        return True
+    if _is_pre_map_field_alias_map(donor, relative, current, expected):
+        return True
+    if _is_pre_linker_closure_map(root, donor, relative, current, expected):
+        return True
+    if _is_pre_event_namespace_map(root, relative, current, expected):
+        return True
+    if _is_pre_shiny_graphics_map(relative, current, expected):
+        return True
+    if _is_pre_movement_range_map(relative, current, expected):
+        return True
+    if _is_pre_normalization_berry_map(root, relative, current, expected):
+        return True
+    if relative == MAP_GROUPS_PATH:
+        manifest = _load(root / MANIFEST_PATH)
+        predecessor = _render_materialized_groups(
+            root, {"maps": manifest["maps"]}, include_host_adapters=False
+        )
+        return _same_output_contents(current, predecessor)
+    if relative == EVENT_SCRIPTS_PATH:
+        if _registered_event_script_prefix(current) is not None:
+            return True
+        predecessor = expected.split(REGISTERED_ADAPTER_MARKER, 1)[0].rstrip(b"\r\n") + b"\n"
+        return _same_output_contents(current, predecessor)
+    if relative == WORLD_PLAN_PATH:
+        try:
+            current_plan = _parse_json_document(current, relative.as_posix())
+            expected_plan = _parse_json_document(expected, relative.as_posix())
+        except WorldPlanError:
+            return False
+        for key in ("host_adapter_map_count", "production_map_count", "host_adapters"):
+            expected_plan.pop(key, None)
+        return current_plan == expected_plan
+    return False
+
+
+def _validate_registration_state(
+    root: Path, donor: Path, outputs: dict[Path, bytes], *, write: bool
+) -> None:
+    for relative, expected in outputs.items():
+        target = root / relative
+        if target.is_file() and _same_output_contents(target.read_bytes(), expected):
+            continue
+        if not write:
+            raise WorldPlanError(f"materialized output is missing or stale: {relative.as_posix()}")
+        if target.is_file():
+            current = target.read_bytes()
+            if _is_trusted_registration_predecessor(root, donor, relative, current, expected):
+                continue
+            current_hash = _sha256(current)
+            trusted = TRUSTED_BOOTSTRAP_SHA256.get(relative.as_posix())
+            normalized_hash = _sha256(current.replace(b"\r\n", b"\n"))
+            if trusted is None or trusted not in {current_hash, normalized_hash}:
+                raise WorldPlanError(f"refusing to overwrite untrusted materialized output: {relative.as_posix()}")
+
+
+def _validate_group_predecessor(root: Path) -> None:
+    """Reject a changed group registry before any donor materialization."""
+    path = root / MAP_GROUPS_PATH
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise WorldPlanError(f"cannot read map group predecessor: {exc}") from exc
+    if _sha256(raw) == TRUSTED_BOOTSTRAP_SHA256[MAP_GROUPS_PATH.as_posix()]:
+        return
+    manifest = _load(root / MANIFEST_PATH)
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("maps"), list):
+        raise WorldPlanError("cannot validate map group predecessor without the region manifest")
+    expected = _render_materialized_groups(root, {"maps": manifest["maps"]})
+    predecessor = _render_materialized_groups(
+        root, {"maps": manifest["maps"]}, include_host_adapters=False
+    )
+    normalized_raw = raw.replace(b"\r\n", b"\n")
+    if normalized_raw not in {
+        expected.replace(b"\r\n", b"\n"),
+        predecessor.replace(b"\r\n", b"\n"),
+    }:
+        raise WorldPlanError("host map group order prefix drifted")
+
+
+def _write_staged_file(target: Path, contents: bytes, suffix: str) -> Path:
+    """Write and sync one sibling artifact, removing it on every I/O failure."""
+    handle = tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        suffix=suffix,
+        delete=False,
+    )
+    artifact = Path(handle.name)
+    try:
+        with handle:
+            handle.write(contents)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        artifact.unlink(missing_ok=True)
+        raise
+    return artifact
+
+
+def _install_registration_outputs(root: Path, outputs: dict[Path, bytes]) -> None:
+    temporary: dict[Path, Path] = {}
+    backups: dict[Path, Path] = {}
+    installed: list[Path] = []
+    created_directories: set[Path] = set()
+    try:
+        for relative, contents in outputs.items():
+            target = root / relative
+            if target.is_file() and _same_output_contents(target.read_bytes(), contents):
+                continue
+            ancestor = target.parent
+            while ancestor != root and not ancestor.exists():
+                created_directories.add(ancestor)
+                ancestor = ancestor.parent
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary[relative] = _write_staged_file(target, contents, ".new")
+            if target.is_file():
+                backups[relative] = _write_staged_file(target, target.read_bytes(), ".bak")
+        for relative, staged in temporary.items():
+            os.replace(staged, root / relative)
+            installed.append(relative)
+    except BaseException as exc:
+        rollback_errors: list[str] = []
+        for relative in reversed(installed):
+            target = root / relative
+            backup = backups.get(relative)
+            try:
+                if backup is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, target)
+            except OSError as rollback_exc:
+                rollback_errors.append(f"{relative.as_posix()}: {rollback_exc}")
+        if rollback_errors:
+            raise WorldPlanError(
+                "registration install failed and rollback was incomplete: " + "; ".join(rollback_errors)
+            ) from exc
+        raise
+    finally:
+        for artifact in (*temporary.values(), *backups.values()):
+            artifact.unlink(missing_ok=True)
+        for directory in sorted(created_directories, key=lambda path: len(path.parts), reverse=True):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+
+
+def run(
+    repo_root: Path = ROOT,
+    donor_root: Path = DEFAULT_DONOR,
+    *,
+    check: bool = False,
+    write: bool = False,
+) -> int:
+    if check == write:
+        raise WorldPlanError("select exactly one of --check or --write")
+    root = Path(repo_root).resolve()
+    donor = Path(donor_root).resolve()
+    if write:
+        _validate_group_predecessor(root)
+    plan = build_plan(repo_root, donor_root)
+    outputs = _registration_outputs(root, donor, plan)
+    _validate_registration_state(root, donor, outputs, write=write)
+    if write:
+        _install_registration_outputs(root, outputs)
+    print(render(plan), end="")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo-root", type=Path, default=ROOT)
+    parser.add_argument("--donor-root", type=Path, default=DEFAULT_DONOR)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--write", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        return run(args.repo_root, args.donor_root, check=args.check, write=args.write)
+    except WorldPlanError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

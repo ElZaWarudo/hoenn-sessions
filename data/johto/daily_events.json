@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "unit": "j3-daily-events",
+  "campaign_ready": true,
+  "engine_hooks_ready": true,
+  "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "selected_daily_flags": [
+    {
+      "symbol": "FLAG_DAILY_BUG_CONTEST_COMPLETED",
+      "current_id": "JOHTO_FLAG_DAILY_BUG_CONTEST_COMPLETED",
+      "runtime_id": 24608,
+      "ordinal": 32,
+      "source_expression": "DAILY_FLAGS_START + 0x5"
+    },
+    {
+      "symbol": "FLAG_DAILY_HAIRCUT1_RECEIVED",
+      "current_id": "JOHTO_FLAG_DAILY_HAIRCUT1_RECEIVED",
+      "runtime_id": 24609,
+      "ordinal": 33,
+      "source_expression": "DAILY_FLAGS_START + 0x3"
+    },
+    {
+      "symbol": "FLAG_DAILY_HAIRCUT2_RECEIVED",
+      "current_id": "JOHTO_FLAG_DAILY_HAIRCUT2_RECEIVED",
+      "runtime_id": 24610,
+      "ordinal": 34,
+      "source_expression": "DAILY_FLAGS_START + 0x4"
+    },
+    {
+      "symbol": "FLAG_DAILY_PICKED_LOTO_TICKET",
+      "current_id": "JOHTO_FLAG_DAILY_PICKED_LOTO_TICKET",
+      "runtime_id": 24611,
+      "ordinal": 35,
+      "source_expression": "DAILY_FLAGS_START + 0xA"
+    }
+  ],
+  "provenance": {
+    "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
+    "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
+    "generated_ledger": "data/johto/content_symbols.json",
+    "source_hashes": [
+      {
+        "source": "include/constants/flags.h",
+        "bytes": 111883,
+        "sha256": "fce1a379d1929bd22bce247717771c1f3e3e6e316cbc371aa0dedd1bc6edc096",
+        "symbols": [
+          "FLAG_DAILY_BUG_CONTEST_COMPLETED",
+          "FLAG_DAILY_HAIRCUT1_RECEIVED",
+          "FLAG_DAILY_HAIRCUT2_RECEIVED",
+          "FLAG_DAILY_PICKED_LOTO_TICKET"
+        ]
+      },
+      {
+        "source": "src/event_data.c",
+        "bytes": 6192,
+        "sha256": "ae1ce12c19b781b098a0f571db8c3f87b12ed2970107b4c43f2e09e597508fc5",
+        "symbols": ["ClearDailyFlags"]
+      }
+    ]
+  },
+  "adaptations": [
+    "Route the four relocated Johto daily flags through JohtoEvent_SetFlag rather than the host legacy daily byte range.",
+    "Invoke the Johto reset once after the existing ClearDailyFlags memset while preserving the host day rollover semantics.",
+    "Keep the selected source identities generated and namespaced; do not edit constants/flags.h."
+  ],
+  "limitations": [
+    "Contest, haircut, and lottery campaign scripts consume the relocated flags; emulator day-rollover validation remains pending.",
+    "Production engine fixture execution remains part of aggregate validation."
+  ]
+}

@@ -2594,6 +2594,10 @@ impl LocalSidecar {
                 if matches!(command, ControlCommand::OnlineStatus { .. }) {
                     return Ok(false);
                 }
+                if matches!(command, ControlCommand::GroupTravel { .. }) {
+                    enqueue_deferred_command(&mut reconnect.deferred_commands, command)?;
+                    return Ok(false);
+                }
                 let command_id = command_parts(&command).0;
                 let can_replay_without_bridge = self.command_history.contains_key(&command_id);
                 let handled = if reconnect.state.checkpoint_state.is_quiescing() {
@@ -3491,6 +3495,20 @@ impl LocalSidecar {
         if is_presence_command(&command) {
             return self.handle_presence_command(command, bridge, session);
         }
+        if matches!(command, ControlCommand::GroupTravel { .. }) {
+            if group_travel_command_waits_for_ready(
+                &command,
+                session,
+                self.session_epoch,
+                self.pending_presence_rearm.is_some(),
+            ) {
+                enqueue_deferred_command(deferred_commands, command)?;
+                return Ok(());
+            }
+            return self
+                .handle_group_travel_command(command, bridge, session)
+                .await;
+        }
         if let ControlCommand::OnlineStatus {
             session_epoch,
             status,
@@ -3590,6 +3608,14 @@ impl LocalSidecar {
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
         while let Some(command) = deferred_commands.front().cloned() {
+            if group_travel_command_waits_for_ready(
+                &command,
+                session,
+                self.session_epoch,
+                self.pending_presence_rearm.is_some(),
+            ) {
+                return Ok(());
+            }
             if deferred_command_waits_for_bridge_state(&command, session, self.session_epoch) {
                 return Ok(());
             }
@@ -3644,6 +3670,42 @@ impl LocalSidecar {
             readiness_generation: self.presence_generation.load(Ordering::Acquire),
         };
         self.handle_stamped_presence_command(stamped, bridge, session)
+    }
+
+    async fn handle_group_travel_command(
+        &mut self,
+        command: ControlCommand,
+        bridge: &mut BridgeWriter,
+        session: &ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        let ControlCommand::GroupTravel {
+            session_epoch,
+            record,
+        } = command
+        else {
+            return Err(SidecarError::ProtocolViolation(
+                "invalid group travel command",
+            ));
+        };
+        if session_epoch != self.session_epoch
+            || session.checkpoint_state.is_quiescing()
+            || !session.acknowledged_rom_ready
+            || self.pending_presence_rearm.is_some()
+        {
+            return Ok(());
+        }
+        let payload = record
+            .encode()
+            .map_err(|_| SidecarError::ProtocolViolation("invalid group travel command"))?;
+        let frame = BridgeFrame::new(
+            MessageType::GroupTravelServer,
+            self.sequence_state.take_sidecar_sequence(),
+            self.session_epoch,
+            &payload,
+        )?;
+        // Travel commands affect player control and world state, so they use
+        // the ordered critical FIFO rather than the discardable presence lane.
+        bridge.send(&frame, Direction::SidecarToRom).await
     }
 
     fn handle_stamped_presence_command(
@@ -3821,6 +3883,26 @@ impl LocalSidecar {
                     return Ok(());
                 }
                 self.handle_presence_frame(frame, control, session).await?;
+            }
+            MessageType::GroupTravelClient => {
+                if frame.session_epoch() != self.session_epoch || !session.acknowledged_rom_ready {
+                    return Err(SidecarError::ProtocolViolation(
+                        "invalid group travel event",
+                    ));
+                }
+                if !self
+                    .sequence_state
+                    .inspect_rom_frame(&frame, self.session_epoch)
+                {
+                    return Ok(());
+                }
+                let record = coop_protocol::GroupTravelClientRecord::decode(frame.payload())
+                    .map_err(|_| SidecarError::ProtocolViolation("invalid group travel event"))?;
+                self.sequence_state.commit_rom_frame(&frame);
+                rotate_expired_tombstone(&frame, &mut session.expired_checkpoint);
+                control
+                    .send_event(&ControlEvent::GroupTravel(record))
+                    .await?;
             }
             MessageType::CheckpointReady => {
                 if self.pending_presence_rearm.is_some() {
@@ -4058,6 +4140,11 @@ impl LocalSidecar {
         now: Instant,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
+        if matches!(command, ControlCommand::GroupTravel { .. }) {
+            return self
+                .handle_group_travel_command(command, bridge, session)
+                .await;
+        }
         let (command_id, fingerprint, key, command_kind) = command_parts(&command);
 
         if self
@@ -4856,7 +4943,8 @@ fn command_parts(
         ),
         ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
-        | ControlCommand::RemotePlayerDespawn(_) => {
+        | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::GroupTravel { .. } => {
             unreachable!("presence commands bypass command ledgers")
         }
     }
@@ -4871,7 +4959,8 @@ fn command_epoch(command: &ControlCommand) -> u32 {
         ControlCommand::ShutdownRequest(command) => command.session_epoch,
         ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
-        | ControlCommand::RemotePlayerDespawn(_) => {
+        | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::GroupTravel { .. } => {
             unreachable!("presence commands have no session epoch")
         }
     }
@@ -4883,6 +4972,22 @@ fn is_presence_command(command: &ControlCommand) -> bool {
         ControlCommand::RemotePlayerSpawn(_)
             | ControlCommand::RemotePlayerUpdate(_)
             | ControlCommand::RemotePlayerDespawn(_)
+    )
+}
+
+fn group_travel_command_waits_for_ready(
+    command: &ControlCommand,
+    session: &ActiveSessionState,
+    session_epoch: u32,
+    presence_rearm_pending: bool,
+) -> bool {
+    matches!(
+        command,
+        ControlCommand::GroupTravel {
+            session_epoch: command_epoch,
+            ..
+        } if *command_epoch == session_epoch
+            && (!session.acknowledged_rom_ready || presence_rearm_pending)
     )
 }
 
@@ -4906,7 +5011,8 @@ fn deferred_command_waits_for_bridge_state(
         | ControlCommand::OnlineStatus { .. }
         | ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
-        | ControlCommand::RemotePlayerDespawn(_) => return false,
+        | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::GroupTravel { .. } => return false,
     };
     let Some(key) = key else {
         return false;
@@ -6494,6 +6600,55 @@ mod tests {
             ControlEvent::RomPresenceReset
         ));
         assert!(!session.rearm_after_reboot);
+    }
+
+    #[tokio::test]
+    async fn startup_group_travel_replay_is_retained_until_rom_ready() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, _control_peer) = control_writer_pair().await;
+        let mut deferred = VecDeque::from([ControlCommand::GroupTravel {
+            session_epoch: TEST_SESSION_EPOCH,
+            record: coop_protocol::GroupTravelServerRecord {
+                kind: coop_protocol::GroupTravelServerKind::Commit,
+                route: coop_protocol::GroupTravelRoute::FerryLater,
+                departure: coop_protocol::GroupTravelDeparture::Ferry,
+                request_id: 23,
+                proposal_id: [9; 16],
+                result: coop_protocol::GroupTravelResult::None,
+                reason: coop_protocol::GroupTravelReason::None,
+            },
+        }]);
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+
+        sidecar
+            .drain_deferred_commands(&mut deferred, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(deferred.len(), 1);
+        assert_no_bridge_data(&mut bridge_peer).await;
+
+        session.acknowledged_rom_ready = true;
+        sidecar
+            .drain_deferred_commands(&mut deferred, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(deferred.is_empty());
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&bytes, Direction::SidecarToRom)
+                .unwrap()
+                .message_type(),
+            MessageType::GroupTravelServer
+        );
     }
 
     #[tokio::test]
@@ -9738,6 +9893,140 @@ mod tests {
             &session,
             TEST_SESSION_EPOCH
         ));
+    }
+
+    #[test]
+    fn deferred_group_travel_waits_for_rom_ready_and_presence_rearm() {
+        let command = ControlCommand::GroupTravel {
+            session_epoch: TEST_SESSION_EPOCH,
+            record: coop_protocol::GroupTravelServerRecord {
+                kind: coop_protocol::GroupTravelServerKind::Commit,
+                route: coop_protocol::GroupTravelRoute::FerryLater,
+                departure: coop_protocol::GroupTravelDeparture::Ferry,
+                request_id: 19,
+                proposal_id: [7; 16],
+                result: coop_protocol::GroupTravelResult::None,
+                reason: coop_protocol::GroupTravelReason::None,
+            },
+        };
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+        assert!(group_travel_command_waits_for_ready(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH,
+            false
+        ));
+        session.acknowledged_rom_ready = true;
+        assert!(group_travel_command_waits_for_ready(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH,
+            true
+        ));
+        assert!(!group_travel_command_waits_for_ready(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH,
+            false
+        ));
+    }
+
+    #[tokio::test]
+    async fn group_travel_client_frames_enforce_readiness_epoch_sequence_and_payload() {
+        let record = coop_protocol::GroupTravelClientRecord {
+            kind: coop_protocol::GroupTravelClientKind::Request,
+            route: coop_protocol::GroupTravelRoute::FerryLater,
+            departure: coop_protocol::GroupTravelDeparture::SsaquaMaiden,
+            request_id: 19,
+            proposal_id: [0; 16],
+            result: coop_protocol::GroupTravelResult::None,
+            reason: coop_protocol::GroupTravelReason::None,
+        };
+        let payload = record.encode().expect("valid group-travel payload");
+
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let frame = BridgeFrame::new(
+            MessageType::GroupTravelClient,
+            2,
+            TEST_SESSION_EPOCH,
+            &payload,
+        )
+        .unwrap();
+
+        sidecar
+            .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::GroupTravel(record)
+        );
+        assert_eq!(sidecar.sequence_state.last_session_rom, 2);
+
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .expect("duplicate sequence is ignored");
+        assert!(
+            timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                .await
+                .is_err()
+        );
+        assert_eq!(sidecar.sequence_state.last_session_rom, 2);
+
+        for (epoch, ready, malformed) in [
+            (TEST_SESSION_EPOCH + 1, true, false),
+            (TEST_SESSION_EPOCH, false, false),
+            (TEST_SESSION_EPOCH, true, true),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let mut candidate = payload;
+            if malformed {
+                candidate[6] = 0;
+            }
+            let frame =
+                BridgeFrame::new(MessageType::GroupTravelClient, 2, epoch, &candidate).unwrap();
+
+            assert!(matches!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await,
+                Err(SidecarError::ProtocolViolation(
+                    "invalid group travel event"
+                ))
+            ));
+            assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[test]

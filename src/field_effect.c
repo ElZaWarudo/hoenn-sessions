@@ -14,6 +14,7 @@
 #include "fldeff.h"
 #include "follower_npc.h"
 #include "gpu_regs.h"
+#include "johto/kanto_travel.h"
 #include "main.h"
 #include "malloc.h"
 #include "mirage_tower.h"
@@ -1544,6 +1545,7 @@ static void Task_UseFly(u8 taskId)
 
 static void FieldCallback_FlyIntoMap(void)
 {
+    (void)JohtoTravel_TryCommitArrival();
     Overworld_PlaySpecialMapMusic();
     FadeInFromBlack();
     CreateTask(Task_FlyIntoMap, 0);

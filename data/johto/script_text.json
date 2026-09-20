@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "campaign_ready": true,
+  "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "normalization": "CRLF to LF",
+  "source_hashes": [
+    {
+      "path": "src/scrcmd.c",
+      "sha256": "f2253b4b9728723f7c89a58dee379e75c30dad6af50e82e9802e81a4c9654358"
+    },
+    {
+      "path": "data/maps/NewBarkTown_Lab/scripts.inc",
+      "sha256": "430fc931e4b90ce74f1083c6b735472a9549527df34843d9a5cc8ce591257152"
+    }
+  ],
+  "adaptations": [
+    "Use supplied literal/variable species under classic policy; preserve VAR_TEMP_2.",
+    "GetSpeciesCategory copies bare category because starter prompts append POKEMON.",
+    "Macro consumes destination byte and species halfword; no saved effects."
+  ],
+  "limitations": [
+    "The macro is linked and all three New Bark Lab call sites are transformed; emulator dialogue validation remains pending."
+  ]
+}

@@ -8,6 +8,7 @@
 #include "follower_npc.h"
 #include "random.h"
 #include "field_player_avatar.h"
+#include "johto/wild.h"
 #include "link.h"
 #include "metatile_behavior.h"
 #include "overworld.h"
@@ -51,7 +52,8 @@ static void FeebasSeedRng(u16 seed);
 static bool8 IsWildLevelAllowedByRepel(u8 level);
 static void ApplyFluteEncounterRateMod(u32 *encRate);
 static void ApplyCleanseTagEncounterRateMod(u32 *encRate);
-static u8 GetMaxLevelOfSpeciesInWildTable(const struct WildPokemon *wildMon, enum Species species, enum WildPokemonArea area);
+static u8 GetMaxLevelOfSpeciesInWildTable(const struct WildPokemonInfo *wildMonInfo, enum Species species, enum WildPokemonArea area);
+static u32 ChooseWildMonIndex_WaterForInfo(const struct WildPokemonInfo *wildMonInfo);
 #ifdef BUGFIX
 static bool8 TryGetAbilityInfluencedWildMonIndex(const struct WildPokemon *wildMon, enum Type type, enum Ability ability, u8 *monIndex, u32 size);
 #else
@@ -68,6 +70,7 @@ EWRAM_DATA u8 gChainFishingDexNavStreak = 0;
 #include "data/wild_encounters.h"
 
 static const struct WildPokemon sWildFeebas = {20, 25, SPECIES_FEEBAS};
+static const struct WildPokemonInfo sWildFeebasInfo = {100, &sWildFeebas};
 
 static const u16 sRoute119WaterTileData[] =
 {
@@ -222,31 +225,65 @@ u32 ChooseWildMonIndex_Land(void)
     return wildMonIndex;
 }
 
-// WATER_WILD_COUNT
-u32 ChooseWildMonIndex_Water(void)
+u8 GetWaterWildMonCount(const struct WildPokemonInfo *wildMonInfo)
 {
-    u32 wildMonIndex = 0;
-    bool8 swap = FALSE;
-    u8 rand = Random() % ENCOUNTER_CHANCE_WATER_MONS_TOTAL;
+    u8 count = JohtoWild_GetWaterSlotCount(wildMonInfo);
 
-    if (rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_0)
-        wildMonIndex = 0;
-    else if (rand >= ENCOUNTER_CHANCE_WATER_MONS_SLOT_0 && rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_1)
-        wildMonIndex = 1;
-    else if (rand >= ENCOUNTER_CHANCE_WATER_MONS_SLOT_1 && rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_2)
-        wildMonIndex = 2;
-    else if (rand >= ENCOUNTER_CHANCE_WATER_MONS_SLOT_2 && rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_3)
-        wildMonIndex = 3;
+    return count == 0 ? WATER_WILD_COUNT : count;
+}
+
+u32 ChooseWildMonIndex_WaterWithRoll(const struct WildPokemonInfo *wildMonInfo, u32 roll, bool8 reverse)
+{
+    u32 wildMonIndex;
+    u8 count = GetWaterWildMonCount(wildMonInfo);
+    u8 rand;
+
+    if (count != WATER_WILD_COUNT)
+    {
+        wildMonIndex = roll % count;
+    }
     else
-        wildMonIndex = 4;
+    {
+        rand = roll % ENCOUNTER_CHANCE_WATER_MONS_TOTAL;
 
-    if (LURE_STEP_COUNT != 0 && (Random() % 10 < 2))
-        swap = TRUE;
+        if (rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_0)
+            wildMonIndex = 0;
+        else if (rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_1)
+            wildMonIndex = 1;
+        else if (rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_2)
+            wildMonIndex = 2;
+        else if (rand < ENCOUNTER_CHANCE_WATER_MONS_SLOT_3)
+            wildMonIndex = 3;
+        else
+            wildMonIndex = 4;
+    }
 
-    if (swap)
-        wildMonIndex = 4 - wildMonIndex;
+    if (reverse)
+        wildMonIndex = count - 1 - wildMonIndex;
 
     return wildMonIndex;
+}
+
+static u32 ChooseWildMonIndex_WaterForInfo(const struct WildPokemonInfo *wildMonInfo)
+{
+    u32 roll = Random();
+    bool8 reverse = LURE_STEP_COUNT != 0 && Random() % 10 < 2;
+
+    return ChooseWildMonIndex_WaterWithRoll(wildMonInfo, roll, reverse);
+}
+
+// WATER_WILD_COUNT for ordinary host tables; Johto tables carry generated widths.
+u32 ChooseWildMonIndex_Water(void)
+{
+    const struct WildPokemonInfo *wildMonInfo = NULL;
+    u32 headerId = GetCurrentMapWildMonHeaderId();
+
+    if (headerId != HEADER_NONE)
+    {
+        enum TimeOfDay timeOfDay = GetTimeOfDayForEncounters(headerId, WILD_AREA_WATER);
+        wildMonInfo = gWildMonHeaders[headerId].encounterTypes[timeOfDay].waterMonsInfo;
+    }
+    return ChooseWildMonIndex_WaterForInfo(wildMonInfo);
 }
 
 // ROCK_WILD_COUNT
@@ -328,8 +365,9 @@ static u32 ChooseWildMonIndex_Fishing(u8 rod)
     return wildMonIndex;
 }
 
-static u8 ChooseWildMonLevel(const struct WildPokemon *wildPokemon, u8 wildMonIndex, enum WildPokemonArea area)
+static u8 ChooseWildMonLevel(const struct WildPokemonInfo *wildMonInfo, u8 wildMonIndex, enum WildPokemonArea area)
 {
+    const struct WildPokemon *wildPokemon = wildMonInfo->wildPokemon;
     u8 min;
     u8 max;
     u8 range;
@@ -369,7 +407,7 @@ static u8 ChooseWildMonLevel(const struct WildPokemon *wildPokemon, u8 wildMonIn
     else
     {
         // Looks for the max level of all slots that share the same species as the selected slot.
-        max = GetMaxLevelOfSpeciesInWildTable(wildPokemon, wildPokemon[wildMonIndex].species, area);
+        max = GetMaxLevelOfSpeciesInWildTable(wildMonInfo, wildPokemon[wildMonIndex].species, area);
         if (max > 0)
             return max + 1;
         else // Failsafe
@@ -410,7 +448,15 @@ u16 GetCurrentMapWildMonHeaderId(void)
 enum TimeOfDay GetTimeOfDayForEncounters(u32 headerId, enum WildPokemonArea area)
 {
     const struct WildPokemonInfo *wildMonInfo;
-    enum TimeOfDay timeOfDay = GetTimeOfDay();
+    enum TimeOfDay timeOfDay;
+
+    if (headerId == HEADER_NONE)
+        return TIME_OF_DAY_DEFAULT;
+
+    if (gWildMonHeaders[headerId].mapGroup >= 75 && gWildMonHeaders[headerId].mapGroup <= 78)
+        return JohtoWild_CurrentTime();
+
+    timeOfDay = GetTimeOfDay();
 
     if (!OW_TIME_OF_DAY_ENCOUNTERS)
         return TIME_OF_DAY_DEFAULT;
@@ -507,20 +553,20 @@ static bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum 
         wildMonIndex = ChooseWildMonIndex_Land();
         break;
     case WILD_AREA_WATER:
-        if (TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_STEEL, ABILITY_MAGNET_PULL, &wildMonIndex, WATER_WILD_COUNT))
+        if (TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_STEEL, ABILITY_MAGNET_PULL, &wildMonIndex, GetWaterWildMonCount(wildMonInfo)))
             break;
-        if (TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_ELECTRIC, ABILITY_STATIC, &wildMonIndex, WATER_WILD_COUNT))
+        if (TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_ELECTRIC, ABILITY_STATIC, &wildMonIndex, GetWaterWildMonCount(wildMonInfo)))
             break;
-        if (OW_LIGHTNING_ROD >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_ELECTRIC, ABILITY_LIGHTNING_ROD, &wildMonIndex, WATER_WILD_COUNT))
+        if (OW_LIGHTNING_ROD >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_ELECTRIC, ABILITY_LIGHTNING_ROD, &wildMonIndex, GetWaterWildMonCount(wildMonInfo)))
             break;
-        if (OW_FLASH_FIRE >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_FIRE, ABILITY_FLASH_FIRE, &wildMonIndex, WATER_WILD_COUNT))
+        if (OW_FLASH_FIRE >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_FIRE, ABILITY_FLASH_FIRE, &wildMonIndex, GetWaterWildMonCount(wildMonInfo)))
             break;
-        if (OW_HARVEST >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_GRASS, ABILITY_HARVEST, &wildMonIndex, WATER_WILD_COUNT))
+        if (OW_HARVEST >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_GRASS, ABILITY_HARVEST, &wildMonIndex, GetWaterWildMonCount(wildMonInfo)))
             break;
-        if (OW_STORM_DRAIN >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_WATER, ABILITY_STORM_DRAIN, &wildMonIndex, WATER_WILD_COUNT))
+        if (OW_STORM_DRAIN >= GEN_8 && TRY_GET_ABILITY_INFLUENCED_WILD_MON_INDEX(wildMonInfo->wildPokemon, TYPE_WATER, ABILITY_STORM_DRAIN, &wildMonIndex, GetWaterWildMonCount(wildMonInfo)))
             break;
 
-        wildMonIndex = ChooseWildMonIndex_Water();
+        wildMonIndex = ChooseWildMonIndex_WaterForInfo(wildMonInfo);
         break;
     case WILD_AREA_ROCKS:
         wildMonIndex = ChooseWildMonIndex_Rocks();
@@ -531,7 +577,7 @@ static bool8 TryGenerateWildMon(const struct WildPokemonInfo *wildMonInfo, enum 
         break;
     }
 
-    level = ChooseWildMonLevel(wildMonInfo->wildPokemon, wildMonIndex, area);
+    level = ChooseWildMonLevel(wildMonInfo, wildMonIndex, area);
     if (flags & WILD_CHECK_REPEL && !IsWildLevelAllowedByRepel(level))
         return FALSE;
     if (gMapHeader.mapLayoutId != LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS && flags & WILD_CHECK_KEEN_EYE && !IsAbilityAllowingEncounter(level))
@@ -545,7 +591,7 @@ static u16 GenerateFishingWildMon(const struct WildPokemonInfo *wildMonInfo, u8 
 {
     u8 wildMonIndex = ChooseWildMonIndex_Fishing(rod);
     enum Species wildMonSpecies = wildMonInfo->wildPokemon[wildMonIndex].species;
-    u8 level = ChooseWildMonLevel(wildMonInfo->wildPokemon, wildMonIndex, WILD_AREA_FISHING);
+    u8 level = ChooseWildMonLevel(wildMonInfo, wildMonIndex, WILD_AREA_FISHING);
 
     UpdateChainFishingStreak();
     CreateWildMon(wildMonSpecies, level);
@@ -937,7 +983,7 @@ void FishingWildEncounter(u8 rod)
     gIsFishingEncounter = TRUE;
     if (CheckFeebas() == TRUE)
     {
-        u8 level = ChooseWildMonLevel(&sWildFeebas, 0, WILD_AREA_FISHING);
+        u8 level = ChooseWildMonLevel(&sWildFeebasInfo, 0, WILD_AREA_FISHING);
 
         species = sWildFeebas.species;
         CreateWildMon(species, level);
@@ -1110,8 +1156,9 @@ static bool8 TryGetRandomWildMonIndexByType(const struct WildPokemon *wildMon, e
 
 #include "data.h"
 
-static u8 GetMaxLevelOfSpeciesInWildTable(const struct WildPokemon *wildMon, enum Species species, enum WildPokemonArea area)
+static u8 GetMaxLevelOfSpeciesInWildTable(const struct WildPokemonInfo *wildMonInfo, enum Species species, enum WildPokemonArea area)
 {
+    const struct WildPokemon *wildMon = wildMonInfo->wildPokemon;
     u8 i, maxLevel = 0, numMon = 0;
 
     switch (area)
@@ -1120,7 +1167,7 @@ static u8 GetMaxLevelOfSpeciesInWildTable(const struct WildPokemon *wildMon, enu
         numMon = LAND_WILD_COUNT;
         break;
     case WILD_AREA_WATER:
-        numMon = WATER_WILD_COUNT;
+        numMon = GetWaterWildMonCount(wildMonInfo);
         break;
     case WILD_AREA_ROCKS:
         numMon = ROCK_WILD_COUNT;

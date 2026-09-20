@@ -12,7 +12,15 @@ enum RegionMapType
     REGION_MAP_KANTO,
     REGION_MAP_SEVII123,
     REGION_MAP_SEVII45,
-    REGION_MAP_SEVII67
+    REGION_MAP_SEVII67,
+    REGION_MAP_JOHTO
+};
+
+enum KantoEra
+{
+    KANTO_ERA_NONE,
+    KANTO_ERA_ORIGINAL,
+    KANTO_ERA_LATER
 };
 
 enum
@@ -136,6 +144,13 @@ void TrySetPlayerIconBlink(void);
 void BlendRegionMap(u16 color, u32 coeff);
 void SetRegionMapDataForZoom(void);
 enum RegionMapType GetRegionMapType(u32 mapSecId);
+enum RegionMapType GetRegionMapTypeByMap(u8 mapGroup, u8 mapNum, u32 mapSecId);
+enum KantoEra GetKantoEraByMap(u8 mapGroup, u8 mapNum, u32 mapSecId);
+void SetForcedFlightRegion(u8 region);
+void SetForcedFlightRegionWithKantoEra(enum RegionMapType region, enum KantoEra era);
+void ClearForcedFlightRegion(void);
+void CancelFlightCall(void);
+bool32 CanFlyToRegionMapSection(mapsec_u16_t mapSecId);
 
 //Pokenav Fly funcs
 u32 FilterFlyDestination(struct RegionMap* regionMap);

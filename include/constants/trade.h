@@ -21,6 +21,11 @@ enum InGameTradeID
     INGAME_TRADE_ELECTRODE,
     INGAME_TRADE_TANGELA,
     INGAME_TRADE_SEEL,
+    // Johto campaign trades use IDs after the existing Hoenn and FRLG table.
+    INGAME_TRADE_JOHTO_ONIX,
+    INGAME_TRADE_JOHTO_MACHOP,
+    INGAME_TRADE_JOHTO_VOLTORB,
+    INGAME_TRADE_JOHTO_MR_MIME,
 };
 
 // Return values for CanTradeSelectedMon and CanSpinTradeMon

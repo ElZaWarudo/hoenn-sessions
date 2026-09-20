@@ -1626,6 +1626,334 @@
       "y": 4,
       "width": 1,
       "height": 1
+    },
+    {
+      "id": "MAPSEC_NEW_BARK_TOWN",
+      "name": "NEW BARK TOWN",
+      "x": 19,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_CHERRYGROVE_CITY",
+      "name": "CHERRYGROVE CITY",
+      "x": 14,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_VIOLET_CITY",
+      "name": "VIOLET CITY",
+      "x": 12,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_AZALEA_TOWN",
+      "name": "AZALEA TOWN",
+      "x": 10,
+      "y": 13,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_GOLDENROD_CITY",
+      "name": "GOLDENROD CITY",
+      "x": 8,
+      "y": 8,
+      "width": 1,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_JOHTO_ECRUTEAK_CITY",
+      "name": "ECRUTEAK CITY",
+      "x": 10,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_OLIVINE_CITY",
+      "name": "OLIVINE CITY",
+      "x": 6,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_CIANWOOD_CITY",
+      "name": "CIANWOOD CITY",
+      "x": 4,
+      "y": 11,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_SAFARI_ZONE_GATE",
+      "name": "SAFARI ZONE GATE",
+      "x": 2,
+      "y": 9,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_MAHOGANY_TOWN",
+      "name": "MAHOGANY TOWN",
+      "x": 15,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_BLACKTHORN_CITY",
+      "name": "BLACKTHORN CITY",
+      "x": 18,
+      "y": 2,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_29",
+      "name": "ROUTE 29",
+      "x": 10,
+      "y": 11,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_30",
+      "name": "ROUTE 30",
+      "x": 9,
+      "y": 6,
+      "width": 1,
+      "height": 5
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_31",
+      "name": "ROUTE 31",
+      "x": 8,
+      "y": 5,
+      "width": 2,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_32",
+      "name": "ROUTE 32",
+      "x": 7,
+      "y": 6,
+      "width": 1,
+      "height": 5
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_33",
+      "name": "ROUTE 33",
+      "x": 7,
+      "y": 12,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_34",
+      "name": "ROUTE 34",
+      "x": 5,
+      "y": 9,
+      "width": 1,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_35",
+      "name": "ROUTE 35",
+      "x": 5,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_36",
+      "name": "ROUTE 36",
+      "x": 6,
+      "y": 5,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_37",
+      "name": "ROUTE 37",
+      "x": 6,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_38",
+      "name": "ROUTE 38",
+      "x": 7,
+      "y": 2,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_39",
+      "name": "ROUTE 39",
+      "x": 6,
+      "y": 2,
+      "width": 1,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_40",
+      "name": "ROUTE 40",
+      "x": 5,
+      "y": 4,
+      "width": 1,
+      "height": 5
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_41",
+      "name": "ROUTE 41",
+      "x": 5,
+      "y": 9,
+      "width": 1,
+      "height": 3
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_42",
+      "name": "ROUTE 42",
+      "x": 11,
+      "y": 2,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_43",
+      "name": "ROUTE 43",
+      "x": 15,
+      "y": 1,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_44",
+      "name": "ROUTE 44",
+      "x": 16,
+      "y": 2,
+      "width": 2,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_45",
+      "name": "ROUTE 45",
+      "x": 18,
+      "y": 3,
+      "width": 1,
+      "height": 4
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_46",
+      "name": "ROUTE 46",
+      "x": 17,
+      "y": 6,
+      "width": 1,
+      "height": 4
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_47",
+      "name": "ROUTE 47",
+      "x": 2,
+      "y": 11,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_48",
+      "name": "ROUTE 48",
+      "x": 2,
+      "y": 10,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_26",
+      "name": "ROUTE 26",
+      "x": 24,
+      "y": 6,
+      "width": 1,
+      "height": 5
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_27",
+      "name": "ROUTE 27",
+      "x": 20,
+      "y": 10,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ROUTE_28",
+      "name": "ROUTE 28",
+      "x": 21,
+      "y": 5,
+      "width": 3,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_LAKE_OF_RAGE",
+      "name": "LAKE OF RAGE",
+      "x": 15,
+      "y": 0,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_NATIONAL_PARK",
+      "name": "NATIONAL PARK",
+      "x": 8,
+      "y": 4,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_RUINS_OF_ALPH",
+      "name": "RUINS OF ALPH",
+      "x": 6,
+      "y": 6,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_MT_SILVER",
+      "name": "MT. SILVER",
+      "x": 14,
+      "y": 7,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_ILEX_FOREST",
+      "name": "ILEX FOREST",
+      "x": 8,
+      "y": 12,
+      "width": 2,
+      "height": 2
+    },
+    {
+      "id": "MAPSEC_JOHTO_WHIRL_ISLANDS",
+      "name": "WHIRL ISLANDS",
+      "x": 6,
+      "y": 11,
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "MAPSEC_JOHTO_SS_AQUA",
+      "name": "S.S. AQUA",
+      "x": 14,
+      "y": 14,
+      "width": 10,
+      "height": 1
     }
   ]
 }

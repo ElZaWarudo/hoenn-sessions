@@ -316,6 +316,22 @@ impl Phase2App {
                     )
                     .route("/v1/groups/{group_id}", get(inspect_group))
                     .route("/v1/groups/{group_id}/travel", post(travel_group))
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals",
+                        post(create_group_travel_proposal),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/current",
+                        get(current_group_travel_proposal),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/{proposal_id}",
+                        get(get_group_travel_proposal),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/{proposal_id}/actions",
+                        post(act_on_group_travel_proposal),
+                    )
                     .layer(axum::extract::DefaultBodyLimit::max(
                         coop_cloud::GROUP_REQUEST_BODY_MAX_BYTES,
                     ))
@@ -647,6 +663,82 @@ impl Phase2App {
             .lock()
             .map_err(|_| Phase2Error::Internal)?;
         group_travel::travel(&self.store, actor, group_id, &request)
+    }
+
+    /// Creates a pending two-member travel proposal from the current group state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, route, role, conflict, capacity, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn create_group_travel_proposal(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::GroupTravelProposalRequest,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        group_travel::create_travel_proposal(&self.store, actor, group_id, &request)
+    }
+
+    /// Returns the caller's current pending or committed travel proposal.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found, fence, or storage error.
+    pub fn current_group_travel_proposal(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        group_travel::current_travel_proposal(&self.store, actor, group_id, fence)
+    }
+
+    /// Returns one proposal by ID to either immutable participant.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found, fence, or storage error.
+    pub fn get_group_travel_proposal(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        group_travel::get_travel_proposal(&self.store, actor, group_id, proposal_id, fence)
+    }
+
+    /// Applies one role-checked proposal action under the runtime transition gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, role, stale-state, conflict, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn act_on_group_travel_proposal(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelActionRequest,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        group_travel::act_on_travel_proposal(&self.store, actor, group_id, proposal_id, &request)
     }
 }
 
@@ -1003,6 +1095,13 @@ struct GroupInvitationPath {
     invitation_id: coop_cloud::GroupInvitationId,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GroupTravelProposalPath {
+    group_id: coop_cloud::GroupId,
+    proposal_id: coop_cloud::GroupTravelProposalId,
+}
+
 async fn group_no_store(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     response
@@ -1074,6 +1173,60 @@ async fn travel_group(
     Ok(Json(app.travel_group(
         actor(&headers, &app)?,
         path.group_id,
+        request,
+    )?))
+}
+
+async fn create_group_travel_proposal(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::GroupTravelProposalRequest>,
+) -> Result<(StatusCode, Json<coop_cloud::GroupTravelProposalView>), Phase2Error> {
+    let response =
+        app.create_group_travel_proposal(actor(&headers, &app)?, path.group_id, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn current_group_travel_proposal(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.current_group_travel_proposal(
+        actor,
+        path.group_id,
+        fence,
+    )?))
+}
+
+async fn get_group_travel_proposal(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupTravelProposalPath>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.get_group_travel_proposal(
+        actor,
+        path.group_id,
+        path.proposal_id,
+        fence,
+    )?))
+}
+
+async fn act_on_group_travel_proposal(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupTravelProposalPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::GroupTravelActionRequest>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    Ok(Json(app.act_on_group_travel_proposal(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.proposal_id,
         request,
     )?))
 }

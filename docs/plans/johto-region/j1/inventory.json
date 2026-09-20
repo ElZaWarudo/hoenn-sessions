@@ -1,0 +1,532 @@
+{
+  "schema": "johto-j1-inventory-v1",
+  "run_id": "johto-region-j1",
+  "contract_sha256": "sha256:f996d3fdd1501e13ed197136228be1eae003f149f122ba6209e8328c96accc61",
+  "source_revision": "121ee4c192d476e57ca033a1e420e16c4dcec865",
+  "sealed_baseline_tree": "5e4c97f0cc2a129d51ea98cd9099695853ffc261",
+  "donor": {
+    "path": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
+    "revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
+  },
+  "selection": {
+    "donor_registration_count": 954,
+    "selected_registration_count": 239,
+    "excluded_registration_count": 715,
+    "selected_map_group_order": "donor group_order, appended to host gMapGroup_Johto",
+    "selected_towns_and_routes": [
+      "NewBarkTown",
+      "CherrygroveCity",
+      "VioletCity",
+      "AzaleaTown",
+      "GoldenrodCity",
+      "EcruteakCity",
+      "OlivineCity",
+      "CianwoodCity",
+      "SafariZoneGate",
+      "Mahoganytown",
+      "BlackthornCity",
+      "Route29",
+      "Route30",
+      "Route31",
+      "Route32",
+      "Route33",
+      "Route34",
+      "Route35",
+      "Route36",
+      "Route37",
+      "Route38",
+      "Route39",
+      "Route40",
+      "Route41",
+      "Route42",
+      "Route43",
+      "Route44",
+      "Route45",
+      "Route46",
+      "Route47",
+      "Route48",
+      "Route26",
+      "Route26North",
+      "Route27",
+      "Route28"
+    ],
+    "selected_full_groups": [
+      {
+        "group": "gMapGroup_IndoorNewBark",
+        "count": 5
+      },
+      {
+        "group": "gMapGroup_IndoorCherrygrove",
+        "count": 5
+      },
+      {
+        "group": "gMapGroup_IndoorViolet",
+        "count": 6
+      },
+      {
+        "group": "gMapGroup_IndoorAzalea",
+        "count": 5
+      },
+      {
+        "group": "gMapGroup_IndoorGoldenrod",
+        "count": 29
+      },
+      {
+        "group": "gMapGroup_IndoorEcruteak",
+        "count": 9
+      },
+      {
+        "group": "gMapGroup_IndoorOlivine",
+        "count": 10
+      },
+      {
+        "group": "gMapGroup_IndoorCianwood",
+        "count": 6
+      },
+      {
+        "group": "gMapGroup_IndoorMahogany",
+        "count": 6
+      },
+      {
+        "group": "gMapGroup_IndoorBlackthorn",
+        "count": 6
+      }
+    ],
+    "selected_partial_groups": {
+      "gMapGroup_IndoorJohtoRoutes": {
+        "selected_count": 25,
+        "excluded_exact": [
+          "Gate_Route40_TrainerHill_Courtyard",
+          "TrainerHill_Courtyard"
+        ],
+        "excluded_class": "Hoenn Trainer Hill contamination"
+      },
+      "gMapGroup_Dungeons": {
+        "selected_count": 72,
+        "excluded_patterns": [
+          "VictoryRoadKanto_*",
+          "ViridianForest",
+          "MtMoon_*",
+          "RockTunnel_*",
+          "CeruleanCave_*",
+          "DiglettsCave_*",
+          "SeafoamIslands_*",
+          "Route19_Cave"
+        ],
+        "excluded_count": 19,
+        "excluded_class": "Kanto duplicate; host Kanto remains canonical",
+        "explicit_selected_addition": "CliffEdgeCave is retained because Route47 depends on it"
+      },
+      "gMapGroup_SpecialArea": {
+        "selected_count": 18,
+        "selected_patterns": [
+          "SSAqua_*"
+        ],
+        "selected_exact": [
+          "SafariZone_Top_Left",
+          "SafariZone_Low_Mid",
+          "SafariZone_Enterance",
+          "SafariZone_Low_Left",
+          "SafariZone_Low_Right",
+          "SafariZone_Top_Mid",
+          "SafariZone_Top_Right"
+        ],
+        "excluded_exact": [
+          "Trees",
+          "WorldHub",
+          "WorldHub2",
+          "NewMap1",
+          "SafariZone1",
+          "SafariZone2",
+          "SafariZone3",
+          "SafariZoneIndoor",
+          "Saffron_Temp"
+        ],
+        "excluded_class": "debug, unused duplicate, or unrelated Kanto temporary content"
+      },
+      "gMapGroup_IndoorKantoRoutes": {
+        "selected_exact": [
+          "Route26_House1",
+          "Route26_House2"
+        ],
+        "selected_count": 2,
+        "excluded_count": 26,
+        "excluded_class": "all other registrations in this group are retained by the canonical Kanto content and are not part of J1"
+      },
+      "gMapGroup_TownsAndRoutes": {
+        "selected_count": 35,
+        "excluded_count": 36,
+        "excluded_class": "all group members not in selected_towns_and_routes are canonical Kanto registrations"
+      }
+    },
+    "exclusion_completeness": "Every donor registration is classified by its group rule below; partial-group rules enumerate exact exclusions or deterministic patterns, and full excluded groups classify all members by group inheritance. Implementation must reject an unclassified registration."
+  },
+  "donor_group_classification": [
+    {
+      "group": "gMapGroup_TownsAndRoutes",
+      "donor_count": 71,
+      "selected_count": 35,
+      "excluded_count": 36,
+      "excluded_class": "canonical Kanto maps"
+    },
+    {
+      "group": "gMapGroup_IndoorNewBark",
+      "donor_count": 5,
+      "selected_count": 5,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorCherrygrove",
+      "donor_count": 5,
+      "selected_count": 5,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorViolet",
+      "donor_count": 6,
+      "selected_count": 6,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorAzalea",
+      "donor_count": 5,
+      "selected_count": 5,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorGoldenrod",
+      "donor_count": 29,
+      "selected_count": 29,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorEcruteak",
+      "donor_count": 9,
+      "selected_count": 9,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorOlivine",
+      "donor_count": 10,
+      "selected_count": 10,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorCianwood",
+      "donor_count": 6,
+      "selected_count": 6,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorMahogany",
+      "donor_count": 6,
+      "selected_count": 6,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorBlackthorn",
+      "donor_count": 6,
+      "selected_count": 6,
+      "excluded_count": 0,
+      "class": "Johto campaign"
+    },
+    {
+      "group": "gMapGroup_IndoorPallet",
+      "donor_count": 5,
+      "selected_count": 0,
+      "excluded_count": 5,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorViridian",
+      "donor_count": 5,
+      "selected_count": 0,
+      "excluded_count": 5,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorPewter",
+      "donor_count": 7,
+      "selected_count": 0,
+      "excluded_count": 7,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorCerulean",
+      "donor_count": 6,
+      "selected_count": 0,
+      "excluded_count": 6,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorVermilion",
+      "donor_count": 9,
+      "selected_count": 0,
+      "excluded_count": 9,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorLavender",
+      "donor_count": 7,
+      "selected_count": 0,
+      "excluded_count": 7,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorCeladon",
+      "donor_count": 18,
+      "selected_count": 0,
+      "excluded_count": 18,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorSaffron",
+      "donor_count": 10,
+      "selected_count": 0,
+      "excluded_count": 10,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorFuchsia",
+      "donor_count": 12,
+      "selected_count": 0,
+      "excluded_count": 12,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorCinnabar",
+      "donor_count": 1,
+      "selected_count": 0,
+      "excluded_count": 1,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorIndigo",
+      "donor_count": 7,
+      "selected_count": 0,
+      "excluded_count": 7,
+      "excluded_class": "canonical Kanto"
+    },
+    {
+      "group": "gMapGroup_IndoorJohtoRoutes",
+      "donor_count": 27,
+      "selected_count": 25,
+      "excluded_count": 2,
+      "excluded_class": "Trainer Hill contamination; exact names in selection.selected_partial_groups"
+    },
+    {
+      "group": "gMapGroup_IndoorKantoRoutes",
+      "donor_count": 28,
+      "selected_count": 2,
+      "excluded_count": 26,
+      "excluded_class": "canonical Kanto; exact selected Route 26 houses in selection"
+    },
+    {
+      "group": "gMapGroup_Dungeons",
+      "donor_count": 91,
+      "selected_count": 72,
+      "excluded_count": 19,
+      "excluded_class": "Kanto duplicate; exact patterns in selection"
+    },
+    {
+      "group": "gMapGroup_IndoorDynamic",
+      "donor_count": 0,
+      "selected_count": 0,
+      "excluded_count": 0,
+      "excluded_class": "empty donor group"
+    },
+    {
+      "group": "gMapGroup_SpecialArea",
+      "donor_count": 27,
+      "selected_count": 18,
+      "excluded_count": 9,
+      "excluded_class": "debug/unused/temporary; exact names in selection"
+    },
+    {
+      "group": "gMapGroup_Emerald1",
+      "donor_count": 126,
+      "selected_count": 0,
+      "excluded_count": 126,
+      "excluded_class": "Emerald content outside Johto scope"
+    },
+    {
+      "group": "gMapGroup_Emerald2",
+      "donor_count": 113,
+      "selected_count": 0,
+      "excluded_count": 113,
+      "excluded_class": "Emerald content outside Johto scope"
+    },
+    {
+      "group": "gMapGroup_Emerald3",
+      "donor_count": 126,
+      "selected_count": 0,
+      "excluded_count": 126,
+      "excluded_class": "Emerald content outside Johto scope"
+    },
+    {
+      "group": "gMapGroup_Emerald4",
+      "donor_count": 74,
+      "selected_count": 0,
+      "excluded_count": 74,
+      "excluded_class": "Emerald content outside Johto scope"
+    },
+    {
+      "group": "gMapGroup_Emerald5",
+      "donor_count": 97,
+      "selected_count": 0,
+      "excluded_count": 97,
+      "excluded_class": "Emerald content outside Johto scope"
+    }
+  ],
+  "host_capacity_and_ids": {
+    "host_map_groups": 76,
+    "johto_group_index": 75,
+    "johto_existing_map_index": 0,
+    "johto_append_indices": "group75 indices1..127, then appended group76 indices0..110; all components <=127",
+    "johto_reserved_indices": "unused indices in appended group76; never assign signed-byte values128..255",
+    "host_region_sections": 210,
+    "host_section_ids_currently_unreferenced": 11,
+    "selected_unique_donor_sections_before_normalization": 57,
+    "u8_header_limit": 253,
+    "section_collisions": {
+      "MAPSEC_NEW_BARK_TOWN": "preserve host index 209 and existing map identity",
+      "MAPSEC_ROCKET_HIDEOUT": "host Kanto index 133; allocate Johto-qualified semantic or audited alias",
+      "MAPSEC_SAFARI_ZONE": "host Hoenn index 57; allocate Johto-qualified semantic or audited alias",
+      "MAPSEC_TRAINER_HILL": "remove by excluding two Trainer Hill maps",
+      "ReceptionGate": "Kanto border; adapt to existing host Route 22 and Kanto Victory Road"
+    },
+    "section_gate": "57 source semantics must resolve to preserved host IDs or explicit Johto aliases; only211..252 are free, and209NewBark/210None remain stable.",
+    "reserved_sections": [
+      210,
+      253,
+      254,
+      255
+    ]
+  },
+  "dependency_counts": {
+    "selected_map_script_files": 239,
+    "selected_script_bytes": 1063703,
+    "map_event_script_refs": 1264,
+    "local_script_label_defs": 2494,
+    "missing_or_external_script_refs": 52,
+    "selected_script_commands": {
+      "trainerbattle_single": 231,
+      "trainerbattle_no_intro": 47,
+      "trainerbattle_double": 12,
+      "trainerbattle": 2,
+      "setflag": 413,
+      "clearflag": 317,
+      "setvar": 459,
+      "special": 187,
+      "giveitem": 87,
+      "setmetatile": 308,
+      "applymovement": 763,
+      "playse": 369,
+      "playbgm": 37,
+      "setwildbattle": 7,
+      "setmaplayoutindex": 8,
+      "setweather": 18,
+      "warp": 24
+    },
+    "script_symbol_counts": {
+      "selected_flag_symbols": 354,
+      "host_known_flags": 48,
+      "selected_var_symbols": 72,
+      "host_known_vars": 16
+    },
+    "trainers": {
+      "unique_selected_symbols": 284,
+      "trainer_event_records": 245,
+      "distinct_trainer_scripts": 243,
+      "party_table_entries_for_selected": 282,
+      "battle_set_placeholders": 2,
+      "host_current_records": 1478,
+      "host_max_records": 1622,
+      "standard_slots_free": 144
+    },
+    "wild": {
+      "selected_records": 149,
+      "selected_maps_with_tables": 93,
+      "selected_maps_without_tables": 146,
+      "species_slots": 3436,
+      "unique_species_including_none": 169
+    },
+    "rom": {
+      "current_bytes": 28644460,
+      "capacity_bytes": 33554432,
+      "used_percent": 85.37,
+      "remaining_bytes": 4909972
+    }
+  },
+  "save_and_identity": {
+    "registry_entries_current": 912,
+    "registry_version_current": 1,
+    "existing_johto_seed": {
+      "trainer_ordinal": 855,
+      "gym_ordinals": "16..23",
+      "badge_bits": "0..7",
+      "fly_ordinal": 2,
+      "event_ordinal": 2
+    },
+    "coop_save_schema": 1,
+    "coop_save_size": 672,
+    "trainer_bits": 2048,
+    "event_bits": 2048,
+    "fly_bits": 128,
+    "gym_bits": 64,
+    "required_migration": "accept current v1 registry version/digest, copy all old bits and engine save state, zero only appended Johto bits, reseal current digest and CRC"
+  },
+  "known_external_refs": {
+    "remove_or_replace": [
+      "NewBarkTown -> MAP_WORLD_HUB",
+      "EcruteakCity -> MAP_BATTLE_FRONTIER_BATTLE_TOWER_LOBBY",
+      "Route40 -> MAP_GATE_ROUTE40_TRAINER_HILL_COURTYARD",
+      "Route40 -> MAP_TRAINER_HILL_COURTYARD",
+      "GoldenrodCity_DepartmentStoreElevator -> MAP_DYNAMIC"
+    ],
+    "adapt_to_host": [
+      "Route26North -> MAP_ROUTE22_FRLG",
+      "ReceptionGate -> MAP_ROUTE22_FRLG and existing Kanto Victory Road"
+    ],
+    "new_bark_preview_cleanup": [
+      "Tin Tower roof warps",
+      "WorldHub/debug links",
+      "closed placeholder event scripts"
+    ],
+    "shared_labels": [
+      "BerryTreeScript",
+      "EventScript_CutTree",
+      "EventScript_RockSmash",
+      "EventScript_StrengthBoulder",
+      "EventScript_Whirlpool",
+      "PC",
+      "Nurse",
+      "bookshelves and standard service labels"
+    ],
+    "contaminated_labels": [
+      "BerryBlender_*",
+      "FallarborTown_*",
+      "LavaridgeTown_*",
+      "LilycoveCity_*",
+      "MauvilleCity_*",
+      "OldaleTown_*",
+      "Route104_*",
+      "Route121_*",
+      "Roulette_*"
+    ]
+  },
+  "open_technical_decisions": [
+    "Choose and prove a u8-safe section alias/recycle/compaction ledger.",
+    "Choose a qualified Johto trainer adapter or SaveBlock1 trainer-flag expansion/migration for 284 identities beyond 144 free standard slots.",
+    "Implement registry digest compatibility migration for existing valid v1 saves."
+  ]
+}

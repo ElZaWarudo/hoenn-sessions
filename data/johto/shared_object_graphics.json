@@ -1,0 +1,4051 @@
+{
+  "contract_hash": "sha256:eb587dee56cf5828f754287e8a6c552145ea74055ced228b74a1b1324703c9d0",
+  "donor": {
+    "repository": "johto-hns",
+    "revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4"
+  },
+  "excluded_special_objects": [
+    "OBJ_EVENT_GFX_BERRY_TREE",
+    "OBJ_EVENT_GFX_ITEM_BALL",
+    "OBJ_EVENT_GFX_LIGHT_SPRITE"
+  ],
+  "host_compatible": [
+    "OBJ_EVENT_GFX_BALDING_MAN",
+    "OBJ_EVENT_GFX_BILL",
+    "OBJ_EVENT_GFX_BOY",
+    "OBJ_EVENT_GFX_CHANNELER",
+    "OBJ_EVENT_GFX_COOLTRAINER_F",
+    "OBJ_EVENT_GFX_COOLTRAINER_M",
+    "OBJ_EVENT_GFX_ROCKER",
+    "OBJ_EVENT_GFX_SS_TIDAL",
+    "OBJ_EVENT_GFX_WORKER_F"
+  ],
+  "objects": [
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_BEAUTY",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 809,
+        "sha256": "a38bd50ceb669f6c408c05082ad9814a825783dcd4d1734b76d3d9c737eef034",
+        "source_path": "graphics/object_events/pics/people/beauty.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_BEAUTY",
+      "picture_table": "sJohtoSharedPicTable_BEAUTY",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BEAUTY",
+      "token": "OBJ_EVENT_GFX_BEAUTY"
+    },
+    {
+      "animation_table": "sAnimTable_Inanimate",
+      "frame_count": 1,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_BIG_WAILMER_DOLL",
+      "logical_dimensions": "32x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 305,
+        "sha256": "337626e233fe5f848104fdb6995497967873863ad46ec72bb77807af8f84539b",
+        "source_path": "graphics/object_events/pics/dolls/big_wailmer_doll.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_BIG_WAILMER_DOLL",
+      "picture_table": "sJohtoSharedPicTable_BIG_WAILMER_DOLL",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BIG_WAILMER_DOLL",
+      "token": "OBJ_EVENT_GFX_BIG_WAILMER_DOLL"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_BLACK_BELT",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 864,
+        "sha256": "e87367429f72f88ebdbc5bd80e1265238f2f862d418b219bef1f89d24336aa8d",
+        "source_path": "graphics/object_events/pics/people/black_belt.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_BLACK_BELT",
+      "picture_table": "sJohtoSharedPicTable_BLACK_BELT",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BLACK_BELT",
+      "token": "OBJ_EVENT_GFX_BLACK_BELT"
+    },
+    {
+      "animation_table": "sAnimTable_BreakableRock",
+      "frame_count": 4,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_BREAKABLE_ROCK",
+      "logical_dimensions": "16x16",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 431,
+        "sha256": "46cebfa7e9c6333ed2dfebda31698b887a785e630471d61a236a51912470aff3",
+        "source_path": "graphics/object_events/pics/misc/breakable_rock.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_BREAKABLE_ROCK",
+      "picture_table": "sJohtoSharedPicTable_BREAKABLE_ROCK",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BREAKABLE_ROCK",
+      "token": "OBJ_EVENT_GFX_BREAKABLE_ROCK"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_BUG_CATCHER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 712,
+        "sha256": "254af8578f1b520862d45c55aa44b4064c9b3a2d3cecea04626fde96d21489f1",
+        "source_path": "graphics/object_events/pics/people/bug_catcher.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_BUG_CATCHER",
+      "picture_table": "sJohtoSharedPicTable_BUG_CATCHER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_BUG_CATCHER",
+      "token": "OBJ_EVENT_GFX_BUG_CATCHER"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_CAMPER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 781,
+        "sha256": "d38b272f55935e2930d223efda3d2cf2df24c4cd0384297693c63715f95cafe1",
+        "source_path": "graphics/object_events/pics/people/camper.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_CAMPER",
+      "picture_table": "sJohtoSharedPicTable_CAMPER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CAMPER",
+      "token": "OBJ_EVENT_GFX_CAMPER"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_CAPTAIN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 729,
+        "sha256": "0119a2c759b2787f2da9aae3154db0144ab14fd35d58bcccefa55a1d0cb12420",
+        "source_path": "graphics/object_events/pics/people/girl_2.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_CAPTAIN",
+      "picture_table": "sJohtoSharedPicTable_CAPTAIN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CAPTAIN",
+      "token": "OBJ_EVENT_GFX_CAPTAIN"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_CLERK",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 769,
+        "sha256": "dc08770288111df9ae0b49ef88c568746e156a635d137a9348385ed7cb61a12b",
+        "source_path": "graphics/object_events/pics/people/mart_employee.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_CLERK",
+      "picture_table": "sJohtoSharedPicTable_CLERK",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CLERK",
+      "token": "OBJ_EVENT_GFX_CLERK"
+    },
+    {
+      "animation_table": "sAnimTable_CuttableTree",
+      "frame_count": 4,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_CUTTABLE_TREE",
+      "logical_dimensions": "16x16",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 402,
+        "sha256": "d1ed8a21a0031d40b93ff5d2adf1a3bfda67a93d51f128df29d7071d3b52b181",
+        "source_path": "graphics/object_events/pics/misc/cuttable_tree.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_CUTTABLE_TREE",
+      "picture_table": "sJohtoSharedPicTable_CUTTABLE_TREE",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_CUTTABLE_TREE",
+      "token": "OBJ_EVENT_GFX_CUTTABLE_TREE"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_FAT_MAN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 733,
+        "sha256": "be589118d9a218642ae004029d8b982de10dd5cb8fbbda428ca74fbdb930ed25",
+        "source_path": "graphics/object_events/pics/people/fat_man.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_FAT_MAN",
+      "picture_table": "sJohtoSharedPicTable_FAT_MAN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FAT_MAN",
+      "token": "OBJ_EVENT_GFX_FAT_MAN"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_FISHER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 3,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 823,
+        "sha256": "3f12b3a006f7e3cb2b76cb6afe8fda3fedadd2cfa51d70d1489e78133e82eaf9",
+        "source_path": "graphics/object_events/pics/people/fisherman.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_FISHER",
+      "picture_table": "sJohtoSharedPicTable_FISHER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FISHER",
+      "token": "OBJ_EVENT_GFX_FISHER"
+    },
+    {
+      "animation_table": "sAnimTable_Inanimate",
+      "frame_count": 1,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_FOSSIL",
+      "logical_dimensions": "16x16",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/rocket_1.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1",
+      "picture": {
+        "bytes": 262,
+        "sha256": "0cd88d3c23dc53caaa77106ebaeffc5e02873e360a9149774f9163480fb7e9ee",
+        "source_path": "graphics/object_events/pics/misc/fossil.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_FOSSIL",
+      "picture_table": "sJohtoSharedPicTable_FOSSIL",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_FOSSIL",
+      "token": "OBJ_EVENT_GFX_FOSSIL"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_GBA_KID",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 419,
+        "sha256": "cd1f691cd0d3cca3eaf2aaf1192864ee546c5b9ed0cf010040e52523b873f676",
+        "source_path": "graphics/object_events/pics/people/gameboy_kid.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_GBA_KID",
+      "picture_table": "sJohtoSharedPicTable_GBA_KID",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GBA_KID",
+      "token": "OBJ_EVENT_GFX_GBA_KID"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_GENTLEMAN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 810,
+        "sha256": "0f5b22e8cad76ff95ed064fa317260bff8c7744a5575a8b04b997d4d3a6108f0",
+        "source_path": "graphics/object_events/pics/people/gentleman.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_GENTLEMAN",
+      "picture_table": "sJohtoSharedPicTable_GENTLEMAN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GENTLEMAN",
+      "token": "OBJ_EVENT_GFX_GENTLEMAN"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_GIOVANNI",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/rocket_1.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1",
+      "picture": {
+        "bytes": 749,
+        "sha256": "0aaf550a3799b969af1ae69e303f385aa7be446e4d8b28390c22a992e5e5dd31",
+        "source_path": "graphics/object_events/pics/people/rockets/giovanni.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_GIOVANNI",
+      "picture_table": "sJohtoSharedPicTable_GIOVANNI",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GIOVANNI",
+      "token": "OBJ_EVENT_GFX_GIOVANNI"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_GIRL_1",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 3,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 679,
+        "sha256": "7219bb68fa98e18029c90fcca697411cdc8078c58c1f5b0f78d24c61b7854e03",
+        "source_path": "graphics/object_events/pics/people/girl_1.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_GIRL_1",
+      "picture_table": "sJohtoSharedPicTable_GIRL_1",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GIRL_1",
+      "token": "OBJ_EVENT_GFX_GIRL_1"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_GYM_GUY",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 735,
+        "sha256": "c2d38e05a6c45b6d7d4f66358df48ec354603010cc9d74a0e6bb12d70647359e",
+        "source_path": "graphics/object_events/pics/people/gym_guy.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_GYM_GUY",
+      "picture_table": "sJohtoSharedPicTable_GYM_GUY",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_GYM_GUY",
+      "token": "OBJ_EVENT_GFX_GYM_GUY"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_HIKER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 815,
+        "sha256": "30f1bf91e395f1542467d40a8f9c22073d57ee86ef054a7d2ff0014b03928cd7",
+        "source_path": "graphics/object_events/pics/people/hiker.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_HIKER",
+      "picture_table": "sJohtoSharedPicTable_HIKER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_HIKER",
+      "token": "OBJ_EVENT_GFX_HIKER"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_LANCE",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 183,
+        "sha256": "5710d9a50148e099a003917f3bde230f1e1e05711e71bd4880f0bc93773f6180",
+        "source_path": "graphics/object_events/palettes/lance.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_LANCE",
+      "picture": {
+        "bytes": 748,
+        "sha256": "d01d1b2e3b4d298d74fce5eb7a6d13ebfa76ed8cc89da9174650c5302738978c",
+        "source_path": "graphics/object_events/pics/people/elite_four/lance.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_LANCE",
+      "picture_table": "sJohtoSharedPicTable_LANCE",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LANCE",
+      "token": "OBJ_EVENT_GFX_LANCE"
+    },
+    {
+      "animation_table": "sAnimTable_Following",
+      "frame_count": 6,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_LAPRAS",
+      "logical_dimensions": "32x32",
+      "palette": {
+        "bytes": 206,
+        "sha256": "b9bbf23f338a4d9f01b4c5a69876d7306f4c49b992426ba8e147269a76d09a0a",
+        "source_path": "graphics/object_events/palettes/lapras.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_LAPRAS",
+      "picture": {
+        "bytes": 924,
+        "sha256": "620af4ebac3cbc9955cbe507b86e63620f76cde08046fe1bec82f5149bfb124c",
+        "source_path": "graphics/object_events/pics/dolls/big_lapras_doll.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_LAPRAS",
+      "picture_table": "sJohtoSharedPicTable_LAPRAS",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LAPRAS",
+      "token": "OBJ_EVENT_GFX_LAPRAS"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_LASS",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 742,
+        "sha256": "ac95c576fddcefda90842b49e7ea88de5a950f9ce4f0701843ff95ca5a367e83",
+        "source_path": "graphics/object_events/pics/people/lass.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_LASS",
+      "picture_table": "sJohtoSharedPicTable_LASS",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LASS",
+      "token": "OBJ_EVENT_GFX_LASS"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_LITTLE_BOY",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 555,
+        "sha256": "b84cfd62e1d5fb8410ff7d96507ace0edbed59ada2977e4d813206d21e158178",
+        "source_path": "graphics/object_events/pics/people/little_boy.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_LITTLE_BOY",
+      "picture_table": "sJohtoSharedPicTable_LITTLE_BOY",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_LITTLE_BOY",
+      "token": "OBJ_EVENT_GFX_LITTLE_BOY"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_MOM",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 791,
+        "sha256": "82a0dd1572c11fdf1345ed92e210386bdd4649dbb59b43626cd066362516d5c5",
+        "source_path": "graphics/object_events/pics/people/mom.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_MOM",
+      "picture_table": "sJohtoSharedPicTable_MOM",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MOM",
+      "token": "OBJ_EVENT_GFX_MOM"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_MR_FUJI",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 612,
+        "sha256": "3e708593676f44ac8a5d470d7f16dc116b7942ee80d0e56d8884b0d7cb9d8d8f",
+        "source_path": "graphics/object_events/pics/people/boy_1.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_MR_FUJI",
+      "picture_table": "sJohtoSharedPicTable_MR_FUJI",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MR_FUJI",
+      "token": "OBJ_EVENT_GFX_MR_FUJI"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_MYSTERY_GIFT_MAN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 420,
+        "sha256": "5dbdff988ff999b9bcb64843e8e1285a1644e061987b55cae45628a3416383ff",
+        "source_path": "graphics/object_events/pics/people/mystery_event_deliveryman.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_MYSTERY_GIFT_MAN",
+      "picture_table": "sJohtoSharedPicTable_MYSTERY_GIFT_MAN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_MYSTERY_GIFT_MAN",
+      "token": "OBJ_EVENT_GFX_MYSTERY_GIFT_MAN"
+    },
+    {
+      "animation_table": "sAnimTable_Nurse",
+      "frame_count": 10,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_NURSE",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 599,
+        "sha256": "5c6319e9779911ee9a30bd54bc8668f581e7c2bc956700b9d121b7270b394011",
+        "source_path": "graphics/object_events/pics/people/nurse.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_NURSE",
+      "picture_table": "sJohtoSharedPicTable_NURSE",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_NURSE",
+      "token": "OBJ_EVENT_GFX_NURSE"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_OLD_MAN_1",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 641,
+        "sha256": "d9605339fed36e193f5ae892e24bd1b39f93ad62c45ec0b018983b7a0ace5063",
+        "source_path": "graphics/object_events/pics/people/old_man.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_OLD_MAN_1",
+      "picture_table": "sJohtoSharedPicTable_OLD_MAN_1",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_1",
+      "token": "OBJ_EVENT_GFX_OLD_MAN_1"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_OLD_MAN_2",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 641,
+        "sha256": "92dfa7c95dd9fd2ae893aaf784b4a0227ba1ca180e4d2fb969009c8a5c0c9bc5",
+        "source_path": "graphics/object_events/pics/people/old_man_2.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_OLD_MAN_2",
+      "picture_table": "sJohtoSharedPicTable_OLD_MAN_2",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_MAN_2",
+      "token": "OBJ_EVENT_GFX_OLD_MAN_2"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_OLD_WOMAN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 630,
+        "sha256": "d4803ad98245b6a65c722fbc7636f5def801534ceb8d8da118046bb88f05535a",
+        "source_path": "graphics/object_events/pics/people/old_woman.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_OLD_WOMAN",
+      "picture_table": "sJohtoSharedPicTable_OLD_WOMAN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_OLD_WOMAN",
+      "token": "OBJ_EVENT_GFX_OLD_WOMAN"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_PICNICKER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 731,
+        "sha256": "0bd6b8bca00441a67c8b85b5d5e74e5274eec13f5225c2c46874e5abababce8b",
+        "source_path": "graphics/object_events/pics/people/picnicker.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_PICNICKER",
+      "picture_table": "sJohtoSharedPicTable_PICNICKER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PICNICKER",
+      "token": "OBJ_EVENT_GFX_PICNICKER"
+    },
+    {
+      "animation_table": "sAnimTable_Following",
+      "frame_count": 6,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_POKE_BALL",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/rocket_1.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1",
+      "picture": {
+        "bytes": 366,
+        "sha256": "f3ffba85aa04c098c30b9fc6a608980c36ef4de3d93e948094106fa56f7b7c8b",
+        "source_path": "graphics/object_events/pics/misc/ball_poke.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_POKE_BALL",
+      "picture_table": "sJohtoSharedPicTable_POKE_BALL",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POKE_BALL",
+      "token": "OBJ_EVENT_GFX_POKE_BALL"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_POLICEMAN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 701,
+        "sha256": "a2e3a34a3bfb6a8f562dc1579058b8ac6ac5a26963fff9092a0ef989868cef1d",
+        "source_path": "graphics/object_events/pics/people/policeman.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_POLICEMAN",
+      "picture_table": "sJohtoSharedPicTable_POLICEMAN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_POLICEMAN",
+      "token": "OBJ_EVENT_GFX_POLICEMAN"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_PROF_OAK",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/rocket_1.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1",
+      "picture": {
+        "bytes": 789,
+        "sha256": "9ac53f6e5615d0cc4f78da06dd03c3d62808d60e634f051deaf3152411f83599",
+        "source_path": "graphics/object_events/pics/people/special/prof_oak.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_PROF_OAK",
+      "picture_table": "sJohtoSharedPicTable_PROF_OAK",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PROF_OAK",
+      "token": "OBJ_EVENT_GFX_PROF_OAK"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_PSYCHIC_M",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 772,
+        "sha256": "67a7f0f6554dc047a7a5185d3381eb12d050cce082b819a2e905ab823ce4b6b7",
+        "source_path": "graphics/object_events/pics/people/psychic_m.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_PSYCHIC_M",
+      "picture_table": "sJohtoSharedPicTable_PSYCHIC_M",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PSYCHIC_M",
+      "token": "OBJ_EVENT_GFX_PSYCHIC_M"
+    },
+    {
+      "animation_table": "sAnimTable_Inanimate",
+      "frame_count": 1,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_PUSHABLE_BOULDER",
+      "logical_dimensions": "16x16",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 231,
+        "sha256": "f33b49518741cf22b4bc08a4f6ced731748e37a2f2ba8aa00a22b2e38cb04839",
+        "source_path": "graphics/object_events/pics/misc/pushable_boulder.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_PUSHABLE_BOULDER",
+      "picture_table": "sJohtoSharedPicTable_PUSHABLE_BOULDER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_PUSHABLE_BOULDER",
+      "token": "OBJ_EVENT_GFX_PUSHABLE_BOULDER"
+    },
+    {
+      "animation_table": "sAnimTable_Rayquaza",
+      "frame_count": 5,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_RAYQUAZA",
+      "logical_dimensions": "64x64",
+      "palette": {
+        "bytes": 210,
+        "sha256": "4153a58fc09fa22bdbbab83da181094ac36ee8292393e3c4f0666e0f5fbf47cd",
+        "source_path": "graphics/object_events/palettes/tower_beam.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_TOWER_BEAM",
+      "picture": {
+        "bytes": 528,
+        "sha256": "a87d1ca4d6b4f0c6fd2ed805c524b861d70c82c68e98e8ca1764a555cbde65e8",
+        "source_path": "graphics/object_events/pics/pokemon/rayquaza_cutscene.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_RAYQUAZA",
+      "picture_table": "sJohtoSharedPicTable_RAYQUAZA",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_RAYQUAZA",
+      "token": "OBJ_EVENT_GFX_RAYQUAZA"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_RED_NORMAL",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 208,
+        "sha256": "d76189cdedca19ea3c4fb5bc500380a7f6d9dc9ee31e849ec6c67bb88da8a1b1",
+        "source_path": "graphics/object_events/palettes/red.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_RED",
+      "picture": {
+        "bytes": 742,
+        "sha256": "94eb37499a8bd663f47a0767c34b93569cf0c222a9906852943016e3a771054d",
+        "source_path": "graphics/object_events/pics/people/special/red_normal.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_RED_NORMAL",
+      "picture_table": "sJohtoSharedPicTable_RED_NORMAL",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_RED_NORMAL",
+      "token": "OBJ_EVENT_GFX_RED_NORMAL"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_ROCKET_F",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/rocket_1.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1",
+      "picture": {
+        "bytes": 681,
+        "sha256": "aa00f0cf9ff78135eb460bcddb565d2337c82467498eca6e2d2d9422efd182c3",
+        "source_path": "graphics/object_events/pics/people/rockets/rocket_f.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_ROCKET_F",
+      "picture_table": "sJohtoSharedPicTable_ROCKET_F",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_F",
+      "token": "OBJ_EVENT_GFX_ROCKET_F"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_ROCKET_M",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/rocket_1.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1",
+      "picture": {
+        "bytes": 650,
+        "sha256": "df9978edee318b6193fc85be4a88fa85202bbd6e689bb21e602c181dab3b6e12",
+        "source_path": "graphics/object_events/pics/people/rockets/rocket_m.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_ROCKET_M",
+      "picture_table": "sJohtoSharedPicTable_ROCKET_M",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_ROCKET_M",
+      "token": "OBJ_EVENT_GFX_ROCKET_M"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_SABRINA",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 707,
+        "sha256": "814394db64af1dba2d62f0c1ea93b19253fe34ad4afb7d131d119ab3ea98f32e",
+        "source_path": "graphics/object_events/pics/people/gym_leaders/sabrina.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_SABRINA",
+      "picture_table": "sJohtoSharedPicTable_SABRINA",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SABRINA",
+      "token": "OBJ_EVENT_GFX_SABRINA"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_SAILOR",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 211,
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_path": "graphics/object_events/palettes/npc_pink.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_PINK",
+      "picture": {
+        "bytes": 841,
+        "sha256": "9b0f6f5400b4e610e8a2ec4be266c0a5215fcb724ebb3501c2649e7423b53058",
+        "source_path": "graphics/object_events/pics/people/sailor.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_SAILOR",
+      "picture_table": "sJohtoSharedPicTable_SAILOR",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SAILOR",
+      "token": "OBJ_EVENT_GFX_SAILOR"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_SWIMMER_F_WATER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 3,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 684,
+        "sha256": "21b54a9ac92e8822065fcafd925965f6a763e51a526c5ce5391165d6939c5e14",
+        "source_path": "graphics/object_events/pics/people/swimmer_f.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_SWIMMER_F_WATER",
+      "picture_table": "sJohtoSharedPicTable_SWIMMER_F_WATER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_F_WATER",
+      "token": "OBJ_EVENT_GFX_SWIMMER_F_WATER"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_SWIMMER_M_WATER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 625,
+        "sha256": "48a6abdabfa5eb805de0fc560f05ebb6fb79f86462c61f7758da67a623c48d57",
+        "source_path": "graphics/object_events/pics/people/swimmer_m.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_SWIMMER_M_WATER",
+      "picture_table": "sJohtoSharedPicTable_SWIMMER_M_WATER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_SWIMMER_M_WATER",
+      "token": "OBJ_EVENT_GFX_SWIMMER_M_WATER"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_TWIN",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 3,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 559,
+        "sha256": "066776008ba1a478aed44d6f90b094bd38952c6e2838160ece5ed29e214c7a21",
+        "source_path": "graphics/object_events/pics/people/twin.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_TWIN",
+      "picture_table": "sJohtoSharedPicTable_TWIN",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_TWIN",
+      "token": "OBJ_EVENT_GFX_TWIN"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_WOMAN_1",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 204,
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_path": "graphics/object_events/palettes/npc_green.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_GREEN",
+      "picture": {
+        "bytes": 744,
+        "sha256": "cc6508fdb301902362bf094b11270acdb5fc98e99150503c96a81e0038ced77a",
+        "source_path": "graphics/object_events/pics/people/rooftop_sale_woman.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_WOMAN_1",
+      "picture_table": "sJohtoSharedPicTable_WOMAN_1",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_1",
+      "token": "OBJ_EVENT_GFX_WOMAN_1"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_WOMAN_2",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 4,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 729,
+        "sha256": "006b51ca958c2743e7d7d61a9f073d9d5c05f872727942a18269d9c943639359",
+        "source_path": "graphics/object_events/pics/people/woman_2.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_WOMAN_2",
+      "picture_table": "sJohtoSharedPicTable_WOMAN_2",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_2",
+      "token": "OBJ_EVENT_GFX_WOMAN_2"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_WOMAN_3",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 730,
+        "sha256": "78e4b094c3f34b2deee98a580f174564c4210dce3a93302d8db2b9e0635bde56",
+        "source_path": "graphics/object_events/pics/people/woman_1.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_WOMAN_3",
+      "picture_table": "sJohtoSharedPicTable_WOMAN_3",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_3",
+      "token": "OBJ_EVENT_GFX_WOMAN_3"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_WORKER_M",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_path": "graphics/object_events/palettes/npc_white.pal"
+      },
+      "palette_slot": 5,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_WHITE",
+      "picture": {
+        "bytes": 761,
+        "sha256": "f6d22dc5f26a478ef7c65b8a9acaa3f342b9955a051e23316f9e9c8173dd3cfb",
+        "source_path": "graphics/object_events/pics/people/worker_m.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_WORKER_M",
+      "picture_table": "sJohtoSharedPicTable_WORKER_M",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M",
+      "token": "OBJ_EVENT_GFX_WORKER_M"
+    },
+    {
+      "animation_table": "sAnimTable_Standard",
+      "frame_count": 9,
+      "info_symbol": "gObjectEventGraphicsInfo_JohtoShared_YOUNGSTER",
+      "logical_dimensions": "16x32",
+      "palette": {
+        "bytes": 205,
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_path": "graphics/object_events/palettes/npc_blue.pal"
+      },
+      "palette_slot": 2,
+      "palette_tag": "OBJ_EVENT_PAL_TAG_JOHTO_SHARED_NPC_BLUE",
+      "picture": {
+        "bytes": 769,
+        "sha256": "86dfa7e28d76ce53d82085ced36f0c76bc35b715ef7975e25ad8699850a6e6e8",
+        "source_path": "graphics/object_events/pics/people/youngster.png"
+      },
+      "picture_symbol": "gObjectEventPic_JohtoShared_YOUNGSTER",
+      "picture_table": "sJohtoSharedPicTable_YOUNGSTER",
+      "public_id": "OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER",
+      "token": "OBJ_EVENT_GFX_YOUNGSTER"
+    }
+  ],
+  "schema_version": 1,
+  "scope": {
+    "objects": 49,
+    "palettes": 9,
+    "pictures": 49
+  },
+  "source_ledger": [
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Beauty",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 47,
+        "symbol": "gObjectEventGraphicsInfo_Beauty"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 809,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/beauty.png",
+          "sha256": "a38bd50ceb669f6c408c05082ad9814a825783dcd4d1734b76d3d9c737eef034",
+          "source_line": 147,
+          "symbol": "gObjectEventPic_Beauty"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Beauty",
+        "line": 314
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Beauty,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 602,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Beauty"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Beauty, 2, 4, 0), overworld_frame(gObjectEventPic_Beauty, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_BEAUTY"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Inanimate",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_BigWailmerDoll",
+          "inanimate": "TRUE",
+          "oam": "&gObjectEventBaseOam_32x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "512",
+          "subsprites": "sOamTables_32x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_NONE",
+          "width": "32"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 191,
+        "symbol": "gObjectEventGraphicsInfo_BigWailmerDoll"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 305,
+          "exists": true,
+          "path": "graphics/object_events/pics/dolls/big_wailmer_doll.png",
+          "sha256": "337626e233fe5f848104fdb6995497967873863ad46ec72bb77807af8f84539b",
+          "source_line": 255,
+          "symbol": "gObjectEventPic_BigWailmerDoll"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "BigWailmerDoll",
+        "line": 452
+      },
+      "donor_table": {
+        "args": null,
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1638,
+        "macro": null,
+        "picture_symbols": [
+          "gObjectEventPic_BigWailmerDoll"
+        ],
+        "raw": "obj_frame_tiles(gObjectEventPic_BigWailmerDoll),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_BIG_WAILMER_DOLL"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_BlackBelt",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 46,
+        "symbol": "gObjectEventGraphicsInfo_BlackBelt"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 864,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/black_belt.png",
+          "sha256": "e87367429f72f88ebdbc5bd80e1265238f2f862d418b219bef1f89d24336aa8d",
+          "source_line": 146,
+          "symbol": "gObjectEventPic_BlackBelt"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "BlackBelt",
+        "line": 313
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_BlackBelt,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 590,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_BlackBelt"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_BlackBelt, 2, 4, 0), overworld_frame(gObjectEventPic_BlackBelt, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_BLACK_BELT"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_BreakableRock",
+          "compressed": "FALSE",
+          "height": "16",
+          "images": "sPicTable_BreakableRock",
+          "inanimate": "TRUE",
+          "oam": "&gObjectEventBaseOam_16x16",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_S",
+          "size": "128",
+          "subsprites": "sOamTables_16x16",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_NONE",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 86,
+        "symbol": "gObjectEventGraphicsInfo_BreakableRock"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 431,
+          "exists": true,
+          "path": "graphics/object_events/pics/misc/breakable_rock.png",
+          "sha256": "46cebfa7e9c6333ed2dfebda31698b887a785e630471d61a236a51912470aff3",
+          "source_line": 260,
+          "symbol": "gObjectEventPic_BreakableRock"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "BreakableRock",
+        "line": 355
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_BreakableRock,2,2,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 934,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_BreakableRock"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_BreakableRock, 2, 2, 0), overworld_frame(gObjectEventPic_BreakableRock, 2, 2, 1"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_BREAKABLE_ROCK"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_BugCatcher",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 39,
+        "symbol": "gObjectEventGraphicsInfo_BugCatcher"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 712,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/bug_catcher.png",
+          "sha256": "254af8578f1b520862d45c55aa44b4064c9b3a2d3cecea04626fde96d21489f1",
+          "source_line": 139,
+          "symbol": "gObjectEventPic_BugCatcher"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "BugCatcher",
+        "line": 306
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_BugCatcher,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 481,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_BugCatcher"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_BugCatcher, 2, 4, 0), overworld_frame(gObjectEventPic_BugCatcher, 2, 4, 1),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_BUG_CATCHER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Camper",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 34,
+        "symbol": "gObjectEventGraphicsInfo_Camper"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 781,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/camper.png",
+          "sha256": "d38b272f55935e2930d223efda3d2cf2df24c4cd0384297693c63715f95cafe1",
+          "source_line": 134,
+          "symbol": "gObjectEventPic_Camper"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Camper",
+        "line": 301
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Camper,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 421,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Camper"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Camper, 2, 4, 0), overworld_frame(gObjectEventPic_Camper, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_CAMPER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Captain",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 12,
+        "symbol": "gObjectEventGraphicsInfo_Captain"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 729,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/girl_2.png",
+          "sha256": "0119a2c759b2787f2da9aae3154db0144ab14fd35d58bcccefa55a1d0cb12420",
+          "source_line": 112,
+          "symbol": "gObjectEventPic_Captain"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Captain",
+        "line": 281
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Captain,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 169,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Captain"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Captain, 2, 4, 0), overworld_frame(gObjectEventPic_Captain, 2, 4, 1), overw"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_CAPTAIN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_MartEmployee",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 83,
+        "symbol": "gObjectEventGraphicsInfo_MartEmployee"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 769,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/mart_employee.png",
+          "sha256": "dc08770288111df9ae0b49ef88c568746e156a635d137a9348385ed7cb61a12b",
+          "source_line": 169,
+          "symbol": "gObjectEventPic_MartEmployee"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "MartEmployee",
+        "line": 352
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_MartEmployee,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 898,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_MartEmployee"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_MartEmployee, 2, 4, 0), overworld_frame(gObjectEventPic_MartEmployee, 2, 4, 1),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_CLERK"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_CuttableTree",
+          "compressed": "FALSE",
+          "height": "16",
+          "images": "sPicTable_CuttableTree",
+          "inanimate": "TRUE",
+          "oam": "&gObjectEventBaseOam_16x16",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_NONE",
+          "size": "128",
+          "subsprites": "sOamTables_16x16",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_NONE",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 82,
+        "symbol": "gObjectEventGraphicsInfo_CuttableTree"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 402,
+          "exists": true,
+          "path": "graphics/object_events/pics/misc/cuttable_tree.png",
+          "sha256": "d1ed8a21a0031d40b93ff5d2adf1a3bfda67a93d51f128df29d7071d3b52b181",
+          "source_line": 259,
+          "symbol": "gObjectEventPic_CuttableTree"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "CuttableTree",
+        "line": 351
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_CuttableTree,2,2,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 891,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_CuttableTree"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_CuttableTree, 2, 2, 0), overworld_frame(gObjectEventPic_CuttableTree, 2, 2, 1),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_CUTTABLE_TREE"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_FatMan",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 20,
+        "symbol": "gObjectEventGraphicsInfo_FatMan"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 733,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/fat_man.png",
+          "sha256": "be589118d9a218642ae004029d8b982de10dd5cb8fbbda428ca74fbdb930ed25",
+          "source_line": 120,
+          "symbol": "gObjectEventPic_FatMan"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "FatMan",
+        "line": 287
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_FatMan,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 253,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_FatMan"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_FatMan, 2, 4, 0), overworld_frame(gObjectEventPic_FatMan, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_FAT_MAN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Fisherman",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "3",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 52,
+        "symbol": "gObjectEventGraphicsInfo_Fisherman"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 823,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/fisherman.png",
+          "sha256": "3f12b3a006f7e3cb2b76cb6afe8fda3fedadd2cfa51d70d1489e78133e82eaf9",
+          "source_line": 152,
+          "symbol": "gObjectEventPic_Fisherman"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Fisherman",
+        "line": 319
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Fisherman,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 662,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Fisherman"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Fisherman, 2, 4, 0), overworld_frame(gObjectEventPic_Fisherman, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_FISHER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Inanimate",
+          "compressed": "FALSE",
+          "height": "16",
+          "images": "sPicTable_Fossil",
+          "inanimate": "TRUE",
+          "oam": "&gObjectEventBaseOam_16x16",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_ROCKET_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_S",
+          "size": "128",
+          "subsprites": "sOamTables_16x16",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_NONE",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 209,
+        "symbol": "gObjectEventGraphicsInfo_Fossil"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/rocket_1.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 67,
+        "symbol": "gObjectEventPal_Rocket1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 262,
+          "exists": true,
+          "path": "graphics/object_events/pics/misc/fossil.png",
+          "sha256": "0cd88d3c23dc53caaa77106ebaeffc5e02873e360a9149774f9163480fb7e9ee",
+          "source_line": 263,
+          "symbol": "gObjectEventPic_Fossil"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Fossil",
+        "line": 468
+      },
+      "donor_table": {
+        "args": null,
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1794,
+        "macro": null,
+        "picture_symbols": [
+          "gObjectEventPic_Fossil"
+        ],
+        "raw": "obj_frame_tiles(gObjectEventPic_Fossil),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_FOSSIL"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_GameboyKid",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 197,
+        "symbol": "gObjectEventGraphicsInfo_GameboyKid"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 419,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/gameboy_kid.png",
+          "sha256": "cd1f691cd0d3cca3eaf2aaf1192864ee546c5b9ed0cf010040e52523b873f676",
+          "source_line": 198,
+          "symbol": "gObjectEventPic_GameboyKid"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "GameboyKid",
+        "line": 458
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_GameboyKid,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1666,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_GameboyKid"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_GameboyKid, 2, 4, 0), overworld_frame(gObjectEventPic_GameboyKid, 2, 4, 1),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_GBA_KID"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Gentleman",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 50,
+        "symbol": "gObjectEventGraphicsInfo_Gentleman"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 810,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/gentleman.png",
+          "sha256": "0f5b22e8cad76ff95ed064fa317260bff8c7744a5575a8b04b997d4d3a6108f0",
+          "source_line": 150,
+          "symbol": "gObjectEventPic_Gentleman"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Gentleman",
+        "line": 317
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Gentleman,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 638,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Gentleman"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Gentleman, 2, 4, 0), overworld_frame(gObjectEventPic_Gentleman, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_GENTLEMAN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Brandon",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_ROCKET_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 247,
+        "symbol": "gObjectEventGraphicsInfo_Giovanni"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/rocket_1.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 67,
+        "symbol": "gObjectEventPal_Rocket1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 749,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/rockets/giovanni.png",
+          "sha256": "0aaf550a3799b969af1ae69e303f385aa7be446e4d8b28390c22a992e5e5dd31",
+          "source_line": 382,
+          "symbol": "gObjectEventPic_Giovanni"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Giovanni",
+        "line": 504
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Giovanni,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 2050,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Giovanni"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Giovanni, 2, 4, 0), overworld_frame(gObjectEventPic_Giovanni, 2, 4, 1), ove"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_GIOVANNI"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Girl1",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "3",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 10,
+        "symbol": "gObjectEventGraphicsInfo_Girl1"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 679,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/girl_1.png",
+          "sha256": "7219bb68fa98e18029c90fcca697411cdc8078c58c1f5b0f78d24c61b7854e03",
+          "source_line": 110,
+          "symbol": "gObjectEventPic_Girl1"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Girl1",
+        "line": 279
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Girl1,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 145,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Girl1"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Girl1, 2, 4, 0), overworld_frame(gObjectEventPic_Girl1, 2, 4, 1), overworld"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_GIRL_1"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_GymGuy",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 26,
+        "symbol": "gObjectEventGraphicsInfo_GymGuy"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 735,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/gym_guy.png",
+          "sha256": "c2d38e05a6c45b6d7d4f66358df48ec354603010cc9d74a0e6bb12d70647359e",
+          "source_line": 126,
+          "symbol": "gObjectEventPic_GymGuy"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "GymGuy",
+        "line": 293
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_GymGuy,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 325,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_GymGuy"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_GymGuy, 2, 4, 0), overworld_frame(gObjectEventPic_GymGuy, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_GYM_GUY"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Hiker",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 57,
+        "symbol": "gObjectEventGraphicsInfo_Hiker"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 815,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/hiker.png",
+          "sha256": "30f1bf91e395f1542467d40a8f9c22073d57ee86ef054a7d2ff0014b03928cd7",
+          "source_line": 157,
+          "symbol": "gObjectEventPic_Hiker"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Hiker",
+        "line": 324
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Hiker,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 722,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Hiker"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Hiker, 2, 4, 0), overworld_frame(gObjectEventPic_Hiker, 2, 4, 1), overworld"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_HIKER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Wallace",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_LANCE",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 141,
+        "symbol": "gObjectEventGraphicsInfo_Lance"
+      },
+      "donor_palette": {
+        "bytes": 183,
+        "exists": true,
+        "path": "graphics/object_events/palettes/lance.pal",
+        "sha256": "5710d9a50148e099a003917f3bde230f1e1e05711e71bd4880f0bc93773f6180",
+        "source_line": 85,
+        "symbol": "gObjectEventPal_Lance"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 748,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/elite_four/lance.png",
+          "sha256": "d01d1b2e3b4d298d74fce5eb7a6d13ebfa76ed8cc89da9174650c5302738978c",
+          "source_line": 192,
+          "symbol": "gObjectEventPic_Lance"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Lance",
+        "line": 402
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Lance,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1355,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Lance"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Lance, 2, 4, 0), overworld_frame(gObjectEventPic_Lance, 2, 4, 1), overworld"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_LANCE"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Following",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_BigLaprasDoll",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_32x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_LAPRAS",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "512",
+          "subsprites": "sOamTables_32x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "32"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 187,
+        "symbol": "gObjectEventGraphicsInfo_BigLaprasDoll"
+      },
+      "donor_palette": {
+        "bytes": 206,
+        "exists": true,
+        "path": "graphics/object_events/palettes/lapras.pal",
+        "sha256": "b9bbf23f338a4d9f01b4c5a69876d7306f4c49b992426ba8e147269a76d09a0a",
+        "source_line": 101,
+        "symbol": "gObjectEventPal_Lapras"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 924,
+          "exists": true,
+          "path": "graphics/object_events/pics/dolls/big_lapras_doll.png",
+          "sha256": "620af4ebac3cbc9955cbe507b86e63620f76cde08046fe1bec82f5149bfb124c",
+          "source_line": 586,
+          "symbol": "gObjectEventPic_BigLaprasDoll"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "BigLaprasDoll",
+        "line": 448
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_BigLaprasDoll,4,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1617,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_BigLaprasDoll"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_BigLaprasDoll, 4, 4, 0), overworld_frame(gObjectEventPic_BigLaprasDoll, 4, 4, 1"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_LAPRAS"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Lass",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 29,
+        "symbol": "gObjectEventGraphicsInfo_Lass"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 742,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/lass.png",
+          "sha256": "ac95c576fddcefda90842b49e7ea88de5a950f9ce4f0701843ff95ca5a367e83",
+          "source_line": 129,
+          "symbol": "gObjectEventPic_Lass"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Lass",
+        "line": 296
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Lass,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 361,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Lass"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Lass, 2, 4, 0), overworld_frame(gObjectEventPic_Lass, 2, 4, 1), overworld_f"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_LASS"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_LittleBoy",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 14,
+        "symbol": "gObjectEventGraphicsInfo_LittleBoy"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 555,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/little_boy.png",
+          "sha256": "b84cfd62e1d5fb8410ff7d96507ace0edbed59ada2977e4d813206d21e158178",
+          "source_line": 114,
+          "symbol": "gObjectEventPic_LittleBoy"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "LittleBoy",
+        "line": 282
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_LittleBoy,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 505,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_LittleBoy"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_LittleBoy, 2, 4, 0), overworld_frame(gObjectEventPic_LittleBoy, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_LITTLE_BOY"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Mom",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 225,
+        "symbol": "gObjectEventGraphicsInfo_Mom"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 791,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/mom.png",
+          "sha256": "82a0dd1572c11fdf1345ed92e210386bdd4649dbb59b43626cd066362516d5c5",
+          "source_line": 205,
+          "symbol": "gObjectEventPic_Mom"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Mom",
+        "line": 485
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Mom,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1858,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Mom"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Mom, 2, 4, 0), overworld_frame(gObjectEventPic_Mom, 2, 4, 1), overworld_fra"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_MOM"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_MrFuji",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 9,
+        "symbol": "gObjectEventGraphicsInfo_MrFuji"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 612,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/boy_1.png",
+          "sha256": "3e708593676f44ac8a5d470d7f16dc116b7942ee80d0e56d8884b0d7cb9d8d8f",
+          "source_line": 109,
+          "symbol": "gObjectEventPic_MrFuji"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "MrFuji",
+        "line": 278
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_MrFuji,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 133,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_MrFuji"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_MrFuji, 2, 4, 0), overworld_frame(gObjectEventPic_MrFuji, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_MR_FUJI"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_MysteryEventDeliveryman",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 230,
+        "symbol": "gObjectEventGraphicsInfo_MysteryEventDeliveryman"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 420,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/mystery_event_deliveryman.png",
+          "sha256": "5dbdff988ff999b9bcb64843e8e1285a1644e061987b55cae45628a3416383ff",
+          "source_line": 366,
+          "symbol": "gObjectEventPic_MysteryEventDeliveryman"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "MysteryEventDeliveryman",
+        "line": 493
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_MysteryEventDeliveryman,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1894,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_MysteryEventDeliveryman"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_MysteryEventDeliveryman, 2, 4, 0), overworld_frame(gObjectEventPic_MysteryEvent"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_MYSTERY_GIFT_MAN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Nurse",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Nurse",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 60,
+        "symbol": "gObjectEventGraphicsInfo_Nurse"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 599,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/nurse.png",
+          "sha256": "5c6319e9779911ee9a30bd54bc8668f581e7c2bc956700b9d121b7270b394011",
+          "source_line": 163,
+          "symbol": "gObjectEventPic_Nurse"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Nurse",
+        "line": 327
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Nurse,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 770,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Nurse"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Nurse, 2, 4, 0), overworld_frame(gObjectEventPic_Nurse, 2, 4, 1), overworld"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_NURSE"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_OldMan",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 24,
+        "symbol": "gObjectEventGraphicsInfo_OldMan"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 641,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/old_man.png",
+          "sha256": "d9605339fed36e193f5ae892e24bd1b39f93ad62c45ec0b018983b7a0ace5063",
+          "source_line": 124,
+          "symbol": "gObjectEventPic_OldMan"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "OldMan",
+        "line": 291
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_OldMan,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 301,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_OldMan"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_OldMan, 2, 4, 0), overworld_frame(gObjectEventPic_OldMan, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_OLD_MAN_1"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_OldMan2",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 32,
+        "symbol": "gObjectEventGraphicsInfo_OldMan2"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 641,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/old_man_2.png",
+          "sha256": "92dfa7c95dd9fd2ae893aaf784b4a0227ba1ca180e4d2fb969009c8a5c0c9bc5",
+          "source_line": 132,
+          "symbol": "gObjectEventPic_OldMan2"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "OldMan2",
+        "line": 299
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_OldMan2,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 397,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_OldMan2"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_OldMan2, 2, 4, 0), overworld_frame(gObjectEventPic_OldMan2, 2, 4, 1), overw"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_OLD_MAN_2"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_OldWoman",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 25,
+        "symbol": "gObjectEventGraphicsInfo_OldWoman"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 630,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/old_woman.png",
+          "sha256": "d4803ad98245b6a65c722fbc7636f5def801534ceb8d8da118046bb88f05535a",
+          "source_line": 125,
+          "symbol": "gObjectEventPic_OldWoman"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "OldWoman",
+        "line": 292
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_OldWoman,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 313,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_OldWoman"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_OldWoman, 2, 4, 0), overworld_frame(gObjectEventPic_OldWoman, 2, 4, 1), ove"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_OLD_WOMAN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Picnicker",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 35,
+        "symbol": "gObjectEventGraphicsInfo_Picnicker"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 731,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/picnicker.png",
+          "sha256": "0bd6b8bca00441a67c8b85b5d5e74e5274eec13f5225c2c46874e5abababce8b",
+          "source_line": 135,
+          "symbol": "gObjectEventPic_Picnicker"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Picnicker",
+        "line": 302
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Picnicker,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 433,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Picnicker"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Picnicker, 2, 4, 0), overworld_frame(gObjectEventPic_Picnicker, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_PICNICKER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Following",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_PokeBall",
+          "inanimate": "TRUE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_ROCKET_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_NONE",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 252,
+        "symbol": "gObjectEventGraphicsInfo_PokeBall"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/rocket_1.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 67,
+        "symbol": "gObjectEventPal_Rocket1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 366,
+          "exists": true,
+          "path": "graphics/object_events/pics/misc/ball_poke.png",
+          "sha256": "f3ffba85aa04c098c30b9fc6a608980c36ef4de3d93e948094106fa56f7b7c8b",
+          "source_line": 383,
+          "symbol": "gObjectEventPic_PokeBall"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "PokeBall",
+        "line": 509
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_PokeBall,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 2146,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_PokeBall"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_PokeBall, 2, 4, 0), overworld_frame(gObjectEventPic_PokeBall, 2, 4, 1), ove"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_POKE_BALL"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Policeman",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 18,
+        "symbol": "gObjectEventGraphicsInfo_Policeman"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 701,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/policeman.png",
+          "sha256": "a2e3a34a3bfb6a8f562dc1579058b8ac6ac5a26963fff9092a0ef989868cef1d",
+          "source_line": 118,
+          "symbol": "gObjectEventPic_Policeman"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Policeman",
+        "line": 285
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Policeman,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 229,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Policeman"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Policeman, 2, 4, 0), overworld_frame(gObjectEventPic_Policeman, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_POLICEMAN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Scott",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_ROCKET_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 229,
+        "symbol": "gObjectEventGraphicsInfo_Scott"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/rocket_1.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 67,
+        "symbol": "gObjectEventPal_Rocket1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 789,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/special/prof_oak.png",
+          "sha256": "9ac53f6e5615d0cc4f78da06dd03c3d62808d60e634f051deaf3152411f83599",
+          "source_line": 364,
+          "symbol": "gObjectEventPic_Scott"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Scott",
+        "line": 489
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Scott,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1870,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Scott"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Scott, 2, 4, 0), overworld_frame(gObjectEventPic_Scott, 2, 4, 1), overworld"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_PROF_OAK"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_PsychicM",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 49,
+        "symbol": "gObjectEventGraphicsInfo_PsychicM"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 772,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/psychic_m.png",
+          "sha256": "67a7f0f6554dc047a7a5185d3381eb12d050cce082b819a2e905ab823ce4b6b7",
+          "source_line": 149,
+          "symbol": "gObjectEventPic_PsychicM"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "PsychicM",
+        "line": 316
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_PsychicM,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 626,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_PsychicM"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_PsychicM, 2, 4, 0), overworld_frame(gObjectEventPic_PsychicM, 2, 4, 1), ove"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_PSYCHIC_M"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Inanimate",
+          "compressed": "FALSE",
+          "height": "16",
+          "images": "sPicTable_PushableBoulder",
+          "inanimate": "TRUE",
+          "oam": "&gObjectEventBaseOam_16x16",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_S",
+          "size": "128",
+          "subsprites": "sOamTables_16x16",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_NONE",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 87,
+        "symbol": "gObjectEventGraphicsInfo_PushableBoulder"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 231,
+          "exists": true,
+          "path": "graphics/object_events/pics/misc/pushable_boulder.png",
+          "sha256": "f33b49518741cf22b4bc08a4f6ced731748e37a2f2ba8aa00a22b2e38cb04839",
+          "source_line": 261,
+          "symbol": "gObjectEventPic_PushableBoulder"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "PushableBoulder",
+        "line": 356
+      },
+      "donor_table": {
+        "args": null,
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 941,
+        "macro": null,
+        "picture_symbols": [
+          "gObjectEventPic_PushableBoulder"
+        ],
+        "raw": "obj_frame_tiles(gObjectEventPic_PushableBoulder),"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_PUSHABLE_BOULDER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Rayquaza",
+          "compressed": "FALSE",
+          "height": "64",
+          "images": "sPicTable_RayquazaCutscene",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_64x64",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_TOWER_BEAM",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_NONE",
+          "size": "2048",
+          "subsprites": "sOamTables_64x64",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "64"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 217,
+        "symbol": "gObjectEventGraphicsInfo_Rayquaza"
+      },
+      "donor_palette": {
+        "bytes": 210,
+        "exists": true,
+        "path": "graphics/object_events/palettes/tower_beam.pal",
+        "sha256": "4153a58fc09fa22bdbbab83da181094ac36ee8292393e3c4f0666e0f5fbf47cd",
+        "source_line": 97,
+        "symbol": "gObjectEventPal_TowerBeam"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 528,
+          "exists": true,
+          "path": "graphics/object_events/pics/pokemon/rayquaza_cutscene.png",
+          "sha256": "a87d1ca4d6b4f0c6fd2ed805c524b861d70c82c68e98e8ca1764a555cbde65e8",
+          "source_line": 899,
+          "symbol": "gObjectEventPic_RayquazaCutscene"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Rayquaza",
+        "line": 476
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_RayquazaCutscene,8,8,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1958,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_RayquazaCutscene"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_RayquazaCutscene, 8, 8, 0), overworld_frame(gObjectEventPic_RayquazaCutscene, 8"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_RAYQUAZA"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_UnionRoomAttendant",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_RED",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 234,
+        "symbol": "gObjectEventGraphicsInfo_UnionRoomAttendant"
+      },
+      "donor_palette": {
+        "bytes": 208,
+        "exists": true,
+        "path": "graphics/object_events/palettes/red.pal",
+        "sha256": "d76189cdedca19ea3c4fb5bc500380a7f6d9dc9ee31e849ec6c67bb88da8a1b1",
+        "source_line": 88,
+        "symbol": "gObjectEventPal_Red"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 742,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/special/red_normal.png",
+          "sha256": "94eb37499a8bd663f47a0767c34b93569cf0c222a9906852943016e3a771054d",
+          "source_line": 367,
+          "symbol": "gObjectEventPic_UnionRoomAttendant"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "UnionRoomAttendant",
+        "line": 497
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_UnionRoomAttendant,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1910,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_UnionRoomAttendant"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_UnionRoomAttendant, 2, 4, 0), overworld_frame(gObjectEventPic_UnionRoomAttendan"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_RED_NORMAL"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_AquaMemberF",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_ROCKET_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 126,
+        "symbol": "gObjectEventGraphicsInfo_RocketMemberF"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/rocket_1.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 67,
+        "symbol": "gObjectEventPal_Rocket1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 681,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/rockets/rocket_f.png",
+          "sha256": "aa00f0cf9ff78135eb460bcddb565d2337c82467498eca6e2d2d9422efd182c3",
+          "source_line": 177,
+          "symbol": "gObjectEventPic_RocketMemberF"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "RocketMemberF",
+        "line": 387
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_RocketMemberF,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1175,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_RocketMemberF"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_RocketMemberF, 2, 4, 0), overworld_frame(gObjectEventPic_RocketMemberF, 2, 4, 1"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_ROCKET_F"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_AquaMemberM",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_ROCKET_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 125,
+        "symbol": "gObjectEventGraphicsInfo_RocketMemberM"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/rocket_1.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 67,
+        "symbol": "gObjectEventPal_Rocket1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 650,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/rockets/rocket_m.png",
+          "sha256": "df9978edee318b6193fc85be4a88fa85202bbd6e689bb21e602c181dab3b6e12",
+          "source_line": 176,
+          "symbol": "gObjectEventPic_RocketMemberM"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "RocketMemberM",
+        "line": 386
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_RocketMemberM,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 1163,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_RocketMemberM"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_RocketMemberM, 2, 4, 0), overworld_frame(gObjectEventPic_RocketMemberM, 2, 4, 1"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_ROCKET_M"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Lucy",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 246,
+        "symbol": "gObjectEventGraphicsInfo_Sabrina"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 707,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/gym_leaders/sabrina.png",
+          "sha256": "814394db64af1dba2d62f0c1ea93b19253fe34ad4afb7d131d119ab3ea98f32e",
+          "source_line": 381,
+          "symbol": "gObjectEventPic_Lucy"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Sabrina",
+        "line": 344
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Lucy,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 2038,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Lucy"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Lucy, 2, 4, 0), overworld_frame(gObjectEventPic_Lucy, 2, 4, 1), overworld_f"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_SABRINA"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Sailor",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_2",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 51,
+        "symbol": "gObjectEventGraphicsInfo_Sailor"
+      },
+      "donor_palette": {
+        "bytes": 211,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_pink.pal",
+        "sha256": "e5275a49e398b49e011b4e6060691f6ec1724eb6fd56e428e2af11dbd33344a5",
+        "source_line": 64,
+        "symbol": "gObjectEventPal_Npc2"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 841,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/sailor.png",
+          "sha256": "9b0f6f5400b4e610e8a2ec4be266c0a5215fcb724ebb3501c2649e7423b53058",
+          "source_line": 151,
+          "symbol": "gObjectEventPic_Sailor"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Sailor",
+        "line": 318
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Sailor,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 650,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Sailor"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Sailor, 2, 4, 0), overworld_frame(gObjectEventPic_Sailor, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_SAILOR"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_SwimmerF",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "3",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 45,
+        "symbol": "gObjectEventGraphicsInfo_SwimmerF"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 684,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/swimmer_f.png",
+          "sha256": "21b54a9ac92e8822065fcafd925965f6a763e51a526c5ce5391165d6939c5e14",
+          "source_line": 145,
+          "symbol": "gObjectEventPic_SwimmerF"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "SwimmerF",
+        "line": 312
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_SwimmerF,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 553,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_SwimmerF"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_SwimmerF, 2, 4, 0), overworld_frame(gObjectEventPic_SwimmerF, 2, 4, 1), ove"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_SWIMMER_F_WATER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_SwimmerM",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 44,
+        "symbol": "gObjectEventGraphicsInfo_SwimmerM"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 625,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/swimmer_m.png",
+          "sha256": "48a6abdabfa5eb805de0fc560f05ebb6fb79f86462c61f7758da67a623c48d57",
+          "source_line": 144,
+          "symbol": "gObjectEventPic_SwimmerM"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "SwimmerM",
+        "line": 311
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_SwimmerM,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 541,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_SwimmerM"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_SwimmerM, 2, 4, 0), overworld_frame(gObjectEventPic_SwimmerM, 2, 4, 1), ove"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_SWIMMER_M_WATER"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Twin",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "3",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 8,
+        "symbol": "gObjectEventGraphicsInfo_Twin"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 559,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/twin.png",
+          "sha256": "066776008ba1a478aed44d6f90b094bd38952c6e2838160ece5ed29e214c7a21",
+          "source_line": 108,
+          "symbol": "gObjectEventPic_Twin"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Twin",
+        "line": 277
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Twin,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 121,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Twin"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Twin, 2, 4, 0), overworld_frame(gObjectEventPic_Twin, 2, 4, 1), overworld_f"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_TWIN"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_RooftopSaleWoman",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_4",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 84,
+        "symbol": "gObjectEventGraphicsInfo_RooftopSaleWoman"
+      },
+      "donor_palette": {
+        "bytes": 204,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_green.pal",
+        "sha256": "ec52e39c3691ed5dab197966ce5afcc550fa3c43a8b6eafea89dffef7f32c749",
+        "source_line": 66,
+        "symbol": "gObjectEventPal_Npc4"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 744,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/rooftop_sale_woman.png",
+          "sha256": "cc6508fdb301902362bf094b11270acdb5fc98e99150503c96a81e0038ced77a",
+          "source_line": 170,
+          "symbol": "gObjectEventPic_RooftopSaleWoman"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "RooftopSaleWoman",
+        "line": 353
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_RooftopSaleWoman,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 910,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_RooftopSaleWoman"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_RooftopSaleWoman, 2, 4, 0), overworld_frame(gObjectEventPic_RooftopSaleWoman, 2"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_WOMAN_1"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Woman2",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "4",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 23,
+        "symbol": "gObjectEventGraphicsInfo_Woman2"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 729,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/woman_2.png",
+          "sha256": "006b51ca958c2743e7d7d61a9f073d9d5c05f872727942a18269d9c943639359",
+          "source_line": 123,
+          "symbol": "gObjectEventPic_Woman2"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Woman2",
+        "line": 290
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Woman2,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 289,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Woman2"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Woman2, 2, 4, 0), overworld_frame(gObjectEventPic_Woman2, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_WOMAN_2"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Woman1",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 19,
+        "symbol": "gObjectEventGraphicsInfo_Woman1"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 730,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/woman_1.png",
+          "sha256": "78e4b094c3f34b2deee98a580f174564c4210dce3a93302d8db2b9e0635bde56",
+          "source_line": 119,
+          "symbol": "gObjectEventPic_Woman1"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Woman1",
+        "line": 286
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Woman1,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 241,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Woman1"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Woman1, 2, 4, 0), overworld_frame(gObjectEventPic_Woman1, 2, 4, 1), overwor"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_WOMAN_3"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_WorkerM",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "5",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_1",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 16,
+        "symbol": "gObjectEventGraphicsInfo_WorkerM"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_white.pal",
+        "sha256": "364226740461c8f31a71727ed46fd5e3d743582c9e37015f916a216742a61e1f",
+        "source_line": 63,
+        "symbol": "gObjectEventPal_Npc1"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 761,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/worker_m.png",
+          "sha256": "f6d22dc5f26a478ef7c65b8a9acaa3f342b9955a051e23316f9e9c8173dd3cfb",
+          "source_line": 116,
+          "symbol": "gObjectEventPic_WorkerM"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "WorkerM",
+        "line": 284
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_WorkerM,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 205,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_WorkerM"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_WorkerM, 2, 4, 0), overworld_frame(gObjectEventPic_WorkerM, 2, 4, 1), overw"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_WORKER_M"
+    },
+    {
+      "donor_info": {
+        "fields": {
+          "affineAnims": "gDummySpriteAffineAnimTable};",
+          "anims": "sAnimTable_Standard",
+          "compressed": "FALSE",
+          "height": "32",
+          "images": "sPicTable_Youngster",
+          "inanimate": "FALSE",
+          "oam": "&gObjectEventBaseOam_16x32",
+          "paletteSlot": "2",
+          "paletteTag": "OBJ_EVENT_PAL_TAG_NPC_3",
+          "reflectionPaletteTag": "OBJ_EVENT_PAL_TAG_NONE",
+          "shadowSize": "SHADOW_SIZE_M",
+          "size": "256",
+          "subsprites": "sOamTables_16x32",
+          "tileTag": "TAG_NONE",
+          "tracks": "TRACKS_FOOT",
+          "width": "16"
+        },
+        "file": "src/data/object_events/object_event_graphics_info.h",
+        "line": 38,
+        "symbol": "gObjectEventGraphicsInfo_Youngster"
+      },
+      "donor_palette": {
+        "bytes": 205,
+        "exists": true,
+        "path": "graphics/object_events/palettes/npc_blue.pal",
+        "sha256": "5501ce3105e8adee0807898f23e7afbc64d3023ff92e275103aea3492904d927",
+        "source_line": 65,
+        "symbol": "gObjectEventPal_Npc3"
+      },
+      "donor_pictures": [
+        {
+          "bytes": 769,
+          "exists": true,
+          "path": "graphics/object_events/pics/people/youngster.png",
+          "sha256": "86dfa7e28d76ce53d82085ced36f0c76bc35b715ef7975e25ad8699850a6e6e8",
+          "source_line": 138,
+          "symbol": "gObjectEventPic_Youngster"
+        }
+      ],
+      "donor_pointer": {
+        "file": "src/data/object_events/object_event_graphics_info_pointers.h",
+        "info": "Youngster",
+        "line": 305
+      },
+      "donor_table": {
+        "args": "gObjectEventPic_Youngster,2,4,0",
+        "file": "src/data/object_events/object_event_pic_tables.h",
+        "line": 469,
+        "macro": "overworld_frame",
+        "picture_symbols": [
+          "gObjectEventPic_Youngster"
+        ],
+        "raw": "overworld_frame(gObjectEventPic_Youngster, 2, 4, 0), overworld_frame(gObjectEventPic_Youngster, 2, 4, 1), o"
+      },
+      "special": [],
+      "token": "OBJ_EVENT_GFX_YOUNGSTER"
+    }
+  ]
+}

@@ -2112,3 +2112,23 @@ const u16 gItemIconPalette_SwapSnack[] = INCBIN_U16("graphics/items/icon_palette
 
 const u32 gItemIcon_TwiceSpicedRadish[] = INCBIN_U32("graphics/items/icons/twice_spiced_radish.4bpp.smol");
 const u16 gItemIconPalette_TwiceSpicedRadish[] = INCBIN_U16("graphics/items/icon_palettes/twice_spiced_radish.gbapal");
+
+// Johto passive item icons
+const u32 gItemIcon_JohtoClearBell[] = INCBIN_U32("graphics/johto/items/icons/clear_bell.4bpp.smol");
+const u16 gItemIconPalette_JohtoClearBell[] = INCBIN_U16("graphics/johto/items/icon_palettes/clear_bell.gbapal");
+const u32 gItemIcon_JohtoGsBall[] = INCBIN_U32("graphics/johto/items/icons/gs_ball.4bpp.smol");
+const u16 gItemIconPalette_JohtoGsBall[] = INCBIN_U16("graphics/johto/items/icon_palettes/gs_ball.gbapal");
+const u32 gItemIcon_JohtoMysteryEgg[] = INCBIN_U32("graphics/johto/items/icons/mystery_egg.4bpp.smol");
+const u16 gItemIconPalette_JohtoMysteryEgg[] = INCBIN_U16("graphics/johto/items/icon_palettes/mystery_egg.gbapal");
+const u32 gItemIcon_JohtoPass[] = INCBIN_U32("graphics/johto/items/icons/pass.4bpp.smol");
+const u16 gItemIconPalette_JohtoPass[] = INCBIN_U16("graphics/johto/items/icon_palettes/pass.gbapal");
+const u32 gItemIcon_JohtoRainbowWing[] = INCBIN_U32("graphics/johto/items/icons/rainbow_wing.4bpp.smol");
+const u16 gItemIconPalette_JohtoRainbowWing[] = INCBIN_U16("graphics/johto/items/icon_palettes/rainbow_wing.gbapal");
+const u32 gItemIcon_JohtoRedScale[] = INCBIN_U32("graphics/johto/items/icons/red_scale.4bpp.smol");
+const u16 gItemIconPalette_JohtoRedScale[] = INCBIN_U16("graphics/johto/items/icon_palettes/red_scale.gbapal");
+const u32 gItemIcon_JohtoSecretPotion[] = INCBIN_U32("graphics/johto/items/icons/secret_potion.4bpp.smol");
+const u16 gItemIconPalette_JohtoSecretPotion[] = INCBIN_U16("graphics/johto/items/icon_palettes/secret_potion.gbapal");
+const u32 gItemIcon_JohtoSilverWing[] = INCBIN_U32("graphics/johto/items/icons/silver_wing.4bpp.smol");
+const u16 gItemIconPalette_JohtoSilverWing[] = INCBIN_U16("graphics/johto/items/icon_palettes/silver_wing.gbapal");
+const u32 gItemIcon_JohtoTidalBell[] = INCBIN_U32("graphics/johto/items/icons/tidal_bell.4bpp.smol");
+const u16 gItemIconPalette_JohtoTidalBell[] = INCBIN_U16("graphics/johto/items/icon_palettes/tidal_bell.gbapal");

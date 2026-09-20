@@ -1,0 +1,37 @@
+{
+  "id": "MAP_KANTO_LATER_FUCHSIA_ROUTE19GATE",
+  "name": "FuchsiaCity_Route19_Gate",
+  "layout": "LAYOUT_KANTO_LATER_FUCHSIA_ROUTE19GATE",
+  "music": "MUS_RG_ROUTE11",
+  "region_map_section": "MAPSEC_FUCHSIA_CITY",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_INDOOR",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [],
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 7,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_LATER_FUCHSIA_CITY",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_LATER_ROUTE19",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [],
+  "region": "REGION_KANTO",
+  "shared_scripts_map": "KantoLater_FuchsiaCity_Route19_Gate_FuchsiaCity_Route19_Gate"
+}

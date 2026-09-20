@@ -12,8 +12,8 @@ use std::{
 };
 
 use coop_protocol::{
-    LocalPresenceStateV1, PresenceInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
-    RemotePlayerUpdateV1,
+    GroupTravelClientRecord, GroupTravelServerRecord, LocalPresenceStateV1, PresenceInteractionV1,
+    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -173,6 +173,11 @@ pub enum ControlCommand {
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     #[serde(rename = "remote_player_despawn")]
     RemotePlayerDespawn(RemotePlayerDespawnV1),
+    #[serde(rename = "group_travel")]
+    GroupTravel {
+        session_epoch: u32,
+        record: GroupTravelServerRecord,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -288,6 +293,8 @@ pub enum ControlEvent {
     InteractRemotePlayer(PresenceInteractionV1),
     #[serde(rename = "rom_presence_reset")]
     RomPresenceReset,
+    #[serde(rename = "group_travel")]
+    GroupTravel(GroupTravelClientRecord),
 }
 
 // Serde accepts unknown fields on an internally tagged unit variant even when
@@ -332,6 +339,8 @@ enum ControlEventWire {
     InteractRemotePlayer(PresenceInteractionV1),
     #[serde(rename = "rom_presence_reset")]
     RomPresenceReset {},
+    #[serde(rename = "group_travel")]
+    GroupTravel(GroupTravelClientRecord),
 }
 
 impl<'de> Deserialize<'de> for ControlEvent {
@@ -387,6 +396,7 @@ impl<'de> Deserialize<'de> for ControlEvent {
             ControlEventWire::PlayerState(value) => Self::PlayerState(value),
             ControlEventWire::InteractRemotePlayer(value) => Self::InteractRemotePlayer(value),
             ControlEventWire::RomPresenceReset {} => Self::RomPresenceReset,
+            ControlEventWire::GroupTravel(value) => Self::GroupTravel(value),
         })
     }
 }
@@ -796,6 +806,35 @@ mod tests {
             r#"{"type":"shutdown_request","command_id":"00000000-0000-4000-8000-000000000001","session_epoch":7,"extra":true}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn group_travel_control_records_are_typed_strict_and_bounded() {
+        let record = coop_protocol::GroupTravelServerRecord {
+            kind: coop_protocol::GroupTravelServerKind::Commit,
+            route: coop_protocol::GroupTravelRoute::FerryLater,
+            departure: coop_protocol::GroupTravelDeparture::Ferry,
+            request_id: 17,
+            proposal_id: [0xAB; 16],
+            result: coop_protocol::GroupTravelResult::None,
+            reason: coop_protocol::GroupTravelReason::None,
+        };
+        let command = ControlCommand::GroupTravel {
+            session_epoch: 9,
+            record,
+        };
+        let bytes = serde_json::to_vec(&command).unwrap();
+        assert!(bytes.len() < MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_slice::<ControlCommand>(&bytes).unwrap(),
+            command
+        );
+        let mut value = serde_json::to_value(&command).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("extra".into(), true.into());
+        assert!(serde_json::from_value::<ControlCommand>(value).is_err());
     }
 
     #[test]

@@ -33,6 +33,7 @@ pub enum MessageType {
     CheckpointReady = 0x000C,
     SaveDataUpdated = 0x000D,
     OnlineRequest = 0x000E,
+    GroupTravelClient = 0x000F,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -47,6 +48,7 @@ pub enum MessageType {
     AbortBattle = 0x010B,
     CheckpointGranted = 0x010C,
     OnlineStatus = 0x010D,
+    GroupTravelServer = 0x010E,
 }
 
 impl MessageType {
@@ -66,7 +68,8 @@ impl MessageType {
             | Self::CommitApplied
             | Self::CheckpointReady
             | Self::SaveDataUpdated
-            | Self::OnlineRequest => Direction::RomToSidecar,
+            | Self::OnlineRequest
+            | Self::GroupTravelClient => Direction::RomToSidecar,
             Self::SessionReady
             | Self::RemotePlayerSpawn
             | Self::RemotePlayerUpdate
@@ -80,7 +83,8 @@ impl MessageType {
             | Self::BattleCommit
             | Self::AbortBattle
             | Self::CheckpointGranted
-            | Self::OnlineStatus => Direction::SidecarToRom,
+            | Self::OnlineStatus
+            | Self::GroupTravelServer => Direction::SidecarToRom,
         }
     }
 }
@@ -104,6 +108,7 @@ impl TryFrom<u16> for MessageType {
             0x000C => Self::CheckpointReady,
             0x000D => Self::SaveDataUpdated,
             0x000E => Self::OnlineRequest,
+            0x000F => Self::GroupTravelClient,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -118,6 +123,7 @@ impl TryFrom<u16> for MessageType {
             0x010B => Self::AbortBattle,
             0x010C => Self::CheckpointGranted,
             0x010D => Self::OnlineStatus,
+            0x010E => Self::GroupTravelServer,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -416,5 +422,17 @@ mod tests {
             BridgeFrame::decode_for(&golden, Direction::RomToSidecar).unwrap(),
             frame
         );
+    }
+
+    #[test]
+    fn group_travel_message_types_preserve_direction_and_payload_size() {
+        let payload = [0_u8; coop_protocol::GROUP_TRAVEL_RECORD_SIZE];
+        let client = BridgeFrame::new(MessageType::GroupTravelClient, 3, 9, &payload).unwrap();
+        let server = BridgeFrame::new(MessageType::GroupTravelServer, 4, 9, &payload).unwrap();
+        assert_eq!(client.direction(), Direction::RomToSidecar);
+        assert_eq!(server.direction(), Direction::SidecarToRom);
+        assert_eq!(client.payload().len(), 32);
+        assert!(client.ensure_direction(Direction::SidecarToRom).is_err());
+        assert!(server.ensure_direction(Direction::RomToSidecar).is_err());
     }
 }
