@@ -2038,6 +2038,20 @@ impl SessionLifecycle {
         Ok(())
     }
 
+    /// Gives child startup a full lease window after local session setup.
+    /// If setup already consumed the lease, reconnect within the server-owned
+    /// grace window before any process is allowed to emit session traffic.
+    pub async fn renew_lease_before_child_start<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(), SessionError> {
+        match self.heartbeat(api).await {
+            Ok(()) => Ok(()),
+            Err(SessionError::Unauthorized) => self.reconnect(api).await,
+            Err(error) => Err(error),
+        }
+    }
+
     /// Reconnects while retaining `SessionId` and accepting a newer server epoch.
     ///
     /// # Errors
@@ -4361,7 +4375,7 @@ mod lifecycle_tests {
         reconnect_requests: Mutex<Vec<ReconnectLeaseRequest>>,
         heartbeats: Mutex<usize>,
         heartbeat_requests: Mutex<Vec<HeartbeatLeaseRequest>>,
-        heartbeat_unauthorized_once: Mutex<bool>,
+        heartbeat_unauthorized_remaining: Mutex<usize>,
         heartbeat_revision: Mutex<Option<Revision>>,
         heartbeat_character: Mutex<Option<CharacterId>>,
         refresh_enabled: Mutex<bool>,
@@ -4400,7 +4414,7 @@ mod lifecycle_tests {
                 reconnect_requests: Mutex::new(Vec::new()),
                 heartbeats: Mutex::new(0),
                 heartbeat_requests: Mutex::new(Vec::new()),
-                heartbeat_unauthorized_once: Mutex::new(false),
+                heartbeat_unauthorized_remaining: Mutex::new(0),
                 heartbeat_revision: Mutex::new(None),
                 heartbeat_character: Mutex::new(None),
                 refresh_enabled: Mutex::new(false),
@@ -4437,7 +4451,11 @@ mod lifecycle_tests {
         }
 
         fn set_heartbeat_unauthorized_once(&self) {
-            *self.heartbeat_unauthorized_once.lock().unwrap() = true;
+            *self.heartbeat_unauthorized_remaining.lock().unwrap() = 1;
+        }
+
+        fn set_heartbeat_unauthorized_count(&self, count: usize) {
+            *self.heartbeat_unauthorized_remaining.lock().unwrap() = count;
         }
 
         fn set_heartbeat_revision(&self, revision: Revision) {
@@ -4545,8 +4563,9 @@ mod lifecycle_tests {
             *self.heartbeats.lock().unwrap() += 1;
             self.heartbeat_observed.notify_one();
             self.heartbeat_requests.lock().unwrap().push(request);
-            if *self.heartbeat_unauthorized_once.lock().unwrap() {
-                *self.heartbeat_unauthorized_once.lock().unwrap() = false;
+            let mut unauthorized = self.heartbeat_unauthorized_remaining.lock().unwrap();
+            if *unauthorized > 0 {
+                *unauthorized -= 1;
                 return Box::pin(async { Err(SessionError::Unauthorized) });
             }
             let mut lease = self.lease;
@@ -5534,6 +5553,36 @@ mod lifecycle_tests {
                 .expose_secret(),
             "refreshed-access"
         );
+    }
+
+    #[tokio::test]
+    async fn child_start_renews_an_active_lease_with_a_heartbeat() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+
+        session
+            .renew_lease_before_child_start(cloud.as_ref())
+            .await
+            .unwrap();
+
+        assert_eq!(*cloud.heartbeats.lock().unwrap(), 1);
+        assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn child_start_renews_an_expired_lease_by_reconnecting() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        cloud.enable_refresh();
+        cloud.set_heartbeat_unauthorized_count(2);
+        cloud.set_reconnect_epoch(2);
+
+        session
+            .renew_lease_before_child_start(cloud.as_ref())
+            .await
+            .unwrap();
+
+        assert_eq!(*cloud.heartbeats.lock().unwrap(), 2);
+        assert_eq!(cloud.reconnect_requests.lock().unwrap().len(), 1);
+        assert_eq!(session.lease.session_epoch.value(), 2);
     }
 
     fn long_running_test_child() -> tokio::process::Child {

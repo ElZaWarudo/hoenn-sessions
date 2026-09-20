@@ -169,6 +169,9 @@ async fn run(
         if *stop.borrow() == 1 {
             break Ok(());
         }
+        if session.renew_lease_before_child_start(&api).await.is_err() {
+            break Err("No se pudo renovar la sesión antes de iniciar".into());
+        }
         let (mut supervisor, descriptor) =
             match EmbeddedSupervisor::start(session.lease.session_epoch.value(), host_tx.clone())
                 .await

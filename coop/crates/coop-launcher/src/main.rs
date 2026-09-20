@@ -434,6 +434,10 @@ async fn run() -> Result<(), CliError> {
     let mut session = SessionLifecycle::acquire_with_keychain(&api, auth, config, keychain)
         .await
         .map_err(|_| CliError::Runtime)?;
+    if session.renew_lease_before_child_start(&api).await.is_err() {
+        let _ = session.release(&api).await;
+        return Err(CliError::Runtime);
+    }
     eprintln!(
         "Session materialized at {}. The launcher validated the official mGBA 0.10.5 Windows x64 Qt artifact; it has no certified startup-script flag, so load {} through Tools > Scripting, then load {} manually if present. New captures must be written to {}.",
         session.workspace.path().display(),
