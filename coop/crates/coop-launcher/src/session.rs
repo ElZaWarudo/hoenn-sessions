@@ -2374,7 +2374,7 @@ impl SessionLifecycle {
                 api,
                 travel_token,
                 self.lease.fence(),
-                children.control.lifecycle_generation(),
+                children.control().lifecycle_generation(),
             );
             tokio::select! {
                 completion = online.next() => {
@@ -2396,7 +2396,7 @@ impl SessionLifecycle {
                 travel = group_travel.next_event() => {
                     match travel {
                         crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
-                            children.control.send(&ControlCommand::GroupTravel {
+                            children.control().send(&ControlCommand::GroupTravel {
                                 session_epoch: self.lease.session_epoch.value(), record,
                             }).await?;
                             group_travel.acknowledge_delivery(record)?;
@@ -2416,7 +2416,7 @@ impl SessionLifecycle {
                         RawSupervisorEvent::Control(ControlEvent::GroupTravel(record)) => {
                             group_travel.handle(
                                 self.lease.fence(),
-                                children.control.lifecycle_generation(),
+                                children.control().lifecycle_generation(),
                                 record,
                             )?;
                         }
@@ -2639,7 +2639,7 @@ impl SessionLifecycle {
                 .ok_or(SessionError::Unauthorized)?
                 .clone();
             let travel_fence = self.lease.fence();
-            let travel_generation = children.control.lifecycle_generation();
+            let travel_generation = children.control().lifecycle_generation();
             group_travel.prepare(api, travel_token, travel_fence, travel_generation);
             let input = tokio::select! {
                 completion = online.next() => {
@@ -2657,7 +2657,7 @@ impl SessionLifecycle {
                 travel = group_travel.next_event() => {
                     match travel {
                         crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
-                            match children.control.send(&ControlCommand::GroupTravel {
+                            match children.control().send(&ControlCommand::GroupTravel {
                                 session_epoch: self.lease.session_epoch.value(), record,
                             }).await {
                                 Ok(()) => {
@@ -2717,7 +2717,7 @@ impl SessionLifecycle {
                         Ok(RawSupervisorEvent::Control(ControlEvent::GroupTravel(record))) => {
                             if let Err(error) = group_travel.handle(
                                 self.lease.fence(),
-                                children.control.lifecycle_generation(),
+                                children.control().lifecycle_generation(),
                                 record,
                             ) {
                                 result = Err(error);
