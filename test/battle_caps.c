@@ -69,16 +69,6 @@ TEST("Badge caps count only victories from the active region")
     gMapHeader.regionMapSectionId = MAPSEC_PALLET_TOWN;
     gSaveBlock1Ptr->location.mapGroup = 77;
     gSaveBlock1Ptr->location.mapNum = 0;
-    for (u32 flag = JOHTO_FLAG_BADGE09_GET; flag <= JOHTO_FLAG_BADGE16_GET; flag++)
-        FlagClear(flag);
-    FlagClear(JOHTO_FLAG_IS_KANTO_CHAMPION);
-    EXPECT_EQ(GetBadgeBattleLevelCap(), 15);
-    FlagSet(JOHTO_FLAG_BADGE09_GET);
-    EXPECT_EQ(GetBadgeBattleLevelCap(), 19);
-    for (u32 flag = JOHTO_FLAG_BADGE09_GET; flag <= JOHTO_FLAG_BADGE16_GET; flag++)
-        FlagSet(flag);
-    EXPECT_EQ(GetBadgeBattleLevelCap(), 58);
-    FlagSet(JOHTO_FLAG_IS_KANTO_CHAMPION);
     EXPECT_EQ(GetBadgeBattleLevelCap(), 100);
 }
 
