@@ -6692,24 +6692,27 @@ static void SwapBattlerMoveData(enum BattlerId battler1, enum BattlerId battler2
 
 static void AnimTask_AllySwitchDataSwap(u8 taskId)
 {
+    union
+    {
+        struct BattlePokemon battleMon;
+        struct SpecialStatus specialStatus;
+        struct ProtectStruct protect;
+        struct BattleSpriteInfo spriteInfo;
+        struct Illusion illusion;
+        struct BattlerState battlerState;
+    } swapData;
     enum BattlerId i, j;
     struct Pokemon *party;
     u32 temp;
     enum BattlerId battlerAtk = gBattlerAttacker;
     enum BattlerId battlerPartner = BATTLE_PARTNER(battlerAtk);
 
-    void *data = Alloc(0x200);
-    if (data == NULL)
-    {
-        SoftReset(1);
-    }
-
-    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], data, sizeof(struct BattlePokemon));
-    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], data, sizeof(struct SpecialStatus));
-    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], data, sizeof(struct ProtectStruct));
-    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], data, sizeof(struct BattleSpriteInfo));
-    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], data, sizeof(struct Illusion));
-    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], data, sizeof(struct BattlerState));
+    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], &swapData, sizeof(struct BattlePokemon));
+    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], &swapData, sizeof(struct SpecialStatus));
+    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], &swapData, sizeof(struct ProtectStruct));
+    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], &swapData, sizeof(struct BattleSpriteInfo));
+    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], &swapData, sizeof(struct Illusion));
+    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], &swapData, sizeof(struct BattlerState));
 
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
@@ -6769,8 +6772,6 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
         ReloadBattlerSprites(battlerPartner, party);
         ReloadBattlerSprites(battlerAtk, party);
     }
-
-    Free(data);
 
     gBattleScripting.battler = battlerPartner;
     DestroyAnimVisualTask(taskId);
