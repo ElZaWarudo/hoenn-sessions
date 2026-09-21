@@ -1798,8 +1798,8 @@ static void TearDownBattle(void)
 
     FreeMonSpritesGfx();
     FreeBattleSpritesData();
-    FreeBattleResources();
     FreeAllWindowBuffers();
+    FreeBattleResources();
     gMain.inBattle = FALSE; // Necessary else some tests report incorrect results when running in same thread as an EXPECT_FAIL test
 }
 

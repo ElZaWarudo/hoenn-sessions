@@ -196,9 +196,7 @@ jobs:
         env:
           GAME_VERSION: EMERALD
           TEST: 1
-        run: |
-          make -j$(nproc) check TESTS='*Healing Wish/Lunar Dance*'
-          arm-none-eabi-addr2line -f -C -e pokeemerald-test.elf 0x824ea32 0x818bba4
+        run: make -j$(nproc) check TESTS='*Healing Wish/Lunar Dance*'
 
   # Gate job: satisfies the "build" branch protection rule.
   # Passes only when all parallel build/test jobs succeed.

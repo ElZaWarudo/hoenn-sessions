@@ -4,9 +4,6 @@
 #include "bg.h"
 #include "blit.h"
 #include "decompress.h"
-#if TESTING
-#include "test/test.h"
-#endif
 
 COMMON_DATA void *gWindowBgTilemapBuffers[NUM_BACKGROUNDS] = {0};
 extern u32 gWindowTileAutoAllocEnabled;
@@ -261,10 +258,6 @@ void FreeAllWindowBuffers(void)
     {
         if (gWindowBgTilemapBuffers[i] != NULL && gWindowBgTilemapBuffers[i] != DummyWindowBgTilemap)
         {
-#if TESTING
-            if ((u8 *)gWindowBgTilemapBuffers[i] < gHeap || (u8 *)gWindowBgTilemapBuffers[i] >= gHeap + HEAP_SIZE)
-                Test_MgbaPrintf("invalid bg tilemap buffer %d: %p", i, gWindowBgTilemapBuffers[i]);
-#endif
             Free(gWindowBgTilemapBuffers[i]);
             gWindowBgTilemapBuffers[i] = NULL;
         }
@@ -274,10 +267,6 @@ void FreeAllWindowBuffers(void)
     {
         if (gWindows[i].tileData != NULL)
         {
-#if TESTING
-            if (gWindows[i].tileData < gHeap || gWindows[i].tileData >= gHeap + HEAP_SIZE)
-                Test_MgbaPrintf("invalid window tile buffer %d: %p", i, gWindows[i].tileData);
-#endif
             Free(gWindows[i].tileData);
             gWindows[i].tileData = NULL;
         }
