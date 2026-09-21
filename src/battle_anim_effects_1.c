@@ -6713,10 +6713,11 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     enum BattlerId battlerPartner = GetPartnerBattler(battlerAtk);
     void *swapData = &sAllySwitchSwapData;
 
-    // Asymmetric multi battles require heap-backed scratch for their battler
-    // layout. Ordinary doubles keep it in EWRAM so sprite reloads (including
-    // Illusion) cannot overwrite adjacent allocator metadata.
-    if (gBattleTypeFlags & (BATTLE_TYPE_MULTI | BATTLE_TYPE_TWO_OPPONENTS))
+    // Reloading an Illusion battler allocates additional sprite data, so keep
+    // the swap scratch out of the heap for that case. Other layouts require
+    // heap-backed scratch to keep the animation task stack small.
+    if (gBattleMons[battlerAtk].ability != ABILITY_ILLUSION
+     && gBattleMons[battlerPartner].ability != ABILITY_ILLUSION)
     {
         swapData = Alloc(sizeof(union AllySwitchSwapData));
         if (swapData == NULL)

@@ -196,7 +196,7 @@ jobs:
         env:
           GAME_VERSION: EMERALD
           TEST: 1
-        run: make -j$(nproc) check TESTS='*Healing Wish/Lunar Dance*'
+        run: make -j$(nproc) check TESTS='test/battle/move_effect/ally_switch.c'
 
   # Gate job: satisfies the "build" branch protection rule.
   # Passes only when all parallel build/test jobs succeed.
