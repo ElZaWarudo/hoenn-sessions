@@ -170,6 +170,7 @@ pub fn spawn_backend(config: BackendConfig) -> Result<BackendHandle, BackendErro
 
 enum BackendCommand {
     Effect(Effect),
+    RuntimeStarted,
     RuntimeFinished(RuntimeCompletion),
     Shutdown(mpsc::Sender<()>),
 }
@@ -195,7 +196,13 @@ struct BackendActor {
 #[derive(Debug)]
 struct RuntimeCompletion {
     auth: Option<AuthSession>,
-    clean_stop: bool,
+    outcome: RuntimeOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeOutcome {
+    StartupFailed(StartFailure),
+    Exited { clean_stop: bool },
 }
 
 impl BackendActor {
@@ -209,6 +216,15 @@ impl BackendActor {
                 BackendCommand::Effect(effect) => {
                     self.execute(effect, &events).await;
                 }
+                BackendCommand::RuntimeStarted => {
+                    if self
+                        .runtime
+                        .as_ref()
+                        .is_some_and(|runtime| runtime.stop.is_some())
+                    {
+                        let _ = events.send(BackendEvent::StartCompleted);
+                    }
+                }
                 BackendCommand::RuntimeFinished(completion) => {
                     let stop_requested = self
                         .runtime
@@ -217,10 +233,8 @@ impl BackendActor {
                     if completion.auth.is_some() {
                         self.auth = completion.auth;
                     }
-                    let _ = events.send(runtime_completion_event(
-                        stop_requested,
-                        completion.clean_stop,
-                    ));
+                    let _ =
+                        events.send(runtime_completion_event(stop_requested, completion.outcome));
                     if let Some(ack) = self.shutdown_ack.take() {
                         let _ = ack.send(());
                         break;
@@ -566,6 +580,7 @@ impl BackendActor {
                 bridge_path,
                 paths,
                 stop_rx,
+                &commands,
             )
             .await;
             let _ = commands.send(BackendCommand::RuntimeFinished(result));
@@ -573,7 +588,6 @@ impl BackendActor {
         self.runtime = Some(RuntimeHandle {
             stop: Some(stop_tx),
         });
-        let _ = events.send(BackendEvent::StartCompleted);
     }
 
     async fn stop_runtime(&mut self, events: &mpsc::Sender<BackendEvent>) {
@@ -587,33 +601,31 @@ impl BackendActor {
     }
 
     async fn reconcile_recovery(&mut self, events: &mpsc::Sender<BackendEvent>) {
-        let client_instance_id =
-            match RecoveryDiscovery::discover(self.config.paths.workspace_parent()) {
-                Ok(discovery) => match discovery
-                    .candidate()
-                    .as_ref()
-                    .map(|candidate| candidate.marker())
-                {
-                    Some(RecoveryMarker::V2(marker)) => marker.prior_client_instance_id,
-                    Some(RecoveryMarker::LegacyV1) | None => {
-                        match ClientInstanceId::new(uuid::Uuid::new_v4()) {
-                            Ok(value) => value,
-                            Err(_) => {
-                                let _ = events.send(BackendEvent::RecoveryReconciled(
-                                    RecoveryResult::StillUncertain,
-                                ));
-                                return;
-                            }
-                        }
-                    }
-                },
+        let discovery = match RecoveryDiscovery::discover(self.config.paths.workspace_parent()) {
+            Ok(discovery) => discovery,
+            Err(_) => {
+                let _ = events.send(BackendEvent::RecoveryReconciled(
+                    RecoveryResult::StillUncertain,
+                ));
+                return;
+            }
+        };
+        let Some(candidate) = discovery.candidate() else {
+            let _ = events.send(BackendEvent::RecoveryReconciled(RecoveryResult::Reconciled));
+            return;
+        };
+        let client_instance_id = match candidate.marker() {
+            RecoveryMarker::V2(marker) => marker.prior_client_instance_id,
+            RecoveryMarker::LegacyV1 => match ClientInstanceId::new(uuid::Uuid::new_v4()) {
+                Ok(value) => value,
                 Err(_) => {
                     let _ = events.send(BackendEvent::RecoveryReconciled(
                         RecoveryResult::StillUncertain,
                     ));
                     return;
                 }
-            };
+            },
+        };
         let auth = match self.take_or_resume_auth().await {
             Ok(auth) => auth,
             Err(_) => {
@@ -827,6 +839,7 @@ async fn run_runtime(
     bridge_path: PathBuf,
     paths: UserPaths,
     stop_rx: oneshot::Receiver<()>,
+    commands: &tokio_mpsc::UnboundedSender<BackendCommand>,
 ) -> RuntimeCompletion {
     let config = SessionConfig {
         client_instance_id: match ClientInstanceId::new(uuid::Uuid::new_v4()) {
@@ -834,7 +847,7 @@ async fn run_runtime(
             Err(_) => {
                 return RuntimeCompletion {
                     auth: Some(auth),
-                    clean_stop: false,
+                    outcome: RuntimeOutcome::StartupFailed(StartFailure::Unavailable),
                 };
             }
         },
@@ -850,7 +863,7 @@ async fn run_runtime(
             Err(_) => {
                 return RuntimeCompletion {
                     auth: None,
-                    clean_stop: false,
+                    outcome: RuntimeOutcome::StartupFailed(StartFailure::Unavailable),
                 };
             }
         };
@@ -896,6 +909,7 @@ async fn run_runtime(
         Ok(children) => children,
         Err(_) => return retain_auth(session, &api).await,
     };
+    let _ = commands.send(BackendCommand::RuntimeStarted);
     let lifecycle = session
         .run_until_shutdown(&api, &mut children, async move {
             let _ = stop_rx.await;
@@ -907,14 +921,16 @@ async fn run_runtime(
         let _ = session.close_credentials(&api).await;
         return RuntimeCompletion {
             auth: None,
-            clean_stop: false,
+            outcome: RuntimeOutcome::Exited { clean_stop: false },
         };
     }
     let released = session.release_lease_keep_credentials(&api).await.is_ok();
     let auth = session.auth;
     RuntimeCompletion {
         auth: Some(auth),
-        clean_stop: released,
+        outcome: RuntimeOutcome::Exited {
+            clean_stop: released,
+        },
     }
 }
 
@@ -926,7 +942,11 @@ async fn retain_auth(
     let auth = session.auth;
     RuntimeCompletion {
         auth: Some(auth),
-        clean_stop,
+        outcome: RuntimeOutcome::StartupFailed(if clean_stop {
+            StartFailure::Unavailable
+        } else {
+            StartFailure::NotReady
+        }),
     }
 }
 
@@ -978,11 +998,14 @@ fn now_seconds() -> Result<i64, ()> {
         .ok_or(())
 }
 
-fn runtime_completion_event(stop_requested: bool, clean_stop: bool) -> BackendEvent {
-    if stop_requested && clean_stop {
-        BackendEvent::StopCompleted
-    } else {
-        BackendEvent::ShutdownUncertain
+fn runtime_completion_event(stop_requested: bool, outcome: RuntimeOutcome) -> BackendEvent {
+    match outcome {
+        RuntimeOutcome::StartupFailed(_) if stop_requested => BackendEvent::StopCompleted,
+        RuntimeOutcome::StartupFailed(failure) => BackendEvent::StartFailed(failure),
+        RuntimeOutcome::Exited { clean_stop: true } if stop_requested => {
+            BackendEvent::StopCompleted
+        }
+        RuntimeOutcome::Exited { .. } => BackendEvent::ShutdownUncertain,
     }
 }
 
@@ -1000,7 +1023,8 @@ fn delete_local_account(
 #[cfg(test)]
 mod tests {
     use super::{
-        BackendConfig, BackendEvent, delete_local_account, runtime_completion_event, spawn_backend,
+        BackendConfig, BackendEvent, RuntimeOutcome, delete_local_account,
+        runtime_completion_event, spawn_backend,
     };
     use crate::config::{AccountRecord, RuntimeConfig, UserPaths};
     use coop_cloud::{CharacterId, RefreshToken, UserId};
@@ -1034,13 +1058,27 @@ mod tests {
     }
 
     #[test]
-    fn unsolicited_runtime_completion_is_never_reported_as_a_clean_stop() {
+    fn runtime_completion_distinguishes_startup_failure_from_uncertain_shutdown() {
         assert!(matches!(
-            runtime_completion_event(false, true),
+            runtime_completion_event(
+                false,
+                RuntimeOutcome::StartupFailed(coop_launcher::StartFailure::Unavailable)
+            ),
+            BackendEvent::StartFailed(coop_launcher::StartFailure::Unavailable)
+        ));
+        assert!(matches!(
+            runtime_completion_event(
+                true,
+                RuntimeOutcome::StartupFailed(coop_launcher::StartFailure::Unavailable)
+            ),
+            BackendEvent::StopCompleted
+        ));
+        assert!(matches!(
+            runtime_completion_event(false, RuntimeOutcome::Exited { clean_stop: true }),
             BackendEvent::ShutdownUncertain
         ));
         assert!(matches!(
-            runtime_completion_event(true, true),
+            runtime_completion_event(true, RuntimeOutcome::Exited { clean_stop: true }),
             BackendEvent::StopCompleted
         ));
     }
