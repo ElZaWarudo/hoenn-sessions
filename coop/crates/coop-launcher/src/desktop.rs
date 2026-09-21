@@ -916,7 +916,20 @@ impl State {
             Self::Running => "Your session is running.",
             Self::Stopping => "Saving and stopping…",
             Self::SigningOut => "Signing out securely…",
-            Self::Blocked { .. } => "This action is blocked. Retry to continue.",
+            Self::Blocked { reason, .. } => match reason {
+                BlockReason::Authentication(AuthFailure::Rejected) => "Sign-in or account creation was rejected. Check your details and retry.",
+                BlockReason::Authentication(AuthFailure::SessionExpired)
+                | BlockReason::Service(ServiceFailure::Unauthorized) => "Your sign-in has expired. Sign in again to continue.",
+                BlockReason::Authentication(AuthFailure::Unavailable) => "Sign-in could not finish. Check your connection and retry.",
+                BlockReason::Service(ServiceFailure::Unavailable) => "The game download could not finish. Check your connection and retry.",
+                BlockReason::Service(ServiceFailure::NotReady) => "The game release could not be verified. Check your PC's date and time, then retry.",
+                BlockReason::Update(UpdateFailure::Unavailable) => "The update download could not finish. Check your connection and retry.",
+                BlockReason::Update(UpdateFailure::ActivationFailed) => "The update could not be installed. Check free disk space and folder access, then retry.",
+                BlockReason::Update(_) => "The downloaded update could not be verified. Retry to download it again.",
+                BlockReason::Start(StartFailure::NotReady) => "The installed game or emulator failed its startup checks. Restart Hoenn Sessions to check for updates.",
+                BlockReason::Start(StartFailure::Unavailable) => "Your game session could not start. Retry to continue.",
+                BlockReason::SignOut(_) => "Sign-out did not finish. Retry to continue.",
+            },
             Self::RecoveryRequired { .. } => "Recovery is required before play can resume.",
         }
     }
