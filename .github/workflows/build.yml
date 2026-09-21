@@ -198,6 +198,13 @@ jobs:
           TEST: 1
         run: make -j$(nproc) check
 
+      - name: Upload test ROM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-rom
+          path: pokeemerald-test*.elf
+
   # Gate job: satisfies the "build" branch protection rule.
   # Passes only when all parallel build/test jobs succeed.
   build:

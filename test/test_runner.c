@@ -35,6 +35,8 @@ static void Intr_Timer2(void);
 
 extern const struct Test __start_tests[];
 extern const struct Test __stop_tests[];
+extern u8 __test_ewram_overlay_start[];
+extern u8 __test_ewram_overlay_end[];
 
 static enum TestFilterMode DetectFilterMode(const char *pattern)
 {
@@ -269,6 +271,8 @@ top:
         break;
 
     case STATE_ASSIGN_TEST:
+        memset(__test_ewram_overlay_start, 0,
+               __test_ewram_overlay_end - __test_ewram_overlay_start);
         ClearSaveBlocks();
         while (1)
         {

@@ -13552,8 +13552,8 @@ const struct ItemInfo gItemsInfo[] =
         .price = 0,
         .description = COMPOUND_STRING(
             "Traps the foe in a\n"
-            "vicious whirlpool for\n"
-            "several turns."),
+            "vicious whirlpool\n"
+            "for several turns."),
         .importance = 1,
         .pocket = POCKET_TM_HM,
         .type = ITEM_USE_PARTY_MENU,
@@ -16025,7 +16025,7 @@ const struct ItemInfo gItemsInfo[] =
     {
         .name = ITEM_NAME("Lost Item"),
         .price = 0,
-        .description = COMPOUND_STRING("A Poké Doll that was\nlost by a girl in\nSaffron City."),
+        .description = COMPOUND_STRING("A Poké Doll that\nwas lost by a girl\nin Saffron City."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,
@@ -16038,7 +16038,7 @@ const struct ItemInfo gItemsInfo[] =
     {
         .name = ITEM_NAME("Machine Part"),
         .price = 0,
-        .description = COMPOUND_STRING("An important part\nfrom the Power Plant's\ngenerator."),
+        .description = COMPOUND_STRING("An important part\nfrom the Power\nPlant's generator."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,
@@ -16051,7 +16051,7 @@ const struct ItemInfo gItemsInfo[] =
     {
         .name = ITEM_NAME("Radio Card"),
         .price = 0,
-        .description = COMPOUND_STRING("A card that adds the\nradio function to the\nPokégear."),
+        .description = COMPOUND_STRING("A card that adds\nthe radio function\nto the Pokégear."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,

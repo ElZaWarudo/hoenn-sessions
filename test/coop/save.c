@@ -1,6 +1,7 @@
 #include <limits.h>
 
 #include "global.h"
+#include "battle_setup.h"
 #include "coop/net_bridge.h"
 #include "coop/progress.h"
 #include "coop/save.h"
@@ -90,6 +91,25 @@ TEST("Cloud Coop new save initializes a sealed region-qualified V1 record")
     }
     EXPECT_EQ(gSaveBlock3Ptr->coop.crc32,
               CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop));
+}
+
+TEST("Cloud Coop clearing a save resets cached online state and permits offline trainer progress")
+{
+    CoopSave_InitializeCurrent();
+    gCoopProgress.regions[0].badge_mask = 1;
+    EXPECT(CoopSave_PrepareForWrite());
+    EXPECT(CoopSave_IsOnlineEnabled());
+    EXPECT(CoopSave_WasPreparedForWrite());
+
+    ClearSav3();
+
+    EXPECT(!CoopSave_IsOnlineEnabled());
+    EXPECT(!CoopSave_WasPreparedForWrite());
+    EXPECT_EQ(gCoopProgress.regions[0].badge_mask, 0);
+    EXPECT_EQ(gSaveBlock3Ptr->coop.magic, 0);
+    EXPECT(!CoopSave_LoadRuntimeProgress());
+    SetTrainerFlag(TRAINER_ROXANNE_1);
+    EXPECT(HasTrainerBeenFought(TRAINER_ROXANNE_1));
 }
 
 TEST("Cloud Coop zeroed and erased legacy records initialize fail closed")

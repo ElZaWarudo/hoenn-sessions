@@ -13,6 +13,7 @@
 #include "overworld.h"
 #include "palette.h"
 #include "save.h"
+#include "script.h"
 #include "test/test.h"
 
 _Static_assert(sizeof(struct CoopBridgeMessage) == 144, "tested message ABI size");
@@ -441,6 +442,8 @@ TEST("Cloud Coop reconnect sends ROM ready before active group travel replay")
     request.departure = COOP_GROUP_TRAVEL_DEPARTURE_FERRY;
     request.destination = COOP_GROUP_TRAVEL_DEST_LATER_VERMILION;
     request.request_id = 77;
+    ScriptContext_Init();
+    UnlockPlayerFieldControls();
     CoopGroupTravel_TestSetSafe(TRUE);
     CoopGroupTravel_TestSeedRequest(&request);
 

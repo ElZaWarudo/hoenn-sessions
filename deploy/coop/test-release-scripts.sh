@@ -175,5 +175,18 @@ else
   report 1 "workflow validates SSH config values" "deploy.yml lost the ssh-config validation"
 fi
 
+# 21. GitHub secrets do not reliably retain a trailing newline. OpenSSH's
+# private-key parser on Linux requires the final PEM/OpenSSH marker to be
+# newline-terminated, so the workflow must add that delimiter when writing
+# the runner's key file.
+key_write_re='^[[:space:]]+printf '\''%s\\n'\'' "[$]VPS_SSH_KEY" > ~/.ssh/hoenn_release[[:space:]]*$'
+commented_key_write='# printf '\''%s\n'\'' "$VPS_SSH_KEY" > ~/.ssh/hoenn_release'
+if grep -Eq "$key_write_re" "$WORKFLOW" && \
+   ! printf '%s\n' "$commented_key_write" | grep -Eq "$key_write_re"; then
+  report 0 "workflow newline-terminates the SSH private key"
+else
+  report 1 "workflow newline-terminates the SSH private key" "deploy.yml may create a key rejected by OpenSSH/libcrypto"
+fi
+
 printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

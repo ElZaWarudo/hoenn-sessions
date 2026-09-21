@@ -93,6 +93,7 @@ static EWRAM_DATA struct MapConnection sRuntimeTestDiveConnection;
 static EWRAM_DATA struct MapConnections sRuntimeTestMapConnections;
 
 extern const struct Tileset gTileset_General;
+extern const struct Tileset gTileset_Petalburg;
 
 struct RuntimeFixtureBackup
 {
@@ -1258,6 +1259,7 @@ TEST("Cloud Coop dive action takes precedence over remote overlap")
     /* Use a real diveable tile and map connection so the production
      * TrySetupDiveDownScript branch returns true at the same tile as remote. */
     sRuntimeTestMapLayout.primaryTileset = &gTileset_General;
+    sRuntimeTestMapLayout.secondaryTileset = &gTileset_Petalburg;
     sRuntimeTestMapData[(MAP_OFFSET + 4)
         + (MAP_OFFSET + 5) * 32] = METATILE_General_RoughDeepWater;
     sRuntimeTestDiveConnection = (struct MapConnection){

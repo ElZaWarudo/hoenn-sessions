@@ -270,7 +270,7 @@ TEST("Johto save extension has a bounded append-only layout")
 
 TEST("Johto save preserves old zero tails in both rotating slots")
 {
-    static u8 sLegacyTail[NUM_SAVE_SLOTS][JOHTO_SAVE_SERIALIZED_TAIL_SIZE];
+    static EWRAM_DATA u8 sLegacyTail[NUM_SAVE_SLOTS][JOHTO_SAVE_SERIALIZED_TAIL_SIZE];
     u16 slot;
 
     for (slot = 0; slot < NUM_SAVE_SLOTS; slot++)

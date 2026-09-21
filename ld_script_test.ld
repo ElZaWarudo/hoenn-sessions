@@ -23,6 +23,29 @@ SECTIONS {
         __ewram_end = .;
     } > EWRAM
 
+    /* Test fixture storage is zeroed before every test and only one test can
+     * run at a time. Overlay the largest independent fixtures so the test ROM
+     * stays within the GBA's physical EWRAM limit. */
+    __test_ewram_overlay_start = .;
+    OVERLAY : NOCROSSREFS
+    {
+        .test_johto_save             { test/johto/save.o(.sbss) }
+        .test_coop_presence_runtime  { test/coop/presence_runtime.o(.sbss) }
+        .test_coop_net_bridge        { test/coop/net_bridge.o(.sbss) }
+        .test_johto_field_moves      { test/johto/field_moves.o(.sbss) }
+        .test_johto_bug_contest_save { test/johto/bug_contest_save.o(.sbss) }
+        .test_johto_bug_settlement   { test/johto/bug_contest_settlement.o(.sbss) }
+        .test_johto_bug_contest      { test/johto/bug_contest.o(.sbss) }
+        .test_johto_trainer_slides   { test/johto/trainer_slide_bounds.o(.sbss) }
+        .test_johto_berry_plots      { test/johto/berry_plots.o(.sbss) }
+        .test_johto_berry_lifetime   { test/johto/berry_lifetime.o(.sbss) }
+        .test_johto_berry_harvest    { test/johto/berry_harvest.o(.sbss) }
+        .test_johto_headbutt         { test/johto/headbutt.o(.sbss) }
+        .test_coop_save              { test/coop/save.o(.sbss) }
+        .test_sprite                 { test/sprite.o(.sbss) }
+    } > EWRAM
+    __test_ewram_overlay_end = .;
+
     .ewram.sbss (NOLOAD) :
     ALIGN(4)
     {
@@ -58,6 +81,12 @@ SECTIONS {
         test/*.o(COMMON);
         *libc.a:sbrkr.o(COMMON);
     } > IWRAM
+
+    /* crt0 starts the system stack at 0x03007E40. Smol decompression copies
+     * executable code onto that stack, which is also used by sound IRQs.
+     * Keep test fixtures from consuming its minimum 3 KiB budget. */
+    ASSERT(ADDR(.iwram.bss) + SIZEOF(.iwram.bss) <= 0x03007E40 - 0xC00,
+           "Test IWRAM leaves less than 3 KiB for the system stack")
 
     /* .persistent starts at 0x3007F00 */
     /* WARNING: This is the end of the IRQ stack, if there's too

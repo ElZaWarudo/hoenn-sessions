@@ -120,7 +120,10 @@ jobs:
               echo "error: VPS_PORT must be empty or numeric" >&2; exit 1 ;;
           esac
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s' "$VPS_SSH_KEY" > ~/.ssh/hoenn_release
+          # GitHub secrets may omit the source file's trailing newline;
+          # OpenSSH/libcrypto rejects a private key whose end marker is not
+          # newline-terminated.
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/hoenn_release
           chmod 600 ~/.ssh/hoenn_release
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
