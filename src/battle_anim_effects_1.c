@@ -6739,9 +6739,6 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], swapData, sizeof(struct Illusion));
     SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], swapData, sizeof(struct BattlerState));
 
-    if (swapData != &sAllySwitchSwapData)
-        Free(swapData);
-
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
     SWAP(gBattleStruct->battlerState[battlerAtk].storedLunarDance, gBattleStruct->battlerState[battlerPartner].storedLunarDance, temp);
@@ -6800,6 +6797,9 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
         ReloadBattlerSprites(battlerPartner, party);
         ReloadBattlerSprites(battlerAtk, party);
     }
+
+    if (swapData != &sAllySwitchSwapData)
+        Free(swapData);
 
     gBattleScripting.battler = battlerPartner;
     DestroyAnimVisualTask(taskId);
