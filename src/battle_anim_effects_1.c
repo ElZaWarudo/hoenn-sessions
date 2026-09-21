@@ -1,5 +1,4 @@
 #include "global.h"
-#include "malloc.h"
 #include "battle_anim.h"
 #include "battle_anim_internal.h"
 #include "battle_interface.h"
@@ -6562,6 +6561,10 @@ union AllySwitchSwapData
     struct BattlerState battlerState;
 };
 
+// The battle animation task stack is too small for this buffer, while using the
+// heap here interferes with the sprite allocations performed by Ally Switch.
+static EWRAM_DATA union AllySwitchSwapData sAllySwitchSwapData = {0};
+
 static void SwapStructData(void *s1, void *s2, void *data, u32 size)
 {
     memcpy(data, s1, size);
@@ -6707,18 +6710,13 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     u32 temp;
     enum BattlerId battlerAtk = gBattlerAttacker;
     enum BattlerId battlerPartner = GetPartnerBattler(battlerAtk);
-    void *data = Alloc(sizeof(union AllySwitchSwapData));
 
-    if (data == NULL)
-        SoftReset(1);
-
-    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], data, sizeof(struct BattlePokemon));
-    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], data, sizeof(struct SpecialStatus));
-    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], data, sizeof(struct ProtectStruct));
-    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], data, sizeof(struct BattleSpriteInfo));
-    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], data, sizeof(struct Illusion));
-    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], data, sizeof(struct BattlerState));
-    Free(data);
+    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattlePokemon));
+    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], &sAllySwitchSwapData, sizeof(struct SpecialStatus));
+    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], &sAllySwitchSwapData, sizeof(struct ProtectStruct));
+    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattleSpriteInfo));
+    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], &sAllySwitchSwapData, sizeof(struct Illusion));
+    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattlerState));
 
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
