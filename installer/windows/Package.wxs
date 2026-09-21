@@ -24,16 +24,24 @@
     </StandardDirectory>
 
     <Component Id="StableBootstrap" Directory="APPFOLDER" Guid="*">
-      <File Id="BootstrapExe" Name="hoenn-sessions-bootstrapper.exe" Source="$(var.BootstrapExe)" KeyPath="yes" />
+      <File Id="BootstrapExe" Name="hoenn-sessions-bootstrapper.exe" Source="$(var.BootstrapExe)" />
+      <RemoveFolder Id="RemoveAppFolder" Directory="APPFOLDER" On="uninstall" />
+      <RemoveFolder Id="RemoveProductFolder" Directory="PRODUCTFOLDER" On="uninstall" />
+      <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="StableBootstrap" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     <Component Id="OnboardingFallback" Directory="APPFOLDER" Guid="*">
-      <File Id="OnboardingExe" Name="hoenn-sessions-onboarding.exe" Source="$(var.OnboardingExe)" KeyPath="yes" />
+      <File Id="OnboardingExe" Name="hoenn-sessions-onboarding.exe" Source="$(var.OnboardingExe)" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="OnboardingFallback" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     <Component Id="PrivatePilotConfig" Directory="PRODUCTFOLDER" Guid="*">
-      <File Id="BootstrapConfig" Name="bootstrap-config.private-pilot.json" Source="$(var.ConfigFile)" KeyPath="yes" />
+      <File Id="BootstrapConfig" Name="bootstrap-config.private-pilot.json" Source="$(var.ConfigFile)" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="PrivatePilotConfig" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     <Component Id="ThirdPartyNotices" Directory="NOTICEFOLDER" Guid="*">
-      <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.txt" Source="$(var.NoticesFile)" KeyPath="yes" />
+      <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.txt" Source="$(var.NoticesFile)" />
+      <RemoveFolder Id="RemoveNoticeFolder" Directory="NOTICEFOLDER" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="ThirdPartyNotices" Type="integer" Value="1" KeyPath="yes" />
     </Component>
     <Component Id="StartMenuShortcut" Directory="PROGRAMMENUDIR" Guid="*">
       <Shortcut Id="HoennSessionsShortcut"
