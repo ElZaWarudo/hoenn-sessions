@@ -107,6 +107,9 @@ public key before either Windows artifact publication or runtime release.
 Pushes to `main` update only the runtime and server components on the VPS. The
 Windows installer job runs only for an explicit `workflow_dispatch`, so normal
 server deployments do not rebuild or publish a desktop installer.
+Each rollout also validates and atomically installs the version-controlled
+`compose.yaml` in the configured VPS deploy directory. The existing `.env`,
+secrets, database, volumes, and Caddy configuration are preserved.
 The installer job carries a version-controlled signing mode. During the private
 pilot it is `unsigned-private-pilot`: both Authenticode steps are skipped, the
 artifact name and provenance state that it is unsigned, and Windows may show an
