@@ -20,6 +20,9 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/moves.h"
+#if TESTING
+#include "test/test.h"
+#endif
 
 static void AnimMovePowderParticle_Step(struct Sprite *);
 static void AnimSolarBeamSmallOrb(struct Sprite *);
@@ -6721,6 +6724,10 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     enum BattlerId battlerPartner = GetAllySwitchPartner(battlerAtk);
     void *swapData = &sAllySwitchSwapData;
 
+#if TESTING
+    Test_MgbaPrintf("ally swap start atk=%d partner=%d", battlerAtk, battlerPartner);
+#endif
+
     // Reloading an Illusion battler allocates additional sprite data, so keep
     // the swap scratch out of the heap for that case. Other layouts require
     // heap-backed scratch to keep the animation task stack small.
@@ -6738,6 +6745,10 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], swapData, sizeof(struct BattleSpriteInfo));
     SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], swapData, sizeof(struct Illusion));
     SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], swapData, sizeof(struct BattlerState));
+
+#if TESTING
+    Test_MgbaPrintf("ally swap structs complete");
+#endif
 
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
@@ -6798,8 +6809,16 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
         ReloadBattlerSprites(battlerAtk, party);
     }
 
+#if TESTING
+    Test_MgbaPrintf("ally swap reload complete");
+#endif
+
     if (swapData != &sAllySwitchSwapData)
         Free(swapData);
+
+#if TESTING
+    Test_MgbaPrintf("ally swap scratch released");
+#endif
 
     gBattleScripting.battler = battlerPartner;
     DestroyAnimVisualTask(taskId);
