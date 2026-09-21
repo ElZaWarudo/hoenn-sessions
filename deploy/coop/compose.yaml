@@ -60,7 +60,8 @@ services:
       - /srv/hoenn:/srv/hoenn:ro
     networks: [database, edge]
     read_only: true
-    tmpfs: [/tmp:size=16m,mode=1777]
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 1536m
@@ -115,7 +116,8 @@ services:
       - ./backups:/backups
     networks: [database]
     read_only: true
-    tmpfs: [/tmp:size=16m,mode=1777]
+    tmpfs:
+      - /tmp:size=16m,mode=1777
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 192m

@@ -42,6 +42,12 @@ export COOP_RELEASE_KEY_ID=pilot-v1
 COOP_RELEASE_PUBLIC_KEY_HEX="$("$COOP_RELEASE_TOOL" public-key)"
 export COOP_RELEASE_PUBLIC_KEY_HEX
 
+if grep -Eq 'tmpfs:[[:space:]]*\[[^]]*,[^]]*\]' "$SCRIPT_DIR/compose.yaml"; then
+  report 1 "compose tmpfs options are not split by YAML flow-list commas"
+else
+  report 0 "compose tmpfs options are not split by YAML flow-list commas"
+fi
+
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/hoenn-release-test.XXXXXX")" || exit 1
 trap 'chmod -R u+w -- "$ROOT" 2>/dev/null; rm -rf -- "$ROOT"' EXIT
 export HOENN_ROOT="$ROOT"
