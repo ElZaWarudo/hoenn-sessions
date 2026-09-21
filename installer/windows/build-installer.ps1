@@ -117,6 +117,9 @@ function Prepare-Installer {
     if (-not [string]::IsNullOrWhiteSpace($BootstrapperExe)) {
         $cargoTarget = (Resolve-Path -LiteralPath $BootstrapperExe).Path
     } else {
+        if ($env:HOENN_INSTALLER_MIN_RELEASE_SEQUENCE -notmatch '^[1-9][0-9]*$') {
+            throw 'Installer minimum release sequence must be a positive verified release sequence'
+        }
         $env:HOENN_RELEASE_TRUST_KEY_ID = $ReleaseTrustKeyId
         $env:HOENN_RELEASE_TRUST_KEY_HEX = $ReleaseTrustPublicKeyHex
         $env:HOENN_MANIFEST_TRUST_KEY_ID = $ManifestTrustKeyId
@@ -173,6 +176,12 @@ function Sign-StagedExecutables {
 function Package-Installer {
     Assert-TrustConfig
     Assert-Stage
+    if ($env:HOENN_INSTALLER_BUILD_NUMBER -notmatch '^[1-9][0-9]*$' -or
+        $env:HOENN_INSTALLER_BUILD_NUMBER.Length -gt 5) {
+        throw 'Installer build number must be a positive Windows Installer version component'
+    }
+    $buildNumber = [int] $env:HOENN_INSTALLER_BUILD_NUMBER
+    if ($buildNumber -gt 65535) { throw 'Installer build number exceeds Windows Installer version range' }
     $dotnet = Assert-CommandVersion -Name 'dotnet' -Expected $manifest.dotnet_sdk -Arguments @('--version')
     $wixOutput = Join-Path $output 'wix'
     if (Test-Path -LiteralPath $wixOutput) {
@@ -185,6 +194,7 @@ function Package-Installer {
         "-property:OnboardingExe=$(Join-Path $stage 'hoenn-sessions-onboarding.exe')",
         "-property:ConfigFile=$(Join-Path $stage 'bootstrap-config.private-pilot.json')",
         "-property:NoticesFile=$(Join-Path $stage 'THIRD_PARTY_NOTICES.txt')",
+        "-property:ProductVersion=1.0.$buildNumber",
         "-property:OutputPath=$wixOutput\"
     )
     & $dotnet build @buildArgs
