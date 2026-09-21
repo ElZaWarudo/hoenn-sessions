@@ -16025,7 +16025,7 @@ const struct ItemInfo gItemsInfo[] =
     {
         .name = ITEM_NAME("Lost Item"),
         .price = 0,
-        .description = COMPOUND_STRING("A Poké Doll that was\nlost by a girl in\nSaffron City."),
+        .description = COMPOUND_STRING("A Poké Doll that\nwas lost by a girl\nin Saffron City."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,

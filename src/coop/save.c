@@ -290,6 +290,14 @@ void CoopSave_InitializeCurrent(void)
     InitializeCurrentWithStatus(0);
 }
 
+void CoopSave_ResetRuntimeState(void)
+{
+    sSaveLoadResolved = FALSE;
+    sOnlineEnabled = FALSE;
+    sSavePreparationSucceeded = FALSE;
+    CoopProgress_Init(&gCoopProgress);
+}
+
 enum CoopSaveLoadResult CoopSave_Load(void)
 {
     struct CoopSaveV1 *save;
