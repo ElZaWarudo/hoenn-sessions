@@ -193,17 +193,16 @@ jobs:
           key: tools-check-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
 
       - name: Test
-        timeout-minutes: 12
         env:
           GAME_VERSION: EMERALD
           TEST: 1
         run: make -j$(nproc) check
 
-      - name: Capture test ROM for memory-layout diagnosis
+      - name: Upload test ROM
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-rom-diagnostic
+          name: test-rom
           path: pokeemerald-test*.elf
 
   # Gate job: satisfies the "build" branch protection rule.

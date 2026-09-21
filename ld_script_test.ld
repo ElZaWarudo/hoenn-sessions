@@ -82,6 +82,12 @@ SECTIONS {
         *libc.a:sbrkr.o(COMMON);
     } > IWRAM
 
+    /* crt0 starts the system stack at 0x03007E40. Smol decompression copies
+     * executable code onto that stack, which is also used by sound IRQs.
+     * Keep test fixtures from consuming its minimum 3 KiB budget. */
+    ASSERT(ADDR(.iwram.bss) + SIZEOF(.iwram.bss) <= 0x03007E40 - 0xC00,
+           "Test IWRAM leaves less than 3 KiB for the system stack")
+
     /* .persistent starts at 0x3007F00 */
     /* WARNING: This is the end of the IRQ stack, if there's too
      * much data it WILL be overwritten. */

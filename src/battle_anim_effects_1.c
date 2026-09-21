@@ -20,9 +20,6 @@
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/moves.h"
-#if TESTING
-#include "test/test.h"
-#endif
 
 static void AnimMovePowderParticle_Step(struct Sprite *);
 static void AnimSolarBeamSmallOrb(struct Sprite *);
@@ -6555,21 +6552,7 @@ void AnimTask_DoubleTeam(u8 taskId)
     PrepareDoubleTeamAnim(taskId, ANIM_ATTACKER, FALSE);
 }
 
-union AllySwitchSwapData
-{
-    struct BattlePokemon battleMon;
-    struct SpecialStatus specialStatus;
-    struct ProtectStruct protect;
-    struct BattleSpriteInfo spriteInfo;
-    struct Illusion illusion;
-    struct BattlerState battlerState;
-};
-
-// The battle animation task stack is too small for this buffer, while using the
-// heap here interferes with the sprite allocations performed by Ally Switch.
-static EWRAM_DATA union AllySwitchSwapData sAllySwitchSwapData = {0};
-
-static void SwapStructData(void *s1, void *s2, void *data, u32 size)
+static inline void SwapStructData(void *s1, void *s2, void *data, u32 size)
 {
     memcpy(data, s1, size);
     memcpy(s1, s2, size);
@@ -6707,48 +6690,26 @@ static void SwapBattlerMoveData(enum BattlerId battler1, enum BattlerId battler2
     SWAP(gLastHitBy[battler1],          gLastHitBy[battler2], temp);
 }
 
-static enum BattlerId GetAllySwitchPartner(enum BattlerId battler)
-{
-    if (gBattleTypeFlags & (BATTLE_TYPE_MULTI | BATTLE_TYPE_TWO_OPPONENTS))
-        return GetPartnerBattler(battler);
-
-    return BATTLE_PARTNER(battler);
-}
-
 static void AnimTask_AllySwitchDataSwap(u8 taskId)
 {
     enum BattlerId i, j;
     struct Pokemon *party;
     u32 temp;
     enum BattlerId battlerAtk = gBattlerAttacker;
-    enum BattlerId battlerPartner = GetAllySwitchPartner(battlerAtk);
-    void *swapData = &sAllySwitchSwapData;
+    enum BattlerId battlerPartner = BATTLE_PARTNER(battlerAtk);
 
-#if TESTING
-    Test_MgbaPrintf("ally swap start atk=%d partner=%d", battlerAtk, battlerPartner);
-#endif
-
-    // Reloading an Illusion battler allocates additional sprite data, so keep
-    // the swap scratch out of the heap for that case. Other layouts require
-    // heap-backed scratch to keep the animation task stack small.
-    if (gBattleMons[battlerAtk].ability != ABILITY_ILLUSION
-     && gBattleMons[battlerPartner].ability != ABILITY_ILLUSION)
+    void *data = Alloc(0x200);
+    if (data == NULL)
     {
-        swapData = Alloc(sizeof(union AllySwitchSwapData));
-        if (swapData == NULL)
-            SoftReset(1);
+        SoftReset(1);
     }
 
-    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], swapData, sizeof(struct BattlePokemon));
-    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], swapData, sizeof(struct SpecialStatus));
-    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], swapData, sizeof(struct ProtectStruct));
-    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], swapData, sizeof(struct BattleSpriteInfo));
-    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], swapData, sizeof(struct Illusion));
-    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], swapData, sizeof(struct BattlerState));
-
-#if TESTING
-    Test_MgbaPrintf("ally swap structs complete");
-#endif
+    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], data, sizeof(struct BattlePokemon));
+    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], data, sizeof(struct SpecialStatus));
+    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], data, sizeof(struct ProtectStruct));
+    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], data, sizeof(struct BattleSpriteInfo));
+    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], data, sizeof(struct Illusion));
+    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], data, sizeof(struct BattlerState));
 
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
@@ -6809,16 +6770,7 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
         ReloadBattlerSprites(battlerAtk, party);
     }
 
-#if TESTING
-    Test_MgbaPrintf("ally swap reload complete");
-#endif
-
-    if (swapData != &sAllySwitchSwapData)
-        Free(swapData);
-
-#if TESTING
-    Test_MgbaPrintf("ally swap scratch released");
-#endif
+    Free(data);
 
     gBattleScripting.battler = battlerPartner;
     DestroyAnimVisualTask(taskId);
@@ -6836,7 +6788,7 @@ static void AnimTask_DoubleTeam_Step(u8 taskId)
 
         FreeSpritePaletteByTag(ANIM_TAG_BENT_SPOON);
         // Swap attacker and partner data-wise and visually
-        if (task->tIsAllySwitch && task->tBattlerId == GetAllySwitchPartner(gBattlerAttacker))
+        if (task->tIsAllySwitch && task->tBattlerId == BATTLE_PARTNER(gBattlerAttacker))
             gTasks[taskId].func = AnimTask_AllySwitchDataSwap;
         else
             DestroyAnimVisualTask(taskId);
@@ -6855,10 +6807,10 @@ static void AnimDoubleTeam(struct Sprite *sprite)
     {
         gTasks[sprite->sTaskId].tBlendSpritesCount--;
         // If Ally Switch - destroy the mon sprites, they'll be created again later.
-        if (gTasks[sprite->sTaskId].tIsAllySwitch && gTasks[sprite->sTaskId].tBattlerId == GetAllySwitchPartner(gBattlerAttacker))
+        if (gTasks[sprite->sTaskId].tIsAllySwitch && gTasks[sprite->sTaskId].tBattlerId == BATTLE_PARTNER(gBattlerAttacker))
         {
             DestroySprite(&gSprites[gBattlerSpriteIds[gBattlerAttacker]]);
-            DestroySprite(&gSprites[gBattlerSpriteIds[GetAllySwitchPartner(gBattlerAttacker)]]);
+            DestroySprite(&gSprites[gBattlerSpriteIds[BATTLE_PARTNER(gBattlerAttacker)]]);
         }
         DestroySpriteWithActiveSheet(sprite);
     }
@@ -6882,11 +6834,11 @@ void AnimTask_AllySwitchAttacker(u8 taskId)
 {
     PrepareDoubleTeamAnim(taskId, ANIM_ATTACKER, TRUE);
     gSprites[gBattlerSpriteIds[gBattlerAttacker]].invisible = TRUE;
-    gSprites[gBattlerSpriteIds[GetAllySwitchPartner(gBattlerAttacker)]].invisible = TRUE;
+    gSprites[gBattlerSpriteIds[BATTLE_PARTNER(gBattlerAttacker)]].invisible = TRUE;
     // Edge case: Partner's sprite is invisible(i.e. after using Dig).
-    if (gBattleSpritesDataPtr->battlerData[GetAllySwitchPartner(gBattlerAttacker)].invisible)
+    if (gBattleSpritesDataPtr->battlerData[BATTLE_PARTNER(gBattlerAttacker)].invisible)
     {
-        gBattleSpritesDataPtr->battlerData[GetAllySwitchPartner(gBattlerAttacker)].invisible = FALSE;
+        gBattleSpritesDataPtr->battlerData[BATTLE_PARTNER(gBattlerAttacker)].invisible = FALSE;
         gBattleSpritesDataPtr->battlerData[gBattlerAttacker].invisible = TRUE;
     }
 }

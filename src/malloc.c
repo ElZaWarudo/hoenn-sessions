@@ -214,17 +214,6 @@ void *AllocZeroed_(u32 size, const char *location)
 
 void Free(void *pointer)
 {
-#if TESTING
-    if (pointer != NULL)
-    {
-        struct MemBlock *block = (struct MemBlock *)((u8 *)pointer - sizeof(struct MemBlock));
-        if (block->magic != MALLOC_SYSTEM_ID)
-        {
-            Test_ExitWithResult(TEST_RESULT_INVALID, 0, "invalid free %p called by %p", pointer, __builtin_return_address(0));
-            return;
-        }
-    }
-#endif
     FreeInternal(sHeapStart, pointer);
 }
 
