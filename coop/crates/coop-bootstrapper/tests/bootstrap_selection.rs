@@ -49,11 +49,46 @@ fn bootstrap_selects_release_installed_by_desktop() {
         .unwrap();
     assert!(
         matches!(
-            select_target(&roots, Some(&key), now),
+            select_target(&roots, Some(&key), Some(1), now),
             LaunchTarget::Accepted { .. }
         ),
         "bootstrap must reopen the desktop-installed release, not fallback to onboarding"
     );
+    assert!(
+        matches!(
+            select_target(&roots, Some(&key), Some(2), now),
+            LaunchTarget::Onboarding(_)
+        ),
+        "a new MSI must not launch the older signed runtime"
+    );
+    assert!(
+        matches!(
+            select_target(&roots, Some(&key), None, now),
+            LaunchTarget::Onboarding(_)
+        ),
+        "a build without a minimum release must not select an installed runtime"
+    );
+
+    let mut upgraded = descriptor;
+    upgraded.release_id = "upgraded-release".into();
+    upgraded.sequence = 2;
+    let envelope = SignedReleaseEnvelope::sign_payload(
+        &serde_json::to_vec(&upgraded).unwrap(),
+        "test",
+        &signing,
+    )
+    .unwrap();
+    let verified = SignedReleaseEnvelope::verify_json(&envelope, &key).unwrap();
+    let payloads = ArtifactSet::new(
+        ArtifactIdentity::all()
+            .iter()
+            .map(|&id| ArtifactPayload::new(id, format!("fixture:{}", id.as_str()).into_bytes())),
+    );
+    store.install_at(&verified, payloads, now).unwrap();
+    assert!(matches!(
+        select_target(&roots, Some(&key), Some(2), now),
+        LaunchTarget::Accepted { .. }
+    ));
 }
 
 #[test]
@@ -83,7 +118,7 @@ fn roots_are_fixed_below_local_app_data() {
 fn missing_trust_or_generation_can_only_select_onboarding() {
     let local = TempDir::new().expect("temp root");
     let roots = InstallRoots::from_local_app_data(local.path()).expect("absolute root");
-    let target = select_target(&roots, None, 1_800_000_000);
+    let target = select_target(&roots, None, Some(1), 1_800_000_000);
     assert!(matches!(target, LaunchTarget::Onboarding(path) if path == roots.onboarding_path()));
 
     assert!(!roots.runtime_root().join("generations").exists());

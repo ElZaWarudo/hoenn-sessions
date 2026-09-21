@@ -104,7 +104,7 @@ jobs:
   # onboarding fallback. It is intentionally a separate private artifact:
   # mutable runtime files, the ROM, mGBA, and sidecar never enter the MSI.
   installer:
-    needs: [validate, release-key-gate]
+    needs: [validate, release-key-gate, release]
     if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     env:
@@ -117,6 +117,8 @@ jobs:
       HOENN_SOURCE_REVISION: ${{ github.sha }}
       HOENN_CI_RUN_ID: ${{ github.run_id }}
       HOENN_CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+      HOENN_INSTALLER_MIN_RELEASE_SEQUENCE: ${{ needs.release.outputs.release_sequence }}
+      HOENN_INSTALLER_BUILD_NUMBER: ${{ github.run_number }}
       # Version-controlled private-pilot exception. Return to `authenticode`
       # with a reviewed policy-and-test change once a certificate is available.
       WINDOWS_INSTALLER_SIGNING_MODE: unsigned-private-pilot
@@ -335,6 +337,8 @@ jobs:
   release:
     needs: [validate, release-key-gate]
     runs-on: ubuntu-latest
+    outputs:
+      release_sequence: ${{ steps.installer-release.outputs.sequence }}
     env:
       RELEASE_ID: ${{ github.sha }}
       RELEASE_SEQUENCE: ${{ github.run_number }}
@@ -729,3 +733,33 @@ jobs:
           else
             ssh hoenn-vps "$REMOTE"
           fi
+
+      # A manual run can reuse a release signed by an earlier run for this
+      # commit. The installer floor must use that signed sequence, not today's
+      # run number, or it would reject the only release available to players.
+      - name: Read verified release sequence for installer
+        if: github.event_name == 'workflow_dispatch'
+        id: installer-release
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          envelope="$RUNNER_TEMP/installer-release-envelope.json"
+          scp "hoenn-vps:/srv/hoenn/releases/$RELEASE_SHA/release-envelope.json" "$envelope"
+          target/release/coop-release-tool verify \
+            --envelope "$envelope" \
+            --key-id "$RELEASE_KEY_ID" \
+            --public-key-hex "$RELEASE_PUBLIC_KEY_HEX" >/dev/null
+          sequence="$(python3 - "$envelope" "$RELEASE_SHA" <<'PY'
+          import base64, json, pathlib, sys
+
+          envelope = json.loads(pathlib.Path(sys.argv[1]).read_bytes())
+          descriptor = json.loads(base64.b64decode(envelope["payload"], validate=True))
+          sequence = descriptor["sequence"]
+          if descriptor["release_id"] != sys.argv[2] or type(sequence) is not int or sequence < 1:
+              raise SystemExit("signed release identity or sequence is invalid")
+          print(sequence)
+          PY
+          )"
+          echo "sequence=$sequence" >> "$GITHUB_OUTPUT"
