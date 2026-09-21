@@ -57,8 +57,9 @@ foreach ($component in @('StableBootstrap', 'OnboardingFallback', 'PrivatePilotC
     $match = [Regex]::Match($package, $pattern)
     if (-not $match.Success -or
         $match.Value -notmatch 'RegistryValue Root="HKCU"' -or
-        $match.Value -notmatch 'KeyPath="yes"') {
-        throw "Per-user component lacks an HKCU registry key path: $component"
+        $match.Value -notmatch 'KeyPath="yes"' -or
+        $match.Value -match 'Guid="\*"') {
+        throw "Per-user component lacks an explicit GUID and HKCU registry key path: $component"
     }
 }
 foreach ($directory in @('APPFOLDER', 'PRODUCTFOLDER', 'NOTICEFOLDER', 'INSTALLFOLDER')) {
