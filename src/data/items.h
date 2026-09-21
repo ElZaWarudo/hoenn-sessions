@@ -16038,7 +16038,7 @@ const struct ItemInfo gItemsInfo[] =
     {
         .name = ITEM_NAME("Machine Part"),
         .price = 0,
-        .description = COMPOUND_STRING("An important part\nfrom the Power Plant's\ngenerator."),
+        .description = COMPOUND_STRING("An important part\nfrom the Power\nPlant's generator."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,
@@ -16051,7 +16051,7 @@ const struct ItemInfo gItemsInfo[] =
     {
         .name = ITEM_NAME("Radio Card"),
         .price = 0,
-        .description = COMPOUND_STRING("A card that adds the\nradio function to the\nPokégear."),
+        .description = COMPOUND_STRING("A card that adds\nthe radio function\nto the Pokégear."),
         .importance = 1,
         .pocket = POCKET_KEY_ITEMS,
         .type = ITEM_USE_BAG_MENU,
