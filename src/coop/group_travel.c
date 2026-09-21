@@ -194,7 +194,7 @@ static bool8 CanOwnControlLock(void)
 {
 #if TESTING
     if (sTravel.test_safe_set)
-        return sTravel.test_safe;
+        return sTravel.test_safe && !ScriptContext_IsEnabled();
 #endif
     return gMain.callback1 == CB1_Overworld && gMain.callback2 == CB2_Overworld
         && !gPaletteFade.active && !ScriptContext_IsEnabled();
