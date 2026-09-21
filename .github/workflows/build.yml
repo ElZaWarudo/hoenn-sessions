@@ -196,7 +196,9 @@ jobs:
         env:
           GAME_VERSION: EMERALD
           TEST: 1
-        run: make -j$(nproc) check TESTS='*Ally Switch does not update Healing Wish/Lunar Dance recovery position*'
+        run: |
+          make -j$(nproc) check TESTS='*Healing Wish/Lunar Dance*'
+          arm-none-eabi-addr2line -f -C -e pokeemerald-test.elf 0x824ea32 0x818bba4
 
   # Gate job: satisfies the "build" branch protection rule.
   # Passes only when all parallel build/test jobs succeed.
