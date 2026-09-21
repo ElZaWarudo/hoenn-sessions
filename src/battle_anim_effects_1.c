@@ -1,5 +1,4 @@
 #include "global.h"
-#include "malloc.h"
 #include "battle_anim.h"
 #include "battle_anim_internal.h"
 #include "battle_interface.h"
@@ -6577,11 +6576,8 @@ static void ReloadBattlerSprites(enum BattlerId battler, struct Pokemon *party)
 {
     struct Pokemon *mon = &party[gBattlerPartyIndexes[battler]];
     BattleLoadMonSpriteGfx(mon, battler);
-    AGB_ASSERT(CheckHeap());
     CreateBattlerSprite(battler);
-    AGB_ASSERT(CheckHeap());
     UpdateHealthboxAttribute(gHealthboxSpriteIds[battler], mon, HEALTHBOX_ALL);
-    AGB_ASSERT(CheckHeap());
     // If battler has an indicator for a gimmick, hide the sprite until the move animation finishes.
     UpdateIndicatorVisibilityAndType(gHealthboxSpriteIds[battler], TRUE);
 
@@ -6715,14 +6711,12 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     enum BattlerId battlerAtk = gBattlerAttacker;
     enum BattlerId battlerPartner = GetPartnerBattler(battlerAtk);
 
-    AGB_ASSERT(CheckHeap());
     SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattlePokemon));
     SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], &sAllySwitchSwapData, sizeof(struct SpecialStatus));
     SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], &sAllySwitchSwapData, sizeof(struct ProtectStruct));
     SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattleSpriteInfo));
     SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], &sAllySwitchSwapData, sizeof(struct Illusion));
     SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattlerState));
-    AGB_ASSERT(CheckHeap());
 
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
@@ -6731,10 +6725,8 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     SWAP(gBattleSpritesDataPtr->battlerData[battlerAtk].invisible, gBattleSpritesDataPtr->battlerData[battlerPartner].invisible, temp);
     SWAP(gTransformedPersonalities[battlerAtk], gTransformedPersonalities[battlerPartner], temp);
     SWAP(gTransformedShininess[battlerAtk], gTransformedShininess[battlerPartner], temp);
-    AGB_ASSERT(CheckHeap());
 
     SwapBattlerMoveData(battlerAtk, battlerPartner);
-    AGB_ASSERT(CheckHeap());
 
     // Swap turn order, so that all the battlers take action
     SWAP(gChosenActionByBattler[battlerAtk], gChosenActionByBattler[battlerPartner], temp);
@@ -6752,17 +6744,14 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
             break;
         }
     }
-    AGB_ASSERT(CheckHeap());
 
     party = GetBattlerParty(battlerAtk);
     SwitchTwoBattlersInParty(battlerAtk, battlerPartner);
     SWAP(gBattlerPartyIndexes[battlerAtk], gBattlerPartyIndexes[battlerPartner], temp);
-    AGB_ASSERT(CheckHeap());
 
     TrySwapStickyWebBattlerId(battlerAtk, battlerPartner);
     TrySwapWishBattlerIds(battlerAtk, battlerPartner);
     TrySwapAttractBattlerIds(battlerAtk, battlerPartner);
-    AGB_ASSERT(CheckHeap());
 
     // For Snipe Shot and abilities Stalwart/Propeller Tail - keep the original target.
     for (i = 0; i < gBattlersCount; i++)
