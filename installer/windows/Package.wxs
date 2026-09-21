@@ -23,22 +23,22 @@
       <Directory Id="PROGRAMMENUDIR" Name="Hoenn Sessions" />
     </StandardDirectory>
 
-    <Component Id="StableBootstrap" Directory="APPFOLDER" Guid="*">
+    <Component Id="StableBootstrap" Directory="APPFOLDER" Guid="FA836C5B-48C8-42F3-AA95-8895F5BF2175">
       <File Id="BootstrapExe" Name="hoenn-sessions-bootstrapper.exe" Source="$(var.BootstrapExe)" />
       <RemoveFolder Id="RemoveAppFolder" Directory="APPFOLDER" On="uninstall" />
       <RemoveFolder Id="RemoveProductFolder" Directory="PRODUCTFOLDER" On="uninstall" />
       <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="StableBootstrap" Type="integer" Value="1" KeyPath="yes" />
     </Component>
-    <Component Id="OnboardingFallback" Directory="APPFOLDER" Guid="*">
+    <Component Id="OnboardingFallback" Directory="APPFOLDER" Guid="DA11E0A7-1A78-424B-A837-3045A71F116A">
       <File Id="OnboardingExe" Name="hoenn-sessions-onboarding.exe" Source="$(var.OnboardingExe)" />
       <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="OnboardingFallback" Type="integer" Value="1" KeyPath="yes" />
     </Component>
-    <Component Id="PrivatePilotConfig" Directory="PRODUCTFOLDER" Guid="*">
+    <Component Id="PrivatePilotConfig" Directory="PRODUCTFOLDER" Guid="FC420A22-EEEC-4C54-8B0A-2703EC937F39">
       <File Id="BootstrapConfig" Name="bootstrap-config.private-pilot.json" Source="$(var.ConfigFile)" />
       <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="PrivatePilotConfig" Type="integer" Value="1" KeyPath="yes" />
     </Component>
-    <Component Id="ThirdPartyNotices" Directory="NOTICEFOLDER" Guid="*">
+    <Component Id="ThirdPartyNotices" Directory="NOTICEFOLDER" Guid="D3BB800E-1A4E-40D8-BB4C-982C28B22BC0">
       <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.txt" Source="$(var.NoticesFile)" />
       <RemoveFolder Id="RemoveNoticeFolder" Directory="NOTICEFOLDER" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="ThirdPartyNotices" Type="integer" Value="1" KeyPath="yes" />
