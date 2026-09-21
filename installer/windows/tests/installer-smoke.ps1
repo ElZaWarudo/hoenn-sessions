@@ -52,6 +52,20 @@ foreach ($required in @(
         throw "WiX package is missing required invariant: $required"
     }
 }
+foreach ($component in @('StableBootstrap', 'OnboardingFallback', 'PrivatePilotConfig', 'ThirdPartyNotices')) {
+    $pattern = '(?s)<Component Id="' + [Regex]::Escape($component) + '".*?</Component>'
+    $match = [Regex]::Match($package, $pattern)
+    if (-not $match.Success -or
+        $match.Value -notmatch 'RegistryValue Root="HKCU"' -or
+        $match.Value -notmatch 'KeyPath="yes"') {
+        throw "Per-user component lacks an HKCU registry key path: $component"
+    }
+}
+foreach ($directory in @('APPFOLDER', 'PRODUCTFOLDER', 'NOTICEFOLDER', 'INSTALLFOLDER')) {
+    if ($package -notmatch ('RemoveFolder[^>]*Directory="' + [Regex]::Escape($directory) + '"[^>]*On="uninstall"')) {
+        throw "Per-user directory lacks uninstall cleanup: $directory"
+    }
+}
 if ($package -match '(?i)(RemoveFile|RemoveFolder[^>]*(runtime|state|recovery)|Credential Manager|CredentialManager)') {
     throw 'WiX package must not remove mutable runtime, state, recovery, or credential data'
 }
