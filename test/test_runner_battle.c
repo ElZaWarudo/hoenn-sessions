@@ -1798,6 +1798,23 @@ static void TearDownBattle(void)
 
     FreeMonSpritesGfx();
     FreeBattleSpritesData();
+
+    // Some battle paths leave window state pointing at static buffers. The
+    // test harness reinitializes that state between cases, so only pass
+    // heap-owned buffers to FreeAllWindowBuffers.
+    for (u32 i = 0; i < NUM_BACKGROUNDS; i++)
+    {
+        if ((uintptr_t)gWindowBgTilemapBuffers[i] < (uintptr_t)gHeap
+         || (uintptr_t)gWindowBgTilemapBuffers[i] >= (uintptr_t)gHeap + HEAP_SIZE)
+            gWindowBgTilemapBuffers[i] = NULL;
+    }
+    for (u32 i = 0; i < WINDOWS_MAX; i++)
+    {
+        if ((uintptr_t)gWindows[i].tileData < (uintptr_t)gHeap
+         || (uintptr_t)gWindows[i].tileData >= (uintptr_t)gHeap + HEAP_SIZE)
+            gWindows[i].tileData = NULL;
+    }
+
     FreeAllWindowBuffers();
     FreeBattleResources();
     gMain.inBattle = FALSE; // Necessary else some tests report incorrect results when running in same thread as an EXPECT_FAIL test
