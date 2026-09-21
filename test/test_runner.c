@@ -305,7 +305,6 @@ top:
             gTestRunnerState.timeoutSeconds = TIMEOUT_SECONDS;
         else
             gTestRunnerState.timeoutSeconds = UINT_MAX;
-        memset(gHeap, 0, sizeof(gHeap));
         InitHeap(gHeap, HEAP_SIZE);
         ResetTasks();
         EnableInterrupts(INTR_FLAG_TIMER2);

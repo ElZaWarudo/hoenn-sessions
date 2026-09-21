@@ -1,4 +1,5 @@
 #include "global.h"
+#include "malloc.h"
 #include "battle_anim.h"
 #include "battle_anim_internal.h"
 #include "battle_interface.h"
@@ -6710,13 +6711,27 @@ static void AnimTask_AllySwitchDataSwap(u8 taskId)
     u32 temp;
     enum BattlerId battlerAtk = gBattlerAttacker;
     enum BattlerId battlerPartner = GetPartnerBattler(battlerAtk);
+    void *swapData = &sAllySwitchSwapData;
 
-    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattlePokemon));
-    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], &sAllySwitchSwapData, sizeof(struct SpecialStatus));
-    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], &sAllySwitchSwapData, sizeof(struct ProtectStruct));
-    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattleSpriteInfo));
-    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], &sAllySwitchSwapData, sizeof(struct Illusion));
-    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], &sAllySwitchSwapData, sizeof(struct BattlerState));
+    // Reloading an Illusion battler can overwrite adjacent heap metadata, so
+    // keep its swap scratch in EWRAM. Other battles retain the heap-backed
+    // scratch required by asymmetric multi-battle layouts.
+    if (GetIllusionMonPtr(battlerAtk) == NULL && GetIllusionMonPtr(battlerPartner) == NULL)
+    {
+        swapData = Alloc(sizeof(union AllySwitchSwapData));
+        if (swapData == NULL)
+            SoftReset(1);
+    }
+
+    SwapStructData(&gBattleMons[battlerAtk], &gBattleMons[battlerPartner], swapData, sizeof(struct BattlePokemon));
+    SwapStructData(&gSpecialStatuses[battlerAtk], &gSpecialStatuses[battlerPartner], swapData, sizeof(struct SpecialStatus));
+    SwapStructData(&gProtectStructs[battlerAtk], &gProtectStructs[battlerPartner], swapData, sizeof(struct ProtectStruct));
+    SwapStructData(&gBattleSpritesDataPtr->battlerData[battlerAtk], &gBattleSpritesDataPtr->battlerData[battlerPartner], swapData, sizeof(struct BattleSpriteInfo));
+    SwapStructData(&gBattleStruct->illusion[battlerAtk], &gBattleStruct->illusion[battlerPartner], swapData, sizeof(struct Illusion));
+    SwapStructData(&gBattleStruct->battlerState[battlerAtk], &gBattleStruct->battlerState[battlerPartner], swapData, sizeof(struct BattlerState));
+
+    if (swapData != &sAllySwitchSwapData)
+        Free(swapData);
 
     // Swap those back since they aren't affected by ally switch
     SWAP(gBattleStruct->battlerState[battlerAtk].storedHealingWish, gBattleStruct->battlerState[battlerPartner].storedHealingWish, temp);
