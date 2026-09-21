@@ -219,7 +219,10 @@ void Free(void *pointer)
     {
         struct MemBlock *block = (struct MemBlock *)((u8 *)pointer - sizeof(struct MemBlock));
         if (block->magic != MALLOC_SYSTEM_ID)
-            Test_MgbaPrintf("invalid free %p called by %p", pointer, __builtin_return_address(0));
+        {
+            Test_ExitWithResult(TEST_RESULT_INVALID, 0, "invalid free %p called by %p", pointer, __builtin_return_address(0));
+            return;
+        }
     }
 #endif
     FreeInternal(sHeapStart, pointer);
