@@ -1,10 +1,10 @@
 //! Strict authenticated release transport for the desktop actor.
 
-use std::{time::{SystemTime, UNIX_EPOCH}};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use coop_launcher::{
-    ArtifactIdentity, ArtifactPayload, ArtifactSet, AuthSession, SignedReleaseEnvelope,
-    TrustedReleaseKey, VerifiedRelease, MAX_ARTIFACT_BYTES, MAX_ENVELOPE_BYTES,
+    ArtifactIdentity, ArtifactPayload, ArtifactSet, AuthSession, MAX_ARTIFACT_BYTES,
+    MAX_ENVELOPE_BYTES, SignedReleaseEnvelope, TrustedReleaseKey, VerifiedRelease,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -68,22 +68,39 @@ impl ReleaseClient {
             || !base.path().trim_matches('/').is_empty()
             || (!loopback && base.scheme() != "https")
             || (loopback && !matches!(base.scheme(), "http" | "https"))
-            || base.port().is_some_and(|port| {
-                matches!((base.scheme(), port), ("https", 443) | ("http", 80))
-            })
+            || base
+                .port()
+                .is_some_and(|port| matches!((base.scheme(), port), ("https", 443) | ("http", 80)))
         {
             return Err(ReleaseError::InvalidEndpoint);
         }
         let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(std::time::Duration::from_secs(20))
+            .read_timeout(std::time::Duration::from_secs(20))
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(|_| ReleaseError::Transport)?;
-        Ok(Self { client, base, trusted_key })
+        Ok(Self {
+            client,
+            base,
+            trusted_key,
+        })
     }
 
-    pub fn trusted_key(&self) -> &TrustedReleaseKey { &self.trusted_key }
+    pub fn trusted_key(&self) -> &TrustedReleaseKey {
+        &self.trusted_key
+    }
+
+    fn artifact_request(&self, url: Url, token: &str) -> reqwest::RequestBuilder {
+        // Runtime files are tens of megabytes. Active transfers can outlive
+        // metadata requests, while connect/read timeouts still bound stalls.
+        self.client
+            .get(url)
+            .timeout(std::time::Duration::from_secs(600))
+            .bearer_auth(token)
+    }
 
     pub async fn fetch_latest(
         &self,
@@ -123,11 +140,12 @@ impl ReleaseClient {
                     verified.release_id(),
                     identity.as_str()
                 );
-                let url = self.base.join(&path).map_err(|_| ReleaseError::InvalidEndpoint)?;
+                let url = self
+                    .base
+                    .join(&path)
+                    .map_err(|_| ReleaseError::InvalidEndpoint)?;
                 let response = self
-                    .client
-                    .get(url)
-                    .bearer_auth(token.expose_secret())
+                    .artifact_request(url, token.expose_secret())
                     .send()
                     .await
                     .map_err(|_| ReleaseError::Transport)?;
@@ -149,29 +167,111 @@ impl ReleaseClient {
         } else {
             ArtifactSet::new(std::iter::empty())
         };
-        Ok(DownloadedRelease { verified, artifacts })
+        Ok(DownloadedRelease {
+            verified,
+            artifacts,
+        })
     }
 }
 
-async fn read_bounded(response: reqwest::Response, maximum: usize) -> Result<Vec<u8>, ReleaseError> {
+async fn read_bounded(
+    response: reqwest::Response,
+    maximum: usize,
+) -> Result<Vec<u8>, ReleaseError> {
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Err(ReleaseError::Unauthorized);
     }
     if !response.status().is_success() {
         return Err(ReleaseError::Status(response.status().as_u16()));
     }
-    if response.content_length().is_some_and(|size| size > maximum as u64) {
+    if response
+        .content_length()
+        .is_some_and(|size| size > maximum as u64)
+    {
         return Err(ReleaseError::Response);
     }
-    let mut bytes = Vec::with_capacity(
-        response.content_length().unwrap_or(0).min(maximum as u64) as usize,
-    );
+    let mut bytes =
+        Vec::with_capacity(response.content_length().unwrap_or(0).min(maximum as u64) as usize);
     let mut response = response;
-    while let Some(chunk) = response.chunk().await.map_err(|_| ReleaseError::Transport)? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| ReleaseError::Transport)?
+    {
         if bytes.len().saturating_add(chunk.len()) > maximum {
             return Err(ReleaseError::Response);
         }
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn slow_server(progress: bool) -> (Url, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!(
+            "http://{}/artifact",
+            listener.local_addr().unwrap()
+        ))
+        .unwrap();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 4096];
+            stream.read(&mut request).await.unwrap();
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\na")
+                .await
+                .unwrap();
+            if progress {
+                for byte in [b'b', b'c'] {
+                    tokio::time::sleep(std::time::Duration::from_secs(11)).await;
+                    if stream.write_all(&[byte]).await.is_err() {
+                        return;
+                    }
+                }
+            } else {
+                tokio::time::sleep(std::time::Duration::from_secs(25)).await;
+            }
+        });
+        (url, task)
+    }
+
+    #[tokio::test]
+    async fn progressing_artifact_can_exceed_twenty_seconds() {
+        let (url, task) = slow_server(true).await;
+        let key = TrustedReleaseKey::new("test", [1; 32]).unwrap();
+        let client = ReleaseClient::new(url.origin().ascii_serialization().as_str(), key).unwrap();
+        let response = client
+            .artifact_request(url, "fixture")
+            .send()
+            .await
+            .unwrap();
+        let result = read_bounded(response, 3).await;
+        task.abort();
+        assert_eq!(result.unwrap(), b"abc");
+    }
+
+    #[tokio::test]
+    async fn stalled_artifact_still_times_out() {
+        let (url, task) = slow_server(false).await;
+        let key = TrustedReleaseKey::new("test", [1; 32]).unwrap();
+        let client = ReleaseClient::new(url.origin().ascii_serialization().as_str(), key).unwrap();
+        let response = client
+            .artifact_request(url, "fixture")
+            .send()
+            .await
+            .unwrap();
+        // The server closes at 25s. Require failure before then so a truncated
+        // response cannot accidentally satisfy the stall-timeout assertion.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(23),
+            read_bounded(response, 3),
+        ).await;
+        task.abort();
+        assert_eq!(result.expect("read stall must fail before server closes").unwrap_err(), ReleaseError::Transport);
+    }
 }

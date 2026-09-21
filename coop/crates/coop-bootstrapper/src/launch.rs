@@ -84,7 +84,7 @@ pub fn select_target(
         return LaunchTarget::Onboarding(roots.onboarding_path());
     };
 
-    let accepted = GenerationStore::new(roots.runtime_root())
+    let accepted = GenerationStore::new(roots.runtime_root().join("releases"))
         .ok()
         .and_then(|store| store.open_accepted_current(trusted_key, now).ok());
     let Some(accepted) = accepted else {
