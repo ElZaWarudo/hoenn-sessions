@@ -116,6 +116,10 @@ void FreeInternal(void *heapStart, void *pointer)
     {
         struct MemBlock *head = (struct MemBlock *)heapStart;
         struct MemBlock *block = (struct MemBlock *)((u8 *)pointer - sizeof(struct MemBlock));
+#if TESTING
+        if (block->magic != MALLOC_SYSTEM_ID)
+            Test_MgbaPrintf("invalid free %p from %p", pointer, __builtin_return_address(0));
+#endif
         AGB_ASSERT(block->magic == MALLOC_SYSTEM_ID);
         AGB_ASSERT(block->allocated == TRUE);
         block->allocated = FALSE;
