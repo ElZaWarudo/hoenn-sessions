@@ -6704,13 +6704,21 @@ static void SwapBattlerMoveData(enum BattlerId battler1, enum BattlerId battler2
     SWAP(gLastHitBy[battler1],          gLastHitBy[battler2], temp);
 }
 
+static enum BattlerId GetAllySwitchPartner(enum BattlerId battler)
+{
+    if (gBattleTypeFlags & (BATTLE_TYPE_MULTI | BATTLE_TYPE_TWO_OPPONENTS))
+        return GetPartnerBattler(battler);
+
+    return BATTLE_PARTNER(battler);
+}
+
 static void AnimTask_AllySwitchDataSwap(u8 taskId)
 {
     enum BattlerId i, j;
     struct Pokemon *party;
     u32 temp;
     enum BattlerId battlerAtk = gBattlerAttacker;
-    enum BattlerId battlerPartner = GetPartnerBattler(battlerAtk);
+    enum BattlerId battlerPartner = GetAllySwitchPartner(battlerAtk);
     void *swapData = &sAllySwitchSwapData;
 
     // Reloading an Illusion battler allocates additional sprite data, so keep
@@ -6809,7 +6817,7 @@ static void AnimTask_DoubleTeam_Step(u8 taskId)
 
         FreeSpritePaletteByTag(ANIM_TAG_BENT_SPOON);
         // Swap attacker and partner data-wise and visually
-        if (task->tIsAllySwitch && task->tBattlerId == GetPartnerBattler(gBattlerAttacker))
+        if (task->tIsAllySwitch && task->tBattlerId == GetAllySwitchPartner(gBattlerAttacker))
             gTasks[taskId].func = AnimTask_AllySwitchDataSwap;
         else
             DestroyAnimVisualTask(taskId);
@@ -6828,10 +6836,10 @@ static void AnimDoubleTeam(struct Sprite *sprite)
     {
         gTasks[sprite->sTaskId].tBlendSpritesCount--;
         // If Ally Switch - destroy the mon sprites, they'll be created again later.
-        if (gTasks[sprite->sTaskId].tIsAllySwitch && gTasks[sprite->sTaskId].tBattlerId == GetPartnerBattler(gBattlerAttacker))
+        if (gTasks[sprite->sTaskId].tIsAllySwitch && gTasks[sprite->sTaskId].tBattlerId == GetAllySwitchPartner(gBattlerAttacker))
         {
             DestroySprite(&gSprites[gBattlerSpriteIds[gBattlerAttacker]]);
-            DestroySprite(&gSprites[gBattlerSpriteIds[GetPartnerBattler(gBattlerAttacker)]]);
+            DestroySprite(&gSprites[gBattlerSpriteIds[GetAllySwitchPartner(gBattlerAttacker)]]);
         }
         DestroySpriteWithActiveSheet(sprite);
     }
@@ -6855,11 +6863,11 @@ void AnimTask_AllySwitchAttacker(u8 taskId)
 {
     PrepareDoubleTeamAnim(taskId, ANIM_ATTACKER, TRUE);
     gSprites[gBattlerSpriteIds[gBattlerAttacker]].invisible = TRUE;
-    gSprites[gBattlerSpriteIds[GetPartnerBattler(gBattlerAttacker)]].invisible = TRUE;
+    gSprites[gBattlerSpriteIds[GetAllySwitchPartner(gBattlerAttacker)]].invisible = TRUE;
     // Edge case: Partner's sprite is invisible(i.e. after using Dig).
-    if (gBattleSpritesDataPtr->battlerData[GetPartnerBattler(gBattlerAttacker)].invisible)
+    if (gBattleSpritesDataPtr->battlerData[GetAllySwitchPartner(gBattlerAttacker)].invisible)
     {
-        gBattleSpritesDataPtr->battlerData[GetPartnerBattler(gBattlerAttacker)].invisible = FALSE;
+        gBattleSpritesDataPtr->battlerData[GetAllySwitchPartner(gBattlerAttacker)].invisible = FALSE;
         gBattleSpritesDataPtr->battlerData[gBattlerAttacker].invisible = TRUE;
     }
 }
