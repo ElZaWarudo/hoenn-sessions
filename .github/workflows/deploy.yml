@@ -3,7 +3,7 @@
 #
 # Triggers on pushes to main (and manually). Never on pull requests.
 # All expensive compilation happens here on GitHub-hosted runners; the VPS
-# only receives files, pulls the pushed image, flips a symlink and restarts
+# only receives files, pulls the pushed image, atomically flips a release marker and restarts
 # the server container. The ROM is transferred directly runner -> VPS and is
 # never published as a public GitHub Release or workflow artifact.
 #
@@ -17,9 +17,9 @@
 #   so a later release contains earlier commits' code), but not every commit
 #   is guaranteed its own release.
 # - Promotion is idempotent, and a status check at the start skips the
-#   rebuild entirely when this commit is already released: re-running the
-#   workflow after a failed server rollout rolls out the recorded digest
-#   instead of building (and conflicting with) a second bundle.
+#   rebuild entirely when this commit is pending or already released:
+#   re-running after an interrupted promotion or failed rollout reuses the
+#   recorded digest instead of building a conflicting second bundle.
 # - Secrets reach shell steps through `env:` mappings, never through
 #   `${{ }}` interpolation into quoted shell: a quote in a secret value
 #   would otherwise break out and execute at parse time, before any
@@ -54,10 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
           toolchain: 1.93.1
           components: clippy, rustfmt
@@ -72,16 +72,277 @@ jobs:
         run: |
           python3 -m py_compile tools/generate_bridge_manifest.py
           bash -n deploy/coop/promote-release.sh
+          bash -n deploy/coop/probe-release-status.sh
           bash -n deploy/coop/deploy-release.sh
 
-  release:
+  # Verify the protected release seed corresponds to the release trust key before
+  # either installer publication or runtime image/bundle work can begin.
+  release-key-gate:
     needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: 1.93.1
+
+      - name: Build release-key correspondence gate
+        run: cargo build --locked --release -p coop-release-tool
+
+      - name: Verify protected seed correspondence (quiet)
+        env:
+          HOENN_RELEASE_PRIVATE_SEED_HEX: ${{ secrets.HOENN_RELEASE_PRIVATE_SEED_HEX }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          test -n "$HOENN_RELEASE_PRIVATE_SEED_HEX" -a -n "$RELEASE_PUBLIC_KEY_HEX"
+          target/release/coop-release-tool check-key --public-key-hex "$RELEASE_PUBLIC_KEY_HEX"
+
+  # The Windows installer is the stable bootstrapper plus the desktop
+  # onboarding fallback. It is intentionally a separate private artifact:
+  # mutable runtime files, the ROM, mGBA, and sidecar never enter the MSI.
+  installer:
+    needs: [validate, release-key-gate]
+    runs-on: windows-latest
+    env:
+      HOENN_COOP_API_BASE: ${{ vars.COOP_API_BASE }}
+      HOENN_RELEASE_TRUST_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+      HOENN_RELEASE_TRUST_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+      HOENN_MANIFEST_TRUST_KEY_ID: ${{ vars.MANIFEST_TRUST_KEY_ID }}
+      HOENN_MANIFEST_TRUST_KEY_HEX: ${{ vars.MANIFEST_TRUST_PUBLIC_KEY_HEX }}
+      HOENN_SOURCE_REPOSITORY: ${{ github.repository }}
+      HOENN_SOURCE_REVISION: ${{ github.sha }}
+      HOENN_CI_RUN_ID: ${{ github.run_id }}
+      HOENN_CI_RUN_ATTEMPT: ${{ github.run_attempt }}
+      # Version-controlled private-pilot exception. Return to `authenticode`
+      # with a reviewed policy-and-test change once a certificate is available.
+      WINDOWS_INSTALLER_SIGNING_MODE: unsigned-private-pilot
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: 1.93.1
+          targets: x86_64-pc-windows-msvc
+
+      - name: Select pinned .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 9.0.203
+
+      - name: Validate installer signing policy
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_INSTALLER_SIGNING_MODE -notin @('authenticode', 'unsigned-private-pilot')) {
+            throw 'WINDOWS_INSTALLER_SIGNING_MODE must be authenticode or unsigned-private-pilot'
+          }
+          if ($env:WINDOWS_INSTALLER_SIGNING_MODE -eq 'unsigned-private-pilot') {
+            Write-Warning 'Building an unsigned private-pilot installer; Windows will show an unknown-publisher warning.'
+          }
+
+      - name: Build desktop onboarding fallback
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:HOENN_COOP_API_BASE) -or
+              [string]::IsNullOrWhiteSpace($env:HOENN_RELEASE_TRUST_KEY_ID) -or
+              [string]::IsNullOrWhiteSpace($env:HOENN_RELEASE_TRUST_KEY_HEX) -or
+              [string]::IsNullOrWhiteSpace($env:HOENN_MANIFEST_TRUST_KEY_ID) -or
+              [string]::IsNullOrWhiteSpace($env:HOENN_MANIFEST_TRUST_KEY_HEX) -or
+              $env:HOENN_RELEASE_TRUST_KEY_HEX -notmatch '^[0-9a-fA-F]{64}$' -or
+              $env:HOENN_MANIFEST_TRUST_KEY_HEX -notmatch '^[0-9a-fA-F]{64}$' -or
+              $env:HOENN_RELEASE_TRUST_KEY_ID -notmatch '^[A-Za-z0-9_.-]{1,64}$' -or
+              $env:HOENN_MANIFEST_TRUST_KEY_ID -notmatch '^[A-Za-z0-9_.-]{1,64}$') {
+            throw 'protected nonsecret release configuration is required'
+          }
+          cargo build --locked --release --package coop-desktop --target x86_64-pc-windows-msvc
+
+      - name: Prepare unsigned installer staging and restore WiX
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File installer/windows/build-installer.ps1 `
+            -Phase Prepare `
+            -OnboardingExe (Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release\coop-launcher.exe') `
+            -NoticesFile android/app/src/main/assets/mgba-LICENSE.txt `
+            -ReleaseTrustKeyId $env:HOENN_RELEASE_TRUST_KEY_ID `
+            -ReleaseTrustPublicKeyHex $env:HOENN_RELEASE_TRUST_KEY_HEX `
+            -ManifestTrustKeyId $env:HOENN_MANIFEST_TRUST_KEY_ID `
+            -ManifestTrustPublicKeyHex $env:HOENN_MANIFEST_TRUST_KEY_HEX
+
+      - name: Sign staged installer executables
+        if: env.WINDOWS_INSTALLER_SIGNING_MODE == 'authenticode'
+        shell: pwsh
+        env:
+          AUTHENTICODE_CERT_B64: ${{ secrets.AUTHENTICODE_CERT_B64 }}
+          AUTHENTICODE_PASSWORD: ${{ secrets.AUTHENTICODE_PASSWORD }}
+          AUTHENTICODE_TIMESTAMP_URL: ${{ vars.AUTHENTICODE_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AUTHENTICODE_CERT_B64) -or
+              [string]::IsNullOrWhiteSpace($env:AUTHENTICODE_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:AUTHENTICODE_TIMESTAMP_URL)) {
+            throw 'Authenticode certificate and timestamp URL are required for release MSI'
+          }
+          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
+          $certificate = $null
+          $thumbprint = $null
+          $bytes = $null
+          $password = $null
+          try {
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $bytes = [Convert]::FromBase64String($env:AUTHENTICODE_CERT_B64)
+            $password = ConvertTo-SecureString $env:AUTHENTICODE_PASSWORD -AsPlainText -Force
+            $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $bytes, $password,
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet)
+            $store.Add($certificate)
+            $thumbprint = $certificate.Thumbprint
+            pwsh -NoProfile -File installer/windows/build-installer.ps1 `
+              -Phase SignExecutables `
+              -OutputRoot installer/windows/out `
+              -AuthenticodeCertificateThumbprint $thumbprint `
+              -AuthenticodeTimestampUrl $env:AUTHENTICODE_TIMESTAMP_URL
+          } finally {
+            # Every cleanup operation is isolated so a failed store operation
+            # cannot skip disposal of the password/PFX bytes or env removal.
+            $cleanupErrors = [System.Collections.Generic.List[string]]::new()
+            try { if ($null -ne $certificate) { $store.Remove($certificate) } } catch { [void]$cleanupErrors.Add('certificate removal failed') }
+            try { if ($null -ne $certificate) { $certificate.Dispose() } } catch { [void]$cleanupErrors.Add('certificate disposal failed') }
+            try { $store.Close() } catch { [void]$cleanupErrors.Add('certificate store close failed') }
+            $certificateStillPresent = $false
+            if ($null -ne $thumbprint) { $certificateStillPresent = $null -ne (Get-ChildItem "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue) }
+            try { if ($null -ne $password) { $password.Dispose() } } catch { [void]$cleanupErrors.Add('password disposal failed') }
+            try { if ($null -ne $bytes) { [Array]::Clear($bytes, 0, $bytes.Length) } } catch { [void]$cleanupErrors.Add('PFX byte disposal failed') }
+            Remove-Item Env:AUTHENTICODE_CERT_B64, Env:AUTHENTICODE_PASSWORD, Env:AUTHENTICODE_TIMESTAMP_URL -ErrorAction SilentlyContinue
+            if ($certificateStillPresent -or $cleanupErrors.Count -gt 0) { throw 'temporary signing certificate cleanup failed' }
+          }
+
+      - name: Package installer MSI without restore
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Phase = 'Package'
+            OutputRoot = 'installer/windows/out'
+            ReleaseTrustKeyId = $env:HOENN_RELEASE_TRUST_KEY_ID
+            ReleaseTrustPublicKeyHex = $env:HOENN_RELEASE_TRUST_KEY_HEX
+            ManifestTrustKeyId = $env:HOENN_MANIFEST_TRUST_KEY_ID
+            ManifestTrustPublicKeyHex = $env:HOENN_MANIFEST_TRUST_KEY_HEX
+          }
+          if ($env:WINDOWS_INSTALLER_SIGNING_MODE -eq 'unsigned-private-pilot') {
+            $arguments.UnsignedPrivatePilot = $true
+          }
+          & ./installer/windows/build-installer.ps1 @arguments
+
+      - name: Sign packaged MSI
+        if: env.WINDOWS_INSTALLER_SIGNING_MODE == 'authenticode'
+        shell: pwsh
+        env:
+          AUTHENTICODE_CERT_B64: ${{ secrets.AUTHENTICODE_CERT_B64 }}
+          AUTHENTICODE_PASSWORD: ${{ secrets.AUTHENTICODE_PASSWORD }}
+          AUTHENTICODE_TIMESTAMP_URL: ${{ vars.AUTHENTICODE_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AUTHENTICODE_CERT_B64) -or
+              [string]::IsNullOrWhiteSpace($env:AUTHENTICODE_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:AUTHENTICODE_TIMESTAMP_URL)) {
+            throw 'Authenticode certificate and timestamp URL are required for release MSI'
+          }
+          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
+          $certificate = $null
+          $thumbprint = $null
+          $bytes = $null
+          $password = $null
+          try {
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            $bytes = [Convert]::FromBase64String($env:AUTHENTICODE_CERT_B64)
+            $password = ConvertTo-SecureString $env:AUTHENTICODE_PASSWORD -AsPlainText -Force
+            $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $bytes, $password,
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet)
+            $store.Add($certificate)
+            $thumbprint = $certificate.Thumbprint
+            pwsh -NoProfile -File installer/windows/build-installer.ps1 `
+              -Phase SignMsi `
+              -OutputRoot installer/windows/out `
+              -AuthenticodeCertificateThumbprint $thumbprint `
+              -AuthenticodeTimestampUrl $env:AUTHENTICODE_TIMESTAMP_URL
+          } finally {
+            # Every cleanup operation is isolated so a failed store operation
+            # cannot skip disposal of the password/PFX bytes or env removal.
+            $cleanupErrors = [System.Collections.Generic.List[string]]::new()
+            try { if ($null -ne $certificate) { $store.Remove($certificate) } } catch { [void]$cleanupErrors.Add('certificate removal failed') }
+            try { if ($null -ne $certificate) { $certificate.Dispose() } } catch { [void]$cleanupErrors.Add('certificate disposal failed') }
+            try { $store.Close() } catch { [void]$cleanupErrors.Add('certificate store close failed') }
+            $certificateStillPresent = $false
+            if ($null -ne $thumbprint) { $certificateStillPresent = $null -ne (Get-ChildItem "Cert:\CurrentUser\My\$thumbprint" -ErrorAction SilentlyContinue) }
+            try { if ($null -ne $password) { $password.Dispose() } } catch { [void]$cleanupErrors.Add('password disposal failed') }
+            try { if ($null -ne $bytes) { [Array]::Clear($bytes, 0, $bytes.Length) } } catch { [void]$cleanupErrors.Add('PFX byte disposal failed') }
+            Remove-Item Env:AUTHENTICODE_CERT_B64, Env:AUTHENTICODE_PASSWORD, Env:AUTHENTICODE_TIMESTAMP_URL -ErrorAction SilentlyContinue
+            if ($certificateStillPresent -or $cleanupErrors.Count -gt 0) { throw 'temporary signing certificate cleanup failed' }
+          }
+
+      - name: Finalize hashes and provenance
+        shell: pwsh
+        run: |
+          $arguments = @{
+            Phase = 'Finalize'
+            OutputRoot = 'installer/windows/out'
+            ReleaseTrustKeyId = $env:HOENN_RELEASE_TRUST_KEY_ID
+            ReleaseTrustPublicKeyHex = $env:HOENN_RELEASE_TRUST_KEY_HEX
+            ManifestTrustKeyId = $env:HOENN_MANIFEST_TRUST_KEY_ID
+            ManifestTrustPublicKeyHex = $env:HOENN_MANIFEST_TRUST_KEY_HEX
+            SourceRepository = $env:HOENN_SOURCE_REPOSITORY
+            SourceRevision = $env:HOENN_SOURCE_REVISION
+            CiRunId = $env:HOENN_CI_RUN_ID
+            CiRunAttempt = $env:HOENN_CI_RUN_ATTEMPT
+          }
+          if ($env:WINDOWS_INSTALLER_SIGNING_MODE -eq 'unsigned-private-pilot') {
+            $arguments.UnsignedPrivatePilot = $true
+          }
+          & ./installer/windows/build-installer.ps1 @arguments
+
+      - name: Verify finalized installer before upload
+        shell: pwsh
+        run: |
+          $msiName = if ($env:WINDOWS_INSTALLER_SIGNING_MODE -eq 'unsigned-private-pilot') {
+            'HoennSessions-UNSIGNED-PRIVATE-PILOT.msi'
+          } else {
+            'HoennSessions.msi'
+          }
+          ./installer/windows/tests/installer-smoke.ps1 `
+            -MsiPath (Join-Path 'installer/windows/out' $msiName) `
+            -HashesPath installer/windows/out/hashes.json `
+            -ProvenancePath installer/windows/out/provenance.json `
+            -ExpectedSigningMode $env:WINDOWS_INSTALLER_SIGNING_MODE `
+            -ExpectedSourceRepository $env:HOENN_SOURCE_REPOSITORY `
+            -ExpectedSourceRevision $env:HOENN_SOURCE_REVISION `
+            -ExpectedCiRunId $env:HOENN_CI_RUN_ID `
+            -ExpectedCiRunAttempt $env:HOENN_CI_RUN_ATTEMPT
+
+      - name: Upload ROM-free MSI and provenance only
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: hoenn-private-pilot-installer-${{ env.WINDOWS_INSTALLER_SIGNING_MODE }}-${{ github.run_number }}
+          path: |
+            installer/windows/out/HoennSessions*.msi
+            installer/windows/out/provenance.json
+            installer/windows/out/hashes.json
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [validate, release-key-gate]
     runs-on: ubuntu-latest
     env:
       RELEASE_ID: ${{ github.sha }}
+      RELEASE_SEQUENCE: ${{ github.run_number }}
+      MGBA_URL: https://s3.amazonaws.com/mgba/build/mGBA-build-2026-09-19-win64-9139-3a5bc24629867576b0fb576a5d5a21d3b3d6b576.7z
+      MGBA_ARCHIVE_SHA256: ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b
+      MGBA_EXECUTABLE_SHA256: 743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Resolve image name
         id: image
@@ -136,62 +397,81 @@ jobs:
             echo "  StrictHostKeyChecking yes"
           } >> ~/.ssh/config
 
-      # Skip the rebuild when this commit is already released (e.g. a re-run
-      # after a failed server rollout): the rollout step below reuses the
-      # recorded digest instead of building a conflicting second bundle.
-      # Fail-closed: an unreachable VPS or unreadable live metadata fails
-      # this step instead of triggering a blind rebuild that could conflict
-      # with the already-promoted release.
-      - name: Check whether this commit is already released
+      # The remote probe distinguishes an untouched commit from a pending
+      # promotion whose association was published before its staging move,
+      # and from an already reusable release. Only ABSENT may build/upload.
+      # Fail-closed on malformed or inconsistent remote state.
+      - name: Classify existing release generation
         id: status
         env:
           RELEASE_SHA: ${{ github.sha }}
+          IMAGE_BASE: ${{ steps.image.outputs.base }}
+          VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
         run: |
-          probe="$(ssh hoenn-vps 'if [ ! -e /srv/hoenn/current ]; then echo NO_RELEASE; else cat /srv/hoenn/current/release.json; fi')"
-          if [ "$probe" = "NO_RELEASE" ]; then
-            echo "released=false" >> "$GITHUB_OUTPUT"
-            echo "released_digest=" >> "$GITHUB_OUTPUT"
-            echo "no live release for this commit; building"
-            exit 0
-          fi
-          commit="$(printf '%s' "$probe" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])')"
-          digest="$(printf '%s' "$probe" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("server_image_digest", ""))')"
-          # Guard the GITHUB_OUTPUT protocol (single-line key=value) and the
-          # downstream digest gate before trusting anything from the VPS.
-          newline='
-          '
-          case "$commit$digest" in
-            *"$newline"* ) echo "error: live release metadata contains a newline; refusing" >&2; exit 1 ;;
+          case "$VPS_DEPLOY_DIR" in
+            "" | *"'"* ) echo "error: VPS_DEPLOY_DIR must be set and contain no single quotes" >&2; exit 1 ;;
           esac
-          case "$digest" in
-            sha256:*) ;;
-            *) echo "error: live release has no usable server_image_digest; refusing" >&2; exit 1 ;;
+          case "$RELEASE_SHA" in
+            "" | *[!0-9a-f]* ) echo "error: RELEASE_SHA must be a lowercase 40-hex commit" >&2; exit 1 ;;
           esac
-          if [ "$commit" = "$RELEASE_SHA" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "released_digest=$digest" >> "$GITHUB_OUTPUT"
-            echo "commit $RELEASE_SHA already released; skipping rebuild"
-            exit 0
+          [ "${#RELEASE_SHA}" -eq 40 ] || { echo "error: RELEASE_SHA must be a lowercase 40-hex commit" >&2; exit 1; }
+          case "$IMAGE_BASE" in
+            "" | *[!A-Za-z0-9_./:-]* ) echo "error: IMAGE_BASE contains unsupported characters" >&2; exit 1 ;;
+          esac
+          if ! probe="$(ssh hoenn-vps "HOENN_ROOT=/srv/hoenn bash -s -- '$RELEASE_SHA' '$IMAGE_BASE'" < deploy/coop/probe-release-status.sh)"; then
+            echo "error: remote release status probe failed" >&2
+            exit 1
           fi
-          echo "released=false" >> "$GITHUB_OUTPUT"
-          echo "released_digest=" >> "$GITHUB_OUTPUT"
-          echo "live release is a different commit; building"
+          [ "$(printf '%s\n' "$probe" | wc -l)" -eq 3 ] || {
+            echo "error: remote release status probe returned an invalid record" >&2
+            exit 1
+          }
+          state="$(printf '%s\n' "$probe" | sed -n 's/^state=//p')"
+          image="$(printf '%s\n' "$probe" | sed -n 's/^image_ref=//p')"
+          digest="$(printf '%s\n' "$probe" | sed -n 's/^image_digest=//p')"
+          case "$state" in
+            ABSENT)
+              [ -z "$image" ] && [ -z "$digest" ] || { echo "error: ABSENT probe record contains image data" >&2; exit 1; }
+              echo "state=ABSENT" >> "$GITHUB_OUTPUT"
+              echo "released=false" >> "$GITHUB_OUTPUT"
+              echo "released_digest=" >> "$GITHUB_OUTPUT"
+              echo "released_image=" >> "$GITHUB_OUTPUT"
+              echo "no association or generation exists; building"
+              ;;
+            PENDING|RELEASED)
+              case "$digest" in
+                sha256:*) ;;
+                *) echo "error: release status has no usable image digest" >&2; exit 1 ;;
+              esac
+              expected_image="$IMAGE_BASE@$digest"
+              [ "$image" = "$expected_image" ] || { echo "error: release status image does not match expected repository" >&2; exit 1; }
+              echo "state=$state" >> "$GITHUB_OUTPUT"
+              echo "released=true" >> "$GITHUB_OUTPUT"
+              echo "released_digest=$digest" >> "$GITHUB_OUTPUT"
+              echo "released_image=$image" >> "$GITHUB_OUTPUT"
+              echo "$state generation found; reusing its recorded image"
+              ;;
+            *)
+              echo "error: unknown remote release status: $state" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Install ARM/GBA toolchain
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
-            libpng-dev python3 mingw-w64
+            libpng-dev python3 mingw-w64 p7zip-full
 
       - name: Add Windows target
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         run: rustup target add x86_64-pc-windows-gnu
 
       - name: Cache ROM build tools
-        if: steps.status.outputs.released != 'true'
-        uses: actions/cache@v4
+        if: steps.status.outputs.state == 'ABSENT'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             tools/bin2c/bin2c
@@ -212,7 +492,7 @@ jobs:
 
       # Single ROM build for this release; reused by manifest + distribution.
       - name: Build Emerald ROM and ELF
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         env:
           GAME_VERSION: EMERALD
         run: make -j"$(nproc)" -O all
@@ -220,7 +500,7 @@ jobs:
       # The generated manifest below is authoritative for this release; the
       # copy committed to the repository is never substituted in.
       - name: Generate bridge manifest from this ROM
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         run: |
           python3 tools/generate_bridge_manifest.py \
             --elf pokeemerald.elf \
@@ -234,14 +514,48 @@ jobs:
           PY
 
       - name: Build coop-sidecar (Windows x86_64)
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         run: |
           cargo build --locked --release --target x86_64-pc-windows-gnu -p coop-sidecar
           cp target/x86_64-pc-windows-gnu/release/coop-sidecar.exe coop-sidecar.exe
 
+      - name: Acquire and verify the pinned official mGBA build
+        if: steps.status.outputs.state == 'ABSENT'
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.3 "$MGBA_URL" -o mgba-build.7z
+          printf '%s  %s\n' "$MGBA_ARCHIVE_SHA256" mgba-build.7z | sha256sum --check --strict
+          rm -rf mgba-extracted && mkdir mgba-extracted
+          7z x -bd -o"$PWD/mgba-extracted" mgba-build.7z >/dev/null
+          MGBA_EXE="$(find mgba-extracted -type f -name 'mGBA.exe' -print -quit)"
+          [ -n "$MGBA_EXE" ] || { echo 'pinned archive has no mGBA.exe' >&2; exit 1; }
+          printf '%s  %s\n' "$MGBA_EXECUTABLE_SHA256" "$MGBA_EXE" | sha256sum --check --strict
+          cp "$MGBA_EXE" mgba.exe
+
+      - name: Build desktop runtime with explicit private-pilot config
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          HOENN_COOP_API_BASE: ${{ vars.COOP_API_BASE }}
+          HOENN_RELEASE_TRUST_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          HOENN_RELEASE_TRUST_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+          HOENN_MANIFEST_TRUST_KEY_ID: ${{ vars.MANIFEST_TRUST_KEY_ID }}
+          HOENN_MANIFEST_TRUST_KEY_HEX: ${{ vars.MANIFEST_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          test -n "$HOENN_COOP_API_BASE" -a -n "$HOENN_RELEASE_TRUST_KEY_ID" -a -n "$HOENN_RELEASE_TRUST_KEY_HEX" \
+            -a -n "$HOENN_MANIFEST_TRUST_KEY_ID" -a -n "$HOENN_MANIFEST_TRUST_KEY_HEX"
+          case "$HOENN_RELEASE_TRUST_KEY_HEX$HOENN_MANIFEST_TRUST_KEY_HEX" in *[!0-9A-Fa-f]*) exit 1 ;; esac
+          [ "${#HOENN_RELEASE_TRUST_KEY_HEX}" -eq 64 ] && [ "${#HOENN_MANIFEST_TRUST_KEY_HEX}" -eq 64 ]
+          case "$HOENN_RELEASE_TRUST_KEY_ID$HOENN_MANIFEST_TRUST_KEY_ID" in *[!A-Za-z0-9_.-]*) exit 1 ;; esac
+          [ "${#HOENN_RELEASE_TRUST_KEY_ID}" -ge 1 ] && [ "${#HOENN_RELEASE_TRUST_KEY_ID}" -le 64 ]
+          [ "${#HOENN_MANIFEST_TRUST_KEY_ID}" -ge 1 ] && [ "${#HOENN_MANIFEST_TRUST_KEY_ID}" -le 64 ]
+          cargo build --locked --release --target x86_64-pc-windows-gnu -p coop-desktop
+          cp target/x86_64-pc-windows-gnu/release/coop-launcher.exe coop-launcher.exe
+
+      - name: Build the release envelope signer
+        run: cargo build --locked --release -p coop-release-tool
+
       - name: Log in to GHCR
-        if: steps.status.outputs.released != 'true'
-        uses: docker/login-action@v3
+        if: steps.status.outputs.state == 'ABSENT'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -251,9 +565,9 @@ jobs:
       # dist/bridge_manifest.json and the server binary embeds/uses it.
       # The pushed digest (not the tag) is the immutable deployment handle.
       - name: Build and push coop-server image
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         id: server-image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: deploy/coop/Dockerfile
@@ -263,50 +577,73 @@ jobs:
             ${{ steps.image.outputs.base }}:latest
 
       - name: Assemble release bundle
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
         run: |
           rm -rf release-bundle && mkdir -p "release-bundle/${{ github.sha }}"
-          cp pokeemerald.gba "release-bundle/${{ github.sha }}/game.gba"
-          cp coop-sidecar.exe "release-bundle/${{ github.sha }}/coop-sidecar.exe"
-          cp dist/bridge_manifest.json "release-bundle/${{ github.sha }}/bridge_manifest.json"
-          python3 - <<'PY'
-          import hashlib, json
-          from pathlib import Path
-          d = Path("release-bundle/${{ github.sha }}")
-          def sha256(p):
-              return hashlib.sha256((d / p).read_bytes()).hexdigest()
-          digest = "${{ steps.server-image.outputs.digest }}"
-          assert digest.startswith("sha256:"), f"unexpected digest output: {digest}"
-          base = "${{ steps.image.outputs.base }}"
-          # The manifest already carries the canonical ROM hash
-          # (game_build.rom_sha256); it is not duplicated here.
-          release = {
-              "version": "${{ github.sha }}",
-              "commit": "${{ github.sha }}",
-              "rom": "game.gba",
-              "sidecar": "coop-sidecar.exe",
-              "manifest": "bridge_manifest.json",
-              "server_image": f"{base}@{digest}",
-              "server_image_tag": f"{base}:${{ github.sha }}",
-              "server_image_digest": digest,
-              "sidecar_sha256": sha256("coop-sidecar.exe"),
-              "manifest_sha256": sha256("bridge_manifest.json"),
-          }
-          (d / "release.json").write_text(json.dumps(release, indent=2, sort_keys=True) + "\n")
+          d="release-bundle/${{ github.sha }}"
+          mkdir -p "$d/app" "$d/runtime" "$d/bridge" "$d/trust"
+          cp coop-launcher.exe "$d/app/coop-launcher.exe"
+          cp mgba.exe "$d/runtime/mgba.exe"
+          cp pokeemerald.gba "$d/runtime/game.gba"
+          cp coop-sidecar.exe "$d/runtime/coop-sidecar.exe"
+          cp bridge/main.lua "$d/bridge/main.lua"
+          cp bridge/memory.lua "$d/bridge/memory.lua"
+          cp bridge/protocol.lua "$d/bridge/protocol.lua"
+          cp bridge/generated_addresses.lua "$d/bridge/generated_addresses.lua"
+          cp dist/bridge_manifest.json "$d/bridge_manifest.json"
+          cp android/app/src/main/assets/mgba-LICENSE.txt "$d/THIRD_PARTY_NOTICES.txt"
+          RELEASE_KEY_ID="$RELEASE_KEY_ID" RELEASE_PUBLIC_KEY_HEX="$RELEASE_PUBLIC_KEY_HEX" \
+            python3 - "$d/trust/release-trust.json" <<'PY'
+          import json, os, pathlib, sys
+          pathlib.Path(sys.argv[1]).write_text(json.dumps({
+              "schema": 1,
+              "algorithm": "ed25519",
+              "key_id": os.environ["RELEASE_KEY_ID"],
+              "public_key_hex": os.environ["RELEASE_PUBLIC_KEY_HEX"].lower(),
+          }, sort_keys=True, separators=(",", ":")) + "\n")
           PY
-          (cd "release-bundle/${{ github.sha }}" && \
-            sha256sum game.gba coop-sidecar.exe bridge_manifest.json release.json > SHA256SUMS)
-          cat "release-bundle/${{ github.sha }}/release.json"
+
+      - name: Sign exact eleven-artifact runtime envelope
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          HOENN_RELEASE_PRIVATE_SEED_HEX: ${{ secrets.HOENN_RELEASE_PRIVATE_SEED_HEX }}
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          test -n "$HOENN_RELEASE_PRIVATE_SEED_HEX" -a -n "$RELEASE_KEY_ID" -a -n "$RELEASE_PUBLIC_KEY_HEX"
+          issued_at="$(date +%s)"
+          expires_at=$((issued_at + 90 * 24 * 60 * 60 - 1))
+          d="release-bundle/${{ github.sha }}"
+          target/release/coop-release-tool sign \
+            --release-id "${{ github.sha }}" --sequence "${{ github.run_number }}" \
+            --issued-at "$issued_at" --expires-at "$expires_at" \
+            --key-id "$RELEASE_KEY_ID" --public-key-hex "$RELEASE_PUBLIC_KEY_HEX" \
+            --output "$d/release-envelope.json" \
+            --artifact "desktop-app=$d/app/coop-launcher.exe" \
+            --artifact "managed-mgba=$d/runtime/mgba.exe" \
+            --artifact "rom=$d/runtime/game.gba" \
+            --artifact "sidecar=$d/runtime/coop-sidecar.exe" \
+            --artifact "bridge-main=$d/bridge/main.lua" \
+            --artifact "bridge-memory=$d/bridge/memory.lua" \
+            --artifact "bridge-protocol=$d/bridge/protocol.lua" \
+            --artifact "bridge-addresses=$d/bridge/generated_addresses.lua" \
+            --artifact "compatibility-manifest=$d/bridge_manifest.json" \
+            --artifact "trust-bundle=$d/trust/release-trust.json" \
+            --artifact "notices=$d/THIRD_PARTY_NOTICES.txt"
 
       # Deploy scripts travel with every run (the rollout below needs them
       # even when the rebuild is skipped for an already-released commit).
       - name: Upload deploy scripts
         run: |
-          scp deploy/coop/promote-release.sh deploy/coop/deploy-release.sh hoenn-vps:/tmp/
+          scp deploy/coop/promote-release.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
+          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
 
       # ROM travels runner -> VPS only; nothing is uploaded as a GH artifact.
       - name: Upload release to VPS staging
-        if: steps.status.outputs.released != 'true'
+        if: steps.status.outputs.state == 'ABSENT'
         run: |
           scp -r "release-bundle/${{ github.sha }}" "hoenn-vps:/srv/hoenn/staging/"
 
@@ -315,26 +652,40 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
           IMAGE_BASE: ${{ steps.image.outputs.base }}
           FRESH_DIGEST: ${{ steps.server-image.outputs.digest }}
-          WAS_RELEASED: ${{ steps.status.outputs.released }}
+          RELEASE_STATE: ${{ steps.status.outputs.state }}
           RELEASED_DIGEST: ${{ steps.status.outputs.released_digest }}
+          RELEASED_IMAGE: ${{ steps.status.outputs.released_image }}
           GHCR_USER: ${{ secrets.VPS_GHCR_USER }}
           GHCR_TOKEN: ${{ secrets.VPS_GHCR_TOKEN }}
           VPS_DEPLOY_DIR: ${{ secrets.VPS_DEPLOY_DIR }}
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
         run: |
-          if [ "$WAS_RELEASED" = "true" ]; then
-            DIGEST="$RELEASED_DIGEST"
-          else
-            DIGEST="$FRESH_DIGEST"
-          fi
+          case "$RELEASE_STATE" in
+            PENDING|RELEASED)
+              # An association may have been published before a prior run
+              # moved staging. Never replace its immutable image with a fresh
+              # digest from a newly rebuilt image.
+              DIGEST="$RELEASED_DIGEST"
+              IMAGE_REF="$RELEASED_IMAGE"
+              ;;
+            ABSENT)
+              DIGEST="$FRESH_DIGEST"
+              IMAGE_REF="$IMAGE_BASE@$DIGEST"
+              ;;
+            *) echo "error: unexpected release state: $RELEASE_STATE" >&2; exit 1 ;;
+          esac
           case "$DIGEST" in
-            sha256:*) ;;
+            sha256:*) digest_value="${DIGEST#sha256:}" ;;
             *) echo "error: unexpected digest output: $DIGEST" >&2; exit 1 ;;
           esac
-          IMAGE_REF="$IMAGE_BASE@$DIGEST"
+          case "$digest_value" in *[!0-9a-f]* | "") echo "error: digest must be lowercase hex" >&2; exit 1 ;; esac
+          [ "${#digest_value}" -eq 64 ] || { echo "error: digest must be 64 hex chars" >&2; exit 1; }
           case "$IMAGE_REF" in
             "" | *[!A-Za-z0-9_./:@-]* )
               echo "error: unsafe image reference: $IMAGE_REF" >&2; exit 1 ;;
           esac
+          case "$IMAGE_REF" in *@$DIGEST) ;; *) echo "error: image association mismatch" >&2; exit 1 ;; esac
           # The remote command below embeds these values single-quoted, so
           # quote-active characters are refused up front (defence in depth:
           # secrets arrive via `env:`, never via expression interpolation).
@@ -355,7 +706,14 @@ jobs:
             echo "error: VPS_GHCR_USER and VPS_GHCR_TOKEN must be set together or not at all" >&2
             exit 1
           fi
-          REMOTE="HOENN_ROOT=/srv/hoenn bash /tmp/promote-release.sh '$RELEASE_SHA'"
+          case "$RELEASE_KEY_ID" in
+            "" | *[!A-Za-z0-9_.-]* ) echo "error: release key id is unsafe" >&2; exit 1 ;;
+          esac
+          case "$RELEASE_PUBLIC_KEY_HEX" in
+            "" | *[!0-9A-Fa-f]* ) echo "error: release public key is unsafe" >&2; exit 1 ;;
+          esac
+          [ "${#RELEASE_PUBLIC_KEY_HEX}" -eq 64 ] || { echo "error: release public key must be 32-byte hex" >&2; exit 1; }
+          REMOTE="HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-release.sh '$RELEASE_SHA' --image-ref '$IMAGE_REF' --image-digest '$DIGEST'"
           REMOTE="$REMOTE && bash /tmp/deploy-release.sh --image '$IMAGE_REF' --deploy-dir '$VPS_DEPLOY_DIR'"
           if [ -n "$GHCR_TOKEN" ]; then
             # The token travels over the encrypted channel on stdin and is

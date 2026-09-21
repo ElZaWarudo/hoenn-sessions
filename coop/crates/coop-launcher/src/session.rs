@@ -45,6 +45,7 @@ use crate::{
         new_command_id,
     },
     realtime::{RealtimeApi, RealtimeCoordinator, RealtimeCoordinatorEvent, RealtimeHttpError},
+    recovery::RecoveryMarkerV2,
 };
 
 pub type CloudFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
@@ -554,6 +555,7 @@ pub struct SessionWorkspace {
     temp: Option<TempDir>,
     stable_path: PathBuf,
     recovery_shadow: Option<RecoveryShadow>,
+    recovery_marker: Option<Vec<u8>>,
 }
 
 /// A secret-free SAV copy created as soon as an authorized checkpoint reads a
@@ -564,14 +566,14 @@ struct RecoveryShadow {
 }
 
 impl RecoveryShadow {
-    fn create(parent: &Path, sav: &[u8]) -> Result<Self, SessionError> {
+    fn create(parent: &Path, sav: &[u8], marker: &[u8]) -> Result<Self, SessionError> {
         reject_symlink_ancestors(parent).map_err(SessionError::Filesystem)?;
         let temp = tempfile::Builder::new()
             .prefix("coop-recovery-")
             .tempdir_in(parent)
             .map_err(SessionError::Filesystem)?;
         write_new_private_file(temp.path(), "character.sav", sav)?;
-        write_new_private_file(temp.path(), "recovery.marker", b"coop-recovery-v1\n")?;
+        write_new_private_file(temp.path(), "recovery.marker", marker)?;
         Ok(Self { temp: Some(temp) })
     }
 
@@ -630,6 +632,7 @@ impl SessionWorkspace {
             temp: Some(temp),
             stable_path,
             recovery_shadow: None,
+            recovery_marker: None,
         })
     }
 
@@ -690,7 +693,25 @@ impl SessionWorkspace {
         if sav.is_empty() {
             return Err(SessionError::Package);
         }
-        self.write_atomic("recovery.marker", b"coop-recovery-v1\n")?;
+        let marker = self
+            .recovery_marker
+            .take()
+            .unwrap_or_else(|| b"coop-recovery-v1\n".to_vec());
+        let marker_path = fixed_path(self.path(), "recovery.marker")?;
+        match std::fs::symlink_metadata(&marker_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                return Err(SessionError::Package);
+            }
+            Ok(_) => {
+                if self.read_fixed("recovery.marker")? != marker {
+                    return Err(SessionError::Package);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.write_atomic("recovery.marker", &marker)?;
+            }
+            Err(error) => return Err(SessionError::Filesystem(error)),
+        }
         if let Some(temp) = self.temp.take() {
             let kept = temp.keep();
             debug_assert_eq!(kept, self.stable_path);
@@ -699,18 +720,29 @@ impl SessionWorkspace {
         Ok(self.stable_path.clone())
     }
 
+    #[cfg(test)]
     fn create_recovery_shadow(&mut self, sav: &[u8]) -> Result<(), SessionError> {
+        self.create_recovery_shadow_with_marker(sav, b"coop-recovery-v1\n")
+    }
+
+    fn create_recovery_shadow_with_marker(
+        &mut self,
+        sav: &[u8],
+        marker: &[u8],
+    ) -> Result<(), SessionError> {
         let parent = self
             .stable_path
             .parent()
             .ok_or_else(|| SessionError::Filesystem(io::Error::other("workspace has no parent")))?;
-        let shadow = RecoveryShadow::create(parent, sav)?;
+        let shadow = RecoveryShadow::create(parent, sav, marker)?;
         self.recovery_shadow = Some(shadow);
+        self.recovery_marker = Some(marker.to_vec());
         Ok(())
     }
 
     fn discard_recovery_shadow(&mut self) {
         let _ = self.recovery_shadow.take();
+        self.recovery_marker = None;
     }
 
     /// Detaches only a separately scrubbed recovery copy when recovery
@@ -718,6 +750,10 @@ impl SessionWorkspace {
     /// because it may still contain loopback or control secrets. The caller
     /// must abort the cloud release.
     fn retain_private_on_scrub_failure(&mut self) {
+        let marker = self
+            .recovery_marker
+            .clone()
+            .unwrap_or_else(|| b"coop-recovery-v1\n".to_vec());
         // The shadow was fully written before any cloud upload. Keep it
         // directly, without copying from a workspace whose scrub may have
         // failed halfway through and still contain session/control secrets.
@@ -737,9 +773,7 @@ impl SessionWorkspace {
             && let Ok(sav) = self.read_fixed("character.sav")
             && !sav.is_empty()
             && quarantine.write_atomic("character.sav", &sav).is_ok()
-            && quarantine
-                .write_atomic("recovery.marker", b"coop-recovery-v1\n")
-                .is_ok()
+            && quarantine.write_atomic("recovery.marker", &marker).is_ok()
         {
             if let Some(temp) = quarantine.temp.take() {
                 let _ = temp.keep();
@@ -1211,6 +1245,25 @@ impl SessionLifecycle {
     #[must_use]
     pub const fn save_generation(&self) -> Option<u32> {
         self.save_generation
+    }
+
+    pub(crate) fn active_save_bytes(&self) -> Result<Vec<u8>, SessionError> {
+        self.workspace.read_fixed("character.sav")
+    }
+
+    pub(crate) fn active_pending_bytes(&self) -> Result<Vec<u8>, SessionError> {
+        self.workspace.read_fixed("pending_commits.json")
+    }
+
+    pub(crate) fn active_save_digest(&self) -> Result<Option<Sha256Digest>, SessionError> {
+        match self.active_save_bytes() {
+            Ok(bytes) if !bytes.is_empty() => Ok(Some(Sha256Digest::of_bytes(&bytes))),
+            Ok(_) => Ok(None),
+            Err(SessionError::Filesystem(error)) if error.kind() == io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     fn registry_contract(&self) -> Result<RegistryContract, SessionError> {
@@ -3749,7 +3802,17 @@ impl SessionLifecycle {
         // artifact or contacting the cloud. Later scrub/upload/finalize
         // failures can retain this shadow without re-reading a compromised
         // workspace.
-        self.workspace.create_recovery_shadow(&sav)?;
+        let marker = RecoveryMarkerV2::new(
+            self.lease.fence(),
+            self.revision,
+            event_generation,
+            Sha256Digest::of_bytes(&sav),
+        )
+        .map_err(|_| SessionError::CheckpointCorrelation)?
+        .encode()
+        .map_err(|_| SessionError::CheckpointCorrelation)?;
+        self.workspace
+            .create_recovery_shadow_with_marker(&sav, &marker)?;
         let pending = self.workspace.read_fixed("pending_commits.json")?;
         if self.revision.is_initial() && pending != b"[]" {
             return Err(SessionError::CheckpointCorrelation);
@@ -3877,6 +3940,125 @@ impl SessionLifecycle {
             }
             tokio::time::sleep(remaining.min(Duration::from_millis(10))).await;
         }
+    }
+
+    pub(crate) async fn commit_recovery_candidate<A: CloudApi>(
+        &mut self,
+        api: &A,
+        sav: Vec<u8>,
+        expected_generation: u32,
+    ) -> Result<Revision, SessionError> {
+        if expected_generation == 0
+            || self.save_generation.unwrap_or(0).checked_add(1) != Some(expected_generation)
+        {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        let parsed = self.validate_character_save(&sav, self.revision)?;
+        let CharacterSave::Version1(save) = parsed else {
+            return Err(SessionError::CheckpointCorrelation);
+        };
+        if save.coop().save_generation != expected_generation {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        let pending = self.active_pending_bytes()?;
+        if self.revision.is_initial() && pending != b"[]" {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        let files = vec![
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &sav)
+                .map_err(|_| SessionError::Package)?,
+            SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, &pending)
+                .map_err(|_| SessionError::Package)?,
+        ];
+        let next_revision = self
+            .revision
+            .next()
+            .map_err(|_| SessionError::FinalizeConflict)?;
+        let snapshot_id =
+            SnapshotId::new(uuid::Uuid::new_v4()).map_err(|_| SessionError::Package)?;
+        let idempotency_key = random_idempotency_key()?;
+        let pending_digest = Sha256Digest::of_bytes(&pending);
+        let request = PrepareSnapshotRequest::new(
+            snapshot_id,
+            SnapshotPrepareFence::new(
+                self.lease.session_id,
+                self.lease.character_id,
+                self.revision,
+                self.lease.session_epoch,
+                self.lease.client_instance_id,
+                idempotency_key,
+            ),
+            files.clone(),
+            pending_digest,
+        )
+        .map_err(|_| SessionError::Package)?;
+        let prepared = self.prepare_with_retry(api, request.clone()).await?;
+        if !prepared.matches_request(&request) {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        for target in &prepared.upload_targets {
+            let bytes = match target.artifact {
+                ArtifactIdentity::CharacterSav => sav.clone(),
+                ArtifactIdentity::PendingCommits => pending.clone(),
+                ArtifactIdentity::ResumeSs1 => return Err(SessionError::Package),
+            };
+            self.upload_with_retry(api, target, bytes).await?;
+        }
+        let finalize = SnapshotFinalizeRequest::new(
+            snapshot_id,
+            SnapshotFinalizeFence::new(
+                self.lease.session_id,
+                self.lease.character_id,
+                self.revision,
+                self.lease.session_epoch,
+                self.lease.client_instance_id,
+                idempotency_key,
+            ),
+            files.clone(),
+            pending_digest,
+            None,
+        )
+        .map_err(|_| SessionError::Package)?;
+        let record = self.finalize_with_retry(api, finalize.clone()).await?;
+        if record.validate().is_err()
+            || record.snapshot_id != snapshot_id
+            || record.session_id != self.lease.session_id
+            || record.character_id != self.lease.character_id
+            || record.parent_revision != self.revision
+            || record.revision != next_revision
+            || record.session_epoch != self.lease.session_epoch
+            || record.files != files
+            || record.pending_commits_sha256 != pending_digest
+        {
+            return Err(SessionError::FinalizeConflict);
+        }
+        self.revision = record.revision;
+        self.lease.current_revision = record.revision;
+        self.save_generation = Some(expected_generation);
+        if let Some(updates) = &self.revision_updates {
+            updates.send_replace(record.revision.value());
+        }
+        self.auth.set_active_fence(self.lease.fence());
+        Ok(record.revision)
+    }
+
+    pub(crate) async fn verify_current_head<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(Sha256Digest, u32), SessionError> {
+        if self.revision.is_initial() {
+            return Err(SessionError::MissingPackage);
+        }
+        let envelope = self
+            .resume_package_retry(api, self.lease.character_id, self.revision)
+            .await?
+            .ok_or(SessionError::MissingPackage)?;
+        let package = self.fetch_verified_at(api, envelope, self.revision).await?;
+        self.heartbeat(api).await?;
+        Ok((
+            Sha256Digest::of_bytes(&package.sav),
+            package.save_generation,
+        ))
     }
 
     fn read_optional_resume(&self) -> Result<Option<Vec<u8>>, SessionError> {
@@ -4066,14 +4248,7 @@ impl SessionLifecycle {
         }
     }
 
-    /// Releases the exact active lease fence and revokes the rotating auth
-    /// family.  Recovery is scrubbed before either remote mutation, and the
-    /// keychain logout is attempted even when lease release fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the server cannot accept the release.
-    pub async fn release<A: CloudApi>(mut self, api: &A) -> Result<(), SessionError> {
+    async fn release_lease_inner<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
         if self.checkpoint_authorized
             && let Err(error) = self.workspace.preserve_recovery()
         {
@@ -4085,14 +4260,12 @@ impl SessionLifecycle {
                 #[cfg(windows)]
                 let _ = std::mem::take(&mut self.workspace.ancestor_guards);
                 let _ = self.workspace.temp.take();
-                let _ = self.logout_credentials(api).await;
                 return Err(error);
             }
             self.workspace.retain_private_on_scrub_failure();
-            let _ = self.logout_credentials(api).await;
             return Err(error);
         }
-        let release_result = match random_idempotency_key() {
+        match random_idempotency_key() {
             Err(error) => Err(error),
             Ok(idempotency_key) => {
                 let request = ReleaseLeaseRequest::new(self.lease.fence(), idempotency_key);
@@ -4114,7 +4287,28 @@ impl SessionLifecycle {
                     },
                 }
             }
-        };
+        }
+    }
+
+    /// Releases only the exact active lease fence and keeps authentication
+    /// alive for the caller's next startup step.  This is the recovery path:
+    /// a successful reconciliation must not delete the refresh credential.
+    pub async fn release_lease_keep_credentials<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(), SessionError> {
+        self.release_lease_inner(api).await
+    }
+
+    /// Releases the exact active lease fence and revokes the rotating auth
+    /// family.  Recovery is scrubbed before either remote mutation, and the
+    /// keychain logout is attempted even when lease release fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the server cannot accept the release.
+    pub async fn release<A: CloudApi>(mut self, api: &A) -> Result<(), SessionError> {
+        let release_result = self.release_lease_inner(api).await;
         let logout_result = self.logout_credentials(api).await;
         match release_result {
             Err(error) => Err(error),
@@ -4319,6 +4513,7 @@ mod lifecycle_tests {
     #[cfg(windows)]
     use crate::SessionWorkspace;
     use crate::process::SessionSupervisor;
+    use crate::recovery::RecoveryMarkerV2;
     use crate::{
         AuthApi, AuthError, AuthSession, BuildCompatibility, CloudApi, ControlChannel, EpochStore,
         KeychainError, RealtimeApi, RealtimeFuture, RealtimeHttpError, RefreshTokenStore,
@@ -4779,14 +4974,16 @@ mod lifecycle_tests {
 
     fn compatibility() -> BuildCompatibility {
         let manifest = serde_json::from_value(json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "emulator": {
                 "name": "mGBA",
-                "version": "0.10.5",
+                "version": "0.11.0",
+                "build_id": "0.11-9139-3a5bc2462",
+                "source_commit": "3a5bc24629867576b0fb576a5d5a21d3b3d6b576",
                 "platform": "windows-x64",
                 "variant": "Qt",
-                "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
-                "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+                "archive_sha256": "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b",
+                "executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546"
             },
             "game_build": {
                 "id": "pokeemerald-coop",
@@ -4822,7 +5019,7 @@ mod lifecycle_tests {
         let target = CompatibilityTarget::new(
             GameBuildId::new("pokeemerald-coop").unwrap(),
             Sha256Digest::of_bytes(b"rom"),
-            MgbaVersion::new("0.10.5").unwrap(),
+            MgbaVersion::new("0.11.0").unwrap(),
             BridgeAbiVersion::new(1).unwrap(),
             ProtocolVersion::new(1).unwrap(),
             Revision::initial(),
@@ -5330,7 +5527,7 @@ mod lifecycle_tests {
         let generated =
             std::fs::read_to_string(session.workspace.path().join("generated_addresses.lua"))
                 .unwrap();
-        assert!(generated.contains("schema_version = 3"));
+        assert!(generated.contains("schema_version = 4"));
         assert!(generated.contains("save = {"));
         assert!(generated.contains("block3_address = 33554432"));
         assert!(!generated.contains("archive_sha256"));
@@ -8149,7 +8346,7 @@ mod lifecycle_tests {
             revision: Revision::new(3),
             game_build_id: GameBuildId::new("pokeemerald-coop").unwrap(),
             rom_sha256: Sha256Digest::of_bytes(b"rom"),
-            mgba_version: MgbaVersion::new("0.10.5").unwrap(),
+            mgba_version: MgbaVersion::new("0.11.0").unwrap(),
             bridge_abi: BridgeAbiVersion::new(1).unwrap(),
             protocol_version: ProtocolVersion::new(1).unwrap(),
             save_sha256: Sha256Digest::of_bytes(b"save"),
@@ -8242,7 +8439,7 @@ mod lifecycle_tests {
             revision: record.revision,
             game_build_id: GameBuildId::new("pokeemerald-coop").unwrap(),
             rom_sha256: Sha256Digest::of_bytes(b"rom"),
-            mgba_version: MgbaVersion::new("0.10.5").unwrap(),
+            mgba_version: MgbaVersion::new("0.11.0").unwrap(),
             bridge_abi: BridgeAbiVersion::new(1).unwrap(),
             protocol_version: ProtocolVersion::new(1).unwrap(),
             save_sha256: Sha256Digest::of_bytes(b"save"),
@@ -8315,15 +8512,21 @@ mod lifecycle_tests {
             .unwrap_err();
         assert!(matches!(error, SessionError::Cloud));
         server.await.unwrap();
+        let prior_fence = session.lease.fence();
         session.release(cloud.as_ref()).await.unwrap();
         assert_eq!(
             std::fs::read(recovery_path.join("character.sav")).unwrap(),
             valid_save(1)
         );
-        assert_eq!(
-            std::fs::read(recovery_path.join("recovery.marker")).unwrap(),
-            b"coop-recovery-v1\n"
-        );
+        let marker_bytes = std::fs::read(recovery_path.join("recovery.marker")).unwrap();
+        let marker: RecoveryMarkerV2 =
+            serde_json::from_slice(&marker_bytes[..marker_bytes.len() - 1]).unwrap();
+        assert_eq!(marker.version, 2);
+        assert_eq!(marker.character_id, prior_fence.character_id);
+        assert_eq!(marker.prior_session_id, prior_fence.session_id);
+        assert_eq!(marker.parent_revision, Revision::initial());
+        assert_eq!(marker.save_generation, 1);
+        assert_eq!(marker.save_sha256, Sha256Digest::of_bytes(&valid_save(1)));
         assert!(!recovery_path.join("session.lua").exists());
         let entries = std::fs::read_dir(&recovery_path).unwrap().count();
         assert_eq!(entries, 2);
@@ -8456,6 +8659,55 @@ mod lifecycle_tests {
             Err(SessionError::Package)
         ));
         assert!(!original.exists());
+    }
+
+    #[tokio::test]
+    async fn recovery_lease_release_retains_authenticated_session_and_refresh_credential() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let keychain = session.keychain.as_ref().expect("test keychain").clone();
+        let access_before = session
+            .auth
+            .access_token()
+            .expect("active access token")
+            .expose_secret()
+            .to_owned();
+        let refresh_before = session
+            .auth
+            .refresh_token()
+            .expect("active refresh token")
+            .expose_secret()
+            .to_owned();
+
+        session
+            .release_lease_keep_credentials(cloud.as_ref())
+            .await
+            .unwrap();
+
+        assert_eq!(*cloud.logouts.lock().unwrap(), 0);
+        assert_eq!(
+            session
+                .auth
+                .access_token()
+                .expect("access token retained")
+                .expose_secret(),
+            access_before
+        );
+        assert_eq!(
+            session
+                .auth
+                .refresh_token()
+                .expect("refresh token retained")
+                .expose_secret(),
+            refresh_before
+        );
+        assert_eq!(
+            keychain
+                .load(crate::keychain::KEYCHAIN_SERVICE, "ash")
+                .unwrap()
+                .expect("refresh token remains in keychain")
+                .expose_secret(),
+            refresh_before
+        );
     }
 
     #[test]

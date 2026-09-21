@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     fmt,
     net::SocketAddr,
+    path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
     sync::{Arc, OnceLock},
 };
@@ -86,6 +87,7 @@ mod persistent;
 pub mod presence;
 pub mod production;
 pub(crate) mod realtime;
+pub mod releases;
 pub mod saves;
 pub mod sessions;
 pub mod storage;
@@ -196,6 +198,7 @@ pub struct Phase2App {
     pub(crate) store: Store,
     presence: presence::PresenceService,
     realtime: Arc<realtime::RealtimeTransportState>,
+    pub(crate) release_root: Option<Arc<PathBuf>>,
 }
 
 impl fmt::Debug for Phase2App {
@@ -218,7 +221,24 @@ impl Phase2App {
             store,
             presence,
             realtime: Arc::new(realtime::RealtimeTransportState::new()),
+            release_root: None,
         })
+    }
+
+    /// Adds the owner-controlled release root used by the private-pilot
+    /// distributor. The path is retained without probing the filesystem so
+    /// authentication remains the first operation on every release request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid request error for an empty path.
+    pub fn with_release_root(mut self, root: impl Into<PathBuf>) -> Result<Self, Phase2Error> {
+        let root = root.into();
+        if root.as_os_str().is_empty() {
+            return Err(Phase2Error::InvalidRequest);
+        }
+        self.release_root = Some(Arc::new(root));
+        Ok(self)
     }
 
     /// Returns the ephemeral presence service shared by all clones of this
@@ -298,6 +318,14 @@ impl Phase2App {
                     .route(
                         "/v1/characters/{character_id}/resume-package/artifacts/{artifact}",
                         get(resume_artifact),
+                    ),
+            )
+            .merge(
+                Router::new()
+                    .route("/v1/releases/windows-x86_64/latest", get(releases::latest))
+                    .route(
+                        "/v1/releases/{release_id}/artifacts/{artifact_id}",
+                        get(releases::artifact),
                     ),
             )
             .merge(

@@ -1,220 +1,199 @@
-# Production releases
+# Private-pilot releases
 
-Each deployed release corresponds to exactly one `main` commit: one ROM, one
-`bridge_manifest.json`, one sidecar build, one server image, one VPS release
-directory. All compilation happens in GitHub Actions; the VPS never builds
-anything.
+The production workflow produces one immutable Windows runtime generation per
+commit. `github.run_number` is the signed monotonic sequence; a release id is
+the full lowercase commit SHA. Re-running a commit reuses its promoted
+generation and image digest instead of creating conflicting metadata.
 
-## How it works
+## What is signed and where it goes
 
-`.github/workflows/deploy.yml` runs on pushes to `main` (or manually via
-`workflow_dispatch`; never on pull requests). After the `validate` job
-(`cargo test` over the workspace) succeeds, the `release` job:
+The release tool uses the launcher’s schema-one types and fixed destinations.
+Every generation contains exactly these eleven files plus
+`release-envelope.json`:
 
-1. Builds the Emerald ROM once (`make`, outputs `pokeemerald.gba` /
-   `pokeemerald.elf`, same flags as PR CI).
-2. Generates `dist/bridge_manifest.json` from that exact ROM+ELF with
-   `python tools/generate_bridge_manifest.py --elf pokeemerald.elf
-   --rom pokeemerald.gba`. This generated file is authoritative; the copy
-   committed in git is never substituted.
-3. Builds `coop-sidecar.exe` for Windows x86_64
-   (`--target x86_64-pc-windows-gnu`).
-4. Builds `deploy/coop/Dockerfile` **after** step 2 (it copies the fresh
-   manifest, which the server embeds) and pushes
-   `ghcr.io/<owner>/hoenn-sessions-server:<full-commit-sha>` (plus `latest`
-   for convenience only).
-5. Captures the pushed image **digest** and deploys by digest
-   (`name@sha256:<digest>`), never by tag: GHCR tags are mutable and a
-   re-run could otherwise swap the image behind a promoted release.
-6. Writes `release.json` + `SHA256SUMS`, copies everything to
-   `/srv/hoenn/staging/<sha>/` on the VPS via SSH.
-7. SSH: `promote-release.sh` verifies and atomically promotes the release
-   (idempotent, so re-running after a failed rollout is safe), then
-   `deploy-release.sh` pins digest-`COOP_IMAGE`, pulls, recreates only the
-   `server` container (`--no-build`, no volume touches; postgres dependency
-   honoured), and gates on `/health/ready` with a bounded retry. The
-   workflow fails if health never returns 200. The ROM only ever exists on
-   the runner and the VPS; it is never a public GitHub artifact.
+```text
+releases/<sha>/
+├── app/coop-launcher.exe
+├── runtime/mgba.exe
+├── runtime/game.gba
+├── runtime/coop-sidecar.exe
+├── bridge/main.lua
+├── bridge/memory.lua
+├── bridge/protocol.lua
+├── bridge/generated_addresses.lua
+├── bridge_manifest.json
+├── trust/release-trust.json
+└── THIRD_PARTY_NOTICES.txt
+```
 
-Releases are serialised by a concurrency group, but GitHub cancels
-superseded *queued* runs: an intermediate `main` commit may never get its
-own run. Every *deployed release* still equals exactly one commit (`main`
-is linear, so a later release contains earlier commits' code), but not
-every commit is guaranteed its own release.
+The envelope signs canonical descriptor bytes containing the schema, release
+id, sequence, validity window (at most 90 days), platform, and the SHA-256
+size/digest of each fixed identity. Promotion verifies the Ed25519 signature,
+key id/public-key configuration, exact inventory, and every transported byte
+before making the directory immutable.
 
-Re-running the workflow for the same commit is safe. It first asks the VPS
-whether the commit is already live: if so, the rebuild and re-upload are
-skipped, promotion re-verifies the released copy (a no-op when `current`
-already points at it), and only the server rollout runs again with the
-recorded digest. So a failed rollout is recovered with a plain re-run (no
-manual steps, no conflicting second bundle). If the VPS is unreachable or
-its live metadata is unreadable, the run fails loudly instead of rebuilding
-blindly. A re-upload that genuinely differs from an already-released copy
-under the same id is still rejected instead of silently replacing it.
+The archive identity is pinned to:
 
-## VPS layout
+```text
+https://s3.amazonaws.com/mgba/build/mGBA-build-2026-09-19-win64-9139-3a5bc24629867576b0fb576a5d5a21d3b3d6b576.7z
+archive sha256: ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b
+mGBA.exe sha256: 743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546
+```
+
+The ROM, mGBA, sidecar, signed envelope, and full runtime are private-pilot
+transport only. They are never uploaded as GitHub Releases or workflow
+artifacts. GitHub receives only the ROM-free MSI, `hashes.json`, and
+`provenance.json`. The MSI contains the stable bootstrapper, desktop
+onboarding fallback, nonsecret private-pilot config, and notices; mutable
+runtime data remains outside the install root.
+
+The signing seed is `HOENN_RELEASE_PRIVATE_SEED_HEX`, supplied to the signing
+step through the protected environment. It must match the public key in the
+protected `RELEASE_TRUST_PUBLIC_KEY_HEX` configuration. Never put the seed in
+workflow arguments, logs, files, release directories, or GitHub artifacts.
+
+## VPS layout and marker contract
 
 ```text
 /srv/hoenn/
-├── staging/<sha>/      # in-flight upload; never served
-├── releases/<sha>/     # immutable: game.gba, coop-sidecar.exe,
-│                       # bridge_manifest.json, release.json, SHA256SUMS
-├── current -> releases/<sha>   # relative symlink, switched atomically
-└── .previous-release   # id active before the last promotion
+├── staging/<sha>/       # in-flight private SSH upload; never served
+├── releases/<sha>/      # verified immutable runtime generation
+├── release-metadata/<sha>.json # immutable release-to-image association
+├── current              # regular file: <sha>\n, atomically replaced
+└── .previous-release    # previous marker id for rollback
 ```
 
-Each release directory contains:
+`current` is deliberately a regular bounded marker. The server reads it only
+after authentication, resolves `releases/<id>`, and serves the signed
+envelope or one fixed artifact. A legacy `current -> releases/<sha>` symlink
+is accepted by `promote-release.sh` only to migrate it atomically to the
+marker contract. Invalid markers, symlinks inside a generation, extra files,
+missing artifacts, signature failures, and conflicting re-uploads fail closed.
 
-```text
-game.gba
-coop-sidecar.exe
-bridge_manifest.json
-release.json
-SHA256SUMS
-```
+Compose sets `COOP_RELEASE_ROOT=/srv/hoenn` and mounts the release parent
+read-only into the server. Do not mount `current` itself: Docker resolves a
+symlink at container creation and would pin the server to one generation.
+The metadata file is outside the served eleven-artifact directory and has the
+schema `{schema, release_id, image_ref, image_digest}`. Promotion validates
+that `image_ref` ends in the exact `sha256:<64 lowercase hex>` digest, creates
+the file without overwriting an existing association, and writes it before
+moving staging into `releases/<sha>` or changing `current`; a failed move may
+leave that validated orphan for a later matching retry. Status and retry resolve the requested
+`releases/<sha>` plus its metadata; they never pair `current` with whichever
+container happens to be running.
 
-`release.json` looks like:
+## Required protected configuration
 
-```json
-{
-  "version": "<commit sha>",
-  "commit": "<full commit sha>",
-  "rom": "game.gba",
-  "sidecar": "coop-sidecar.exe",
-  "manifest": "bridge_manifest.json",
-  "server_image": "ghcr.io/<owner>/hoenn-sessions-server@sha256:<digest>",
-  "server_image_tag": "ghcr.io/<owner>/hoenn-sessions-server:<commit sha>",
-  "server_image_digest": "sha256:<digest>",
-  "sidecar_sha256": "...",
-  "manifest_sha256": "..."
-}
-```
-
-`server_image` is the immutable deployment handle; `server_image_tag` is
-kept for human readability only and must never be deployed by itself.
-
-The canonical ROM hash lives in `bridge_manifest.json`
-(`game_build.rom_sha256`) and is cross-checked against `game.gba` during
-promotion; it is intentionally not duplicated in `release.json`. No secrets
-are ever written to `release.json`.
-
-## GitHub secrets / settings
-
-| Secret | Purpose |
+| Name | Purpose |
 |---|---|
-| `VPS_HOST` | VPS hostname/IP for SSH + scp |
-| `VPS_USER` | SSH user (should own `/srv/hoenn` + docker rights) |
-| `VPS_SSH_KEY` | Private deploy key (never logged; `chmod 600` in-runner) |
-| `VPS_PORT` | Optional SSH port (default `22`) |
-| `VPS_KNOWN_HOSTS` | **Required** pinned VPS host key (`ssh-keyscan` output captured once over a trusted network — never `StrictHostKeyChecking=no`, never an in-run keyscan) |
-| `VPS_DEPLOY_DIR` | Absolute path of `deploy/coop` on the VPS (e.g. `/opt/hoenn-sessions/deploy/coop`); must not contain single quotes |
-| `VPS_GHCR_USER` / `VPS_GHCR_TOKEN` | Read-only GHCR credentials (`read:packages`) so the VPS can `pull` the private server image; set together or not at all (`[A-Za-z0-9_.-]` user; the token travels over the SSH channel on stdin, never in a command line) |
+| `RELEASE_TRUST_KEY_ID` | Public key id embedded in the envelope and trust bundle |
+| `RELEASE_TRUST_PUBLIC_KEY_HEX` | 32-byte Ed25519 public key used by desktop and promotion |
+| `MANIFEST_TRUST_KEY_ID` | Public key id compiled into Windows desktop manifest verification |
+| `MANIFEST_TRUST_PUBLIC_KEY_HEX` | 32-byte Ed25519 public key compiled into Windows desktop |
+| `HOENN_RELEASE_PRIVATE_SEED_HEX` | Runtime-only 32-byte signing seed |
+| `COOP_API_BASE` | Nonsecret HTTPS API base compiled into desktop/bootstrapper |
+| `AUTHENTICODE_CERT_B64` | Protected PFX bytes for the Windows MSI job; required only in `authenticode` mode |
+| `AUTHENTICODE_PASSWORD` | Protected PFX password, never logged; required only in `authenticode` mode |
+| `AUTHENTICODE_TIMESTAMP_URL` | Timestamp service URL; required only in `authenticode` mode |
+| `VPS_HOST`, `VPS_USER`, `VPS_PORT` | SSH destination (host keys are pinned) |
+| `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS` | SSH identity and exact known-hosts data |
+| `VPS_DEPLOY_DIR` | Absolute deployment directory on the VPS |
+| `VPS_GHCR_USER`, `VPS_GHCR_TOKEN` | Optional read-only GHCR credentials, passed over SSH stdin |
 
-The workflow needs `packages: write` (push image); `GITHUB_TOKEN` covers it.
-No other tokens are required.
+The workflow validates SSH grammars and uses `StrictHostKeyChecking yes`.
+Never replace pinned host keys with an in-run key scan.
+The release-key gate checks the protected private seed against the release
+public key before either Windows artifact publication or runtime release.
+The installer job carries a version-controlled signing mode. During the private
+pilot it is `unsigned-private-pilot`: both Authenticode steps are skipped, the
+artifact name and provenance state that it is unsigned, and Windows may show an
+unknown-publisher warning. Ed25519 release-envelope signing remains mandatory.
+Changing to any unknown signing mode fails closed; returning to `authenticode`
+requires a reviewed workflow change.
 
-## One-time VPS setup
+The unsigned artifact is named `HoennSessions-UNSIGNED-PRIVATE-PILOT.msi` and
+is restricted to invited testers. Download it only with `hashes.json` and
+`provenance.json` from the same authenticated Actions run. Before bypassing the
+Windows unknown-publisher warning, confirm the repository, commit, run id, and
+attempt in provenance and verify the MSI SHA-256. Do not rename or forward the
+MSI separately from that evidence.
 
-Prerequisites on the VPS: Docker Engine with Compose v2, `bash`, `python3`,
-GNU coreutils (`sha256sum`, `awk`, `mv -T`) and `diffutils` (`diff -qr`)
-for the promotion script.
+Installer checkout, restore, and unsigned staging run before either narrow
+Authenticode step receives secrets. The PFX bytes are imported into the CurrentUser\My
+certificate store using a SecureString and removed in a `finally` block;
+signtool receives only the certificate thumbprint and never a password or PFX
+path. The installer job uses separate prepare, executable-sign, package,
+MSI-sign, and finalize phases: secret-bearing phases invoke only signtool and
+the certificate cleanup boundary; `dotnet build --no-restore` and artifact
+upload run after the key is gone. Hashes and provenance are generated only
+after the final MSI signature.
 
-```sh
-# 1. Follow deploy/coop/README.md for the base stack (secrets, .env, volumes).
-# 2. Keep a repo checkout for the deploy scripts (or copy the two scripts):
-git clone https://github.com/ElZaWarudo/hoenn-sessions.git /opt/hoenn-sessions
-# 3. Release store owned by the SSH user:
-sudo mkdir -p /srv/hoenn/staging /srv/hoenn/releases
-sudo chown -R "$USER" /srv/hoenn
-# 4. GHCR read-only login (fine-grained PAT, read:packages only):
-docker login ghcr.io -u <user>
-# 5. Authorize the deploy key: append its public half to ~<VPS_USER>/.ssh/authorized_keys.
-# 6. Pin the host key over a trusted network and store it as VPS_KNOWN_HOSTS:
-ssh-keyscan -p <port> <vps-host>
-# 7. Add the GitHub secrets above (VPS_DEPLOY_DIR=/opt/hoenn-sessions/deploy/coop).
-```
+## Deployment and retry
 
-## Normal deployment
+Before building, the workflow streams `probe-release-status.sh` over the
+pinned SSH connection. It classifies the requested commit as:
 
-Just merge to `main`. The workflow uploads, promotes, rolls the server and
-health-checks automatically. Watch it in Actions; on success:
+| State | Required remote state | Workflow action |
+|---|---|---|
+| `ABSENT` | no release, staging directory, or association | build, sign, upload, then promote |
+| `PENDING` | association plus staging, no release | reuse the recorded image, skip rebuild/upload, promote |
+| `RELEASED` | association plus release directory | reuse the recorded image, skip rebuild/upload, re-promote/roll out |
 
-```sh
-readlink /srv/hoenn/current            # -> releases/<new-sha>
-cat /srv/hoenn/current/release.json
-docker compose --project-directory "$VPS_DEPLOY_DIR" ps server
-```
+Missing counterparts, malformed metadata, conflicting release/staging bytes,
+and an image reference from another repository fail closed. For `ABSENT`, the
+workflow builds the runtime and Linux `coop-release-tool`, writes the trust
+bundle, signs the envelope, then copies the complete generation directly to
+`/srv/hoenn/staging/<sha>`. It also copies the verifier and promotion scripts
+to `/tmp`; the verifier is required on the VPS and receives only the public key
+configuration. Promotion first publishes the immutable image association, then
+moves staging into `releases/<sha>` and atomically replaces `current`; an
+interrupted move can be retried against the recorded association. The deployment step
+rolls the digest-pinned server image with the existing readiness gate.
 
-## Manual deploy / re-promote
-
-```sh
-HOENN_ROOT=/srv/hoenn bash deploy/coop/promote-release.sh <full-sha>
-GHCR_USER=... GHCR_TOKEN=... bash deploy/coop/deploy-release.sh \
-  --image 'ghcr.io/<owner>/hoenn-sessions-server@sha256:<digest>' \
-  --deploy-dir /opt/hoenn-sessions/deploy/coop
-```
-
-Only digest-pinned references are accepted — tags are never deployed, not
-even full-SHA ones, because GHCR tags are mutable and a pipeline re-run
-overwrites them. Pre-check without touching anything with
-`--validate-only`. Re-running promotion for an already-promoted release is
-a safe no-op (a differing re-upload under the same id is rejected
-instead), so a failed rollout can be retried from the server step alone.
-
-## Rollback
-
-Client files (atomic: symlink built aside, then renamed over `current`, so
-readers never see a missing link):
-
-```sh
-ln -sfn /srv/hoenn/releases/<previous-sha> /srv/hoenn/current.tmp
-mv -Tf /srv/hoenn/current.tmp /srv/hoenn/current
-# previous id hint: cat /srv/hoenn/.previous-release; ls /srv/hoenn/releases
-```
-
-Server (keeps volumes, secrets, Caddy untouched; never `down -v`):
+Run a private re-promotion manually after a failed rollout:
 
 ```sh
-bash deploy/coop/deploy-release.sh \
-  --image 'ghcr.io/<owner>/hoenn-sessions-server@sha256:<previous-digest>' \
-  --deploy-dir /opt/hoenn-sessions/deploy/coop
+HOENN_ROOT=/srv/hoenn \
+COOP_RELEASE_KEY_ID=pilot-v1 \
+COOP_RELEASE_PUBLIC_KEY_HEX=<public-key-hex> \
+COOP_RELEASE_TOOL=/tmp/coop-release-tool \
+bash deploy/coop/promote-release.sh <full-sha> \
+  --image-ref ghcr.io/<owner>/hoenn-sessions-server@sha256:<64hex> \
+  --image-digest sha256:<64hex>
 ```
 
-Old releases and the previous image are deliberately retained; nothing is
-auto-deleted. Released files are made read-only by convention (ownership
-remains the real enforcer). Database state is never rolled back
-automatically: a persistence-format change may need its matching backup
-(see README.md).
+An already-promoted identical release is a no-op and reuses its recorded image
+association even when it is not current. A different staging copy or image
+association under an existing id is rejected. To roll back client runtime,
+promote an already verified older generation with its recorded association;
+`.previous-release` records the marker that was live before the last successful
+switch. Roll back the server with that same recorded digest using
+`deploy-release.sh`; never use mutable tags or `docker compose down -v`.
 
-## Verify the deployed version
+## Verification
+
+On the VPS, inspect only private operator output:
 
 ```sh
-cat /srv/hoenn/current/release.json
-(cd /srv/hoenn/current && sha256sum -c SHA256SUMS)
-python3 -c 'import json; m=json.load(open("/srv/hoenn/current/bridge_manifest.json")); print(m["game_build"]["rom_sha256"])'
-sha256sum /srv/hoenn/current/game.gba   # must match the line above
-docker inspect --format='{{.Config.Image}}' "$(docker compose ps -q server)"
-curl -fsS https://<domain>/health/ready
+cat /srv/hoenn/current
+id="$(cat /srv/hoenn/current)"
+cd "/srv/hoenn/releases/$id"
+COOP_RELEASE_TOOL=/tmp/coop-release-tool \
+  COOP_RELEASE_KEY_ID=pilot-v1 \
+  COOP_RELEASE_PUBLIC_KEY_HEX=<public-key-hex> \
+  coop-release-tool verify --envelope release-envelope.json \
+    --key-id "$COOP_RELEASE_KEY_ID" \
+    --public-key-hex "$COOP_RELEASE_PUBLIC_KEY_HEX"
 ```
 
-## Downloading current client files
+The hermetic checks are safe to run from a checkout:
 
-Serve `/srv/hoenn/current` privately through the existing Caddy (never the
-staging directories, never without auth):
+```sh
+cargo test --manifest-path Cargo.toml -p coop-release-tool --all-features --locked
+bash deploy/coop/test-release-scripts.sh
+```
 
-1. `docker compose exec caddy caddy hash-password` → put the output in
-   `.env` as `COOP_DOWNLOAD_HASH` plus `COOP_DOWNLOAD_USER`. The bcrypt
-   hash contains `$`: double each one as `$$` in `.env` so Compose passes
-   it through literally.
-2. Uncomment the `/srv/hoenn` **parent** mount in `compose.yaml` (never the
-   `current` symlink itself: Docker resolves symlinks at container
-   creation, which would pin downloads to one release). The parent mount
-   lets every request resolve the live `current` target, so promotions need
-   no caddy restart. Only `/download/*` is served; staging directories and
-   `..` escapes are never reachable.
-3. Paste the `handle /download/*` block from the Caddyfile comments inside
-   the site block and recreate caddy once (`docker compose up -d caddy`).
-   Missing credentials fail closed at startup.
-4. Fetch (example): `curl -u user:pass
-   https://<domain>/download/game.gba`, `/download/coop-sidecar.exe`,
-   `/download/bridge_manifest.json`, `/download/release.json`.
+Those tests use a temporary root and cover exact inventory, signature and
+envelope requirements, marker migration, idempotent promotion, conflict
+rejection, rollback, workflow private-transport invariants, and Compose
+release-root wiring.
