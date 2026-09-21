@@ -10,7 +10,7 @@
 # service. Never runs `docker compose down -v`.
 #
 # Usage: deploy-release.sh --image <immutable-ref> [--deploy-dir DIR]
-#        [--env-file FILE] [--validate-only]
+#        [--env-file FILE] [--compose-file FILE] [--validate-only]
 #
 #   --image       e.g. ghcr.io/<owner>/hoenn-sessions-server@sha256:<digest>
 #   --deploy-dir  directory containing compose.yaml (default: $HOENN_DEPLOY_DIR
@@ -18,6 +18,8 @@
 #   --env-file    env file holding COOP_IMAGE (default: <deploy-dir>/.env);
 #                 passed to every compose invocation, so a custom path is
 #                 honoured instead of silently ignored
+#   --compose-file version-controlled compose file to validate and atomically
+#                 install into <deploy-dir>/compose.yaml before rollout
 #   --validate-only  check arguments, image reference, compose file and env
 #                 file, then exit 0 before any login, pull, or restart
 #
@@ -32,6 +34,7 @@ set -euo pipefail
 IMAGE=""
 DEPLOY_DIR="${HOENN_DEPLOY_DIR:-$(dirname -- "$0")}"
 ENV_FILE=""
+COMPOSE_FILE=""
 VALIDATE_ONLY=0
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 
@@ -40,6 +43,7 @@ while [ "$#" -gt 0 ]; do
     --image) IMAGE="${2:?--image needs a value}"; shift 2 ;;
     --deploy-dir) DEPLOY_DIR="${2:?--deploy-dir needs a value}"; shift 2 ;;
     --env-file) ENV_FILE="${2:?--env-file needs a value}"; shift 2 ;;
+    --compose-file) COMPOSE_FILE="${2:?--compose-file needs a value}"; shift 2 ;;
     --validate-only) VALIDATE_ONLY=1; shift ;;
     -h | --help) sed -n '1,24p' -- "$0"; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 2 ;;
@@ -79,7 +83,8 @@ esac
 if [ -z "$ENV_FILE" ]; then
   ENV_FILE="$DEPLOY_DIR/.env"
 fi
-if [ ! -f "$DEPLOY_DIR/compose.yaml" ]; then
+ACTIVE_COMPOSE="$DEPLOY_DIR/compose.yaml"
+if [ ! -f "$ACTIVE_COMPOSE" ]; then
   echo "error: compose.yaml not found in $DEPLOY_DIR" >&2
   exit 1
 fi
@@ -87,17 +92,37 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "error: env file not found: $ENV_FILE (copy .env.example first)" >&2
   exit 1
 fi
+if [ -n "$COMPOSE_FILE" ] && [ ! -f "$COMPOSE_FILE" ]; then
+  echo "error: compose file not found: $COMPOSE_FILE" >&2
+  exit 1
+fi
+
+COMPOSE_PATH="${COMPOSE_FILE:-$ACTIVE_COMPOSE}"
 
 # Route every compose invocation through the selected env file so --env-file
 # is honoured instead of silently falling back to the project default.
 compose() {
-  docker compose --project-directory "$DEPLOY_DIR" --env-file "$ENV_FILE" "$@"
+  docker compose --project-directory "$DEPLOY_DIR" --env-file "$ENV_FILE" -f "$COMPOSE_PATH" "$@"
 }
 
 if [ "$VALIDATE_ONLY" -eq 1 ]; then
   compose config --quiet
   echo "valid: $IMAGE with $DEPLOY_DIR/compose.yaml and $ENV_FILE"
   exit 0
+fi
+
+# Validate the candidate with the production environment before replacing the
+# active file. Install and rename on the same filesystem so readers never see
+# a partial Compose configuration; retain the previous file for recovery.
+if [ -n "$COMPOSE_FILE" ]; then
+  compose config --quiet
+  cp -p -- "$ACTIVE_COMPOSE" "$ACTIVE_COMPOSE.bak"
+  NEXT_COMPOSE="$DEPLOY_DIR/.compose.yaml.next.$$"
+  trap 'rm -f -- "${NEXT_COMPOSE:-}"' EXIT
+  install -m 0644 -- "$COMPOSE_FILE" "$NEXT_COMPOSE"
+  mv -f -- "$NEXT_COMPOSE" "$ACTIVE_COMPOSE"
+  trap - EXIT
+  COMPOSE_PATH="$ACTIVE_COMPOSE"
 fi
 
 # Pin COOP_IMAGE to the new immutable reference, keeping a backup.

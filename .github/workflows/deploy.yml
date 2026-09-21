@@ -640,6 +640,7 @@ jobs:
       - name: Upload deploy scripts
         run: |
           scp deploy/coop/promote-release.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
+          scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
           ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
 
       # ROM travels runner -> VPS only; nothing is uploaded as a GH artifact.
@@ -715,7 +716,7 @@ jobs:
           esac
           [ "${#RELEASE_PUBLIC_KEY_HEX}" -eq 64 ] || { echo "error: release public key must be 32-byte hex" >&2; exit 1; }
           REMOTE="HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-release.sh '$RELEASE_SHA' --image-ref '$IMAGE_REF' --image-digest '$DIGEST'"
-          REMOTE="$REMOTE && bash /tmp/deploy-release.sh --image '$IMAGE_REF' --deploy-dir '$VPS_DEPLOY_DIR'"
+          REMOTE="$REMOTE && bash /tmp/deploy-release.sh --image '$IMAGE_REF' --deploy-dir '$VPS_DEPLOY_DIR' --compose-file /tmp/hoenn-compose.yaml"
           if [ -n "$GHCR_TOKEN" ]; then
             # The token travels over the encrypted channel on stdin and is
             # read by the remote shell into GHCR_TOKEN; it never appears in

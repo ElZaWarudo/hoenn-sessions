@@ -313,6 +313,13 @@ if grep -q 'WINDOWS_INSTALLER_SIGNING_MODE: unsigned-private-pilot' "$WORKFLOW" 
 else
   report 1 "workflow labels and isolates unsigned private-pilot installer mode"
 fi
+if grep -q 'scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml' "$WORKFLOW" && \
+   grep -q -- '--compose-file /tmp/hoenn-compose.yaml' "$WORKFLOW" && \
+   grep -q -- '--compose-file)' deploy-release.sh; then
+  report 0 "workflow atomically syncs version-controlled Compose configuration"
+else
+  report 1 "workflow atomically syncs version-controlled Compose configuration"
+fi
 if grep -q 'COOP_RELEASE_ROOT: /srv/hoenn' compose.yaml && \
    grep -q '/srv/hoenn:/srv/hoenn:ro' compose.yaml; then
   report 0 "compose wires read-only release parent"
