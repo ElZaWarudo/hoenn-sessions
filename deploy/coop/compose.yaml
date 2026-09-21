@@ -49,12 +49,15 @@ services:
       COOP_INVITE_PEPPER_FILE: /run/secrets/invite_pepper
       COOP_BOOTSTRAP_INVITE_FILE: /run/secrets/bootstrap_invite
       COOP_UPLOAD_BASE_URL: https://${COOP_DOMAIN:?Set COOP_DOMAIN}
+      COOP_RELEASE_ROOT: /srv/hoenn
     secrets:
       - database_url
       - firebase_service_account
       - signing_key
       - invite_pepper
       - bootstrap_invite
+    volumes:
+      - /srv/hoenn:/srv/hoenn:ro
     networks: [database, edge]
     read_only: true
     tmpfs: [/tmp:size=16m,mode=1777]

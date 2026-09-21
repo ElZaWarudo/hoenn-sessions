@@ -93,7 +93,11 @@ fn from_env() -> Result<Phase2App, Phase2Error> {
         super::persistent::PostgresStateRepository::connect(&production.database_url)?,
     ));
     config.production = Some(production);
-    let app = Phase2App::new(config)?;
+    let release_root = required("COOP_RELEASE_ROOT")?;
+    if release_root.trim().is_empty() {
+        return Err(StorageError::InvalidConfiguration.into());
+    }
+    let app = Phase2App::new(config)?.with_release_root(release_root)?;
     match std::env::var("COOP_BOOTSTRAP_INVITE_FILE") {
         Ok(path) if !path.is_empty() => {
             let bytes = read_secret(Path::new(&path), 1024)?;

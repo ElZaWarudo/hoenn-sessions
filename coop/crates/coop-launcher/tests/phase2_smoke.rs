@@ -367,14 +367,16 @@ fn fixed_ids() -> (
 
 fn compatibility() -> BuildCompatibility {
     let manifest = serde_json::from_value(serde_json::json!({
-        "schema_version": 3,
+        "schema_version": 4,
         "emulator": {
             "name": "mGBA",
-            "version": "0.10.5",
+            "version": "0.11.0",
+            "build_id": "0.11-9139-3a5bc2462",
+            "source_commit": "3a5bc24629867576b0fb576a5d5a21d3b3d6b576",
             "platform": "windows-x64",
             "variant": "Qt",
-            "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
-            "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+            "archive_sha256": "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b",
+            "executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546"
         },
         "game_build": {
             "id": "pokeemerald-coop",
@@ -411,7 +413,7 @@ fn compatibility() -> BuildCompatibility {
         target: CompatibilityTarget::new(
             GameBuildId::new("pokeemerald-coop").expect("build"),
             Sha256Digest::of_bytes(b"rom"),
-            MgbaVersion::new("0.10.5").expect("mGBA"),
+            MgbaVersion::new("0.11.0").expect("mGBA"),
             BridgeAbiVersion::new(1).expect("ABI"),
             ProtocolVersion::new(1).expect("protocol"),
             Revision::initial(),

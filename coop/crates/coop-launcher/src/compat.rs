@@ -24,13 +24,22 @@ use coop_save::RegistryContract;
 use serde::Deserialize;
 use thiserror::Error;
 
-pub const EXPECTED_MGBA_VERSION: &str = "0.10.5";
+/// Cloud-facing semantic compatibility version. The official development
+/// artifact reports a richer build suffix at runtime; both identities are
+/// required so a release cannot silently substitute another 0.11 build.
+pub const EXPECTED_MGBA_VERSION: &str = "0.11.0";
+pub const EXPECTED_MGBA_VERSION_SUFFIX: &str =
+    "0.11-9139-3a5bc2462 (3a5bc24629867576b0fb576a5d5a21d3b3d6b576)";
+pub const EXPECTED_MGBA_SCRIPT_HELP: &str =
+    "--script FILE  Run a script on start. Can be passed multiple times";
+pub const EXPECTED_MGBA_BUILD_ID: &str = "0.11-9139-3a5bc2462";
+pub const EXPECTED_MGBA_SOURCE_COMMIT: &str = "3a5bc24629867576b0fb576a5d5a21d3b3d6b576";
 pub const EXPECTED_MGBA_PLATFORM: &str = "windows-x64";
 pub const EXPECTED_MGBA_VARIANT: &str = "Qt";
 pub const EXPECTED_MGBA_EXECUTABLE_SHA256: &str =
-    "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247";
+    "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546";
 pub const EXPECTED_MGBA_ARCHIVE_SHA256: &str =
-    "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a";
+    "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b";
 pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 /// Keep this in sync with the CLI's source-ROM admission limit.  The public
 /// compatibility API is also callable without the CLI, so it must enforce
@@ -39,7 +48,7 @@ pub const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_MGBA_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
 pub const MAX_MGBA_OUTPUT_BYTES: usize = 64 * 1024;
 pub const MGBA_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-pub const BRIDGE_MANIFEST_SCHEMA: u16 = 3;
+pub const BRIDGE_MANIFEST_SCHEMA: u16 = 4;
 pub const BRIDGE_ABI: u16 = 1;
 pub const GAME_PROTOCOL: u16 = 1;
 pub const BRIDGE_MESSAGE_BYTES: u64 = 144;
@@ -88,6 +97,8 @@ pub enum CompatibilityError {
     MgbaTimeout,
     #[error("unsupported mGBA version")]
     MgbaVersion,
+    #[error("pinned mGBA scripting capability is unavailable")]
+    MgbaScript,
     #[error("unsupported bridge ABI or protocol")]
     Protocol,
 }
@@ -116,6 +127,8 @@ pub struct BridgeManifest {
 pub struct EmulatorManifest {
     pub name: String,
     pub version: String,
+    pub build_id: String,
+    pub source_commit: String,
     pub platform: String,
     pub variant: String,
     pub archive_sha256: String,
@@ -368,6 +381,8 @@ fn validate_manifest(manifest: &BridgeManifest) -> Result<(), CompatibilityError
     };
     if emulator.name != "mGBA"
         || emulator.version != EXPECTED_MGBA_VERSION
+        || emulator.build_id != EXPECTED_MGBA_BUILD_ID
+        || emulator.source_commit != EXPECTED_MGBA_SOURCE_COMMIT
         || emulator.platform != EXPECTED_MGBA_PLATFORM
         || emulator.variant != EXPECTED_MGBA_VARIANT
         || Sha256Digest::parse(&emulator.archive_sha256).is_err()
@@ -577,41 +592,68 @@ fn reject_symlink_components(path: &Path) -> io::Result<()> {
 
 #[cfg(windows)]
 fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
-    let output =
-        crate::windows_mgba_supervisor::probe(path, &["--version".to_owned()], MGBA_PROBE_TIMEOUT)
-            .map_err(|failure| match failure {
-                crate::windows_mgba_supervisor::ProbeFailure::Spawn(error)
-                | crate::windows_mgba_supervisor::ProbeFailure::Output(error) => {
-                    CompatibilityError::Mgba(error)
-                }
-                crate::windows_mgba_supervisor::ProbeFailure::Cleanup(_) => {
-                    CompatibilityError::MgbaCleanup
-                }
-                crate::windows_mgba_supervisor::ProbeFailure::OutputTooLarge => {
-                    CompatibilityError::MgbaOutput
-                }
-                crate::windows_mgba_supervisor::ProbeFailure::Timeout => {
-                    CompatibilityError::MgbaTimeout
-                }
-            })?;
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    if !output.status.success()
-        || !text.lines().any(|line| {
-            let line = line.trim();
-            line.contains("mGBA")
-                && line
-                    .split_whitespace()
-                    .any(|token| token == EXPECTED_MGBA_VERSION)
-        })
-    {
+    let version = probe_mgba_command(path, &["--version"])?;
+    let version_text = probe_text(&version.stdout, &version.stderr);
+    if !version.status.success() || !version_text.contains(EXPECTED_MGBA_VERSION_SUFFIX) {
         return Err(CompatibilityError::MgbaVersion);
+    }
+    let help = probe_mgba_command(path, &["--help"])?;
+    let help_text = probe_text(&help.stdout, &help.stderr);
+    if !help.status.success() || !help_text.contains(EXPECTED_MGBA_SCRIPT_HELP) {
+        return Err(CompatibilityError::MgbaScript);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn probe_mgba_command(
+    path: &Path,
+    args: &[&str],
+) -> Result<crate::windows_mgba_supervisor::ProbeOutput, CompatibilityError> {
+    crate::windows_mgba_supervisor::probe(
+        path,
+        &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+        MGBA_PROBE_TIMEOUT,
+    )
+    .map_err(|failure| match failure {
+        crate::windows_mgba_supervisor::ProbeFailure::Spawn(error)
+        | crate::windows_mgba_supervisor::ProbeFailure::Output(error) => {
+            CompatibilityError::Mgba(error)
+        }
+        crate::windows_mgba_supervisor::ProbeFailure::Cleanup(_) => CompatibilityError::MgbaCleanup,
+        crate::windows_mgba_supervisor::ProbeFailure::OutputTooLarge => {
+            CompatibilityError::MgbaOutput
+        }
+        crate::windows_mgba_supervisor::ProbeFailure::Timeout => CompatibilityError::MgbaTimeout,
+    })
+}
+
+fn probe_text(stdout: &[u8], stderr: &[u8]) -> String {
+    let mut text = String::from_utf8_lossy(stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(stderr));
+    text
+}
+
+#[cfg(not(windows))]
+fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
+    let (status, stdout, stderr) = probe_mgba_command(path, &["--version"])?;
+    let text = probe_text(&stdout, &stderr);
+    if !status.success() || !text.contains(EXPECTED_MGBA_VERSION_SUFFIX) {
+        return Err(CompatibilityError::MgbaVersion);
+    }
+    let (status, stdout, stderr) = probe_mgba_command(path, &["--help"])?;
+    let text = probe_text(&stdout, &stderr);
+    if !status.success() || !text.contains(EXPECTED_MGBA_SCRIPT_HELP) {
+        return Err(CompatibilityError::MgbaScript);
     }
     Ok(())
 }
 
 #[cfg(not(windows))]
-fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
+fn probe_mgba_command(
+    path: &Path,
+    args: &[&str],
+) -> Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>), CompatibilityError> {
     let deadline = Instant::now() + MGBA_PROBE_TIMEOUT;
     let mut command = Command::new(path);
     let path_variable = std::env::var_os("PATH");
@@ -620,7 +662,7 @@ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
         command.env("PATH", path_variable);
     }
     let mut child = command
-        .arg("--version")
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -702,20 +744,7 @@ fn probe_mgba(path: &Path) -> Result<(), CompatibilityError> {
         }
         return Err(CompatibilityError::MgbaOutput);
     }
-    let mut text = String::from_utf8_lossy(&stdout.0).into_owned();
-    text.push_str(&String::from_utf8_lossy(&stderr.0));
-    if !status.success()
-        || !text.lines().any(|line| {
-            let line = line.trim();
-            line.contains("mGBA")
-                && line
-                    .split_whitespace()
-                    .any(|token| token == EXPECTED_MGBA_VERSION)
-        })
-    {
-        return Err(CompatibilityError::MgbaVersion);
-    }
-    Ok(())
+    Ok((status, stdout.0, stderr.0))
 }
 
 #[cfg(not(windows))]
@@ -876,7 +905,11 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use super::{CompatibilityError, MAX_MANIFEST_BYTES, open_bounded_regular_file};
+    use super::{
+        BRIDGE_MANIFEST_SCHEMA, CompatibilityError, EXPECTED_MGBA_ARCHIVE_SHA256,
+        EXPECTED_MGBA_BUILD_ID, EXPECTED_MGBA_EXECUTABLE_SHA256, EXPECTED_MGBA_SOURCE_COMMIT,
+        EXPECTED_MGBA_VERSION, MAX_MANIFEST_BYTES, open_bounded_regular_file,
+    };
 
     #[cfg(not(windows))]
     use super::{
@@ -933,7 +966,7 @@ mod tests {
         sender
             .send(ProbeOutput {
                 stderr: true,
-                bytes: b"mGBA 0.10.5".to_vec(),
+                bytes: b"mGBA 0.11-9139-3a5bc2462".to_vec(),
                 oversized: false,
             })
             .unwrap();
@@ -946,7 +979,7 @@ mod tests {
             receive_probe_outputs(&receiver, Instant::now() + Duration::from_secs(1), early)
                 .unwrap();
         assert_eq!(stdout.0, b"version");
-        assert_eq!(stderr.0, b"mGBA 0.10.5");
+        assert_eq!(stderr.0, b"mGBA 0.11-9139-3a5bc2462");
     }
 
     #[test]
@@ -1021,7 +1054,16 @@ mod tests {
             .join("bridge_manifest.json");
         let directory = tempfile::tempdir().unwrap();
         let manifest = directory.path().join("manifest.json");
-        fs::copy(source, &manifest).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        value["schema_version"] = serde_json::Value::from(BRIDGE_MANIFEST_SCHEMA);
+        value["emulator"]["version"] = serde_json::Value::from(EXPECTED_MGBA_VERSION);
+        value["emulator"]["build_id"] = serde_json::Value::from(EXPECTED_MGBA_BUILD_ID);
+        value["emulator"]["source_commit"] = serde_json::Value::from(EXPECTED_MGBA_SOURCE_COMMIT);
+        value["emulator"]["archive_sha256"] = serde_json::Value::from(EXPECTED_MGBA_ARCHIVE_SHA256);
+        value["emulator"]["executable_sha256"] =
+            serde_json::Value::from(EXPECTED_MGBA_EXECUTABLE_SHA256);
+        fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
         let executable = directory.path().join("mGBA.exe");
         fs::write(&executable, b"not the official mGBA executable").unwrap();
         assert!(matches!(

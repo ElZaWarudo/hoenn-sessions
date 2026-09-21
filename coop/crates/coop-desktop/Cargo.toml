@@ -1,0 +1,34 @@
+[package]
+name = "coop-desktop"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+coop-cloud = { path = "../coop-cloud" }
+coop-launcher = { path = "../coop-launcher" }
+ed25519-dalek.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+url.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow"] }
+
+[dev-dependencies]
+axum.workspace = true
+http-body-util.workspace = true
+tempfile.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "coop-launcher"
+path = "src/main.rs"

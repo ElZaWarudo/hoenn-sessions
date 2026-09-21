@@ -439,7 +439,7 @@ async fn run() -> Result<(), CliError> {
         return Err(CliError::Runtime);
     }
     eprintln!(
-        "Session materialized at {}. The launcher validated the official mGBA 0.10.5 Windows x64 Qt artifact; it has no certified startup-script flag, so load {} through Tools > Scripting, then load {} manually if present. New captures must be written to {}.",
+        "Session materialized at {}. The launcher validated the pinned mGBA 0.11 Windows x64 Qt build and its startup-script capability. The managed desktop launcher starts the bridge automatically; this CLI path remains diagnostic. Session files: bridge {}, resume {}, captures {}.",
         session.workspace.path().display(),
         session.workspace.path().join("main.lua").display(),
         session.workspace.path().join("resume.input.ss1").display(),

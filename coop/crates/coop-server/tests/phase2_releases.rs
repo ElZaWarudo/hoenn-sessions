@@ -1,0 +1,300 @@
+//! Focused black-box coverage for the authenticated private-pilot distributor.
+
+use std::{
+    error::Error,
+    fs::{self, File},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use axum::{
+    Router,
+    body::Body,
+    http::{HeaderMap, Request, StatusCode, header},
+};
+use coop_cloud::{InvitationCode, LoginRequest, Password, RegisterRequest, SigningPrivateKey};
+use coop_server::{Phase2App, Phase2Config, phase2::releases};
+use http_body_util::BodyExt;
+use tower::ServiceExt;
+
+type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+const INVITE: &str = "release-api-test-invite";
+const USERNAME: &str = "ReleaseApiTestUser";
+const PASSWORD: &str = "release-api-test-password";
+
+struct Fixture {
+    app: Phase2App,
+    root: PathBuf,
+    access_token: String,
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+async fn fixture() -> TestResult<Fixture> {
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let root = std::env::temp_dir().join(format!("coop-release-api-{stamp}"));
+    fs::create_dir_all(&root)?;
+    write_release(&root, "release-one", b"signed-envelope-one")?;
+    fs::write(root.join(releases::CURRENT_RELEASE_FILE), b"release-one\n")?;
+
+    let config = Phase2Config::local(
+        vec![0x55; 32],
+        SigningPrivateKey::from_bytes([7; 32]),
+        "release-api-test-key",
+    )?;
+    let app = Phase2App::new(config)?.with_release_root(root.clone())?;
+    app.add_invitation(INVITE)?;
+    let password = Password::new(PASSWORD)?;
+    app.register(RegisterRequest::new(
+        USERNAME,
+        password.clone(),
+        InvitationCode::new(INVITE)?,
+    )?)?;
+    let login = app.login(LoginRequest::new(USERNAME, password)?)?;
+    Ok(Fixture {
+        app,
+        root,
+        access_token: login.access_token.expose_secret().to_owned(),
+    })
+}
+
+fn write_release(root: &Path, release_id: &str, envelope: &[u8]) -> TestResult<()> {
+    let release = root.join(releases::RELEASES_DIRECTORY).join(release_id);
+    fs::create_dir_all(&release)?;
+    fs::write(release.join(releases::RELEASE_ENVELOPE_FILE), envelope)?;
+    for (artifact_id, destination) in releases::FIXED_ARTIFACTS {
+        let path = release.join(destination);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, format!("artifact:{artifact_id}").as_bytes())?;
+    }
+    Ok(())
+}
+
+async fn request(
+    router: Router,
+    uri: &str,
+    token: Option<&str>,
+    range: Option<&str>,
+) -> TestResult<(StatusCode, HeaderMap, Vec<u8>)> {
+    let mut builder = Request::builder().method("GET").uri(uri);
+    if let Some(token) = token {
+        builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    }
+    if let Some(range) = range {
+        builder = builder.header(header::RANGE, range);
+    }
+    let response = router.oneshot(builder.body(Body::empty())?).await?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.into_body().collect().await?.to_bytes().to_vec();
+    Ok((status, headers, body))
+}
+
+fn assert_private_no_store(headers: &HeaderMap) {
+    assert_eq!(
+        headers
+            .get(header::CACHE_CONTROL)
+            .and_then(|value| value.to_str().ok()),
+        Some("private, no-store")
+    );
+}
+
+#[tokio::test]
+async fn latest_authenticates_before_filesystem_and_preserves_exact_bytes() -> TestResult<()> {
+    let fixture = fixture().await?;
+    let uri = "/v1/releases/windows-x86_64/latest";
+    let (status, headers, _body) = request(fixture.app.router(), uri, None, None).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_private_no_store(&headers);
+
+    let (status, headers, body) =
+        request(fixture.app.router(), uri, Some(&fixture.access_token), None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, b"signed-envelope-one");
+    assert_eq!(headers[header::CONTENT_LENGTH], body.len().to_string());
+    assert_private_no_store(&headers);
+    assert!(headers.get(header::ACCEPT_RANGES).is_none());
+
+    let (status, headers, _) = request(
+        fixture.app.router(),
+        uri,
+        Some(&fixture.access_token),
+        Some("bytes=0-1"),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_private_no_store(&headers);
+    Ok(())
+}
+
+#[tokio::test]
+async fn every_fixed_mapping_streams_exact_bytes_and_unknown_ids_fail() -> TestResult<()> {
+    let fixture = fixture().await?;
+    for (artifact_id, _) in releases::FIXED_ARTIFACTS {
+        let uri = format!("/v1/releases/release-one/artifacts/{artifact_id}");
+        let (status, headers, body) = request(
+            fixture.app.router(),
+            &uri,
+            Some(&fixture.access_token),
+            None,
+        )
+        .await?;
+        let expected = format!("artifact:{artifact_id}");
+        assert_eq!(status, StatusCode::OK, "{artifact_id}");
+        assert_eq!(body, expected.as_bytes(), "{artifact_id}");
+        assert_eq!(headers[header::CONTENT_LENGTH], body.len().to_string());
+        assert_private_no_store(&headers);
+        assert!(headers.get(header::ACCEPT_RANGES).is_none());
+    }
+
+    for artifact_id in ["bootstrapper", "manifest", "not-a-fixed-id"] {
+        let uri = format!("/v1/releases/release-one/artifacts/{artifact_id}");
+        let (status, headers, _) = request(
+            fixture.app.router(),
+            &uri,
+            Some(&fixture.access_token),
+            None,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{artifact_id}");
+        assert_private_no_store(&headers);
+    }
+    let (status, _, _) = request(
+        fixture.app.router(),
+        "/v1/releases/release-one/artifacts/%2e%2e",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+async fn current_switch_and_path_bounds_fail_closed() -> TestResult<()> {
+    let fixture = fixture().await?;
+    write_release(&fixture.root, "release-two", b"signed-envelope-two")?;
+    let current_tmp = fixture.root.join("current.tmp");
+    fs::write(&current_tmp, b"release-two\n")?;
+    if fs::rename(
+        &current_tmp,
+        fixture.root.join(releases::CURRENT_RELEASE_FILE),
+    )
+    .is_err()
+    {
+        fs::remove_file(fixture.root.join(releases::CURRENT_RELEASE_FILE))?;
+        fs::rename(
+            &current_tmp,
+            fixture.root.join(releases::CURRENT_RELEASE_FILE),
+        )?;
+    }
+    let (status, _, body) = request(
+        fixture.app.router(),
+        "/v1/releases/windows-x86_64/latest",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, b"signed-envelope-two");
+
+    fs::write(
+        fixture.root.join(releases::CURRENT_RELEASE_FILE),
+        b"release-one\n",
+    )?;
+
+    let (status, _, _) = request(
+        fixture.app.router(),
+        &format!(
+            "/v1/releases/{}/artifacts/rom",
+            "r".repeat(releases::MAX_RELEASE_ID_BYTES + 1)
+        ),
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let directory = fixture
+        .root
+        .join(releases::RELEASES_DIRECTORY)
+        .join("release-one")
+        .join("bridge_manifest.json");
+    fs::remove_file(&directory)?;
+    fs::create_dir(&directory)?;
+    let (status, _, _) = request(
+        fixture.app.router(),
+        "/v1/releases/release-one/artifacts/compatibility-manifest",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let envelope = fixture
+        .root
+        .join(releases::RELEASES_DIRECTORY)
+        .join("release-one")
+        .join(releases::RELEASE_ENVELOPE_FILE);
+    let oversized = File::create(&envelope)?;
+    oversized.set_len(releases::MAX_ENVELOPE_BYTES + 1)?;
+    let (status, _, _) = request(
+        fixture.app.router(),
+        "/v1/releases/windows-x86_64/latest",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    let rom = fixture
+        .root
+        .join(releases::RELEASES_DIRECTORY)
+        .join("release-one")
+        .join("runtime/game.gba");
+    let oversized = File::create(&rom)?;
+    oversized.set_len(releases::MAX_ARTIFACT_BYTES + 1)?;
+    let (status, _, _) = request(
+        fixture.app.router(),
+        "/v1/releases/release-one/artifacts/rom",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn symlink_artifacts_are_rejected() -> TestResult<()> {
+    use std::os::unix::fs::symlink;
+
+    let fixture = fixture().await?;
+    let outside = fixture.root.join("outside.bin");
+    fs::write(&outside, b"outside")?;
+    let rom = fixture
+        .root
+        .join(releases::RELEASES_DIRECTORY)
+        .join("release-one")
+        .join("runtime/game.gba");
+    fs::remove_file(&rom)?;
+    symlink(&outside, &rom)?;
+    let (status, headers, _) = request(
+        fixture.app.router(),
+        "/v1/releases/release-one/artifacts/rom",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_private_no_store(&headers);
+    Ok(())
+}
