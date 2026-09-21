@@ -292,6 +292,8 @@ else
 fi
 if grep -q 'actions/[^ ]*@v[0-9]' "$WORKFLOW" || \
    ! grep -q 'dotnet-version: 9.0.203' "$WORKFLOW" || \
+   ! grep -q '"version": "9.0.203"' "$REPO_ROOT/global.json" || \
+   ! grep -q '"rollForward": "disable"' "$REPO_ROOT/global.json" || \
    grep -q 'PersistKeySet' "$WORKFLOW" || \
    grep -q 'HOENN_SIGNING_PASSWORD\|AuthenticodeCertificatePath' "$REPO_ROOT/installer/windows/build-installer.ps1" || \
    grep -Eq '(^|[^[:alnum:]])/p([^[:alnum:]]|$)' "$REPO_ROOT/installer/windows/build-installer.ps1"; then
