@@ -105,6 +105,7 @@ jobs:
   # mutable runtime files, the ROM, mGBA, and sidecar never enter the MSI.
   installer:
     needs: [validate, release-key-gate]
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     env:
       HOENN_COOP_API_BASE: ${{ vars.COOP_API_BASE }}

@@ -1,7 +1,6 @@
 #[cfg(windows)]
 #[path = "../src/config.rs"]
 mod config;
-#[cfg(windows)]
 #[path = "../src/release_client.rs"]
 mod release_client;
 #[cfg(windows)]

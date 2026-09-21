@@ -104,6 +104,9 @@ The workflow validates SSH grammars and uses `StrictHostKeyChecking yes`.
 Never replace pinned host keys with an in-run key scan.
 The release-key gate checks the protected private seed against the release
 public key before either Windows artifact publication or runtime release.
+Pushes to `main` update only the runtime and server components on the VPS. The
+Windows installer job runs only for an explicit `workflow_dispatch`, so normal
+server deployments do not rebuild or publish a desktop installer.
 The installer job carries a version-controlled signing mode. During the private
 pilot it is `unsigned-private-pilot`: both Authenticode steps are skipped, the
 artifact name and provenance state that it is unsigned, and Windows may show an
