@@ -294,6 +294,7 @@ else
   report 0 "workflow actions/dotnet and secure installer signing pins"
 fi
 if grep -q 'WINDOWS_INSTALLER_SIGNING_MODE: unsigned-private-pilot' "$WORKFLOW" && \
+   grep -A2 '^  installer:' "$WORKFLOW" | grep -q "if: github.event_name == 'workflow_dispatch'" && \
    [ "$(grep -c "if: env.WINDOWS_INSTALLER_SIGNING_MODE == 'authenticode'" "$WORKFLOW")" -eq 2 ] && \
    grep -q '\$arguments.UnsignedPrivatePilot = \$true' "$WORKFLOW" && \
    grep -q 'HoennSessions-UNSIGNED-PRIVATE-PILOT.msi' "$WORKFLOW" && \
