@@ -3,16 +3,22 @@
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "event_object_movement.h"
+#include "field_effect.h"
 #include "field_player_avatar.h"
 #include "fieldmap.h"
+#include "follower_helper.h"
 #include "overworld.h"
 #include "palette.h"
+#include "pokemon.h"
 #include "script.h"
 #include "sprite.h"
 #include "constants/event_object_movement.h"
 #include "constants/event_objects.h"
+#include "constants/field_effects.h"
 
 extern void MovementType_None(struct Sprite *sprite);
+
+static void RemoveFollowerRenderer(void);
 
 enum CoopPresencePendingType
 {
@@ -20,6 +26,8 @@ enum CoopPresencePendingType
     COOP_PRESENCE_PENDING_SPAWN,
     COOP_PRESENCE_PENDING_UPDATE,
     COOP_PRESENCE_PENDING_DESPAWN,
+    COOP_PRESENCE_PENDING_COMPANION,
+    COOP_PRESENCE_PENDING_SIGNAL,
 };
 
 struct CoopPresencePendingFrame
@@ -30,6 +38,8 @@ struct CoopPresencePendingFrame
         struct CoopPresenceSpawn spawn;
         struct CoopPresenceUpdate update;
         struct CoopPresenceDespawn despawn;
+        struct CoopPresenceRemoteCompanion companion;
+        struct CoopPresenceRemoteSignal signal;
     } value;
 };
 
@@ -71,6 +81,39 @@ struct CoopPresenceRuntime
     bool8 renderer_owned;
     u8 despawn_hold_reason;
     u32 despawn_hold_start;
+    u32 companion_source_sequence;
+    u16 last_companion_species;
+    u8 last_companion_flags;
+    u32 last_companion_frame;
+    u32 signal_source_sequence;
+    bool8 signal_used;
+    u32 last_signal_frame;
+    u8 next_emote;
+    bool8 remote_companion_valid;
+    u64 remote_companion_handle;
+    u32 remote_companion_sequence;
+    u16 remote_companion_species;
+    u8 remote_companion_flags;
+    u32 remote_signal_sequence;
+    bool8 remote_signal_seen;
+    u8 pending_bubble;
+    bool8 pending_bubble_set;
+    u32 pending_bubble_frame;
+    s16 ping_x;
+    s16 ping_y;
+    u16 ping_map_group;
+    u16 ping_map_num;
+    u32 ping_frame;
+    bool8 ping_valid;
+    bool8 follower_owned;
+    u8 follower_object_id;
+    u8 follower_sprite_id;
+    u16 follower_generation;
+    u16 follower_species;
+    u8 follower_flags;
+    s16 follower_x;
+    s16 follower_y;
+    u32 follower_step_frame;
 };
 
 static EWRAM_DATA struct CoopPresenceRuntime sCoopPresenceRuntime = {0};
@@ -439,6 +482,7 @@ static void RemoveOwnedRenderer(void)
     /* Every real removal drops a pending despawn hold with it. The hold
      * path below never calls this until the grace expires. */
     sCoopPresenceRuntime.despawn_hold_reason = 0;
+    RemoveFollowerRenderer();
     if (!sCoopPresenceRuntime.renderer_owned)
     {
         object_id = FindRemoteObjectEvent();
@@ -805,6 +849,598 @@ static bool8 DespawnHoldActive(void)
             < COOP_PRESENCE_RUNTIME_DESPAWN_HOLD_FRAMES;
 }
 
+static EWRAM_DATA u16 sCoopFollowerGeneration = 0;
+
+static u16 NextFollowerGeneration(void)
+{
+    sCoopFollowerGeneration++;
+    if (sCoopFollowerGeneration == 0)
+        sCoopFollowerGeneration++;
+    return sCoopFollowerGeneration;
+}
+
+bool8 CoopPresenceRuntime_IsFollowerObject(const struct ObjectEvent *object_event)
+{
+    return object_event != NULL
+        && object_event->localId == COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID;
+}
+
+static bool8 IsCurrentFollowerObject(const struct ObjectEvent *object_event)
+{
+    return gSaveBlock1Ptr != NULL && object_event != NULL && object_event->active
+        && object_event->localId == COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID
+        && object_event->mapGroup == gSaveBlock1Ptr->location.mapGroup
+        && object_event->mapNum == gSaveBlock1Ptr->location.mapNum;
+}
+
+static u8 FindFollowerObjectEvent(void)
+{
+    u8 i;
+
+    if (gSaveBlock1Ptr == NULL)
+        return OBJECT_EVENTS_COUNT;
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        if (IsCurrentFollowerObject(&gObjectEvents[i]))
+            return i;
+    }
+    return OBJECT_EVENTS_COUNT;
+}
+
+static bool8 IsFollowerSpriteProof(u8 object_id, u8 sprite_id, u16 generation,
+                                   u16 graphics_id, bool8 require_backlink)
+{
+    const struct ObjectEvent *object_event;
+    struct Sprite *sprite;
+
+    if (object_id >= OBJECT_EVENTS_COUNT || sprite_id >= MAX_SPRITES
+     || generation == 0)
+        return FALSE;
+    object_event = &gObjectEvents[object_id];
+    if ((require_backlink && !object_event->active)
+     || object_event->localId != COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID
+     || object_event->movementType != MOVEMENT_TYPE_NONE
+     || (require_backlink && object_event->graphicsId != graphics_id)
+     || (require_backlink && object_event->spriteId != sprite_id))
+        return FALSE;
+    sprite = &gSprites[sprite_id];
+    if (!sprite->inUse || sprite->data[0] != (s16)object_id
+     || (u16)sprite->data[7] != generation
+     || sprite->callback != MovementType_None)
+        return FALSE;
+    return TRUE;
+}
+
+static bool8 FindOwnedFollowerSprite(struct ObjectEvent *object_event, u16 generation,
+                                     struct Sprite **out)
+{
+    u8 object_id;
+
+    if (!IsCurrentFollowerObject(object_event)
+     || object_event->spriteId >= MAX_SPRITES)
+        return FALSE;
+    object_id = (u8)(object_event - gObjectEvents);
+    if (!IsFollowerSpriteProof(object_id, object_event->spriteId, generation,
+                               object_event->graphicsId, TRUE))
+        return FALSE;
+    if (out != NULL)
+        *out = &gSprites[object_event->spriteId];
+    return TRUE;
+}
+
+static u16 FollowerGraphicsId(u16 species, u8 flags)
+{
+    u16 graphics_id = (u16)(OBJ_EVENT_MON | species);
+
+    if ((flags & COOP_PRESENCE_COMPANION_FLAG_SHINY) != 0)
+        graphics_id = (u16)(graphics_id | OBJ_EVENT_MON_SHINY);
+    return graphics_id;
+}
+
+static void ClearFollowerIdentity(void)
+{
+    sCoopPresenceRuntime.follower_owned = FALSE;
+    sCoopPresenceRuntime.follower_object_id = OBJECT_EVENTS_COUNT;
+    sCoopPresenceRuntime.follower_sprite_id = MAX_SPRITES;
+    sCoopPresenceRuntime.follower_generation = 0;
+    sCoopPresenceRuntime.follower_species = 0;
+    sCoopPresenceRuntime.follower_flags = 0;
+    sCoopPresenceRuntime.follower_x = 0;
+    sCoopPresenceRuntime.follower_y = 0;
+}
+
+static void RemoveFollowerRenderer(void)
+{
+    u8 object_id;
+    struct ObjectEvent *object_event;
+
+    if (!sCoopPresenceRuntime.follower_owned)
+    {
+        object_id = FindFollowerObjectEvent();
+        if (object_id < OBJECT_EVENTS_COUNT)
+        {
+            object_event = &gObjectEvents[object_id];
+            if (!FindOwnedFollowerSprite(object_event,
+                                         sCoopPresenceRuntime.follower_generation,
+                                         NULL))
+                object_event->active = FALSE;
+        }
+        ClearFollowerIdentity();
+        return;
+    }
+
+    object_id = sCoopPresenceRuntime.follower_object_id;
+    if (object_id < OBJECT_EVENTS_COUNT
+     && sCoopPresenceRuntime.follower_sprite_id < MAX_SPRITES
+     && IsFollowerSpriteProof(object_id, sCoopPresenceRuntime.follower_sprite_id,
+                              sCoopPresenceRuntime.follower_generation,
+                              FollowerGraphicsId(sCoopPresenceRuntime.follower_species,
+                                                 sCoopPresenceRuntime.follower_flags),
+                              FALSE))
+    {
+        object_event = &gObjectEvents[object_id];
+        if (object_event->active
+         && object_event->localId == COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID
+         && object_event->spriteId == sCoopPresenceRuntime.follower_sprite_id)
+            RemoveObjectEvent(object_event);
+        else if (object_event->active
+              && object_event->localId == COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID)
+            object_event->active = FALSE;
+    }
+    ClearFollowerIdentity();
+}
+
+static void ClearSocialState(void)
+{
+    sCoopPresenceRuntime.remote_companion_valid = FALSE;
+    sCoopPresenceRuntime.remote_companion_handle = 0;
+    sCoopPresenceRuntime.remote_companion_sequence = 0;
+    sCoopPresenceRuntime.remote_companion_species = 0;
+    sCoopPresenceRuntime.remote_companion_flags = 0;
+    sCoopPresenceRuntime.remote_signal_sequence = 0;
+    sCoopPresenceRuntime.remote_signal_seen = FALSE;
+    sCoopPresenceRuntime.pending_bubble_set = FALSE;
+    sCoopPresenceRuntime.pending_bubble = 0;
+    sCoopPresenceRuntime.ping_valid = FALSE;
+    RemoveFollowerRenderer();
+}
+
+/* Tile behind the remote avatar: the follower trails instead of stacking. */
+static bool8 FollowerTargetTile(const struct CoopPresenceRemote *remote, s16 map_x, s16 map_y,
+                                s16 *out_x, s16 *out_y)
+{
+    s16 x = map_x;
+    s16 y = map_y;
+
+    if (remote == NULL || out_x == NULL || out_y == NULL)
+        return FALSE;
+    switch (remote->state.pose.direction)
+    {
+    case COOP_PRESENCE_DIRECTION_SOUTH:
+        y--;
+        break;
+    case COOP_PRESENCE_DIRECTION_NORTH:
+        y++;
+        break;
+    case COOP_PRESENCE_DIRECTION_WEST:
+        x++;
+        break;
+    case COOP_PRESENCE_DIRECTION_EAST:
+        x--;
+        break;
+    default:
+        return FALSE;
+    }
+    if (gMapHeader.mapLayout == NULL
+     || x < MAP_OFFSET || y < MAP_OFFSET
+     || x >= gMapHeader.mapLayout->width + MAP_OFFSET
+     || y >= gMapHeader.mapLayout->height + MAP_OFFSET)
+        return FALSE;
+    *out_x = x;
+    *out_y = y;
+    return TRUE;
+}
+
+static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
+                                    s16 map_x, s16 map_y)
+{
+    struct ObjectEvent *object_event;
+    struct Sprite *sprite;
+    const struct ObjectEventGraphicsInfo *graphics;
+    u16 graphics_id;
+    s16 target_x;
+    s16 target_y;
+    u8 object_id;
+    u8 created_id;
+    u16 generation;
+
+    if (remote == NULL || !sCoopPresenceRuntime.remote_companion_valid
+     || remote->handle != sCoopPresenceRuntime.remote_companion_handle
+     || sCoopPresenceRuntime.remote_companion_species == 0
+     || sCoopPresenceRuntime.remote_companion_species >= NUM_SPECIES)
+        return FALSE;
+    if (!FollowerTargetTile(remote, map_x, map_y, &target_x, &target_y))
+    {
+        target_x = map_x;
+        target_y = (s16)(map_y + 1);
+    }
+    graphics_id = FollowerGraphicsId(sCoopPresenceRuntime.remote_companion_species,
+                                     sCoopPresenceRuntime.remote_companion_flags);
+    graphics = GetObjectEventGraphicsInfo(graphics_id);
+    if (graphics == NULL)
+        return FALSE;
+    if (graphics->paletteTag != TAG_NONE
+     && LoadObjectEventPalette(graphics->paletteTag) == 0xFF)
+        return FALSE;
+
+    if (sCoopPresenceRuntime.follower_owned
+     && (sCoopPresenceRuntime.follower_species != sCoopPresenceRuntime.remote_companion_species
+      || sCoopPresenceRuntime.follower_flags != sCoopPresenceRuntime.remote_companion_flags))
+        RemoveFollowerRenderer();
+
+    if (!sCoopPresenceRuntime.follower_owned)
+    {
+        object_id = FindFollowerObjectEvent();
+        if (object_id >= OBJECT_EVENTS_COUNT)
+        {
+            if (GetFirstInactiveObjectEventId() >= OBJECT_EVENTS_COUNT)
+                return FALSE;
+            created_id = SpawnSpecialObjectEventParameterized(
+                graphics_id, MOVEMENT_TYPE_NONE, COOP_PRESENCE_RUNTIME_FOLLOWER_LOCAL_ID,
+                target_x, target_y, remote->state.pose.elevation);
+            if (created_id >= OBJECT_EVENTS_COUNT)
+                return FALSE;
+            if (!IsCurrentFollowerObject(&gObjectEvents[created_id]))
+            {
+                gObjectEvents[created_id].active = FALSE;
+                return FALSE;
+            }
+            object_id = created_id;
+            generation = NextFollowerGeneration();
+            gSprites[gObjectEvents[object_id].spriteId].data[7] = (s16)generation;
+            sCoopPresenceRuntime.follower_owned = TRUE;
+            sCoopPresenceRuntime.follower_object_id = object_id;
+            sCoopPresenceRuntime.follower_sprite_id = gObjectEvents[object_id].spriteId;
+            sCoopPresenceRuntime.follower_generation = generation;
+            sCoopPresenceRuntime.follower_species = sCoopPresenceRuntime.remote_companion_species;
+            sCoopPresenceRuntime.follower_flags = sCoopPresenceRuntime.remote_companion_flags;
+            sCoopPresenceRuntime.follower_x = target_x;
+            sCoopPresenceRuntime.follower_y = target_y;
+            sCoopPresenceRuntime.follower_step_frame = sCoopPresenceRuntime.frame_counter;
+        }
+        else
+        {
+            object_event = &gObjectEvents[object_id];
+            if (object_event->isPlayer || object_event->graphicsId != graphics_id)
+                return FALSE;
+            if (!FindOwnedFollowerSprite(object_event,
+                                         sCoopPresenceRuntime.follower_generation,
+                                         NULL))
+                return FALSE;
+            sCoopPresenceRuntime.follower_owned = TRUE;
+            sCoopPresenceRuntime.follower_object_id = object_id;
+            sCoopPresenceRuntime.follower_sprite_id = object_event->spriteId;
+            sCoopPresenceRuntime.follower_species = sCoopPresenceRuntime.remote_companion_species;
+            sCoopPresenceRuntime.follower_flags = sCoopPresenceRuntime.remote_companion_flags;
+            sCoopPresenceRuntime.follower_x = object_event->currentCoords.x;
+            sCoopPresenceRuntime.follower_y = object_event->currentCoords.y;
+            sCoopPresenceRuntime.follower_step_frame = sCoopPresenceRuntime.frame_counter;
+        }
+    }
+
+    object_id = sCoopPresenceRuntime.follower_object_id;
+    if (object_id >= OBJECT_EVENTS_COUNT)
+    {
+        RemoveFollowerRenderer();
+        return FALSE;
+    }
+    object_event = &gObjectEvents[object_id];
+    if (!FindOwnedFollowerSprite(object_event,
+                                 sCoopPresenceRuntime.follower_generation,
+                                 &sprite))
+    {
+        RemoveFollowerRenderer();
+        return FALSE;
+    }
+    if (object_event->graphicsId != graphics_id)
+    {
+        RemoveFollowerRenderer();
+        return FALSE;
+    }
+
+    if ((sCoopPresenceRuntime.follower_x != target_x
+      || sCoopPresenceRuntime.follower_y != target_y)
+     && sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.follower_step_frame
+        >= COOP_PRESENCE_RUNTIME_FOLLOWER_STEP_INTERVAL)
+    {
+        s16 step_x = sCoopPresenceRuntime.follower_x;
+        s16 step_y = sCoopPresenceRuntime.follower_y;
+
+        if (step_x != target_x)
+            step_x += (s16)((target_x > step_x) ? 1 : -1);
+        else if (step_y != target_y)
+            step_y += (s16)((target_y > step_y) ? 1 : -1);
+        MoveObjectEventToMapCoords(object_event, step_x, step_y);
+        SetObjectEventDirection(object_event,
+            (step_x != sCoopPresenceRuntime.follower_x)
+                ? (step_x > sCoopPresenceRuntime.follower_x ? DIR_EAST : DIR_WEST)
+                : (step_y > sCoopPresenceRuntime.follower_y ? DIR_SOUTH : DIR_NORTH));
+        sCoopPresenceRuntime.follower_x = step_x;
+        sCoopPresenceRuntime.follower_y = step_y;
+        sCoopPresenceRuntime.follower_step_frame = sCoopPresenceRuntime.frame_counter;
+    }
+    (void)sprite;
+    return TRUE;
+}
+
+static u8 CoopEmoteToFollowerEmotion(u8 emote)
+{
+    switch (emote)
+    {
+    case COOP_PRESENCE_EMOTE_EXCLAIM:
+        return FOLLOWER_EMOTION_SURPRISE;
+    case COOP_PRESENCE_EMOTE_QUESTION:
+        return FOLLOWER_EMOTION_CURIOUS;
+    case COOP_PRESENCE_EMOTE_HEART:
+        return FOLLOWER_EMOTION_LOVE;
+    case COOP_PRESENCE_EMOTE_MUSIC:
+        return FOLLOWER_EMOTION_MUSIC;
+    case COOP_PRESENCE_EMOTE_SWEAT:
+        return FOLLOWER_EMOTION_UPSET;
+    case COOP_PRESENCE_EMOTE_ANGER:
+        return FOLLOWER_EMOTION_ANGRY;
+    case COOP_PRESENCE_EMOTE_SLEEP:
+        return FOLLOWER_EMOTION_NEUTRAL;
+    case COOP_PRESENCE_EMOTE_STAR:
+    default:
+        return FOLLOWER_EMOTION_HAPPY;
+    }
+}
+
+static void ShowBubbleOnObject(struct ObjectEvent *object_event, u8 emotion)
+{
+    if (object_event == NULL || !object_event->active
+     || object_event->spriteId >= MAX_SPRITES
+     || !gSprites[object_event->spriteId].inUse)
+        return;
+    ObjectEventGetLocalIdAndMap(object_event,
+        &gFieldEffectArguments[0], &gFieldEffectArguments[1], &gFieldEffectArguments[2]);
+    gFieldEffectArguments[7] = (s32)(emotion % FOLLOWER_EMOTION_LENGTH);
+    FieldEffectStart(FLDEFF_EMOTE);
+}
+
+static void ConsumePendingBubble(void)
+{
+    u8 object_id;
+    struct ObjectEvent *object_event;
+
+    if (!sCoopPresenceRuntime.pending_bubble_set)
+        return;
+    /* A stale bubble is dropped rather than shown late. */
+    if (sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.pending_bubble_frame > 90)
+    {
+        sCoopPresenceRuntime.pending_bubble_set = FALSE;
+        return;
+    }
+    if (sCoopPresenceRuntime.renderer_owned)
+    {
+        object_id = sCoopPresenceRuntime.rendered_object_id;
+        if (object_id < OBJECT_EVENTS_COUNT)
+        {
+            object_event = &gObjectEvents[object_id];
+            if (IsCurrentObjectEvent(object_event)
+             && FindOwnedSprite(object_event,
+                                sCoopPresenceRuntime.rendered_generation,
+                                NULL))
+                ShowBubbleOnObject(object_event, sCoopPresenceRuntime.pending_bubble);
+        }
+    }
+    sCoopPresenceRuntime.pending_bubble_set = FALSE;
+}
+
+static bool8 ReadLeadCompanion(u16 *species, u8 *flags)
+{
+    u8 i;
+
+    if (species == NULL || flags == NULL || gSaveBlock1Ptr == NULL)
+        return FALSE;
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        u16 candidate = (u16)GetMonData(&gPlayerParty[i], MON_DATA_SPECIES);
+
+        if (candidate == SPECIES_NONE || candidate == SPECIES_EGG
+         || candidate >= NUM_SPECIES)
+            continue;
+        if (GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG))
+            continue;
+        *species = candidate;
+        *flags = IsMonShiny(&gPlayerParty[i]) ? COOP_PRESENCE_COMPANION_FLAG_SHINY : 0;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void MaybePublishCompanion(void)
+{
+    struct CoopPresenceLocalCompanion companion;
+    u8 payload[COOP_PRESENCE_LOCAL_COMPANION_SIZE];
+    u16 species;
+    u8 flags;
+
+    if (!sCoopPresenceRuntime.initialized || !sCoopPresenceRuntime.transport_ready
+     || sCoopPresenceRuntime.warp_sequence == 0 || !IsOverworldPoseAllowed())
+        return;
+    if (!ReadLeadCompanion(&species, &flags))
+        return;
+    if (species == sCoopPresenceRuntime.last_companion_species
+     && flags == sCoopPresenceRuntime.last_companion_flags
+     && sCoopPresenceRuntime.last_companion_frame != 0
+     && sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.last_companion_frame
+        < COOP_PRESENCE_RUNTIME_COMPANION_INTERVAL)
+        return;
+    sCoopPresenceRuntime.companion_source_sequence = CoopPresence_NextSequence(
+        sCoopPresenceRuntime.companion_source_sequence);
+    companion.species = species;
+    companion.form = 0;
+    companion.flags = flags;
+    companion.source_sequence = sCoopPresenceRuntime.companion_source_sequence;
+    if (!CoopPresence_EncodeLocalCompanion(&companion, payload, sizeof(payload)))
+        return;
+    if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_COMPANION_STATE,
+                                            payload, sizeof(payload)))
+        return;
+    sCoopPresenceRuntime.last_companion_species = species;
+    sCoopPresenceRuntime.last_companion_flags = flags;
+    sCoopPresenceRuntime.last_companion_frame = sCoopPresenceRuntime.frame_counter;
+}
+
+static bool8 CanUseSignal(void)
+{
+    if (!sCoopPresenceRuntime.initialized || !sCoopPresenceRuntime.transport_ready
+     || !IsOverworldPoseAllowed())
+        return FALSE;
+    if (sCoopPresenceRuntime.signal_used
+     && sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.last_signal_frame
+        < COOP_PRESENCE_RUNTIME_SIGNAL_COOLDOWN)
+        return FALSE;
+    return TRUE;
+}
+
+static bool8 EnqueueSignal(u8 kind, u8 emote, s16 x, s16 y)
+{
+    struct CoopPresenceLocalSignal signal;
+    u8 payload[COOP_PRESENCE_LOCAL_SIGNAL_SIZE];
+
+    if (!CanUseSignal())
+        return FALSE;
+    sCoopPresenceRuntime.signal_source_sequence = CoopPresence_NextSequence(
+        sCoopPresenceRuntime.signal_source_sequence);
+    signal.kind = kind;
+    signal.emote = emote;
+    signal.x = x;
+    signal.y = y;
+    signal.source_sequence = sCoopPresenceRuntime.signal_source_sequence;
+    if (!CoopPresence_EncodeLocalSignal(&signal, payload, sizeof(payload)))
+        return FALSE;
+    if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL,
+                                            payload, sizeof(payload)))
+        return FALSE;
+    sCoopPresenceRuntime.signal_used = TRUE;
+    sCoopPresenceRuntime.last_signal_frame = sCoopPresenceRuntime.frame_counter;
+    return TRUE;
+}
+
+bool8 CoopPresenceRuntime_TryPing(void)
+{
+    const struct ObjectEvent *player;
+    s16 x;
+    s16 y;
+
+    if (!CanUseSignal() || !IsPlayerBindingValid())
+        return FALSE;
+    player = &gObjectEvents[gPlayerAvatar.objectEventId];
+    x = (s16)(player->currentCoords.x - MAP_OFFSET);
+    y = (s16)(player->currentCoords.y - MAP_OFFSET);
+    return EnqueueSignal(COOP_PRESENCE_SIGNAL_PING, COOP_PRESENCE_EMOTE_NONE, x, y);
+}
+
+bool8 CoopPresenceRuntime_TryEmote(void)
+{
+    u8 emote;
+    const struct ObjectEvent *player;
+
+    if (!CanUseSignal())
+        return FALSE;
+    if (sCoopPresenceRuntime.next_emote < COOP_PRESENCE_EMOTE_EXCLAIM
+     || sCoopPresenceRuntime.next_emote > COOP_PRESENCE_EMOTE_MAX)
+        sCoopPresenceRuntime.next_emote = COOP_PRESENCE_EMOTE_EXCLAIM;
+    emote = sCoopPresenceRuntime.next_emote;
+    sCoopPresenceRuntime.next_emote = (u8)(emote >= COOP_PRESENCE_EMOTE_MAX
+        ? COOP_PRESENCE_EMOTE_EXCLAIM : emote + 1);
+    if (!EnqueueSignal(COOP_PRESENCE_SIGNAL_EMOTE, emote, 0, 0))
+        return FALSE;
+    if (IsPlayerBindingValid())
+    {
+        player = &gObjectEvents[gPlayerAvatar.objectEventId];
+        ShowBubbleOnObject((struct ObjectEvent *)player,
+                           CoopEmoteToFollowerEmotion(emote));
+    }
+    return TRUE;
+}
+
+bool8 CoopPresenceRuntime_GetPingMarker(s16 *x, s16 *y)
+{
+    if (x == NULL || y == NULL || !sCoopPresenceRuntime.ping_valid
+     || gSaveBlock1Ptr == NULL
+     || sCoopPresenceRuntime.ping_map_group != gSaveBlock1Ptr->location.mapGroup
+     || sCoopPresenceRuntime.ping_map_num != gSaveBlock1Ptr->location.mapNum
+     || sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.ping_frame
+        >= COOP_PRESENCE_RUNTIME_PING_TTL_FRAMES)
+        return FALSE;
+    *x = sCoopPresenceRuntime.ping_x;
+    *y = sCoopPresenceRuntime.ping_y;
+    return TRUE;
+}
+
+static enum CoopPresenceApplyResult ApplyRemoteCompanion(
+    const struct CoopPresenceRemoteCompanion *companion)
+{
+    const struct CoopPresenceRemote *active;
+
+    if (companion == NULL || gSaveBlock1Ptr == NULL)
+        return COOP_PRESENCE_APPLY_REJECTED;
+    active = CoopPresenceReducer_GetRemote(&sCoopPresenceRuntime.reducer);
+    if (active == NULL || active->handle != companion->handle)
+        return COOP_PRESENCE_APPLY_STALE;
+    if (sCoopPresenceRuntime.remote_companion_valid
+     && sCoopPresenceRuntime.remote_companion_handle == companion->handle
+     && !CoopPresence_SequenceIsNewer(companion->server_sequence,
+                                      sCoopPresenceRuntime.remote_companion_sequence))
+        return COOP_PRESENCE_APPLY_STALE;
+    sCoopPresenceRuntime.remote_companion_valid = TRUE;
+    sCoopPresenceRuntime.remote_companion_handle = companion->handle;
+    sCoopPresenceRuntime.remote_companion_sequence = companion->server_sequence;
+    sCoopPresenceRuntime.remote_companion_species = companion->species;
+    sCoopPresenceRuntime.remote_companion_flags = companion->flags;
+    return COOP_PRESENCE_APPLY_APPLIED;
+}
+
+static enum CoopPresenceApplyResult ApplyRemoteSignal(
+    const struct CoopPresenceRemoteSignal *signal)
+{
+    const struct CoopPresenceRemote *active;
+
+    if (signal == NULL || gSaveBlock1Ptr == NULL)
+        return COOP_PRESENCE_APPLY_REJECTED;
+    active = CoopPresenceReducer_GetRemote(&sCoopPresenceRuntime.reducer);
+    if (active == NULL || active->handle != signal->handle)
+        return COOP_PRESENCE_APPLY_STALE;
+    if (sCoopPresenceRuntime.remote_signal_seen
+     && !CoopPresence_SequenceIsNewer(signal->server_sequence,
+                                      sCoopPresenceRuntime.remote_signal_sequence))
+        return COOP_PRESENCE_APPLY_STALE;
+    sCoopPresenceRuntime.remote_signal_seen = TRUE;
+    sCoopPresenceRuntime.remote_signal_sequence = signal->server_sequence;
+    if (signal->kind == COOP_PRESENCE_SIGNAL_PING)
+    {
+        sCoopPresenceRuntime.ping_x = signal->x;
+        sCoopPresenceRuntime.ping_y = signal->y;
+        sCoopPresenceRuntime.ping_map_group = gSaveBlock1Ptr->location.mapGroup;
+        sCoopPresenceRuntime.ping_map_num = gSaveBlock1Ptr->location.mapNum;
+        sCoopPresenceRuntime.ping_frame = sCoopPresenceRuntime.frame_counter;
+        sCoopPresenceRuntime.ping_valid = TRUE;
+        sCoopPresenceRuntime.pending_bubble =
+            CoopEmoteToFollowerEmotion(COOP_PRESENCE_EMOTE_EXCLAIM);
+    }
+    else
+    {
+        sCoopPresenceRuntime.pending_bubble = CoopEmoteToFollowerEmotion(signal->emote);
+    }
+    sCoopPresenceRuntime.pending_bubble_set = TRUE;
+    sCoopPresenceRuntime.pending_bubble_frame = sCoopPresenceRuntime.frame_counter;
+    return COOP_PRESENCE_APPLY_APPLIED;
+}
+
 static void ApplyPendingFrames(void)
 {
     struct CoopPresenceLocalState local;
@@ -850,14 +1486,25 @@ static void ApplyPendingFrames(void)
                 else
                 {
                     sCoopPresenceRuntime.despawn_hold_reason = 0;
+                    ClearSocialState();
                 }
             }
+            break;
+        case COOP_PRESENCE_PENDING_COMPANION:
+            result = ApplyRemoteCompanion(&pending->value.companion);
+            break;
+        case COOP_PRESENCE_PENDING_SIGNAL:
+            result = ApplyRemoteSignal(&pending->value.signal);
             break;
         default:
             result = COOP_PRESENCE_APPLY_REJECTED;
             break;
         }
-        if (result == COOP_PRESENCE_APPLY_APPLIED)
+        /* Companion and signal records never refresh avatar liveness; only
+         * the pose lifecycle owns the stale-removal deadline. */
+        if (result == COOP_PRESENCE_APPLY_APPLIED
+         && pending->type != COOP_PRESENCE_PENDING_COMPANION
+         && pending->type != COOP_PRESENCE_PENDING_SIGNAL)
             sCoopPresenceRuntime.last_lifecycle_frame = sCoopPresenceRuntime.frame_counter;
         pending->type = COOP_PRESENCE_PENDING_NONE;
         sCoopPresenceRuntime.pending_read = (u8)((sCoopPresenceRuntime.pending_read + 1)
@@ -903,7 +1550,19 @@ void CoopPresenceRuntime_Update(void)
         return;
     }
     if (!EnsureRemoteRenderer(remote))
+    {
         RemoveOwnedRenderer();
+        return;
+    }
+    ConsumePendingBubble();
+    {
+        s16 map_x;
+        s16 map_y;
+
+        if (RemoteCoordinatesValid(remote, &map_x, &map_y))
+            EnsureFollowerRenderer(remote, map_x, map_y);
+    }
+    MaybePublishCompanion();
 }
 
 bool8 CoopPresenceRuntime_QueueBridgeFrame(u16 type, const u8 *payload, u16 length)
@@ -930,6 +1589,16 @@ bool8 CoopPresenceRuntime_QueueBridgeFrame(u16 type, const u8 *payload, u16 leng
             return FALSE;
         candidate.type = COOP_PRESENCE_PENDING_DESPAWN;
         break;
+    case COOP_BRIDGE_MESSAGE_REMOTE_COMPANION:
+        if (!CoopPresence_DecodeRemoteCompanion(payload, length, &candidate.value.companion))
+            return FALSE;
+        candidate.type = COOP_PRESENCE_PENDING_COMPANION;
+        break;
+    case COOP_BRIDGE_MESSAGE_REMOTE_SOCIAL_SIGNAL:
+        if (!CoopPresence_DecodeRemoteSignal(payload, length, &candidate.value.signal))
+            return FALSE;
+        candidate.type = COOP_PRESENCE_PENDING_SIGNAL;
+        break;
     default:
         return FALSE;
     }
@@ -946,6 +1615,9 @@ void CoopPresenceRuntime_Init(void)
     CoopPresenceReducer_Init(&sCoopPresenceRuntime.reducer);
     sCoopPresenceRuntime.warp_sequence = 1;
     sCoopPresenceRuntime.rendered_object_id = OBJECT_EVENTS_COUNT;
+    sCoopPresenceRuntime.follower_object_id = OBJECT_EVENTS_COUNT;
+    sCoopPresenceRuntime.follower_sprite_id = MAX_SPRITES;
+    sCoopPresenceRuntime.next_emote = COOP_PRESENCE_EMOTE_EXCLAIM;
     sCoopPresenceRuntime.initialized = TRUE;
     /* Presence is not publishable until the transport accepts a nonzero
      * SESSION_READY epoch. */
@@ -974,6 +1646,7 @@ void CoopPresenceRuntime_Reset(void)
     sCoopPresenceRuntime.rendered_handle = 0;
     sCoopPresenceRuntime.last_pose_valid = FALSE;
     sCoopPresenceRuntime.last_lifecycle_frame = sCoopPresenceRuntime.frame_counter;
+    ClearSocialState();
     RemoveOwnedRenderer();
 }
 
@@ -1049,4 +1722,25 @@ enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void)
 const struct CoopPresenceReducer *CoopPresenceRuntime_GetReducer(void)
 {
     return &sCoopPresenceRuntime.reducer;
+}
+
+void CoopPresenceRuntime_RetireFollowerObjectOnReturnToField(u8 objectEventId)
+{
+    if (objectEventId >= OBJECT_EVENTS_COUNT
+     || !gObjectEvents[objectEventId].active
+     || !CoopPresenceRuntime_IsFollowerObject(&gObjectEvents[objectEventId]))
+        return;
+
+    /* ResumeMap has already reset the sprite table. Retire the reserved
+     * follower object without destroying a slot rebound to another owner. */
+    if (gObjectEvents[objectEventId].spriteId >= MAX_SPRITES
+     || !IsFollowerSpriteProof(objectEventId, gObjectEvents[objectEventId].spriteId,
+                               sCoopPresenceRuntime.follower_generation,
+                               gObjectEvents[objectEventId].graphicsId, FALSE))
+        gObjectEvents[objectEventId].active = FALSE;
+    else
+        RemoveObjectEvent(&gObjectEvents[objectEventId]);
+    if (sCoopPresenceRuntime.follower_owned
+     && sCoopPresenceRuntime.follower_object_id == objectEventId)
+        ClearFollowerIdentity();
 }

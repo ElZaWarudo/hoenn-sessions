@@ -225,6 +225,24 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
     if (input->pressedAButton && TrySetupDiveDownScript() == TRUE)
         return TRUE;
 
+    /* Co-op social keys use raw button state because the engine remaps L to
+     * A in the cooked key set. L alone pings the current tile; L held with
+     * a fresh SELECT press cycles the 1..8 emote set. The ping arm runs
+     * before the remote-interact fallback so a pure L press never doubles
+     * as a remapped-A interaction. */
+    if ((gMain.newKeysRaw & L_BUTTON) != 0
+     && (gMain.newKeysRaw & (u16)(R_BUTTON | SELECT_BUTTON | START_BUTTON | A_BUTTON | B_BUTTON)) == 0)
+    {
+        if (CoopPresenceRuntime_TryPing())
+            return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
+    }
+    if ((gMain.newKeys & SELECT_BUTTON) != 0
+     && (gMain.heldKeysRaw & L_BUTTON) != 0)
+    {
+        if (CoopPresenceRuntime_TryEmote())
+            return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
+    }
+
     /* Vanilla object, background, metatile, door, and dive actions own the
      * target tile.  A remote is only the fallback after every local A action
      * has declined the input, so a nonblocking remote can never mask a real

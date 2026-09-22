@@ -3005,6 +3005,11 @@ void SpawnObjectEventsOnReturnToField(s16 x, s16 y)
             CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(i);
             continue;
         }
+        if (CoopPresenceRuntime_IsFollowerObject(&gObjectEvents[i]))
+        {
+            CoopPresenceRuntime_RetireFollowerObjectOnReturnToField(i);
+            continue;
+        }
         SpawnObjectEventOnReturnToField(i, x, y);
     }
     CreateReflectionEffectSprites();

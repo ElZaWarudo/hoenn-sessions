@@ -548,6 +548,201 @@ static bool8 EncodeInteractionValue(const struct CoopPresenceInteraction *value,
     return TRUE;
 }
 
+static bool8 IsSignalKind(u8 value)
+{
+    return value == COOP_PRESENCE_SIGNAL_PING
+        || value == COOP_PRESENCE_SIGNAL_EMOTE;
+}
+
+static bool8 IsEmoteId(u8 value)
+{
+    return value <= COOP_PRESENCE_EMOTE_MAX;
+}
+
+static bool8 IsCompanionFieldsValid(u16 species, u8 form, u8 flags)
+{
+    return species != 0
+        && form <= COOP_PRESENCE_COMPANION_FORM_MAX
+        && (flags & (u8)~COOP_PRESENCE_COMPANION_FLAG_SHINY) == 0;
+}
+
+static bool8 IsSignalBodyValid(u8 kind, u8 emote, s16 x, s16 y)
+{
+    if (kind == COOP_PRESENCE_SIGNAL_PING)
+        return emote == COOP_PRESENCE_EMOTE_NONE;
+    if (kind == COOP_PRESENCE_SIGNAL_EMOTE)
+        return emote != COOP_PRESENCE_EMOTE_NONE && x == 0 && y == 0;
+    return FALSE;
+}
+
+bool8 CoopPresence_DecodeLocalCompanion(const u8 *bytes, u32 length,
+                                        struct CoopPresenceLocalCompanion *out)
+{
+    struct CoopPresenceLocalCompanion candidate = {0};
+
+    if (out == NULL || !IsExactLength(bytes, length, COOP_PRESENCE_LOCAL_COMPANION_SIZE))
+        return FALSE;
+    candidate.species = ReadLe16(&bytes[COOP_PRESENCE_LOCAL_COMPANION_SPECIES_OFFSET]);
+    candidate.form = bytes[COOP_PRESENCE_LOCAL_COMPANION_FORM_OFFSET];
+    candidate.flags = bytes[COOP_PRESENCE_LOCAL_COMPANION_FLAGS_OFFSET];
+    candidate.source_sequence = ReadLe32(
+        &bytes[COOP_PRESENCE_LOCAL_COMPANION_SOURCE_SEQUENCE_OFFSET]);
+    if (!IsCompanionFieldsValid(candidate.species, candidate.form, candidate.flags)
+     || !IsSequenceValid(candidate.source_sequence))
+        return FALSE;
+    *out = candidate;
+    return TRUE;
+}
+
+bool8 CoopPresence_EncodeLocalCompanion(const struct CoopPresenceLocalCompanion *value,
+                                        u8 *bytes, u32 length)
+{
+    u8 candidate[COOP_PRESENCE_LOCAL_COMPANION_SIZE] = {0};
+
+    if (value == NULL || bytes == NULL || length != COOP_PRESENCE_LOCAL_COMPANION_SIZE
+     || !IsCompanionFieldsValid(value->species, value->form, value->flags)
+     || !IsSequenceValid(value->source_sequence))
+        return FALSE;
+    WriteLe16(&candidate[COOP_PRESENCE_LOCAL_COMPANION_SPECIES_OFFSET], value->species);
+    candidate[COOP_PRESENCE_LOCAL_COMPANION_FORM_OFFSET] = value->form;
+    candidate[COOP_PRESENCE_LOCAL_COMPANION_FLAGS_OFFSET] = value->flags;
+    WriteLe32(&candidate[COOP_PRESENCE_LOCAL_COMPANION_SOURCE_SEQUENCE_OFFSET],
+              value->source_sequence);
+    CopyBytes(bytes, candidate, COOP_PRESENCE_LOCAL_COMPANION_SIZE);
+    return TRUE;
+}
+
+bool8 CoopPresence_DecodeRemoteCompanion(const u8 *bytes, u32 length,
+                                         struct CoopPresenceRemoteCompanion *out)
+{
+    struct CoopPresenceRemoteCompanion candidate = {0};
+
+    if (out == NULL || !IsExactLength(bytes, length, COOP_PRESENCE_REMOTE_COMPANION_SIZE))
+        return FALSE;
+    candidate.handle = ReadLe64(&bytes[COOP_PRESENCE_REMOTE_COMPANION_HANDLE_OFFSET]);
+    candidate.server_sequence = ReadLe32(
+        &bytes[COOP_PRESENCE_REMOTE_COMPANION_SERVER_SEQUENCE_OFFSET]);
+    candidate.species = ReadLe16(&bytes[COOP_PRESENCE_REMOTE_COMPANION_SPECIES_OFFSET]);
+    candidate.form = bytes[COOP_PRESENCE_REMOTE_COMPANION_FORM_OFFSET];
+    candidate.flags = bytes[COOP_PRESENCE_REMOTE_COMPANION_FLAGS_OFFSET];
+    if (!IsHandleValid(candidate.handle)
+     || !IsSequenceValid(candidate.server_sequence)
+     || !IsCompanionFieldsValid(candidate.species, candidate.form, candidate.flags))
+        return FALSE;
+    *out = candidate;
+    return TRUE;
+}
+
+bool8 CoopPresence_EncodeRemoteCompanion(const struct CoopPresenceRemoteCompanion *value,
+                                         u8 *bytes, u32 length)
+{
+    u8 candidate[COOP_PRESENCE_REMOTE_COMPANION_SIZE] = {0};
+
+    if (value == NULL || bytes == NULL || length != COOP_PRESENCE_REMOTE_COMPANION_SIZE
+     || !IsHandleValid(value->handle) || !IsSequenceValid(value->server_sequence)
+     || !IsCompanionFieldsValid(value->species, value->form, value->flags))
+        return FALSE;
+    WriteLe64(&candidate[COOP_PRESENCE_REMOTE_COMPANION_HANDLE_OFFSET], value->handle);
+    WriteLe32(&candidate[COOP_PRESENCE_REMOTE_COMPANION_SERVER_SEQUENCE_OFFSET],
+              value->server_sequence);
+    WriteLe16(&candidate[COOP_PRESENCE_REMOTE_COMPANION_SPECIES_OFFSET], value->species);
+    candidate[COOP_PRESENCE_REMOTE_COMPANION_FORM_OFFSET] = value->form;
+    candidate[COOP_PRESENCE_REMOTE_COMPANION_FLAGS_OFFSET] = value->flags;
+    CopyBytes(bytes, candidate, COOP_PRESENCE_REMOTE_COMPANION_SIZE);
+    return TRUE;
+}
+
+bool8 CoopPresence_DecodeLocalSignal(const u8 *bytes, u32 length,
+                                     struct CoopPresenceLocalSignal *out)
+{
+    struct CoopPresenceLocalSignal candidate = {0};
+
+    if (out == NULL || !IsExactLength(bytes, length, COOP_PRESENCE_LOCAL_SIGNAL_SIZE))
+        return FALSE;
+    if (bytes[COOP_PRESENCE_LOCAL_SIGNAL_RESERVED_OFFSET] != 0
+     || bytes[COOP_PRESENCE_LOCAL_SIGNAL_RESERVED_OFFSET + 1] != 0)
+        return FALSE;
+    candidate.kind = bytes[COOP_PRESENCE_LOCAL_SIGNAL_KIND_OFFSET];
+    candidate.emote = bytes[COOP_PRESENCE_LOCAL_SIGNAL_EMOTE_OFFSET];
+    candidate.x = ReadLeS16(&bytes[COOP_PRESENCE_LOCAL_SIGNAL_X_OFFSET]);
+    candidate.y = ReadLeS16(&bytes[COOP_PRESENCE_LOCAL_SIGNAL_Y_OFFSET]);
+    candidate.source_sequence = ReadLe32(
+        &bytes[COOP_PRESENCE_LOCAL_SIGNAL_SOURCE_SEQUENCE_OFFSET]);
+    if (!IsSignalKind(candidate.kind) || !IsEmoteId(candidate.emote)
+     || !IsSignalBodyValid(candidate.kind, candidate.emote, candidate.x, candidate.y)
+     || !IsSequenceValid(candidate.source_sequence))
+        return FALSE;
+    *out = candidate;
+    return TRUE;
+}
+
+bool8 CoopPresence_EncodeLocalSignal(const struct CoopPresenceLocalSignal *value,
+                                     u8 *bytes, u32 length)
+{
+    u8 candidate[COOP_PRESENCE_LOCAL_SIGNAL_SIZE] = {0};
+
+    if (value == NULL || bytes == NULL || length != COOP_PRESENCE_LOCAL_SIGNAL_SIZE
+     || !IsSignalKind(value->kind) || !IsEmoteId(value->emote)
+     || !IsSignalBodyValid(value->kind, value->emote, value->x, value->y)
+     || !IsSequenceValid(value->source_sequence))
+        return FALSE;
+    candidate[COOP_PRESENCE_LOCAL_SIGNAL_KIND_OFFSET] = value->kind;
+    candidate[COOP_PRESENCE_LOCAL_SIGNAL_EMOTE_OFFSET] = value->emote;
+    WriteLeS16(&candidate[COOP_PRESENCE_LOCAL_SIGNAL_X_OFFSET], value->x);
+    WriteLeS16(&candidate[COOP_PRESENCE_LOCAL_SIGNAL_Y_OFFSET], value->y);
+    WriteLe32(&candidate[COOP_PRESENCE_LOCAL_SIGNAL_SOURCE_SEQUENCE_OFFSET],
+              value->source_sequence);
+    CopyBytes(bytes, candidate, COOP_PRESENCE_LOCAL_SIGNAL_SIZE);
+    return TRUE;
+}
+
+bool8 CoopPresence_DecodeRemoteSignal(const u8 *bytes, u32 length,
+                                      struct CoopPresenceRemoteSignal *out)
+{
+    struct CoopPresenceRemoteSignal candidate = {0};
+
+    if (out == NULL || !IsExactLength(bytes, length, COOP_PRESENCE_REMOTE_SIGNAL_SIZE))
+        return FALSE;
+    if (bytes[COOP_PRESENCE_REMOTE_SIGNAL_RESERVED_OFFSET] != 0
+     || bytes[COOP_PRESENCE_REMOTE_SIGNAL_RESERVED_OFFSET + 1] != 0)
+        return FALSE;
+    candidate.handle = ReadLe64(&bytes[COOP_PRESENCE_REMOTE_SIGNAL_HANDLE_OFFSET]);
+    candidate.server_sequence = ReadLe32(
+        &bytes[COOP_PRESENCE_REMOTE_SIGNAL_SERVER_SEQUENCE_OFFSET]);
+    candidate.kind = bytes[COOP_PRESENCE_REMOTE_SIGNAL_KIND_OFFSET];
+    candidate.emote = bytes[COOP_PRESENCE_REMOTE_SIGNAL_EMOTE_OFFSET];
+    candidate.x = ReadLeS16(&bytes[COOP_PRESENCE_REMOTE_SIGNAL_X_OFFSET]);
+    candidate.y = ReadLeS16(&bytes[COOP_PRESENCE_REMOTE_SIGNAL_Y_OFFSET]);
+    if (!IsHandleValid(candidate.handle)
+     || !IsSequenceValid(candidate.server_sequence)
+     || !IsSignalKind(candidate.kind) || !IsEmoteId(candidate.emote)
+     || !IsSignalBodyValid(candidate.kind, candidate.emote, candidate.x, candidate.y))
+        return FALSE;
+    *out = candidate;
+    return TRUE;
+}
+
+bool8 CoopPresence_EncodeRemoteSignal(const struct CoopPresenceRemoteSignal *value,
+                                      u8 *bytes, u32 length)
+{
+    u8 candidate[COOP_PRESENCE_REMOTE_SIGNAL_SIZE] = {0};
+
+    if (value == NULL || bytes == NULL || length != COOP_PRESENCE_REMOTE_SIGNAL_SIZE
+     || !IsHandleValid(value->handle) || !IsSequenceValid(value->server_sequence)
+     || !IsSignalKind(value->kind) || !IsEmoteId(value->emote)
+     || !IsSignalBodyValid(value->kind, value->emote, value->x, value->y))
+        return FALSE;
+    WriteLe64(&candidate[COOP_PRESENCE_REMOTE_SIGNAL_HANDLE_OFFSET], value->handle);
+    WriteLe32(&candidate[COOP_PRESENCE_REMOTE_SIGNAL_SERVER_SEQUENCE_OFFSET],
+              value->server_sequence);
+    candidate[COOP_PRESENCE_REMOTE_SIGNAL_KIND_OFFSET] = value->kind;
+    candidate[COOP_PRESENCE_REMOTE_SIGNAL_EMOTE_OFFSET] = value->emote;
+    WriteLeS16(&candidate[COOP_PRESENCE_REMOTE_SIGNAL_X_OFFSET], value->x);
+    WriteLeS16(&candidate[COOP_PRESENCE_REMOTE_SIGNAL_Y_OFFSET], value->y);
+    CopyBytes(bytes, candidate, COOP_PRESENCE_REMOTE_SIGNAL_SIZE);
+    return TRUE;
+}
+
 bool8 CoopPresence_SequenceIsNewer(u32 candidate, u32 reference)
 {
     u32 delta;
