@@ -370,12 +370,32 @@ jobs:
             '-property:ProductVersion=1.0.1'
           if ($LASTEXITCODE -ne 0) { throw 'WiX package compilation failed' }
 
+  # The shipped mGBA bridge scripts are plain Lua with their own suites.
+  # Lua 5.4 matches the API mGBA embeds (integers, math.type, string.pack).
+  # This job always runs: it is cheap and guards the cross-language contract.
+  bridge-lua:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lua5.4
+
+      - name: Bridge Lua suites
+        run: |
+          lua5.4 bridge/tests/main_test.lua
+          lua5.4 bridge/tests/memory_test.lua
+          lua5.4 bridge/tests/protocol_test.lua
+
   # Gate job: satisfies the "build" branch protection rule.
   # Validate intentional skips as well as failures; a skipped gate is not a pass.
   build:
     if: always() && github.actor != 'allcontributors[bot]'
     runs-on: ubuntu-24.04
-    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, installer-package-smoke]
+    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, installer-package-smoke, bridge-lua]
     steps:
       - name: Check every required job
         env:
@@ -396,6 +416,7 @@ jobs:
               expected = 'success' if selected == 'true' else 'skipped'
               for name in names:
                   assert jobs[name]['result'] == expected, f'{name}: {jobs[name]["result"]}, expected {expected}'
+          assert jobs['bridge-lua']['result'] == 'success', f'bridge-lua: {jobs["bridge-lua"]["result"]}, expected success'
           print('All required builds and tests passed.')
           PY
 
