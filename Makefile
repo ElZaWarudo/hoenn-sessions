@@ -50,7 +50,7 @@ RELEASE      ?= 0
 ifeq (compare,$(MAKECMDGOALS))
   COMPARE := 1
 endif
-ifeq (check,$(MAKECMDGOALS))
+ifneq (,$(filter check check-build,$(MAKECMDGOALS)))
   TEST := 1
 endif
 ifeq (debug,$(MAKECMDGOALS))
@@ -268,7 +268,7 @@ MAKEFLAGS += --no-print-directory
 .DELETE_ON_ERROR:
 
 RULES_NO_SCAN += libagbsyscall clean clean-assets tidy tidymodern tidycheck tidyrelease generated clean-generated clean-teachables clean-teachables_intermediates
-.PHONY: all rom agbcc modern compare check debug release
+.PHONY: all rom agbcc modern compare check check-build debug release
 .PHONY: $(RULES_NO_SCAN)
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
@@ -358,9 +358,11 @@ else
 TEST_SKIP_IS_FAIL := \x00
 endif
 
-check: $(TESTELF)
+check-build: $(TESTELF)
 	@cp $< $(HEADLESSELF)
 	$(PATCHELF) $(HEADLESSELF) gTestRunnerHeadless '\x01' gTestRunnerSkipIsFail "$(TEST_SKIP_IS_FAIL)"
+
+check: check-build
 	$(ROMTESTHYDRA) $(ROMTEST) $(OBJCOPY) $(HEADLESSELF)
 
 # Other rules
