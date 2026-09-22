@@ -32,16 +32,18 @@ RUST_SAVE_SOURCE = Path(__file__).resolve().parents[1] / "coop/crates/coop-save/
 ABI_SYMBOLS = frozenset(
     (BRIDGE_SYMBOL, SAVE_BLOCK3_SYMBOL, SAVE_DESCRIPTOR_SYMBOL, SAVE_SLOT_LAYOUT_SYMBOL)
 )
-MANIFEST_SCHEMA_VERSION = 3
+MANIFEST_SCHEMA_VERSION = 4
 EMULATOR_NAME = "mGBA"
-EMULATOR_VERSION = "0.10.5"
+EMULATOR_VERSION = "0.11.0"
+EMULATOR_BUILD_ID = "0.11-9139-3a5bc2462"
+EMULATOR_SOURCE_COMMIT = "3a5bc24629867576b0fb576a5d5a21d3b3d6b576"
 EMULATOR_PLATFORM = "windows-x64"
 EMULATOR_VARIANT = "Qt"
 EMULATOR_ARCHIVE_SHA256 = (
-    "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a"
+    "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b"
 )
 EMULATOR_EXECUTABLE_SHA256 = (
-    "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+    "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546"
 )
 BRIDGE_MAGIC = 0x504B434F
 BRIDGE_ABI_VERSION = 1
@@ -133,6 +135,8 @@ def validate_emulator_contract(value: object) -> dict[str, str]:
     expected = {
         "name": EMULATOR_NAME,
         "version": EMULATOR_VERSION,
+        "build_id": EMULATOR_BUILD_ID,
+        "source_commit": EMULATOR_SOURCE_COMMIT,
         "platform": EMULATOR_PLATFORM,
         "variant": EMULATOR_VARIANT,
         "archive_sha256": EMULATOR_ARCHIVE_SHA256,
@@ -539,6 +543,8 @@ def build_manifest(
             {
                 "name": EMULATOR_NAME,
                 "version": EMULATOR_VERSION,
+                "build_id": EMULATOR_BUILD_ID,
+                "source_commit": EMULATOR_SOURCE_COMMIT,
                 "platform": EMULATOR_PLATFORM,
                 "variant": EMULATOR_VARIANT,
                 "archive_sha256": EMULATOR_ARCHIVE_SHA256,

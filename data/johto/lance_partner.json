@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "unit": "j3-lance-partner",
+  "campaign_battle_ready": true,
+  "provenance": {
+    "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
+    "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "source_file": "src/battle_tower.c",
+    "source_symbol": "sStevenMons",
+    "source_note": "The donor symbol is misleading; this is the Lance roster used by the source battle.",
+    "assets": [
+      {"source": "graphics/trainers/back_pics/steven.png", "target": "graphics/johto/trainers/back_pics/lance.png", "sha256": "52f38cd618ddd115653860c61516f0e3c244fb72ec5d0b3ddbfc93f0eb795474"},
+      {"source": "graphics/trainers/palettes/steven_back.pal", "target": "graphics/johto/trainers/back_pics/lance.pal", "sha256": "57bf312444230be21b0bc5e247f1cd39a5935dc85c917eb29d36dfd60e601069"}
+    ]
+  },
+  "partner": {
+    "id": "PARTNER_LANCE",
+    "numeric_id": 2,
+    "count": 3,
+    "name": "LANCE",
+    "class": "TRAINER_CLASS_ELITE_FOUR",
+    "gender": "TRAINER_GENDER_MALE",
+    "music": "TRAINER_ENCOUNTER_MUSIC_ELITE_FOUR",
+    "ai": "AI_FLAG_BASIC_TRAINER",
+    "pic": "TRAINER_PIC_JOHTO_PARTNER_LANCE",
+    "multi_team_size": "MULTI_TEAM_SIZE_HALF",
+    "party": [
+      {"species": "SPECIES_DRAGONITE", "level": 42, "nature": "NATURE_ADAMANT", "ivs": 31, "evs": {"hp": 0, "atk": 252, "def": 252, "speed": 0, "spatk": 6, "spdef": 0}, "held_item": "ITEM_NONE", "moves": ["MOVE_HYPER_BEAM", "MOVE_THUNDER", "MOVE_SAFEGUARD", "MOVE_OUTRAGE"]},
+      {"species": "SPECIES_DRAGONAIR", "level": 35, "nature": "NATURE_ADAMANT", "ivs": 31, "evs": {"hp": 252, "atk": 0, "def": 0, "speed": 0, "spatk": 6, "spdef": 252}, "held_item": "ITEM_NONE", "moves": ["MOVE_BLIZZARD", "MOVE_THUNDER_WAVE", "MOVE_FLAMETHROWER", "MOVE_QUICK_ATTACK"]},
+      {"species": "SPECIES_CHARIZARD", "level": 36, "nature": "NATURE_ADAMANT", "ivs": 31, "evs": {"hp": 0, "atk": 252, "def": 0, "speed": 0, "spatk": 252, "spdef": 6}, "held_item": "ITEM_NONE", "moves": ["MOVE_FLAMETHROWER", "MOVE_WING_ATTACK", "MOVE_DOUBLE_TEAM", "MOVE_STEEL_WING"]}
+    ]
+  },
+  "presentation": {
+    "back_sheet": "64x256",
+    "frames": 4,
+    "tile_frame_bytes": 2048,
+    "offset": 4,
+    "front": "TRAINER_PIC_ELITE_FOUR_LANCE_FRLG",
+    "animation": "sBackAnims_Hoenn",
+    "throw_frames": [0, 1, 2, 0, 3],
+    "throw_durations": [24, 9, 24, 9, 50],
+    "neutral_frame": 3,
+    "point_animation": "safe host sAnimCmd_Point_HGSS reused through sBackAnims_Hoenn; unterminated donor command is not copied"
+  },
+  "scope_limits": [
+    "The Rocket Hideout multi battle selects PARTNER_LANCE and the public FillPartnerParty path materializes the roster; emulator battle validation remains pending.",
+    "Partner Half metadata does not itself select the player party; host opponent configuration owns that decision.",
+    "No full-region readiness claim is made here."
+  ]
+}

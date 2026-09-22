@@ -26,9 +26,11 @@
 #include "heal_location.h"
 #include "constants/field_specials.h"
 #include "constants/heal_locations.h"
+#include "constants/johto_content.h"
 #include "constants/rgb.h"
 #include "constants/weather.h"
 #include "item_menu.h"
+#include "johto/kanto_travel.h"
 
 extern bool8 gFlightCallFromBag;
 extern bool8 gSkipShowMonAnim;
@@ -75,17 +77,36 @@ struct MultiNameFlyDest
 //Flight Call
 static EWRAM_DATA bool8 sUseForcedFlightRegion;
 static EWRAM_DATA u8 sForcedFlightRegion;
+static EWRAM_DATA enum KantoEra sForcedFlightKantoEra;
 
 void SetForcedFlightRegion(u8 region)
 {
     sForcedFlightRegion = region;
+    sForcedFlightKantoEra = region == REGION_MAP_KANTO ? KANTO_ERA_ORIGINAL : KANTO_ERA_NONE;
+    sUseForcedFlightRegion = TRUE;
+}
+
+void SetForcedFlightRegionWithKantoEra(enum RegionMapType region, enum KantoEra era)
+{
+    sForcedFlightRegion = region;
+    sForcedFlightKantoEra = region == REGION_MAP_KANTO
+                          ? (era == KANTO_ERA_LATER ? KANTO_ERA_LATER : KANTO_ERA_ORIGINAL)
+                          : KANTO_ERA_NONE;
     sUseForcedFlightRegion = TRUE;
 }
 
 void ClearForcedFlightRegion(void)
 {
     sForcedFlightRegion = 0;
+    sForcedFlightKantoEra = KANTO_ERA_NONE;
     sUseForcedFlightRegion = FALSE;
+}
+
+void CancelFlightCall(void)
+{
+    gFlightCallFromBag = FALSE;
+    (void)JohtoTravel_Cancel();
+    ClearForcedFlightRegion();
 }
 
 static u8 GetActiveRegionMapType(void)
@@ -93,7 +114,9 @@ static u8 GetActiveRegionMapType(void)
     if (sUseForcedFlightRegion)
         return sForcedFlightRegion;
 
-    return GetRegionMapType(gMapHeader.regionMapSectionId);
+    return GetRegionMapTypeByMap(gSaveBlock1Ptr->location.mapGroup,
+                                 gSaveBlock1Ptr->location.mapNum,
+                                 gMapHeader.regionMapSectionId);
 }
 
 static u8 GetActiveTopLevelRegion(void)
@@ -105,10 +128,22 @@ static u8 GetActiveTopLevelRegion(void)
     case REGION_MAP_SEVII45:
     case REGION_MAP_SEVII67:
         return REGION_KANTO;
+    case REGION_MAP_JOHTO:
+        return REGION_JOHTO;
     case REGION_MAP_HOENN:
     default:
         return REGION_HOENN;
     }
+}
+
+static enum KantoEra GetActiveKantoEra(void)
+{
+    if (sUseForcedFlightRegion)
+        return sForcedFlightKantoEra;
+
+    return GetKantoEraByMap(gSaveBlock1Ptr->location.mapGroup,
+                            gSaveBlock1Ptr->location.mapNum,
+                            gMapHeader.regionMapSectionId);
 }
 
 static u8 GetActiveKantoSubregion(void)
@@ -182,6 +217,7 @@ static void SpriteCB_FlyDestIcon(struct Sprite *sprite);
 static void CB_FadeInFlyMap(void);
 static void CB_HandleFlyMapInput(void);
 static void CB_ExitFlyMap(void);
+static bool32 TryGetCampaignFlyLocationVisited(mapsec_u16_t mapSecId, bool32 *visited);
 
 static const u16 sRegionMapCursorPal[] = INCBIN_U16("graphics/pokenav/region_map/cursor.gbapal");
 static const u32 sRegionMapCursorSmallGfxLZ[] = INCBIN_U32("graphics/pokenav/region_map/cursor_small.4bpp.smol");
@@ -189,6 +225,8 @@ static const u32 sRegionMapCursorLargeGfxLZ[] = INCBIN_U32("graphics/pokenav/reg
 static const u16 sRegionMapBg_Pal[] = INCBIN_U16("graphics/pokenav/region_map/map.gbapal");
 static const u32 sRegionMapBg_GfxLZ[] = INCBIN_U32("graphics/pokenav/region_map/map.8bpp.smol");
 static const u32 sRegionMapBg_TilemapLZ[] = INCBIN_U32("graphics/pokenav/region_map/map.bin.smolTM");
+static const u32 sRegionMapJohto_Gfx[] = INCBIN_U32("graphics/pokenav/region_map/johtomap.8bpp.smol");
+static const u32 sRegionMapJohto_Tilemap[] = INCBIN_U32("graphics/pokenav/region_map/johtomap.bin.smolTM");
 static const u16 sRegionMapPlayerIcon_BrendanPal[] = INCBIN_U16("graphics/pokenav/region_map/brendan_icon.gbapal");
 static const u8 sRegionMapPlayerIcon_BrendanGfx[] = INCBIN_U8("graphics/pokenav/region_map/brendan_icon.4bpp");
 static const u16 sRegionMapPlayerIcon_MayPal[] = INCBIN_U16("graphics/pokenav/region_map/may_icon.gbapal");
@@ -203,6 +241,7 @@ static const u8 sRegionMapPlayerIcon_LeafGfx[] = INCBIN_U8("graphics/pokenav/reg
 #include "data/region_map/region_map_layout_sevii123.h"
 #include "data/region_map/region_map_layout_sevii45.h"
 #include "data/region_map/region_map_layout_sevii67.h"
+#include "data/region_map/region_map_layout_johto.h"
 #include "data/region_map/region_map_entries.h"
 
 static const mapsec_u16_t sRegionMap_SpecialPlaceLocations[][2] =
@@ -443,6 +482,16 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .regionMapGfx = sRegionMapSevii67_Gfx,
         .regionMapTilemap = sRegionMapSevii67_Tilemap,
     },
+    [REGION_MAP_JOHTO]    =
+    {
+        .dexMapPalette = sRegionMapBg_Pal,
+        .dexMapGfx = sRegionMapJohto_Gfx,
+        .dexMapTilemap = sRegionMapJohto_Tilemap,
+        .dexMapPaletteSize = sizeof(sRegionMapBg_Pal),
+        .regionMapPalette = sRegionMapBg_Pal,
+        .regionMapGfx = sRegionMapJohto_Gfx,
+        .regionMapTilemap = sRegionMapJohto_Tilemap,
+    },
 };
 
 static const u8 sMapHealLocations[][3] =
@@ -601,6 +650,16 @@ static const u8 sMapHealLocations[][3] =
     [MAPSEC_RIXY_CHAMBER] = {MAP_GROUP(MAP_PALLET_TOWN), MAP_NUM(MAP_PALLET_TOWN), HEAL_LOCATION_NONE},
     [MAPSEC_VIAPOIS_CHAMBER] = {MAP_GROUP(MAP_PALLET_TOWN), MAP_NUM(MAP_PALLET_TOWN), HEAL_LOCATION_NONE},
     [MAPSEC_EMBER_SPA] = {MAP_GROUP(MAP_PALLET_TOWN), MAP_NUM(MAP_PALLET_TOWN), HEAL_LOCATION_NONE},
+    [MAPSEC_NEW_BARK_TOWN] = {MAP_GROUP(MAP_NEW_BARK_TOWN), MAP_NUM(MAP_NEW_BARK_TOWN), HEAL_LOCATION_JOHTO_NEW_BARK_TOWN},
+    [MAPSEC_JOHTO_CHERRYGROVE_CITY] = {MAP_GROUP(MAP_CHERRYGROVE_CITY), MAP_NUM(MAP_CHERRYGROVE_CITY), HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY},
+    [MAPSEC_JOHTO_VIOLET_CITY] = {MAP_GROUP(MAP_VIOLET_CITY), MAP_NUM(MAP_VIOLET_CITY), HEAL_LOCATION_JOHTO_VIOLET_CITY},
+    [MAPSEC_JOHTO_AZALEA_TOWN] = {MAP_GROUP(MAP_AZALEA_TOWN), MAP_NUM(MAP_AZALEA_TOWN), HEAL_LOCATION_JOHTO_AZALEA_TOWN},
+    [MAPSEC_JOHTO_GOLDENROD_CITY] = {MAP_GROUP(MAP_GOLDENROD_CITY), MAP_NUM(MAP_GOLDENROD_CITY), HEAL_LOCATION_JOHTO_GOLDENROD_CITY},
+    [MAPSEC_JOHTO_ECRUTEAK_CITY] = {MAP_GROUP(MAP_ECRUTEAK_CITY), MAP_NUM(MAP_ECRUTEAK_CITY), HEAL_LOCATION_JOHTO_ECRUTEAK_CITY},
+    [MAPSEC_JOHTO_OLIVINE_CITY] = {MAP_GROUP(MAP_OLIVINE_CITY), MAP_NUM(MAP_OLIVINE_CITY), HEAL_LOCATION_JOHTO_OLIVINE_CITY},
+    [MAPSEC_JOHTO_CIANWOOD_CITY] = {MAP_GROUP(MAP_CIANWOOD_CITY), MAP_NUM(MAP_CIANWOOD_CITY), HEAL_LOCATION_JOHTO_CIANWOOD_CITY},
+    [MAPSEC_JOHTO_MAHOGANY_TOWN] = {MAP_GROUP(MAP_MAHOGANYTOWN), MAP_NUM(MAP_MAHOGANYTOWN), HEAL_LOCATION_JOHTO_MAHOGANY_TOWN},
+    [MAPSEC_JOHTO_BLACKTHORN_CITY] = {MAP_GROUP(MAP_BLACKTHORN_CITY), MAP_NUM(MAP_BLACKTHORN_CITY), HEAL_LOCATION_JOHTO_BLACKTHORN_CITY},
 };
 
 static const u8 *const sEverGrandeCityNames[] =
@@ -1244,10 +1303,70 @@ enum RegionMapType GetRegionMapType(u32 mapSecId)
         default:
             return REGION_MAP_KANTO;
         }
+    case REGION_JOHTO:
+        return REGION_MAP_JOHTO;
     case REGION_HOENN:
     default:
         return REGION_MAP_HOENN;
     }
+}
+
+static bool32 IsRegisteredJohtoMapPair(u8 mapGroup, u8 mapNum)
+{
+    if (mapGroup == MAP_GROUP(MAP_GATE_ILEX_FOREST_ROUTE34))
+        return mapNum <= MAP_NUM(MAP_GATE_ILEX_FOREST_ROUTE34);
+    if (mapGroup == MAP_GROUP(MAP_SAFARI_ZONE_TOP_RIGHT))
+        return mapNum <= MAP_NUM(MAP_SAFARI_ZONE_TOP_RIGHT);
+
+    return FALSE;
+}
+
+static bool32 IsRegisteredLaterKantoMapPair(u8 mapGroup, u8 mapNum)
+{
+    if (mapGroup == MAP_GROUP(MAP_KANTO_LATER_MT_MOON_SHOP))
+        return mapNum <= MAP_NUM(MAP_KANTO_LATER_MT_MOON_SHOP);
+    if (mapGroup == MAP_GROUP(MAP_KANTO_LATER_ROUTE19_CAVE))
+        return mapNum <= MAP_NUM(MAP_KANTO_LATER_ROUTE19_CAVE);
+
+    return FALSE;
+}
+
+static bool32 IsReservedJohtoMapGroup(u8 mapGroup)
+{
+    return mapGroup == MAP_GROUP(MAP_GATE_ILEX_FOREST_ROUTE34)
+        || mapGroup == MAP_GROUP(MAP_SAFARI_ZONE_TOP_RIGHT);
+}
+
+static bool32 IsReservedLaterKantoMapGroup(u8 mapGroup)
+{
+    return mapGroup == MAP_GROUP(MAP_KANTO_LATER_MT_MOON_SHOP)
+        || mapGroup == MAP_GROUP(MAP_KANTO_LATER_ROUTE19_CAVE);
+}
+
+enum RegionMapType GetRegionMapTypeByMap(u8 mapGroup, u8 mapNum, u32 mapSecId)
+{
+    if (IsRegisteredJohtoMapPair(mapGroup, mapNum))
+        return REGION_MAP_JOHTO;
+    if (IsRegisteredLaterKantoMapPair(mapGroup, mapNum))
+        return REGION_MAP_KANTO;
+    if (IsReservedJohtoMapGroup(mapGroup) || IsReservedLaterKantoMapGroup(mapGroup))
+        return REGION_MAP_HOENN;
+
+    return GetRegionMapType(mapSecId);
+}
+
+enum KantoEra GetKantoEraByMap(u8 mapGroup, u8 mapNum, u32 mapSecId)
+{
+    enum RegionMapType regionMapType = GetRegionMapTypeByMap(mapGroup, mapNum, mapSecId);
+
+    if (IsRegisteredLaterKantoMapPair(mapGroup, mapNum))
+        return KANTO_ERA_LATER;
+    if (IsReservedJohtoMapGroup(mapGroup) || IsReservedLaterKantoMapGroup(mapGroup))
+        return KANTO_ERA_NONE;
+    if (regionMapType == REGION_MAP_KANTO)
+        return KANTO_ERA_ORIGINAL;
+
+    return KANTO_ERA_NONE;
 }
 
 static mapsec_u16_t GetMapSecIdAt(u16 x, u16 y)
@@ -1274,6 +1393,8 @@ static mapsec_u16_t GetMapSecIdAt(u16 x, u16 y)
         default:
                 return sRegionMapSections_Kanto[y][x];
         }
+    case REGION_JOHTO:
+            return sRegionMapSections_Johto[y][x];
     case REGION_HOENN:
     default:
             return sRegionMap_MapSectionLayout[y][x];
@@ -1495,6 +1616,11 @@ static void RegionMap_InitializeStateBasedOnSSTidalLocation(void)
 
 static u8 GetMapsecType(mapsec_u16_t mapSecId)
 {
+    bool32 visited;
+
+    if (TryGetCampaignFlyLocationVisited(mapSecId, &visited))
+        return visited ? MAPSECTYPE_CITY_CANFLY : MAPSECTYPE_CITY_CANTFLY;
+
     switch (mapSecId)
     {
     case MAPSEC_NONE:
@@ -1578,6 +1704,13 @@ static u8 GetMapsecType(mapsec_u16_t mapSecId)
     default:
         return MAPSECTYPE_ROUTE;
     }
+}
+
+bool32 CanFlyToRegionMapSection(mapsec_u16_t mapSecId)
+{
+    u8 mapSecType = GetMapsecType(mapSecId);
+
+    return mapSecType == MAPSECTYPE_CITY_CANFLY || mapSecType == MAPSECTYPE_BATTLE_FRONTIER;
 }
 
 mapsec_u16_t GetRegionMapSecIdAt(u16 x, u16 y)
@@ -2033,6 +2166,7 @@ void CB2_OpenFlyMap(void)
         sFlyMap = Alloc(sizeof(*sFlyMap));
         if (sFlyMap == NULL)
         {
+            CancelFlightCall();
             SetMainCallback2(CB2_ReturnToFieldWithOpenMenu);
         }
         else
@@ -2206,12 +2340,24 @@ static void LoadFlyDestIcons(void)
 struct FlyLocation
 {
     enum RegionMapType regionMapType;
+    enum KantoEra kantoEra;
     u16 flag;
     u16 mapsec;
+    u16 healLocation;
 };
 
 static const struct FlyLocation sFlyLocations[] =
 {
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_NEWBARK_TOWN, MAPSEC_NEW_BARK_TOWN, HEAL_LOCATION_JOHTO_NEW_BARK_TOWN },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_CHERRYGROVE_CITY, MAPSEC_JOHTO_CHERRYGROVE_CITY, HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_VIOLET_CITY, MAPSEC_JOHTO_VIOLET_CITY, HEAL_LOCATION_JOHTO_VIOLET_CITY },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_AZALEA_TOWN, MAPSEC_JOHTO_AZALEA_TOWN, HEAL_LOCATION_JOHTO_AZALEA_TOWN },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_GOLDENROD_CITY, MAPSEC_JOHTO_GOLDENROD_CITY, HEAL_LOCATION_JOHTO_GOLDENROD_CITY },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_ECRUTEAK_CITY, MAPSEC_JOHTO_ECRUTEAK_CITY, HEAL_LOCATION_JOHTO_ECRUTEAK_CITY },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_OLIVINE_CITY, MAPSEC_JOHTO_OLIVINE_CITY, HEAL_LOCATION_JOHTO_OLIVINE_CITY },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_CIANWOOD_CITY, MAPSEC_JOHTO_CIANWOOD_CITY, HEAL_LOCATION_JOHTO_CIANWOOD_CITY },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_MAHOGANY_TOWN, MAPSEC_JOHTO_MAHOGANY_TOWN, HEAL_LOCATION_JOHTO_MAHOGANY_TOWN },
+    { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_BLACKTHORN_CITY, MAPSEC_JOHTO_BLACKTHORN_CITY, HEAL_LOCATION_JOHTO_BLACKTHORN_CITY },
     {
         .regionMapType = REGION_MAP_HOENN,
         .mapsec = MAPSEC_LITTLEROOT_TOWN,
@@ -2347,6 +2493,16 @@ static const struct FlyLocation sFlyLocations[] =
         .mapsec = MAPSEC_SAFFRON_CITY,
         .flag = FLAG_WORLD_MAP_SAFFRON_CITY,
     },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_PALLET_TOWN, MAPSEC_PALLET_TOWN, HEAL_LOCATION_KANTO_LATER_PALLET_TOWN },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_VIRIDIAN_CITY, MAPSEC_VIRIDIAN_CITY, HEAL_LOCATION_KANTO_LATER_VIRIDIAN_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_PEWTER_CITY, MAPSEC_PEWTER_CITY, HEAL_LOCATION_KANTO_LATER_PEWTER_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_CERULEAN_CITY, MAPSEC_CERULEAN_CITY, HEAL_LOCATION_KANTO_LATER_CERULEAN_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_LAVENDER_TOWN, MAPSEC_LAVENDER_TOWN, HEAL_LOCATION_KANTO_LATER_LAVENDER_TOWN },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_VERMILION_CITY, MAPSEC_VERMILION_CITY, HEAL_LOCATION_KANTO_LATER_VERMILION_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_CELADON_CITY, MAPSEC_CELADON_CITY, HEAL_LOCATION_KANTO_LATER_CELADON_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_FUCHSIA_CITY, MAPSEC_FUCHSIA_CITY, HEAL_LOCATION_KANTO_LATER_FUCHSIA_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_SAFFRON_CITY, MAPSEC_SAFFRON_CITY, HEAL_LOCATION_KANTO_LATER_SAFFRON_CITY },
+    { REGION_MAP_KANTO, KANTO_ERA_LATER, JOHTO_FLAG_VISITED_CINNABAR_ISLAND, MAPSEC_CINNABAR_ISLAND, HEAL_LOCATION_KANTO_LATER_CINNABAR_ISLAND },
     {
         .regionMapType = REGION_MAP_SEVII123,
         .mapsec = MAPSEC_ONE_ISLAND,
@@ -2394,6 +2550,49 @@ static const struct FlyLocation sFlyLocations[] =
     },
 };
 
+static bool32 IsFlyLocationInActiveContext(const struct FlyLocation *location)
+{
+    enum KantoEra locationEra;
+
+    if (location->regionMapType != GetActiveRegionMapType())
+        return FALSE;
+    if (location->regionMapType != REGION_MAP_KANTO)
+        return TRUE;
+
+    locationEra = location->kantoEra == KANTO_ERA_NONE ? KANTO_ERA_ORIGINAL : location->kantoEra;
+    return locationEra == GetActiveKantoEra();
+}
+
+static const struct FlyLocation *FindFlyLocationInActiveContext(mapsec_u16_t mapSecId)
+{
+    u32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sFlyLocations); i++)
+    {
+        if (sFlyLocations[i].mapsec == mapSecId && IsFlyLocationInActiveContext(&sFlyLocations[i]))
+            return &sFlyLocations[i];
+    }
+
+    return NULL;
+}
+
+static bool32 TryGetCampaignFlyLocationVisited(mapsec_u16_t mapSecId, bool32 *visited)
+{
+    const struct FlyLocation *location;
+    enum RegionMapType regionMapType = GetActiveRegionMapType();
+
+    if (regionMapType != REGION_MAP_JOHTO
+        && !(regionMapType == REGION_MAP_KANTO && GetActiveKantoEra() == KANTO_ERA_LATER))
+        return FALSE;
+
+    location = FindFlyLocationInActiveContext(mapSecId);
+    if (location == NULL)
+        return FALSE;
+
+    *visited = FlagGet(location->flag);
+    return TRUE;
+}
+
 //Flight Call Helper
 static void InitMapForForcedFlightRegion(void)
 {
@@ -2403,7 +2602,7 @@ static void InitMapForForcedFlightRegion(void)
 
     for (i = 0; i < ARRAY_COUNT(sFlyLocations); i++)
     {
-        if (sFlyLocations[i].regionMapType != GetActiveRegionMapType())
+        if (!IsFlyLocationInActiveContext(&sFlyLocations[i]))
             continue;
 
         if (FlagGet(sFlyLocations[i].flag))
@@ -2417,7 +2616,7 @@ static void InitMapForForcedFlightRegion(void)
     {
         for (i = 0; i < ARRAY_COUNT(sFlyLocations); i++)
         {
-            if (sFlyLocations[i].regionMapType == GetActiveRegionMapType())
+            if (IsFlyLocationInActiveContext(&sFlyLocations[i]))
             {
                 mapSecId = sFlyLocations[i].mapsec;
                 break;
@@ -2453,7 +2652,7 @@ static void CreateFlyDestIcons(void)
 
     for (i = 0; i < ARRAY_COUNT(sFlyLocations); i++)
     {
-        if (sFlyLocations[i].regionMapType != regionMapType)
+        if (sFlyLocations[i].regionMapType != regionMapType || !IsFlyLocationInActiveContext(&sFlyLocations[i]))
             continue;
 
         GetMapSecDimensions(sFlyLocations[i].mapsec, &x, &y, &width, &height);
@@ -2567,7 +2766,7 @@ static void CB_HandleFlyMapInput(void)
             DrawFlyDestTextWindow();
             break;
         case MAP_INPUT_A_BUTTON:
-            if (sFlyMap->regionMap.mapSecType == MAPSECTYPE_CITY_CANFLY || sFlyMap->regionMap.mapSecType == MAPSECTYPE_BATTLE_FRONTIER)
+            if (CanFlyToRegionMapSection(sFlyMap->regionMap.mapSecId))
             {
                 m4aSongNumStart(SE_SELECT);
                 sFlyMap->choseFlyLocation = TRUE;
@@ -2596,6 +2795,15 @@ static void CB_ExitFlyMap(void)
         {
             FreeRegionMapIconResources();
 
+            if (sFlyMap->choseFlyLocation
+                && JohtoTravel_GetPendingDestination() != JOHTO_TRAVEL_DESTINATION_NONE
+                && (!JohtoTravel_RecordCurrentHeal(
+                        GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation))
+                    || !JohtoTravel_PrepareCrossing()))
+            {
+                sFlyMap->choseFlyLocation = FALSE;
+            }
+
             if (sFlyMap->choseFlyLocation)
             {
                 struct RegionMap *tempRegionMap = &sFlyMap->regionMap;
@@ -2609,9 +2817,11 @@ static void CB_ExitFlyMap(void)
             }
             else
             {
-                if (gFlightCallFromBag)
+                bool8 returnToBag = gFlightCallFromBag;
+
+                CancelFlightCall();
+                if (returnToBag)
                 {
-                    gFlightCallFromBag = FALSE;
                     SetMainCallback2(CB2_ReturnToBagMenuPocket);
                 }
                 else
@@ -2630,6 +2840,11 @@ static void CB_ExitFlyMap(void)
 
 u32 FilterFlyDestination(struct RegionMap* regionMap)
 {
+    const struct FlyLocation *flyLocation = FindFlyLocationInActiveContext(regionMap->mapSecId);
+
+    if (flyLocation != NULL && flyLocation->healLocation != HEAL_LOCATION_NONE)
+        return flyLocation->healLocation;
+
     switch (regionMap->mapSecId)
     {
     case MAPSEC_SOUTHERN_ISLAND:

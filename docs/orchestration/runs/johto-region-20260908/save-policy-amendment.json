@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-08T18:06:45.848609+00:00",
+  "source": "explicit user message",
+  "instruction": "don't care about preserve existing saves, the game still in development so we don't care",
+  "supersedes": [
+    "initiative R6 legacy compatibility",
+    "derived old-save migration and preservation gates",
+    "historical co-op registry migration gates",
+    "active goal original preservation wording"
+  ],
+  "policy_path": "docs\\plans\\johto-region\\development-save-policy.md",
+  "policy_sha256": "sha256:c4a0f1e895db21a2650eb382fc1c9e909bd7252f51e17566f7f337b6a7a5f0db",
+  "retained": [
+    "current-format save/load correctness",
+    "same-character interregional travel progress",
+    "new-game and co-op integrity",
+    "unrelated WIP preservation",
+    "full Johto campaign",
+    "one final release phase"
+  ],
+  "requires_new_approval": false
+}

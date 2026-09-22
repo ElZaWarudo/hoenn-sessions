@@ -134,7 +134,7 @@ struct PokemonSubstruct0
     u16 unused_02:6;
     u32 experience:21;
     u32 nickname11:8; // 11th character of nickname.
-    u32 unused_04:3;
+    u32 experienceHigh:3; // Upper EXP bits for mastery; keeps nickname11 at its original offset.
     u8 ppBonuses;
     u8 friendship;
     u16 pokeball:6; // 63 balls.

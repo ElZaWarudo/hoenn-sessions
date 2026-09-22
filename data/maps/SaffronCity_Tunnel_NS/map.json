@@ -1,0 +1,37 @@
+{
+  "id": "MAP_KANTO_LATER_SAFFRON_CITY_TUNNEL_NS",
+  "name": "SaffronCity_Tunnel_NS",
+  "layout": "LAYOUT_KANTO_LATER_SAFFRON_CITY_TUNNEL_NS",
+  "music": "MUS_RG_ROUTE1",
+  "region_map_section": "MAPSEC_ROUTE_5",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_INDOOR",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [],
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 3,
+      "y": 4,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_LATER_ROUTE5_TUNNEL_ENTRANCE",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 2,
+      "y": 38,
+      "elevation": 0,
+      "dest_map": "MAP_KANTO_LATER_ROUTE6_TUNNEL_ENTRANCE",
+      "dest_warp_id": "1"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [],
+  "region": "REGION_KANTO",
+  "shared_scripts_map": "KantoLater_SaffronCity_Tunnel_NS_SaffronCity_Tunnel_NS"
+}

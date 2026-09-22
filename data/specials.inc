@@ -491,6 +491,7 @@ gSpecials::
 	def_special ScriptMenu_CreateStartMenuForPokenavTutorial
 	def_special CountPlayerTrainerStars
 	def_special BufferBattleFrontierTutorMoveName
+	def_special GetBattleFrontierTutorMoveIndex
 	def_special CloseBattleFrontierTutorWindow
 	def_special ScrollableMultichoice_RedrawPersistentMenu
 	def_special ChooseMonForMoveTutor
@@ -564,6 +565,18 @@ gSpecials::
 	def_special GetCodeFeedback
 	def_special SetHiddenNature
 	def_special SetAbility
+	def_special SwitchMonAbility
+	def_special Johto_BeginBugContestAdmission
+	def_special Johto_ShowBugContestChosenMon
+	def_special Johto_AbortBugContestAdmission
+	def_special Johto_RequestBugContestTimeout
+	def_special Johto_JudgeBugContestSelectedMon
+	def_special Johto_PrepareBugContestSettlement
+	def_special Johto_ShowBugContestResult
+	def_special Johto_TransferBugContestSelectedMon
+	def_special Johto_ClaimBugContestReward
+	def_special Johto_ForfeitBugContestReward
+	def_special Johto_ExitBugContest
 	def_special CanTeachMoveBoxMon
 	def_special ObjectEventInteractionGetApricornTreeData
 	def_special ObjectEventInteractionPickApricornTree
@@ -639,4 +652,29 @@ gSpecials::
 	def_special StickerManGetBragFlags
 	def_special CheckAddCoins
 	def_special Special_FlightCallKanto
+	def_special Special_FlightCallSelectedKantoEra
+	def_special Special_FlightCallJohto
 	def_special Special_FlightCallHoenn
+	def_special Johto_GetCurrentTravelContext
+	def_special Johto_SelectOriginalKanto
+	def_special Johto_SelectLaterKanto
+	def_special Johto_ChooseJohto
+	def_special Johto_CancelKantoTravel
+	def_special Johto_RecordCurrentHeal
+	def_special Johto_PrepareKantoTravel
+	def_special Johto_CommitKantoTravel
+	def_special Johto_NeedsLaterKantoInitialization
+	def_special Johto_MarkLaterKantoInitialized
+	def_special Johto_CheckHooh, requests_effects=1
+	def_special Johto_CheckAerodactyl, requests_effects=1
+	def_special Johto_CheckKabuto, requests_effects=1
+	def_special Johto_CheckOmanyte, requests_effects=1
+	def_special Johto_CheckTogepi, requests_effects=1
+	def_special Johto_CheckCelebi, requests_effects=1
+	def_special Johto_NameRival, requests_effects=1
+	def_special DoSlidingPuzzle, requests_effects=1
+	def_special HaircutBrother1, requests_effects=1
+	def_special Special_CoopGroupTravelBegin
+	def_special Special_CoopGroupTravelGetOffer
+	def_special Special_CoopGroupTravelRespond
+	def_special Special_CoopGroupTravelCancel

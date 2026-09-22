@@ -486,6 +486,9 @@ const u16 gTrainerBackPicPalette_Leaf[] = INCBIN_U16("graphics/trainers/back_pic
 const u16 gTrainerBackPicPalette_Pokedude[] = INCBIN_U16("graphics/trainers/back_pics/pokedude.gbapal");
 const u16 gTrainerBackPicPalette_OldMan[] = INCBIN_U16("graphics/trainers/back_pics/old_man.gbapal");
 
+const u8 gJohtoTrainerBackPic_Lance[] = INCBIN_U8("graphics/johto/trainers/back_pics/lance.4bpp");
+const u16 gJohtoTrainerBackPalette_Lance[16] = INCBIN_U16("graphics/johto/trainers/back_pics/lance.gbapal");
+
 
 static const union AnimCmd sAnimCmd_Hoenn[] =
 {
@@ -582,6 +585,45 @@ const union AnimCmd *const sBackAnims_OldManPokedude[] = {
         .paletteData = pal,                                                                  \
         .animation = anim,                                                                   \
     }}
+
+const u32 gJohtoTrainerPic_ARCHER[] = INCBIN_U32("graphics/johto/trainers/archer.4bpp.smol");
+const u16 gJohtoTrainerPalette_ARCHER[] = INCBIN_U16("graphics/johto/trainers/archer.gbapal");
+const u32 gJohtoTrainerPic_ARIANA[] = INCBIN_U32("graphics/johto/trainers/ariana.4bpp.smol");
+const u16 gJohtoTrainerPalette_ARIANA[] = INCBIN_U16("graphics/johto/trainers/ariana.gbapal");
+const u32 gJohtoTrainerPic_EUSINE[] = INCBIN_U32("graphics/johto/trainers/eusine.4bpp.smol");
+const u16 gJohtoTrainerPalette_EUSINE[] = INCBIN_U16("graphics/johto/trainers/eusine.gbapal");
+const u32 gJohtoTrainerPic_FIREBREATHER[] = INCBIN_U32("graphics/johto/trainers/firebreather.4bpp.smol");
+const u16 gJohtoTrainerPalette_FIREBREATHER[] = INCBIN_U16("graphics/johto/trainers/firebreather.gbapal");
+const u32 gJohtoTrainerPic_KIMONO_GIRL[] = INCBIN_U32("graphics/johto/trainers/kimono_girl.4bpp.smol");
+const u16 gJohtoTrainerPalette_KIMONO_GIRL[] = INCBIN_U16("graphics/johto/trainers/kimono_girl.gbapal");
+const u32 gJohtoTrainerPic_LEADER_BUGSY[] = INCBIN_U32("graphics/johto/trainers/leader_bugsy.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_BUGSY[] = INCBIN_U16("graphics/johto/trainers/leader_bugsy.gbapal");
+const u32 gJohtoTrainerPic_LEADER_CHUCK[] = INCBIN_U32("graphics/johto/trainers/leader_chuck.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_CHUCK[] = INCBIN_U16("graphics/johto/trainers/leader_chuck.gbapal");
+const u32 gJohtoTrainerPic_LEADER_CLAIR[] = INCBIN_U32("graphics/johto/trainers/leader_clair.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_CLAIR[] = INCBIN_U16("graphics/johto/trainers/leader_clair.gbapal");
+const u32 gJohtoTrainerPic_LEADER_FALKNER[] = INCBIN_U32("graphics/johto/trainers/leader_falkner.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_FALKNER[] = INCBIN_U16("graphics/johto/trainers/leader_falkner.gbapal");
+const u32 gJohtoTrainerPic_LEADER_JASMINE[] = INCBIN_U32("graphics/johto/trainers/leader_jasmine.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_JASMINE[] = INCBIN_U16("graphics/johto/trainers/leader_jasmine.gbapal");
+const u32 gJohtoTrainerPic_LEADER_MORTY[] = INCBIN_U32("graphics/johto/trainers/leader_morty.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_MORTY[] = INCBIN_U16("graphics/johto/trainers/leader_morty.gbapal");
+const u32 gJohtoTrainerPic_LEADER_PRYCE[] = INCBIN_U32("graphics/johto/trainers/leader_pryce.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_PRYCE[] = INCBIN_U16("graphics/johto/trainers/leader_pryce.gbapal");
+const u32 gJohtoTrainerPic_LEADER_WHITNEY[] = INCBIN_U32("graphics/johto/trainers/leader_whitney.4bpp.smol");
+const u16 gJohtoTrainerPalette_LEADER_WHITNEY[] = INCBIN_U16("graphics/johto/trainers/leader_whitney.gbapal");
+const u32 gJohtoTrainerPic_MR_FUJI[] = INCBIN_U32("graphics/johto/trainers/mr_fuji.4bpp.smol");
+const u16 gJohtoTrainerPalette_MR_FUJI[] = INCBIN_U16("graphics/johto/trainers/mr_fuji.gbapal");
+const u32 gJohtoTrainerPic_PETREL[] = INCBIN_U32("graphics/johto/trainers/petrel.4bpp.smol");
+const u16 gJohtoTrainerPalette_PETREL[] = INCBIN_U16("graphics/johto/trainers/petrel.gbapal");
+const u32 gJohtoTrainerPic_POLICEMAN[] = INCBIN_U32("graphics/johto/trainers/policeman.4bpp.smol");
+const u16 gJohtoTrainerPalette_POLICEMAN[] = INCBIN_U16("graphics/johto/trainers/policeman.gbapal");
+const u32 gJohtoTrainerPic_PROTON[] = INCBIN_U32("graphics/johto/trainers/proton.4bpp.smol");
+const u16 gJohtoTrainerPalette_PROTON[] = INCBIN_U16("graphics/johto/trainers/proton.gbapal");
+const u32 gJohtoTrainerPic_SAGE[] = INCBIN_U32("graphics/johto/trainers/sage.4bpp.smol");
+const u16 gJohtoTrainerPalette_SAGE[] = INCBIN_U16("graphics/johto/trainers/sage.gbapal");
+const u32 gJohtoTrainerPic_SILVER[] = INCBIN_U32("graphics/johto/trainers/silver.4bpp.smol");
+const u16 gJohtoTrainerPalette_SILVER[] = INCBIN_U16("graphics/johto/trainers/silver.gbapal");
 
 const struct TrainerPicInfo gTrainerPicInfo[TRAINER_PIC_COUNT] =
 {
@@ -1226,4 +1268,86 @@ const struct TrainerPicInfo gTrainerPicInfo[TRAINER_PIC_COUNT] =
     {
         .frontPic = TRAINER_FRONT_PIC(gTrainerFrontPic_PainterFrlg, gTrainerPalette_PainterFrlg),
     },
+    [TRAINER_PIC_ARCHER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_ARCHER, gJohtoTrainerPalette_ARCHER),
+    },
+    [TRAINER_PIC_ARIANA] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_ARIANA, gJohtoTrainerPalette_ARIANA),
+    },
+    [TRAINER_PIC_EUSINE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_EUSINE, gJohtoTrainerPalette_EUSINE),
+    },
+    [TRAINER_PIC_FIREBREATHER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_FIREBREATHER, gJohtoTrainerPalette_FIREBREATHER),
+    },
+    [TRAINER_PIC_KIMONO_GIRL] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_KIMONO_GIRL, gJohtoTrainerPalette_KIMONO_GIRL),
+    },
+    [TRAINER_PIC_LEADER_BUGSY] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_BUGSY, gJohtoTrainerPalette_LEADER_BUGSY),
+    },
+    [TRAINER_PIC_LEADER_CHUCK] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_CHUCK, gJohtoTrainerPalette_LEADER_CHUCK),
+    },
+    [TRAINER_PIC_LEADER_CLAIR] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_CLAIR, gJohtoTrainerPalette_LEADER_CLAIR),
+    },
+    [TRAINER_PIC_LEADER_FALKNER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_FALKNER, gJohtoTrainerPalette_LEADER_FALKNER),
+    },
+    [TRAINER_PIC_LEADER_JASMINE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_JASMINE, gJohtoTrainerPalette_LEADER_JASMINE),
+    },
+    [TRAINER_PIC_LEADER_MORTY] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_MORTY, gJohtoTrainerPalette_LEADER_MORTY),
+    },
+    [TRAINER_PIC_LEADER_PRYCE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_PRYCE, gJohtoTrainerPalette_LEADER_PRYCE),
+    },
+    [TRAINER_PIC_LEADER_WHITNEY] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_LEADER_WHITNEY, gJohtoTrainerPalette_LEADER_WHITNEY),
+    },
+    [TRAINER_PIC_MR_FUJI] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_MR_FUJI, gJohtoTrainerPalette_MR_FUJI),
+    },
+    [TRAINER_PIC_PETREL] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_PETREL, gJohtoTrainerPalette_PETREL),
+    },
+    [TRAINER_PIC_POLICEMAN] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_POLICEMAN, gJohtoTrainerPalette_POLICEMAN),
+    },
+    [TRAINER_PIC_PROTON] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_PROTON, gJohtoTrainerPalette_PROTON),
+    },
+    [TRAINER_PIC_SAGE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_SAGE, gJohtoTrainerPalette_SAGE),
+    },
+    [TRAINER_PIC_SILVER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gJohtoTrainerPic_SILVER, gJohtoTrainerPalette_SILVER),
+    },
+    [TRAINER_PIC_JOHTO_PARTNER_LANCE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gTrainerFrontPic_EliteFourLanceFrlg, gTrainerPalette_EliteFourLanceFrlg, -32, 0),
+        .backPic = TRAINER_BACK_PIC(4, gJohtoTrainerBackPic_Lance, gJohtoTrainerBackPalette_Lance, sBackAnims_Hoenn),
+    },
+
 };

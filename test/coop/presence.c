@@ -3,6 +3,25 @@
 #include "constants/map_groups.h"
 #include "test/test.h"
 
+TEST("Cloud Coop presence admits New Bark Town only with its Johto identity")
+{
+    struct CoopPresenceReducer reducer;
+    struct WorldLocation location = {
+        .region = COOP_REGION_JOHTO,
+        .map_group = MAP_GROUP(MAP_NEW_BARK_TOWN),
+        .map_number = MAP_NUM(MAP_NEW_BARK_TOWN),
+        .x = 10,
+        .y = 10,
+    };
+
+    CoopPresenceReducer_Reset(&reducer);
+    EXPECT(CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
+    location.region = COOP_REGION_HOENN;
+    EXPECT(!CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
+    location.region = COOP_REGION_KANTO;
+    EXPECT(!CoopPresenceReducer_Synchronize(&reducer, 9, &location, 1));
+}
+
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_REGION_OFFSET == 0, "location region offset");
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_MAP_GROUP_OFFSET == 1, "location map group offset");
 _Static_assert(COOP_PRESENCE_WORLD_LOCATION_MAP_NUMBER_OFFSET == 3, "location map number offset");
@@ -1357,7 +1376,7 @@ TEST("Cloud Coop presence rejects every invalid ordinal independently")
                     &output, localSnapshot);
     RejectLocalByte(localBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 0,
                     &output, localSnapshot);
-    RejectLocalByte(localBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 13,
+    RejectLocalByte(localBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, COOP_PRESENCE_AVATAR_MAX + 1,
                     &output, localSnapshot);
     RejectLocalByte(localBytes, COOP_PRESENCE_POSE_PLAYER_STATE_OFFSET, 2,
                     &output, localSnapshot);
@@ -1372,7 +1391,7 @@ TEST("Cloud Coop presence rejects every invalid ordinal independently")
                    &poseOutput, poseSnapshot);
     RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 0,
                    &poseOutput, poseSnapshot);
-    RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, 13,
+    RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET, COOP_PRESENCE_AVATAR_MAX + 1,
                    &poseOutput, poseSnapshot);
     RejectPoseByte(poseBytes, COOP_PRESENCE_POSE_PLAYER_STATE_OFFSET, 2,
                    &poseOutput, poseSnapshot);
@@ -1443,9 +1462,9 @@ TEST("Cloud Coop presence propagates strict ordinal rejection through spawn and 
     RejectUpdateStateByte(updateBytesLocal, COOP_PRESENCE_POSE_DIRECTION_OFFSET,
                           5, &updateOutput, updateSnapshot);
     RejectSpawnStateByte(spawnBytes, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET,
-                         13, &spawnOutput, spawnSnapshot);
+                         COOP_PRESENCE_AVATAR_MAX + 1, &spawnOutput, spawnSnapshot);
     RejectUpdateStateByte(updateBytesLocal, COOP_PRESENCE_POSE_AVATAR_ID_OFFSET,
-                          13, &updateOutput, updateSnapshot);
+                          COOP_PRESENCE_AVATAR_MAX + 1, &updateOutput, updateSnapshot);
 }
 
 TEST("Cloud Coop presence update and length rejection preserve output")

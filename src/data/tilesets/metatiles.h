@@ -403,3 +403,9 @@ const u16 gMetatileAttributes_PokemonLeague[] = INCBIN_U16("data/tilesets/second
 
 const u16 gMetatiles_HallOfFame[] = INCBIN_U16("data/tilesets/secondary/hall_of_fame_frlg/metatiles.bin");
 const u16 gMetatileAttributes_HallOfFame[] = INCBIN_U16("data/tilesets/secondary/hall_of_fame_frlg/metatile_attributes.bin");
+
+const u16 gMetatiles_Johto_General[] = INCBIN_U16("data/tilesets/primary/johto_general/metatiles.bin");
+const u32 gMetatileAttributes_Johto_General[] = INCBIN_U32("data/tilesets/primary/johto_general/metatile_attributes.bin");
+
+const u16 gMetatiles_NewBarkTown[] = INCBIN_U16("data/tilesets/secondary/new_bark_town/metatiles.bin");
+const u32 gMetatileAttributes_NewBarkTown[] = INCBIN_U32("data/tilesets/secondary/new_bark_town/metatile_attributes.bin");

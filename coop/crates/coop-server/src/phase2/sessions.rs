@@ -314,6 +314,7 @@ pub(crate) fn release(
         lease
             .release_keys
             .push((request.idempotency_key, request_fence));
+        super::group_travel::cancel_pending_for_member(state, actor.character_id);
         Ok(LogoutResponse::default())
     })
 }

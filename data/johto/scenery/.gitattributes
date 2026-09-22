@@ -1,0 +1,3 @@
+# Source assets have pinned raw hashes, including JASC palette line endings.
+* binary
+.gitattributes text diff

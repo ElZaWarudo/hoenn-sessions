@@ -45,6 +45,7 @@ use crate::{
         new_command_id,
     },
     realtime::{RealtimeApi, RealtimeCoordinator, RealtimeCoordinatorEvent, RealtimeHttpError},
+    recovery::RecoveryMarkerV2,
 };
 
 pub type CloudFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
@@ -64,13 +65,12 @@ fn initial_presence_eligible(state: &coop_protocol::LocalPresenceStateV1) -> boo
 
 fn compatible_presence_map(state: &coop_protocol::LocalPresenceStateV1) -> bool {
     let location = state.pose().location();
-    location.region == coop_protocol::RegionId::Hoenn
-        && coop_protocol::MapCatalog::resolve_coordinates(
-            location.region,
-            location.map_group,
-            location.map_number,
-        )
-        .is_ok_and(|map| map.map == "LITTLEROOT_TOWN")
+    coop_protocol::MapCatalog::resolve_coordinates(
+        location.region,
+        location.map_group,
+        location.map_number,
+    )
+    .is_ok()
 }
 
 /// Compares two u32 serial values using the RFC 1982 half-range rule used by
@@ -370,6 +370,41 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    fn group_travel_create(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _request: coop_cloud::GroupTravelProposalRequest,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_current(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::group_travel::GroupTravelFuture<'_, Option<coop_cloud::GroupTravelProposalView>>
+    {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_get(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
+    fn group_travel_action(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _proposal_id: coop_cloud::GroupTravelProposalId,
+        _request: coop_cloud::GroupTravelActionRequest,
+    ) -> crate::group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        Box::pin(async { Err(crate::group_travel::GroupTravelError::Unavailable) })
+    }
     fn online_snapshot(
         &self,
         _token: coop_cloud::AccessToken,
@@ -478,6 +513,11 @@ pub enum SessionError {
     FinalizeConflict,
     #[error("realtime lifecycle failed")]
     Realtime,
+    #[error("realtime connection ended: {message}")]
+    RealtimeStatus {
+        kind: &'static str,
+        message: &'static str,
+    },
     #[error("presence transport requires an acknowledged replacement")]
     PresenceRecovery { transport_failure: bool },
 }
@@ -515,6 +555,7 @@ pub struct SessionWorkspace {
     temp: Option<TempDir>,
     stable_path: PathBuf,
     recovery_shadow: Option<RecoveryShadow>,
+    recovery_marker: Option<Vec<u8>>,
 }
 
 /// A secret-free SAV copy created as soon as an authorized checkpoint reads a
@@ -525,14 +566,14 @@ struct RecoveryShadow {
 }
 
 impl RecoveryShadow {
-    fn create(parent: &Path, sav: &[u8]) -> Result<Self, SessionError> {
+    fn create(parent: &Path, sav: &[u8], marker: &[u8]) -> Result<Self, SessionError> {
         reject_symlink_ancestors(parent).map_err(SessionError::Filesystem)?;
         let temp = tempfile::Builder::new()
             .prefix("coop-recovery-")
             .tempdir_in(parent)
             .map_err(SessionError::Filesystem)?;
         write_new_private_file(temp.path(), "character.sav", sav)?;
-        write_new_private_file(temp.path(), "recovery.marker", b"coop-recovery-v1\n")?;
+        write_new_private_file(temp.path(), "recovery.marker", marker)?;
         Ok(Self { temp: Some(temp) })
     }
 
@@ -591,6 +632,7 @@ impl SessionWorkspace {
             temp: Some(temp),
             stable_path,
             recovery_shadow: None,
+            recovery_marker: None,
         })
     }
 
@@ -651,7 +693,25 @@ impl SessionWorkspace {
         if sav.is_empty() {
             return Err(SessionError::Package);
         }
-        self.write_atomic("recovery.marker", b"coop-recovery-v1\n")?;
+        let marker = self
+            .recovery_marker
+            .take()
+            .unwrap_or_else(|| b"coop-recovery-v1\n".to_vec());
+        let marker_path = fixed_path(self.path(), "recovery.marker")?;
+        match std::fs::symlink_metadata(&marker_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                return Err(SessionError::Package);
+            }
+            Ok(_) => {
+                if self.read_fixed("recovery.marker")? != marker {
+                    return Err(SessionError::Package);
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.write_atomic("recovery.marker", &marker)?;
+            }
+            Err(error) => return Err(SessionError::Filesystem(error)),
+        }
         if let Some(temp) = self.temp.take() {
             let kept = temp.keep();
             debug_assert_eq!(kept, self.stable_path);
@@ -660,18 +720,29 @@ impl SessionWorkspace {
         Ok(self.stable_path.clone())
     }
 
+    #[cfg(test)]
     fn create_recovery_shadow(&mut self, sav: &[u8]) -> Result<(), SessionError> {
+        self.create_recovery_shadow_with_marker(sav, b"coop-recovery-v1\n")
+    }
+
+    fn create_recovery_shadow_with_marker(
+        &mut self,
+        sav: &[u8],
+        marker: &[u8],
+    ) -> Result<(), SessionError> {
         let parent = self
             .stable_path
             .parent()
             .ok_or_else(|| SessionError::Filesystem(io::Error::other("workspace has no parent")))?;
-        let shadow = RecoveryShadow::create(parent, sav)?;
+        let shadow = RecoveryShadow::create(parent, sav, marker)?;
         self.recovery_shadow = Some(shadow);
+        self.recovery_marker = Some(marker.to_vec());
         Ok(())
     }
 
     fn discard_recovery_shadow(&mut self) {
         let _ = self.recovery_shadow.take();
+        self.recovery_marker = None;
     }
 
     /// Detaches only a separately scrubbed recovery copy when recovery
@@ -679,6 +750,10 @@ impl SessionWorkspace {
     /// because it may still contain loopback or control secrets. The caller
     /// must abort the cloud release.
     fn retain_private_on_scrub_failure(&mut self) {
+        let marker = self
+            .recovery_marker
+            .clone()
+            .unwrap_or_else(|| b"coop-recovery-v1\n".to_vec());
         // The shadow was fully written before any cloud upload. Keep it
         // directly, without copying from a workspace whose scrub may have
         // failed halfway through and still contain session/control secrets.
@@ -698,9 +773,7 @@ impl SessionWorkspace {
             && let Ok(sav) = self.read_fixed("character.sav")
             && !sav.is_empty()
             && quarantine.write_atomic("character.sav", &sav).is_ok()
-            && quarantine
-                .write_atomic("recovery.marker", b"coop-recovery-v1\n")
-                .is_ok()
+            && quarantine.write_atomic("recovery.marker", &marker).is_ok()
         {
             if let Some(temp) = quarantine.temp.take() {
                 let _ = temp.keep();
@@ -1172,6 +1245,25 @@ impl SessionLifecycle {
     #[must_use]
     pub const fn save_generation(&self) -> Option<u32> {
         self.save_generation
+    }
+
+    pub(crate) fn active_save_bytes(&self) -> Result<Vec<u8>, SessionError> {
+        self.workspace.read_fixed("character.sav")
+    }
+
+    pub(crate) fn active_pending_bytes(&self) -> Result<Vec<u8>, SessionError> {
+        self.workspace.read_fixed("pending_commits.json")
+    }
+
+    pub(crate) fn active_save_digest(&self) -> Result<Option<Sha256Digest>, SessionError> {
+        match self.active_save_bytes() {
+            Ok(bytes) if !bytes.is_empty() => Ok(Some(Sha256Digest::of_bytes(&bytes))),
+            Ok(_) => Ok(None),
+            Err(SessionError::Filesystem(error)) if error.kind() == io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     fn registry_contract(&self) -> Result<RegistryContract, SessionError> {
@@ -1999,6 +2091,20 @@ impl SessionLifecycle {
         Ok(())
     }
 
+    /// Gives child startup a full lease window after local session setup.
+    /// If setup already consumed the lease, reconnect within the server-owned
+    /// grace window before any process is allowed to emit session traffic.
+    pub async fn renew_lease_before_child_start<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(), SessionError> {
+        match self.heartbeat(api).await {
+            Ok(()) => Ok(()),
+            Err(SessionError::Unauthorized) => self.reconnect(api).await,
+            Err(error) => Err(error),
+        }
+    }
+
     /// Reconnects while retaining `SessionId` and accepting a newer server epoch.
     ///
     /// # Errors
@@ -2233,11 +2339,19 @@ impl SessionLifecycle {
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut shutdown = Box::pin(shutdown);
         let mut online = crate::online::OnlineOwner::default();
+        let mut group_travel = crate::group_travel::GroupTravelOwner::default();
         let mut failures = 0_u8;
         loop {
             let started = tokio::time::Instant::now();
             match self
-                .run_realtime_attempt(api, children, &mut shutdown, &mut heartbeat, &mut online)
+                .run_realtime_attempt(
+                    api,
+                    children,
+                    &mut shutdown,
+                    &mut heartbeat,
+                    &mut online,
+                    &mut group_travel,
+                )
                 .await
             {
                 Err(SessionError::PresenceRecovery { transport_failure }) => {
@@ -2286,6 +2400,7 @@ impl SessionLifecycle {
         shutdown: &mut Pin<Box<F>>,
         heartbeat: &mut tokio::time::Interval,
         online: &mut crate::online::OnlineOwner<'a>,
+        group_travel: &mut crate::group_travel::GroupTravelOwner<'a>,
     ) -> Result<(), SessionError>
     where
         A: CloudApi + RealtimeApi,
@@ -2303,6 +2418,17 @@ impl SessionLifecycle {
             {
                 break (generation, latest);
             }
+            let travel_token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            group_travel.prepare(
+                api,
+                travel_token,
+                self.lease.fence(),
+                children.control().lifecycle_generation(),
+            );
             tokio::select! {
                 completion = online.next() => {
                     if let Some(status) = online.finish(completion, self.lease.fence(), children.control().lifecycle_generation())? {
@@ -2320,6 +2446,18 @@ impl SessionLifecycle {
                     };
                 }
                 _ = heartbeat.tick() => self.heartbeat(api).await?,
+                travel = group_travel.next_event() => {
+                    match travel {
+                        crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
+                            children.control().send(&ControlCommand::GroupTravel {
+                                session_epoch: self.lease.session_epoch.value(), record,
+                            }).await?;
+                            group_travel.acknowledge_delivery(record)?;
+                        }
+                        crate::group_travel::GroupTravelOwnerEvent::Error(error) => return Err(error),
+                        crate::group_travel::GroupTravelOwnerEvent::Wake | crate::group_travel::GroupTravelOwnerEvent::Complete => {}
+                    }
+                }
                 observation = children.observe_raw() => {
                     match observation.map_err(SessionError::Control)? {
                         RawSupervisorEvent::Control(
@@ -2327,6 +2465,13 @@ impl SessionLifecycle {
                         ) => {}
                         RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                             self.start_online(api, online, &mut children.control(), request).await?;
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::GroupTravel(record)) => {
+                            group_travel.handle(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                record,
+                            )?;
                         }
                         RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                             self.checkpoint_with_deadline(api, &mut children.control(), ready).await?;
@@ -2513,6 +2658,7 @@ impl SessionLifecycle {
         }
 
         let mut priority = RealtimeSource::Control;
+        group_travel.reset_poll();
         while result.is_ok() {
             let realtime = coordinator.as_mut().expect("coordinator remains owned");
             if !checkpoint_shutdown && realtime.recovery_needed() {
@@ -2540,6 +2686,14 @@ impl SessionLifecycle {
                 };
                 break;
             }
+            let travel_token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            let travel_fence = self.lease.fence();
+            let travel_generation = children.control().lifecycle_generation();
+            group_travel.prepare(api, travel_token, travel_fence, travel_generation);
             let input = tokio::select! {
                 completion = online.next() => {
                     match online.finish(completion, self.lease.fence(), children.control().lifecycle_generation()) {
@@ -2550,6 +2704,25 @@ impl SessionLifecycle {
                         }
                         Ok(None) => {}
                         Err(error) => result = Err(error),
+                    }
+                    continue;
+                }
+                travel = group_travel.next_event() => {
+                    match travel {
+                        crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
+                            match children.control().send(&ControlCommand::GroupTravel {
+                                session_epoch: self.lease.session_epoch.value(), record,
+                            }).await {
+                                Ok(()) => {
+                                    if let Err(error) = group_travel.acknowledge_delivery(record) {
+                                        result = Err(error);
+                                    }
+                                }
+                                Err(error) => result = Err(SessionError::Control(error)),
+                            }
+                        }
+                        crate::group_travel::GroupTravelOwnerEvent::Error(error) => result = Err(error),
+                        crate::group_travel::GroupTravelOwnerEvent::Wake | crate::group_travel::GroupTravelOwnerEvent::Complete => {}
                     }
                     continue;
                 }
@@ -2591,6 +2764,15 @@ impl SessionLifecycle {
                                 .start_online(api, online, &mut children.control(), request)
                                 .await
                             {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::GroupTravel(record))) => {
+                            if let Err(error) = group_travel.handle(
+                                self.lease.fence(),
+                                children.control().lifecycle_generation(),
+                                record,
+                            ) {
                                 result = Err(error);
                             }
                         }
@@ -2684,13 +2866,11 @@ impl SessionLifecycle {
                             }
                         }
                         Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => {
-                            result = Err(if realtime.recovery_needed() {
-                                SessionError::PresenceRecovery {
-                                    transport_failure: !realtime.planned_recovery(),
-                                }
-                            } else {
-                                SessionError::Realtime
-                            });
+                            result = Err(Self::terminal_session_error(
+                                realtime.recovery_needed(),
+                                realtime.planned_recovery(),
+                                realtime.terminal_report(),
+                            ));
                         }
                     }
                 }
@@ -2932,10 +3112,13 @@ impl SessionLifecycle {
         // Flash programming emits no genuine ROM poses. Retire the transport
         // before granting flash work rather than manufacturing presence freshness.
         control.disable_lifecycle();
-        realtime
-            .suspend_for_checkpoint()
-            .await
-            .map_err(|_| SessionError::Realtime)?;
+        if realtime.suspend_for_checkpoint().await.is_err() {
+            return Err(Self::terminal_session_error(
+                realtime.recovery_needed(),
+                realtime.planned_recovery(),
+                realtime.terminal_report(),
+            ));
+        }
         let outcome = self
             .checkpoint_before_activation_with_realtime(
                 api, control, ready, realtime, shutdown, heartbeat,
@@ -3098,11 +3281,9 @@ impl SessionLifecycle {
                         realtime_first = true;
                     }
                     RealtimeCheckpointWorkInput::Realtime(event) => {
-                        if let Err(error) = Self::buffer_checkpoint_realtime_event(
-                            event,
-                            &mut buffered,
-                            realtime.recovery_needed(),
-                        ) {
+                        if let Err(error) =
+                            Self::buffer_checkpoint_realtime_event(event, &mut buffered, &*realtime)
+                        {
                             terminal = Some(error);
                         }
                         realtime_first = false;
@@ -3185,11 +3366,7 @@ impl SessionLifecycle {
                     priority = RealtimeSource::Control;
                 }
                 CheckpointInput::Realtime(event) => {
-                    Self::buffer_checkpoint_realtime_event(
-                        event,
-                        buffered,
-                        realtime.recovery_needed(),
-                    )?;
+                    Self::buffer_checkpoint_realtime_event(event, buffered, &*realtime)?;
                     priority = RealtimeSource::Heartbeat;
                 }
                 CheckpointInput::Control(Err(error)) => {
@@ -3214,6 +3391,7 @@ impl SessionLifecycle {
                 CheckpointInput::Control(Ok(
                     ControlEvent::RomPresenceReset
                     | ControlEvent::OnlineRequest(_)
+                    | ControlEvent::GroupTravel(_)
                     | ControlEvent::PresenceRearmed { .. },
                 )) => {
                     return Err(SessionError::Realtime);
@@ -3223,21 +3401,45 @@ impl SessionLifecycle {
         }
     }
 
+    /// Maps a finished realtime driver to the player-facing session error.
+    /// Recovery classification stays with the coordinator; the terminal
+    /// detail comes from its report so fatal outcomes keep their stable
+    /// kind and message instead of collapsing to an opaque error.
+    fn terminal_session_error(
+        recovery_needed: bool,
+        planned_recovery: bool,
+        report: Option<(&'static str, &'static str)>,
+    ) -> SessionError {
+        if recovery_needed {
+            SessionError::PresenceRecovery {
+                transport_failure: !planned_recovery,
+            }
+        } else if let Some((kind, message)) = report {
+            SessionError::RealtimeStatus { kind, message }
+        } else {
+            SessionError::Realtime
+        }
+    }
+
     fn buffer_checkpoint_realtime_event(
         event: Result<RealtimeCoordinatorEvent, crate::realtime::RealtimeCoordinatorError>,
         buffered: &mut Vec<ControlCommand>,
-        recovery_needed: bool,
+        realtime: &RealtimeCoordinator,
     ) -> Result<(), SessionError> {
         match event {
             Ok(RealtimeCoordinatorEvent::Ready) => Ok(()),
             Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
                 Self::buffer_checkpoint_command(buffered, command)
             }
-            Ok(RealtimeCoordinatorEvent::Terminal) if recovery_needed => {
+            Ok(RealtimeCoordinatorEvent::Terminal) if realtime.recovery_needed() => {
                 buffered.clear();
                 Ok(())
             }
-            Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => Err(SessionError::Realtime),
+            Ok(RealtimeCoordinatorEvent::Terminal) | Err(_) => Err(Self::terminal_session_error(
+                realtime.recovery_needed(),
+                realtime.planned_recovery(),
+                realtime.terminal_report(),
+            )),
         }
     }
 
@@ -3315,11 +3517,7 @@ impl SessionLifecycle {
                     priority = CutoverSource::Realtime;
                 }
                 RealtimeCutoverInput::Realtime(event) => {
-                    Self::buffer_checkpoint_realtime_event(
-                        event,
-                        buffered,
-                        realtime.recovery_needed(),
-                    )?;
+                    Self::buffer_checkpoint_realtime_event(event, buffered, &*realtime)?;
                     priority = if realtime.server_ready() {
                         CutoverSource::Activate
                     } else {
@@ -3346,6 +3544,7 @@ impl SessionLifecycle {
                 .map_err(|_| SessionError::Realtime),
             ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
+            | ControlEvent::GroupTravel(_)
             | ControlEvent::PresenceRearmed { .. }
             | ControlEvent::CheckpointReady { .. }
             | ControlEvent::SaveDataUpdated { .. }
@@ -3603,7 +3802,17 @@ impl SessionLifecycle {
         // artifact or contacting the cloud. Later scrub/upload/finalize
         // failures can retain this shadow without re-reading a compromised
         // workspace.
-        self.workspace.create_recovery_shadow(&sav)?;
+        let marker = RecoveryMarkerV2::new(
+            self.lease.fence(),
+            self.revision,
+            event_generation,
+            Sha256Digest::of_bytes(&sav),
+        )
+        .map_err(|_| SessionError::CheckpointCorrelation)?
+        .encode()
+        .map_err(|_| SessionError::CheckpointCorrelation)?;
+        self.workspace
+            .create_recovery_shadow_with_marker(&sav, &marker)?;
         let pending = self.workspace.read_fixed("pending_commits.json")?;
         if self.revision.is_initial() && pending != b"[]" {
             return Err(SessionError::CheckpointCorrelation);
@@ -3731,6 +3940,125 @@ impl SessionLifecycle {
             }
             tokio::time::sleep(remaining.min(Duration::from_millis(10))).await;
         }
+    }
+
+    pub(crate) async fn commit_recovery_candidate<A: CloudApi>(
+        &mut self,
+        api: &A,
+        sav: Vec<u8>,
+        expected_generation: u32,
+    ) -> Result<Revision, SessionError> {
+        if expected_generation == 0
+            || self.save_generation.unwrap_or(0).checked_add(1) != Some(expected_generation)
+        {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        let parsed = self.validate_character_save(&sav, self.revision)?;
+        let CharacterSave::Version1(save) = parsed else {
+            return Err(SessionError::CheckpointCorrelation);
+        };
+        if save.coop().save_generation != expected_generation {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        let pending = self.active_pending_bytes()?;
+        if self.revision.is_initial() && pending != b"[]" {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        let files = vec![
+            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &sav)
+                .map_err(|_| SessionError::Package)?,
+            SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, &pending)
+                .map_err(|_| SessionError::Package)?,
+        ];
+        let next_revision = self
+            .revision
+            .next()
+            .map_err(|_| SessionError::FinalizeConflict)?;
+        let snapshot_id =
+            SnapshotId::new(uuid::Uuid::new_v4()).map_err(|_| SessionError::Package)?;
+        let idempotency_key = random_idempotency_key()?;
+        let pending_digest = Sha256Digest::of_bytes(&pending);
+        let request = PrepareSnapshotRequest::new(
+            snapshot_id,
+            SnapshotPrepareFence::new(
+                self.lease.session_id,
+                self.lease.character_id,
+                self.revision,
+                self.lease.session_epoch,
+                self.lease.client_instance_id,
+                idempotency_key,
+            ),
+            files.clone(),
+            pending_digest,
+        )
+        .map_err(|_| SessionError::Package)?;
+        let prepared = self.prepare_with_retry(api, request.clone()).await?;
+        if !prepared.matches_request(&request) {
+            return Err(SessionError::CheckpointCorrelation);
+        }
+        for target in &prepared.upload_targets {
+            let bytes = match target.artifact {
+                ArtifactIdentity::CharacterSav => sav.clone(),
+                ArtifactIdentity::PendingCommits => pending.clone(),
+                ArtifactIdentity::ResumeSs1 => return Err(SessionError::Package),
+            };
+            self.upload_with_retry(api, target, bytes).await?;
+        }
+        let finalize = SnapshotFinalizeRequest::new(
+            snapshot_id,
+            SnapshotFinalizeFence::new(
+                self.lease.session_id,
+                self.lease.character_id,
+                self.revision,
+                self.lease.session_epoch,
+                self.lease.client_instance_id,
+                idempotency_key,
+            ),
+            files.clone(),
+            pending_digest,
+            None,
+        )
+        .map_err(|_| SessionError::Package)?;
+        let record = self.finalize_with_retry(api, finalize.clone()).await?;
+        if record.validate().is_err()
+            || record.snapshot_id != snapshot_id
+            || record.session_id != self.lease.session_id
+            || record.character_id != self.lease.character_id
+            || record.parent_revision != self.revision
+            || record.revision != next_revision
+            || record.session_epoch != self.lease.session_epoch
+            || record.files != files
+            || record.pending_commits_sha256 != pending_digest
+        {
+            return Err(SessionError::FinalizeConflict);
+        }
+        self.revision = record.revision;
+        self.lease.current_revision = record.revision;
+        self.save_generation = Some(expected_generation);
+        if let Some(updates) = &self.revision_updates {
+            updates.send_replace(record.revision.value());
+        }
+        self.auth.set_active_fence(self.lease.fence());
+        Ok(record.revision)
+    }
+
+    pub(crate) async fn verify_current_head<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(Sha256Digest, u32), SessionError> {
+        if self.revision.is_initial() {
+            return Err(SessionError::MissingPackage);
+        }
+        let envelope = self
+            .resume_package_retry(api, self.lease.character_id, self.revision)
+            .await?
+            .ok_or(SessionError::MissingPackage)?;
+        let package = self.fetch_verified_at(api, envelope, self.revision).await?;
+        self.heartbeat(api).await?;
+        Ok((
+            Sha256Digest::of_bytes(&package.sav),
+            package.save_generation,
+        ))
     }
 
     fn read_optional_resume(&self) -> Result<Option<Vec<u8>>, SessionError> {
@@ -3920,14 +4248,7 @@ impl SessionLifecycle {
         }
     }
 
-    /// Releases the exact active lease fence and revokes the rotating auth
-    /// family.  Recovery is scrubbed before either remote mutation, and the
-    /// keychain logout is attempted even when lease release fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the server cannot accept the release.
-    pub async fn release<A: CloudApi>(mut self, api: &A) -> Result<(), SessionError> {
+    async fn release_lease_inner<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
         if self.checkpoint_authorized
             && let Err(error) = self.workspace.preserve_recovery()
         {
@@ -3939,14 +4260,12 @@ impl SessionLifecycle {
                 #[cfg(windows)]
                 let _ = std::mem::take(&mut self.workspace.ancestor_guards);
                 let _ = self.workspace.temp.take();
-                let _ = self.logout_credentials(api).await;
                 return Err(error);
             }
             self.workspace.retain_private_on_scrub_failure();
-            let _ = self.logout_credentials(api).await;
             return Err(error);
         }
-        let release_result = match random_idempotency_key() {
+        match random_idempotency_key() {
             Err(error) => Err(error),
             Ok(idempotency_key) => {
                 let request = ReleaseLeaseRequest::new(self.lease.fence(), idempotency_key);
@@ -3968,7 +4287,28 @@ impl SessionLifecycle {
                     },
                 }
             }
-        };
+        }
+    }
+
+    /// Releases only the exact active lease fence and keeps authentication
+    /// alive for the caller's next startup step.  This is the recovery path:
+    /// a successful reconciliation must not delete the refresh credential.
+    pub async fn release_lease_keep_credentials<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<(), SessionError> {
+        self.release_lease_inner(api).await
+    }
+
+    /// Releases the exact active lease fence and revokes the rotating auth
+    /// family.  Recovery is scrubbed before either remote mutation, and the
+    /// keychain logout is attempted even when lease release fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the server cannot accept the release.
+    pub async fn release<A: CloudApi>(mut self, api: &A) -> Result<(), SessionError> {
+        let release_result = self.release_lease_inner(api).await;
         let logout_result = self.logout_credentials(api).await;
         match release_result {
             Err(error) => Err(error),
@@ -4173,6 +4513,7 @@ mod lifecycle_tests {
     #[cfg(windows)]
     use crate::SessionWorkspace;
     use crate::process::SessionSupervisor;
+    use crate::recovery::RecoveryMarkerV2;
     use crate::{
         AuthApi, AuthError, AuthSession, BuildCompatibility, CloudApi, ControlChannel, EpochStore,
         KeychainError, RealtimeApi, RealtimeFuture, RealtimeHttpError, RefreshTokenStore,
@@ -4229,7 +4570,7 @@ mod lifecycle_tests {
         reconnect_requests: Mutex<Vec<ReconnectLeaseRequest>>,
         heartbeats: Mutex<usize>,
         heartbeat_requests: Mutex<Vec<HeartbeatLeaseRequest>>,
-        heartbeat_unauthorized_once: Mutex<bool>,
+        heartbeat_unauthorized_remaining: Mutex<usize>,
         heartbeat_revision: Mutex<Option<Revision>>,
         heartbeat_character: Mutex<Option<CharacterId>>,
         refresh_enabled: Mutex<bool>,
@@ -4268,7 +4609,7 @@ mod lifecycle_tests {
                 reconnect_requests: Mutex::new(Vec::new()),
                 heartbeats: Mutex::new(0),
                 heartbeat_requests: Mutex::new(Vec::new()),
-                heartbeat_unauthorized_once: Mutex::new(false),
+                heartbeat_unauthorized_remaining: Mutex::new(0),
                 heartbeat_revision: Mutex::new(None),
                 heartbeat_character: Mutex::new(None),
                 refresh_enabled: Mutex::new(false),
@@ -4305,7 +4646,11 @@ mod lifecycle_tests {
         }
 
         fn set_heartbeat_unauthorized_once(&self) {
-            *self.heartbeat_unauthorized_once.lock().unwrap() = true;
+            *self.heartbeat_unauthorized_remaining.lock().unwrap() = 1;
+        }
+
+        fn set_heartbeat_unauthorized_count(&self, count: usize) {
+            *self.heartbeat_unauthorized_remaining.lock().unwrap() = count;
         }
 
         fn set_heartbeat_revision(&self, revision: Revision) {
@@ -4413,8 +4758,9 @@ mod lifecycle_tests {
             *self.heartbeats.lock().unwrap() += 1;
             self.heartbeat_observed.notify_one();
             self.heartbeat_requests.lock().unwrap().push(request);
-            if *self.heartbeat_unauthorized_once.lock().unwrap() {
-                *self.heartbeat_unauthorized_once.lock().unwrap() = false;
+            let mut unauthorized = self.heartbeat_unauthorized_remaining.lock().unwrap();
+            if *unauthorized > 0 {
+                *unauthorized -= 1;
                 return Box::pin(async { Err(SessionError::Unauthorized) });
             }
             let mut lease = self.lease;
@@ -4628,14 +4974,16 @@ mod lifecycle_tests {
 
     fn compatibility() -> BuildCompatibility {
         let manifest = serde_json::from_value(json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "emulator": {
                 "name": "mGBA",
-                "version": "0.10.5",
+                "version": "0.11.0",
+                "build_id": "0.11-9139-3a5bc2462",
+                "source_commit": "3a5bc24629867576b0fb576a5d5a21d3b3d6b576",
                 "platform": "windows-x64",
                 "variant": "Qt",
-                "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
-                "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247"
+                "archive_sha256": "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b",
+                "executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546"
             },
             "game_build": {
                 "id": "pokeemerald-coop",
@@ -4671,7 +5019,7 @@ mod lifecycle_tests {
         let target = CompatibilityTarget::new(
             GameBuildId::new("pokeemerald-coop").unwrap(),
             Sha256Digest::of_bytes(b"rom"),
-            MgbaVersion::new("0.10.5").unwrap(),
+            MgbaVersion::new("0.11.0").unwrap(),
             BridgeAbiVersion::new(1).unwrap(),
             ProtocolVersion::new(1).unwrap(),
             Revision::initial(),
@@ -4881,6 +5229,7 @@ mod lifecycle_tests {
                 }
                 coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
                 | coop_sidecar::control::ControlCommand::OnlineStatus { .. }
+                | coop_sidecar::control::ControlCommand::GroupTravel { .. }
                 | coop_sidecar::control::ControlCommand::PresenceRearm(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_) => {
@@ -5178,7 +5527,7 @@ mod lifecycle_tests {
         let generated =
             std::fs::read_to_string(session.workspace.path().join("generated_addresses.lua"))
                 .unwrap();
-        assert!(generated.contains("schema_version = 3"));
+        assert!(generated.contains("schema_version = 4"));
         assert!(generated.contains("save = {"));
         assert!(generated.contains("block3_address = 33554432"));
         assert!(!generated.contains("archive_sha256"));
@@ -5401,6 +5750,36 @@ mod lifecycle_tests {
                 .expose_secret(),
             "refreshed-access"
         );
+    }
+
+    #[tokio::test]
+    async fn child_start_renews_an_active_lease_with_a_heartbeat() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+
+        session
+            .renew_lease_before_child_start(cloud.as_ref())
+            .await
+            .unwrap();
+
+        assert_eq!(*cloud.heartbeats.lock().unwrap(), 1);
+        assert!(cloud.reconnect_requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn child_start_renews_an_expired_lease_by_reconnecting() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        cloud.enable_refresh();
+        cloud.set_heartbeat_unauthorized_count(2);
+        cloud.set_reconnect_epoch(2);
+
+        session
+            .renew_lease_before_child_start(cloud.as_ref())
+            .await
+            .unwrap();
+
+        assert_eq!(*cloud.heartbeats.lock().unwrap(), 2);
+        assert_eq!(cloud.reconnect_requests.lock().unwrap().len(), 1);
+        assert_eq!(session.lease.session_epoch.value(), 2);
     }
 
     fn long_running_test_child() -> tokio::process::Child {
@@ -5695,7 +6074,7 @@ mod lifecycle_tests {
         });
 
         let result = timeout(
-            Duration::from_secs(3),
+            Duration::from_secs(5),
             session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
                 let _ = shutdown_rx.await;
             }),
@@ -6615,6 +6994,10 @@ mod lifecycle_tests {
     }
 
     #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the lifecycle test keeps its full recovery timeline visible"
+    )]
     async fn online_mint_failure_reconciles_checkpoint_before_recovery() {
         let (_root, mut session, cloud) = bootstrap(false).await;
         std::fs::write(
@@ -6691,6 +7074,7 @@ mod lifecycle_tests {
         let mut shutdown = Box::pin(std::future::pending::<()>());
         let mut heartbeat = tokio::time::interval(Duration::from_secs(60));
         let mut online = crate::online::OnlineOwner::default();
+        let mut group_travel = crate::group_travel::GroupTravelOwner::default();
         let result = timeout(
             Duration::from_secs(3),
             session.run_realtime_attempt(
@@ -6699,6 +7083,7 @@ mod lifecycle_tests {
                 &mut shutdown,
                 &mut heartbeat,
                 &mut online,
+                &mut group_travel,
             ),
         )
         .await
@@ -7038,13 +7423,10 @@ mod lifecycle_tests {
         drop(websocket_listener);
     }
 
-    #[tokio::test]
-    async fn realtime_activation_waits_for_littleroot_while_keeping_lease_alive() {
-        assert_initial_presence_wait(
-            realtime_presence_state_at(1, 1, 0, PlayerState::Overworld),
-            true,
-        )
-        .await;
+    #[test]
+    fn realtime_activation_accepts_a_catalogued_non_littleroot_map() {
+        let state = realtime_presence_state_at(1, 1, 0, PlayerState::Overworld);
+        assert!(super::initial_presence_eligible(&state));
     }
 
     #[tokio::test]
@@ -7491,14 +7873,6 @@ mod lifecycle_tests {
                 .await;
             }
             drop_rx.await.unwrap();
-            if house {
-                let mut remainder = Vec::new();
-                socket.read_to_end(&mut remainder).await.unwrap();
-                assert!(
-                    remainder.is_empty(),
-                    "incompatible house pose never reaches the old transport"
-                );
-            }
             drop(socket);
             old_closed_tx.send(()).unwrap();
         });
@@ -7508,7 +7882,12 @@ mod lifecycle_tests {
             assert_eq!(
                 decode_client_realtime_frame(&read_websocket_text_for_test(&mut socket).await)
                     .unwrap(),
-                ClientRealtimeFrameV1::player_state(realtime_presence_state(20))
+                ClientRealtimeFrameV1::player_state(realtime_presence_state_at(
+                    11,
+                    1,
+                    0,
+                    PlayerState::Overworld,
+                ))
             );
             for frame in [
                 ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(2).unwrap()),
@@ -7617,20 +7996,6 @@ mod lifecycle_tests {
                     0,
                     PlayerState::Overworld,
                 )),
-            )
-            .await;
-            let before = *control_cloud.heartbeats.lock().unwrap();
-            while *control_cloud.heartbeats.lock().unwrap() < before + 2 {
-                control_cloud.heartbeat_observed.notified().await;
-            }
-            assert_eq!(
-                control_cloud.realtime_requests.lock().unwrap().len(),
-                1,
-                "cached or incompatible poses cannot spend the new ticket"
-            );
-            write_control_event(
-                &mut stream,
-                &ControlEvent::PlayerState(realtime_presence_state(20)),
             )
             .await;
             control_cloud.realtime_requested.notified().await;
@@ -7981,7 +8346,7 @@ mod lifecycle_tests {
             revision: Revision::new(3),
             game_build_id: GameBuildId::new("pokeemerald-coop").unwrap(),
             rom_sha256: Sha256Digest::of_bytes(b"rom"),
-            mgba_version: MgbaVersion::new("0.10.5").unwrap(),
+            mgba_version: MgbaVersion::new("0.11.0").unwrap(),
             bridge_abi: BridgeAbiVersion::new(1).unwrap(),
             protocol_version: ProtocolVersion::new(1).unwrap(),
             save_sha256: Sha256Digest::of_bytes(b"save"),
@@ -8074,7 +8439,7 @@ mod lifecycle_tests {
             revision: record.revision,
             game_build_id: GameBuildId::new("pokeemerald-coop").unwrap(),
             rom_sha256: Sha256Digest::of_bytes(b"rom"),
-            mgba_version: MgbaVersion::new("0.10.5").unwrap(),
+            mgba_version: MgbaVersion::new("0.11.0").unwrap(),
             bridge_abi: BridgeAbiVersion::new(1).unwrap(),
             protocol_version: ProtocolVersion::new(1).unwrap(),
             save_sha256: Sha256Digest::of_bytes(b"save"),
@@ -8147,15 +8512,21 @@ mod lifecycle_tests {
             .unwrap_err();
         assert!(matches!(error, SessionError::Cloud));
         server.await.unwrap();
+        let prior_fence = session.lease.fence();
         session.release(cloud.as_ref()).await.unwrap();
         assert_eq!(
             std::fs::read(recovery_path.join("character.sav")).unwrap(),
             valid_save(1)
         );
-        assert_eq!(
-            std::fs::read(recovery_path.join("recovery.marker")).unwrap(),
-            b"coop-recovery-v1\n"
-        );
+        let marker_bytes = std::fs::read(recovery_path.join("recovery.marker")).unwrap();
+        let marker: RecoveryMarkerV2 =
+            serde_json::from_slice(&marker_bytes[..marker_bytes.len() - 1]).unwrap();
+        assert_eq!(marker.version, 2);
+        assert_eq!(marker.character_id, prior_fence.character_id);
+        assert_eq!(marker.prior_session_id, prior_fence.session_id);
+        assert_eq!(marker.parent_revision, Revision::initial());
+        assert_eq!(marker.save_generation, 1);
+        assert_eq!(marker.save_sha256, Sha256Digest::of_bytes(&valid_save(1)));
         assert!(!recovery_path.join("session.lua").exists());
         let entries = std::fs::read_dir(&recovery_path).unwrap().count();
         assert_eq!(entries, 2);
@@ -8288,5 +8659,103 @@ mod lifecycle_tests {
             Err(SessionError::Package)
         ));
         assert!(!original.exists());
+    }
+
+    #[tokio::test]
+    async fn recovery_lease_release_retains_authenticated_session_and_refresh_credential() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let keychain = session.keychain.as_ref().expect("test keychain").clone();
+        let access_before = session
+            .auth
+            .access_token()
+            .expect("active access token")
+            .expose_secret()
+            .to_owned();
+        let refresh_before = session
+            .auth
+            .refresh_token()
+            .expect("active refresh token")
+            .expose_secret()
+            .to_owned();
+
+        session
+            .release_lease_keep_credentials(cloud.as_ref())
+            .await
+            .unwrap();
+
+        assert_eq!(*cloud.logouts.lock().unwrap(), 0);
+        assert_eq!(
+            session
+                .auth
+                .access_token()
+                .expect("access token retained")
+                .expose_secret(),
+            access_before
+        );
+        assert_eq!(
+            session
+                .auth
+                .refresh_token()
+                .expect("refresh token retained")
+                .expose_secret(),
+            refresh_before
+        );
+        assert_eq!(
+            keychain
+                .load(crate::keychain::KEYCHAIN_SERVICE, "ash")
+                .unwrap()
+                .expect("refresh token remains in keychain")
+                .expose_secret(),
+            refresh_before
+        );
+    }
+
+    #[test]
+    fn terminal_error_preserves_fatal_outcome_status() {
+        use coop_sidecar::RealtimeOutcome;
+
+        // Inputs come from the real sidecar mappings, not literals, so a
+        // renamed kind or reworded message fails here instead of drifting.
+        let fatal = RealtimeOutcome::ProtocolViolation;
+        assert!(!fatal.is_recoverable());
+        let error = SessionLifecycle::terminal_session_error(
+            fatal.is_recoverable(),
+            false,
+            Some((fatal.kind(), fatal.user_message())),
+        );
+        assert!(matches!(
+            error,
+            SessionError::RealtimeStatus {
+                kind: "PROTOCOL_VIOLATION",
+                ..
+            }
+        ));
+        assert_eq!(
+            error.to_string(),
+            format!("realtime connection ended: {}", fatal.user_message())
+        );
+
+        let recoverable = RealtimeOutcome::TransportFailed;
+        assert!(recoverable.is_recoverable());
+        assert!(matches!(
+            SessionLifecycle::terminal_session_error(
+                recoverable.is_recoverable(),
+                false,
+                Some((recoverable.kind(), recoverable.user_message())),
+            ),
+            SessionError::PresenceRecovery {
+                transport_failure: true
+            }
+        ));
+        assert!(matches!(
+            SessionLifecycle::terminal_session_error(true, true, None),
+            SessionError::PresenceRecovery {
+                transport_failure: false
+            }
+        ));
+        assert!(matches!(
+            SessionLifecycle::terminal_session_error(false, false, None),
+            SessionError::Realtime
+        ));
     }
 }

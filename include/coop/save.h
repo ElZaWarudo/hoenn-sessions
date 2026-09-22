@@ -116,6 +116,7 @@ extern const struct CoopSaveSchemaDescriptor gCoopSaveSchemaDescriptor;
 
 void CoopSave_Initialize(struct CoopSaveV1 *save);
 void CoopSave_InitializeCurrent(void);
+void CoopSave_ResetRuntimeState(void);
 enum CoopSaveLoadResult CoopSave_Load(void);
 bool8 CoopSave_Validate(const struct CoopSaveV1 *save);
 bool8 CoopSave_Seal(struct CoopSaveV1 *save);

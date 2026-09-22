@@ -1,4 +1,5 @@
 #include "global.h"
+#include "coop/group_travel.h"
 #include "debug.h"
 #include "malloc.h"
 #include "battle.h"
@@ -19,10 +20,13 @@
 #include "field_specials.h"
 #include "field_weather.h"
 #include "graphics.h"
+#include "heal_location.h"
 #include "international_string_util.h"
 #include "item.h"
 #include "item_icon.h"
 #include "item_menu.h"
+#include "johto/bug_contest.h"
+#include "johto/kanto_travel.h"
 #include "link.h"
 #include "list_menu.h"
 #include "load_save.h"
@@ -89,7 +93,174 @@
 #define ELEVATOR_WINDOW_HEIGHT 3
 #define ELEVATOR_LIGHT_STAGES  3
 
-void SetForcedFlightRegion(s8 region);
+static void OpenFlightMap(enum RegionMapType region, enum KantoEra kantoEra)
+{
+    if (region == REGION_MAP_KANTO)
+        SetForcedFlightRegionWithKantoEra(region, kantoEra);
+    else
+        SetForcedFlightRegion(region);
+    CleanupOverworldWindowsAndTilemaps();
+    SetMainCallback2(CB2_OpenFlyMap);
+}
+
+void Johto_GetCurrentTravelContext(void)
+{
+    gSpecialVar_Result = JohtoTravel_GetCurrentContext();
+}
+
+static void SelectTravelDestination(enum JohtoTravelDestination destination)
+{
+    if (!JohtoTravel_SetPendingDestination(destination))
+    {
+        (void)JohtoTravel_Cancel();
+        gSpecialVar_Result = JOHTO_TRAVEL_DESTINATION_NONE;
+        return;
+    }
+    gSpecialVar_Result = destination;
+}
+
+void Johto_SelectOriginalKanto(void)
+{
+    SelectTravelDestination(JOHTO_TRAVEL_DESTINATION_KANTO_ORIGINAL);
+}
+
+void Johto_SelectLaterKanto(void)
+{
+    SelectTravelDestination(JOHTO_TRAVEL_DESTINATION_KANTO_LATER);
+}
+
+void Johto_ChooseJohto(void)
+{
+    SelectTravelDestination(JOHTO_TRAVEL_DESTINATION_JOHTO);
+}
+
+void Johto_CancelKantoTravel(void)
+{
+    CancelFlightCall();
+    gSpecialVar_Result = JOHTO_TRAVEL_DESTINATION_NONE;
+}
+
+void Johto_RecordCurrentHeal(void)
+{
+    u16 healLocationId = GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation);
+
+    gSpecialVar_Result = JohtoTravel_RecordCurrentHeal(healLocationId);
+}
+
+void Johto_PrepareKantoTravel(void)
+{
+    gSpecialVar_Result = JohtoTravel_PrepareCrossing();
+}
+
+void Johto_CommitKantoTravel(void)
+{
+    /* Group travel owns the exact-arrival acknowledgement. Destination map
+     * scripts may still initialize their world, but must leave the pending
+     * crossing intact until the co-op runtime can emit APPLIED. */
+    gSpecialVar_Result = CoopGroupTravel_IsManagingArrival()
+        ? TRUE
+        : JohtoTravel_TryCommitArrival();
+}
+
+void Johto_NeedsLaterKantoInitialization(void)
+{
+    gSpecialVar_Result = JohtoTravel_NeedsLaterKantoInitialization();
+}
+
+void Johto_MarkLaterKantoInitialized(void)
+{
+    gSpecialVar_Result = JohtoTravel_MarkLaterKantoInitialized();
+}
+
+void Johto_BeginBugContestAdmission(void)
+{
+    enum JohtoBugContestStatus status = JohtoBugContest_Begin(gMain.vblankCounter1);
+
+    gSpecialVar_Result = status == JOHTO_BUG_CONTEST_OK ? MON_GIVEN_TO_PARTY : MON_CANT_GIVE;
+}
+
+void Johto_ShowBugContestChosenMon(void)
+{
+    StringCopy(gStringVar1, JohtoBugContest_GetSelectedName());
+    gSpecialVar_Result = JohtoBugContest_GetSelectedDisplayIndex();
+}
+
+void Johto_AbortBugContestAdmission(void)
+{
+    gSpecialVar_Result = JohtoBugContest_Abort();
+}
+
+void Johto_RequestBugContestTimeout(void)
+{
+    gSpecialVar_Result = JohtoBugContest_RequestEnd(JOHTO_BUG_CONTEST_END_TIMEOUT) == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_JudgeBugContestSelectedMon(void)
+{
+    enum JohtoBugContestStatus status = JohtoBugContest_Judge(gSpecialVar_0x8004);
+
+    gSpecialVar_Result = status == JOHTO_BUG_CONTEST_OK
+        ? JohtoBugContest_GetSelectedPlacement()
+        : 0;
+}
+
+void Johto_PrepareBugContestSettlement(void)
+{
+    gSpecialVar_Result = JohtoBugContest_PrepareSettlement() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ShowBugContestResult(void)
+{
+    StringCopy(gStringVar1, JohtoBugContest_GetSelectedName());
+    gSpecialVar_Result = JohtoBugContest_GetSelectedPlacement();
+}
+
+void Johto_TransferBugContestSelectedMon(void)
+{
+    gSpecialVar_Result = JohtoBugContest_TransferSelected() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ClaimBugContestReward(void)
+{
+    gSpecialVar_Result = JohtoBugContest_ClaimReward() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ForfeitBugContestReward(void)
+{
+    gSpecialVar_Result = JohtoBugContest_ForfeitReward() == JOHTO_BUG_CONTEST_OK;
+}
+
+void Johto_ExitBugContest(void)
+{
+    gSpecialVar_Result = JohtoBugContest_Exit() == JOHTO_BUG_CONTEST_OK;
+}
+
+void SwitchMonAbility(void)
+{
+    u16 partyIndex = gSpecialVar_0x8004;
+    u8 currentAbilityNum;
+    u8 newAbilityNum;
+    enum Species species;
+    enum Ability currentAbility;
+    enum Ability newAbility;
+
+    gSpecialVar_Result = FALSE;
+    if (partyIndex == 0xFF || partyIndex >= gPlayerPartyCount)
+        return;
+
+    species = GetMonData(&gPlayerParty[partyIndex], MON_DATA_SPECIES);
+    currentAbilityNum = GetMonData(&gPlayerParty[partyIndex], MON_DATA_ABILITY_NUM);
+    if (currentAbilityNum > 2)
+        return;
+    newAbilityNum = !currentAbilityNum;
+    currentAbility = GetSpeciesAbility(species, currentAbilityNum);
+    newAbility = GetSpeciesAbility(species, newAbilityNum);
+    if (newAbility == ABILITY_NONE || newAbility == currentAbility)
+        return;
+
+    SetMonData(&gPlayerParty[partyIndex], MON_DATA_ABILITY_NUM, &newAbilityNum);
+    gSpecialVar_Result = TRUE;
+}
 
 EWRAM_DATA bool8 gBikeCyclingChallenge = FALSE;
 EWRAM_DATA u8 gBikeCollisions = 0;
@@ -2462,6 +2633,16 @@ void ShowScrollableMultichoice(void)
         task->tKeepOpenAfterSelect = FALSE;
         task->tTaskId = taskId;
         break;
+    case SCROLL_MULTI_BF_MOVE_TUTOR_3:
+        task->tMaxItemsOnScreen = 4;
+        task->tNumItems = 4;
+        task->tLeft = 15;
+        task->tTop = 1;
+        task->tWidth = 14;
+        task->tHeight = 8;
+        task->tKeepOpenAfterSelect = FALSE;
+        task->tTaskId = taskId;
+        break;
     case SCROLL_MULTI_SS_TIDAL_DESTINATION:
         task->tMaxItemsOnScreen = MAX_SCROLL_MULTI_ON_SCREEN;
         task->tNumItems = 7;
@@ -2691,7 +2872,14 @@ static const u8 *const sScrollableMultichoiceOptions[][MAX_SCROLL_MULTI_LENGTH] 
         gText_2F,
         gText_1F,
         gText_Exit,
-    }
+    },
+    [SCROLL_MULTI_BF_MOVE_TUTOR_3] =
+    {
+        COMPOUND_STRING("FRENZY PLANT{CLEAR_TO 0x4E}64BP"),
+        COMPOUND_STRING("BLAST BURN{CLEAR_TO 0x4E}64BP"),
+        COMPOUND_STRING("HYDRO CANNON{CLEAR_TO 0x4E}64BP"),
+        gText_Exit,
+    },
 };
 
 static void Task_ShowScrollableMultichoice(u8 taskId)
@@ -3187,8 +3375,59 @@ static void HideFrontierExchangeCornerItemIcon(enum ScrollMulti menu, u16 unused
     }
 }
 
+static enum Move GetBattleFrontierTutorMove(u16 tutorId, u16 selection)
+{
+    static const enum Move sBattleFrontierTutorMoves[][10] =
+    {
+        {
+            MOVE_SOFT_BOILED,
+            MOVE_SEISMIC_TOSS,
+            MOVE_DREAM_EATER,
+            MOVE_MEGA_PUNCH,
+            MOVE_MEGA_KICK,
+            MOVE_BODY_SLAM,
+            MOVE_ROCK_SLIDE,
+            MOVE_COUNTER,
+            MOVE_THUNDER_WAVE,
+            MOVE_SWORDS_DANCE,
+        },
+        {
+            MOVE_DEFENSE_CURL,
+            MOVE_SNORE,
+            MOVE_MUD_SLAP,
+            MOVE_SWIFT,
+            MOVE_ICY_WIND,
+            MOVE_ENDURE,
+            MOVE_PSYCH_UP,
+            MOVE_ICE_PUNCH,
+            MOVE_THUNDER_PUNCH,
+            MOVE_FIRE_PUNCH,
+        },
+        {
+            MOVE_FRENZY_PLANT,
+            MOVE_BLAST_BURN,
+            MOVE_HYDRO_CANNON,
+        },
+    };
+    static const u8 sBattleFrontierTutorMoveCounts[] = {10, 10, 3};
+
+    if (tutorId >= ARRAY_COUNT(sBattleFrontierTutorMoves)
+     || selection >= sBattleFrontierTutorMoveCounts[tutorId])
+        return MOVE_NONE;
+
+    return sBattleFrontierTutorMoves[tutorId][selection];
+}
+
+void GetBattleFrontierTutorMoveIndex(void)
+{
+    gSpecialVar_0x8005 = GetBattleFrontierTutorMove(
+        VarGet(VAR_TEMP_FRONTIER_TUTOR_ID),
+        VarGet(VAR_TEMP_FRONTIER_TUTOR_SELECTION));
+}
+
 void BufferBattleFrontierTutorMoveName(void)
 {
+    GetBattleFrontierTutorMoveIndex();
     StringCopy(gStringVar1, GetMoveName(gSpecialVar_0x8005));
 }
 
@@ -3205,7 +3444,9 @@ static void ShowBattleFrontierTutorWindow(enum ScrollMulti menu, u16 selection)
         .baseBlock = 28,
     };
 
-    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1 || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
+    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_3)
     {
         if (gSpecialVar_0x8006 == 0)
         {
@@ -3248,13 +3489,41 @@ static void ShowBattleFrontierTutorMoveDescription(enum ScrollMulti menu, u16 se
         gText_Exit,
     };
 
-    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1 || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
+    static const u8 *const sBattleFrontier_TutorMoveDescriptions3[] =
     {
-        FillWindowPixelRect(sTutorMoveAndElevatorWindowId, PIXEL_FILL(1), 0, 0, 96, 48);
-        if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
-            AddTextPrinterParameterized(sTutorMoveAndElevatorWindowId, FONT_NORMAL, sBattleFrontier_TutorMoveDescriptions2[selection], 0, 1, 0, NULL);
+        COMPOUND_STRING("A powerful GRASS move.\nThe user rests next turn."),
+        COMPOUND_STRING("A powerful FIRE move.\nThe user rests next turn."),
+        COMPOUND_STRING("A powerful WATER move.\nThe user rests next turn."),
+        gText_Exit,
+    };
+
+    if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_1
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_2
+     || menu == SCROLL_MULTI_BF_MOVE_TUTOR_3)
+    {
+        const u8 *description;
+
+        if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_3)
+        {
+            if (selection >= ARRAY_COUNT(sBattleFrontier_TutorMoveDescriptions3))
+                return;
+            description = sBattleFrontier_TutorMoveDescriptions3[selection];
+        }
+        else if (menu == SCROLL_MULTI_BF_MOVE_TUTOR_2)
+        {
+            if (selection >= ARRAY_COUNT(sBattleFrontier_TutorMoveDescriptions2))
+                return;
+            description = sBattleFrontier_TutorMoveDescriptions2[selection];
+        }
         else
-            AddTextPrinterParameterized(sTutorMoveAndElevatorWindowId, FONT_NORMAL, sBattleFrontier_TutorMoveDescriptions1[selection], 0, 1, 0, NULL);
+        {
+            if (selection >= ARRAY_COUNT(sBattleFrontier_TutorMoveDescriptions1))
+                return;
+            description = sBattleFrontier_TutorMoveDescriptions1[selection];
+        }
+
+        FillWindowPixelRect(sTutorMoveAndElevatorWindowId, PIXEL_FILL(1), 0, 0, 96, 48);
+        AddTextPrinterParameterized(sTutorMoveAndElevatorWindowId, FONT_NORMAL, description, 0, 1, 0, NULL);
     }
 }
 
@@ -5754,19 +6023,66 @@ void UpdateTrainerCardPhotoIcons(void)
     VarSet(VAR_TRAINER_CARD_MON_ICON_TINT_IDX, gSpecialVar_0x8004);
 }
 
-//Flight Call function
+// Flight Call functions
 void Special_FlightCallKanto(void)
 {
-    SetForcedFlightRegion(REGION_MAP_KANTO);
-    CleanupOverworldWindowsAndTilemaps();
-    SetMainCallback2(CB2_OpenFlyMap);
+    enum KantoEra era = JohtoTravel_GetCurrentContext() == JOHTO_TRAVEL_CONTEXT_KANTO_LATER
+        ? KANTO_ERA_LATER : KANTO_ERA_ORIGINAL;
+
+    (void)JohtoTravel_Cancel();
+    OpenFlightMap(REGION_MAP_KANTO, era);
+    gSpecialVar_Result = TRUE;
+}
+
+void Special_FlightCallSelectedKantoEra(void)
+{
+    enum JohtoTravelDestination destination = JohtoTravel_GetPendingDestination();
+    enum KantoEra era;
+
+    if (destination == JOHTO_TRAVEL_DESTINATION_KANTO_ORIGINAL)
+        era = KANTO_ERA_ORIGINAL;
+    else if (destination == JOHTO_TRAVEL_DESTINATION_KANTO_LATER)
+        era = KANTO_ERA_LATER;
+    else
+        goto fail;
+
+    OpenFlightMap(REGION_MAP_KANTO, era);
+    gSpecialVar_Result = TRUE;
+    return;
+
+fail:
+    Johto_CancelKantoTravel();
+    gSpecialVar_Result = FALSE;
+}
+
+void Special_FlightCallJohto(void)
+{
+    enum JohtoTravelContext context = JohtoTravel_GetCurrentContext();
+
+    if (context == JOHTO_TRAVEL_CONTEXT_KANTO_ORIGINAL
+        || context == JOHTO_TRAVEL_CONTEXT_KANTO_LATER)
+    {
+        if (!JohtoTravel_SetPendingDestination(JOHTO_TRAVEL_DESTINATION_JOHTO))
+        {
+            Johto_CancelKantoTravel();
+            gSpecialVar_Result = FALSE;
+            return;
+        }
+    }
+    else
+    {
+        (void)JohtoTravel_Cancel();
+    }
+
+    OpenFlightMap(REGION_MAP_JOHTO, KANTO_ERA_NONE);
+    gSpecialVar_Result = TRUE;
 }
 
 void Special_FlightCallHoenn(void)
 {
-    SetForcedFlightRegion(REGION_MAP_HOENN);
-    CleanupOverworldWindowsAndTilemaps();
-    SetMainCallback2(CB2_OpenFlyMap);
+    (void)JohtoTravel_Cancel();
+    OpenFlightMap(REGION_MAP_HOENN, KANTO_ERA_NONE);
+    gSpecialVar_Result = TRUE;
 }
 
 u16 StickerManGetBragFlags(void)

@@ -63,6 +63,7 @@ void CheckForFlashMemory(void)
 void ClearSav3(void)
 {
     CpuFill16(0, &gSaveblock3, sizeof(struct SaveBlock3));
+    CoopSave_ResetRuntimeState();
     FakeRtc_Reset();
 }
 

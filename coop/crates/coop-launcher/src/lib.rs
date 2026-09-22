@@ -4,18 +4,29 @@
 
 pub mod auth;
 pub mod compat;
+pub mod desktop;
 pub mod epoch;
+pub mod group_travel;
 pub mod keychain;
 pub mod online;
 pub mod process;
 pub mod realtime;
+pub mod recovery;
 pub mod session;
+pub mod update;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
 
 pub use auth::{AuthApi, AuthError, AuthSession};
 pub use compat::{BuildCompatibility, CompatibilityError};
+pub use desktop::{
+    AuthFlow, AuthRequest, AuthFailure, BlockReason, BootstrapInput, Command,
+    CommandRejection, Controller, Dispatch, Effect, RecoveryReason, RecoveryResult,
+    ReleaseReadiness, RetryTarget, Secret, ServiceFailure, SignOutFailure, StartFailure,
+    State, Status, UiModel, UpdateFailure,
+};
 pub use epoch::{EpochError, EpochRecord, EpochStore};
+pub use group_travel::{GroupTravelError, GroupTravelFuture};
 pub use keychain::{KeychainError, OsKeychain, RefreshTokenStore};
 pub use process::{
     CommandSpec, ControlChannel, ControlShutdownEvidence, DescendantCompletionEvidence,
@@ -26,17 +37,27 @@ pub use process::{
 pub use realtime::{
     REALTIME_TICKET_RESPONSE_BODY_MAX_BYTES, RealtimeApi, RealtimeFuture, RealtimeHttpError,
 };
+pub use recovery::{
+    RecoveryCandidate, RecoveryDiscovery, RecoveryError, RecoveryMarker, RecoveryMarkerV2,
+    RecoveryOutcome, RecoveryReconciler, RecoverySession,
+};
 pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};
+pub use update::{
+    AcceptedGeneration, ArtifactIdentity, ArtifactPayload, ArtifactSet, GenerationArtifact, GenerationHandoff,
+    GenerationStore, InstalledGeneration, ReleaseDescriptor, ReleaseStore, SignedReleaseEnvelope,
+    TrustedReleaseKey, UpdateError, VerifiedRelease, MAX_ARTIFACT_BYTES, MAX_ENVELOPE_BYTES,
+};
+pub use coop_cloud::TrustedManifestKey;
 
 use std::time::Duration;
 
 use coop_cloud::{
-    AcquireLeaseRequest, ArtifactIdentity, CharacterId, HeartbeatLeaseRequest, LeaseContract,
+    AcquireLeaseRequest, ArtifactIdentity as CloudArtifactIdentity, CharacterId, HeartbeatLeaseRequest, LeaseContract,
     LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, PrepareSnapshotRequest,
-    ReconnectLeaseRequest, RefreshRequest, RefreshResponse, ReleaseLeaseRequest, Revision,
-    SignedManifestEnvelope, SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
-    SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
-    UploadTarget,
+    ReconnectLeaseRequest, RefreshRequest, RefreshResponse, RegisterRequest, RegisterResponse,
+    ReleaseLeaseRequest, Revision, SignedManifestEnvelope, SnapshotFinalizeRequest,
+    SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord,
+    SnapshotRestoreRequest, SnapshotRestoreResponse, UploadTarget,
 };
 use reqwest::{Client, Method, StatusCode, Url};
 use thiserror::Error;
@@ -246,6 +267,22 @@ async fn bounded_body(
 type AResult<'a, T> = auth::AuthFuture<'a, T>;
 
 impl AuthApi for ReqwestCloudApi {
+    fn register(&self, request: RegisterRequest) -> AResult<'_, RegisterResponse> {
+        Box::pin(async move {
+            let url = self
+                .url("v1/auth/register")
+                .map_err(|_| AuthError::Transport)?;
+            self.send_json(
+                self.client.post(url).json(&request),
+                MAX_JSON_RESPONSE_BYTES,
+            )
+            .await
+            .map_err(|error| match error {
+                HttpClientError::Status(StatusCode::UNAUTHORIZED) => AuthError::InvalidCredentials,
+                _ => AuthError::Transport,
+            })
+        })
+    }
     fn login(&self, request: LoginRequest) -> AResult<'_, LoginResponse> {
         Box::pin(async move {
             let url = self
@@ -288,6 +325,44 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn group_travel_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::GroupTravelProposalRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_create_http(token, group_id, request)
+    }
+
+    fn group_travel_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> group_travel::GroupTravelFuture<'_, Option<coop_cloud::GroupTravelProposalView>> {
+        self.group_travel_current_http(token, group_id, fence)
+    }
+
+    fn group_travel_get(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_get_http(token, group_id, proposal_id, fence)
+    }
+
+    fn group_travel_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelActionRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_action_http(token, group_id, proposal_id, request)
+    }
+
     fn online_snapshot(
         &self,
         token: coop_cloud::AccessToken,
@@ -428,7 +503,7 @@ impl CloudApi for ReqwestCloudApi {
         &'a self,
         auth: &'a AuthSession,
         character: CharacterId,
-        artifact: ArtifactIdentity,
+        artifact: CloudArtifactIdentity,
         revision: Revision,
     ) -> session::CloudFuture<'a, Vec<u8>> {
         Box::pin(async move {
@@ -624,7 +699,7 @@ mod tests {
     use super::{HttpClientError, ReqwestCloudApi, bounded_body, map_cloud_error};
     use crate::{AuthError, AuthSession, CloudApi, RefreshTokenStore, SessionError};
     use coop_cloud::{
-        AccessToken, ArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
+        AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
         LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId, RefreshToken,
         SessionEpoch, SessionId, UnixTimestampMillis, UploadTarget, UserId,
     };
@@ -830,7 +905,7 @@ mod tests {
             .unwrap();
         assert_eq!(heartbeat, lease);
         let target = UploadTarget::new_put(
-            ArtifactIdentity::CharacterSav,
+            CloudArtifactIdentity::CharacterSav,
             format!("http://127.0.0.1:{}/upload?capability=test", address.port()),
             UnixTimestampMillis::new(4_000_000_000_000),
         )

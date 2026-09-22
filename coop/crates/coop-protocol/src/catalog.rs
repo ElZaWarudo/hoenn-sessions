@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn generated_catalog_has_complete_unique_coverage() {
-        assert_eq!(MAP_CATALOG.len(), 935);
+        assert_eq!(MAP_CATALOG.len(), 1344);
 
         let keys: HashSet<_> = MAP_CATALOG
             .iter()
@@ -229,10 +229,30 @@ mod tests {
                 .iter()
                 .any(|entry| entry.region == RegionId::Sevii)
         );
+        let later_kanto: Vec<_> = MAP_CATALOG
+            .iter()
+            .filter(|entry| entry.map.starts_with("KANTO_LATER_"))
+            .collect();
+        assert_eq!(later_kanto.len(), 168);
+        assert!(
+            later_kanto
+                .iter()
+                .all(|entry| entry.region == RegionId::Kanto)
+        );
+        assert!(
+            MAP_CATALOG
+                .iter()
+                .any(|entry| { entry.region == RegionId::Johto && entry.map == "NEW_BARK_TOWN" })
+        );
     }
 
     #[test]
     fn forward_and_reverse_resolution_are_exact() {
+        let johto = resolve_map(RegionId::Johto, "NEW_BARK_TOWN").unwrap();
+        assert_eq!(
+            map_key_for_coordinates(RegionId::Johto, johto.map_group, johto.map_number).unwrap(),
+            "NEW_BARK_TOWN"
+        );
         let hoenn = resolve_map(RegionId::Hoenn, "LITTLEROOT_TOWN").unwrap();
         assert_eq!(hoenn.coordinates(), (0, 9));
         assert_eq!(
@@ -265,5 +285,27 @@ mod tests {
             resolve_map_coordinates(RegionId::Hoenn, u16::MAX, u16::MAX),
             Err(ProtocolError::UnknownMapCoordinates { .. })
         ));
+    }
+
+    #[test]
+    fn geographic_kanto_and_later_kanto_keep_wire_compatible_region_ids() {
+        let route_26 = resolve_map(RegionId::Kanto, "ROUTE26").unwrap();
+        assert_eq!(route_26.region, RegionId::Kanto);
+        assert!(matches!(
+            resolve_map(RegionId::Johto, "ROUTE26"),
+            Err(ProtocolError::MapRegionMismatch { .. })
+        ));
+
+        let later_vermilion = resolve_map(RegionId::Kanto, "KANTO_LATER_VERMILION_CITY").unwrap();
+        assert_eq!(later_vermilion.region, RegionId::Kanto);
+        assert_eq!(
+            resolve_map_coordinates(
+                RegionId::Kanto,
+                later_vermilion.map_group,
+                later_vermilion.map_number
+            )
+            .unwrap(),
+            later_vermilion
+        );
     }
 }

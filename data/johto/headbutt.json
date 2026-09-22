@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unit": "j3-headbutt",
+  "contract_hash": "sha256:45c64f20c86029734110158934f37ea41cb0b3e7cf9d1dc2df26b369f206ffbc",
+  "donor": {
+    "revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "path": "data/scripts/field_move_scripts.inc",
+    "normalized_sha256": "e585c1e6117474eb3f40a0f9eb1bca0b804cbf6ff0edaa87d43910fdd6bbccf4",
+    "lines": [114, 164],
+    "normalization": "UTF-8 decoded with CRLF normalized to LF"
+  },
+  "runtime_script": "data/scripts/johto_field_moves.inc",
+  "native": "Script_JohtoCheckHeadbutt",
+  "selector": {
+    "function": "JohtoFieldMoves_GetHeadbuttScript",
+    "behavior": "MB_JOHTO_HEADBUTT_TREE",
+    "path": "GetInteractedMetatileScript",
+    "unmatched": "NULL"
+  },
+  "policy": {
+    "unlock": "JOHTO_FLAG_GET_HEADBUTT",
+    "move": "MOVE_HEADBUTT",
+    "party": "First nonempty non-egg member within min(count, PARTY_SIZE), scanning all four moves; fainted allowed.",
+    "feedback": "ShakeCamera vertical0 horizontal1 four shakes delay2, then SE_M_HEADBUTT and waitstate.",
+    "encounter": "RockSmashWildEncounter; false releases immediately; true waits while the ordinary wild battle owns controls, then the host field or whiteout callback restores state and discards this script context.",
+    "effects": "Native requests SCREFF_V1 before VAR_RESULT; no saved mutations or tree removal."
+  },
+  "source_correction": "Adapt the donor object animation to persistent metatile interaction with non-destructive camera feedback.",
+  "campaign_ready": true,
+  "pending_binding": null,
+  "verification": {
+    "python": "Pinned donor intent, exact feedback/branch ordering, real metatile linkage, native bounds and Whirlpool regression.",
+    "engine": "test/johto/headbutt.c uses actual Pokemon data, native effects, reserved selector values, ShakeCamera waiting/resumption and ordinary wild-return callbacks/tasks. Root owns execution and ROM linkage.",
+    "emulator": "Full tree traversal remains pending validation."
+  }
+}

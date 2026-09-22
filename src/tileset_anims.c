@@ -1432,3 +1432,4 @@ void InitTilesetAnim_CeladonGym(void)
     sSecondaryTilesetAnimCallback = TilesetAnim_CeladonGym;
 }
 
+#include "data/johto/tileset_anims.h"

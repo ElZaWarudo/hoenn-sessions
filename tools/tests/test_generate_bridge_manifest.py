@@ -344,12 +344,14 @@ class BridgeManifestTests(unittest.TestCase):
         manifest = generator.build_manifest(bridge, block3, descriptor, registry, digest)
         lua = generator.render_lua(manifest)
 
-        self.assertEqual(manifest["schema_version"], 3)
+        self.assertEqual(manifest["schema_version"], generator.MANIFEST_SCHEMA_VERSION)
         self.assertEqual(
             manifest["emulator"],
             {
                 "name": "mGBA",
-                "version": "0.10.5",
+                "version": "0.11.0",
+                "build_id": generator.EMULATOR_BUILD_ID,
+                "source_commit": generator.EMULATOR_SOURCE_COMMIT,
                 "platform": "windows-x64",
                 "variant": "Qt",
                 "archive_sha256": generator.EMULATOR_ARCHIVE_SHA256,
@@ -378,7 +380,7 @@ class BridgeManifestTests(unittest.TestCase):
             },
         )
         self.assertIn("address = 0x020376BC", lua)
-        self.assertIn("schema_version = 3", lua)
+        self.assertIn(f"schema_version = {generator.MANIFEST_SCHEMA_VERSION}", lua)
         self.assertIn("checksum = 140", lua)
         self.assertIn("save = {", lua)
         self.assertIn("block3_address = 0x02000100", lua)
@@ -466,7 +468,10 @@ class BridgeManifestTests(unittest.TestCase):
 
         # A schema-v1 manifest remains a pinned, real build artifact. It must not
         # be rewritten with invented linked addresses when no ELF/ROM is present.
-        self.assertIn(checked_in["schema_version"], (1, generator.MANIFEST_SCHEMA_VERSION))
+        self.assertIn(
+            checked_in["schema_version"],
+            (1, 3, generator.MANIFEST_SCHEMA_VERSION),
+        )
         if checked_in["schema_version"] == generator.MANIFEST_SCHEMA_VERSION:
             registry = generator.load_registry_contract(
                 REPO_ROOT / "data" / "coop" / "regional_identities.json"

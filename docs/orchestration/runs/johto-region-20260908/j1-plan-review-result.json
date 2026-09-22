@@ -1,0 +1,36 @@
+{
+  "actor": "/root/johto_plan_feasibility",
+  "result": "needs-fix for broad J1 proposal; map selection count independently confirmed",
+  "contract_hash": "sha256:f996d3fdd1501e13ed197136228be1eae003f149f122ba6209e8328c96accc61",
+  "diff_digest": "sha256:0b0552476b96d8cf03b24ab6d0ee41502c3d711f4f665c34334d02d6ad87f6de",
+  "coverage": [
+    "six planning artifacts",
+    "donor registration and section recount",
+    "signed WarpData identity seam",
+    "region classification",
+    "trainer lookup and offline flag fallback"
+  ],
+  "findings": [
+    {
+      "id": "J1-P1-MAP-SIGNED",
+      "observation": "Indices128..238 cannot fit signed WarpData components",
+      "resolution": "Split at128; keep75:0 stable; enforce in manifest tooling"
+    },
+    {
+      "id": "J1-P1-SECTIONS",
+      "observation": "57 sections, reserved210/253..255, and include/regions.h omitted",
+      "resolution": "Explicit57-source alias ledger; retain sentinel; runtime consumers remain gated"
+    },
+    {
+      "id": "J1-P1-TRAINER",
+      "observation": "Trainer table and offline raw-flag fallback are not safe for new IDs",
+      "resolution": "No runtime trainer or registry writes in first slice; separate adapter/save design and checks required"
+    }
+  ],
+  "limitations": [
+    "No implementation reviewed",
+    "No scripts or assets validated",
+    "Worker stopped at12-minute deadline"
+  ],
+  "root_disposition": "Accept research inventory; narrow first execution unit to reproducible manifest tooling. Runtime J1 remains unaccepted."
+}

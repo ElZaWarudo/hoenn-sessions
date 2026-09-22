@@ -10,11 +10,11 @@
   "game_build": {
     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
     "numeric_id": 65536,
-    "rom_sha256": "8d599e9742e14c4418e754f9a105299d99058c584f59a7a1b5ae35eb8b336eb0"
+    "rom_sha256": "33d1e827abe0f3b169868c1db41c912d5b7d747b4ff00db59b6d051fdfc0cb4a"
   },
   "net_bridge": {
     "abi_version": 1,
-    "address": 33782964,
+    "address": 33784276,
     "byte_order": "little",
     "checksum": {
       "algorithm": "CRC-32/IEEE",
@@ -59,10 +59,10 @@
     "symbol": "gCoopNetBridge"
   },
   "save": {
-    "block3_address": 33639892,
+    "block3_address": 33640416,
     "coop_offset": 4,
     "crc_offset": 668,
-    "generation_address": 33639924,
+    "generation_address": 33640448,
     "generation_offset": 28,
     "registry_digest": "43918833dec646d6a583d124686c8540",
     "registry_version": 1,

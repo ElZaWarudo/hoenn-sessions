@@ -1,5 +1,7 @@
 #include "global.h"
 #include "event_data.h"
+#include "johto/daily_events.h"
+#include "johto/events.h"
 #include "pokedex.h"
 
 #define SPECIAL_FLAGS_SIZE  (NUM_SPECIAL_FLAGS / 8)  // 8 flags per byte
@@ -69,6 +71,7 @@ void ClearTempFieldEventData(void)
 void ClearDailyFlags(void)
 {
     memset(&gSaveBlock1Ptr->flags[DAILY_FLAGS_START / 8], 0, DAILY_FLAGS_SIZE);
+    JohtoDailyEvents_ClearFlags();
 }
 
 void DisableNationalPokedex(void)
@@ -182,6 +185,11 @@ bool32 CanResetRTC(void)
 
 u16 *GetVarPointer(u16 id)
 {
+    /* The whole Johto window must be rejected before any legacy or testing
+     * array arithmetic.  Johto values are accessed through VarGet/VarSet so
+     * writes can reseal the persistent record. */
+    if (JohtoEvent_IsReservedId(id))
+        return NULL;
     if (id < VARS_START)
         return NULL;
     else if (id < SPECIAL_VARS_START)
@@ -196,6 +204,11 @@ u16 *GetVarPointer(u16 id)
 
 u16 VarGet(u16 id)
 {
+    if (JohtoEvent_IsVariableId(id))
+        return JohtoEvent_GetVariable(id);
+    if (JohtoEvent_IsReservedId(id))
+        return id;
+
     u16 *ptr = GetVarPointer(id);
     if (!ptr)
         return id;
@@ -204,6 +217,11 @@ u16 VarGet(u16 id)
 
 u16 VarGetIfExist(u16 id)
 {
+    if (JohtoEvent_IsVariableId(id))
+        return JohtoEvent_GetVariable(id);
+    if (JohtoEvent_IsReservedId(id))
+        return 65535;
+
     u16 *ptr = GetVarPointer(id);
     if (!ptr)
         return 65535;
@@ -212,6 +230,11 @@ u16 VarGetIfExist(u16 id)
 
 bool8 VarSet(u16 id, u16 value)
 {
+    if (JohtoEvent_IsVariableId(id))
+        return JohtoEvent_SetVariable(id, value);
+    if (JohtoEvent_IsReservedId(id))
+        return FALSE;
+
     u16 *ptr = GetVarPointer(id);
     if (!ptr)
         return FALSE;
@@ -226,6 +249,11 @@ u16 VarGetObjectEventGraphicsId(u8 id)
 
 u8 *GetFlagPointer(u16 id)
 {
+    /* Never expose a writable pointer into the Johto record.  The reserved
+     * range also includes cross-kind and one-past IDs which must not reach the
+     * legacy or TESTING storage arithmetic below. */
+    if (JohtoEvent_IsReservedId(id))
+        return NULL;
     if (id == 0)
         return NULL;
     else if (id < SPECIAL_FLAGS_START)
@@ -240,6 +268,14 @@ u8 *GetFlagPointer(u16 id)
 
 u8 FlagSet(u16 id)
 {
+    if (JohtoEvent_IsFlagId(id))
+    {
+        (void)JohtoEvent_SetFlag(id, TRUE);
+        return 0;
+    }
+    if (JohtoEvent_IsReservedId(id))
+        return 0;
+
     u8 *ptr = GetFlagPointer(id);
     if (ptr)
         *ptr |= 1 << (id & 7);
@@ -248,6 +284,14 @@ u8 FlagSet(u16 id)
 
 u8 FlagToggle(u16 id)
 {
+    if (JohtoEvent_IsFlagId(id))
+    {
+        (void)JohtoEvent_SetFlag(id, !JohtoEvent_GetFlag(id));
+        return 0;
+    }
+    if (JohtoEvent_IsReservedId(id))
+        return 0;
+
     u8 *ptr = GetFlagPointer(id);
     if (ptr)
         *ptr ^= 1 << (id & 7);
@@ -256,6 +300,14 @@ u8 FlagToggle(u16 id)
 
 u8 FlagClear(u16 id)
 {
+    if (JohtoEvent_IsFlagId(id))
+    {
+        (void)JohtoEvent_SetFlag(id, FALSE);
+        return 0;
+    }
+    if (JohtoEvent_IsReservedId(id))
+        return 0;
+
     u8 *ptr = GetFlagPointer(id);
     if (ptr)
         *ptr &= ~(1 << (id & 7));
@@ -264,6 +316,11 @@ u8 FlagClear(u16 id)
 
 bool8 FlagGet(u16 id)
 {
+    if (JohtoEvent_IsFlagId(id))
+        return JohtoEvent_GetFlag(id);
+    if (JohtoEvent_IsReservedId(id))
+        return FALSE;
+
     u8 *ptr = GetFlagPointer(id);
 
     if (!ptr)

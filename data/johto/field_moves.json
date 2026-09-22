@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "donor": {
+    "revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "path": "data/scripts/field_move_scripts.inc",
+    "normalized_sha256": "e585c1e6117474eb3f40a0f9eb1bca0b804cbf6ff0edaa87d43910fdd6bbccf4",
+    "lines": [
+      477,
+      553
+    ],
+    "normalization": "UTF-8 decoded with CRLF normalized to LF"
+  },
+  "external_aliases": {
+    "EventScript_Whirlpool": "Johto_EventScript_Whirlpool"
+  },
+  "runtime_script": "data/scripts/johto_field_moves.inc",
+  "native": "Script_JohtoCheckWhirlpool",
+  "policy": {
+    "badge": "JOHTO_FLAG_BADGE07_GET",
+    "move": "MOVE_WHIRLPOOL",
+    "party": "First nonempty non-egg member within min(count, PARTY_SIZE), scanning all four moves; fainted allowed.",
+    "crossing": "Three directional slide steps on player, waitmovement, releaseall, end.",
+    "effects": "Native requests SCREFF_V1 before VAR_RESULT; no saved mutations."
+  },
+  "source_correction": "The donor commented out its broken party move check. Restore the intended known-Whirlpool requirement rather than preserve the bypass.",
+  "campaign_ready": true,
+  "pending_binding": null,
+  "verification": {
+    "python": "Pinned source, exact donor movement/dialogue comparison, ordered gate/release paths, assembly inclusion and native source checks.",
+    "engine": "test/johto/field_moves.c uses actual Pokemon data and instrumented native effects. Root owns execution and ROM linkage.",
+    "emulator": "Full Route41 and DragonsDen traversal remains pending validation."
+  }
+}

@@ -3438,4 +3438,24 @@ extern const u16 gBattleIcons_Pal2[];
 extern const u32 gGhostFrontPic[];
 extern const u16 gGhostPalette[];
 
+// Johto passive item icons
+extern const u32 gItemIcon_JohtoClearBell[];
+extern const u16 gItemIconPalette_JohtoClearBell[];
+extern const u32 gItemIcon_JohtoGsBall[];
+extern const u16 gItemIconPalette_JohtoGsBall[];
+extern const u32 gItemIcon_JohtoMysteryEgg[];
+extern const u16 gItemIconPalette_JohtoMysteryEgg[];
+extern const u32 gItemIcon_JohtoPass[];
+extern const u16 gItemIconPalette_JohtoPass[];
+extern const u32 gItemIcon_JohtoRainbowWing[];
+extern const u16 gItemIconPalette_JohtoRainbowWing[];
+extern const u32 gItemIcon_JohtoRedScale[];
+extern const u16 gItemIconPalette_JohtoRedScale[];
+extern const u32 gItemIcon_JohtoSecretPotion[];
+extern const u16 gItemIconPalette_JohtoSecretPotion[];
+extern const u32 gItemIcon_JohtoSilverWing[];
+extern const u16 gItemIconPalette_JohtoSilverWing[];
+extern const u32 gItemIcon_JohtoTidalBell[];
+extern const u16 gItemIconPalette_JohtoTidalBell[];
+
 #endif //GUARD_GRAPHICS_H

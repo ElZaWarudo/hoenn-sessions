@@ -23,6 +23,7 @@
 #include "gpu_regs.h"
 #include "graphics.h"
 #include "item.h"
+#include "johto/events.h"
 #include "mauville_old_man.h"
 #include "metatile_behavior.h"
 #include "overworld.h"
@@ -262,6 +263,8 @@ static void (*const sCameraObjectFuncs[])(struct Sprite *) = {
 };
 
 #include "data/object_events/object_event_graphics.h"
+#include "data/object_events/johto_assets.h"
+#include "data/object_events/johto_shared_assets.h"
 
 // movement type callbacks
 static void (*const sMovementTypeCallbacks[])(struct Sprite *) =
@@ -487,6 +490,8 @@ const u8 gInitialMovementTypeFacingDirections[NUM_MOVEMENT_TYPES] = {
 #include "data/object_events/base_oam.h"
 #include "data/object_events/object_event_subsprites.h"
 #include "data/object_events/object_event_graphics_info.h"
+#include "data/object_events/johto_info.h"
+#include "data/object_events/johto_shared_info.h"
 #include "data/object_events/object_event_graphics_info_followers.h"
 
 static const struct SpritePalette sObjectEventSpritePalettes[] = {
@@ -577,6 +582,8 @@ static const struct SpritePalette sObjectEventSpritePalettes[] = {
     {gObjectEventPaletteLight2,             OBJ_EVENT_PAL_TAG_LIGHT_2},
     {gObjectEventPaletteEmotes,             OBJ_EVENT_PAL_TAG_EMOTES},
     {gObjectEventPaletteNeonLight,          OBJ_EVENT_PAL_TAG_NEON_LIGHT},
+#include "data/object_events/johto_palettes.inc"
+#include "data/object_events/johto_shared_palettes.inc"
 #ifdef BUGFIX
     {NULL,                                  OBJ_EVENT_PAL_TAG_NONE},
 #else
@@ -767,6 +774,7 @@ static const u16 *const sObjectPaletteTagSets[] = {
 };
 
 #include "data/object_events/berry_tree_graphics_tables.h"
+#include "data/object_events/johto_berry_graphics.h"
 #include "data/field_effects/field_effect_objects.h"
 
 static const s16 sMovementDelaysMedium[] = {32, 64,  96, 128};
@@ -3196,10 +3204,15 @@ static void SetBerryTreeGraphicsById(struct ObjectEvent *objectEvent, u8 berryId
     const u16 graphicsId = gBerryTreeObjectEventGraphicsIdTable[berryStage];
     const struct ObjectEventGraphicsInfo *graphicsInfo = GetObjectEventGraphicsInfo(graphicsId);
     struct Sprite *sprite = &gSprites[objectEvent->spriteId];
-    UpdateSpritePalette(&sObjectEventSpritePalettes[gBerries[berryId].berryTreePaletteSlotTable[berryStage] - 2], sprite);
+    const bool8 useJohtoBerryGraphics = JohtoBerryGraphics_Apply(objectEvent, sprite, berryId, berryStage);
+
+    if (!useJohtoBerryGraphics)
+    {
+        UpdateSpritePalette(&sObjectEventSpritePalettes[gBerries[berryId].berryTreePaletteSlotTable[berryStage] - 2], sprite);
+        sprite->images = gBerries[berryId].berryTreePicTable;
+    }
     sprite->oam.shape = graphicsInfo->oam->shape;
     sprite->oam.size = graphicsInfo->oam->size;
-    sprite->images = gBerries[berryId].berryTreePicTable;
     sprite->anims = graphicsInfo->anims;
     sprite->subspriteTables = graphicsInfo->subspriteTables;
     objectEvent->inanimate = graphicsInfo->inanimate;
@@ -3212,6 +3225,30 @@ static void SetBerryTreeGraphicsById(struct ObjectEvent *objectEvent, u8 berryId
     if (objectEvent->trackedByCamera)
         CameraObjectReset();
 }
+
+#if TESTING
+void JohtoBerryGraphics_TestRender(struct ObjectEvent *objectEvent, struct Sprite *sprite, u8 berryId, u8 berryStage)
+{
+    objectEvent->spriteId = (u8)(sprite - gSprites);
+    if (berryStage >= ARRAY_COUNT(sJohtoBerryPaletteTags_CHERI))
+        return;
+    SetBerryTreeGraphicsById(objectEvent, berryId, berryStage);
+}
+
+const struct SpriteFrameImage *JohtoBerryGraphics_TestImages(u8 berryId)
+{
+    if (berryId < BERRY_ID_CHERI || berryId > BERRY_ID_SITRUS)
+        return NULL;
+    return sJohtoBerryPicTables[berryId];
+}
+
+u16 JohtoBerryGraphics_TestPaletteTag(u8 berryId, u8 berryStage)
+{
+    if (!JohtoBerryGraphics_IsSupported(JOHTO_BERRY_PLOTS_FIRST, berryId, berryStage))
+        return OBJ_EVENT_PAL_TAG_NONE;
+    return sJohtoBerryPaletteTags[berryId][berryStage];
+}
+#endif
 
 static void SetBerryTreeGraphics(struct ObjectEvent *objectEvent, struct Sprite *sprite)
 {
@@ -6380,21 +6417,19 @@ void GetDirectionToFaceScript(struct ScriptContext *ctx)
     u32 varId = ScriptReadHalfword(ctx);
     u8 sourceId = GetObjectEventIdByLocalId(ScriptReadByte(ctx));
     u8 targetId = GetObjectEventIdByLocalId(ScriptReadByte(ctx));
+    u16 value;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    u16 *var = GetVarPointer(varId);
-
-    if (var == NULL)
-        return;
     if (sourceId >= OBJECT_EVENTS_COUNT || targetId >= OBJECT_EVENTS_COUNT)
-        *var = DIR_NONE;
+        value = DIR_NONE;
     else
-        *var = GetDirectionToFace(gObjectEvents[sourceId].currentCoords.x,
-                                  gObjectEvents[sourceId].currentCoords.y,
-                                  gObjectEvents[targetId].currentCoords.x,
-                                  gObjectEvents[targetId].currentCoords.y);
+        value = GetDirectionToFace(gObjectEvents[sourceId].currentCoords.x,
+                                   gObjectEvents[sourceId].currentCoords.y,
+                                   gObjectEvents[targetId].currentCoords.x,
+                                   gObjectEvents[targetId].currentCoords.y);
+    (void)VarSet(varId, value);
 }
 
 // Whether following Pokémon is also the user of the field move
@@ -6402,22 +6437,20 @@ void GetDirectionToFaceScript(struct ScriptContext *ctx)
 void IsFollowerFieldMoveUser(struct ScriptContext *ctx)
 {
     u32 varId = ScriptReadHalfword(ctx);
+    u16 value = FALSE;
 
     Script_RequestEffects(SCREFF_V1);
     Script_RequestWriteVar(varId);
 
-    u16 *var = GetVarPointer(varId);
     u16 userIndex = gFieldEffectArguments[0]; // field move user index
     struct Pokemon *follower = GetFirstLiveMon();
     struct ObjectEvent *obj = GetFollowerObject();
-    if (var == NULL)
-        return;
-    *var = FALSE;
     if (follower && obj && !obj->invisible)
     {
         u16 followIndex = ((u32)follower - (u32)gParties[B_TRAINER_0]) / sizeof(struct Pokemon);
-        *var = userIndex == followIndex;
+        value = userIndex == followIndex;
     }
+    (void)VarSet(varId, value);
 }
 
 void SetTrainerMovementType(struct ObjectEvent *objectEvent, u8 movementType)

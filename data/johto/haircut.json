@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unit": "j3-haircut",
+  "campaign_ready": true,
+  "source_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+  "source_root": "johto-hns/src/field_specials.c",
+  "provenance": {
+    "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
+    "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "donor_tree": "33661709e5368edc01c37ed9bb5e0a7a0cb192c8",
+    "source_hashes": [
+      {
+        "source": "src/field_specials.c",
+        "target": "src/johto/haircut.c",
+        "sha256": "014f93982ad6a13f79b023afd33fd3bca9028570d1505aef493a3b8a9c7f8e74",
+        "bytes": 160427,
+        "symbols": ["HaircutBrother1"]
+      },
+      {
+        "source": "src/pokemon.c",
+        "target": "src/johto/haircut.c",
+        "sha256": "0f2b3a56cda6c994f8adf3e00176dc6b9e4bcb53ea20d2576782933ad2211a5d",
+        "bytes": 470821,
+        "symbols": ["sFriendshipEventModifiers", "AdjustFriendship"]
+      }
+    ]
+  },
+  "adaptations": [
+    "Expose a Johto-namespaced safe service instead of importing the donor-wide field_specials file",
+    "Use host CalculateFriendshipBonuses and ShouldSkipFriendshipChange policy",
+    "Preserve host Enigma Berry hold-effect branch and MAX_FRIENDSHIP saturation",
+    "Append an effects-aware HaircutBrother1 special with explicit boolean result",
+    "Use generated Goldenrod scripts for payment, daily gates, and the HaircutBrother1 call"
+  ],
+  "limitations": [
+    "Goldenrod payment and daily-limit scripts are linked; real emulator interaction remains pending validation."
+  ]
+}

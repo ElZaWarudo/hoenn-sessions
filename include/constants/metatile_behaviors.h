@@ -242,6 +242,13 @@ enum {
     MB_DOWN_RIGHT_STAIR_WARP,
     MB_DOWN_LEFT_STAIR_WARP,
     MB_ROCK_CLIMB,
+    // Johto imports use a small reserved extension beyond the host range.
+    // Keep the existing host values stable and leave 0xEF occupied by
+    // MB_ROCK_CLIMB; these explicit values are part of the asset contract.
+    MB_JOHTO_HEADBUTT_TREE = 0xF0,
+    MB_JOHTO_WATER_NORTH_ARROW_WARP,
+    MB_JOHTO_INERT,
+    MB_JOHTO_DEOXYS_ATTACK,
     NUM_METATILE_BEHAVIORS
 };
 

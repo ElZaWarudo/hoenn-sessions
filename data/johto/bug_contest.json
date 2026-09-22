@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "unit": "j3-bug-contest-core",
+  "campaign_ready": true,
+  "engine_hooks_ready": true,
+  "provenance": {
+    "donor_repository": "C:/Users/Mayor/Documents/Caribbean/johto-hns",
+    "donor_revision": "751823abaf677020bcd72c45fe3e7cb2b8a576e4",
+    "donor_source_path": "src/bug_contest.c",
+    "donor_source_sha256": "3746ba048588670b7476eeeea14ed92f802a38fa5d2f6af634d0412e6bb4b95d",
+    "target_source_sha256": "82e8f68a002d0c287ececd946734b8e5866657656246d8be35e0fb443ea017ba",
+    "source_header": "include/bug_contest.h",
+    "source_scripts": [
+      "data/scripts/bug_contest.inc",
+      "data/maps/Gate_NationalPark/scripts.inc"
+    ],
+    "target_source_hash_normalization": "CRLF to LF"
+  },
+  "adaptations": [
+    "Eight-minute unsigned VBlank timer with wrap-safe elapsed comparison",
+    "Dedicated EWRAM contest snapshot for six party records and mail records",
+    "Transactional thirty Safari Ball loan preserving pre-existing stock",
+    "Validated ten-species judging and source reward tables",
+    "Idempotent PC transfer and reward claim with recoverable failures",
+    "Serialization fence rejects saves and cooperative checkpoints while the temporary party snapshot is owned",
+    "Engine save fences and generated campaign UI scripts bind timeout, judging, recoverable settlement, explicit reward forfeit, and gated exit"
+  ],
+  "duration_frames": 28800,
+  "contest_species": [
+    "SPECIES_CATERPIE",
+    "SPECIES_WEEDLE",
+    "SPECIES_METAPOD",
+    "SPECIES_KAKUNA",
+    "SPECIES_PARAS",
+    "SPECIES_VENONAT",
+    "SPECIES_BUTTERFREE",
+    "SPECIES_BEEDRILL",
+    "SPECIES_SCYTHER",
+    "SPECIES_PINSIR"
+  ],
+  "reward_tables": {
+    "first": [
+      "ITEM_MOON_STONE",
+      "ITEM_SUN_STONE",
+      "ITEM_LEAF_STONE"
+    ],
+    "second": [
+      "ITEM_FIRE_STONE",
+      "ITEM_THUNDER_STONE",
+      "ITEM_WATER_STONE"
+    ],
+    "third": [
+      "ITEM_ORAN_BERRY",
+      "ITEM_CHERI_BERRY",
+      "ITEM_PERSIM_BERRY",
+      "ITEM_PECHA_BERRY",
+      "ITEM_RAWST_BERRY",
+      "ITEM_ASPEAR_BERRY",
+      "ITEM_CHESTO_BERRY"
+    ]
+  }
+}

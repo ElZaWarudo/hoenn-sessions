@@ -36,7 +36,7 @@ Run the following from this directory on the target host only when ready to depl
 
 ```sh
 cp .env.example .env
-# Edit the domain, bucket and release image tag in .env.
+# Edit the domain, bucket and release image digest in .env.
 bash init-secrets.sh
 # Copy the service account JSON securely to secrets/firebase-service-account.json.
 chmod 444 secrets/firebase-service-account.json
@@ -163,11 +163,12 @@ After deployment, the operator should watch for 30 minutes and then daily:
   quotas are reached. No latency/player-capacity claim is made without load tests.
 
 If readiness stays unhealthy, saves fail, or revisions regress, stop client
-access and investigate before restarting repeatedly. To roll back compatible
-code, stop `server`, set `COOP_IMAGE` to the retained previous image, and run
-`docker compose up -d --no-build server`. A changed persistence format may also
-require its matching database backup; never run old code against an unknown
-format. Do not recreate PostgreSQL to fix an application startup error.
+access and investigate before restarting repeatedly. To roll back, use the
+digest-pinned rollback in [RELEASES.md](RELEASES.md) (validates the
+immutable image reference and health-checks); do not hand-edit `COOP_IMAGE`
+to a tag and recreate the container around it. A changed persistence format
+may also require its matching database backup; never run old code against an
+unknown format. Do not recreate PostgreSQL to fix an application startup error.
 
 ## Budget
 
@@ -206,3 +207,40 @@ COOP_TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:55439/postgres \
 Those tests create and drop only randomly named test databases. Never supply a
 production database URL. Live Firebase authentication and a real two-player
 internet session remain deployment smoke checks requiring the target project.
+
+## Production releases
+
+Merges to `main` are released automatically by `.github/workflows/deploy.yml`.
+The workflow builds the ROM, sidecar, desktop client and the pinned official
+mGBA archive, regenerates `dist/bridge_manifest.json`, and signs a schema-one
+Windows x86_64 envelope containing exactly eleven fixed runtime artifacts.
+The signing seed is read only from a protected job environment; it is never
+logged, persisted, or uploaded. A separate Windows job builds and
+Authenticode-signs the stable bootstrapper/MSI. The only GitHub artifact is
+the ROM-free MSI plus nonsecret hashes/provenance. Windows installer signing is
+phased: secret-free prepare/restore/build, narrow executable signing, secret-
+free MSI packaging with `--no-restore`, narrow MSI signing, then secret-free
+hash/provenance finalization. PFX bytes are imported in memory into a
+temporary user certificate entry, verified, explicitly removed, and never
+written to a PFX path or passed with a password argument.
+
+The complete runtime (including the ROM) travels directly over pinned SSH to
+`/srv/hoenn/staging/<sha>`. Promotion verifies the Ed25519 envelope, exact
+identities, destinations, and bytes before moving it to
+`/srv/hoenn/releases/<sha>`. It records the full digest-pinned server image in
+the sibling `/srv/hoenn/release-metadata/<sha>.json` store before flipping
+`current`; the association is the first irreversible publication, before the
+staging-to-release move, and is immutable and reusable after a failed move or
+rollout. `current` is a bounded regular file containing the release id;
+a legacy `current -> releases/<sha>` symlink is migrated on the next
+promotion. The server receives `COOP_RELEASE_ROOT=/srv/hoenn` and a read-only
+`/srv/hoenn` parent mount. See [RELEASES.md](RELEASES.md) for the private-pilot
+layout, secure signing, rollback, and verification procedure.
+
+Before any runtime build, the workflow streams `probe-release-status.sh` over
+the pinned SSH connection. `ABSENT` means no association or generation exists
+and permits a build. `PENDING` means the association and staging exist but the
+atomic move did not finish; `RELEASED` means the generation is already
+reusable. Both states reuse the recorded full image reference and skip rebuild,
+sign, and upload. A missing counterpart, malformed association, conflicting
+staging copy, or repository mismatch fails closed.

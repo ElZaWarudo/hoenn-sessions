@@ -1,4 +1,5 @@
 #include "global.h"
+#include "mastery.h"
 #include "malloc.h"
 #include "battle.h"
 #include "pokemon.h"
@@ -1997,17 +1998,15 @@ void UpdateHealthboxAttribute(u8 healthboxSpriteId, struct Pokemon *mon, u8 elem
         if (!isDoubles && (elementId == HEALTHBOX_EXP_BAR || elementId == HEALTHBOX_ALL))
         {
             enum Species species;
-            u32 exp, currLevelExp;
+            u32 exp, currLevelExp, nextLevelExp;
             s32 currExpBarValue, maxExpBarValue;
-            u8 level;
 
             LoadBattleBarGfx(3);
             species = GetMonData(mon, MON_DATA_SPECIES);
-            level = GetMonData(mon, MON_DATA_LEVEL);
             exp = GetMonData(mon, MON_DATA_EXP);
-            currLevelExp = gExperienceTables[gSpeciesInfo[species].growthRate][level];
-            currExpBarValue = exp - currLevelExp;
-            maxExpBarValue = gExperienceTables[gSpeciesInfo[species].growthRate][level + 1] - currLevelExp;
+            GetProgressLevelExpBounds(species, exp, &currLevelExp, &nextLevelExp);
+            currExpBarValue = min(exp, GetMaxMonExperience(species)) - currLevelExp;
+            maxExpBarValue = max(1, nextLevelExp - currLevelExp);
             SetBattleBarStruct(battler, healthboxSpriteId, maxExpBarValue, currExpBarValue, isDoubles);
             MoveBattleBar(battler, healthboxSpriteId, EXP_BAR, 0);
         }
@@ -2158,7 +2157,7 @@ static void MoveBattleBarGraphically(enum BattlerId battler, u8 whichBar)
                     &gBattleSpritesDataPtr->battleBars[battler].currValue,
                     array, B_EXPBAR_PIXELS / 8);
         level = GetMonData(GetBattlerMon(battler), MON_DATA_LEVEL);
-        if (level >= MAX_LEVEL)
+        if (level >= MAX_LEVEL && !CanMonGainExperience(GetBattlerMon(battler)))
         {
             for (i = 0; i < 8; i++)
                 array[i] = 0;

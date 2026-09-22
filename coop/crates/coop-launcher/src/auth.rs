@@ -7,8 +7,9 @@ use std::{
 };
 
 use coop_cloud::{
-    AccessToken, CharacterId, LeaseFence, LoginRequest, LoginResponse, LogoutRequest,
-    LogoutResponse, Password, RefreshRequest, RefreshResponse, RefreshToken, UserId, Username,
+    AUTH_API_VERSION, AccessToken, CharacterId, InvitationCode, LeaseFence, LoginRequest,
+    LoginResponse, LogoutRequest, LogoutResponse, Password, RefreshRequest, RefreshResponse,
+    RefreshToken, RegisterRequest, RegisterResponse, UserId, Username,
 };
 use thiserror::Error;
 
@@ -22,6 +23,8 @@ pub enum AuthError {
     Transport,
     #[error("authentication response was invalid")]
     InvalidResponse,
+    #[error("account registration completed; sign-in required")]
+    RegistrationComplete,
     #[error("credential vault operation failed")]
     Keychain(#[from] KeychainError),
     #[error("invalid username or password")]
@@ -34,6 +37,18 @@ pub enum AuthError {
 
 /// Authentication transport implemented by the cloud HTTP adapter or tests.
 pub trait AuthApi: Send + Sync {
+    /// Sends an invite-gated account registration request.
+    ///
+    /// Implementations that do not support registration retain the transport
+    /// failure default so existing test and embedded adapters remain safe.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication error when transport or response validation
+    /// fails.
+    fn register(&self, _request: RegisterRequest) -> AuthFuture<'_, RegisterResponse> {
+        Box::pin(async { Err(AuthError::Transport) })
+    }
     /// Sends a username/password login request.
     ///
     /// # Errors
@@ -104,6 +119,56 @@ impl AuthSession {
             .validate()
             .map_err(|_| AuthError::InvalidResponse)?;
         keychain.store(KEYCHAIN_SERVICE, username.as_str(), &response.refresh_token)?;
+        Ok(Self::from_login(username, response))
+    }
+
+    /// Registers an invite-gated account and immediately signs it in.
+    ///
+    /// The server registration response only contains the stable tenant
+    /// identity, so the same password is used for the follow-up login.  The
+    /// resulting rotating refresh token is persisted through the same
+    /// keychain path as ordinary login; the password and access token remain
+    /// memory-only.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the username/password/invite is invalid, the
+    /// invite is rejected, the server returns an inconsistent identity, or
+    /// keychain storage fails.
+    pub async fn register(
+        api: &impl AuthApi,
+        keychain: &(impl RefreshTokenStore + ?Sized),
+        username: impl Into<String>,
+        password: Password,
+        invitation_code: InvitationCode,
+    ) -> Result<Self, AuthError> {
+        let username = Username::new(username).map_err(|_| AuthError::InvalidCredentials)?;
+        let login_password = password.clone();
+        let request = RegisterRequest::new(username.as_str(), password, invitation_code)
+            .map_err(|_| AuthError::InvalidCredentials)?;
+        let registered = api.register(request).await?;
+        if registered.api_version.value() != AUTH_API_VERSION {
+            return Err(AuthError::InvalidResponse);
+        }
+
+        let response = api
+            .login(
+                LoginRequest::new(username.as_str(), login_password)
+                    .map_err(|_| AuthError::RegistrationComplete)?,
+            )
+            .await
+            .map_err(|_| AuthError::RegistrationComplete)?;
+        response
+            .validate()
+            .map_err(|_| AuthError::RegistrationComplete)?;
+        if response.user_id != registered.user_id
+            || response.character_id != registered.character_id
+        {
+            return Err(AuthError::InvalidResponse);
+        }
+        keychain
+            .store(KEYCHAIN_SERVICE, username.as_str(), &response.refresh_token)
+            .map_err(|_| AuthError::RegistrationComplete)?;
         Ok(Self::from_login(username, response))
     }
 
@@ -299,9 +364,12 @@ fn now_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    };
 
-    use coop_cloud::{RefreshFamilyId, UnixTimestampMillis};
+    use coop_cloud::{RefreshFamilyId, RegisterResponse, UnixTimestampMillis};
     use tokio::sync::Notify;
     use uuid::Uuid;
 
@@ -408,6 +476,140 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy)]
+    enum FirstLoginFailure {
+        Transport,
+        Rejected,
+    }
+
+    struct RegistrationApi {
+        registration: RegisterResponse,
+        login: LoginResponse,
+        first_login_failure: Mutex<Option<FirstLoginFailure>>,
+        register_calls: AtomicUsize,
+        login_calls: AtomicUsize,
+    }
+
+    impl RegistrationApi {
+        fn new(
+            registration: RegisterResponse,
+            login: LoginResponse,
+            first_login_failure: Option<FirstLoginFailure>,
+        ) -> Self {
+            Self {
+                registration,
+                login,
+                first_login_failure: Mutex::new(first_login_failure),
+                register_calls: AtomicUsize::new(0),
+                login_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl AuthApi for RegistrationApi {
+        fn register(&self, _request: RegisterRequest) -> AuthFuture<'_, RegisterResponse> {
+            self.register_calls.fetch_add(1, Ordering::SeqCst);
+            let response = self.registration;
+            Box::pin(async move { Ok(response) })
+        }
+
+        fn login(&self, _request: LoginRequest) -> AuthFuture<'_, LoginResponse> {
+            self.login_calls.fetch_add(1, Ordering::SeqCst);
+            let failure = self
+                .first_login_failure
+                .lock()
+                .expect("registration API lock")
+                .take();
+            let response = self.login.clone();
+            Box::pin(async move {
+                match failure {
+                    Some(FirstLoginFailure::Transport) => Err(AuthError::Transport),
+                    Some(FirstLoginFailure::Rejected) => Err(AuthError::InvalidCredentials),
+                    None => Ok(response),
+                }
+            })
+        }
+
+        fn refresh(&self, _request: RefreshRequest) -> AuthFuture<'_, RefreshResponse> {
+            Box::pin(async { Err(AuthError::Transport) })
+        }
+
+        fn logout(&self, _request: LogoutRequest) -> AuthFuture<'_, LogoutResponse> {
+            Box::pin(async { Err(AuthError::Transport) })
+        }
+    }
+
+    struct RegistrationKeychain {
+        fail_store: bool,
+        token: Mutex<Option<RefreshToken>>,
+    }
+
+    impl RegistrationKeychain {
+        fn new(fail_store: bool) -> Self {
+            Self {
+                fail_store,
+                token: Mutex::new(None),
+            }
+        }
+    }
+
+    impl RefreshTokenStore for RegistrationKeychain {
+        fn load(
+            &self,
+            _service: &str,
+            _username: &str,
+        ) -> Result<Option<RefreshToken>, KeychainError> {
+            Ok(self
+                .token
+                .lock()
+                .expect("registration keychain lock")
+                .clone())
+        }
+
+        fn store(
+            &self,
+            _service: &str,
+            _username: &str,
+            token: &RefreshToken,
+        ) -> Result<(), KeychainError> {
+            if self.fail_store {
+                return Err(KeychainError::Operation);
+            }
+            *self.token.lock().expect("registration keychain lock") = Some(token.clone());
+            Ok(())
+        }
+
+        fn delete(&self, _service: &str, _username: &str) -> Result<(), KeychainError> {
+            *self.token.lock().expect("registration keychain lock") = None;
+            Ok(())
+        }
+    }
+
+    fn registration_fixture() -> (RegisterResponse, LoginResponse) {
+        let user_id = UserId::new(Uuid::from_u128(11)).expect("registration user id");
+        let character_id = CharacterId::new(Uuid::from_u128(12)).expect("registration character");
+        let registration = RegisterResponse::new(user_id, character_id);
+        let login = LoginResponse::new(
+            user_id,
+            character_id,
+            AccessToken::new("registration-access").expect("registration access token"),
+            RefreshToken::new("registration-refresh").expect("registration refresh token"),
+            RefreshFamilyId::new(Uuid::from_u128(13)).expect("registration family id"),
+            UnixTimestampMillis::new(200_000),
+            UnixTimestampMillis::new(300_000),
+        )
+        .expect("registration login response");
+        (registration, login)
+    }
+
+    fn registration_password() -> Password {
+        Password::new("registration-password").expect("registration password")
+    }
+
+    fn registration_invite() -> InvitationCode {
+        InvitationCode::new("registration-invite").expect("registration invite")
+    }
+
     fn session() -> AuthSession {
         let response = LoginResponse::new(
             UserId::new(Uuid::from_u128(1)).expect("test user id is non-nil"),
@@ -434,6 +636,149 @@ mod tests {
         assert!(!session.should_refresh_at(u64::MAX));
         assert!(session.access_token().is_none());
         assert!(session.refresh_token().is_none());
+    }
+
+    #[tokio::test]
+    async fn registration_login_transport_returns_sign_in_required_without_resubmitting_invite() {
+        let (registration, login) = registration_fixture();
+        let api = RegistrationApi::new(registration, login, Some(FirstLoginFailure::Transport));
+        let keychain = RegistrationKeychain::new(false);
+
+        let error = AuthSession::register(
+            &api,
+            &keychain,
+            "registration-user",
+            registration_password(),
+            registration_invite(),
+        )
+        .await
+        .expect_err("a post-registration login transport failure must be actionable");
+
+        assert!(matches!(error, AuthError::RegistrationComplete));
+        assert!(!error.to_string().contains("registration-password"));
+        assert!(!error.to_string().contains("registration-invite"));
+        let session = AuthSession::login(
+            &api,
+            &keychain,
+            "registration-user",
+            registration_password(),
+        )
+        .await
+        .expect("caller can switch to ordinary sign-in");
+        assert_eq!(session.user_id, registration.user_id);
+        assert_eq!(
+            api.register_calls.load(Ordering::SeqCst),
+            1,
+            "ordinary sign-in must not resubmit the invite"
+        );
+        assert_eq!(api.login_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn registration_login_rejection_returns_sign_in_required_without_resubmitting_invite() {
+        let (registration, login) = registration_fixture();
+        let api = RegistrationApi::new(registration, login, Some(FirstLoginFailure::Rejected));
+        let keychain = RegistrationKeychain::new(false);
+
+        let error = AuthSession::register(
+            &api,
+            &keychain,
+            "registration-user",
+            registration_password(),
+            registration_invite(),
+        )
+        .await
+        .expect_err("a post-registration login rejection must be actionable");
+
+        assert!(matches!(error, AuthError::RegistrationComplete));
+        assert!(!error.to_string().contains("registration-password"));
+        assert!(!error.to_string().contains("registration-invite"));
+        AuthSession::login(
+            &api,
+            &keychain,
+            "registration-user",
+            registration_password(),
+        )
+        .await
+        .expect("caller can switch to ordinary sign-in");
+        assert_eq!(
+            api.register_calls.load(Ordering::SeqCst),
+            1,
+            "ordinary sign-in must not resubmit the invite"
+        );
+        assert_eq!(api.login_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn registration_keychain_failure_returns_sign_in_required_without_resubmitting_invite() {
+        let (registration, login) = registration_fixture();
+        let api = RegistrationApi::new(registration, login, None);
+        let failing_keychain = RegistrationKeychain::new(true);
+
+        let error = AuthSession::register(
+            &api,
+            &failing_keychain,
+            "registration-user",
+            registration_password(),
+            registration_invite(),
+        )
+        .await
+        .expect_err("a refresh-token persistence failure must be actionable");
+
+        assert!(matches!(error, AuthError::RegistrationComplete));
+        assert!(!error.to_string().contains("registration-password"));
+        assert!(!error.to_string().contains("registration-invite"));
+        let keychain = RegistrationKeychain::new(false);
+        AuthSession::login(
+            &api,
+            &keychain,
+            "registration-user",
+            registration_password(),
+        )
+        .await
+        .expect("caller can switch to ordinary sign-in");
+        assert_eq!(
+            api.register_calls.load(Ordering::SeqCst),
+            1,
+            "ordinary sign-in must not resubmit the invite"
+        );
+        assert_eq!(api.login_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn registration_tenant_mismatch_stays_fail_closed() {
+        let (registration, _) = registration_fixture();
+        let mismatched_login = LoginResponse::new(
+            UserId::new(Uuid::from_u128(21)).expect("mismatched user id"),
+            CharacterId::new(Uuid::from_u128(22)).expect("mismatched character id"),
+            AccessToken::new("mismatched-access").expect("mismatched access token"),
+            RefreshToken::new("mismatched-refresh").expect("mismatched refresh token"),
+            RefreshFamilyId::new(Uuid::from_u128(23)).expect("mismatched family id"),
+            UnixTimestampMillis::new(200_000),
+            UnixTimestampMillis::new(300_000),
+        )
+        .expect("mismatched login response");
+        let api = RegistrationApi::new(registration, mismatched_login, None);
+        let keychain = RegistrationKeychain::new(false);
+
+        let error = AuthSession::register(
+            &api,
+            &keychain,
+            "registration-user",
+            registration_password(),
+            registration_invite(),
+        )
+        .await
+        .expect_err("tenant mismatch must fail closed");
+
+        assert!(matches!(error, AuthError::InvalidResponse));
+        assert!(
+            keychain
+                .token
+                .lock()
+                .expect("registration keychain lock")
+                .is_none()
+        );
     }
 
     #[tokio::test]

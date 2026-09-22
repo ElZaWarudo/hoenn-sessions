@@ -42,3 +42,42 @@ EVs: 252 Atk / 252 SpA / 6 SpD
 - Protect
 - Solar Beam
 - Dragon Claw
+
+=== PARTNER_LANCE ===
+Name: LANCE
+Class: Elite Four
+Pic: Johto Partner Lance
+Gender: Male
+Music: Elite Four
+AI: Basic Trainer
+Multi Party: Half
+
+Dragonite
+Adamant Nature
+Level: 42
+IVs: 31 HP / 31 Atk / 31 Def / 31 SpA / 31 SpD / 31 Spe
+EVs: 252 Atk / 252 Def / 6 SpA
+- Hyper Beam
+- Thunder
+- Safeguard
+- Outrage
+
+Dragonair
+Adamant Nature
+Level: 35
+IVs: 31 HP / 31 Atk / 31 Def / 31 SpA / 31 SpD / 31 Spe
+EVs: 252 HP / 6 SpA / 252 SpD
+- Blizzard
+- Thunder Wave
+- Flamethrower
+- Quick Attack
+
+Charizard
+Adamant Nature
+Level: 36
+IVs: 31 HP / 31 Atk / 31 Def / 31 SpA / 31 SpD / 31 Spe
+EVs: 252 Atk / 252 SpA / 6 SpD
+- Flamethrower
+- Wing Attack
+- Double Team
+- Steel Wing

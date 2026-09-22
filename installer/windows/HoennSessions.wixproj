@@ -1,0 +1,11 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <Platform>x64</Platform>
+    <DefineConstants>BootstrapExe=$(BootstrapExe);OnboardingExe=$(OnboardingExe);ConfigFile=$(ConfigFile);NoticesFile=$(NoticesFile);ProductVersion=$(ProductVersion)</DefineConstants>
+    <OutputName>HoennSessions</OutputName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="6.0.2" />
+  </ItemGroup>
+</Project>

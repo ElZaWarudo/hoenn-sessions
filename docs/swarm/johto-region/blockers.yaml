@@ -1,0 +1,43 @@
+schema_version: 1
+updated_at: '2026-09-08'
+blockers:
+- id: DOC-APPROVAL
+  title: Seneschal documentation packet approval
+  status: resolved
+  type: approval
+  suggested_owner: user
+  affected_units:
+  - J1
+  - J2
+  - J3
+  - J4
+  - J5
+  - J6
+  - J7
+  blocks_dependents: true
+  description: Broad initiative requires approval of the reviewed final packet before
+    worker execution.
+  next_action: Present the completed proposal and bind explicit approval to its artifact
+    digests.
+  resolution:
+    decided_at: '2026-09-08T12:48:31Z'
+    decided_by: user
+    decision: User accepted the packet and authorized fully autonomous subagentic
+      local execution, necessary local commits, and one release phase at the end.
+- id: KANTO-TIMELINE
+  title: Existing Kanto versus later Gen II recreation
+  status: resolved
+  type: product-decision
+  suggested_owner: user
+  affected_units:
+  - J5
+  blocks_dependents: true
+  description: User requires Johto to connect back to Kanto; current proposal integrates
+    the existing Kanto.
+  next_action: Incorporate the pending answer before approving or implementing the
+    Kanto unit.
+  resolution:
+    decided_at: '2026-09-08T12:48:31Z'
+    decided_by: user
+    decision: User accepted the proposed existing-Kanto connection by directing full
+      autonomous execution in response to the packet approval question.

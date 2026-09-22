@@ -146,9 +146,7 @@ static void RemovePreview(void)
 {
     if (sPreview != MAX_SPRITES)
     {
-        u8 palette = gSprites[sPreview].oam.paletteNum;
-        DestroySprite(&gSprites[sPreview]);
-        FieldEffectFreePaletteIfUnused(palette);
+        FieldEffectFreeGraphicsResources(&gSprites[sPreview]);
         sPreview = MAX_SPRITES;
     }
 }

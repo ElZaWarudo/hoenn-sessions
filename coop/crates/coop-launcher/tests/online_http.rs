@@ -3,14 +3,43 @@ use coop_cloud::{
     AcquireLeaseRequest, ApiVersion, ClientInstanceId, CreateGroupInvitationRequest,
     GroupInvitationView, IdempotencyKey, InvitationCode, LeaseContract, LoginRequest,
     LoginResponse, OnlineAction, OnlineActionRequest, OnlineActionResponse, OnlineSnapshotRequest,
-    Password, RegisterRequest, SigningPrivateKey,
+    Password, RefreshToken, RegisterRequest, SigningPrivateKey,
 };
-use coop_launcher::{CloudApi, ReqwestCloudApi};
+use coop_launcher::{
+    AuthError, AuthSession, CloudApi, KeychainError, RefreshTokenStore, ReqwestCloudApi,
+};
 use coop_server::{Phase2App, Phase2Config};
+use std::sync::Mutex;
 use uuid::Uuid;
 
 fn key() -> IdempotencyKey {
     IdempotencyKey::new(Uuid::new_v4()).unwrap()
+}
+
+#[derive(Default)]
+struct MemoryKeychain {
+    token: Mutex<Option<RefreshToken>>,
+}
+
+impl RefreshTokenStore for MemoryKeychain {
+    fn load(&self, _service: &str, _username: &str) -> Result<Option<RefreshToken>, KeychainError> {
+        Ok(self.token.lock().unwrap().clone())
+    }
+
+    fn store(
+        &self,
+        _service: &str,
+        _username: &str,
+        token: &RefreshToken,
+    ) -> Result<(), KeychainError> {
+        *self.token.lock().unwrap() = Some(token.clone());
+        Ok(())
+    }
+
+    fn delete(&self, _service: &str, _username: &str) -> Result<(), KeychainError> {
+        *self.token.lock().unwrap() = None;
+        Ok(())
+    }
 }
 
 async fn account(app: &Phase2App, base: &str, name: &str) -> (LoginResponse, LeaseContract) {
@@ -217,6 +246,64 @@ async fn online_http_inbox_accept_decline_and_symmetric_leave_use_real_server() 
             .incoming
             .is_empty()
     );
+    stop_tx.send(()).unwrap();
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn launcher_registration_authenticates_and_reused_invite_is_generic() {
+    let config = Phase2Config::local(
+        vec![0x56; 32],
+        SigningPrivateKey::from_bytes([8; 32]),
+        "registration-test",
+    )
+    .unwrap();
+    let app = Phase2App::new(config).unwrap();
+    app.add_invitation("launcher-invite").unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let router = app.router();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = stop_rx.await;
+            })
+            .await
+            .unwrap();
+    });
+
+    let api = ReqwestCloudApi::new(&base).unwrap();
+    let keychain = MemoryKeychain::default();
+    let session = AuthSession::register(
+        &api,
+        &keychain,
+        "launcher-user",
+        Password::new("test strong password").unwrap(),
+        InvitationCode::new("launcher-invite").unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(session.username.as_str(), "launcher-user");
+    assert!(session.access_token().is_some());
+    assert!(session.refresh_token().is_some());
+    assert!(keychain.token.lock().unwrap().is_some());
+
+    let reused = AuthSession::register(
+        &api,
+        &keychain,
+        "another-user",
+        Password::new("test strong password").unwrap(),
+        InvitationCode::new("launcher-invite").unwrap(),
+    )
+    .await
+    .expect_err("a single-use invite must not be reusable");
+    assert!(matches!(reused, AuthError::InvalidCredentials));
+    assert!(!reused.to_string().contains("launcher-invite"));
+    assert!(!reused.to_string().contains("test strong password"));
+
     stop_tx.send(()).unwrap();
     server.await.unwrap();
 }

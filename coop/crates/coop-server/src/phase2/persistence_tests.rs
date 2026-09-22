@@ -207,6 +207,7 @@ mod durable {
                         group,
                         zone,
                         status: GroupStatus::Active,
+                        zone_revision: 0,
                     },
                 );
                 state

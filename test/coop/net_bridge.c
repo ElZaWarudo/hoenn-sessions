@@ -1,6 +1,7 @@
 #include <stddef.h>
 
 #include "global.h"
+#include "coop/group_travel.h"
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "coop/region.h"
@@ -12,6 +13,7 @@
 #include "overworld.h"
 #include "palette.h"
 #include "save.h"
+#include "script.h"
 #include "test/test.h"
 
 _Static_assert(sizeof(struct CoopBridgeMessage) == 144, "tested message ABI size");
@@ -425,6 +427,43 @@ TEST("Cloud Coop session epoch change clears both queues and reissues ROM ready"
     EXPECT_EQ(message.sequence, 1);
     EXPECT_EQ(message.session_epoch, 17);
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop reconnect sends ROM ready before active group travel replay")
+{
+    struct CoopBridgeMessage message;
+    struct CoopGroupTravelRecord request = {0};
+
+    InitTestBridge();
+    PopInitialRomReady();
+    request.kind = COOP_GROUP_TRAVEL_CLIENT_REQUEST;
+    request.route = COOP_GROUP_TRAVEL_ROUTE_FERRY_LATER;
+    request.era = COOP_GROUP_TRAVEL_ERA_LATER;
+    request.departure = COOP_GROUP_TRAVEL_DEPARTURE_FERRY;
+    request.destination = COOP_GROUP_TRAVEL_DEST_LATER_VERMILION;
+    request.request_id = 77;
+    ScriptContext_Init();
+    UnlockPlayerFieldControls();
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_TestSeedRequest(&request);
+
+    EXPECT(CoopBridgeMessage_Seal(&message,
+                                  COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  5,
+                                  17,
+                                  NULL,
+                                  0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_ROM_READY);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_CLIENT);
+    EXPECT_EQ(message.length, COOP_GROUP_TRAVEL_RECORD_SIZE);
+    EXPECT(CoopGroupTravel_TestSemanticQueued());
+    CoopGroupTravel_OnTransportLost();
+    CoopGroupTravel_Init();
 }
 
 TEST("Cloud Coop same epoch reconnect rejects stale replay and preserves sequences")

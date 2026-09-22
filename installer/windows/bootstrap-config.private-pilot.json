@@ -1,0 +1,8 @@
+{
+  "product": "hoenn-sessions",
+  "channel": "private-pilot",
+  "bootstrap_mode": "msi-owned",
+  "requires_online_readiness": true,
+  "mutable_runtime_is_outside_install_root": true,
+  "notices_required": true
+}

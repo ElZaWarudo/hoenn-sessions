@@ -674,7 +674,7 @@ static void LoadCurrentMapData(void)
     gMapHeader.mapLayout = GetMapLayout(gMapHeader.mapLayoutId);
     if (GetCurrentRegion() == REGION_KANTO)
         isFrlg = 1;
-    else if (GetCurrentRegion() == REGION_HOENN)
+    else if (GetCurrentRegion() == REGION_HOENN || GetCurrentRegion() == REGION_JOHTO)
         isFrlg = 0;
 }
 

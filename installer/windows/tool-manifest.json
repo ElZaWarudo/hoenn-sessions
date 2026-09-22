@@ -1,0 +1,10 @@
+{
+  "dotnet_sdk": "9.0.203",
+  "wix_sdk": "6.0.2",
+  "rust_toolchain": "1.93.1",
+  "target": "x86_64-pc-windows-msvc",
+  "signing": {
+    "required_for_release": true,
+    "timestamp_algorithm": "sha256"
+  }
+}

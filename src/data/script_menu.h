@@ -1137,8 +1137,97 @@ struct MultichoiceListStruct
 static const struct MenuAction sMultichoiceList_FlightCallRegions[] =
 {
     { COMPOUND_STRING("Kanto") },
+    { COMPOUND_STRING("Johto") },
     { COMPOUND_STRING("Hoenn") },
     { COMPOUND_STRING("Cancel") },
+};
+
+static const struct MenuAction sMultichoiceList_KantoEras[] =
+{
+    { COMPOUND_STRING("Original Kanto") },
+    { COMPOUND_STRING("Three Years Later") },
+    { COMPOUND_STRING("Cancel") },
+};
+
+static const struct MenuAction sMultichoiceList_JohtoDaysOfWeek[] =
+{
+    { COMPOUND_STRING("Sunday") }, { COMPOUND_STRING("Monday") },
+    { COMPOUND_STRING("Tuesday") }, { COMPOUND_STRING("Wednesday") },
+    { COMPOUND_STRING("Thursday") }, { COMPOUND_STRING("Friday") },
+    { COMPOUND_STRING("Saturday") }, { gText_Exit },
+};
+
+static const struct MenuAction sMultichoiceList_JohtoKurtBalls[] =
+{
+    { COMPOUND_STRING("Love Ball") }, { COMPOUND_STRING("Lure Ball") },
+    { COMPOUND_STRING("Friend Ball") }, { COMPOUND_STRING("Heavy Ball") },
+    { COMPOUND_STRING("Moon Ball") }, { COMPOUND_STRING("Fast Ball") },
+    { COMPOUND_STRING("Level Ball") }, { gText_Exit },
+};
+
+static const struct MenuAction sMultichoiceList_JohtoPrizeMons[] =
+{
+    { COMPOUND_STRING("Abra") }, { COMPOUND_STRING("Clefairy") },
+    { COMPOUND_STRING("Munchlax") }, { COMPOUND_STRING("Dratini") },
+    { COMPOUND_STRING("Porygon") }, { gText_Exit },
+};
+
+static const struct MenuAction sMultichoiceList_Johto7Floors[] =
+{
+    { COMPOUND_STRING("6F") }, { COMPOUND_STRING("5F") },
+    { COMPOUND_STRING("4F") }, { COMPOUND_STRING("3F") },
+    { COMPOUND_STRING("2F") }, { COMPOUND_STRING("1F") },
+    { COMPOUND_STRING("B1F") }, { gText_Exit },
+};
+
+static const struct MenuAction sMultichoiceList_Johto5Floors[] =
+{
+    { COMPOUND_STRING("5F") }, { COMPOUND_STRING("4F") },
+    { COMPOUND_STRING("3F") }, { COMPOUND_STRING("2F") },
+    { COMPOUND_STRING("1F") }, { gText_Exit },
+};
+
+static const struct MenuAction sMultichoiceList_JohtoGoldSilver[] =
+{
+    { COMPOUND_STRING("Gold") }, { COMPOUND_STRING("Silver") },
+};
+
+static const struct MenuAction sMultichoiceList_JohtoElderQuiz1[] =
+{
+    { COMPOUND_STRING("Pal") }, { COMPOUND_STRING("Underling") }, { COMPOUND_STRING("Friend") },
+};
+static const struct MenuAction sMultichoiceList_JohtoElderQuiz2[] =
+{
+    { COMPOUND_STRING("Strategy") }, { COMPOUND_STRING("Training") }, { COMPOUND_STRING("Cheating") },
+};
+static const struct MenuAction sMultichoiceList_JohtoElderQuiz3[] =
+{
+    { COMPOUND_STRING("Weak person") }, { COMPOUND_STRING("Tough person") }, { COMPOUND_STRING("Anybody") },
+};
+static const struct MenuAction sMultichoiceList_JohtoElderQuiz4[] =
+{
+    { COMPOUND_STRING("Love") }, { COMPOUND_STRING("Violence") }, { COMPOUND_STRING("Knowledge") },
+};
+static const struct MenuAction sMultichoiceList_JohtoElderQuiz5[] =
+{
+    { COMPOUND_STRING("Tough") }, { COMPOUND_STRING("Weak") }, { COMPOUND_STRING("Both") },
+};
+
+static const struct MenuAction sMultichoiceList_JohtoOlivineHarbor[] =
+{
+    { COMPOUND_STRING("Vermilion") }, { COMPOUND_STRING("Southern Island") },
+    { COMPOUND_STRING("Birth Island") }, { COMPOUND_STRING("Faraway Island") },
+    { COMPOUND_STRING("Battle Frontier") }, { gText_Exit },
+};
+static const struct MenuAction sMultichoiceList_JohtoVermilionHarbor[] =
+{
+    { COMPOUND_STRING("Olivine") }, { COMPOUND_STRING("Southern Island") },
+    { COMPOUND_STRING("Birth Island") }, { COMPOUND_STRING("Faraway Island") },
+    { COMPOUND_STRING("Battle Frontier") }, { gText_Exit },
+};
+static const struct MenuAction sMultichoiceList_JohtoHoennStarters[] =
+{
+    { COMPOUND_STRING("Green Stone") }, { COMPOUND_STRING("Red Stone") }, { COMPOUND_STRING("Blue Stone") },
 };
 
 static const struct MultichoiceListStruct sMultichoiceLists[] =
@@ -1303,6 +1392,21 @@ static const struct MultichoiceListStruct sMultichoiceLists[] =
     [MULTI_EGGS_VICTORIES_QUIT]                        = MULTICHOICE(sMultichoiceList_Eggs_Victories_Quit),
     [MULTI_HOF_EGGS_VICTORIES_QUIT]                    = MULTICHOICE(sMultichoiceList_HOF_Eggs_Victories_Quit),
 	[MULTI_FLIGHTCALL_REGIONS]                           = MULTICHOICE(sMultichoiceList_FlightCallRegions),
+    [MULTI_KANTO_ERAS]                                  = MULTICHOICE(sMultichoiceList_KantoEras),
+    [MULTI_JOHTO_DAYS_OF_WEEK]                          = MULTICHOICE(sMultichoiceList_JohtoDaysOfWeek),
+    [MULTI_JOHTO_KURT_BALLS]                            = MULTICHOICE(sMultichoiceList_JohtoKurtBalls),
+    [MULTI_JOHTO_PRIZE_MONS]                            = MULTICHOICE(sMultichoiceList_JohtoPrizeMons),
+    [MULTI_JOHTO_7FLOORS]                               = MULTICHOICE(sMultichoiceList_Johto7Floors),
+    [MULTI_JOHTO_GOLD_SILVER]                           = MULTICHOICE(sMultichoiceList_JohtoGoldSilver),
+    [MULTI_JOHTO_ELDER_QUIZ_1]                          = MULTICHOICE(sMultichoiceList_JohtoElderQuiz1),
+    [MULTI_JOHTO_ELDER_QUIZ_2]                          = MULTICHOICE(sMultichoiceList_JohtoElderQuiz2),
+    [MULTI_JOHTO_ELDER_QUIZ_3]                          = MULTICHOICE(sMultichoiceList_JohtoElderQuiz3),
+    [MULTI_JOHTO_ELDER_QUIZ_4]                          = MULTICHOICE(sMultichoiceList_JohtoElderQuiz4),
+    [MULTI_JOHTO_ELDER_QUIZ_5]                          = MULTICHOICE(sMultichoiceList_JohtoElderQuiz5),
+    [MULTI_JOHTO_OLIVINE_HARBOR]                        = MULTICHOICE(sMultichoiceList_JohtoOlivineHarbor),
+    [MULTI_JOHTO_VERMILION_HARBOR]                      = MULTICHOICE(sMultichoiceList_JohtoVermilionHarbor),
+    [MULTI_JOHTO_HOENN_STARTERS]                        = MULTICHOICE(sMultichoiceList_JohtoHoennStarters),
+    [MULTI_JOHTO_5FLOORS]                               = MULTICHOICE(sMultichoiceList_Johto5Floors),
 };
 
 const u8 *const gStdStrings[] =

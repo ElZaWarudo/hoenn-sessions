@@ -1,4 +1,6 @@
 #include "global.h"
+#include "constants/regions.h"
+#include "johto/rival.h"
 #include "string_util.h"
 #include "text.h"
 #include "strings.h"
@@ -479,6 +481,9 @@ static const u8 *ExpandPlaceholder_KunChan(void)
 
 static const u8 *ExpandPlaceholder_RivalName(void)
 {
+    if (gMapHeader.engineRegion == REGION_JOHTO)
+        return JohtoRival_GetName();
+
     if (isFrlg)
     {
         if (gSaveBlock2Ptr->rivalName[0] != EOS)

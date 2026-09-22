@@ -290,6 +290,13 @@ graphics/pokemon_jump/bg.4bpp: %.4bpp: %.png
 graphics/pokenav/region_map/map.8bpp: %.8bpp: %.png
 	$(GFX) $< $@ -num_tiles 233 -Wnum_tiles
 
+graphics/pokenav/region_map/johtomap.8bpp: %.8bpp: %.png
+	$(GFX) $< $@
+
+graphics/pokenav/region_map/johtomap.8bpp.smol: graphics/pokenav/region_map/johtomap.8bpp
+
+graphics/pokenav/region_map/johtomap.bin.smolTM: graphics/pokenav/region_map/johtomap.bin
+
 $(MISCGFXDIR)/japanese_hof.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -num_tiles 29 -Wnum_tiles
 
@@ -678,3 +685,17 @@ $(SPINDAGFXDIR)/spot_2.1bpp: %.1bpp: %.png
 
 $(SPINDAGFXDIR)/spot_3.1bpp: %.1bpp: %.png
 	$(GFX) $< $@ -plain -data_width 2
+
+### Johto sliding puzzle source art ###
+
+graphics/johto/sliding_puzzle/puzzles/kabuto/tiles.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+
+graphics/johto/sliding_puzzle/puzzles/omanyte/tiles.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+
+graphics/johto/sliding_puzzle/puzzles/aerodactyl/tiles.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4
+
+graphics/johto/sliding_puzzle/puzzles/ho_oh/tiles.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 4 -mheight 4

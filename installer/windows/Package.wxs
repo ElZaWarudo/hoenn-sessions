@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package
+      Name="Hoenn Sessions"
+      Manufacturer="Hoenn Sessions"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="123F488C-39CB-454D-B12A-A7A4D591C88C"
+      Scope="perUser"
+      InstallerVersion="500">
+    <MajorUpgrade DowngradeErrorMessage="A newer Hoenn Sessions installation is already present." />
+    <MediaTemplate EmbedCab="yes" />
+    <util:CloseApplication Id="CloseDesktopBeforeUpgrade"
+                           Target="coop-launcher.exe"
+                           Description="Save and close Hoenn Sessions before updating, then choose Retry. If you choose Ignore, the old game stays open until you close it."
+                           PromptToContinue="yes"
+                           CloseMessage="yes"
+                           Timeout="60" />
+    <util:CloseApplication Id="CloseBootstrapBeforeUpgrade"
+                           Target="hoenn-sessions-bootstrapper.exe"
+                           Description="Close Hoenn Sessions before updating, then choose Retry."
+                           PromptToContinue="yes"
+                           Timeout="60" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Programs">
+        <Directory Id="PRODUCTFOLDER" Name="Hoenn Sessions">
+          <Directory Id="APPFOLDER" Name="app" />
+          <Directory Id="NOTICEFOLDER" Name="notices" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="PROGRAMMENUDIR" Name="Hoenn Sessions" />
+    </StandardDirectory>
+
+    <Component Id="StableBootstrap" Directory="APPFOLDER" Guid="FA836C5B-48C8-42F3-AA95-8895F5BF2175">
+      <File Id="BootstrapExe" Name="hoenn-sessions-bootstrapper.exe" Source="$(var.BootstrapExe)" />
+      <RemoveFolder Id="RemoveAppFolder" Directory="APPFOLDER" On="uninstall" />
+      <RemoveFolder Id="RemoveProductFolder" Directory="PRODUCTFOLDER" On="uninstall" />
+      <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="StableBootstrap" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="OnboardingFallback" Directory="APPFOLDER" Guid="DA11E0A7-1A78-424B-A837-3045A71F116A">
+      <File Id="OnboardingExe" Name="hoenn-sessions-onboarding.exe" Source="$(var.OnboardingExe)" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="OnboardingFallback" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="PrivatePilotConfig" Directory="PRODUCTFOLDER" Guid="FC420A22-EEEC-4C54-8B0A-2703EC937F39">
+      <File Id="BootstrapConfig" Name="bootstrap-config.private-pilot.json" Source="$(var.ConfigFile)" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="PrivatePilotConfig" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="ThirdPartyNotices" Directory="NOTICEFOLDER" Guid="D3BB800E-1A4E-40D8-BB4C-982C28B22BC0">
+      <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.txt" Source="$(var.NoticesFile)" />
+      <RemoveFolder Id="RemoveNoticeFolder" Directory="NOTICEFOLDER" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions\InstallerComponents" Name="ThirdPartyNotices" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+    <Component Id="StartMenuShortcut" Directory="PROGRAMMENUDIR" Guid="*">
+      <Shortcut Id="HoennSessionsShortcut"
+                Name="Hoenn Sessions"
+                Description="Play Hoenn Sessions"
+                Target="[APPFOLDER]hoenn-sessions-bootstrapper.exe"
+                WorkingDirectory="APPFOLDER" />
+      <RemoveFolder Id="RemoveProgramMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Hoenn Sessions" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <Feature Id="MainFeature" Title="Hoenn Sessions" Level="1">
+      <ComponentRef Id="StableBootstrap" />
+      <ComponentRef Id="OnboardingFallback" />
+      <ComponentRef Id="PrivatePilotConfig" />
+      <ComponentRef Id="ThirdPartyNotices" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

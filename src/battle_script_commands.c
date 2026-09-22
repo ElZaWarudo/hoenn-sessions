@@ -1,4 +1,6 @@
 #include "global.h"
+#include "mastery.h"
+#include "battle_caps.h"
 #include "battle.h"
 #include "battle_hold_effects.h"
 #include "battle_message.h"
@@ -4254,6 +4256,21 @@ static void Cmd_getexp(void)
     case 2: // set exp value to the poke in expgetter_id and print message
         if (gBattleControllerExecFlags == 0)
         {
+            // Real species/level own EXP, EVs and move learning. Combat resumes
+            // only after case 5 puts the temporary battle projection back.
+            if (BattleCaps_BeginExperience(*expMonId))
+            {
+                for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+                {
+                    struct Pokemon *mon = &gParties[B_TRAINER_0][*expMonId];
+                    if (GetBattlerMon(battler) == mon && GetActiveGimmick(battler) == GIMMICK_DYNAMAX)
+                    {
+                        ApplyDynamaxHPMultiplier(mon);
+                        gBattleMons[battler].hp = GetMonData(mon, MON_DATA_HP);
+                        gBattleMons[battler].maxHP = GetMonData(mon, MON_DATA_MAX_HP);
+                    }
+                }
+            }
             bool32 wasSentOut = (gBattleStruct->expSentInMons & (1u << *expMonId)) != 0;
             holdEffect = GetMonHoldEffect(&gParties[B_TRAINER_0][*expMonId]);
 
@@ -4264,7 +4281,7 @@ static void Cmd_getexp(void)
                 gBattleStruct->battlerExpReward = 0;
             }
             else if ((gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER && *expMonId >= 3)
-                  || GetMonData(&gParties[B_TRAINER_0][*expMonId], MON_DATA_LEVEL) == MAX_LEVEL)
+                  || !CanMonGainExperience(&gParties[B_TRAINER_0][*expMonId]))
             {
                 gBattleScripting.getexpState = 5;
                 gBattleStruct->battlerExpReward = 0;
@@ -4367,7 +4384,7 @@ static void Cmd_getexp(void)
         {
             gBattleResources->bufferB[gBattleStruct->expGetterBattlerId][0] = 0;
             currLvl = GetMonData(&gParties[B_TRAINER_0][*expMonId], MON_DATA_LEVEL);
-            if (GetMonData(&gParties[B_TRAINER_0][*expMonId], MON_DATA_HP) && currLvl != MAX_LEVEL)
+            if (GetMonData(&gParties[B_TRAINER_0][*expMonId], MON_DATA_HP) && CanMonGainExperience(&gParties[B_TRAINER_0][*expMonId]))
             {
                 gBattleResources->beforeLvlUp->stats[STAT_HP]    = GetMonData(&gParties[B_TRAINER_0][*expMonId], MON_DATA_MAX_HP);
                 gBattleResources->beforeLvlUp->stats[STAT_ATK]   = GetMonData(&gParties[B_TRAINER_0][*expMonId], MON_DATA_ATK);
@@ -4439,6 +4456,32 @@ static void Cmd_getexp(void)
         }
         else
         {
+            if (BattleCaps_EndExperience(*expMonId))
+            {
+                for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+                {
+                    if (!IsOnPlayerSide(battler) || gBattlerPartyIndexes[battler] != *expMonId
+                     || GetBattlerMon(battler) != &gParties[B_TRAINER_0][*expMonId])
+                        continue;
+                    struct Pokemon *mon = &gParties[B_TRAINER_0][*expMonId];
+                    if (gBattleMons[battler].volatiles.transformed)
+                    {
+                        gBattleMons[battler].level = GetMonData(mon, MON_DATA_LEVEL);
+                        gBattleMons[battler].hp = GetMonData(mon, MON_DATA_HP);
+                        gBattleMons[battler].maxHP = GetMonData(mon, MON_DATA_MAX_HP);
+                    }
+                    else
+                    {
+                        CopyMonLevelAndBaseStatsToBattleMon(battler, mon);
+                        if (gBattleMons[battler].volatiles.powerTrick)
+                        {
+                            u16 temp;
+                            SWAP(gBattleMons[battler].attack, gBattleMons[battler].defense, temp);
+                        }
+                    }
+                    UpdateHealthboxAttribute(gHealthboxSpriteIds[battler], mon, HEALTHBOX_ALL);
+                }
+            }
             if ((++gBattleStruct->expOrderId) < PARTY_SIZE)
             {
                 *expMonId = gBattleStruct->expGettersOrder[gBattleStruct->expOrderId];

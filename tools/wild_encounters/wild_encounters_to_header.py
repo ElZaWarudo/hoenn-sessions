@@ -172,6 +172,9 @@ class WildEncounterAssembler:
 
     def WritePokemonHeaders(self, headers):
         label = headers["label"]
+        if label == "gWildMonHeaders":
+            self.WriteLine('#include "johto/wild_info.h"')
+            self.WriteLine()
         self.WriteLine(f"const struct WildPokemonHeader {label}[] =")
         self.WriteLine("{")
         for shared_label in headers["data"]:
@@ -218,6 +221,8 @@ class WildEncounterAssembler:
             self.WriteLine("},", 2)
             self.WriteLine("},", 1)
             self.WriteLine(f"#endif")
+        if label == "gWildMonHeaders":
+            self.WriteLine('#include "johto/wild_headers.inc"')
         self.WriteTerminator()
         self.WriteLine("};")
 

@@ -32,6 +32,7 @@ extern u16 ALIGNED(4) sBackupMapData[MAX_MAP_DATA_SIZE];
 u32 GetNumTilesInPrimary(struct MapLayout const *mapLayout);
 u32 GetNumMetatilesInPrimary(struct MapLayout const *mapLayout);
 u32 GetNumPalsInPrimary(struct MapLayout const *mapLayout);
+bool32 IsMetatileIdValidForMapLayout(const struct MapLayout *mapLayout, u16 metatileId);
 u32 MapGridGetMetatileIdAt(int x, int y);
 u32 MapGridGetMetatileBehaviorAt(int x, int y);
 void MapGridSetMetatileIdAt(int x, int y, u16 metatile);

@@ -28,10 +28,10 @@ ciborium = "0.2.2"
 postgres = "0.19.14"
 reqwest = { workspace = true, features = ["blocking"] }
 jsonwebtoken = { version = "9.3.1", default-features = false, features = ["use_pem"] }
+futures-util.workspace = true
 
 [dev-dependencies]
 crc32fast.workspace = true
-futures-util.workspace = true
 http-body-util.workspace = true
 tower.workspace = true
 tokio-tungstenite.workspace = true

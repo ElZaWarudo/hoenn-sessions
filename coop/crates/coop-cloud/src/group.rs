@@ -4,7 +4,7 @@ use crate::{
     ApiVersion, CharacterId, ClientInstanceId, IdError, IdempotencyKey, LeaseFence, Revision,
     SessionEpoch, SessionId, UnixTimestampMillis, ids::deserialize_bounded_string,
 };
-use coop_protocol::{RegionId, WorldZone};
+use coop_protocol::{GroupTravelDeparture, RegionId, WorldZone};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
@@ -573,6 +573,250 @@ pub struct GroupTravelResponse {
     pub group: GroupView,
 }
 
+/// Creates a consent-gated two-player travel proposal for an exact group state.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GroupTravelProposalRequest {
+    pub api_version: ApiVersion,
+    pub route_id: RouteId,
+    pub departure: GroupTravelDeparture,
+    pub session_id: SessionId,
+    pub character_id: CharacterId,
+    pub current_revision: Revision,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+    pub idempotency_key: IdempotencyKey,
+}
+
+impl GroupTravelProposalRequest {
+    /// # Errors
+    ///
+    /// Returns an error for a malformed route or non-canonical expected members.
+    pub fn new(
+        fence: LeaseFence,
+        route_id: impl Into<String>,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<Self, GroupError> {
+        let route_id = RouteId::new(route_id)?;
+        let departure = if route_id.as_str().ends_with("_TRAIN") {
+            GroupTravelDeparture::Train
+        } else if route_id.as_str().ends_with("_FERRY") {
+            GroupTravelDeparture::Ferry
+        } else if route_id.as_str().ends_with("_ROUTE22") {
+            GroupTravelDeparture::Gate
+        } else {
+            return Err(GroupError::InvalidRouteId);
+        };
+        Self::new_with_departure(fence, route_id.as_str(), departure, idempotency_key)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error when `route_id` is not a valid canonical route identifier.
+    pub fn new_with_departure(
+        fence: LeaseFence,
+        route_id: impl Into<String>,
+        departure: GroupTravelDeparture,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<Self, GroupError> {
+        let request = Self {
+            api_version: ApiVersion::V1,
+            route_id: RouteId::new(route_id)?,
+            departure,
+            session_id: fence.session_id,
+            character_id: fence.character_id,
+            current_revision: fence.current_revision,
+            session_epoch: fence.session_epoch,
+            client_instance_id: fence.client_instance_id,
+            idempotency_key,
+        };
+        request.validate()?;
+        Ok(request)
+    }
+
+    #[must_use]
+    pub const fn fence(&self) -> LeaseFence {
+        LeaseFence::new(
+            self.session_id,
+            self.character_id,
+            self.current_revision,
+            self.session_epoch,
+            self.client_instance_id,
+        )
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error for an unsupported version or non-canonical revisions.
+    pub fn validate(&self) -> Result<(), GroupError> {
+        if self.api_version.value() != 1 {
+            return Err(GroupError::InvalidApiVersion);
+        }
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de> for GroupTravelProposalRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            api_version: ApiVersion,
+            route_id: RouteId,
+            departure: GroupTravelDeparture,
+            session_id: SessionId,
+            character_id: CharacterId,
+            current_revision: Revision,
+            session_epoch: SessionEpoch,
+            client_instance_id: ClientInstanceId,
+            idempotency_key: IdempotencyKey,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        let request = Self {
+            api_version: wire.api_version,
+            route_id: wire.route_id,
+            departure: wire.departure,
+            session_id: wire.session_id,
+            character_id: wire.character_id,
+            current_revision: wire.current_revision,
+            session_epoch: wire.session_epoch,
+            client_instance_id: wire.client_instance_id,
+            idempotency_key: wire.idempotency_key,
+        };
+        request.validate().map_err(serde::de::Error::custom)?;
+        Ok(request)
+    }
+}
+
+/// A role-checked action on an existing travel proposal.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GroupTravelAction {
+    Accept,
+    Decline,
+    Cancel,
+    Applied,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct GroupTravelActionRequest {
+    pub api_version: ApiVersion,
+    pub action: GroupTravelAction,
+    pub session_id: SessionId,
+    pub character_id: CharacterId,
+    pub current_revision: Revision,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+    pub idempotency_key: IdempotencyKey,
+}
+
+impl GroupTravelActionRequest {
+    #[must_use]
+    pub const fn new(
+        fence: LeaseFence,
+        action: GroupTravelAction,
+        idempotency_key: IdempotencyKey,
+    ) -> Self {
+        Self {
+            api_version: ApiVersion::V1,
+            action,
+            session_id: fence.session_id,
+            character_id: fence.character_id,
+            current_revision: fence.current_revision,
+            session_epoch: fence.session_epoch,
+            client_instance_id: fence.client_instance_id,
+            idempotency_key,
+        }
+    }
+
+    #[must_use]
+    pub const fn fence(&self) -> LeaseFence {
+        LeaseFence::new(
+            self.session_id,
+            self.character_id,
+            self.current_revision,
+            self.session_epoch,
+            self.client_instance_id,
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for GroupTravelActionRequest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            api_version: ApiVersion,
+            action: GroupTravelAction,
+            session_id: SessionId,
+            character_id: CharacterId,
+            current_revision: Revision,
+            session_epoch: SessionEpoch,
+            client_instance_id: ClientInstanceId,
+            idempotency_key: IdempotencyKey,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        if wire.api_version.value() != 1 {
+            return Err(serde::de::Error::custom(GroupError::InvalidApiVersion));
+        }
+        Ok(Self {
+            api_version: wire.api_version,
+            action: wire.action,
+            session_id: wire.session_id,
+            character_id: wire.character_id,
+            current_revision: wire.current_revision,
+            session_epoch: wire.session_epoch,
+            client_instance_id: wire.client_instance_id,
+            idempotency_key: wire.idempotency_key,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GroupTravelProposalStatus {
+    Pending,
+    Committed,
+    Declined,
+    Cancelled,
+    Expired,
+}
+
+/// Immutable delivery payload created by the atomic accept transaction.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupTravelCommit {
+    pub group_zone_revision: u64,
+    pub members: [GroupMemberView; 2],
+    pub destination: WorldZone,
+}
+
+/// Persistent proposal state delivered to either group member.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupTravelProposalView {
+    pub api_version: ApiVersion,
+    pub proposal_id: crate::GroupTravelProposalId,
+    pub group_id: crate::GroupId,
+    pub requester_character_id: CharacterId,
+    pub responder_character_id: CharacterId,
+    pub route_id: RouteId,
+    pub departure: GroupTravelDeparture,
+    pub source: WorldZone,
+    pub destination: WorldZone,
+    pub expected_group_zone_revision: u64,
+    pub expected_members: [GroupMemberView; 2],
+    pub status: GroupTravelProposalStatus,
+    pub expires_at: UnixTimestampMillis,
+    pub commit: Option<GroupTravelCommit>,
+    pub applied_by: [bool; 2],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -595,6 +839,16 @@ mod tests {
         .expect("valid group view")
     }
 
+    fn sample_fence() -> LeaseFence {
+        LeaseFence::new(
+            id(SessionId::new, 10),
+            id(CharacterId::new, 11),
+            Revision::new(3),
+            SessionEpoch::new(1).expect("epoch"),
+            id(ClientInstanceId::new, 12),
+        )
+    }
+
     #[test]
     fn group_view_zone_wire_is_strict_bounded_and_round_trips() {
         let original = sample_view();
@@ -609,5 +863,35 @@ mod tests {
         let mut oversized_map = value;
         oversized_map["world_zone"]["map"] = json!("A".repeat(129));
         assert!(serde_json::from_value::<GroupView>(oversized_map).is_err());
+    }
+
+    #[test]
+    fn proposal_requests_and_actions_are_strict_and_use_named_actions() {
+        let proposal = GroupTravelProposalRequest::new_with_departure(
+            sample_fence(),
+            "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
+            GroupTravelDeparture::Train,
+            id(IdempotencyKey::new, 13),
+        )
+        .expect("proposal");
+        let mut value = serde_json::to_value(&proposal).expect("proposal json");
+        assert_eq!(
+            serde_json::from_value::<GroupTravelProposalRequest>(value.clone())
+                .expect("proposal round trip"),
+            proposal
+        );
+        value["unexpected"] = json!(true);
+        assert!(serde_json::from_value::<GroupTravelProposalRequest>(value).is_err());
+
+        let action = GroupTravelActionRequest::new(
+            sample_fence(),
+            GroupTravelAction::Applied,
+            id(IdempotencyKey::new, 14),
+        );
+        let mut value = serde_json::to_value(action).expect("action json");
+        assert_eq!(value["action"], "APPLIED");
+        assert!(serde_json::from_value::<GroupTravelActionRequest>(value.clone()).is_ok());
+        value["action"] = json!("applied");
+        assert!(serde_json::from_value::<GroupTravelActionRequest>(value).is_err());
     }
 }

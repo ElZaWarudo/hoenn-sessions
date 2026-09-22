@@ -26,13 +26,15 @@ pub use group::{
     AcceptGroupInvitationRequest, AcceptGroupInvitationResponse, CreateGroupInvitationRequest,
     CreateGroupInvitationResponse, GROUP_INVITATION_TTL_MS, GROUP_REQUEST_BODY_MAX_BYTES,
     GROUP_ROUTE_ID_MAX_BYTES, Group, GroupError, GroupInvitationView, GroupMemberView,
-    GroupTravelRequest, GroupTravelResponse, GroupView, MAX_WORLD_REVISION, RouteId,
+    GroupTravelAction, GroupTravelActionRequest, GroupTravelCommit, GroupTravelProposalRequest,
+    GroupTravelProposalStatus, GroupTravelProposalView, GroupTravelRequest, GroupTravelResponse,
+    GroupView, MAX_WORLD_REVISION, RouteId,
 };
 pub use ids::{
     BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,
-    GroupInvitationId, IdError, IdempotencyKey, MgbaVersion, ProtocolVersion, RefreshFamilyId,
-    Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotId, SnapshotRevision, Timestamp,
-    UnixTimestampMillis, UserId,
+    GroupInvitationId, GroupTravelProposalId, IdError, IdempotencyKey, MgbaVersion,
+    ProtocolVersion, RefreshFamilyId, Revision, SessionEpoch, SessionId, Sha256Digest, SnapshotId,
+    SnapshotRevision, Timestamp, UnixTimestampMillis, UserId,
 };
 pub use online::{
     ONLINE_PAGE_SIZE, OnlineAction, OnlineActionRequest, OnlineActionResponse, OnlineGroup,
