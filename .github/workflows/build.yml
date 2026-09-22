@@ -60,6 +60,11 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+
       - name: Build and verify bundled Android APK
         run: bash android/build-ci.sh debug
         # This public repository must not publish ROM-bearing APKs as artifacts.
