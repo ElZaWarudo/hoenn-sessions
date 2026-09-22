@@ -77,4 +77,25 @@ local travel_frame = assert(protocol.encode({
 assert(protocol.decode(travel_frame, "inbound"))
 assert(protocol.decode(travel_frame, "outbound") == nil)
 
+assert(protocol.is_outbound(protocol.types.COMPANION_STATE))
+assert(protocol.is_outbound(protocol.types.SOCIAL_SIGNAL))
+assert(not protocol.is_outbound(protocol.types.REMOTE_COMPANION))
+assert(not protocol.is_inbound(protocol.types.SOCIAL_SIGNAL))
+assert(protocol.is_inbound(protocol.types.REMOTE_COMPANION))
+assert(protocol.is_inbound(protocol.types.REMOTE_SOCIAL_SIGNAL))
+
+local companion_frame = assert(protocol.encode({
+  type = protocol.types.COMPANION_STATE, sequence = 3, session_epoch = 1,
+  payload = string.rep("\0", 8),
+}))
+assert(protocol.decode(companion_frame, "outbound"))
+assert(protocol.decode(companion_frame, "inbound") == nil)
+
+local remote_signal_frame = assert(protocol.encode({
+  type = protocol.types.REMOTE_SOCIAL_SIGNAL, sequence = 4, session_epoch = 1,
+  payload = string.rep("\0", 20),
+}))
+assert(protocol.decode(remote_signal_frame, "inbound"))
+assert(protocol.decode(remote_signal_frame, "outbound") == nil)
+
 print("bridge protocol tests passed")
