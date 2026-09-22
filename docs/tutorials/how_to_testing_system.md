@@ -3,6 +3,36 @@
 ## Running Tests
 To run all the tests use:
 `make check -j`
+
+CI builds the test ROM once with `make check-build -j4` and runs four shards
+against that same ROM. To reproduce one shard locally, run
+`TEST_SHARD_COUNT=4 TEST_SHARD_INDEX=0 make check -j4` (indices `0` through `3`).
+Run every index to cover the full suite. All shards must use the same ROM,
+test filter, shard count, and local worker count (`-j4` in CI). Without the shard
+variables, `make check` runs every test. The number of local workers times the
+shard count must not exceed 32. Invalid configurations and empty shards fail.
+Hydra preserves reported test failures across expected emulator crash recovery.
+
+Before sharding, CI runs `test/test_test_runner.c` with one worker to check
+battle-to-function isolation, including interrupt callback cleanup.
+
+The `test-rom` CI artifact contains the ELF files for debugging. The separate
+`test-runtime` artifact contains a tar archive with the headless ELF, mGBA,
+Hydra, and patchelf, including their executable permissions. On Linux, extract
+the archive and run a shard without rebuilding:
+
+```sh
+tar -xzf test-runtime.tar.gz
+MAKEFLAGS=-j4 TEST_SHARD_COUNT=4 TEST_SHARD_INDEX=0 \
+  tools/mgba-rom-test-hydra/mgba-rom-test-hydra \
+  tools/mgba/mgba-rom-test unused-objcopy pokeemerald-test-headless.elf
+```
+
+PRs confined to documentation, Rust, installer, Android, or deployment files
+select their relevant checks without rebuilding unrelated ROMs. Unknown paths
+and CI/tooling changes select every check. Pushes to `main` run every check.
+The final `build` gate rejects failed, cancelled, and unexpectedly skipped jobs.
+
 To run specific tests, e.g. Spikes ones, use:
 `make check TESTS="Spikes"`
 To build a ROM (pokemerald-test.elf) that can be opened in mgba to view specific tests, e.g. Spikes ones, use:

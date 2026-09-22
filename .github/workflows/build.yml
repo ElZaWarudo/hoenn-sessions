@@ -6,6 +6,14 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
+# A newer commit supersedes the previous validation of the same PR.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   GAME_REVISION: 0
   GAME_LANGUAGE: ENGLISH
@@ -14,9 +22,34 @@ env:
   DEPRECATED_ERROR: 1
 
 jobs:
-  build-emerald:
+  changes:
     if: github.actor != 'allcontributors[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      rom: ${{ steps.select.outputs.rom }}
+      rust: ${{ steps.select.outputs.rust }}
+      installer: ${{ steps.select.outputs.installer }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test CI change selection
+        run: python3 .github/ci/test_classify_changes.py
+      - name: Select required checks
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = pull_request ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            python3 .github/ci/classify_changes.py --base "$BASE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            python3 .github/ci/classify_changes.py --all >> "$GITHUB_OUTPUT"
+          fi
+
+  build-emerald:
+    needs: changes
+    if: needs.changes.outputs.rom == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,7 +77,7 @@ jobs:
             tools/compresSmol/compresSmol
             tools/compresSmol/compresSmolTilemap
             tools/wav2agb/wav2agb
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
       - name: ROM (Emerald)
         env:
@@ -70,8 +103,9 @@ jobs:
         # This public repository must not publish ROM-bearing APKs as artifacts.
 
   build-firered:
-    if: github.actor != 'allcontributors[bot]'
-    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rom == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,14 +133,15 @@ jobs:
             tools/compresSmol/compresSmol
             tools/compresSmol/compresSmolTilemap
             tools/wav2agb/wav2agb
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
       - name: ROM (Firered)
         run: make firered -j$(nproc) -O
 
   build-leafgreen:
-    if: github.actor != 'allcontributors[bot]'
-    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rom == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -134,14 +169,15 @@ jobs:
             tools/compresSmol/compresSmol
             tools/compresSmol/compresSmolTilemap
             tools/wav2agb/wav2agb
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
       - name: ROM (Leafgreen)
         run: make leafgreen -j$(nproc) -O
 
   release:
-    if: github.actor != 'allcontributors[bot]'
-    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rom == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -169,16 +205,17 @@ jobs:
             tools/compresSmol/compresSmol
             tools/compresSmol/compresSmolTilemap
             tools/wav2agb/wav2agb
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
       - name: Release
         env:
           GAME_VERSION: EMERALD
         run: make -j$(nproc) release
 
-  test:
-    if: github.actor != 'allcontributors[bot]'
-    runs-on: ubuntu-latest
+  build-test-rom:
+    needs: changes
+    if: needs.changes.outputs.rom == 'true'
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -208,13 +245,42 @@ jobs:
             tools/wav2agb/wav2agb
             tools/patchelf/patchelf
             tools/mgba-rom-test-hydra/mgba-rom-test-hydra
-          key: tools-check-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+          key: tools-check-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
-      - name: Test
+      - name: Test host runner sharding and failure reporting
+        run: |
+          make -f make_tools.mk check-tools
+          python3 tools/mgba-rom-test-hydra/test_sharding.py
+
+      - name: Build test ROM once
         env:
           GAME_VERSION: EMERALD
           TEST: 1
-        run: make -j$(nproc) check
+        run: make -j$(nproc) -O check-build
+
+      - name: Check battle-to-function test isolation
+        env:
+          MAKEFLAGS: -j1
+        run: |
+          cp pokeemerald-test-headless.elf test-isolation.elf
+          tools/patchelf/patchelf test-isolation.elf gTestRunnerArgv 'test/test_test_runner.c\0'
+          tools/mgba-rom-test-hydra/mgba-rom-test-hydra \
+            tools/mgba/mgba-rom-test unused-objcopy test-isolation.elf
+
+      - name: Package test runtime with executable permissions
+        run: |
+          tar -czf test-runtime.tar.gz pokeemerald-test-headless.elf \
+            tools/patchelf/patchelf tools/mgba-rom-test-hydra/mgba-rom-test-hydra \
+            tools/mgba/mgba-rom-test
+
+      - name: Upload shared test runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-runtime
+          path: test-runtime.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload test ROM
         if: always()
@@ -222,9 +288,57 @@ jobs:
         with:
           name: test-rom
           path: pokeemerald-test*.elf
+          retention-days: 7
+
+  test:
+    needs: build-test-rom
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - name: Download shared test runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: test-runtime
+
+      - name: Run test shard
+        env:
+          # Every shard must use the same local worker count and ELF.
+          MAKEFLAGS: -j4
+          TEST_SHARD_COUNT: 4
+          TEST_SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          tar -xzf test-runtime.tar.gz
+          tools/mgba-rom-test-hydra/mgba-rom-test-hydra \
+            tools/mgba/mgba-rom-test unused-objcopy pokeemerald-test-headless.elf
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.93.1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: linux-tests
+          cache-workspace-crates: 'false'
+          cache-all-crates: 'false'
+          cache-bin: 'false'
+      - name: Rust tests
+        run: cargo test --locked --workspace --exclude coop-android
+      - name: Release script tests
+        run: bash deploy/coop/test-release-scripts.sh
 
   installer-package-smoke:
-    if: github.actor != 'allcontributors[bot]'
+    needs: changes
+    if: needs.changes.outputs.installer == 'true'
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -257,14 +371,33 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WiX package compilation failed' }
 
   # Gate job: satisfies the "build" branch protection rule.
-  # Passes only when all parallel build/test jobs succeed.
+  # Validate intentional skips as well as failures; a skipped gate is not a pass.
   build:
-    if: github.actor != 'allcontributors[bot]'
-    runs-on: ubuntu-latest
-    needs: [build-emerald, build-firered, build-leafgreen, release, test, installer-package-smoke]
+    if: always() && github.actor != 'allcontributors[bot]'
+    runs-on: ubuntu-24.04
+    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, installer-package-smoke]
     steps:
-      - name: All builds passed
-        run: echo "All builds and tests passed."
+      - name: Check every required job
+        env:
+          JOBS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          jobs = json.loads(os.environ['JOBS'])
+          assert jobs['changes']['result'] == 'success', 'change selection failed'
+          groups = {
+              'rom': ['build-emerald', 'build-firered', 'build-leafgreen', 'release', 'build-test-rom', 'test'],
+              'rust': ['rust'],
+              'installer': ['installer-package-smoke'],
+          }
+          for group, names in groups.items():
+              selected = jobs['changes']['outputs'][group]
+              assert selected in ('true', 'false'), f'invalid selection: {group}'
+              expected = 'success' if selected == 'true' else 'skipped'
+              for name in names:
+                  assert jobs[name]['result'] == expected, f'{name}: {jobs[name]["result"]}, expected {expected}'
+          print('All required builds and tests passed.')
+          PY
 
   docs_validate:
     if: github.actor != 'allcontributors[bot]'
