@@ -339,8 +339,13 @@ async fn run(
             // Only the verified canonical SAV is portable across desktop/Android.
             "signature_verified":session.revision.value()>0});
         let run = if events.send(load).await.is_ok() {
+            // Embedded mGBA currently reboots the ROM bridge as soon as the
+            // first moving presence update enters the realtime lifecycle.
+            // Keep Android gameplay and cloud checkpoints alive through the
+            // proven fenced lifecycle until embedded realtime can survive
+            // ordinary overworld movement.
             session
-                .run_until_shutdown_with_realtime(&api, &mut supervisor, async {
+                .run_until_shutdown(&api, &mut supervisor, async {
                     while *stop.borrow_and_update() == 0 {
                         if stop.changed().await.is_err() {
                             break;
