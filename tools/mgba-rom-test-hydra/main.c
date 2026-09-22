@@ -93,6 +93,24 @@ static struct Runner *runners = NULL;
 // TODO: Build the symbol table on demand.
 static struct SymbolTable symbol_table = { NULL, 0 };
 
+static unsigned shard_count = 1;
+static unsigned shard_index = 0;
+
+static unsigned parse_shard_value(const char *name, unsigned fallback)
+{
+    const char *value = getenv(name);
+    if (!value || !*value)
+        return fallback;
+    char *end;
+    unsigned long parsed = strtoul(value, &end, 10);
+    if (*end || parsed > MAX_PROCESSES)
+    {
+        fprintf(stderr, "%s must be an integer between 0 and %d\n", name, MAX_PROCESSES);
+        exit(2);
+    }
+    return parsed;
+}
+
 static const struct Symbol *lookup_address(uint32_t address)
 {
     int lo = 0, hi = symbol_table.symbols_n;
@@ -517,6 +535,14 @@ int main(int argc, char *argv[])
     }
     if (nrunners > MAX_PROCESSES)
         nrunners = MAX_PROCESSES;
+    shard_count = parse_shard_value("TEST_SHARD_COUNT", 1);
+    shard_index = parse_shard_value("TEST_SHARD_INDEX", 0);
+    if (!nrunners || !shard_count || shard_index >= shard_count || nrunners * shard_count > MAX_PROCESSES)
+    {
+        fprintf(stderr, "invalid test shard configuration: %u runners, shard %u of %u (max %d total runners)\n",
+                nrunners, shard_index, shard_count, MAX_PROCESSES);
+        exit(2);
+    }
     runners_digits = ceil(log10(nrunners));
     runners = calloc(nrunners, sizeof(*runners));
     if (!runners)
@@ -602,9 +628,12 @@ int main(int argc, char *argv[])
             else if (patchelfpid == 0)
             {
                 char n_arg[5], i_arg[5];
-                snprintf(n_arg, sizeof(n_arg), "\\x%02x", nrunners);
-                snprintf(i_arg, sizeof(i_arg), "\\x%02x", i);
-                if (execlp("tools/patchelf/patchelf", "tools/patchelf/patchelf", rom_path, "gTestRunnerN", n_arg, "gTestRunnerI", i_arg, NULL) == -1)
+                // All shards use the same ROM and local runner count. Give
+                // the existing ROM allocator a disjoint slice of global IDs.
+                snprintf(n_arg, sizeof(n_arg), "\\x%02x", nrunners * shard_count);
+                snprintf(i_arg, sizeof(i_arg), "\\x%02x", shard_index * nrunners + i);
+                if (execlp("tools/patchelf/patchelf", "tools/patchelf/patchelf", rom_path,
+                           "gTestRunnerN", n_arg, "gTestRunnerI", i_arg, NULL) == -1)
                 {
                     perror("execlp patchelf failed");
                     _exit(2);
@@ -785,6 +814,12 @@ int main(int argc, char *argv[])
             fwrite(runners[i].output_buffer, 1, runners[i].output_buffer_size, stdout);
         if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) > exit_code)
             exit_code = WEXITSTATUS(wstatus);
+        else if (!WIFEXITED(wstatus))
+        {
+            fprintf(stderr, "test runner %d terminated abnormally\n", i);
+            if (exit_code < 2)
+                exit_code = 2;
+        }
         passes += runners[i].passes;
         expectedFails += runners[i].expectedFails;
         knownFails += runners[i].knownFails;
@@ -831,6 +866,8 @@ int main(int argc, char *argv[])
     if (results == 0)
     {
         fprintf(stdout, "\nNo tests found.\n");
+        if (shard_count > 1)
+            exit_code = 2;
     }
     else
     {

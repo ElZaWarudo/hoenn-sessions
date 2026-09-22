@@ -51,7 +51,7 @@ env:
 jobs:
   # Gate: Rust test suite must pass before any release work starts.
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -61,6 +61,14 @@ jobs:
         with:
           toolchain: 1.93.1
           components: clippy, rustfmt
+
+      - name: Cache Rust build dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: linux-tests
+          cache-all-crates: false
+          cache-workspace-crates: false
+          cache-bin: false
 
       - name: Rust tests
         run: cargo test --locked --workspace --exclude coop-android
@@ -79,7 +87,9 @@ jobs:
   # either installer publication or runtime image/bundle work can begin.
   release-key-gate:
     needs: [validate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      signer_artifact_id: ${{ steps.release_signer.outputs.artifact-id }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -88,6 +98,14 @@ jobs:
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
           toolchain: 1.93.1
+
+      - name: Cache Rust build dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: linux-release-tool
+          cache-all-crates: false
+          cache-workspace-crates: false
+          cache-bin: false
 
       - name: Build release-key correspondence gate
         run: cargo build --locked --release -p coop-release-tool
@@ -99,6 +117,17 @@ jobs:
         run: |
           test -n "$HOENN_RELEASE_PRIVATE_SEED_HEX" -a -n "$RELEASE_PUBLIC_KEY_HEX"
           target/release/coop-release-tool check-key --public-key-hex "$RELEASE_PUBLIC_KEY_HEX"
+
+      - name: Package verified release tool
+        run: tar -C target/release -czf release-tool.tar.gz coop-release-tool
+
+      - name: Share verified release tool with this run
+        id: release_signer
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-envelope-signer-${{ github.run_attempt }}
+          path: release-tool.tar.gz
+          if-no-files-found: error
 
   # The Windows installer is the stable bootstrapper plus the desktop
   # onboarding fallback. It is intentionally a separate private artifact:
@@ -131,6 +160,14 @@ jobs:
         with:
           toolchain: 1.93.1
           targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: windows-msvc-release
+          cache-all-crates: false
+          cache-workspace-crates: false
+          cache-bin: false
 
       - name: Select pinned .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -336,7 +373,7 @@ jobs:
 
   release:
     needs: [validate, release-key-gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_sequence: ${{ steps.installer-release.outputs.sequence }}
     env:
@@ -470,9 +507,24 @@ jobs:
             binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
             libpng-dev python3 mingw-w64 p7zip-full
 
+      - name: Install pinned Rust
+        if: steps.status.outputs.state == 'ABSENT'
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        with:
+          toolchain: 1.93.1
+
       - name: Add Windows target
         if: steps.status.outputs.state == 'ABSENT'
         run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Cache Rust build dependencies
+        if: steps.status.outputs.state == 'ABSENT'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: linux-windows-gnu-release
+          cache-all-crates: false
+          cache-workspace-crates: false
+          cache-bin: false
 
       - name: Cache ROM build tools
         if: steps.status.outputs.state == 'ABSENT'
@@ -493,7 +545,7 @@ jobs:
             tools/compresSmol/compresSmol
             tools/compresSmol/compresSmolTilemap
             tools/wav2agb/wav2agb
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h') }}
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
 
       # Single ROM build for this release; reused by manifest + distribution.
       - name: Build Emerald ROM and ELF
@@ -555,8 +607,19 @@ jobs:
           cargo build --locked --release --target x86_64-pc-windows-gnu -p coop-desktop
           cp target/x86_64-pc-windows-gnu/release/coop-launcher.exe coop-launcher.exe
 
-      - name: Build the release envelope signer
-        run: cargo build --locked --release -p coop-release-tool
+      # Release-only retries reuse the successful gate's exact artifact.
+      # If it has expired, rerun all jobs to rebuild and verify the tool.
+      - name: Download verified release tool from this run
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          artifact-ids: ${{ needs.release-key-gate.outputs.signer_artifact_id }}
+          path: release-tool-artifact
+
+      - name: Restore the release envelope signer
+        run: |
+          mkdir -p target/release
+          tar -xzf release-tool-artifact/release-tool.tar.gz -C target/release
+          test -x target/release/coop-release-tool
 
       - name: Log in to GHCR
         if: steps.status.outputs.state == 'ABSENT'
