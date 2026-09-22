@@ -11,6 +11,7 @@ Run every index to cover the full suite. All shards must use the same ROM,
 test filter, shard count, and local worker count (`-j4` in CI). Without the shard
 variables, `make check` runs every test. The number of local workers times the
 shard count must not exceed 32. Invalid configurations and empty shards fail.
+Hydra preserves reported test failures across expected emulator crash recovery.
 
 Before sharding, CI runs `test/test_test_runner.c` with one worker to check
 battle-to-function isolation, including interrupt callback cleanup.

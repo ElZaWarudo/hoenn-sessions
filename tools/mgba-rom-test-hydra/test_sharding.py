@@ -94,6 +94,14 @@ class ShardingTests(unittest.TestCase):
                         sys.exit(7)
                     if behavior == "signal":
                         os.kill(os.getpid(), signal.SIGTERM)
+                    if behavior.startswith("report-"):
+                        result, _, exit_status = behavior[7:].partition(":")
+                        print(f"GBA Debug: :Nreported-{result}")
+                        print("GBA Debug: :Lfixture.c:1")
+                        print(f"GBA Debug: :{result}RESULT")
+                        print("GBA Debug: :Nafter-restart")
+                        print("GBA Debug: :ECRASH")
+                        sys.exit(int(exit_status or "0"))
                 print(f"GBA Debug: :Nworker-{index}-of-{total}")
                 print("GBA Debug: :PPASS")
                 """
@@ -173,6 +181,25 @@ class ShardingTests(unittest.TestCase):
         result = self.run_hydra(count=2, index=1, behavior="empty")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("No tests found", result.stdout)
+
+    def test_reported_failures_survive_a_clean_exit_after_expected_crash(self):
+        for category in ("F", "U", "V"):
+            with self.subTest(category=category):
+                result = self.run_hydra(behavior=f"report-{category}")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("after-restart: CRASH", result.stdout)
+                self.assertEqual(WORKER_RESULT.findall(result.stdout), [("1", "2")])
+
+    def test_expected_failures_and_crashes_remain_successful(self):
+        for category in ("E", "K"):
+            with self.subTest(category=category):
+                result = self.run_hydra(behavior=f"report-{category}")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("after-restart: CRASH", result.stdout)
+
+    def test_reported_failure_preserves_higher_worker_error(self):
+        result = self.run_hydra(behavior="report-F:7")
+        self.assertEqual(result.returncode, 7, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

@@ -863,6 +863,11 @@ int main(int argc, char *argv[])
         results += runners[i].results;
     }
 
+    // An expected ROM restart can reset its exit code after reporting a
+    // failure. Keep parsed failures fatal even if the emulator exits cleanly.
+    if (exit_code == 0 && (fails > 0 || knownFailsPassing > 0 || expectedFailsPassing > 0))
+        exit_code = 1;
+
     if (results == 0)
     {
         fprintf(stdout, "\nNo tests found.\n");
