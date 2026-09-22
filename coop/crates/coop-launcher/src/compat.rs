@@ -1010,6 +1010,37 @@ mod tests {
     }
 
     #[test]
+    fn shipped_bridge_script_gates_the_pinned_manifest_schema() {
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("bridge")
+            .join("main.lua");
+        let text = fs::read_to_string(source).unwrap();
+        let mut gated = Vec::new();
+        for line in text.lines() {
+            let Some((_, version)) = line.split_once("manifest.schema_version ~=") else {
+                continue;
+            };
+            gated.push(
+                version
+                    .trim()
+                    .split_whitespace()
+                    .next()
+                    .unwrap()
+                    .parse::<u16>()
+                    .unwrap(),
+            );
+        }
+        assert_eq!(
+            gated,
+            [BRIDGE_MANIFEST_SCHEMA],
+            "bridge/main.lua must gate exactly the pinned manifest schema"
+        );
+    }
+
+    #[test]
     fn checked_manifest_requires_the_pinned_emulator_contract() {
         let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
