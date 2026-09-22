@@ -164,6 +164,24 @@ Stock mGBA 0.10.5 requires this UI action; there is no supported script autoload
 command-line flag. Generated addresses, session secrets, ROMs, saves,
 savestates, and BIOS files must remain uncommitted.
 
+## Social presence: follower, pings, emotes
+
+Each client publishes its lead-party companion (species + shiny) with the
+pose stream, and the partner renders it as a trailing overworld follower
+(`OBJ_EVENT_MON` graphics) behind the remote avatar. Position pings
+(`L` alone in the overworld) and one of eight emote bubbles (`L` held +
+`SELECT`, cycling 1..8, both rate-limited to one per two seconds) travel as
+best-effort social signals: accepted submits fan out to visible partition
+peers immediately, never tick-publish, and never disconnect slow receivers.
+Remote emotes render as engine emotion bubbles over the remote avatar; a ping
+additionally stores a five-second map marker readable via
+`CoopPresenceRuntime_GetPingMarker`. Companion records piggyback on the spawn
+drain so late joiners see the follower at once. The wire contracts live in
+`coop-protocol` (`social.rs`), the realtime kinds are `COMPANION` /
+`SOCIAL_SIGNAL` (client) and `REMOTE_COMPANION` / `REMOTE_SOCIAL_SIGNAL`
+(server), and the bridge types are `0x0010`/`0x0011` (ROM to sidecar) and
+`0x010F`/`0x0110` (sidecar to ROM).
+
 ## Deliberately deferred
 
 PostgreSQL/Firebase persistence, live group warp delivery,
