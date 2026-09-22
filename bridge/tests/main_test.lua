@@ -224,7 +224,7 @@ local stale_manifest_ok, stale_manifest_error = pcall(original_dofile, "bridge/m
 assert(not stale_manifest_ok)
 assert(tostring(stale_manifest_error):match("address projection schema"))
 
-manifest_schema = 3
+manifest_schema = 4
 save_schema = 2
 local stale_save_ok, stale_save_error = pcall(original_dofile, "bridge/main.lua")
 assert(not stale_save_ok)

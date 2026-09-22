@@ -17,7 +17,7 @@ local function is_integer(value)
 end
 
 local function validate_save_manifest(value)
-  if manifest.schema_version ~= 3 then
+  if manifest.schema_version ~= 4 then
     return nil, "generated bridge address projection schema is incompatible"
   end
   if type(value) ~= "table"
