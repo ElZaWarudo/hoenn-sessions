@@ -230,7 +230,7 @@ async fn run(
             CharacterId::parse(&character_id).map_err(|_| "Personaje guardado inválido")?;
         AuthSession::refresh_from_keychain(&api, vault.as_ref(), &user, user_id, character_id)
             .await
-            .map_err(|_| "No se pudo restaurar la sesión guardada")?
+            .map_err(|error| format!("No se pudo restaurar la sesión guardada: {error}"))?
     } else {
         AuthSession::login(
             &api,
