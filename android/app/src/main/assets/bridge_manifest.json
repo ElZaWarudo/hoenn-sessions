@@ -1,20 +1,22 @@
 {
   "emulator": {
-    "archive_sha256": "b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a",
-    "executable_sha256": "5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247",
+    "archive_sha256": "ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b",
+    "build_id": "0.11-9139-3a5bc2462",
+    "executable_sha256": "743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546",
     "name": "mGBA",
     "platform": "windows-x64",
+    "source_commit": "3a5bc24629867576b0fb576a5d5a21d3b3d6b576",
     "variant": "Qt",
-    "version": "0.10.5"
+    "version": "0.11.0"
   },
   "game_build": {
     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
     "numeric_id": 65536,
-    "rom_sha256": "06764f4afa0d8a9664f28bfbc874dd0b9421c6b932765648034621146ce7893e"
+    "rom_sha256": "1935a5b99e40922fa915dcbcc28c4e210ffc4b4241747a91f586670fdfc7078d"
   },
   "net_bridge": {
     "abi_version": 1,
-    "address": 33782960,
+    "address": 33784272,
     "byte_order": "little",
     "checksum": {
       "algorithm": "CRC-32/IEEE",
@@ -59,15 +61,15 @@
     "symbol": "gCoopNetBridge"
   },
   "save": {
-    "block3_address": 33639888,
+    "block3_address": 33640412,
     "coop_offset": 4,
     "crc_offset": 668,
-    "generation_address": 33639920,
+    "generation_address": 33640444,
     "generation_offset": 28,
     "registry_digest": "43918833dec646d6a583d124686c8540",
     "registry_version": 1,
     "schema_version": 1,
     "struct_size": 672
   },
-  "schema_version": 3
+  "schema_version": 4
 }

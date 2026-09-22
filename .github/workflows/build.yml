@@ -51,6 +51,19 @@ jobs:
           GAME_VERSION: EMERALD
         run: make -j$(nproc) -O all
 
+      - name: Generate Android compatibility manifest from the same ROM
+        run: python3 tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
+
+      - name: Set up Android Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build and verify bundled Android APK
+        run: bash android/build-ci.sh debug
+        # This public repository must not publish ROM-bearing APKs as artifacts.
+
   build-firered:
     if: github.actor != 'allcontributors[bot]'
     runs-on: ubuntu-latest
@@ -261,7 +274,6 @@ jobs:
   allcontributors:
     if: github.actor == 'allcontributors[bot]'
     runs-on: ubuntu-latest
-    needs: []
     steps:
       - name: Automatically pass for allcontributors
         run: echo "CI automatically passes for allcontributors" && exit 0

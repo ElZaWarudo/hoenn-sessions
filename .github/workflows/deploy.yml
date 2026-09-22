@@ -518,6 +518,20 @@ jobs:
           print("manifest rom_sha256:", rom)
           PY
 
+      - name: Set up Android Java
+        if: steps.status.outputs.state == 'ABSENT'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build signed Android APK from the server ROM and manifest
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: bash android/build-ci.sh release
+
       - name: Build coop-sidecar (Windows x86_64)
         if: steps.status.outputs.state == 'ABSENT'
         run: |
@@ -646,6 +660,15 @@ jobs:
           scp deploy/coop/promote-release.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
           scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
           ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
+
+      # APK contains the ROM. Keep it private and outside the Windows envelope.
+      # This runs only for a fresh release, matching the ROM/server build above.
+      - name: Store signed Android APK privately on VPS
+        if: steps.status.outputs.state == 'ABSENT'
+        run: |
+          ssh hoenn-vps 'mkdir -p /srv/hoenn/android/${{ github.sha }} && chmod 700 /srv/hoenn/android /srv/hoenn/android/${{ github.sha }}'
+          scp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/app-release.apk.sha256 hoenn-vps:/srv/hoenn/android/${{ github.sha }}/
+          ssh hoenn-vps 'chmod 600 /srv/hoenn/android/${{ github.sha }}/*'
 
       # ROM travels runner -> VPS only; nothing is uploaded as a GH artifact.
       - name: Upload release to VPS staging

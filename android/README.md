@@ -1,97 +1,70 @@
-# Android cooperative client — pending runtime validation
+# Hoenn Sessions for Android
 
-The client embeds mGBA 0.10.5 and the Rust launcher/sidecar in one Android
-process. Touch controls, audio, JNI queues, server-issued leases/epochs,
-realtime presence and canonical save transactions are implemented. They still
-require end-to-end validation; see [current status](ESTADO-PR.md).
+The APK includes the compatible game, mGBA 0.10.5 and the Rust cooperative client.
+Open the app, enter your account and choose **Iniciar sesión y jugar**. No ROM picker
+or separate runtime download is required. Save inside the game before closing.
 
-## Build on Windows
+**Menú → Configurar mando** provides ten button mappings, collision swaps, stick
+ deadzone (10–50%), a left-stick toggle, input testing and reset. Settings persist
+on this device. Touch controls remain available. Disconnected controllers and
+loss of focus release held inputs. A Bluetooth/USB controller must first be paired
+with Android. Android 9+ on ARM64 or x86_64 is required.
 
-Install Rust using rustup, Android Studio/JDK and the Android SDK. For a GNU
-Rust host, host GCC must be on PATH; MSYS2_ROOT selects its installation,
-defaulting to %USERPROFILE%/.hoenn-tools/msys64 on this machine.
+## Build locally
 
-From the repository root, run:
-
-```powershell
-.\android\build.ps1
-```
-
-The script prepares NDK 27.2.12479018, CMake 3.22.1 and clean mGBA source
-at commit 26b7884bc25a5933960f3cdcd98bac1ae14d42e2. Gradle preBuild invokes
-build-rust.ps1 for x86_64 and arm64-v8a, packaging libcoop_android.so alongside
-the C/JNI core. Cargo uses the lockfile. Android linking supports 16 KiB pages.
-The core version/source commit are checked before opening an online game;
-Windows executable digests are not Android native identity evidence.
-
-Output: app/build/outputs/apk/debug/app-debug.apk (development signature).
-Compilation does not run tests. In this session, obtain user authorization
-before any test, device launch or server connection.
-
-## ROM and server
-
-Import pokeemerald.gba through the document picker. Its whole-file SHA-256 must be:
-
-```text
-06764f4afa0d8a9664f28bfbc874dd0b9421c6b932765648034621146ce7893e
-```
-
-ROM/ELF source commit: 333a5f3991607298e66f66e68ada6ad20867c0a9.
-The generator produced artifacts/bridge_manifest.windows-build.json; the APK
-asset is a copy of it. BuildConfig derives addresses and hashes from the asset.
-The VPS must admit that same manifest. This client does not update the VPS.
-
-Endpoint: https://169-128-190-115.sslip.io.
-Pinned Ed25519 ID: pilot-v1; public key:
-f239614d143272c416c185e4d52d95a883f7ad89cadf55e1cf1dbc9dda8fe188.
-
-TLS certificates and hostnames remain validated. Resume packages require
-the pinned signature and matching character, revision, build and artifact hashes.
-Revision zero has no signed resume: health/login do not prove signing identity.
-No ROM, BIOS, account, invitation, private key or save is packaged.
-
-## Play, save and close
-
-1. Import the exact ROM and select login/play with your account.
-2. Rust acquires a lease and restores a verified canonical character.sav, or
-   lets the game produce the first save at revision zero.
-3. Java bridges memory queues to the authenticated in-process sidecar.
-   Presence becomes eligible outdoors in Littleroot.
-4. Save using the game menu. Java waits for the matching grant, generation and
-   mGBA savedata callback before synchronizing actual Flash1M bytes. Rust validates
-   the canonical container and performs prepare/upload/finalize. The UI reports
-   a cloud revision only after server acceptance.
-5. Reconnect starts from the cloud save after confirmed core/sidecar shutdown
-   and a newer server epoch. It requires an accepted save. An unresolved
-   checkpoint fails closed and preserves recovery material.
-6. Close after saving. Leaving the foreground requests graceful close: the core
-   runs briefly without audio/input to finish an already-ready checkpoint.
-   Reopening requires login and restores the server save. Force-killing Android
-   cannot guarantee graceful drain; unsaved game progress is not a cloud save.
-
-Desktop savestates are not loaded into Android. The canonical SAV is shared;
-optional Windows states are not presumed portable. Refresh tokens remain in
-memory and are revoked on graceful closure. Android backup is disabled.
-
-## Validation — authorization required in this session
+Install Rust via rustup, Python 3, Android Studio/JDK 21+ and SDK command-line tools.
+Run from the repository root:
 
 ```powershell
-.\android\build.ps1 -Test
-.\android\open-emulator.ps1
-.\android\test-device.ps1 -CredentialFile .local/android-test-account.clixml
+$env:JAVA_HOME = 'C:/Program Files/Android/Android Studio/jbr'
+.\android\build.ps1 -Test -Rom 'C:/private/game.gba' -Manifest 'C:/private/bridge_manifest.json'
 ```
 
-The emulator script boots Hoenn_API_36, installs the APK and opens the app.
-It uses WHPX, software graphics and explicit virtual-cellular DNS. It never
-disables TLS checks or changes the VPS.
+The ROM and manifest must come from the **same deployed release**. BuildConfig
+uses that manifest's ROM hash and memory addresses. The build rejects mismatching
+ROM bytes; startup verifies the bundled bytes again before installing them into
+private app storage. Existing saves are preserved. Without `-Manifest`, the checked
+in Android manifest identifies deployed ROM SHA-256
+`1935a5b99e40922fa915dcbcc28c4e210ffc4b4241747a91f586670fdfc7078d`.
+Without `-Rom`, the build uses the repository's `pokeemerald.gba`.
 
-The debug smoke checks native loading and cloud authentication/leases.
-Credentials are streamed into app-private storage, removed before use and
-never printed. It does not replace interactive gameplay validation.
+The script installs SDK 37, NDK 27.2.12479018, CMake 3.22.1, and clean mGBA sources
+at `26b7884bc25a5933960f3cdcd98bac1ae14d42e2`. Both Android native ABIs are built
+with Cargo's lockfile. Release libraries support 16 KiB pages.
+Output: `app/build/outputs/apk/debug/app-debug.apk` (development signature).
 
-Still to validate: ROM frames/controls/audio, first game-produced save/upload,
-real pilot-v1 resume signature, close/recovery/reconnect, and two-client presence
-with distinct accounts. Historical evidence is in VALIDACION.md.
+For a signed release, set `HOENN_ROM_PATH`, `HOENN_MANIFEST_PATH`,
+`ANDROID_KEYSTORE_PATH`, and `ANDROID_KEYSTORE_PASSWORD`; use key alias
+`hoenn-android` and run `android/gradlew.bat -p android assembleRelease`.
+Keep the keystore backed up privately: future updates require the same signer.
 
-mGBA is MPL 2.0 (license included in assets). JCS uses java-json-canonicalization;
-Ed25519 also uses Bouncy Castle. Rust reuses the workspace protocol and save parser.
+## GitHub CI and delivery
+
+The CI Emerald job builds the ROM once, generates its manifest, builds the bundled
+APK, runs Java tests and Android lint, and verifies the actual packaged ROM,
+manifest, native libraries, signature and alignment. A PR build proves compatibility
+with its own ROM; only a matching deployed ROM can join the live server.
+
+The production release job builds a signed APK from the exact ROM/manifest used by
+the server image. Configure repository secrets `ANDROID_KEYSTORE_B64` and
+`ANDROID_KEYSTORE_PASSWORD` (alias `hoenn-android`). Missing keys fail the release
+before server publication. The APK and SHA-256 are stored privately on the VPS at
+`/srv/hoenn/android/<commit>/`. They are outside the signed Windows envelope.
+Previously promoted releases are reused, not rebuilt; APK generation follows the
+same fresh-release condition.
+
+This repository is public. APKs contain the ROM, so CI deliberately does not upload
+them to public workflow artifacts or GitHub Releases. Distribute the APK through
+the project's private channel. No BIOS, account, password, private key or save is
+included in an APK.
+
+## Server and trust
+
+Endpoint: https://169-128-190-115.sslip.io. TLS and hostname validation are enabled.
+Cloud saves require the pinned `pilot-v1` Ed25519 key:
+`f239614d143272c416c185e4d52d95a883f7ad89cadf55e1cf1dbc9dda8fe188`.
+The Android core/wire version is 0.10.5, separate from the Windows emulator
+metadata in the shared ROM manifest. Updating Android does not deploy the VPS.
+
+An APK build and a successful login are not evidence of an accepted cloud save.
+Gameplay, save/resume and physical controller checks must be recorded separately.
