@@ -19,7 +19,9 @@ public final class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final CloudApi api=new CloudApi();
     private TextView status;
-    private LinearLayout layout, loginPanel, playPanel;
+    private LinearLayout layout, loginPanel;
+    private FrameLayout playPanel;
+    private View loginScreen;
     private volatile boolean settingsOpen, inputFocused;
     private EditText user,password;
     private GameView game;
@@ -35,7 +37,7 @@ public final class MainActivity extends Activity {
     };
     private volatile BridgeConnection connection;
     private volatile boolean cooperative;
-    private volatile boolean pendingStart,destroyed,restartAfterPause;
+    private volatile boolean pendingStart,destroyed,restartAfterPause,autoResumePending;
     private final Handler hostHandler=new Handler(Looper.getMainLooper());
     private final Runnable hostPoll=new Runnable(){public void run(){
         try{pollSession();}catch(Exception e){status.setText("Error de sesión: "+e.getMessage());NativeSession.stop();closeCore();}
@@ -53,33 +55,32 @@ public final class MainActivity extends Activity {
         super.onCreate(saved);
         SecureCredentialStore.initialize(this);
         savedAccount=SecureCredentialStore.loadAccount();
+        autoResumePending=savedAccount!=null;
         ControllerSettingsDialog.loadPreferences(this,controller);
         inputManager=getSystemService(InputManager.class);
         inputManager.registerInputDeviceListener(controllerDevices,hostHandler);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE,WindowManager.LayoutParams.FLAG_SECURE);
-        ScrollView scroll=new ScrollView(this);layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(24,48,24,32);scroll.addView(layout);setContentView(scroll);
+        FrameLayout root=new FrameLayout(this);setContentView(root);
+        ScrollView scroll=new ScrollView(this);loginScreen=scroll;layout=new LinearLayout(this);layout.setOrientation(LinearLayout.VERTICAL);layout.setPadding(24,48,24,32);scroll.addView(layout);root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         TextView title=new TextView(this);title.setText("HOENN SESSIONS");title.setTextSize(23);layout.addView(title);
         button("Menú",this::showMenu);
         status=new TextView(this);status.setTag("session-status");status.setText("Inicia sesión para continuar tu partida.");status.setPadding(0,20,0,20);layout.addView(status);
-        LinearLayout root=layout;
-        loginPanel=new LinearLayout(this);loginPanel.setOrientation(LinearLayout.VERTICAL);root.addView(loginPanel);layout=loginPanel;
+        LinearLayout loginRoot=layout;
+        loginPanel=new LinearLayout(this);loginPanel.setOrientation(LinearLayout.VERTICAL);loginRoot.addView(loginPanel);layout=loginPanel;
         user=field("Usuario",false);password=field("Contraseña",true);
         button("Iniciar sesión y jugar",this::startWithPassword);
         button("Continuar con la sesión guardada",()->{if(SecureCredentialStore.loadAccount()==null)status.setText("No hay una sesión guardada en este dispositivo.");else startSavedSession();});
-        layout=root;
-        playPanel=new LinearLayout(this);playPanel.setOrientation(LinearLayout.VERTICAL);root.addView(playPanel);
-        layout=playPanel;
-        FrameLayout stage=new FrameLayout(this);
-        game=new GameView();game.setTag("gba-frame");stage.addView(game,new FrameLayout.LayoutParams(-1,-1));
-        touchOverlay=new TouchOverlay(this);touchOverlay.setTag("touch-overlay");stage.addView(touchOverlay,new FrameLayout.LayoutParams(-1,-1));
+        layout=loginRoot;
+        playPanel=new FrameLayout(this);root.addView(playPanel,new FrameLayout.LayoutParams(-1,-1));
+        game=new GameView();game.setTag("gba-frame");playPanel.addView(game,new FrameLayout.LayoutParams(-1,-1));
+        touchOverlay=new TouchOverlay(this);touchOverlay.setTag("touch-overlay");playPanel.addView(touchOverlay,new FrameLayout.LayoutParams(-1,-1));
+        Button gameMenu=new Button(this);gameMenu.setText("☰");gameMenu.setContentDescription("Menú del juego");gameMenu.setOnClickListener(v->showMenu());
+        FrameLayout.LayoutParams menuParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);playPanel.addView(gameMenu,menuParams);
         overlaySettings=new Button(this);overlaySettings.setText("⚙ Controles");overlaySettings.setOnClickListener(v->configureTouchOverlay());
-        FrameLayout.LayoutParams settingsParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT);stage.addView(overlaySettings,settingsParams);
-        layout.addView(stage,new LinearLayout.LayoutParams(-1,-2));
-        button("Cerrar partida (guarda antes en el juego)",()->{if(pendingStart || NativeSession.isActive()){status.setText("Cerrando y comprobando checkpoint…");NativeSession.stop();}else work(()->{closeCore();return "Juego local detenido.";});});
-        layout=root;
+        FrameLayout.LayoutParams settingsParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT);playPanel.addView(overlaySettings,settingsParams);
         playPanel.setVisibility(View.GONE);
         hostHandler.post(hostPoll);
-        if(savedAccount!=null){status.setText("Restaurando la sesión de "+savedAccount.username+"…");startSavedSession();}
+        if(savedAccount!=null)status.setText("Restaurando la sesión de "+savedAccount.username+"…");
     }
 
     private void startWithPassword(){
@@ -122,7 +123,7 @@ public final class MainActivity extends Activity {
                 if(destroyed || !resumed){closeCore();NativeSession.stop();continue;}
                 verifyCore();
                 synchronized(NativeCore.class){NativeCore.close();NativeCore.configureBridge(BuildConfig.BRIDGE_ADDRESS,BuildConfig.SAVE_GENERATION_ADDRESS);if(!NativeCore.open(event.getString("rom"),event.getString("save")))throw new IOException("mGBA no pudo abrir la partida");connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
-                savedAccount=SecureCredentialStore.loadAccount();loginPanel.setVisibility(View.GONE);playPanel.setVisibility(View.VISIBLE);
+                savedAccount=SecureCredentialStore.loadAccount();loginScreen.setVisibility(View.GONE);playPanel.setVisibility(View.VISIBLE);enterFullscreen();
                 status.setText("Sesión adquirida · epoch "+event.getLong("epoch")+" · revisión "+event.getLong("revision")+(event.getBoolean("signature_verified")?" · firma pilot-v1 verificada":" · primer guardado pendiente")+". Presencia al llegar a Villa Raíz exterior.");
             }else if(type.equals("stop")){
                 closeCore();
@@ -130,12 +131,12 @@ public final class MainActivity extends Activity {
                 status.setText("Guardado aceptado por el servidor · revisión "+event.getLong("revision"));
             }else if(type.equals("reconnect_wait")){status.setText("Reconectando: esperando el período permitido por el servidor ("+((event.getLong("wait_ms")+999)/1000)+" s)…");}
             else if(type.equals("closed")){
-                loginPanel.setVisibility(View.VISIBLE);playPanel.setVisibility(View.GONE);
+                exitFullscreen();loginScreen.setVisibility(View.VISIBLE);loginPanel.setVisibility(View.VISIBLE);playPanel.setVisibility(View.GONE);
                 boolean signedOut=event.optBoolean("signed_out",false);
                 if(signedOut){SecureCredentialStore.clearLocalAccount();savedAccount=null;status.setText("Sesión cerrada.");}
                 else {savedAccount=SecureCredentialStore.loadAccount();status.setText("Partida cerrada · revisión cloud "+event.getLong("revision"));}
                 if(restartAfterPause && resumed && !signedOut)resumeAfterClose();
-            }else if(type.equals("error")){closeCore();savedAccount=SecureCredentialStore.loadAccount();loginPanel.setVisibility(View.VISIBLE);playPanel.setVisibility(View.GONE);status.setText(event.getString("message"));}
+            }else if(type.equals("error")){closeCore();savedAccount=SecureCredentialStore.loadAccount();exitFullscreen();loginScreen.setVisibility(View.VISIBLE);loginPanel.setVisibility(View.VISIBLE);playPanel.setVisibility(View.GONE);status.setText(event.getString("message"));}
         }
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
@@ -153,16 +154,38 @@ public final class MainActivity extends Activity {
     }
     private void showMenu(){
         new AlertDialog.Builder(this).setTitle("Menú")
-            .setItems(new String[]{"Configurar controles en pantalla","Configurar mando","Reconectar desde último guardado cloud","Cerrar sesión","Registrar cuenta","Comprobar conexión"},(dialog,item)->{
+            .setItems(new String[]{"Configurar controles en pantalla","Configurar mando","Reconectar desde último guardado cloud","Cerrar partida","Cerrar sesión","Registrar cuenta","Comprobar conexión"},(dialog,item)->{
                 if(item==0)configureTouchOverlay();
                 else if(item==1){
                     settingsOpen=true;controller.clear();game.keys=0;
                     new ControllerSettingsDialog(this,controller,()->{controller.clear();settingsOpen=false;}).show();
                 }else if(item==2)reconnectSession();
-                else if(item==3)signOut();
-                else if(item==4)registerAccount();
+                else if(item==3)stopSession();
+                else if(item==4)signOut();
+                else if(item==5)registerAccount();
                 else work(()->{api.health();return "Conexión segura · servidor disponible.";});
             }).show();
+    }
+
+    private void enterFullscreen(){
+        if(Build.VERSION.SDK_INT>=30){
+            getWindow().setDecorFitsSystemWindows(false);
+            WindowInsetsController insets=getWindow().getInsetsController();
+            if(insets!=null){
+                insets.hide(WindowInsets.Type.statusBars()|WindowInsets.Type.navigationBars());
+                insets.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        }else{
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
+    }
+
+    private void exitFullscreen(){
+        if(Build.VERSION.SDK_INT>=30){
+            getWindow().setDecorFitsSystemWindows(true);
+            WindowInsetsController insets=getWindow().getInsetsController();
+            if(insets!=null)insets.show(WindowInsets.Type.statusBars()|WindowInsets.Type.navigationBars());
+        }else getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
     }
     private void configureTouchOverlay(){
         if(touchOverlay.isEditing()){
@@ -203,8 +226,9 @@ public final class MainActivity extends Activity {
         if(NativeSession.isActive() || pendingStart){hostHandler.postDelayed(this::resumeAfterClose,100);return;}
         restartAfterPause=false;startSavedSession();
     }
-    @Override protected void onResume(){super.onResume();resumed=true;if(game!=null)game.start();resumeAfterClose();}
-    @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);inputFocused=hasFocus;if(!hasFocus){controller.clear();if(game!=null)game.keys=0;}}
+    @Override protected void onResume(){super.onResume();resumed=true;if(game!=null)game.start();if(autoResumePending && !pendingStart && !NativeSession.isActive()){autoResumePending=false;startSavedSession();}else resumeAfterClose();}
+    @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);inputFocused=hasFocus;if(hasFocus && cooperative)enterFullscreen();if(!hasFocus){controller.clear();if(game!=null)game.keys=0;}}
+    @Override public void onBackPressed(){if(cooperative)showMenu();else super.onBackPressed();}
     @Override protected void onPause(){resumed=false;controller.clear();if(game!=null){game.keys=0;if(NativeSession.isActive() || pendingStart){restartAfterPause=true;NativeSession.stop();}else game.stop();}super.onPause();}
     @Override protected void onDestroy(){destroyed=true;inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
     private final class GameView extends View implements Runnable {

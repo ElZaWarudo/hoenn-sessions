@@ -10,7 +10,8 @@ Save inside the game before closing.
 Touch controls are drawn over the emulator. Use **⚙ Controles** or
 **Menú → Configurar controles en pantalla** to change their size, drag each control
 to a new position, hide the overlay or restore the default layout. These choices
-persist on the device.
+persist on the device. After authentication the game switches to an immersive,
+edge-to-edge view; the floating **☰** button keeps session actions available.
 
 **Menú → Configurar mando** provides ten button mappings, collision swaps, stick
  deadzone (10–50%), a left-stick toggle, input testing and reset. Settings persist
