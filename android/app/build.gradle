@@ -1,5 +1,8 @@
 plugins { id 'com.android.application' }
-def releaseManifest = new groovy.json.JsonSlurper().parse(file('src/main/assets/bridge_manifest.json'))
+def manifestFile = file(System.getenv('HOENN_MANIFEST_PATH') ?: 'src/main/assets/bridge_manifest.json')
+def releaseManifest = new groovy.json.JsonSlurper().parse(manifestFile)
+def romFile = file(System.getenv('HOENN_ROM_PATH') ?: '../../pokeemerald.gba')
+def bundledAssets = layout.buildDirectory.dir('generated/bundledAssets')
 def sdkProperties = new Properties()
 def sdkFile = new File(rootProject.projectDir, 'local.properties')
 if (sdkFile.exists()) { sdkFile.withInputStream { sdkProperties.load(it) } }
@@ -16,21 +19,32 @@ android {
         applicationId 'io.hoenn.sessions'
         minSdk 28
         targetSdk 36
-        versionCode 2
-        versionName '0.2-coop-validation'
+        versionCode 3
+        versionName '0.3'
         ndk { abiFilters 'x86_64', 'arm64-v8a' }
         externalNativeBuild { cmake { arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON' } }
     }
     buildFeatures { buildConfig true }
-    sourceSets { main { jniLibs.srcDir layout.buildDirectory.dir('generated/rustJniLibs').get().asFile } }
+    sourceSets { main { assets.srcDirs = [bundledAssets]; jniLibs.srcDir layout.buildDirectory.dir('generated/rustJniLibs').get().asFile } }
     externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
-    buildTypes { debug { debuggable true } }
+    signingConfigs {
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_PATH')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias 'hoenn-android'
+                keyPassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug { debuggable true }
+        release { signingConfig signingConfigs.release }
+    }
 }
 def compileCoopRust = tasks.register('compileCoopRust', Exec) {
     workingDir rootProject.projectDir.parentFile
-    commandLine 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-        new File(rootProject.projectDir, 'build-rust.ps1').absolutePath,
-        '-Sdk', sdkPath
+    commandLine 'python', new File(rootProject.projectDir, 'build-rust.py').absolutePath, '--sdk', sdkPath
 }
 tasks.named('preBuild').configure { dependsOn compileCoopRust }
 dependencies {
@@ -38,4 +52,34 @@ dependencies {
     implementation 'io.github.erdtman:java-json-canonicalization:1.1'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20251224'
+}
+
+// Every packaged APK contains a verified ROM. Unit tests do not need proprietary assets.
+def prepareBundledRom = tasks.register('prepareBundledRom') {
+    inputs.file(manifestFile)
+    inputs.file(romFile)
+    inputs.file('src/main/assets/mgba-LICENSE.txt')
+    outputs.dir(bundledAssets)
+    doLast {
+        if (!romFile.isFile() || romFile.length() > 64L * 1024 * 1024) {
+            throw new GradleException('Set HOENN_ROM_PATH to the matching release ROM (maximum 64 MiB)')
+        }
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        romFile.withInputStream { input ->
+            byte[] buffer = new byte[65536]
+            int count
+            while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count)
+        }
+        if (digest.digest().encodeHex().toString() != releaseManifest.game_build.rom_sha256) {
+            throw new GradleException('ROM hash does not match the release manifest')
+        }
+        copy { from romFile; into bundledAssets; rename { 'pokeemerald.gba' } }
+        copy { from manifestFile; into bundledAssets; rename { 'bridge_manifest.json' } }
+        copy { from 'src/main/assets/mgba-LICENSE.txt'; into bundledAssets }
+    }
+}
+tasks.configureEach {
+    if (name.matches('merge.*Assets') || name.contains('Lint') || name.startsWith('lint')) {
+        dependsOn prepareBundledRom
+    }
 }

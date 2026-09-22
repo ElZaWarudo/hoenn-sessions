@@ -1785,6 +1785,11 @@ void TestRunner_Battle_AfterLastTurn(void)
 
 static void TearDownBattle(void)
 {
+    // Interrupts must not access battle resources after teardown or advance
+    // the seeded RNG when a later function test changes the battle flags.
+    SetVBlankCallback(NULL);
+    SetHBlankCallback(NULL);
+
     // Zero out the parties, data in them could potentially carry over
     for (enum BattleTrainer trainer = B_TRAINER_0; trainer < MAX_BATTLE_TRAINERS; trainer++)
         ZeroPartyMons(gParties[trainer]);

@@ -1,13 +1,33 @@
 #include "global.h"
+#include "main.h"
+#include "random.h"
 #include "test/battle.h"
 #include "test/test.h"
-#include "test/battle.h"
+
+static bool8 sBattleTeardownFixtureRan;
 
 TEST("Tests resume after CRASH")
 {
     KNOWN_CRASHING;
     void (*f)(void) = NULL;
     f();
+}
+
+TEST("Battle teardown preserves seeded RNG across VBlank")
+{
+    u32 battleTypeFlags = gBattleTypeFlags;
+    rng_value_t before = gRngValue;
+
+    // The serial CI pass must execute the Celebrate battle first. Check
+    // this explicitly so a change in test registration order cannot pass.
+    if (gTestRunnerN == 1)
+        EXPECT(sBattleTeardownFixtureRan);
+
+    gBattleTypeFlags = 0;
+    VBlankIntrWait();
+    gBattleTypeFlags = battleTypeFlags;
+
+    EXPECT_EQ(memcmp(&gRngValue, &before, sizeof(before)), 0);
 }
 
 MULTI_BATTLE_TEST("Forced Abilities are set correctly in multi battle tests")
@@ -187,5 +207,7 @@ MULTI_BATTLE_TEST("Celebrate does not need to be explicitly set in a non-AI test
         ANIMATION(ANIM_TYPE_MOVE, MOVE_CELEBRATE, opponentLeft);
         ANIMATION(ANIM_TYPE_MOVE, MOVE_CELEBRATE, playerRight);
         ANIMATION(ANIM_TYPE_MOVE, MOVE_CELEBRATE, opponentRight);
+    } THEN {
+        sBattleTeardownFixtureRan = TRUE;
     }
 }

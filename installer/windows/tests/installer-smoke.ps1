@@ -35,6 +35,17 @@ if ($package -notmatch 'Scope="perUser"') {
 if ($package -notmatch 'UpgradeCode="123F488C-39CB-454D-B12A-A7A4D591C88C"') {
     throw 'WiX UpgradeCode changed from the stable product identity'
 }
+if ($package -notmatch [Regex]::Escape('Version="$(var.ProductVersion)"') -or
+    $project -notmatch [Regex]::Escape('ProductVersion=$(ProductVersion)') -or
+    $build -notmatch [Regex]::Escape('HOENN_INSTALLER_BUILD_NUMBER')) {
+    throw 'Every MSI run must have an increasing Windows Installer version'
+}
+if ($project -notmatch [Regex]::Escape('WixToolset.Util.wixext') -or
+    $package -notmatch [Regex]::Escape('Target="coop-launcher.exe"') -or
+    $package -notmatch [Regex]::Escape('PromptToContinue="yes"') -or
+    $package -match 'TerminateProcess=') {
+    throw 'Installer upgrades must prompt for a graceful launcher close'
+}
 foreach ($required in @(
         'StandardDirectory Id="LocalAppDataFolder"',
         'Name="Programs"',
@@ -75,6 +86,13 @@ if ($project -notmatch 'WixToolset\.Sdk/6\.0\.2') {
 }
 if ($build -notmatch 'dotnet restore' -or $build -notmatch '--no-restore') {
     throw 'Installer phases must restore during prepare and package with --no-restore'
+}
+if ($build -notmatch [Regex]::Escape('HOENN_INSTALLER_MIN_RELEASE_SEQUENCE') -or
+    $workflow -notmatch [Regex]::Escape('HOENN_INSTALLER_MIN_RELEASE_SEQUENCE: ${{ needs.release.outputs.release_sequence }}') -or
+    $workflow -notmatch [Regex]::Escape('HOENN_INSTALLER_BUILD_NUMBER: ${{ github.run_number }}') -or
+    $workflow -notmatch [Regex]::Escape('release_sequence: ${{ steps.installer-release.outputs.sequence }}') -or
+    $workflow -notmatch [Regex]::Escape('--sequence "${{ github.run_number }}"')) {
+    throw 'Installer floor must come from the verified deployed release, including reused releases'
 }
 foreach ($required in @(
         'HOENN_RELEASE_TRUST_KEY_ID',
@@ -132,7 +150,8 @@ foreach ($match in $secretSteps) {
 if ($workflowWithoutSigningSteps -match 'secrets\.AUTHENTICODE_(CERT_B64|PASSWORD)') {
     throw 'Authenticode secrets may appear only in the two conditional signing steps'
 }
-if ([Regex]::Matches($workflow, 'needs: \[validate, release-key-gate\]').Count -ne 2) {
+if ([Regex]::Matches($workflow, 'needs: \[validate, release-key-gate\]').Count -ne 1 -or
+    $workflow -notmatch [Regex]::Escape('needs: [validate, release-key-gate, release]')) {
     throw 'Installer publication and runtime release must both require the release-key gate'
 }
 foreach ($required in @(

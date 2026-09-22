@@ -64,6 +64,28 @@ impl EpochStore {
         Self { path: path.into() }
     }
 
+    /// Selects an epoch store using the authenticated character UUID.
+    /// Existing single-account installations keep their original history;
+    /// other characters receive independent stores without resetting any epoch.
+    ///
+    /// # Errors
+    /// Fails closed if the legacy epoch history is corrupt or unavailable.
+    pub fn for_character(root: &Path, character_id: CharacterId) -> Result<Self, EpochError> {
+        let legacy = Self::new(root.join("epoch.json"));
+        let _lock = FileLock::acquire(&legacy.lock_path())?;
+        if legacy
+            .read_record()?
+            .is_some_and(|record| record.character_id == character_id)
+        {
+            return Ok(legacy);
+        }
+        Ok(Self::new(
+            root.join("characters")
+                .join(character_id.to_string())
+                .join("epoch.json"),
+        ))
+    }
+
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
@@ -465,6 +487,7 @@ impl FileLock {
 
 // std::fs::File::try_lock is unsupported on Android. Keep the same kernel-owned
 // nonblocking advisory lock, which is released when the owning descriptor closes.
+#[cfg(not(windows))]
 fn try_lock_file(file: &File) -> Result<(), std::fs::TryLockError> {
     #[cfg(target_os = "android")]
     {
@@ -572,5 +595,73 @@ impl Drop for FileLock {
         // Unix releases the advisory lock on close; Windows DELETE_ON_CLOSE
         // removes the owner pathname when its exclusive handle closes.
         let _ = self.file.take();
+    }
+}
+
+#[cfg(test)]
+mod character_tests {
+    use super::*;
+
+    #[test]
+    fn account_switch_preserves_legacy_history_and_rejects_stale_epochs() {
+        let root = tempfile::tempdir().unwrap();
+        let first = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let second = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let session = SessionId::new(uuid::Uuid::new_v4()).unwrap();
+        let legacy = EpochStore::new(root.path().join("epoch.json"));
+        legacy
+            .accept(first, session, SessionEpoch::new(10).unwrap())
+            .unwrap();
+        legacy
+            .accept(first, session, SessionEpoch::new(11).unwrap())
+            .unwrap();
+        let before = fs::read(legacy.path()).unwrap();
+        let second_store = EpochStore::for_character(root.path(), second).unwrap();
+        second_store
+            .accept(second, session, SessionEpoch::new(1).unwrap())
+            .unwrap();
+        assert_eq!(fs::read(legacy.path()).unwrap(), before);
+        let first_again = EpochStore::for_character(root.path(), first).unwrap();
+        assert_eq!(first_again.path(), legacy.path());
+        assert!(matches!(
+            first_again.accept(first, session, SessionEpoch::new(10).unwrap()),
+            Err(EpochError::Stale)
+        ));
+        first_again
+            .accept(first, session, SessionEpoch::new(12).unwrap())
+            .unwrap();
+        let second_again = EpochStore::for_character(root.path(), second).unwrap();
+        assert_eq!(
+            second_again
+                .read(second, session)
+                .unwrap()
+                .unwrap()
+                .greatest_epoch,
+            1
+        );
+        assert!(matches!(
+            second_again.accept(second, session, SessionEpoch::new(1).unwrap()),
+            Err(EpochError::Stale)
+        ));
+    }
+
+    #[test]
+    fn new_accounts_are_separate_and_corrupt_legacy_is_not_ignored() {
+        let root = tempfile::tempdir().unwrap();
+        let first = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let second = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let session = SessionId::new(uuid::Uuid::new_v4()).unwrap();
+        for character in [first, second] {
+            EpochStore::for_character(root.path(), character)
+                .unwrap()
+                .accept(character, session, SessionEpoch::new(1).unwrap())
+                .unwrap();
+        }
+        assert!(!root.path().join("epoch.json").exists());
+        fs::write(root.path().join("epoch.json"), b"invalid").unwrap();
+        assert!(matches!(
+            EpochStore::for_character(root.path(), first),
+            Err(EpochError::Corrupt)
+        ));
     }
 }

@@ -264,7 +264,7 @@ impl BuildCompatibility {
     /// Validate a release ROM for the separately pinned, statically linked
     /// Android mGBA core. Windows executable metadata is validated as release
     /// metadata; it is never claimed as identity evidence for the Android core.
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", test))]
     pub fn load_android(manifest_path: &Path, rom_path: &Path) -> Result<Self, CompatibilityError> {
         let file = open_bounded_regular_file(manifest_path, MAX_MANIFEST_BYTES)
             .map_err(CompatibilityError::Read)?;
@@ -282,7 +282,9 @@ impl BuildCompatibility {
             GameBuildId::new(manifest.game_build.id.clone())
                 .map_err(|_| CompatibilityError::Manifest)?,
             digest,
-            MgbaVersion::new(EXPECTED_MGBA_VERSION).map_err(|_| CompatibilityError::Manifest)?,
+            // Android embeds the separately pinned 0.10.5 core. The Windows
+            // emulator metadata in this shared ROM manifest is not its version.
+            MgbaVersion::new("0.10.5").map_err(|_| CompatibilityError::Manifest)?,
             BridgeAbiVersion::new(BRIDGE_ABI).map_err(|_| CompatibilityError::Protocol)?,
             ProtocolVersion::new(GAME_PROTOCOL).map_err(|_| CompatibilityError::Protocol)?,
             Revision::initial(),
@@ -1070,5 +1072,24 @@ mod tests {
             super::BuildCompatibility::validate(&manifest, "missing.gba", &executable),
             Err(CompatibilityError::MgbaIdentity)
         ));
+    }
+
+    #[test]
+    fn android_uses_its_native_core_version_and_verifies_rom() {
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../android/app/src/main/assets/bridge_manifest.json");
+        let directory = tempfile::tempdir().unwrap();
+        let rom = directory.path().join("game.gba");
+        fs::write(&rom, b"test ROM fixture").unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(source).unwrap()).unwrap();
+        value["game_build"]["rom_sha256"] =
+            serde_json::Value::from(super::hash_file(&rom).unwrap().to_string());
+        let manifest = directory.path().join("manifest.json");
+        fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
+        let build = super::BuildCompatibility::load_android(&manifest, &rom).unwrap();
+        assert_eq!(build.target.mgba_version, coop_cloud::MgbaVersion::new("0.10.5").unwrap());
+        fs::write(&rom, b"corrupted").unwrap();
+        assert!(matches!(super::BuildCompatibility::load_android(&manifest, &rom), Err(CompatibilityError::RomHash)));
     }
 }

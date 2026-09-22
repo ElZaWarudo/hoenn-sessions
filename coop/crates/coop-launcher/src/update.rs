@@ -730,6 +730,7 @@ pub struct GenerationGuard {
 pub struct AcceptedGeneration {
     path: PathBuf,
     release_id: String,
+    sequence: u64,
     artifacts: BTreeMap<ArtifactIdentity, ArtifactRecord>,
     guard: GenerationGuard,
 }
@@ -743,6 +744,11 @@ impl AcceptedGeneration {
     /// Returns the accepted signed release id.
     pub fn release_id(&self) -> &str {
         &self.release_id
+    }
+
+    /// Returns the accepted signed release sequence.
+    pub const fn sequence(&self) -> u64 {
+        self.sequence
     }
 
     /// Cold-opened generations are already complete and therefore reused.
@@ -1183,6 +1189,7 @@ impl GenerationStore {
         Ok(AcceptedGeneration {
             path: generation,
             release_id: release.release_id().to_owned(),
+            sequence: release.descriptor.sequence,
             artifacts,
             guard,
         })

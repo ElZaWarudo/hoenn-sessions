@@ -20,6 +20,14 @@ pub const DESKTOP_FILE: &str = "coop-launcher.exe";
 pub const TRUST_KEY_ID_ENV: &str = "HOENN_RELEASE_TRUST_KEY_ID";
 pub const TRUST_PUBLIC_KEY_ENV: &str = "HOENN_RELEASE_TRUST_PUBLIC_KEY_HEX";
 
+/// The MSI can only hand off to a signed runtime at or above the release
+/// sequence verified from the release deployed for this installer build.
+pub fn compiled_min_release_sequence() -> Option<u64> {
+    option_env!("HOENN_INSTALLER_MIN_RELEASE_SEQUENCE")
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|sequence| *sequence > 0)
+}
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("LOCALAPPDATA is missing")]

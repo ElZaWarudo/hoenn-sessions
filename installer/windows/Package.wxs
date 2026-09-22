@@ -1,14 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package
       Name="Hoenn Sessions"
       Manufacturer="Hoenn Sessions"
-      Version="1.0.0.0"
+      Version="$(var.ProductVersion)"
       UpgradeCode="123F488C-39CB-454D-B12A-A7A4D591C88C"
       Scope="perUser"
       InstallerVersion="500">
     <MajorUpgrade DowngradeErrorMessage="A newer Hoenn Sessions installation is already present." />
     <MediaTemplate EmbedCab="yes" />
+    <util:CloseApplication Id="CloseDesktopBeforeUpgrade"
+                           Target="coop-launcher.exe"
+                           Description="Save and close Hoenn Sessions before updating, then choose Retry. If you choose Ignore, the old game stays open until you close it."
+                           PromptToContinue="yes"
+                           CloseMessage="yes"
+                           Timeout="60" />
+    <util:CloseApplication Id="CloseBootstrapBeforeUpgrade"
+                           Target="hoenn-sessions-bootstrapper.exe"
+                           Description="Close Hoenn Sessions before updating, then choose Retry."
+                           PromptToContinue="yes"
+                           Timeout="60" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="Programs">

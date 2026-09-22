@@ -183,7 +183,7 @@ struct BackendActor {
     config: BackendConfig,
     api: coop_launcher::ReqwestCloudApi,
     release: ReleaseClient,
-    keychain: Arc<OsKeychain>,
+    keychain: Arc<dyn RefreshTokenStore>,
     store: GenerationStore,
     auth: Option<AuthSession>,
     pending_release: Option<DownloadedRelease>,
@@ -502,9 +502,12 @@ impl BackendActor {
             let _ = events.send(BackendEvent::StartFailed(StartFailure::NotReady));
             return;
         }
-        let Some(auth) = self.auth.take() else {
-            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
-            return;
+        let auth = match self.take_or_resume_auth().await {
+            Ok(auth) => auth,
+            Err(_) => {
+                let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+                return;
+            }
         };
         let now = match now_seconds() {
             Ok(now) => now,
@@ -828,7 +831,7 @@ impl BackendActor {
 
 async fn run_runtime(
     api: coop_launcher::ReqwestCloudApi,
-    keychain: Arc<OsKeychain>,
+    keychain: Arc<dyn RefreshTokenStore>,
     auth: AuthSession,
     _handoff: coop_launcher::GenerationHandoff,
     compatibility: BuildCompatibility,
@@ -942,11 +945,15 @@ async fn retain_auth(
     let auth = session.auth;
     RuntimeCompletion {
         auth: Some(auth),
-        outcome: RuntimeOutcome::StartupFailed(if clean_stop {
-            StartFailure::Unavailable
-        } else {
-            StartFailure::NotReady
-        }),
+        outcome: startup_failure_outcome(clean_stop),
+    }
+}
+
+fn startup_failure_outcome(clean_stop: bool) -> RuntimeOutcome {
+    if clean_stop {
+        RuntimeOutcome::StartupFailed(StartFailure::Unavailable)
+    } else {
+        RuntimeOutcome::Exited { clean_stop: false }
     }
 }
 
@@ -1032,6 +1039,91 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     struct DeleteOnlyKeychain(AtomicBool);
+
+    #[test]
+    fn startup_cleanup_failure_requires_recovery_even_after_stop() {
+        for stop_requested in [false, true] {
+            assert!(matches!(
+                runtime_completion_event(stop_requested, super::startup_failure_outcome(false)),
+                BackendEvent::ShutdownUncertain
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn start_retry_attempts_saved_auth_when_acquisition_consumed_memory_auth() {
+        struct MissingCredential(std::sync::atomic::AtomicUsize);
+        impl RefreshTokenStore for MissingCredential {
+            fn load(&self, _: &str, _: &str) -> Result<Option<RefreshToken>, KeychainError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }
+            fn store(&self, _: &str, _: &str, _: &RefreshToken) -> Result<(), KeychainError> {
+                panic!("missing credential must not be stored")
+            }
+            fn delete(&self, _: &str, _: &str) -> Result<(), KeychainError> {
+                panic!("retry must not delete credentials")
+            }
+        }
+        let root = tempfile::tempdir().expect("temporary directory");
+        let paths = UserPaths::from_local_app_data(root.path()).expect("paths");
+        let runtime = RuntimeConfig::for_test(
+            "http://127.0.0.1:9",
+            TrustedReleaseKey::new(
+                "release-test",
+                ed25519_dalek::SigningKey::from_bytes(&[1; 32])
+                    .verifying_key()
+                    .to_bytes(),
+            )
+            .unwrap(),
+            TrustedManifestKey::new(
+                "manifest-test",
+                ed25519_dalek::SigningKey::from_bytes(&[2; 32])
+                    .verifying_key()
+                    .to_bytes(),
+            )
+            .unwrap(),
+        );
+        let config = BackendConfig::for_test(paths, runtime).unwrap();
+        config
+            .paths
+            .save_account(&AccountRecord {
+                username: "retry-player".into(),
+                user_id: UserId::new(uuid::Uuid::from_u128(41)).unwrap(),
+                character_id: CharacterId::new(uuid::Uuid::from_u128(42)).unwrap(),
+            })
+            .unwrap();
+        let keychain =
+            std::sync::Arc::new(MissingCredential(std::sync::atomic::AtomicUsize::new(0)));
+        let mut actor = super::BackendActor {
+            api: coop_launcher::ReqwestCloudApi::new(&config.runtime.api_base).unwrap(),
+            release: super::ReleaseClient::new(
+                &config.runtime.api_base,
+                config.runtime.release_key.clone(),
+            )
+            .unwrap(),
+            store: super::GenerationStore::new(config.paths.generations_root()).unwrap(),
+            config,
+            keychain: keychain.clone(),
+            auth: None,
+            pending_release: None,
+            runtime: None,
+            commands: tokio::sync::mpsc::unbounded_channel().0,
+            shutdown_ack: None,
+            pending_credential_cleanup: None,
+        };
+        let (events, receiver) = std::sync::mpsc::channel();
+        actor.start_runtime(&events).await;
+        assert_eq!(
+            keychain.0.load(Ordering::SeqCst),
+            1,
+            "Retry must attempt credential recovery instead of permanently rejecting absent in-memory auth"
+        );
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            BackendEvent::StartFailed(_)
+        ));
+    }
 
     impl RefreshTokenStore for DeleteOnlyKeychain {
         fn load(

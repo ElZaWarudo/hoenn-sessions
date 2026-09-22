@@ -78,9 +78,11 @@ impl LaunchTarget {
 pub fn select_target(
     roots: &InstallRoots,
     trusted_key: Option<&TrustedReleaseKey>,
+    min_release_sequence: Option<u64>,
     now: i64,
 ) -> LaunchTarget {
-    let Some(trusted_key) = trusted_key else {
+    let (Some(trusted_key), Some(min_release_sequence)) = (trusted_key, min_release_sequence)
+    else {
         return LaunchTarget::Onboarding(roots.onboarding_path());
     };
 
@@ -90,6 +92,9 @@ pub fn select_target(
     let Some(accepted) = accepted else {
         return LaunchTarget::Onboarding(roots.onboarding_path());
     };
+    if accepted.sequence() < min_release_sequence {
+        return LaunchTarget::Onboarding(roots.onboarding_path());
+    }
     accepted_target(roots, accepted)
         .unwrap_or_else(|| LaunchTarget::Onboarding(roots.onboarding_path()))
 }
@@ -136,6 +141,7 @@ pub fn run() -> Result<i32, LaunchError> {
     let roots = InstallRoots::resolve()?;
     let _instance = SingleInstanceGuard::acquire(&roots)?;
     let trusted_key = config::compiled_trust_key().ok();
+    let min_release_sequence = config::compiled_min_release_sequence();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| LaunchError::Config(ConfigError::InvalidTrustKey))?
@@ -143,7 +149,7 @@ pub fn run() -> Result<i32, LaunchError> {
 
     let mut attempts = 0_u8;
     loop {
-        let target = select_target(&roots, trusted_key.as_ref(), now);
+        let target = select_target(&roots, trusted_key.as_ref(), min_release_sequence, now);
         let status = launch(target, roots.install_root())?;
         let exit_code = status.code().unwrap_or(1);
         if exit_code == TRUSTED_RESELECTION_EXIT_CODE && attempts < MAX_RESELECTION_ATTEMPTS {
