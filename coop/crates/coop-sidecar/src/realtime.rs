@@ -21,8 +21,9 @@ use coop_cloud::{
     encode_client_realtime_frame,
 };
 use coop_protocol::{
-    DespawnReason, LocalPresenceStateV1, PlayerState, PresenceHandle, PresenceInteractionV1,
-    RemotePlayerSpawnV1, RemotePlayerUpdateV1, sequence_is_newer,
+    DespawnReason, LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PlayerState,
+    PresenceHandle, PresenceInteractionV1, RemoteCompanionV1, RemotePlayerSpawnV1,
+    RemotePlayerUpdateV1, RemoteSignalV1, sequence_is_newer,
 };
 use futures_util::{SinkExt, StreamExt};
 use thiserror::Error;
@@ -53,6 +54,8 @@ pub const MAX_REMOTE_PLAYERS: usize = 4;
 const MAX_TRACKED_REMOTE_HANDLES: usize = MAX_REMOTE_PLAYERS * 2;
 /// Bounded interaction queue capacity.
 pub const MAX_INTERACTION_QUEUE: usize = 16;
+/// Bounded social-signal queue capacity.
+pub const MAX_SIGNAL_QUEUE: usize = 16;
 /// Bounded owner event queue capacity.
 pub const MAX_OWNER_EVENT_QUEUE: usize = 32;
 /// Local state transmission cadence.
@@ -417,6 +420,8 @@ pub enum RealtimeOwnerEvent {
     Spawn(RemotePlayerSpawnV1),
     Update(RemotePlayerUpdateV1),
     Despawn(coop_protocol::RemotePlayerDespawnV1),
+    Companion(RemoteCompanionV1),
+    Signal(RemoteSignalV1),
 }
 
 impl RealtimeOwnerEvent {
@@ -427,6 +432,8 @@ impl RealtimeOwnerEvent {
             Self::Spawn(_) => "REMOTE_PLAYER_SPAWN",
             Self::Update(_) => "REMOTE_PLAYER_UPDATE",
             Self::Despawn(_) => "REMOTE_PLAYER_DESPAWN",
+            Self::Companion(_) => "REMOTE_COMPANION",
+            Self::Signal(_) => "REMOTE_SOCIAL_SIGNAL",
         }
     }
 }
@@ -435,6 +442,8 @@ impl RealtimeOwnerEvent {
 pub struct RealtimeOwner {
     state_tx: watch::Sender<LocalPresenceStateV1>,
     interaction_tx: mpsc::Sender<PresenceInteractionV1>,
+    companion_tx: watch::Sender<Option<LocalCompanionV1>>,
+    signal_tx: mpsc::Sender<LocalSignalV1>,
     stop_tx: watch::Sender<bool>,
     event_rx: mpsc::Receiver<RealtimeOwnerEvent>,
     ready: Arc<AtomicBool>,
@@ -479,6 +488,44 @@ impl RealtimeOwner {
             })
     }
 
+    /// Publishes the latest follower-companion state. The driver sends it at
+    /// most once per 100 ms tick, like pose state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RealtimeInputError::Stopped`] or
+    /// [`RealtimeInputError::Closed`] when the driver is no longer running.
+    pub fn update_companion(&self, companion: LocalCompanionV1) -> Result<(), RealtimeInputError> {
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(RealtimeInputError::Stopped);
+        }
+        self.companion_tx
+            .send(Some(companion))
+            .map_err(|_| RealtimeInputError::Closed)
+    }
+
+    /// Queues one ping/emote signal after readiness. FIFO capacity is fixed
+    /// at 16, matching the interaction queue.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RealtimeInputError::NotReady`] before the server readiness
+    /// event, or a bounded queue/owner state error otherwise.
+    pub fn signal(&self, signal: LocalSignalV1) -> Result<(), RealtimeInputError> {
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(RealtimeInputError::Stopped);
+        }
+        if !self.ready.load(Ordering::Acquire) {
+            return Err(RealtimeInputError::NotReady);
+        }
+        self.signal_tx
+            .try_send(signal)
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => RealtimeInputError::QueueFull,
+                mpsc::error::TrySendError::Closed(_) => RealtimeInputError::Closed,
+            })
+    }
+
     /// Requests a bounded, graceful stop.  Repeated calls are harmless.
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Release);
@@ -507,6 +554,8 @@ impl Drop for RealtimeOwner {
 pub struct RealtimeDriver {
     state_rx: watch::Receiver<LocalPresenceStateV1>,
     interaction_rx: mpsc::Receiver<PresenceInteractionV1>,
+    companion_rx: watch::Receiver<Option<LocalCompanionV1>>,
+    signal_rx: mpsc::Receiver<LocalSignalV1>,
     stop_rx: watch::Receiver<bool>,
     event_tx: mpsc::Sender<RealtimeOwnerEvent>,
     ready: Arc<AtomicBool>,
@@ -527,6 +576,8 @@ pub fn realtime_channel(
         .map_err(|_| RealtimeError::InvalidState)?;
     let (state_tx, state_rx) = watch::channel(initial_state);
     let (interaction_tx, interaction_rx) = mpsc::channel(MAX_INTERACTION_QUEUE);
+    let (companion_tx, companion_rx) = watch::channel(None);
+    let (signal_tx, signal_rx) = mpsc::channel(MAX_SIGNAL_QUEUE);
     let (event_tx, event_rx) = mpsc::channel(MAX_OWNER_EVENT_QUEUE);
     let (stop_tx, stop_rx) = watch::channel(false);
     let ready = Arc::new(AtomicBool::new(false));
@@ -535,6 +586,8 @@ pub fn realtime_channel(
         RealtimeOwner {
             state_tx,
             interaction_tx,
+            companion_tx,
+            signal_tx,
             stop_tx,
             event_rx,
             ready: Arc::clone(&ready),
@@ -543,6 +596,8 @@ pub fn realtime_channel(
         RealtimeDriver {
             state_rx,
             interaction_rx,
+            companion_rx,
+            signal_rx,
             stop_rx,
             event_tx,
             ready,
@@ -662,6 +717,7 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
 
     let mut remotes = BTreeMap::new();
     let mut last_sent = driver.state_rx.borrow().clone();
+    let mut last_sent_companion = *driver.companion_rx.borrow();
     let mut tick = time::interval_at(Instant::now() + PRESENCE_TICK, PRESENCE_TICK);
     tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
@@ -682,6 +738,21 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
                     }
                     last_sent = latest;
                 }
+                let latest_companion = *driver.companion_rx.borrow();
+                if latest_companion != last_sent_companion {
+                    if let Some(companion) = latest_companion
+                        && send_client_frame(
+                            &mut socket,
+                            ClientRealtimeFrameV1::companion(companion),
+                        )
+                        .await
+                            != Ok(())
+                    {
+                        driver.ready.store(false, Ordering::Release);
+                        return RealtimeOutcome::WriteFailed;
+                    }
+                    last_sent_companion = latest_companion;
+                }
             }
             interaction = driver.interaction_rx.recv() => {
                 let Some(interaction) = interaction else {
@@ -689,6 +760,16 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
                     return RealtimeOutcome::OwnerStopped;
                 };
                 if send_client_frame(&mut socket, ClientRealtimeFrameV1::interact_remote_player(interaction)).await != Ok(()) {
+                    driver.ready.store(false, Ordering::Release);
+                    return RealtimeOutcome::WriteFailed;
+                }
+            }
+            signal = driver.signal_rx.recv() => {
+                let Some(signal) = signal else {
+                    driver.ready.store(false, Ordering::Release);
+                    return RealtimeOutcome::OwnerStopped;
+                };
+                if send_client_frame(&mut socket, ClientRealtimeFrameV1::social_signal(signal)).await != Ok(()) {
                     driver.ready.store(false, Ordering::Release);
                     return RealtimeOutcome::WriteFailed;
                 }
@@ -814,7 +895,9 @@ where
                 }
                 frame @ (ServerRealtimeFrameV1::RemotePlayerSpawn(_)
                 | ServerRealtimeFrameV1::RemotePlayerUpdate(_)
-                | ServerRealtimeFrameV1::RemotePlayerDespawn(_)) => Receive::Lifecycle(frame),
+                | ServerRealtimeFrameV1::RemotePlayerDespawn(_)
+                | ServerRealtimeFrameV1::RemoteCompanion(_)
+                | ServerRealtimeFrameV1::RemoteSocialSignal(_)) => Receive::Lifecycle(frame),
             }
         }
         Message::Binary(_) | Message::Frame(_) => Receive::Protocol,
@@ -847,12 +930,15 @@ fn send_event(
     event_tx.try_send(event).map_err(|_| ())
 }
 
-fn apply_lifecycle(
+/// Validates lifecycle ordering and consumes social frames. Pose frames
+/// return their subject handle and sequence; social frames are fully applied
+/// and return `Ok(None)`.
+fn lifecycle_pose_sequence(
     frame: &ServerRealtimeFrameV1,
     self_handle: PresenceHandle,
     remotes: &mut BTreeMap<PresenceHandle, RemoteState>,
     event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
-) -> Result<(), RealtimeOutcome> {
+) -> Result<Option<(PresenceHandle, u32)>, RealtimeOutcome> {
     let (handle, sequence) = match &frame {
         ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
             (spawn.handle(), spawn.server_sequence())
@@ -863,10 +949,27 @@ fn apply_lifecycle(
         ServerRealtimeFrameV1::RemotePlayerDespawn(despawn) => {
             (despawn.handle(), despawn.server_sequence())
         }
+        ServerRealtimeFrameV1::RemoteCompanion(companion) => {
+            (companion.handle(), companion.server_sequence())
+        }
+        ServerRealtimeFrameV1::RemoteSocialSignal(signal) => {
+            (signal.handle(), signal.server_sequence())
+        }
         ServerRealtimeFrameV1::PresenceReady(_) => return Err(RealtimeOutcome::ProtocolViolation),
     };
     if handle == self_handle {
         return Err(RealtimeOutcome::ProtocolViolation);
+    }
+
+    // Companion and signal records share one per-handle server sequence
+    // space that is independent of the pose lifecycle space, so they are
+    // validated separately before the pose ordering check below.
+    if matches!(
+        frame,
+        ServerRealtimeFrameV1::RemoteCompanion(_) | ServerRealtimeFrameV1::RemoteSocialSignal(_)
+    ) {
+        apply_social_frame(frame, remotes, event_tx)?;
+        return Ok(None);
     }
 
     // Server sequences are scoped to a remote handle.  A new remote may
@@ -878,6 +981,19 @@ fn apply_lifecycle(
     {
         return Err(RealtimeOutcome::ProtocolViolation);
     }
+    Ok(Some((handle, sequence)))
+}
+
+fn apply_lifecycle(
+    frame: &ServerRealtimeFrameV1,
+    self_handle: PresenceHandle,
+    remotes: &mut BTreeMap<PresenceHandle, RemoteState>,
+    event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
+) -> Result<(), RealtimeOutcome> {
+    let Some((handle, sequence)) = lifecycle_pose_sequence(frame, self_handle, remotes, event_tx)?
+    else {
+        return Ok(());
+    };
 
     match &frame {
         ServerRealtimeFrameV1::RemotePlayerSpawn(spawn) => {
@@ -958,6 +1074,10 @@ fn apply_lifecycle(
             }
         }
         ServerRealtimeFrameV1::PresenceReady(_) => unreachable!(),
+        ServerRealtimeFrameV1::RemoteCompanion(_)
+        | ServerRealtimeFrameV1::RemoteSocialSignal(_) => {
+            unreachable!("social frames return through apply_social_frame")
+        }
     }
     Ok(())
 }
@@ -965,12 +1085,48 @@ fn apply_lifecycle(
 struct RemoteState {
     sequence: u32,
     visible: bool,
+    social_sequence: u32,
 }
 
 impl RemoteState {
     const fn new(sequence: u32, visible: bool) -> Self {
-        Self { sequence, visible }
+        Self {
+            sequence,
+            visible,
+            social_sequence: 0,
+        }
     }
+}
+
+fn apply_social_frame(
+    frame: &ServerRealtimeFrameV1,
+    remotes: &mut BTreeMap<PresenceHandle, RemoteState>,
+    event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
+) -> Result<(), RealtimeOutcome> {
+    let (handle, sequence, event) = match frame {
+        ServerRealtimeFrameV1::RemoteCompanion(companion) => (
+            companion.handle(),
+            companion.server_sequence(),
+            RealtimeOwnerEvent::Companion(*companion),
+        ),
+        ServerRealtimeFrameV1::RemoteSocialSignal(signal) => (
+            signal.handle(),
+            signal.server_sequence(),
+            RealtimeOwnerEvent::Signal(*signal),
+        ),
+        _ => return Err(RealtimeOutcome::ProtocolViolation),
+    };
+    let Some(remote) = remotes.get_mut(&handle) else {
+        return Err(RealtimeOutcome::ProtocolViolation);
+    };
+    // The zero social sequence means no social record has been accepted for
+    // this handle yet; any nonzero server sequence starts the stream.
+    if remote.social_sequence != 0 && !sequence_is_newer(sequence, remote.social_sequence) {
+        return Err(RealtimeOutcome::ProtocolViolation);
+    }
+    remote.social_sequence = sequence;
+    send_event(event_tx, event).map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
+    Ok(())
 }
 
 fn state_is_visible(state: &LocalPresenceStateV1) -> bool {

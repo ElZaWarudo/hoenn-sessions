@@ -8,9 +8,10 @@ use coop_cloud::{
     encode_server_realtime_frame,
 };
 use coop_protocol::{
-    AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
-    MovementMode, PlayerState, PresenceHandle, PresenceInteractionV1, PresencePoseV1, RegionId,
-    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
+    AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, EmoteId, LocalCompanionV1,
+    LocalPresenceStateV1, LocalSignalV1, MovementMode, PlayerState, PresenceHandle,
+    PresenceInteractionV1, PresencePoseV1, RegionId, RemoteCompanionV1, RemotePlayerDespawnV1,
+    RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1, SignalKind, WorldLocation,
 };
 use coop_sidecar::realtime::{
     MAX_INTERACTION_QUEUE, RealtimeEndpoint, RealtimeError, RealtimeGrant, RealtimeOutcome,
@@ -598,4 +599,132 @@ async fn realtime_malformed_server_data_is_redacted_protocol_failure() {
 #[test]
 fn realtime_interaction_queue_capacity_is_fixed() {
     assert_eq!(MAX_INTERACTION_QUEUE, 16);
+}
+#[tokio::test]
+async fn realtime_remote_companion_and_signal_decode_to_owner_events() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let observed = Arc::new(Mutex::new(None));
+    let observed_server = Arc::clone(&observed);
+    let cached = state(1, 11);
+    let remote_handle = PresenceHandle::new(0x44).unwrap();
+    let remote_user = CanonicalUsername::new("erika").unwrap();
+    let spawn = RemotePlayerSpawnV1::new(remote_handle, 1, cached, remote_user).unwrap();
+    let companion = RemoteCompanionV1::new(remote_handle, 1, 25, 0, 1).unwrap();
+    let signal =
+        RemoteSignalV1::new(remote_handle, 2, SignalKind::Ping, EmoteId::None, 6, 7).unwrap();
+    let server = tokio::spawn(async move {
+        let mut socket = accept_server(listener, observed_server).await;
+        let _ = socket.next().await.unwrap().unwrap();
+        send_frame(&mut socket, ready_frame()).await;
+        send_frame(
+            &mut socket,
+            ServerRealtimeFrameV1::remote_player_spawn(spawn),
+        )
+        .await;
+        send_frame(
+            &mut socket,
+            ServerRealtimeFrameV1::remote_companion(companion),
+        )
+        .await;
+        send_frame(
+            &mut socket,
+            ServerRealtimeFrameV1::remote_social_signal(signal),
+        )
+        .await;
+        while socket.next().await.is_some() {}
+    });
+    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
+    let run = tokio::spawn(run_realtime(grant(port), driver));
+    assert_ready(&mut owner).await;
+    assert!(matches!(
+        owner.recv_event().await,
+        Some(RealtimeOwnerEvent::Spawn(_))
+    ));
+    assert_eq!(
+        owner.recv_event().await,
+        Some(RealtimeOwnerEvent::Companion(companion))
+    );
+    assert_eq!(
+        owner.recv_event().await,
+        Some(RealtimeOwnerEvent::Signal(signal))
+    );
+    owner.stop();
+    let outcome = timeout(Duration::from_secs(2), run).await.unwrap().unwrap();
+    assert_eq!(outcome, RealtimeOutcome::OwnerStopped);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn realtime_local_companion_and_signal_publish_as_client_frames() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let observed = Arc::new(Mutex::new(None));
+    let observed_server = Arc::clone(&observed);
+    let companion = LocalCompanionV1::new(150, 0, 0, 41).unwrap();
+    let signal = LocalSignalV1::new(SignalKind::Emote, EmoteId::Heart, 0, 0, 42).unwrap();
+    let server = tokio::spawn(async move {
+        let mut socket = accept_server(listener, observed_server).await;
+        let _ = socket.next().await.unwrap().unwrap();
+        send_frame(&mut socket, ready_frame()).await;
+        let mut seen = [false; 2];
+        for _ in 0..8 {
+            let frame = read_client_frame(&mut socket).await;
+            match frame {
+                ClientRealtimeFrameV1::SocialSignal(received) => {
+                    assert_eq!(received, signal);
+                    seen[0] = true;
+                }
+                ClientRealtimeFrameV1::Companion(received) => {
+                    assert_eq!(received, companion);
+                    seen[1] = true;
+                }
+                frame => panic!("unexpected client frame: {frame:?}"),
+            }
+            if seen == [true; 2] {
+                break;
+            }
+        }
+        assert_eq!(seen, [true; 2]);
+        while socket.next().await.is_some() {}
+    });
+    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
+    let run = tokio::spawn(run_realtime(grant(port), driver));
+    assert_ready(&mut owner).await;
+    owner.signal(signal).unwrap();
+    owner.update_companion(companion).unwrap();
+    // Companion publish rides the 100 ms tick; let it flush before stopping.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    owner.stop();
+    let outcome = timeout(Duration::from_secs(2), run).await.unwrap().unwrap();
+    assert_eq!(outcome, RealtimeOutcome::OwnerStopped);
+    server.await.unwrap();
+}
+
+fn ready_frame() -> ServerRealtimeFrameV1 {
+    ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap())
+}
+
+async fn assert_ready(owner: &mut coop_sidecar::realtime::RealtimeOwner) {
+    assert_eq!(
+        owner.recv_event().await,
+        Some(RealtimeOwnerEvent::Ready(coop_cloud::PresenceReadyV1::new(
+            PresenceHandle::new(1).unwrap()
+        )))
+    );
+}
+
+async fn read_client_frame(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+) -> ClientRealtimeFrameV1 {
+    use futures_util::StreamExt as _;
+    let next = tokio::time::timeout(Duration::from_secs(1), socket.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let tokio_tungstenite::tungstenite::Message::Text(next) = next else {
+        panic!("client frame was not text")
+    };
+    serde_json::from_str::<ClientRealtimeFrameV1>(next.as_ref()).unwrap()
 }

@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use coop_protocol::{LocalPresenceStateV1, PresenceInteractionV1};
+use coop_protocol::{LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceInteractionV1};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -3739,6 +3739,12 @@ impl LocalSidecar {
             ControlCommand::RemotePlayerDespawn(value) => {
                 (MessageType::RemotePlayerDespawn, value.encode().to_vec())
             }
+            ControlCommand::RemoteCompanion(value) => {
+                (MessageType::RemoteCompanion, value.encode().to_vec())
+            }
+            ControlCommand::RemoteSocialSignal(value) => {
+                (MessageType::RemoteSocialSignal, value.encode().to_vec())
+            }
             _ => return Err(SidecarError::ProtocolViolation("invalid presence command")),
         };
         let sequence = self.sequence_state.take_sidecar_sequence();
@@ -3878,6 +3884,8 @@ impl LocalSidecar {
         match frame.message_type() {
             MessageType::PlayerState
             | MessageType::InteractRemotePlayer
+            | MessageType::CompanionState
+            | MessageType::SocialSignal
             | MessageType::OnlineRequest => {
                 if self.pending_presence_rearm.is_some() {
                     return Ok(());
@@ -4037,6 +4045,14 @@ impl LocalSidecar {
             MessageType::OnlineRequest => ControlEvent::OnlineRequest(
                 coop_protocol::OnlineRequest::decode(frame.payload())
                     .map_err(|_| SidecarError::ProtocolViolation("invalid online request"))?,
+            ),
+            MessageType::CompanionState => ControlEvent::CompanionState(
+                LocalCompanionV1::decode(frame.payload())
+                    .map_err(|_| SidecarError::ProtocolViolation("invalid companion state"))?,
+            ),
+            MessageType::SocialSignal => ControlEvent::SocialSignal(
+                LocalSignalV1::decode(frame.payload())
+                    .map_err(|_| SidecarError::ProtocolViolation("invalid social signal"))?,
             ),
             _ => return Err(SidecarError::ProtocolViolation("invalid presence frame")),
         };
@@ -4944,6 +4960,8 @@ fn command_parts(
         ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::RemoteCompanion(_)
+        | ControlCommand::RemoteSocialSignal(_)
         | ControlCommand::GroupTravel { .. } => {
             unreachable!("presence commands bypass command ledgers")
         }
@@ -4960,6 +4978,8 @@ fn command_epoch(command: &ControlCommand) -> u32 {
         ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::RemoteCompanion(_)
+        | ControlCommand::RemoteSocialSignal(_)
         | ControlCommand::GroupTravel { .. } => {
             unreachable!("presence commands have no session epoch")
         }
@@ -4972,6 +4992,8 @@ fn is_presence_command(command: &ControlCommand) -> bool {
         ControlCommand::RemotePlayerSpawn(_)
             | ControlCommand::RemotePlayerUpdate(_)
             | ControlCommand::RemotePlayerDespawn(_)
+            | ControlCommand::RemoteCompanion(_)
+            | ControlCommand::RemoteSocialSignal(_)
     )
 }
 
@@ -5012,6 +5034,8 @@ fn deferred_command_waits_for_bridge_state(
         | ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::RemoteCompanion(_)
+        | ControlCommand::RemoteSocialSignal(_)
         | ControlCommand::GroupTravel { .. } => return false,
     };
     let Some(key) = key else {
@@ -6418,6 +6442,28 @@ mod tests {
         assert!(matches!(
             error,
             SidecarError::ProtocolViolation("invalid remote player interaction")
+        ));
+        assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+        let frame =
+            BridgeFrame::new(MessageType::CompanionState, 6, TEST_SESSION_EPOCH, &[0; 7]).unwrap();
+        let error = sidecar
+            .handle_presence_frame(frame, &mut control, &mut session)
+            .await
+            .expect_err("truncated companion must be rejected");
+        assert!(matches!(
+            error,
+            SidecarError::ProtocolViolation("invalid companion state")
+        ));
+        assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+        let frame =
+            BridgeFrame::new(MessageType::SocialSignal, 7, TEST_SESSION_EPOCH, &[0; 11]).unwrap();
+        let error = sidecar
+            .handle_presence_frame(frame, &mut control, &mut session)
+            .await
+            .expect_err("truncated signal must be rejected");
+        assert!(matches!(
+            error,
+            SidecarError::ProtocolViolation("invalid social signal")
         ));
         assert_eq!(sidecar.sequence_state.last_session_rom, 0);
         assert!(
