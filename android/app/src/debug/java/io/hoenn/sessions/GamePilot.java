@@ -33,9 +33,9 @@ public final class GamePilot extends Instrumentation {
     }
     private void key(String key,int holdMs) throws Exception {
         if(holdMs<20 || holdMs>10000)throw new IllegalArgumentException("Invalid hold duration");
-        long down=SystemClock.uptimeMillis();
-        runOnMainSync(()->{MotionEvent event=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,8,8,0);try{find(key).dispatchTouchEvent(event);}finally{event.recycle();}});
-        try{Thread.sleep(holdMs);}finally{runOnMainSync(()->{MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,8,8,0);try{find(key).dispatchTouchEvent(event);}finally{event.recycle();}});}
+        long down=SystemClock.uptimeMillis();AtomicReference<TouchOverlay> target=new AtomicReference<>();AtomicReference<float[]> center=new AtomicReference<>();
+        runOnMainSync(()->{TouchOverlay overlay=activity.getWindow().getDecorView().findViewWithTag("touch-overlay");target.set(overlay);center.set(overlay.controlCenter(key));MotionEvent event=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,center.get()[0],center.get()[1],0);try{overlay.dispatchTouchEvent(event);}finally{event.recycle();}});
+        try{Thread.sleep(holdMs);}finally{runOnMainSync(()->{MotionEvent event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,center.get()[0],center.get()[1],0);try{target.get().dispatchTouchEvent(event);}finally{event.recycle();}});}
     }
     private void report(JSONObject result)throws Exception{
         File temporary=new File(root,"pilot-result.tmp"),target=new File(root,"pilot-result.json");

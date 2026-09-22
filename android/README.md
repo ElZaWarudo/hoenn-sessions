@@ -2,11 +2,19 @@
 
 The APK includes the compatible game, mGBA 0.10.5 and the Rust cooperative client.
 Open the app, enter your account and choose **Iniciar sesión y jugar**. No ROM picker
-or separate runtime download is required. Save inside the game before closing.
+or separate runtime download is required. The rotating refresh token is encrypted
+with Android Keystore, so reopening the app restores the account without asking for
+the password again. **Cerrar sesión** revokes and removes that saved credential.
+Save inside the game before closing.
+
+Touch controls are drawn over the emulator. Use **⚙ Controles** or
+**Menú → Configurar controles en pantalla** to change their size, drag each control
+to a new position, hide the overlay or restore the default layout. These choices
+persist on the device.
 
 **Menú → Configurar mando** provides ten button mappings, collision swaps, stick
  deadzone (10–50%), a left-stick toggle, input testing and reset. Settings persist
-on this device. Touch controls remain available. Disconnected controllers and
+on this device. Disconnected controllers and
 loss of focus release held inputs. A Bluetooth/USB controller must first be paired
 with Android. Android 9+ on ARM64 or x86_64 is required.
 
