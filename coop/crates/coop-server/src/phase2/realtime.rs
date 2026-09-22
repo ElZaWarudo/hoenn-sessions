@@ -572,7 +572,12 @@ async fn realtime_session(
                         let _ = close_socket(&mut socket, 1009).await;
                         return;
                     }
-                    Ok(ClientRealtimeFrameV1::InteractRemotePlayer(_)) | Err(_) => {
+                    Ok(
+                        ClientRealtimeFrameV1::InteractRemotePlayer(_)
+                        | ClientRealtimeFrameV1::Companion(_)
+                        | ClientRealtimeFrameV1::SocialSignal(_),
+                    )
+                    | Err(_) => {
                         let _ = close_socket(&mut socket, 1008).await;
                         return;
                     }
@@ -678,6 +683,18 @@ async fn realtime_session(
                                     return;
                                 }
                             }
+                            Ok(ClientRealtimeFrameV1::Companion(companion)) => {
+                                match app.presence.submit_companion(connection, companion) {
+                                    Ok(_) => {},
+                                    Err(error) => { let _ = close_presence_error(&mut socket, error).await; return; }
+                                }
+                            }
+                            Ok(ClientRealtimeFrameV1::SocialSignal(signal)) => {
+                                match app.presence.submit_signal(connection, signal) {
+                                    Ok(_) => {},
+                                    Err(error) => { let _ = close_presence_error(&mut socket, error).await; return; }
+                                }
+                            }
                             Err(coop_cloud::RealtimeError::MessageTooLarge) => { let _ = close_socket(&mut socket, 1009).await; return; }
                             Err(_) => { let _ = close_socket(&mut socket, 1008).await; return; }
                         }
@@ -715,6 +732,8 @@ fn server_frame(event: &PresenceOutboundV1) -> ServerRealtimeFrameV1 {
         PresenceOutboundV1::Despawn(value) => {
             ServerRealtimeFrameV1::remote_player_despawn(value.clone())
         }
+        PresenceOutboundV1::Companion(value) => ServerRealtimeFrameV1::remote_companion(*value),
+        PresenceOutboundV1::Signal(value) => ServerRealtimeFrameV1::remote_social_signal(*value),
     }
 }
 

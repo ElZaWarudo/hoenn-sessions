@@ -6,8 +6,9 @@
 use std::{fmt, str};
 
 use coop_protocol::{
-    LocalPresenceStateV1, PresenceHandle, PresenceInteractionV1, RemotePlayerDespawnV1,
-    RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+    LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceHandle, PresenceInteractionV1,
+    RemoteCompanionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+    RemoteSignalV1,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -476,6 +477,8 @@ impl<'de> Deserialize<'de> for PresenceReadyV1 {
 pub enum ClientRealtimeFrameV1 {
     PlayerState(LocalPresenceStateV1),
     InteractRemotePlayer(PresenceInteractionV1),
+    Companion(LocalCompanionV1),
+    SocialSignal(LocalSignalV1),
 }
 
 #[derive(Serialize)]
@@ -491,6 +494,8 @@ struct ClientFrameWire<'a, T> {
 enum ClientFramePayload {
     PlayerState(LocalPresenceStateV1),
     InteractRemotePlayer(PresenceInteractionV1),
+    Companion(LocalCompanionV1),
+    SocialSignal(LocalSignalV1),
 }
 
 #[derive(Deserialize)]
@@ -511,6 +516,16 @@ impl ClientRealtimeFrameV1 {
     #[must_use]
     pub fn interact_remote_player(interaction: PresenceInteractionV1) -> Self {
         Self::InteractRemotePlayer(interaction)
+    }
+
+    #[must_use]
+    pub fn companion(companion: LocalCompanionV1) -> Self {
+        Self::Companion(companion)
+    }
+
+    #[must_use]
+    pub fn social_signal(signal: LocalSignalV1) -> Self {
+        Self::SocialSignal(signal)
     }
 
     #[must_use]
@@ -537,6 +552,18 @@ impl Serialize for ClientRealtimeFrameV1 {
                 payload: interaction,
             }
             .serialize(serializer),
+            Self::Companion(companion) => ClientFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "COMPANION",
+                payload: companion,
+            }
+            .serialize(serializer),
+            Self::SocialSignal(signal) => ClientFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "SOCIAL_SIGNAL",
+                payload: signal,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -557,6 +584,12 @@ impl<'de> Deserialize<'de> for ClientRealtimeFrameV1 {
             ("INTERACT_REMOTE_PLAYER", ClientFramePayload::InteractRemotePlayer(interaction)) => {
                 Ok(Self::InteractRemotePlayer(interaction))
             }
+            ("COMPANION", ClientFramePayload::Companion(companion)) => {
+                Ok(Self::Companion(companion))
+            }
+            ("SOCIAL_SIGNAL", ClientFramePayload::SocialSignal(signal)) => {
+                Ok(Self::SocialSignal(signal))
+            }
             _ => Err(serde::de::Error::custom("invalid client realtime frame")),
         }
     }
@@ -569,6 +602,8 @@ pub enum ServerRealtimeFrameV1 {
     RemotePlayerSpawn(RemotePlayerSpawnV1),
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     RemotePlayerDespawn(RemotePlayerDespawnV1),
+    RemoteCompanion(RemoteCompanionV1),
+    RemoteSocialSignal(RemoteSignalV1),
 }
 
 #[derive(Deserialize)]
@@ -578,6 +613,8 @@ enum ServerFramePayload {
     RemotePlayerSpawn(RemotePlayerSpawnV1),
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     RemotePlayerDespawn(RemotePlayerDespawnV1),
+    RemoteCompanion(RemoteCompanionV1),
+    RemoteSocialSignal(RemoteSignalV1),
 }
 
 #[derive(Deserialize)]
@@ -608,6 +645,16 @@ impl ServerRealtimeFrameV1 {
     #[must_use]
     pub fn remote_player_despawn(despawn: RemotePlayerDespawnV1) -> Self {
         Self::RemotePlayerDespawn(despawn)
+    }
+
+    #[must_use]
+    pub fn remote_companion(companion: RemoteCompanionV1) -> Self {
+        Self::RemoteCompanion(companion)
+    }
+
+    #[must_use]
+    pub fn remote_social_signal(signal: RemoteSignalV1) -> Self {
+        Self::RemoteSocialSignal(signal)
     }
 
     #[must_use]
@@ -646,6 +693,18 @@ impl Serialize for ServerRealtimeFrameV1 {
                 payload,
             }
             .serialize(serializer),
+            Self::RemoteCompanion(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "REMOTE_COMPANION",
+                payload,
+            }
+            .serialize(serializer),
+            Self::RemoteSocialSignal(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "REMOTE_SOCIAL_SIGNAL",
+                payload,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -679,6 +738,12 @@ impl<'de> Deserialize<'de> for ServerRealtimeFrameV1 {
             }
             ("REMOTE_PLAYER_DESPAWN", ServerFramePayload::RemotePlayerDespawn(despawn)) => {
                 Ok(Self::RemotePlayerDespawn(despawn))
+            }
+            ("REMOTE_COMPANION", ServerFramePayload::RemoteCompanion(companion)) => {
+                Ok(Self::RemoteCompanion(companion))
+            }
+            ("REMOTE_SOCIAL_SIGNAL", ServerFramePayload::RemoteSocialSignal(signal)) => {
+                Ok(Self::RemoteSocialSignal(signal))
             }
             _ => Err(serde::de::Error::custom("invalid server realtime frame")),
         }
@@ -767,6 +832,8 @@ impl fmt::Display for ClientRealtimeFrameV1 {
         formatter.write_str(match self {
             Self::PlayerState(_) => "PLAYER_STATE",
             Self::InteractRemotePlayer(_) => "INTERACT_REMOTE_PLAYER",
+            Self::Companion(_) => "COMPANION",
+            Self::SocialSignal(_) => "SOCIAL_SIGNAL",
         })
     }
 }
@@ -778,6 +845,8 @@ impl fmt::Display for ServerRealtimeFrameV1 {
             Self::RemotePlayerSpawn(_) => "REMOTE_PLAYER_SPAWN",
             Self::RemotePlayerUpdate(_) => "REMOTE_PLAYER_UPDATE",
             Self::RemotePlayerDespawn(_) => "REMOTE_PLAYER_DESPAWN",
+            Self::RemoteCompanion(_) => "REMOTE_COMPANION",
+            Self::RemoteSocialSignal(_) => "REMOTE_SOCIAL_SIGNAL",
         })
     }
 }
@@ -792,8 +861,9 @@ mod tests {
         ProtocolVersion, SessionEpoch, SessionId, Sha256Digest,
     };
     use coop_protocol::{
-        AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, MovementMode,
-        PlayerState, PresencePoseV1, RegionId, WorldLocation, all_maps,
+        AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, EmoteId,
+        LocalCompanionV1, LocalSignalV1, MovementMode, PlayerState, PresencePoseV1, RegionId,
+        RemoteCompanionV1, RemoteSignalV1, SignalKind, WorldLocation, all_maps,
     };
     use serde_json::{Value, json};
     use uuid::Uuid;
@@ -882,7 +952,22 @@ mod tests {
         LocalPresenceStateV1::new(pose, u32::MAX).unwrap()
     }
 
-    fn maximum_client_frames() -> [ClientRealtimeFrameV1; 2] {
+    fn maximum_companion() -> LocalCompanionV1 {
+        LocalCompanionV1::new(u16::MAX, 63, 1, u32::MAX).unwrap()
+    }
+
+    fn maximum_local_signal() -> LocalSignalV1 {
+        LocalSignalV1::new(
+            SignalKind::Ping,
+            EmoteId::None,
+            i16::MIN,
+            i16::MIN,
+            u32::MAX,
+        )
+        .unwrap()
+    }
+
+    fn maximum_client_frames() -> [ClientRealtimeFrameV1; 4] {
         [
             ClientRealtimeFrameV1::player_state(maximum_serialized_state()),
             ClientRealtimeFrameV1::interact_remote_player(
@@ -895,10 +980,12 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            ClientRealtimeFrameV1::companion(maximum_companion()),
+            ClientRealtimeFrameV1::social_signal(maximum_local_signal()),
         ]
     }
 
-    fn maximum_server_frames() -> [ServerRealtimeFrameV1; 4] {
+    fn maximum_server_frames() -> [ServerRealtimeFrameV1; 6] {
         [
             ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(u64::MAX).unwrap()),
             ServerRealtimeFrameV1::remote_player_spawn(
@@ -926,6 +1013,27 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            ServerRealtimeFrameV1::remote_companion(
+                RemoteCompanionV1::new(
+                    PresenceHandle::new(u64::MAX).unwrap(),
+                    u32::MAX,
+                    u16::MAX,
+                    63,
+                    1,
+                )
+                .unwrap(),
+            ),
+            ServerRealtimeFrameV1::remote_social_signal(
+                RemoteSignalV1::new(
+                    PresenceHandle::new(u64::MAX).unwrap(),
+                    u32::MAX,
+                    SignalKind::Ping,
+                    EmoteId::None,
+                    i16::MIN,
+                    i16::MIN,
+                )
+                .unwrap(),
+            ),
         ]
     }
 
@@ -950,19 +1058,39 @@ mod tests {
         RemotePlayerDespawnV1::new(handle(), 4, DespawnReason::Stale).unwrap()
     }
 
-    fn client_frames() -> [ClientRealtimeFrameV1; 2] {
+    fn companion() -> LocalCompanionV1 {
+        LocalCompanionV1::new(25, 0, 1, 7).unwrap()
+    }
+
+    fn local_signal() -> LocalSignalV1 {
+        LocalSignalV1::new(SignalKind::Emote, EmoteId::Heart, 0, 0, 8).unwrap()
+    }
+
+    fn remote_companion() -> RemoteCompanionV1 {
+        RemoteCompanionV1::new(handle(), 9, 25, 0, 0).unwrap()
+    }
+
+    fn remote_signal() -> RemoteSignalV1 {
+        RemoteSignalV1::new(handle(), 10, SignalKind::Ping, EmoteId::None, 6, 7).unwrap()
+    }
+
+    fn client_frames() -> [ClientRealtimeFrameV1; 4] {
         [
             ClientRealtimeFrameV1::player_state(state()),
             ClientRealtimeFrameV1::interact_remote_player(interaction()),
+            ClientRealtimeFrameV1::companion(companion()),
+            ClientRealtimeFrameV1::social_signal(local_signal()),
         ]
     }
 
-    fn server_frames() -> [ServerRealtimeFrameV1; 4] {
+    fn server_frames() -> [ServerRealtimeFrameV1; 6] {
         [
             ServerRealtimeFrameV1::presence_ready(handle()),
             ServerRealtimeFrameV1::remote_player_spawn(spawn()),
             ServerRealtimeFrameV1::remote_player_update(update()),
             ServerRealtimeFrameV1::remote_player_despawn(despawn()),
+            ServerRealtimeFrameV1::remote_companion(remote_companion()),
+            ServerRealtimeFrameV1::remote_social_signal(remote_signal()),
         ]
     }
 
@@ -1249,7 +1377,12 @@ mod tests {
 
     #[test]
     fn every_frame_variant_has_golden_roundtrip_and_exact_envelope() {
-        let client_tags = ["PLAYER_STATE", "INTERACT_REMOTE_PLAYER"];
+        let client_tags = [
+            "PLAYER_STATE",
+            "INTERACT_REMOTE_PLAYER",
+            "COMPANION",
+            "SOCIAL_SIGNAL",
+        ];
         for (frame, expected_tag) in client_frames().into_iter().zip(client_tags) {
             let encoded = encode_client_realtime_frame(&frame).unwrap();
             let wire: Value = serde_json::from_slice(&encoded).unwrap();
@@ -1266,6 +1399,8 @@ mod tests {
             "REMOTE_PLAYER_SPAWN",
             "REMOTE_PLAYER_UPDATE",
             "REMOTE_PLAYER_DESPAWN",
+            "REMOTE_COMPANION",
+            "REMOTE_SOCIAL_SIGNAL",
         ];
         for (frame, expected_tag) in server_frames().into_iter().zip(server_tags) {
             let encoded = encode_server_realtime_frame(&frame).unwrap();
@@ -1477,6 +1612,21 @@ mod tests {
                 DespawnReason::PartitionLeft,
             ],
         );
+        assert_longest_json_token(&SignalKind::Emote, &[SignalKind::Ping, SignalKind::Emote]);
+        assert_longest_json_token(
+            &EmoteId::Question,
+            &[
+                EmoteId::None,
+                EmoteId::Exclaim,
+                EmoteId::Question,
+                EmoteId::Heart,
+                EmoteId::Music,
+                EmoteId::Sweat,
+                EmoteId::Anger,
+                EmoteId::Sleep,
+                EmoteId::Star,
+            ],
+        );
     }
 
     #[test]
@@ -1487,7 +1637,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [368, 190]
+            [368, 190, 118, 137]
         );
         for frame in maximum_client_frames {
             let encoded = encode_client_realtime_frame(&frame).unwrap();
@@ -1501,7 +1651,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [163, 488, 443, 148]
+            [163, 488, 443, 148, 153, 172]
         );
         for frame in maximum_server_frames {
             let encoded = encode_server_realtime_frame(&frame).unwrap();
