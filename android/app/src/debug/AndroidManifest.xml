@@ -3,4 +3,5 @@
     <instrumentation android:name="io.hoenn.sessions.GamePilot" android:targetPackage="${applicationId}" android:label="Explicit gameplay pilot"/>
     <instrumentation android:name="io.hoenn.sessions.ControllerSmoke" android:targetPackage="${applicationId}" android:label="Controller settings integration"/>
     <instrumentation android:name="io.hoenn.sessions.SessionStoreSmoke" android:targetPackage="${applicationId}" android:label="Encrypted session storage integration"/>
+    <instrumentation android:name="io.hoenn.sessions.OverlaySmoke" android:targetPackage="${applicationId}" android:label="Touch overlay integration"/>
 </manifest>

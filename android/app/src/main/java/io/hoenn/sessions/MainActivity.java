@@ -9,6 +9,8 @@ import android.os.*;
 import android.text.InputType;
 import android.view.*;
 import android.widget.*;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import java.io.*;
 import java.nio.*;
 
@@ -26,7 +28,7 @@ public final class MainActivity extends Activity {
     private EditText user,password;
     private GameView game;
     private TouchOverlay touchOverlay;
-    private Button overlaySettings;
+    private OnBackInvokedCallback backCallback;
     private SecureCredentialStore.Account savedAccount;
     private final ControllerInput controller=new ControllerInput();
     private InputManager inputManager;
@@ -74,11 +76,8 @@ public final class MainActivity extends Activity {
         playPanel=new FrameLayout(this);root.addView(playPanel,new FrameLayout.LayoutParams(-1,-1));
         game=new GameView();game.setTag("gba-frame");playPanel.addView(game,new FrameLayout.LayoutParams(-1,-1));
         touchOverlay=new TouchOverlay(this);touchOverlay.setTag("touch-overlay");playPanel.addView(touchOverlay,new FrameLayout.LayoutParams(-1,-1));
-        Button gameMenu=new Button(this);gameMenu.setText("☰");gameMenu.setContentDescription("Menú del juego");gameMenu.setOnClickListener(v->showMenu());
-        FrameLayout.LayoutParams menuParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.LEFT);playPanel.addView(gameMenu,menuParams);
-        overlaySettings=new Button(this);overlaySettings.setText("⚙ Controles");overlaySettings.setOnClickListener(v->configureTouchOverlay());
-        FrameLayout.LayoutParams settingsParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT);playPanel.addView(overlaySettings,settingsParams);
         playPanel.setVisibility(View.GONE);
+        if(Build.VERSION.SDK_INT>=33){backCallback=this::handleBack;getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT,backCallback);}
         hostHandler.post(hostPoll);
         if(savedAccount!=null)status.setText("Restaurando la sesión de "+savedAccount.username+"…");
     }
@@ -189,14 +188,13 @@ public final class MainActivity extends Activity {
     }
     private void configureTouchOverlay(){
         if(touchOverlay.isEditing()){
-            touchOverlay.setEditing(false);overlaySettings.setText("⚙ Controles");status.setText("Posición de los controles guardada.");return;
+            touchOverlay.setEditing(false);status.setText("Posición de los controles guardada.");return;
         }
         settingsOpen=true;controller.clear();game.keys=0;
         TouchOverlaySettingsDialog.show(this,touchOverlay,()->{
-            touchOverlay.setEditing(true);overlaySettings.setText("Guardar controles");settingsOpen=false;
-            status.setText("Arrastra los controles y pulsa Guardar controles.");
-        });
-        settingsOpen=false;
+            touchOverlay.setEditing(true);settingsOpen=false;
+            Toast.makeText(this,"Arrastra los controles. Atrás guarda y abre el menú.",Toast.LENGTH_LONG).show();
+        },()->settingsOpen=false);
     }
     void reconnectSession(){status.setText(NativeSession.reconnect()?"Reconectando desde tu último guardado…":"Necesitas una sesión activa y un guardado aceptado por el servidor.");}
     void stopSession(){NativeSession.stop();status.setText("Cerrando y comprobando el guardado…");}
@@ -228,9 +226,15 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){super.onResume();resumed=true;if(game!=null)game.start();if(autoResumePending && !pendingStart && !NativeSession.isActive()){autoResumePending=false;startSavedSession();}else resumeAfterClose();}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);inputFocused=hasFocus;if(hasFocus && cooperative)enterFullscreen();if(!hasFocus){controller.clear();if(game!=null)game.keys=0;}}
-    @Override public void onBackPressed(){if(cooperative)showMenu();else super.onBackPressed();}
+    private void handleBack(){
+        if(cooperative){
+            if(touchOverlay.isEditing()){touchOverlay.setEditing(false);settingsOpen=false;Toast.makeText(this,"Posición guardada.",Toast.LENGTH_SHORT).show();}
+            showMenu();
+        }else finish();
+    }
+    @Override public void onBackPressed(){handleBack();}
     @Override protected void onPause(){resumed=false;controller.clear();if(game!=null){game.keys=0;if(NativeSession.isActive() || pendingStart){restartAfterPause=true;NativeSession.stop();}else game.stop();}super.onPause();}
-    @Override protected void onDestroy(){destroyed=true;inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){destroyed=true;if(Build.VERSION.SDK_INT>=33 && backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
     private final class GameView extends View implements Runnable {
         volatile int keys;private Thread thread;private volatile boolean stop;
         private final Bitmap bitmap=Bitmap.createBitmap(240,160,Bitmap.Config.ARGB_8888);
@@ -247,7 +251,19 @@ public final class MainActivity extends Activity {
                 audio.play();
             }catch(IllegalArgumentException | IllegalStateException e){if(audio!=null)audio.release();audio=null;}
             int[] pixels=new int[240*160];short[] samples=new short[4096];
-            try{while(!stop && (resumed || pendingStart || NativeSession.isActive())){long started=System.nanoTime();int n;synchronized(NativeCore.class){n=NativeCore.frame(resumed && inputFocused && !settingsOpen?(keys | touchOverlay.keys() | controller.keys()):0,pixels,samples);if(connection!=null)connection.step();}if(audio!=null)audio.setVolume(resumed?1:0);if(n>=0){synchronized(bitmap){bitmap.setPixels(pixels,0,240,0,0,240,160);}postInvalidate();if(n>0 && audio!=null)audio.write(samples,0,n);}long left=16742706-(System.nanoTime()-started);if(left>0)TimeUnit.NANOSECONDS.sleep(left);}}
+            try{while(!stop && (resumed || pendingStart || NativeSession.isActive())){
+                long started=System.nanoTime();boolean fast=touchOverlay.fastForwardHeld();int repeats=fast?4:1,n=-1;
+                for(int i=0;i<repeats;i++){
+                    synchronized(NativeCore.class){
+                        int input=resumed&&inputFocused&&!settingsOpen?(keys|touchOverlay.keys()|controller.keys()):0;
+                        n=NativeCore.frame(input,pixels,samples);if(connection!=null)connection.step();
+                    }
+                    if(n<0)break;
+                }
+                if(audio!=null)audio.setVolume(resumed&&!fast?1:0);
+                if(n>=0){synchronized(bitmap){bitmap.setPixels(pixels,0,240,0,0,240,160);}postInvalidate();if(n>0&&audio!=null&&!fast)audio.write(samples,0,n);}
+                long left=16742706-(System.nanoTime()-started);if(left>0)TimeUnit.NANOSECONDS.sleep(left);
+            }}
             catch(InterruptedException e){Thread.currentThread().interrupt();}catch(Exception e){NativeSession.stop();runOnUiThread(()->status.setText("Bridge detenido: "+e.getMessage()));}finally{if(audio!=null){audio.stop();audio.release();}}
         }
         @Override protected void onMeasure(int widthSpec,int heightSpec){

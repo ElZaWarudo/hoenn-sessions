@@ -7,11 +7,13 @@ with Android Keystore, so reopening the app restores the account without asking 
 the password again. **Cerrar sesión** revokes and removes that saved credential.
 Save inside the game before closing.
 
-Touch controls are drawn over the emulator. Use **⚙ Controles** or
-**Menú → Configurar controles en pantalla** to change their size, drag each control
-to a new position, hide the overlay or restore the default layout. These choices
+Touch controls are drawn over the emulator with a transparent outlined layout.
+Use Android's **Back** gesture to open **Menú**, then choose
+**Configurar controles en pantalla** to change their size, drag each control to a
+new position, hide the overlay, enable the optional fast-forward control or restore
+the default layout. Fast-forward runs only while its button is held. These choices
 persist on the device. After authentication the game switches to an immersive,
-edge-to-edge view; the floating **☰** button keeps session actions available.
+edge-to-edge view without floating corner buttons.
 
 **Menú → Configurar mando** provides ten button mappings, collision swaps, stick
  deadzone (10–50%), a left-stick toggle, input testing and reset. Settings persist
