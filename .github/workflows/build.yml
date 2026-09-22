@@ -84,6 +84,24 @@ jobs:
           GAME_VERSION: EMERALD
         run: make -j$(nproc) -O all
 
+      - name: Generate Android compatibility manifest from the same ROM
+        run: python3 tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
+
+      - name: Set up Android Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+
+      - name: Build and verify bundled Android APK
+        run: bash android/build-ci.sh debug
+        # This public repository must not publish ROM-bearing APKs as artifacts.
+
   build-firered:
     needs: changes
     if: needs.changes.outputs.rom == 'true'

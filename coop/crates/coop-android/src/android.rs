@@ -90,15 +90,8 @@ async fn run(
         std::fs::write(&instance_file, &value).map_err(|_| "No se pudo guardar identidad local")?;
         value
     };
-    let config = SessionConfig {
-        client_instance_id: serde_json::from_value::<ClientInstanceId>(json!(instance))
-            .map_err(|_| "Identidad local inválida")?,
-        manifest,
-        trusted_manifest_key: key(),
-        epoch_store: EpochStore::new(root.join("epoch.json")),
-        workspace_parent: root.join("sessions"),
-        bridge_lua_dir: bridge,
-    };
+    let client_instance_id = serde_json::from_value::<ClientInstanceId>(json!(instance))
+        .map_err(|_| "Identidad local inválida")?;
     let auth = AuthSession::login(
         &api,
         vault.as_ref(),
@@ -108,6 +101,25 @@ async fn run(
     .await
     .map_err(|_| "Login rechazado o red no disponible")?;
     drop(password);
+    let epoch_store = match EpochStore::for_character(&root, auth.character_id) {
+        Ok(store) => store,
+        Err(error) => {
+            if let Ok(Some(token)) = vault.load("", "") {
+                let _ = coop_launcher::AuthApi::logout(&api, coop_cloud::LogoutRequest::new(token))
+                    .await;
+            }
+            let _ = vault.delete("", "");
+            return Err(format!("Historial local de sesión no disponible: {error}"));
+        }
+    };
+    let config = SessionConfig {
+        client_instance_id,
+        manifest,
+        trusted_manifest_key: key(),
+        epoch_store,
+        workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
+        bridge_lua_dir: bridge,
+    };
     let acquired = SessionLifecycle::acquire_with_keychain(&api, auth, config, vault.clone()).await;
     let mut session = match acquired {
         Ok(session) => session,

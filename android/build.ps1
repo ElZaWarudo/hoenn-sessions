@@ -1,4 +1,6 @@
-param([switch]$Test)
+param([switch]$Test, [string]$Rom, [string]$Manifest)
+if ($Rom) { $env:HOENN_ROM_PATH = (Resolve-Path -LiteralPath $Rom).Path }
+if ($Manifest) { $env:HOENN_MANIFEST_PATH = (Resolve-Path -LiteralPath $Manifest).Path }
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path $PSScriptRoot -Parent
 if (-not $env:JAVA_HOME) { $env:JAVA_HOME = 'C:/Program Files/Android/Android Studio/jbr' }
@@ -16,7 +18,7 @@ if (-not (Test-Path "$nativeSource/.git")) {
 $nativeCommit = & git -C $nativeSource rev-parse HEAD
 if ($nativeCommit -ne '26b7884bc25a5933960f3cdcd98bac1ae14d42e2') { throw 'Unexpected mGBA source identity' }
 if (& git -C $nativeSource status --porcelain) { throw 'mGBA source has local modifications; review before building' }
-Set-Content -LiteralPath "$PSScriptRoot/local.properties" -Value ('sdk.dir=' + $env:ANDROID_HOME.Replace('\','/')) -Encoding utf8
+Set-Content -LiteralPath "$PSScriptRoot/local.properties" -Value ('sdk.dir=' + $env:ANDROID_HOME.Replace('\','/').Replace(':','\:')) -Encoding utf8
 $buildTasks = @('assembleDebug')
 if ($Test) { $buildTasks += 'testDebugUnitTest' }
 & "$PSScriptRoot/gradlew.bat" -p $PSScriptRoot @buildTasks --no-daemon --console=plain

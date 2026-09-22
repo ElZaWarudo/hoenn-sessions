@@ -15,13 +15,13 @@ final class BridgeFrame {
         ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
         int type=b.getShort()&65535,length=b.getShort()&65535;
         long sequence=Integer.toUnsignedLong(b.getInt()),epoch=Integer.toUnsignedLong(b.getInt());
-        if(length>128 || sequence==0 || (inbound?(type<0x100 || type>0x10d):(type<1 || type>14)))throw new IllegalArgumentException("Cabecera del bridge inválida");
+        if(length>128 || sequence==0 || (inbound?(type<0x100 || type>0x10e):(type<1 || type>15)))throw new IllegalArgumentException("Cabecera del bridge inválida");
         CRC32 crc=new CRC32();crc.update(bytes,0,140);
         if(crc.getValue()!=Integer.toUnsignedLong(b.getInt(140)))throw new IllegalArgumentException("CRC del bridge inválido");
         return new BridgeFrame(type,sequence,epoch,Arrays.copyOfRange(bytes,12,12+length));
     }
     static byte[] encode(int type,long sequence,long epoch,byte[] payload) {
-        if(!((type>=1 && type<=14)||(type>=0x100 && type<=0x10d)))throw new IllegalArgumentException("Tipo del bridge inválido");
+        if(!((type>=1 && type<=15)||(type>=0x100 && type<=0x10e)))throw new IllegalArgumentException("Tipo del bridge inválido");
         if(sequence<=0 || sequence>0xffffffffL || epoch<0 || epoch>0xffffffffL || payload.length>128)throw new IllegalArgumentException("Rango del bridge inválido");
         byte[] bytes=new byte[144];ByteBuffer b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
         b.putShort((short)type).putShort((short)payload.length).putInt((int)sequence).putInt((int)epoch).put(payload);

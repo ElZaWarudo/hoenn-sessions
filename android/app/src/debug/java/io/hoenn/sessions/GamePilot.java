@@ -28,7 +28,7 @@ public final class GamePilot extends Instrumentation {
     private String state(){AtomicReference<String> text=new AtomicReference<>();runOnMainSync(()->{TextView status=activity.getWindow().getDecorView().findViewWithTag("session-status");text.set(status.getText().toString());});return text.get();}
     private void snapshot() throws Exception {
         AtomicReference<Bitmap> frame=new AtomicReference<>();
-        runOnMainSync(()->{View view=activity.getWindow().getDecorView().findViewWithTag("gba-frame");Bitmap bitmap=Bitmap.createBitmap(view.getWidth(),view.getHeight(),Bitmap.Config.ARGB_8888);view.draw(new Canvas(bitmap));frame.set(bitmap);});
+        runOnMainSync(()->{View view=activity.getWindow().getDecorView().findViewWithTag("gba-frame");Bitmap bitmap=Bitmap.createBitmap(Math.max(240,view.getWidth()),Math.max(160,view.getHeight()),Bitmap.Config.ARGB_8888);view.draw(new Canvas(bitmap));frame.set(bitmap);});
         try(OutputStream out=new FileOutputStream(new File(root,"pilot-frame.png"))){frame.get().compress(Bitmap.CompressFormat.PNG,100,out);}finally{frame.get().recycle();}
     }
     private void key(String key,int holdMs) throws Exception {
@@ -57,11 +57,11 @@ public final class GamePilot extends Instrumentation {
                 if(!file.delete())throw new IOException("Command cleanup failed");
                 String op=command.getString("op");
                 switch(op){
-                    case "login": runOnMainSync(()->{try{((EditText)find("Usuario de prueba")).setText(credentials.getString("username"));((EditText)find("Contraseña")).setText(credentials.getString("password"));find("Iniciar sesión y jugar / reanudar").performClick();}catch(Exception e){throw new IllegalStateException("Login UI failed");}});break;
-                    case "import":click("Importar ROM compatible");break;
+                    case "login": runOnMainSync(()->{try{((EditText)find("Usuario")).setText(credentials.getString("username"));((EditText)find("Contraseña")).setText(credentials.getString("password"));find("Iniciar sesión y jugar").performClick();}catch(Exception e){throw new IllegalStateException("Login UI failed");}});break;
+
                     case "key":key(command.getString("key"),command.optInt("hold_ms",120));break;
-                    case "close":click("Cerrar sesión");break;
-                    case "reconnect":click("Reconectar desde último guardado cloud");break;
+                    case "close":runOnMainSync(()->activity.stopSession());break;
+                    case "reconnect":runOnMainSync(()->activity.reconnectSession());break;
                     case "status":break;
                     case "finish":if(NativeSession.isActive())throw new IllegalStateException("Close the session before finishing");credentials=null;finish(Activity.RESULT_OK,new Bundle());return;
                     default:throw new IllegalArgumentException("Unsupported operation");
