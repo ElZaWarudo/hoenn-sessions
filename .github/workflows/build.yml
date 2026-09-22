@@ -240,6 +240,15 @@ jobs:
           TEST: 1
         run: make -j$(nproc) -O check-build
 
+      - name: Check battle-to-function test isolation
+        env:
+          MAKEFLAGS: -j1
+        run: |
+          cp pokeemerald-test-headless.elf test-isolation.elf
+          tools/patchelf/patchelf test-isolation.elf gTestRunnerArgv 'test/test_test_runner.c\0'
+          tools/mgba-rom-test-hydra/mgba-rom-test-hydra \
+            tools/mgba/mgba-rom-test unused-objcopy test-isolation.elf
+
       - name: Package test runtime with executable permissions
         run: |
           tar -czf test-runtime.tar.gz pokeemerald-test-headless.elf \

@@ -12,6 +12,9 @@ test filter, shard count, and local worker count (`-j4` in CI). Without the shar
 variables, `make check` runs every test. The number of local workers times the
 shard count must not exceed 32. Invalid configurations and empty shards fail.
 
+Before sharding, CI runs `test/test_test_runner.c` with one worker to check
+battle-to-function isolation, including interrupt callback cleanup.
+
 The `test-rom` CI artifact contains the ELF files for debugging. The separate
 `test-runtime` artifact contains a tar archive with the headless ELF, mGBA,
 Hydra, and patchelf, including their executable permissions. On Linux, extract

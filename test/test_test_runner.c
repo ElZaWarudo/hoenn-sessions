@@ -1,7 +1,8 @@
 #include "global.h"
+#include "main.h"
+#include "random.h"
 #include "test/battle.h"
 #include "test/test.h"
-#include "test/battle.h"
 
 TEST("Tests resume after CRASH")
 {
@@ -188,4 +189,18 @@ MULTI_BATTLE_TEST("Celebrate does not need to be explicitly set in a non-AI test
         ANIMATION(ANIM_TYPE_MOVE, MOVE_CELEBRATE, playerRight);
         ANIMATION(ANIM_TYPE_MOVE, MOVE_CELEBRATE, opponentRight);
     }
+}
+
+TEST("Battle teardown preserves seeded RNG across VBlank")
+{
+    u32 battleTypeFlags = gBattleTypeFlags;
+    rng_value_t before = gRngValue;
+
+    // Run this file with one worker to exercise the preceding battle's
+    // teardown. Function tests can change flags and wait for interrupts.
+    gBattleTypeFlags = 0;
+    VBlankIntrWait();
+    gBattleTypeFlags = battleTypeFlags;
+
+    EXPECT_EQ(memcmp(&gRngValue, &before, sizeof(before)), 0);
 }
