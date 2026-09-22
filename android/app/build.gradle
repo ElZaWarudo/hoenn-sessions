@@ -38,7 +38,13 @@ android {
         }
     }
     buildTypes {
-        debug { debuggable true }
+        debug {
+            debuggable true
+            if (project.hasProperty('sideBySideDebug')) {
+                applicationIdSuffix '.debug'
+                versionNameSuffix '-debug'
+            }
+        }
         release { signingConfig signingConfigs.release }
     }
 }

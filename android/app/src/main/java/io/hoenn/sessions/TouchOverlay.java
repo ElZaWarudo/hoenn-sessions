@@ -66,7 +66,8 @@ final class TouchOverlay extends View {
         invalidate();
     }
 
-    void resetPositions() {
+    void resetDefaults() {
+        visible=true;scale=1f;
         for (int i=0;i<positions.length;i++) {
             positions[i][0]=DEFAULTS[i][0]; positions[i][1]=DEFAULTS[i][1];
         }

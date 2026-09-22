@@ -24,7 +24,7 @@ final class TouchOverlaySettingsDialog {
             @Override public void onStopTrackingTouch(SeekBar bar){}
         });
         AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Controles en pantalla").setView(content)
-            .setNeutralButton("Restablecer",(d,w)->overlay.resetPositions())
+            .setNeutralButton("Restablecer todo",(d,w)->overlay.resetDefaults())
             .setNegativeButton("Cerrar",null)
             .setPositiveButton("Mover controles",null).create();
         dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{dialog.dismiss();editPositions.run();}));
