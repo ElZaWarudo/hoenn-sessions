@@ -61,6 +61,12 @@ TEST("Existing Hoenn and Sevii region map classifications are preserved")
     EXPECT_EQ(GetKantoEraByMap(MAP_GROUP(MAP_ONE_ISLAND), MAP_NUM(MAP_ONE_ISLAND), MAPSEC_ONE_ISLAND), KANTO_ERA_NONE);
 }
 
+TEST("Wide sections cannot alias an event island")
+{
+    EXPECT(IsEventIslandMapSecId(MAPSEC_BIRTH_ISLAND));
+    EXPECT(!IsEventIslandMapSecId(0x100 | MAPSEC_BIRTH_ISLAND));
+}
+
 TEST("Forced Flight selects era-specific Kanto destinations")
 {
     struct RegionMap regionMap = { .mapSecId = MAPSEC_PALLET_TOWN };

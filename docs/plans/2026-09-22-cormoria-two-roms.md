@@ -77,7 +77,7 @@ The reviewed schema-two definition exists in the C header without changing the l
 
 ## Section-width checkpoint
 
-The map-header generator and C `MapHeader` now carry 16-bit section IDs, with 32-byte aligned headers; a two-header assembly fixture checks section 256 and the following label offset. The overworld section getters and map-preview path now also carry 16-bit IDs, including the preview task's stored section. The exact combined patch passed the Linux ARM `make -s -j6 check TESTS=Cloud` run: 127 passed and eight pre-existing `TO_DO`. These changes are foundations only: the remaining region-map, TV, Pokémon met-location and save consumers still need a deliberate widen/adapter/rejection decision before Cormoria map registration. No map above 255 is playable yet.
+The map-header generator and C `MapHeader` now carry 16-bit section IDs, with 32-byte aligned headers; a two-header assembly fixture checks section 256 and the following label offset. The overworld section getters and map-preview path now also carry 16-bit IDs, including the preview task's stored section. The exact combined patch passed the Linux ARM `make -s -j6 check TESTS=Cloud` run: 127 passed and eight pre-existing `TO_DO`. Region-map island and old Aqua Hideout predicates now accept full-width section IDs so a later section cannot alias a low-byte special location; the `Wide` ARM filter passed two tests and independent review found no caller mismatch. These changes are foundations only: the remaining region-map, TV, Pokémon met-location and save consumers still need a deliberate widen/adapter/rejection decision before Cormoria map registration. No map above 255 is playable yet.
 
 ## Build-world registry checkpoint
 
