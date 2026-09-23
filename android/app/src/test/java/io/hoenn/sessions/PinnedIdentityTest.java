@@ -17,6 +17,6 @@ public class PinnedIdentityTest {
         assertFalse(PinnedIdentity.verifySignature(identity,new byte[0],new byte[64]));
     }
     @Test public void rejectsUntrustedEnvelope() throws Exception {
-        try {PinnedIdentity.verify("{\"package_version\":1,\"signing_algorithm_version\":1,\"signing_key_id\":\"attacker\",\"manifest\":{},\"signature\":[]}","test",1);fail();}catch(SecurityException expected){}
+        try {PinnedIdentity.verify("{\"package_version\":1,\"signing_algorithm_version\":1,\"signing_key_id\":\"attacker\",\"manifest\":{},\"signature\":[]}","test",1,"hash","build");fail();}catch(SecurityException expected){}
     }
 }

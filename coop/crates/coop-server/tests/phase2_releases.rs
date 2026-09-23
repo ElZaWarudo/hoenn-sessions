@@ -41,6 +41,14 @@ async fn fixture() -> TestResult<Fixture> {
     fs::create_dir_all(&root)?;
     write_release(&root, "release-one", b"signed-envelope-one")?;
     fs::write(root.join(releases::CURRENT_RELEASE_FILE), b"release-one\n")?;
+    let android = root.join(releases::ANDROID_DIRECTORY).join("apk-one");
+    fs::create_dir_all(&android)?;
+    fs::write(root.join(releases::ANDROID_CURRENT_FILE), b"apk-one\n")?;
+    fs::write(
+        android.join(releases::ANDROID_METADATA_FILE),
+        b"{\"release_id\":\"apk-one\",\"version_code\":4}",
+    )?;
+    fs::write(android.join(releases::ANDROID_APK_FILE), b"private-apk")?;
 
     let config = Phase2Config::local(
         vec![0x55; 32],
@@ -104,6 +112,49 @@ fn assert_private_no_store(headers: &HeaderMap) {
             .and_then(|value| value.to_str().ok()),
         Some("private, no-store")
     );
+}
+
+#[tokio::test]
+async fn android_apk_and_metadata_are_authenticated_and_path_closed() -> TestResult<()> {
+    let fixture = fixture().await?;
+    let latest = "/v1/releases/android/latest";
+    let apk = "/v1/releases/android/apk-one/apk";
+    for uri in [latest, apk] {
+        let (status, headers, _) = request(fixture.app.router(), uri, None, None).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_private_no_store(&headers);
+        let (status, headers, _) = request(
+            fixture.app.router(),
+            uri,
+            Some(&fixture.access_token),
+            Some("bytes=0-1"),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_private_no_store(&headers);
+    }
+    let (status, _, body) = request(
+        fixture.app.router(),
+        latest,
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, b"{\"release_id\":\"apk-one\",\"version_code\":4}");
+    let (status, _, body) =
+        request(fixture.app.router(), apk, Some(&fixture.access_token), None).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, b"private-apk");
+    let (status, _, _) = request(
+        fixture.app.router(),
+        "/v1/releases/android/%2e%2e/apk",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    Ok(())
 }
 
 #[tokio::test]
