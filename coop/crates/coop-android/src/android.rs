@@ -1,12 +1,14 @@
-use coop_cloud::{ClientInstanceId, Password, RefreshToken, TrustedManifestKey};
+use coop_cloud::{
+    CharacterId, ClientInstanceId, Password, RefreshToken, TrustedManifestKey, UserId,
+};
 use coop_launcher::keychain::{KeychainError, RefreshTokenStore};
 use coop_launcher::process::{SessionSupervisor, embedded::EmbeddedSupervisor};
 use coop_launcher::{
     AuthSession, BuildCompatibility, EpochStore, ReqwestCloudApi, SessionConfig, SessionLifecycle,
 };
 use jni::{
-    JNIEnv,
-    objects::{JClass, JString},
+    JNIEnv, JavaVM,
+    objects::{GlobalRef, JClass, JString, JValue},
     sys::{jboolean, jstring},
 };
 use serde_json::{Value, json};
@@ -20,21 +22,142 @@ use zeroize::Zeroizing;
 const SERVER: &str = "https://169-128-190-115.sslip.io";
 const KEY: &str = "f239614d143272c416c185e4d52d95a883f7ad89cadf55e1cf1dbc9dda8fe188";
 
-// Session-only tokens. No file/environment fallback and no credentials survive
-// process death. Reopening requires login; server refresh rotation still works.
-#[derive(Default)]
-struct VolatileTokens(Mutex<Option<RefreshToken>>);
-impl RefreshTokenStore for VolatileTokens {
-    fn load(&self, _: &str, _: &str) -> Result<Option<RefreshToken>, KeychainError> {
-        Ok(self.0.lock().map_err(|_| KeychainError::Operation)?.clone())
+/// Delegates refresh-token persistence to an AES-GCM key held by Android Keystore.
+struct AndroidTokens {
+    vm: Arc<JavaVM>,
+    class: GlobalRef,
+}
+
+impl AndroidTokens {
+    fn strings<'local>(
+        env: &mut JNIEnv<'local>,
+        service: &str,
+        username: &str,
+    ) -> Result<(JString<'local>, JString<'local>), KeychainError> {
+        Ok((
+            env.new_string(service)
+                .map_err(|_| KeychainError::Operation)?,
+            env.new_string(username)
+                .map_err(|_| KeychainError::Operation)?,
+        ))
     }
-    fn store(&self, _: &str, _: &str, token: &RefreshToken) -> Result<(), KeychainError> {
-        *self.0.lock().map_err(|_| KeychainError::Operation)? = Some(token.clone());
-        Ok(())
+
+    fn store_account(&self, auth: &AuthSession) -> Result<(), KeychainError> {
+        let mut env = self
+            .vm
+            .attach_current_thread()
+            .map_err(|_| KeychainError::Unavailable)?;
+        let username = env
+            .new_string(auth.username.as_str())
+            .map_err(|_| KeychainError::Operation)?;
+        let user_id = env
+            .new_string(auth.user_id.to_string())
+            .map_err(|_| KeychainError::Operation)?;
+        let character_id = env
+            .new_string(auth.character_id.to_string())
+            .map_err(|_| KeychainError::Operation)?;
+        let stored = env
+            .call_static_method(
+                &self.class,
+                "storeAccount",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
+                &[
+                    JValue::Object(&username),
+                    JValue::Object(&user_id),
+                    JValue::Object(&character_id),
+                ],
+            )
+            .and_then(|value| value.z())
+            .map_err(|_| KeychainError::Operation)?;
+        if stored {
+            Ok(())
+        } else {
+            Err(KeychainError::Operation)
+        }
     }
-    fn delete(&self, _: &str, _: &str) -> Result<(), KeychainError> {
-        *self.0.lock().map_err(|_| KeychainError::Operation)? = None;
-        Ok(())
+}
+
+impl RefreshTokenStore for AndroidTokens {
+    fn load(&self, service: &str, username: &str) -> Result<Option<RefreshToken>, KeychainError> {
+        let mut env = self
+            .vm
+            .attach_current_thread()
+            .map_err(|_| KeychainError::Unavailable)?;
+        let (service, username) = Self::strings(&mut env, service, username)?;
+        let value = env
+            .call_static_method(
+                &self.class,
+                "load",
+                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                &[JValue::Object(&service), JValue::Object(&username)],
+            )
+            .and_then(|value| value.l())
+            .map_err(|_| KeychainError::Operation)?;
+        if value.is_null() {
+            return Ok(None);
+        }
+        let token = env
+            .get_string(&JString::from(value))
+            .map_err(|_| KeychainError::Operation)?
+            .to_string_lossy()
+            .into_owned();
+        RefreshToken::new(token)
+            .map(Some)
+            .map_err(KeychainError::Invalid)
+    }
+    fn store(
+        &self,
+        service: &str,
+        username: &str,
+        token: &RefreshToken,
+    ) -> Result<(), KeychainError> {
+        let mut env = self
+            .vm
+            .attach_current_thread()
+            .map_err(|_| KeychainError::Unavailable)?;
+        let (service, username) = Self::strings(&mut env, service, username)?;
+        let token = env
+            .new_string(token.expose_secret())
+            .map_err(|_| KeychainError::Operation)?;
+        let stored = env
+            .call_static_method(
+                &self.class,
+                "store",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z",
+                &[
+                    JValue::Object(&service),
+                    JValue::Object(&username),
+                    JValue::Object(&token),
+                ],
+            )
+            .and_then(|value| value.z())
+            .map_err(|_| KeychainError::Operation)?;
+        if stored {
+            Ok(())
+        } else {
+            Err(KeychainError::Operation)
+        }
+    }
+    fn delete(&self, service: &str, username: &str) -> Result<(), KeychainError> {
+        let mut env = self
+            .vm
+            .attach_current_thread()
+            .map_err(|_| KeychainError::Unavailable)?;
+        let (service, username) = Self::strings(&mut env, service, username)?;
+        let deleted = env
+            .call_static_method(
+                &self.class,
+                "delete",
+                "(Ljava/lang/String;Ljava/lang/String;)Z",
+                &[JValue::Object(&service), JValue::Object(&username)],
+            )
+            .and_then(|value| value.z())
+            .map_err(|_| KeychainError::Operation)?;
+        if deleted {
+            Ok(())
+        } else {
+            Err(KeychainError::Operation)
+        }
     }
 }
 
@@ -66,6 +189,12 @@ async fn run(
     root: PathBuf,
     user: String,
     password: Zeroizing<String>,
+    user_id: String,
+    character_id: String,
+    resume: bool,
+    logout_only: bool,
+    vm: Arc<JavaVM>,
+    credential_class: GlobalRef,
     handle: Arc<Handle>,
     events: mpsc::Sender<Value>,
     mut stop: watch::Receiver<u8>,
@@ -79,7 +208,10 @@ async fn run(
     )
     .map_err(|_| "ROM/manifiesto incompatible")?;
     let api = ReqwestCloudApi::new(SERVER).map_err(|_| "Endpoint inválido")?;
-    let vault = Arc::new(VolatileTokens::default());
+    let vault = Arc::new(AndroidTokens {
+        vm,
+        class: credential_class,
+    });
     let bridge = root.join("bridge");
     std::fs::create_dir_all(&bridge).map_err(|_| "No se pudo crear el directorio bridge")?;
     let instance_file = root.join("client-instance.txt");
@@ -92,25 +224,39 @@ async fn run(
     };
     let client_instance_id = serde_json::from_value::<ClientInstanceId>(json!(instance))
         .map_err(|_| "Identidad local inválida")?;
-    let auth = AuthSession::login(
-        &api,
-        vault.as_ref(),
-        user,
-        Password::new(password.to_string()).map_err(|_| "Contraseña inválida")?,
-    )
-    .await
-    .map_err(|_| "Login rechazado o red no disponible")?;
+    let mut auth = if resume {
+        let user_id = UserId::parse(&user_id).map_err(|_| "Identidad guardada inválida")?;
+        let character_id =
+            CharacterId::parse(&character_id).map_err(|_| "Personaje guardado inválido")?;
+        AuthSession::refresh_from_keychain(&api, vault.as_ref(), &user, user_id, character_id)
+            .await
+            .map_err(|error| format!("No se pudo restaurar la sesión guardada: {error}"))?
+    } else {
+        AuthSession::login(
+            &api,
+            vault.as_ref(),
+            &user,
+            Password::new(password.to_string()).map_err(|_| "Contraseña inválida")?,
+        )
+        .await
+        .map_err(|_| "Login rechazado o red no disponible")?
+    };
     drop(password);
+    vault
+        .store_account(&auth)
+        .map_err(|_| "No se pudo proteger la sesión en el dispositivo")?;
+    if logout_only {
+        auth.logout(&api, vault.as_ref())
+            .await
+            .map_err(|_| "No se pudo cerrar la sesión remota")?;
+        let _ = events
+            .send(json!({"type":"closed","revision":0,"signed_out":true}))
+            .await;
+        return Ok(());
+    }
     let epoch_store = match EpochStore::for_character(&root, auth.character_id) {
         Ok(store) => store,
-        Err(error) => {
-            if let Ok(Some(token)) = vault.load("", "") {
-                let _ = coop_launcher::AuthApi::logout(&api, coop_cloud::LogoutRequest::new(token))
-                    .await;
-            }
-            let _ = vault.delete("", "");
-            return Err(format!("Historial local de sesión no disponible: {error}"));
-        }
+        Err(error) => return Err(format!("Historial local de sesión no disponible: {error}")),
     };
     let config = SessionConfig {
         client_instance_id,
@@ -128,11 +274,6 @@ async fn run(
                 coop_launcher::session::SessionError::Epoch(epoch) => format!("{epoch:?}"),
                 _ => error.to_string(),
             };
-            if let Ok(Some(token)) = vault.load("", "") {
-                let _ = coop_launcher::AuthApi::logout(&api, coop_cloud::LogoutRequest::new(token))
-                    .await;
-            }
-            let _ = vault.delete("", "");
             return Err(format!("No se pudo adquirir/reanudar: {detail}"));
         }
     };
@@ -178,7 +319,7 @@ async fn run(
     });
     let mut can_release = true;
     let outcome: Result<(), String> = loop {
-        if *stop.borrow() == 1 {
+        if matches!(*stop.borrow(), 1 | 3) {
             break Ok(());
         }
         if session.renew_lease_before_child_start(&api).await.is_err() {
@@ -198,8 +339,13 @@ async fn run(
             // Only the verified canonical SAV is portable across desktop/Android.
             "signature_verified":session.revision.value()>0});
         let run = if events.send(load).await.is_ok() {
+            // Embedded mGBA currently reboots the ROM bridge as soon as the
+            // first moving presence update enters the realtime lifecycle.
+            // Keep Android gameplay and cloud checkpoints alive through the
+            // proven fenced lifecycle until embedded realtime can survive
+            // ordinary overworld movement.
             session
-                .run_until_shutdown_with_realtime(&api, &mut supervisor, async {
+                .run_until_shutdown(&api, &mut supervisor, async {
                     while *stop.borrow_and_update() == 0 {
                         if stop.changed().await.is_err() {
                             break;
@@ -252,7 +398,7 @@ async fn run(
         tokio::select! {
             () = tokio::time::sleep(std::time::Duration::from_millis(wait_ms)) => {},
             () = async {
-                while *stop.borrow_and_update() != 1 {
+                while !matches!(*stop.borrow_and_update(), 1 | 3) {
                     if stop.changed().await.is_err() { break; }
                 }
             } => break Ok(()),
@@ -263,8 +409,11 @@ async fn run(
     };
     let revision = session.revision.value();
     let recovery = session.workspace.path().to_path_buf();
-    let release = if can_release {
+    let signed_out = *stop.borrow() == 3;
+    let release = if can_release && signed_out {
         session.release(&api).await
+    } else if can_release {
+        session.release_lease_keep_credentials(&api).await
     } else {
         let _ = session.preserve_recovery_after_child_failure();
         session.close_credentials(&api).await
@@ -281,7 +430,7 @@ async fn run(
     }
     release.map_err(|e| format!("Cierre pendiente: {e}"))?;
     let _ = events
-        .send(json!({"type":"closed","revision":revision}))
+        .send(json!({"type":"closed","revision":revision,"signed_out":signed_out}))
         .await;
     Ok(())
 }
@@ -293,15 +442,28 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_start(
     root: JString,
     user: JString,
     password: JString,
+    user_id: JString,
+    character_id: JString,
+    resume: jboolean,
+    logout_only: jboolean,
 ) -> jboolean {
     let read = |env: &mut JNIEnv, value: &JString| {
         env.get_string(value)
             .map(|v| v.to_string_lossy().into_owned())
     };
-    let (Ok(root), Ok(user), Ok(password)) = (
+    let Ok(credential_class) = env
+        .find_class("io/hoenn/sessions/SecureCredentialStore")
+        .and_then(|class| env.new_global_ref(class))
+    else {
+        return 0;
+    };
+    let (Ok(root), Ok(user), Ok(password), Ok(user_id), Ok(character_id), Ok(vm)) = (
         read(&mut env, &root),
         read(&mut env, &user),
         read(&mut env, &password),
+        read(&mut env, &user_id),
+        read(&mut env, &character_id),
+        env.get_java_vm(),
     ) else {
         return 0;
     };
@@ -336,6 +498,12 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_start(
                     PathBuf::from(root),
                     user,
                     Zeroizing::new(password),
+                    user_id,
+                    character_id,
+                    resume != 0,
+                    logout_only != 0,
+                    Arc::new(vm),
+                    credential_class,
                     handle.clone(),
                     tx.clone(),
                     rx,
@@ -426,4 +594,11 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_reconnect(
         }
     }
     0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_hoenn_sessions_NativeSession_signOut(_: JNIEnv, _: JClass) {
+    if let Some(handle) = active().lock().expect("session lock").as_ref() {
+        let _ = handle.stop.send(3);
+    }
 }

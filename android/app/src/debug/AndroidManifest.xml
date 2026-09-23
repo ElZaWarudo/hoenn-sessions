@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <instrumentation android:name="io.hoenn.sessions.DeviceSmoke" android:targetPackage="io.hoenn.sessions" android:label="Private device smoke"/>
-    <instrumentation android:name="io.hoenn.sessions.GamePilot" android:targetPackage="io.hoenn.sessions" android:label="Explicit gameplay pilot"/>
-    <instrumentation android:name="io.hoenn.sessions.ControllerSmoke" android:targetPackage="io.hoenn.sessions" android:label="Controller settings integration"/>
+    <instrumentation android:name="io.hoenn.sessions.DeviceSmoke" android:targetPackage="${applicationId}" android:label="Private device smoke"/>
+    <instrumentation android:name="io.hoenn.sessions.GamePilot" android:targetPackage="${applicationId}" android:label="Explicit gameplay pilot"/>
+    <instrumentation android:name="io.hoenn.sessions.ControllerSmoke" android:targetPackage="${applicationId}" android:label="Controller settings integration"/>
+    <instrumentation android:name="io.hoenn.sessions.SessionStoreSmoke" android:targetPackage="${applicationId}" android:label="Encrypted session storage integration"/>
+    <instrumentation android:name="io.hoenn.sessions.OverlaySmoke" android:targetPackage="${applicationId}" android:label="Touch overlay integration"/>
 </manifest>
