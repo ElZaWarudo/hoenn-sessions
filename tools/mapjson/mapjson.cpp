@@ -147,6 +147,29 @@ int get_map_engine_region_value(const Json &map_data) {
     FATAL_ERROR("Unknown or unsupported map engine region '%s'.\n", region.c_str());
 }
 
+void validate_map_section_byte(const string &section) {
+    static const std::map<string, size_t> section_ids = [] {
+        string error;
+        Json data = Json::parse(read_text_file("src/data/region_map/region_map_sections.json"), error);
+        if (data == Json())
+            FATAL_ERROR("Cannot parse map sections: %s\n", error.c_str());
+        std::map<string, size_t> ids;
+        const auto sections = data["map_sections"].array_items();
+        for (size_t index = 0; index < sections.size(); ++index) {
+            string id = json_to_string(sections[index], "id");
+            if (!ids.emplace(id, index).second)
+                FATAL_ERROR("Duplicate map section '%s'.\n", id.c_str());
+        }
+        ids.emplace("MAPSEC_NONE", sections.size());
+        return ids;
+    }();
+    auto found = section_ids.find(section);
+    if (found == section_ids.end())
+        FATAL_ERROR("Unknown map section '%s'.\n", section.c_str());
+    if (found->second > 255)
+        FATAL_ERROR("Map section '%s' has ID %zu, but map headers hold one byte.\n", section.c_str(), found->second);
+}
+
 string get_generated_warning(const string &filename, bool isAsm) {
     string comment = isAsm ? "@" : "//";
 
@@ -189,6 +212,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
 
     string mapName = json_to_string(map_data, "name");
     int engine_region = get_map_engine_region_value(map_data);
+    validate_map_section_byte(json_to_string(map_data, "region_map_section"));
     text << get_generated_warning("data/maps/" + mapName + "/map.json", true);
 
     text << mapName << ":\n"

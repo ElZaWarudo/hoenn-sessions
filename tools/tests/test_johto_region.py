@@ -110,6 +110,26 @@ class JohtoMapHeaderTests(unittest.TestCase):
                 header = (self.directory / "header.inc").read_text()
                 self.assertIn(f"\t.byte {ordinal}\n\tmap_header_flags", header)
 
+    def test_map_section_beyond_header_capacity_is_rejected(self) -> None:
+        sections_path = self.directory / "src/data/region_map/region_map_sections.json"
+        sections_path.parent.mkdir(parents=True, exist_ok=True)
+        sections_path.write_text(json.dumps({"map_sections": [
+            {"id": f"MAPSEC_TEST_{number}"} for number in range(256)
+        ] + [{"id": "MAPSEC_OVERFLOW"}]}))
+        source = json.loads((ROOT / "data/maps/LittlerootTown/map.json").read_text())
+        source["region_map_section"] = "MAPSEC_OVERFLOW"
+        source_path = self.directory / "overflow_map.json"
+        source_path.write_text(json.dumps(source))
+        layouts_path = self.directory / "layouts.json"
+        layouts_path.write_text((ROOT / "data/layouts/layouts.json").read_text())
+        result = subprocess.run(
+            [str(self.executable), "map", "emerald", source_path.as_posix(),
+             layouts_path.as_posix(), self.directory.as_posix()],
+            cwd=self.directory, capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ID 256, but map headers hold one byte", result.stderr)
+
     def test_routes_26_to_28_use_kanto_engine_region(self) -> None:
         for section in (
             "MAPSEC_JOHTO_ROUTE_26",
