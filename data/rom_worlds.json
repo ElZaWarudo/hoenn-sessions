@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "default_world": "main",
+  "worlds": [
+    {
+      "name": "main",
+      "world_id": 1,
+      "build_bit": 1,
+      "game_version": null,
+      "map_version": null,
+      "build_name": null,
+      "title": null,
+      "game_code": null
+    },
+    {
+      "name": "cormoria",
+      "world_id": 2,
+      "build_bit": 2,
+      "game_version": "EMERALD",
+      "map_version": "emerald",
+      "build_name": "emerald-cormoria",
+      "title": "CORMORIA",
+      "game_code": "BPCO"
+    }
+  ]
+}

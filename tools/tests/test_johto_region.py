@@ -110,7 +110,7 @@ class JohtoMapHeaderTests(unittest.TestCase):
                 header = (self.directory / "header.inc").read_text()
                 self.assertIn(f"\t.byte {ordinal}\n\tmap_header_flags", header)
 
-    def test_map_section_beyond_header_capacity_is_rejected(self) -> None:
+    def test_map_section_above_255_uses_wide_header_field(self) -> None:
         sections_path = self.directory / "src/data/region_map/region_map_sections.json"
         sections_path.parent.mkdir(parents=True, exist_ok=True)
         sections_path.write_text(json.dumps({"map_sections": [
@@ -122,13 +122,42 @@ class JohtoMapHeaderTests(unittest.TestCase):
         source_path.write_text(json.dumps(source))
         layouts_path = self.directory / "layouts.json"
         layouts_path.write_text((ROOT / "data/layouts/layouts.json").read_text())
+        map_groups_path = self.directory / "include/constants/map_groups.h"
+        map_groups_path.parent.mkdir(parents=True, exist_ok=True)
+        map_groups_path.write_text("MAP_LITTLEROOT_TOWN = (0\n")
         result = subprocess.run(
             [str(self.executable), "map", "emerald", source_path.as_posix(),
              layouts_path.as_posix(), self.directory.as_posix()],
             cwd=self.directory, capture_output=True, text=True,
         )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("ID 256, but map headers hold one byte", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        header = (self.directory / "header.inc").read_text()
+        self.assertIn("\t.2byte MAPSEC_OVERFLOW\n", header)
+        if not shutil.which("as") or not shutil.which("objcopy"):
+            self.skipTest("assembling header layout needs as and objcopy")
+        directives = []
+        for line in header.splitlines():
+            stripped = line.strip()
+            if stripped.startswith((".4byte", ".2byte", ".byte")):
+                width = stripped.split()[0]
+                value = 256 if "MAPSEC_OVERFLOW" in stripped else 0
+                directives.append(f"{width} {value}")
+            elif stripped.startswith(".balign"):
+                directives.append(stripped)
+            elif stripped.startswith("map_header_flags"):
+                directives.append(".byte 0")
+        assembly = self.directory / "headers.s"
+        assembly.write_text(".section .rodata\n" + "\n".join(
+            f"{label}:\n" + "\n".join(directives) for label in ("FirstMap", "SecondMap")
+        ) + "\n")
+        obj = self.directory / "headers.o"
+        binary = self.directory / "headers.bin"
+        subprocess.run(["as", "-o", str(obj), str(assembly)], check=True)
+        subprocess.run(["objcopy", "-O", "binary", "-j", ".rodata", str(obj), str(binary)], check=True)
+        packed = binary.read_bytes()
+        self.assertEqual(len(packed), 2 * 0x20)
+        self.assertEqual(packed[0x14:0x16], b"\x00\x01")
+        self.assertEqual(packed[0x20 + 0x14:0x20 + 0x16], b"\x00\x01")
 
     def test_routes_26_to_28_use_kanto_engine_region(self) -> None:
         for section in (

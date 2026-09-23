@@ -15,6 +15,9 @@ using std::sort; using std::find;
 #include <map>
 using std::map;
 
+#include <set>
+using std::set;
+
 #include <fstream>
 using std::ofstream; using std::ifstream;
 
@@ -147,7 +150,7 @@ int get_map_engine_region_value(const Json &map_data) {
     FATAL_ERROR("Unknown or unsupported map engine region '%s'.\n", region.c_str());
 }
 
-void validate_map_section_byte(const string &section) {
+void validate_map_section_width(const string &section) {
     static const std::map<string, size_t> section_ids = [] {
         string error;
         Json data = Json::parse(read_text_file("src/data/region_map/region_map_sections.json"), error);
@@ -166,8 +169,8 @@ void validate_map_section_byte(const string &section) {
     auto found = section_ids.find(section);
     if (found == section_ids.end())
         FATAL_ERROR("Unknown map section '%s'.\n", section.c_str());
-    if (found->second > 255)
-        FATAL_ERROR("Map section '%s' has ID %zu, but map headers hold one byte.\n", section.c_str(), found->second);
+    if (found->second > 65535)
+        FATAL_ERROR("Map section '%s' has ID %zu, but map headers hold two bytes.\n", section.c_str(), found->second);
 }
 
 string get_generated_warning(const string &filename, bool isAsm) {
@@ -212,7 +215,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
 
     string mapName = json_to_string(map_data, "name");
     int engine_region = get_map_engine_region_value(map_data);
-    validate_map_section_byte(json_to_string(map_data, "region_map_section"));
+    validate_map_section_width(json_to_string(map_data, "region_map_section"));
     text << get_generated_warning("data/maps/" + mapName + "/map.json", true);
 
     text << mapName << ":\n"
@@ -236,7 +239,7 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
 
     text << "\t.2byte " << json_to_string(map_data, "music") << "\n"
          << "\t.2byte " << json_to_string(layout, "id") << "\n"
-         << "\t.byte "  << json_to_string(map_data, "region_map_section") << "\n"
+         << "\t.2byte " << json_to_string(map_data, "region_map_section") << "\n"
          << "\t.byte "  << json_to_string(map_data, "requires_flash") << "\n"
          << "\t.byte "  << json_to_string(map_data, "weather") << "\n"
          << "\t.byte "  << json_to_string(map_data, "map_type") << "\n";
@@ -258,7 +261,8 @@ string generate_map_header_text(Json map_data, Json layouts_data) {
              << "allow_running=" << json_to_string(map_data, "allow_running") << ", "
              << "show_map_name=" << json_to_string(map_data, "show_map_name") << "\n";
 
-     text << "\t.byte " << json_to_string(map_data, "battle_scene") << "\n\n";
+     text << "\t.byte " << json_to_string(map_data, "battle_scene") << "\n"
+          << "\t.balign 4, 0\n\n";
 
     return text.str();
 }
@@ -533,18 +537,108 @@ void process_event_constants(const vector<string> &map_filepaths, string output_
     write_text_file(output_ids_file, ids_file_text.str());
 }
 
-// Stable IDs are common to both ROMs. Membership affects linked content only.
+// Stable map/layout IDs are common to every ROM. Membership affects linked content only.
+struct RomWorldRegistry {
+    map<string, int> bits;
+    int all_bits;
+    int default_bit;
+};
+
+int registry_integer(const Json &value, const string &field, int maximum) {
+    if (!value.is_number() || value.number_value() < 1 || value.number_value() > maximum
+     || value.number_value() != static_cast<int>(value.number_value()))
+        FATAL_ERROR("ROM world registry: %s must be an integer from 1 through %d\n", field.c_str(), maximum);
+    return value.int_value();
+}
+
+RomWorldRegistry load_rom_world_registry() {
+    const string path = "data/rom_worlds.json";
+    string error;
+    const Json data = Json::parse(read_text_file(path), error);
+    RomWorldRegistry registry = {{}, 0, 0};
+    set<int> ids;
+    set<int> bits;
+    set<string> build_names;
+    set<string> game_codes;
+
+    if (!error.empty() || !data.is_object() || data["schema_version"] != 1
+     || !data["worlds"].is_array() || data["worlds"].array_items().empty()
+     || !data["default_world"].is_string())
+        FATAL_ERROR("%s: invalid ROM world registry\n", path.c_str());
+
+    for (const Json &world : data["worlds"].array_items()) {
+        if (!world.is_object() || !world["name"].is_string())
+            FATAL_ERROR("%s: invalid ROM world entry\n", path.c_str());
+        const string name = world["name"].string_value();
+        if (!std::regex_match(name, std::regex("[a-z][a-z0-9_]*")) || name == "shared")
+            FATAL_ERROR("%s: invalid ROM world name %s\n", path.c_str(), name.c_str());
+        const int id = registry_integer(world["world_id"], name + " world_id", 65535);
+        const int bit = registry_integer(world["build_bit"], name + " build_bit", 1 << 30);
+        if ((bit & (bit - 1)) != 0 || !ids.insert(id).second || !bits.insert(bit).second
+         || !registry.bits.emplace(name, bit).second)
+            FATAL_ERROR("%s: duplicate or invalid ROM world identity %s\n", path.c_str(), name.c_str());
+        const bool is_default = name == data["default_world"].string_value();
+        const Json game_version = world["game_version"];
+        const Json map_version = world["map_version"];
+        const Json build_name = world["build_name"];
+        const Json title = world["title"];
+        const Json game_code = world["game_code"];
+        if ((!game_version.is_null() && (!game_version.is_string()
+             || (game_version.string_value() != "EMERALD" && game_version.string_value() != "FIRERED"
+              && game_version.string_value() != "LEAFGREEN")))
+         || (!map_version.is_null() && (!map_version.is_string()
+             || (map_version.string_value() != "emerald" && map_version.string_value() != "firered")))
+         || (!build_name.is_null() && (!build_name.is_string()
+             || !std::regex_match(build_name.string_value(), std::regex("[a-z0-9][a-z0-9-]*"))))
+         || (!title.is_null() && (!title.is_string()
+             || !std::regex_match(title.string_value(), std::regex("[A-Z0-9 ]{1,12}"))))
+         || (!game_code.is_null() && (!game_code.is_string()
+             || !std::regex_match(game_code.string_value(), std::regex("[A-Z0-9]{4}"))))
+         || (!is_default && (game_version.is_null() || map_version.is_null()
+             || build_name.is_null() || title.is_null() || game_code.is_null()))
+         || (is_default && (!game_version.is_null() || !map_version.is_null()
+             || !build_name.is_null() || !title.is_null() || !game_code.is_null())))
+            FATAL_ERROR("%s: invalid build metadata for ROM world %s\n", path.c_str(), name.c_str());
+        if ((!build_name.is_null()
+             && (!build_names.insert(build_name.string_value()).second
+              || (!is_default && (build_name.string_value() == "emerald"
+                  || build_name.string_value() == "firered" || build_name.string_value() == "leafgreen"))))
+         || (!game_code.is_null()
+             && (!game_codes.insert(game_code.string_value()).second
+              || (!is_default && (game_code.string_value() == "BPEE"
+                  || game_code.string_value() == "BPRE" || game_code.string_value() == "BPGE")))))
+            FATAL_ERROR("%s: duplicate ROM artifact identity for world %s\n", path.c_str(), name.c_str());
+        registry.all_bits |= bit;
+    }
+
+    const auto found = registry.bits.find(data["default_world"].string_value());
+    if (found == registry.bits.end() || found->second != 1)
+        FATAL_ERROR("%s: default_world must have build_bit 1\n", path.c_str());
+    registry.default_bit = found->second;
+    return registry;
+}
+
 int rom_world_mask(const Json &data, const string &owner) {
+    static const RomWorldRegistry registry = load_rom_world_registry();
     auto field = data.object_items().find("rom_world");
     if (field == data.object_items().end())
-        return 1; // Existing maps/layouts belong to the main world.
+        return registry.default_bit; // Existing maps/layouts remain in the default world.
     if (field->second.is_string()) {
         const string world = field->second.string_value();
-        if (world == "main") return 1;
-        if (world == "cormoria") return 2;
-        if (world == "shared") return 3;
+        if (world == "shared") return registry.all_bits;
+        const auto found = registry.bits.find(world);
+        if (found != registry.bits.end()) return found->second;
+    } else if (field->second.is_array() && !field->second.array_items().empty()) {
+        int mask = 0;
+        for (const Json &member : field->second.array_items()) {
+            if (!member.is_string() || registry.bits.count(member.string_value()) == 0
+             || (mask & registry.bits.at(member.string_value())) != 0)
+                FATAL_ERROR("%s: rom_world array has an invalid or duplicate world\n", owner.c_str());
+            mask |= registry.bits.at(member.string_value());
+        }
+        return mask;
     }
-    FATAL_ERROR("%s: rom_world must be main, cormoria, or shared\n", owner.c_str());
+    FATAL_ERROR("%s: rom_world must name registered worlds or shared\n", owner.c_str());
 }
 
 void begin_rom_world(ostringstream &text, int mask) {

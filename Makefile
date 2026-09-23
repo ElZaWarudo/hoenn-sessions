@@ -21,16 +21,32 @@ ifeq (leafgreen, $(or $(BUILD), $(MAKECMDGOALS)))
 endif
 endif
 
-ifneq ($(filter $(ROM_WORLD),1 2),$(ROM_WORLD))
-$(error ROM_WORLD must be 1 (main) or 2 (Cormoria))
+ROM_WORLD_SELECTORS := $(shell python3 tools/rom_world_registry.py data/rom_worlds.json --selectors)
+ifeq ($(strip $(ROM_WORLD)),)
+$(error ROM_WORLD must select a registered world)
 endif
-ifeq ($(ROM_WORLD),2)
-  ifneq ($(GAME_VERSION),EMERALD)
-$(error The Cormoria world currently requires GAME_VERSION=EMERALD)
-  endif
-  override BUILD_NAME := emerald-cormoria
-  TITLE := CORMORIA
-  GAME_CODE := BPCO
+ifneq ($(filter $(ROM_WORLD),$(ROM_WORLD_SELECTORS)),$(ROM_WORLD))
+$(error ROM_WORLD must select a registered world)
+endif
+ifneq ($(filter $(GAME_VERSION),EMERALD FIRERED LEAFGREEN),$(GAME_VERSION))
+$(error GAME_VERSION must be EMERALD, FIRERED, or LEAFGREEN)
+endif
+ROM_WORLD_SETTINGS := $(shell python3 tools/rom_world_registry.py data/rom_worlds.json $(ROM_WORLD) $(GAME_VERSION))
+ifeq ($(strip $(ROM_WORLD_SETTINGS)),)
+$(error ROM_WORLD must select a registered world compatible with GAME_VERSION)
+endif
+override ROM_WORLD := $(word 1,$(ROM_WORLD_SETTINGS))
+ifneq ($(word 2,$(ROM_WORLD_SETTINGS)),-)
+  override BUILD_NAME := $(word 2,$(ROM_WORLD_SETTINGS))
+endif
+ifneq ($(word 3,$(ROM_WORLD_SETTINGS)),-)
+  override TITLE := $(subst ~, ,$(word 3,$(ROM_WORLD_SETTINGS)))
+endif
+ifneq ($(word 4,$(ROM_WORLD_SETTINGS)),-)
+  override GAME_CODE := $(word 4,$(ROM_WORLD_SETTINGS))
+endif
+ifneq ($(word 5,$(ROM_WORLD_SETTINGS)),-)
+  override MAP_VERSION := $(word 5,$(ROM_WORLD_SETTINGS))
 endif
 
 # GBA rom header

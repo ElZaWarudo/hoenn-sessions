@@ -7,9 +7,10 @@
 #include "test/test.h"
 
 _Static_assert(sizeof(struct WorldLocation) == 10, "tested world location ABI size");
-_Static_assert(sizeof(struct MapHeader) == 0x1C, "tested map header size");
-_Static_assert(offsetof(struct MapHeader, engineRegion) == 0x19, "tested engine region offset");
-_Static_assert(offsetof(struct MapHeader, battleType) == 0x1B, "tested battle type offset");
+_Static_assert(sizeof(struct MapHeader) == 0x20, "tested map header size");
+_Static_assert(offsetof(struct MapHeader, regionMapSectionId) == 0x14, "tested section offset");
+_Static_assert(offsetof(struct MapHeader, engineRegion) == 0x1A, "tested engine region offset");
+_Static_assert(offsetof(struct MapHeader, battleType) == 0x1C, "tested battle type offset");
 _Static_assert(COOP_MAP_ENGINE_REGION_HOENN == 0, "Hoenn map header byte");
 _Static_assert(COOP_MAP_ENGINE_REGION_KANTO == 1, "Kanto map header byte");
 _Static_assert(COOP_MAP_ENGINE_REGION_JOHTO == 2, "Johto map header byte");

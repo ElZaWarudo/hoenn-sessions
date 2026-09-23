@@ -347,7 +347,7 @@ bool32 ShouldRunMapPreview(void)
     return FALSE;
 }
 
-static u8 GetMapPreviewScreenIdx(mapsec_u8_t mapsec)
+static u8 GetMapPreviewScreenIdx(mapsec_u16_t mapsec)
 {
     s32 i;
 
@@ -385,7 +385,7 @@ void MapPreview_InitBgs(void)
     ShowBg(0);
 }
 
-void MapPreview_LoadGfx(mapsec_u8_t mapsec)
+void MapPreview_LoadGfx(mapsec_u16_t mapsec)
 {
     u8 idx;
 
@@ -427,7 +427,7 @@ bool32 MapPreview_IsGfxLoadFinished(void)
     return FreeTempTileDataBuffersIfPossible();
 }
 
-u16 MapPreview_CreateMapNameWindow(mapsec_u8_t mapsec)
+u16 MapPreview_CreateMapNameWindow(mapsec_u16_t mapsec)
 {
     u16 windowId;
     u32 xctr;
@@ -466,13 +466,12 @@ u16 MapPreview_CreateMapNameWindow(mapsec_u8_t mapsec)
 #define tState      data[0]
 #define tCounter    data[1]
 #define tDuration   data[2]
-#define tMapSecId   data[3]
-#define tWindowId   data[4]
+#define tWindowId   data[7]
 
-void RunMapPreviewScreenNonFade(u8 mapSecId)
+void RunMapPreviewScreenNonFade(mapsec_u16_t mapSecId)
 {
     u8 taskId = CreateTask(Task_MapPreviewScreen_NonFade, 0);
-    gTasks[taskId].tMapSecId = mapSecId;
+    SetWordTaskArg(taskId, 3, mapSecId);
 }
 
 void Task_MapPreviewScreen_NonFade(u8 taskId)
@@ -484,14 +483,14 @@ void Task_MapPreviewScreen_NonFade(u8 taskId)
         SetWordTaskArg(taskId, 5, (uintptr_t)gMain.vblankCallback);
         SetVBlankCallback(NULL);
         MapPreview_InitBgs();
-        MapPreview_LoadGfx(tMapSecId);
+        MapPreview_LoadGfx(GetWordTaskArg(taskId, 3));
         BlendPalettes(PALETTES_ALL, 0x10, RGB_WHITE);
         tState++;
         break;
     case 1:
         if (!MapPreview_IsGfxLoadFinished())
         {
-            tWindowId = MapPreview_CreateMapNameWindow(tMapSecId);
+            tWindowId = MapPreview_CreateMapNameWindow(GetWordTaskArg(taskId, 3));
             CopyWindowToVram(tWindowId, COPYWIN_FULL);
             tState++;
         }
@@ -511,7 +510,7 @@ void Task_MapPreviewScreen_NonFade(u8 taskId)
     case 3:
         if (!UpdatePaletteFade())
         {
-            tDuration = MapPreview_GetDuration(tMapSecId);
+            tDuration = MapPreview_GetDuration(GetWordTaskArg(taskId, 3));
             tState++;
         }
         break;
@@ -545,7 +544,6 @@ void Task_MapPreviewScreen_NonFade(u8 taskId)
 }
 
 #undef tDuration
-#undef tMapSecId
 #undef tWindowId
 
 #define tBGPriority     data[2]
@@ -559,7 +557,7 @@ void Task_MapPreviewScreen_NonFade(u8 taskId)
 #define tDuration       data[10]
 #define tWindowId       data[11]
 
-void RunMapPreviewScreenFadeIn(mapsec_u8_t mapsec)
+void RunMapPreviewScreenFadeIn(mapsec_u16_t mapsec)
 {
     u8 taskId;
 
@@ -678,7 +676,7 @@ static void Task_MapPreviewScreen_FadeIn(u8 taskId)
 #undef tDuration
 #undef tWindowId
 
-u16 MapPreview_GetDuration(mapsec_u8_t mapsec)
+u16 MapPreview_GetDuration(mapsec_u16_t mapsec)
 {
     u8 idx;
     u16 flagId;
