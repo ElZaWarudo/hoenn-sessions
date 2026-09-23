@@ -461,16 +461,21 @@ class BridgeManifestTests(unittest.TestCase):
     def test_accepts_maximum_length_textual_build_id(self) -> None:
         self.assertEqual(generator.validate_game_build_id("A" * 128), "A" * 128)
 
-    def test_checked_in_manifest_requires_a_fresh_linked_rom_for_schema_three(self) -> None:
+    def test_checked_in_manifest_matches_generator_schema(self) -> None:
         manifest_path = REPO_ROOT / "dist" / "bridge_manifest.json"
         checked_in_text = manifest_path.read_text(encoding="utf-8")
         checked_in = json.loads(checked_in_text)
 
-        # A schema-v1 manifest remains a pinned, real build artifact. It must not
-        # be rewritten with invented linked addresses when no ELF/ROM is present.
-        self.assertIn(
+        # The checked-in manifest is a real build artifact: it must not be
+        # rewritten with invented linked addresses when no ELF/ROM is present.
+        # But it must also never drift behind the generator schema — a stale
+        # schema fails closed in the launcher and Lua, so regenerate it from
+        # a linked ROM (`make modern`, then
+        # `python tools/generate_bridge_manifest.py --elf pokeemerald.elf
+        # --rom pokeemerald.gba`) instead of weakening this assertion.
+        self.assertEqual(
             checked_in["schema_version"],
-            (1, 3, generator.MANIFEST_SCHEMA_VERSION),
+            generator.MANIFEST_SCHEMA_VERSION,
         )
         if checked_in["schema_version"] == generator.MANIFEST_SCHEMA_VERSION:
             registry = generator.load_registry_contract(
@@ -511,12 +516,12 @@ class BridgeManifestTests(unittest.TestCase):
                     generator.render_lua(expected),
                 )
 
-    def test_example_lua_documents_schema_three_save_contract(self) -> None:
+    def test_example_lua_documents_schema_four_save_contract(self) -> None:
         example = (REPO_ROOT / "bridge" / "generated_addresses.lua.example").read_text(
             encoding="utf-8"
         )
         for expected in (
-            "schema_version = 3",
+            "schema_version = 4",
             "save = {",
             "coop_offset = 4",
             "generation_offset = 28",

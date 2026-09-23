@@ -1028,6 +1028,20 @@ impl GenerationStore {
         marker: &CompletionMarker,
         marker_bytes: &[u8],
     ) -> Result<(), UpdateError> {
+        self.write_accepted_head_file(marker_file, marker, marker_bytes)
+            .map(|_| ())
+    }
+
+    /// Writes one accepted-head record for an already validated marker and
+    /// returns the head pathname. The marker bytes must have been synced to
+    /// their final pathname before this call so a crash between the two
+    /// renames leaves a recoverable orphan marker, never a dangling head.
+    fn write_accepted_head_file(
+        &self,
+        marker_file: &str,
+        marker: &CompletionMarker,
+        marker_bytes: &[u8],
+    ) -> Result<PathBuf, UpdateError> {
         let head = AcceptedHead {
             marker_file: marker_file.to_owned(),
             marker_sha256: Sha256::digest(marker_bytes).into(),
@@ -1061,7 +1075,8 @@ impl GenerationStore {
         sync_directory(&self.generations).map_err(|error| match error {
             UpdateError::StagingIo(error) => UpdateError::CurrentMarkerIo(error),
             other => other,
-        })
+        })?;
+        Ok(final_path)
     }
 
     fn load_current_marker(&self) -> Result<Option<CompletionMarker>, UpdateError> {
@@ -1150,11 +1165,14 @@ impl GenerationStore {
         if markers.is_empty() && heads.is_empty() {
             return Ok(None);
         }
-        if markers.is_empty() || heads.is_empty() {
+        if markers.is_empty() {
+            // Head records without marker bytes cannot be validated or
+            // rebuilt; this is genuine history loss, not a crash orphan.
             return Err(UpdateError::MarkerHistoryRegression(
                 self.generations.clone(),
             ));
         }
+        self.heal_orphan_markers(&markers, &mut heads)?;
 
         let mut referenced = BTreeSet::new();
         let mut current: Option<CompletionMarker> = None;
@@ -1185,6 +1203,38 @@ impl GenerationStore {
             return Err(UpdateError::MarkerHistoryRegression(orphan));
         }
         Ok(current)
+    }
+
+    /// Rebuilds head records for validated markers left without one by a
+    /// crash between the marker rename and the head rename in
+    /// [`Self::persist_current_marker`]. Every marker passed in was already
+    /// validated against its complete generation, so a rebuilt head restores
+    /// exactly what the interrupted install would have written. Markers that
+    /// already have a head are untouched.
+    fn heal_orphan_markers(
+        &self,
+        markers: &BTreeMap<String, CompletionMarker>,
+        heads: &mut Vec<(PathBuf, AcceptedHead)>,
+    ) -> Result<(), UpdateError> {
+        let referenced: BTreeSet<&str> = heads
+            .iter()
+            .map(|(_, head)| head.marker_file.as_str())
+            .collect();
+        let orphans: Vec<(&String, &CompletionMarker)> = markers
+            .iter()
+            .filter(|(name, _)| !referenced.contains(name.as_str()))
+            .collect();
+        for (name, marker) in orphans {
+            let marker_bytes = marker.encode();
+            let path = self.write_accepted_head_file(name, marker, &marker_bytes)?;
+            let head = AcceptedHead {
+                marker_file: name.clone(),
+                marker_sha256: Sha256::digest(&marker_bytes).into(),
+                marker: marker.clone(),
+            };
+            heads.push((path, head));
+        }
+        Ok(())
     }
 
     /// Revalidates a named complete generation without activating anything.
