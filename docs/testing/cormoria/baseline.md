@@ -82,6 +82,12 @@ The linked Cormoria-profile ROM uses 29,249,476 of 33,554,432 bytes (87.17%), le
 
 This is a build-profile and resource baseline. The donor's 165 maps and quest runtime remain unregistered, and no cross-ROM travel has been observed.
 
+The same native snapshot passed `make -s -j6 check TESTS=Cloud` with 127 passes and eight existing `TO_DO` results. A focused GNU Make fixture and all ten world-registry tests also passed against the later `GAME_VERSION` forwarding correction; the independent corrective review found no remaining issue.
+
+## Authenticated content stage — 2026-09-23
+
+`tools/cormoria/import_world.py` authenticates the three pinned manifests and donor revision, then stages Cormoria content outside either source tree without registering maps or layouts. The reviewed v3 stage at `C:\Users\Mayor\.codex\cormoria-swarm-artifacts\content-stage-20260923-v3` contains 165 maps, 165 layouts, 188 namespaced compiled-script sources and 2,960 authenticated donor source files. It excludes donor Pokémon, menu, union-room and Battle Frontier data tables. Its metadata records the native bindings and three external map edges as unmet adapters and sets `runtime_ready=false`. The five focused tests passed against the pinned local donor; the independent review found no concrete correctness issue. Machines without that donor checkout skip the full staging test. Manifest hashes are pinned to canonical LF content so Windows CRLF and LF checkouts produce the same stage provenance.
+
 ## Main synchronization — 2026-09-23
 
 The Cormoria branch was rebased onto `origin/main` at `4fb7f5060e` (40 upstream commits beyond the original base), then local `main` was fast-forwarded to the same commit. The donor inventory was regenerated because upstream changed `include/constants/event_objects.h`; its 135 affected shared-roster binding records now carry the new host header hash. The map, layout, section and tileset counts did not change, and the pinned-source `--check` passed. No donor source revision changed.

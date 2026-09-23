@@ -46,6 +46,8 @@ The first release must exercise the same registry and transaction path with two 
 
 The build selector now reads `data/rom_worlds.json` for names, immutable world IDs, unique membership bits and ROM build metadata. `mapjson` accepts a world name, an explicit list of owning worlds, or `shared`, which expands to every registered build bit; legacy maps/layouts remain in the default world. The Makefile resolves a registered name or bit before passing the bit to C and assembly, and registry edits regenerate map/layout tables. Tests cover a synthetic third world and reject duplicate bits, IDs, artifact names and game codes. This build registry is distinct from the trusted release catalog and travel protocol, which are not implemented yet.
 
+Before enabling travel, exercise the release catalog and transfer engine with a synthetic third ROM: switch main → Cormoria → third → main, verify the same shared player state and co-op identity at each arrival, and verify that all three regional saves retain their independent progress and return locations. The test must use catalog entries and portal IDs, not a Cormoria-specific branch. A new world may supply its own content adapter, but must not require changes to the shared transfer algorithm; reject worlds whose save schema, location allocation, object catalog or artifact identity cannot be represented by the release family.
+
 ## Shared player transfer contract
 
 | State | Travel rule |
