@@ -107,6 +107,14 @@ public key before either Windows artifact publication or runtime release.
 Pushes to `main` update only the runtime and server components on the VPS. The
 Windows installer job runs only for an explicit `workflow_dispatch`, so normal
 server deployments do not rebuild or publish a desktop installer.
+Android clients authenticate to download the ROM and matching manifest from the
+signed release envelope. A new signed APK is published only when Android client
+code has changed since the last published APK, or on a manual dispatch for a fresh release. The
+`/srv/hoenn/android/current` marker selects the latest privately served APK and
+is replaced only after its file and metadata are uploaded. The VPS needs `setfacl`
+so container UID 10001 can read the APK while other local users cannot. A changed
+release trust key also forces an APK rebuild. Native client and
+emulator changes still require an APK; routine ROM changes do not.
 Each rollout also validates and atomically installs the version-controlled
 `compose.yaml` in the configured VPS deploy directory. The existing `.env`,
 secrets, database, volumes, and Caddy configuration are preserved.

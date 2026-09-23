@@ -26,9 +26,12 @@ public final class DeviceSmoke extends Instrumentation {
             if(!input.delete())throw new IOException("Could not delete private test input");
             if(config.has("invitation_code")) {api.register(config.getString("username"),config.getString("password"),config.getString("invitation_code"));report.append("registration=PASS\n");}
             api.login(config.getString("username"),config.getString("password")); report.append("login=PASS\n");
+            RuntimeStore store=new RuntimeStore(getTargetContext().getFilesDir());
+            store.prepareBundled(getTargetContext().getAssets());
+            RuntimeStore.Game game=store.ensureLatest(api);
             long revision=api.acquire();report.append("lease_acquire=PASS revision=").append(revision).append('\n');
             api.heartbeat();report.append("lease_heartbeat=PASS\n");
-            try {api.verifyResume();report.append("pinned_server_signature=PASS\n");}
+            try {api.verifyResume(game.romHash,game.buildId);report.append("pinned_server_signature=PASS\n");}
             catch(CloudApi.HttpError e){if(e.status!=404 || revision!=0)throw e;report.append("pinned_server_signature=UNTESTED no snapshot (HTTP 404, revision 0)\n");}
             api.release();report.append("lease_release=PASS\n");
             api.logout();report.append("logout=PASS\n");

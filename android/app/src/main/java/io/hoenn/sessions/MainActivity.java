@@ -22,6 +22,7 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity {
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private final CloudApi api=new CloudApi();
+    private RuntimeStore.Game currentGame;
     private TextView status;
     private LinearLayout layout, loginPanel;
     private FrameLayout playPanel;
@@ -41,7 +42,7 @@ public final class MainActivity extends Activity {
     };
     private volatile BridgeConnection connection;
     private volatile boolean cooperative;
-    private volatile boolean pendingStart,destroyed,restartAfterPause,autoResumePending;
+    private volatile boolean pendingStart,updatePromptPending,destroyed,restartAfterPause,autoResumePending;
     private final Handler hostHandler=new Handler(Looper.getMainLooper());
     private final Runnable hostPoll=new Runnable(){public void run(){
         try{pollSession();}catch(Exception e){status.setText("Error de sesión: "+e.getMessage());NativeSession.stop();closeCore();}
@@ -49,6 +50,7 @@ public final class MainActivity extends Activity {
         hostHandler.postDelayed(this,50);
     }};
     private volatile boolean resumed;
+    private boolean awaitingInstallPermission;
     private interface Work {String run() throws Exception;}
     private void work(Work work) {
         worker.execute(()->{try{String result=work.run(); runOnUiThread(()->status.setText(result));}catch(Exception e){runOnUiThread(()->status.setText(e.getClass().getSimpleName()+": "+e.getMessage()));}});
@@ -98,21 +100,65 @@ public final class MainActivity extends Activity {
     }
 
     private void startSession(String username,String secret,String userId,String characterId,boolean resumeSession){
-        if(pendingStart || NativeSession.isActive()){status.setText("Ya hay una sesión activa o cerrándose.");return;}
+        if(pendingStart || updatePromptPending || NativeSession.isActive()){status.setText("Ya hay una sesión activa o cerrándose.");return;}
         pendingStart=true;
         work(()->{try{
             if(destroyed || !resumed)return "Inicio cancelado al salir de la aplicación.";
-            verifyCore();closeCore();
-            BundledRom.install(getFilesDir(),PinnedIdentity.ROM_HASH,()->getAssets().open("pokeemerald.gba"));
-            copyManifest();
-            if(!NativeSession.start(getFilesDir().getCanonicalPath(),username,secret,userId,characterId,resumeSession,false))throw new IOException("Ya hay una sesión activa");
-            if(destroyed || !resumed)NativeSession.stop();
-            return resumeSession?"Restaurando tu sesión…":"Comprobando tus credenciales…";
+            verifyCore();
+            new RuntimeStore(getFilesDir()).prepareBundled(getAssets());
+            api.authenticate(username,secret);
+            ApkUpdate.Available update=ApkUpdate.check(api);
+            if(update!=null) {
+                updatePromptPending=true;
+                runOnUiThread(()->promptApkUpdate(update,username,userId,characterId,resumeSession));
+                return "Hay una actualización de la aplicación disponible.";
+            }
+            return beginGame(username,userId,characterId,resumeSession);
+        }catch(IOException error){
+            if(resumeSession && resumed && !destroyed && resumeRetryCount<15){
+                resumeRetryCount++;
+                hostHandler.postDelayed(resumeRetry,10000);
+                return "Conexión interrumpida. Reintentando automáticamente ("+resumeRetryCount+"/15)…";
+            }
+            throw error;
         }finally{pendingStart=false;}});
     }
-    private void copyManifest() throws Exception {try(InputStream in=getAssets().open("bridge_manifest.json");OutputStream out=new FileOutputStream(new File(getFilesDir(),"bridge_manifest.json"))){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}}
+    private String beginGame(String username,String userId,String characterId,boolean resumeSession) throws Exception {
+        closeCore();
+        currentGame=new RuntimeStore(getFilesDir()).ensureLatest(api);
+        String authenticatedUserId=resumeSession?userId:api.userId();
+        String authenticatedCharacterId=resumeSession?characterId:api.characterId();
+        api.clearAccess();
+        // Java's preflight login created the refresh family; Rust rotates that same family.
+        if(!NativeSession.start(getFilesDir().getCanonicalPath(),username,"",authenticatedUserId,authenticatedCharacterId,true,false))throw new IOException("Ya hay una sesión activa");
+        if(destroyed || !resumed)NativeSession.stop();
+        return resumeSession?"Restaurando tu sesión…":"Comprobando tus credenciales…";
+    }
+    private void promptApkUpdate(ApkUpdate.Available update,String username,String userId,String characterId,boolean resumeSession) {
+        if(destroyed){updatePromptPending=false;return;}
+        new AlertDialog.Builder(this).setTitle("Actualización disponible")
+            .setMessage("Android instalará una nueva versión de Hoenn Sessions. Tus partidas guardadas se conservarán.")
+            .setPositiveButton("Actualizar",(dialog,which)->worker.execute(()->{
+                try {
+                    ApkUpdate.download(api,this,update);
+                    runOnUiThread(()->{openApkInstaller();updatePromptPending=false;});
+                } catch(Exception error) {
+                    runOnUiThread(()->{status.setText(error.getClass().getSimpleName()+": "+error.getMessage());updatePromptPending=false;});
+                }
+            }))
+            .setNegativeButton("Más tarde",(dialog,which)->work(()->{
+                try {return beginGame(username,userId,characterId,resumeSession);}
+                finally {updatePromptPending=false;}
+            }))
+            .setOnCancelListener(dialog->updatePromptPending=false)
+            .show();
+    }
     private void verifyCore() throws IOException {
         if(!"0.10.5|26b7884bc25a5933960f3cdcd98bac1ae14d42e2".equals(NativeCore.identity()))throw new IOException("Identidad del núcleo mGBA no admitida");
+    }
+    private void openApkInstaller() {
+        try { awaitingInstallPermission=!ApkUpdate.openInstaller(this); }
+        catch (RuntimeException error) { awaitingInstallPermission=false;status.setText("No se pudo abrir el instalador: "+error.getMessage()); }
     }
     private void closeCore(){
         controller.clear();
@@ -125,7 +171,7 @@ public final class MainActivity extends Activity {
                 resumeRetryCount=0;hostHandler.removeCallbacks(resumeRetry);
                 if(destroyed || !resumed){closeCore();NativeSession.stop();continue;}
                 verifyCore();
-                synchronized(NativeCore.class){NativeCore.close();NativeCore.configureBridge(BuildConfig.BRIDGE_ADDRESS,BuildConfig.SAVE_GENERATION_ADDRESS);if(!NativeCore.open(event.getString("rom"),event.getString("save")))throw new IOException("mGBA no pudo abrir la partida");connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
+                synchronized(NativeCore.class){NativeCore.close();NativeBridge.ADDRESS=currentGame.bridgeAddress();NativeCore.configureBridge(NativeBridge.ADDRESS,currentGame.generationAddress());if(!NativeCore.open(event.getString("rom"),event.getString("save")))throw new IOException("mGBA no pudo abrir la partida");connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
                 savedAccount=SecureCredentialStore.loadAccount();loginScreen.setVisibility(View.GONE);playPanel.setVisibility(View.VISIBLE);enterFullscreen();
                 status.setText("Sesión adquirida · epoch "+event.getLong("epoch")+" · revisión "+event.getLong("revision")+(event.getBoolean("signature_verified")?" · firma pilot-v1 verificada":" · primer guardado pendiente")+". Presencia al llegar a Villa Raíz exterior.");
             }else if(type.equals("stop")){
@@ -157,7 +203,7 @@ public final class MainActivity extends Activity {
     }
     private void showMenu(){
         new AlertDialog.Builder(this).setTitle("Menú")
-            .setItems(new String[]{"Configurar controles en pantalla","Configurar mando","Reconectar desde último guardado cloud","Cerrar partida","Cerrar sesión","Registrar cuenta","Comprobar conexión"},(dialog,item)->{
+            .setItems(new String[]{"Configurar controles en pantalla","Configurar mando","Reconectar desde último guardado cloud","Cerrar partida","Cerrar sesión","Registrar cuenta","Comprobar conexión","Instalar actualización descargada"},(dialog,item)->{
                 if(item==0)configureTouchOverlay();
                 else if(item==1){
                     settingsOpen=true;controller.clear();game.keys=0;
@@ -166,7 +212,9 @@ public final class MainActivity extends Activity {
                 else if(item==3)stopSession();
                 else if(item==4)signOut();
                 else if(item==5)registerAccount();
-                else work(()->{api.health();return "Conexión segura · servidor disponible.";});
+                else if(item==6)work(()->{api.health();return "Conexión segura · servidor disponible.";});
+                else if(new File(new File(getFilesDir(),"updates"),"update.apk").isFile())openApkInstaller();
+                else status.setText("No hay una actualización descargada.");
             }).show();
     }
 
@@ -234,7 +282,7 @@ public final class MainActivity extends Activity {
         if(NativeSession.isActive()||pendingStart){hostHandler.postDelayed(this,500);return;}
         startSavedSession();
     }};
-    @Override protected void onResume(){super.onResume();resumed=true;if(game!=null)game.start();if(autoResumePending && !pendingStart && !NativeSession.isActive()){autoResumePending=false;startSavedSession();}else if(resumeRetryCount>0)hostHandler.post(resumeRetry);else resumeAfterClose();}
+    @Override protected void onResume(){super.onResume();resumed=true;if(game!=null)game.start();if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())openApkInstaller();else status.setText("Permite instalar desde Hoenn Sessions para completar la actualización.");}if(autoResumePending && !pendingStart && !NativeSession.isActive()){autoResumePending=false;startSavedSession();}else if(resumeRetryCount>0)hostHandler.post(resumeRetry);else resumeAfterClose();}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);inputFocused=hasFocus;if(hasFocus && cooperative)enterFullscreen();if(!hasFocus){controller.clear();if(game!=null)game.keys=0;}}
     private void handleBack(){
         if(cooperative){

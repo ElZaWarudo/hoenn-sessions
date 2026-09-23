@@ -1,11 +1,18 @@
 # Hoenn Sessions for Android
 
-The APK includes the compatible game, mGBA 0.10.5 and the Rust cooperative client.
-Open the app, enter your account and choose **Iniciar sesión y jugar**. No ROM picker
-or separate runtime download is required. The rotating refresh token is encrypted
+The APK includes an initial compatible game, mGBA 0.10.5 and the Rust cooperative client.
+On sign-in, the app checks the authenticated, signed release envelope and downloads a newer
+ROM and matching bridge manifest when needed. Each verified pair is stored as one runtime
+generation; an interrupted download leaves the previous generation selected. No ROM picker
+is required. The rotating refresh token is encrypted
 with Android Keystore, so reopening the app restores the account without asking for
 the password again. **Cerrar sesión** revokes and removes that saved credential.
 Save inside the game before closing.
+
+When Android client code changes, the app offers a private APK update and opens Android's
+installer after checking the download hash. Android may ask the player to allow installs
+from Hoenn Sessions. **Menú → Instalar actualización descargada** resumes the handoff.
+ROM-only releases do not require a new APK.
 
 Touch controls are drawn over the emulator with a transparent outlined layout.
 Use Android's **Back** gesture to open **Menú**, then choose
@@ -31,10 +38,10 @@ $env:JAVA_HOME = 'C:/Program Files/Android/Android Studio/jbr'
 .\android\build.ps1 -Test -Rom 'C:/private/game.gba' -Manifest 'C:/private/bridge_manifest.json'
 ```
 
-The ROM and manifest must come from the **same deployed release**. BuildConfig
-uses that manifest's ROM hash and memory addresses. The build rejects mismatching
-ROM bytes; startup verifies the bundled bytes again before installing them into
-private app storage. Existing saves are preserved. Without `-Manifest`, the checked
+The initial bundled ROM and manifest must come from the **same deployed release**. The
+build rejects mismatching ROM bytes; startup verifies the bundled bytes before installing
+them into private app storage. Runtime updates use the signed release's ROM hash and bridge
+addresses instead of the bundled build constants. Existing saves are preserved. Without `-Manifest`, the checked
 in Android manifest identifies deployed ROM SHA-256
 `1935a5b99e40922fa915dcbcc28c4e210ffc4b4241747a91f586670fdfc7078d`.
 Without `-Rom`, the build uses the repository's `pokeemerald.gba`.
@@ -56,13 +63,17 @@ APK, runs Java tests and Android lint, and verifies the actual packaged ROM,
 manifest, native libraries, signature and alignment. A PR build proves compatibility
 with its own ROM; only a matching deployed ROM can join the live server.
 
-The production release job builds a signed APK from the exact ROM/manifest used by
-the server image. Configure repository secrets `ANDROID_KEYSTORE_B64` and
-`ANDROID_KEYSTORE_PASSWORD` (alias `hoenn-android`). Missing keys fail the release
-before server publication. The APK and SHA-256 are stored privately on the VPS at
-`/srv/hoenn/android/<commit>/`. They are outside the signed Windows envelope.
-Previously promoted releases are reused, not rebuilt; APK generation follows the
-same fresh-release condition.
+For a fresh production release, the job builds a signed APK when Android client code
+changes, or when manually dispatched. Its initial bundled ROM/manifest comes from that release. Configure
+repository secrets `ANDROID_KEYSTORE_B64` and `ANDROID_KEYSTORE_PASSWORD` (alias
+`hoenn-android`). Missing keys fail an APK build. The APK, SHA-256 and version metadata
+are stored privately on the VPS at `/srv/hoenn/android/<commit>/`; an atomic
+`/srv/hoenn/android/current` marker selects the latest APK. The authenticated server API
+serves it to the app. The game ROM and manifest use the existing signed release envelope
+and authenticated artifact routes. Previously promoted releases are reused, not rebuilt.
+The VPS needs `setfacl`: the upload grants container UID 10001 read access while keeping
+the APK inaccessible to other local users. A release trust-key rotation also builds a
+new APK so installed clients can verify the newly signed ROM release.
 
 This repository is public. APKs contain the ROM, so CI deliberately does not upload
 them to public workflow artifacts or GitHub Releases. Distribute the APK through

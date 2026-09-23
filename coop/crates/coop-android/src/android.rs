@@ -185,6 +185,30 @@ fn key() -> TrustedManifestKey {
     TrustedManifestKey::new("pilot-v1", bytes).expect("strong public key")
 }
 
+fn runtime_directory(root: &std::path::Path) -> Result<PathBuf, String> {
+    let name = std::fs::read_to_string(root.join("runtime/current"))
+        .map_err(|_| "Versión del juego no instalada")?;
+    let name = name.trim_end_matches(['\r', '\n']);
+    if name.is_empty()
+        || name.len() > 128
+        || name == "."
+        || name == ".."
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("Versión del juego inválida".into());
+    }
+    let directory = root.join("runtime").join(name);
+    let canonical = directory
+        .canonicalize()
+        .map_err(|_| "Versión del juego ausente")?;
+    if !canonical.starts_with(root.join("runtime")) {
+        return Err("Ruta del juego inválida".into());
+    }
+    Ok(canonical)
+}
+
 async fn run(
     root: PathBuf,
     user: String,
@@ -202,9 +226,10 @@ async fn run(
     let root = root
         .canonicalize()
         .map_err(|_| "Directorio privado inválido")?;
+    let runtime = runtime_directory(&root)?;
     let manifest = BuildCompatibility::load_android(
-        &root.join("bridge_manifest.json"),
-        &root.join("pokeemerald.gba"),
+        &runtime.join("bridge_manifest.json"),
+        &runtime.join("pokeemerald.gba"),
     )
     .map_err(|_| "ROM/manifiesto incompatible")?;
     let api = ReqwestCloudApi::new(SERVER).map_err(|_| "Endpoint inválido")?;
@@ -333,7 +358,7 @@ async fn run(
                 Err(_) => break Err("No se pudo iniciar sidecar".into()),
             };
         handle.host.lock().expect("host lock").closed = false;
-        let load = json!({"type":"load","rom":root.join("pokeemerald.gba"),
+        let load = json!({"type":"load","rom":runtime.join("pokeemerald.gba"),
             "save":session.workspace.path().join("character.sav"),"bridge":descriptor.bridge(),
             "epoch":session.lease.session_epoch.value(),"revision":session.revision.value(),
             // Only the verified canonical SAV is portable across desktop/Android.

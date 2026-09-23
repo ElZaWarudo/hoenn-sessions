@@ -7,7 +7,7 @@ import java.util.Arrays;
  * The preview does NOT yet connect this boundary to the Rust sidecar's cloud state machine.
  */
 final class NativeBridge {
-    static final int ADDRESS=BuildConfig.BRIDGE_ADDRESS;
+    static int ADDRESS;
     static void validate(byte[] memory) {
         if(memory==null || memory.length!=9244)throw new IllegalStateException("Bridge no disponible");
         ByteBuffer b=ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN);
