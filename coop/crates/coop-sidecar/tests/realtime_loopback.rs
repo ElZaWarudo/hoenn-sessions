@@ -701,6 +701,96 @@ async fn realtime_local_companion_and_signal_publish_as_client_frames() {
     server.await.unwrap();
 }
 
+#[tokio::test]
+async fn realtime_sends_companion_cached_before_readiness() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let companion = LocalCompanionV1::new(150, 0, 0, 41).unwrap();
+    let server = tokio::spawn(async move {
+        let mut socket = accept_server(listener, Arc::new(Mutex::new(None))).await;
+        assert!(matches!(
+            read_client_frame(&mut socket).await,
+            ClientRealtimeFrameV1::PlayerState(_)
+        ));
+        send_frame(&mut socket, ready_frame()).await;
+        assert_eq!(
+            timeout(Duration::from_secs(1), read_client_frame(&mut socket))
+                .await
+                .expect("cached companion must be published"),
+            ClientRealtimeFrameV1::companion(companion),
+        );
+    });
+    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
+    owner.update_companion(companion).unwrap();
+    let run = tokio::spawn(run_realtime(grant(port), driver));
+    assert_ready(&mut owner).await;
+    server.await.unwrap();
+    assert!(matches!(
+        timeout(Duration::from_secs(1), run).await.unwrap().unwrap(),
+        RealtimeOutcome::PeerClosed | RealtimeOutcome::TransportFailed
+    ));
+}
+
+#[tokio::test]
+async fn realtime_silent_peer_expires_without_a_pong() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        let mut socket = accept_server(listener, Arc::new(Mutex::new(None))).await;
+        let _ = socket.next().await.unwrap().unwrap();
+        send_frame(&mut socket, ready_frame()).await;
+        tokio::time::sleep(Duration::from_secs(12)).await;
+    });
+    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
+    let run = tokio::spawn(run_realtime(grant(port), driver));
+    assert_ready(&mut owner).await;
+    assert_eq!(
+        timeout(Duration::from_secs(12), run)
+            .await
+            .unwrap()
+            .unwrap(),
+        RealtimeOutcome::TransportFailed,
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn realtime_pong_keeps_idle_session_alive() {
+    use futures_util::{SinkExt as _, StreamExt as _};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        let mut socket = accept_server(listener, Arc::new(Mutex::new(None))).await;
+        let _ = socket.next().await.unwrap().unwrap();
+        send_frame(&mut socket, ready_frame()).await;
+        for _ in 0..2 {
+            let message = timeout(Duration::from_secs(6), socket.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            let Message::Ping(payload) = message else {
+                panic!("expected liveness ping");
+            };
+            socket.send(Message::Pong(payload)).await.unwrap();
+        }
+        while socket.next().await.is_some() {}
+    });
+    let (mut owner, driver) = realtime_channel(state(1, 11)).unwrap();
+    let run = tokio::spawn(run_realtime(grant(port), driver));
+    assert_ready(&mut owner).await;
+    tokio::time::sleep(Duration::from_secs(11)).await;
+    assert!(!run.is_finished());
+    owner.stop();
+    assert_eq!(
+        timeout(Duration::from_secs(2), run).await.unwrap().unwrap(),
+        RealtimeOutcome::OwnerStopped
+    );
+    server.await.unwrap();
+}
+
 fn ready_frame() -> ServerRealtimeFrameV1 {
     ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(1).unwrap())
 }

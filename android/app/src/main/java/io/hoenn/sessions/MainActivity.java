@@ -50,6 +50,13 @@ public final class MainActivity extends Activity {
         hostHandler.postDelayed(this,50);
     }};
     private volatile boolean resumed;
+    private static final long BACKGROUND_GRACE_MS=30000;
+    private final Runnable stopAfterBackground=()->{
+        if(!destroyed && !resumed && NativeSession.isActive()){
+            restartAfterPause=true;
+            NativeSession.stop();
+        }
+    };
     private boolean awaitingInstallPermission;
     private interface Work {String run() throws Exception;}
     private void work(Work work) {
@@ -282,7 +289,7 @@ public final class MainActivity extends Activity {
         if(NativeSession.isActive()||pendingStart){hostHandler.postDelayed(this,500);return;}
         startSavedSession();
     }};
-    @Override protected void onResume(){super.onResume();resumed=true;if(game!=null)game.start();if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())openApkInstaller();else status.setText("Permite instalar desde Hoenn Sessions para completar la actualización.");}if(autoResumePending && !pendingStart && !NativeSession.isActive()){autoResumePending=false;startSavedSession();}else if(resumeRetryCount>0)hostHandler.post(resumeRetry);else resumeAfterClose();}
+    @Override protected void onResume(){super.onResume();resumed=true;hostHandler.removeCallbacks(stopAfterBackground);if(game!=null)game.start();if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())openApkInstaller();else status.setText("Permite instalar desde Hoenn Sessions para completar la actualización.");}if(autoResumePending && !pendingStart && !NativeSession.isActive()){autoResumePending=false;startSavedSession();}else if(resumeRetryCount>0)hostHandler.post(resumeRetry);else resumeAfterClose();}
     @Override public void onWindowFocusChanged(boolean hasFocus){super.onWindowFocusChanged(hasFocus);inputFocused=hasFocus;if(hasFocus && cooperative)enterFullscreen();if(!hasFocus){controller.clear();if(game!=null)game.keys=0;}}
     private void handleBack(){
         if(cooperative){
@@ -293,8 +300,8 @@ public final class MainActivity extends Activity {
     // Android 13+ uses the registered OnBackInvokedCallback; this handles older devices.
     @SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){handleBack();}
-    @Override protected void onPause(){resumed=false;hostHandler.removeCallbacks(resumeRetry);controller.clear();if(game!=null){game.keys=0;if(NativeSession.isActive() || pendingStart){restartAfterPause=true;NativeSession.stop();}else game.stop();}super.onPause();}
-    @Override protected void onDestroy(){destroyed=true;hostHandler.removeCallbacks(resumeRetry);if(Build.VERSION.SDK_INT>=33 && backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
+    @Override protected void onPause(){resumed=false;hostHandler.removeCallbacks(resumeRetry);controller.clear();if(game!=null){game.keys=0;if(NativeSession.isActive())hostHandler.postDelayed(stopAfterBackground,BACKGROUND_GRACE_MS);else if(pendingStart){restartAfterPause=true;NativeSession.stop();}else game.stop();}super.onPause();}
+    @Override protected void onDestroy(){destroyed=true;hostHandler.removeCallbacks(resumeRetry);hostHandler.removeCallbacks(stopAfterBackground);if(Build.VERSION.SDK_INT>=33 && backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}
     private final class GameView extends View implements Runnable {
         volatile int keys;private Thread thread;private volatile boolean stop;
         private final Bitmap bitmap=Bitmap.createBitmap(240,160,Bitmap.Config.ARGB_8888);

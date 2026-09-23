@@ -2652,6 +2652,16 @@ impl SessionLifecycle {
             RealtimeCoordinator::start(grant, generation, freshest.2.clone())
                 .map_err(|_| SessionError::Realtime)?,
         );
+        if children
+            .control()
+            .latest_companion_state()
+            .is_some_and(|(companion_generation, _, _)| companion_generation == generation)
+        {
+            Self::update_companion_from_control(
+                children.control(),
+                coordinator.as_mut().expect("coordinator was just created"),
+            )?;
+        }
 
         let mut result = Ok(());
         let mut checkpoint_shutdown = false;
