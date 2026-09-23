@@ -882,6 +882,32 @@ jobs:
           scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
           ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
 
+      - name: Ensure VPS ACL support for private APK
+        if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
+        run: |
+          ssh hoenn-vps '
+            set -eu
+            if command -v setfacl >/dev/null 2>&1; then exit 0; fi
+            if ! command -v apt-get >/dev/null 2>&1; then
+              echo "error: install the acl package on the VPS before publishing an APK" >&2
+              exit 1
+            fi
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends acl
+            elif command -v sudo >/dev/null 2>&1; then
+              sudo -n apt-get update
+              sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends acl
+            else
+              echo "error: VPS SSH user needs package-install privileges to install acl" >&2
+              exit 1
+            fi
+            command -v setfacl >/dev/null 2>&1 || {
+              echo "error: acl installation did not provide setfacl" >&2
+              exit 1
+            }
+          '
+
       # APKs remain private; a new one is needed only when Android client code changes.
       - name: Store signed Android APK privately on VPS
         if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'

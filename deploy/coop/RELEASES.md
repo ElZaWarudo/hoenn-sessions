@@ -122,6 +122,9 @@ is replaced only after its file and metadata are uploaded. The VPS needs `setfac
 so container UID 10001 can read the APK while other local users cannot. A changed
 release trust key also forces an APK rebuild. Native client and
 emulator changes still require an APK; routine ROM changes do not.
+For a VPS with `apt-get`, the production workflow installs the `acl` package
+when `setfacl` is absent; the SSH user needs root or passwordless `sudo` for
+that first install. On other hosts, install `setfacl` before publishing an APK.
 Each rollout also validates and atomically installs the version-controlled
 `compose.yaml` in the configured VPS deploy directory. The existing `.env`,
 secrets, database, volumes, and Caddy configuration are preserved.
