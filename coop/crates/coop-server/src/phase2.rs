@@ -3201,6 +3201,64 @@ mod tests {
     }
 
     #[test]
+    fn same_client_replacement_fences_the_previous_lease() {
+        let (app, _) = deterministic_app();
+        let (actor, first, client) = account_and_lease(&app);
+        let other_client = id(ClientInstanceId::new);
+        let first_key = app
+            .store
+            .inspect_state(|state| {
+                state
+                    .acquire_history
+                    .iter()
+                    .find(|(_, record)| record.contract == first)
+                    .map(|(key, _)| *key)
+            })
+            .expect("history")
+            .expect("first key");
+
+        assert_eq!(
+            app.acquire(
+                actor,
+                AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new)),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            app.acquire(
+                actor,
+                AcquireLeaseRequest::new(
+                    actor.character_id,
+                    other_client,
+                    id(IdempotencyKey::new),
+                )
+                .replacing_same_client(),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+
+        let replacement = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new))
+            .replacing_same_client();
+        let second = app
+            .acquire(actor, replacement)
+            .expect("same client takes over");
+        assert_ne!(second.session_id, first.session_id);
+        assert!(second.session_epoch > first.session_epoch);
+        assert_eq!(app.acquire(actor, replacement), Ok(second));
+        assert_eq!(
+            app.acquire(
+                actor,
+                AcquireLeaseRequest::new(actor.character_id, client, first_key),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            app.heartbeat(actor, HeartbeatLeaseRequest::new(first.fence())),
+            Err(Phase2Error::Conflict)
+        );
+    }
+
+    #[test]
     fn service_clock_never_moves_backwards() {
         let (app, clock) = deterministic_app();
         let first = app.store.now();

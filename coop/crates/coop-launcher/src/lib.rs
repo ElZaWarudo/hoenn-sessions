@@ -88,6 +88,13 @@ fn map_cloud_error(error: HttpClientError) -> SessionError {
     }
 }
 
+fn map_acquire_error(error: HttpClientError) -> SessionError {
+    match error {
+        HttpClientError::Status(StatusCode::CONFLICT) => SessionError::AcquireConflict,
+        other => map_cloud_error(other),
+    }
+}
+
 /// Strict no-redirect HTTP adapter for the certified local Phase 2 routes.
 #[derive(Clone)]
 pub struct ReqwestCloudApi {
@@ -395,7 +402,7 @@ impl CloudApi for ReqwestCloudApi {
                 MAX_JSON_RESPONSE_BYTES,
             )
             .await
-            .map_err(map_cloud_error)
+            .map_err(map_acquire_error)
         })
     }
     fn heartbeat<'a>(
@@ -696,7 +703,7 @@ impl CloudApi for ReqwestCloudApi {
 
 #[cfg(test)]
 mod tests {
-    use super::{HttpClientError, ReqwestCloudApi, bounded_body, map_cloud_error};
+    use super::{HttpClientError, ReqwestCloudApi, bounded_body, map_acquire_error, map_cloud_error};
     use crate::{AuthError, AuthSession, CloudApi, RefreshTokenStore, SessionError};
     use coop_cloud::{
         AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
@@ -753,6 +760,22 @@ mod tests {
         assert!(matches!(
             map_cloud_error(HttpClientError::SessionClosed),
             SessionError::Auth(AuthError::SessionClosed)
+        ));
+    }
+
+    #[test]
+    fn acquire_conflict_is_distinct_from_transport_failure() {
+        assert!(matches!(
+            map_acquire_error(HttpClientError::Status(StatusCode::CONFLICT)),
+            SessionError::AcquireConflict
+        ));
+        assert!(matches!(
+            map_acquire_error(HttpClientError::Status(StatusCode::SERVICE_UNAVAILABLE)),
+            SessionError::Cloud
+        ));
+        assert!(matches!(
+            map_cloud_error(HttpClientError::Status(StatusCode::CONFLICT)),
+            SessionError::Cloud
         ));
     }
 

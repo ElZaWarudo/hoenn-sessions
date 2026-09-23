@@ -56,6 +56,12 @@ pub(crate) fn acquire(
         if let Some(record) = state.acquire_history.get(&request.idempotency_key) {
             if record.character_id == request.character_id
                 && record.client_instance_id == request.client_instance_id
+                && state
+                    .leases
+                    .get(&request.character_id)
+                    .is_some_and(|lease| {
+                        !lease.released && lease.contract.fence() == record.contract.fence()
+                    })
             {
                 return Ok(record.contract);
             }
@@ -64,7 +70,12 @@ pub(crate) fn acquire(
         if state
             .leases
             .get(&request.character_id)
-            .is_some_and(|existing| !existing.released && existing.grace_until > now)
+            .is_some_and(|existing| {
+                !existing.released
+                    && existing.grace_until > now
+                    && !(request.replace_same_client
+                        && existing.contract.client_instance_id == request.client_instance_id)
+            })
         {
             return Err(Phase2Error::Conflict);
         }
@@ -75,6 +86,18 @@ pub(crate) fn acquire(
             .count();
         if history_for_character >= MAX_ACQUIRE_HISTORY {
             return Err(Phase2Error::Busy);
+        }
+        if request.replace_same_client
+            && state
+                .leases
+                .get(&request.character_id)
+                .is_some_and(|existing| {
+                    !existing.released
+                        && existing.grace_until > now
+                        && existing.contract.client_instance_id == request.client_instance_id
+                })
+        {
+            super::group_travel::cancel_pending_for_member(state, actor.character_id);
         }
         let character = state
             .characters

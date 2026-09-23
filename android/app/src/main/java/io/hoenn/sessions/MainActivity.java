@@ -192,7 +192,21 @@ public final class MainActivity extends Activity {
                 if(signedOut){SecureCredentialStore.clearLocalAccount();savedAccount=null;status.setText("Sesión cerrada.");}
                 else {savedAccount=SecureCredentialStore.loadAccount();status.setText("Partida cerrada · revisión cloud "+event.getLong("revision"));}
                 if(restartAfterPause && resumed && !signedOut)resumeAfterClose();
-            }else if(type.equals("error")){closeCore();savedAccount=SecureCredentialStore.loadAccount();exitFullscreen();loginScreen.setVisibility(View.VISIBLE);loginPanel.setVisibility(View.VISIBLE);playPanel.setVisibility(View.GONE);String message=event.getString("message");if(resumed&&savedAccount!=null&&message.contains("No se pudo adquirir/reanudar: cloud request failed")&&resumeRetryCount<15){resumeRetryCount++;status.setText("La sesión anterior todavía se está cerrando. Reintentando automáticamente ("+resumeRetryCount+"/15)…");hostHandler.removeCallbacks(resumeRetry);hostHandler.postDelayed(resumeRetry,10000);}else status.setText(message);}
+            }else if(type.equals("error")){
+                closeCore();savedAccount=SecureCredentialStore.loadAccount();exitFullscreen();
+                loginScreen.setVisibility(View.VISIBLE);loginPanel.setVisibility(View.VISIBLE);playPanel.setVisibility(View.GONE);
+                String message=event.getString("message");
+                boolean leaseConflict=message.contains("No se pudo adquirir/reanudar: previous session is still active");
+                boolean cloudFailure=message.contains("No se pudo adquirir/reanudar: cloud request failed");
+                if(resumed&&savedAccount!=null&&(leaseConflict||cloudFailure)&&resumeRetryCount<15){
+                    resumeRetryCount++;
+                    status.setText((leaseConflict?"Hay otra sesión activa para este personaje.":"Conexión interrumpida.")
+                        +" Reintentando automáticamente ("+resumeRetryCount+"/15)…");
+                    hostHandler.removeCallbacks(resumeRetry);hostHandler.postDelayed(resumeRetry,10000);
+                }else if(leaseConflict)status.setText("Hay otra sesión activa para este personaje. Ciérrala e inténtalo de nuevo.");
+                else if(cloudFailure)status.setText("No se pudo conectar al servidor. Comprueba la conexión e inténtalo de nuevo.");
+                else status.setText(message);
+            }
         }
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
