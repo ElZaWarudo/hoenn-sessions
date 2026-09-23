@@ -5,9 +5,12 @@ date: 2026-09-22
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
+status: superseded
 ---
 
 # Cormoria Region - Plan
+
+> **Superseded by the user's two-ROM direction on 2026-09-22.** Entering Cormoria must automatically switch to its ROM; leaving must switch back. Pokémon and co-op continuity remain required, and existing saves must be preserved. The combined-ROM implementation units below are historical and must not be executed without revision. The donor inventory is complete, but campaign import and runtime adapters remain open. The active plan is [Cormoria travel between two ROMs](2026-09-22-cormoria-two-roms.md). Automatic switching has not yet been implemented or verified.
 
 ## Goal Capsule
 
