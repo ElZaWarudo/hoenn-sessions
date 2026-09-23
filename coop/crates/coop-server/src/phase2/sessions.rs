@@ -60,7 +60,7 @@ pub(crate) fn acquire(
                     .leases
                     .get(&request.character_id)
                     .is_some_and(|lease| {
-                        !lease.released && lease.contract.fence() == record.contract.fence()
+                        lease.contract.fence() == record.contract.fence()
                     })
             {
                 return Ok(record.contract);
