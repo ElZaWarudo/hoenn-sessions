@@ -66,6 +66,8 @@ pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 /// Maximum time allowed for the server's readiness frame.
 pub const READY_TIMEOUT: Duration = Duration::from_secs(3);
+/// A silent connection must answer a probe before the next interval.
+pub const LIVENESS_INTERVAL: Duration = Duration::from_secs(5);
 
 const MAX_WEBSOCKET_WRITE_BUFFER_BYTES: usize = 4096;
 
@@ -695,7 +697,7 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
                         return RealtimeOutcome::ProtocolViolation;
                     }
                     Receive::Transport => return RealtimeOutcome::TransportFailed,
-                    Receive::Ignored => {}
+                    Receive::Ignored | Receive::Pong(_) => {}
                 }
             }
             () = time::sleep_until(ready_deadline) => {
@@ -717,9 +719,16 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
 
     let mut remotes = BTreeMap::new();
     let mut last_sent = driver.state_rx.borrow().clone();
-    let mut last_sent_companion = *driver.companion_rx.borrow();
+    // A companion may have been published while the socket was connecting.
+    // Only player state was sent before readiness, so the companion has no
+    // server-side copy yet even if it has not changed since then.
+    let mut last_sent_companion = None;
     let mut tick = time::interval_at(Instant::now() + PRESENCE_TICK, PRESENCE_TICK);
     tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut liveness = time::interval_at(Instant::now() + LIVENESS_INTERVAL, LIVENESS_INTERVAL);
+    liveness.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut next_probe = 0_u64;
+    let mut awaiting_pong = None;
 
     loop {
         tokio::select! {
@@ -754,6 +763,23 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
                     last_sent_companion = latest_companion;
                 }
             }
+            _ = liveness.tick() => {
+                if awaiting_pong.is_some() {
+                    driver.ready.store(false, Ordering::Release);
+                    return RealtimeOutcome::TransportFailed;
+                }
+                next_probe = next_probe.wrapping_add(1);
+                let probe = next_probe.to_be_bytes();
+                if !matches!(
+                    time::timeout(WRITE_TIMEOUT, socket.send(Message::Ping(probe.to_vec().into())))
+                        .await,
+                    Ok(Ok(()))
+                ) {
+                    driver.ready.store(false, Ordering::Release);
+                    return RealtimeOutcome::WriteFailed;
+                }
+                awaiting_pong = Some(probe);
+            }
             interaction = driver.interaction_rx.recv() => {
                 let Some(interaction) = interaction else {
                     driver.ready.store(false, Ordering::Release);
@@ -781,6 +807,11 @@ pub async fn run_realtime(grant: RealtimeGrant, mut driver: RealtimeDriver) -> R
                         return RealtimeOutcome::ProtocolViolation;
                     }
                     Receive::Ignored => {}
+                    Receive::Pong(payload) => {
+                        if awaiting_pong.is_some_and(|probe| payload.as_slice() == probe.as_slice()) {
+                            awaiting_pong = None;
+                        }
+                    }
                     Receive::Lifecycle(frame) => {
                         let outcome = apply_lifecycle(
                             &frame,
@@ -851,6 +882,7 @@ enum Receive {
     Ready(PresenceHandle),
     Lifecycle(ServerRealtimeFrameV1),
     Ignored,
+    Pong(Vec<u8>),
     PeerClosed,
     PingFailure,
     Protocol,
@@ -910,7 +942,7 @@ where
                 _ => Receive::PingFailure,
             }
         }
-        Message::Pong(_) => Receive::Ignored,
+        Message::Pong(payload) => Receive::Pong(payload.to_vec()),
         Message::Close(frame) => {
             // Only an ordinary departure can restart under the same lease.
             // Policy/auth and protocol closes must never become retry loops.

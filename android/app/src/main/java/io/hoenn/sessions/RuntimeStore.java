@@ -27,6 +27,34 @@ final class RuntimeStore {
     RuntimeStore(File root) {runtime=new File(root,"runtime");}
     private File directory(String id) {return new File(runtime,id);}
     private File marker() {return new File(runtime,"current");}
+    private String selectedId() throws Exception {
+        byte[] markerBytes=CloudApi.bounded(new FileInputStream(marker()),130);
+        int end=markerBytes.length;
+        while(end>0 && (markerBytes[end-1]=='\r' || markerBytes[end-1]=='\n')) end--;
+        String id=new String(markerBytes,0,end,StandardCharsets.US_ASCII);
+        if(!ReleaseCatalog.safeId(id)) throw new SecurityException("Versión local inválida");
+        return id;
+    }
+    private long signedSequenceFloor() throws Exception {
+        long floor=0;
+        File[] entries=runtime.listFiles();
+        if(entries==null) return floor;
+        for(File entry:entries) {
+            if(Files.isSymbolicLink(entry.toPath()) || !entry.isDirectory()) continue;
+            String name=entry.getName();
+            if(!ReleaseCatalog.safeId(name) || name.equals("bundled") || name.contains(".partial-")) continue;
+            File envelope=new File(entry,"release-envelope.json");
+            if(Files.isSymbolicLink(envelope.toPath()) || !envelope.isFile()) continue;
+            try {
+                ReleaseCatalog.Release release=ReleaseCatalog.verify(
+                    CloudApi.bounded(new FileInputStream(envelope),65536),
+                    BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX,false);
+                if(name.equals(release.id) || name.startsWith(release.id+".damaged-"))
+                    floor=Math.max(floor,release.sequence);
+            } catch(Exception ignored) { /* Unverified files cannot establish a release floor. */ }
+        }
+        return floor;
+    }
     private void removeGeneration(File directory) {
         if(Files.isSymbolicLink(directory.toPath()) || !directory.isDirectory()) return;
         File[] children=directory.listFiles();
@@ -60,7 +88,6 @@ final class RuntimeStore {
         Files.move(temporary.toPath(),marker().toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
     }
     void prepareBundled(AssetManager assets) throws Exception {
-        if(marker().isFile()) return;
         if(!runtime.isDirectory() && !runtime.mkdirs()) throw new IOException("No se pudo preparar el juego");
         File bundled=directory("bundled");
         if(!bundled.isDirectory() && !bundled.mkdirs()) throw new IOException("No se pudo preparar el juego");
@@ -69,15 +96,11 @@ final class RuntimeStore {
             writeSynced(new File(bundled,"bridge_manifest.json"),CloudApi.bounded(input,1024*1024));
         }
         ReleaseCatalog.verifiedManifest(new File(bundled,"bridge_manifest.json"),BuildConfig.ROM_SHA256);
-        select("bundled");
+        if(!marker().isFile()) select("bundled");
     }
     Game current() throws Exception {return current(true);}
     private Game current(boolean requireFresh) throws Exception {
-        byte[] markerBytes=CloudApi.bounded(new FileInputStream(marker()),130);
-        int end=markerBytes.length;
-        while(end>0 && (markerBytes[end-1]=='\r' || markerBytes[end-1]=='\n')) end--;
-        String id=new String(markerBytes,0,end,StandardCharsets.US_ASCII);
-        if(!ReleaseCatalog.safeId(id)) throw new SecurityException("Versión local inválida");
+        String id=selectedId();
         File selected=directory(id);
         File rom=new File(selected,"pokeemerald.gba");
         File manifest=new File(selected,"bridge_manifest.json");
@@ -104,19 +127,30 @@ final class RuntimeStore {
         try {bytes=api.request("/v1/releases/windows-x86_64/latest",null,65536);}
         catch(IOException error) {return current();}
         ReleaseCatalog.Release latest=ReleaseCatalog.verify(bytes,BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX);
-        Game installed=current(false);
-        if(latest.sequence<installed.sequence) throw new SecurityException("El servidor ofrece una versión anterior");
-        if(directory(latest.id).equals(installed.directory)) return installed;
+        if(latest.id.equals("bundled")) throw new SecurityException("Identidad de versión reservada");
+        Game installed;
+        try {installed=current(false);} catch(Exception invalidSelection) {installed=null;}
+        long floor=Math.max(signedSequenceFloor(),installed==null?0:installed.sequence);
+        if(latest.sequence<floor) throw new SecurityException("El servidor ofrece una versión anterior");
+        if(installed!=null && directory(latest.id).equals(installed.directory)
+            && installed.sequence==latest.sequence
+            && java.util.Arrays.equals(
+                CloudApi.bounded(new FileInputStream(new File(installed.directory,"release-envelope.json")),65536),bytes))
+            return installed;
         File target=directory(latest.id);
         if(target.exists()) {
-            ReleaseCatalog.verifyFile(new File(target,"pokeemerald.gba"),latest.rom);
-            ReleaseCatalog.verifyFile(new File(target,"bridge_manifest.json"),latest.manifest);
-            JSONObject parsed=ReleaseCatalog.verifiedManifest(new File(target,"bridge_manifest.json"),latest.rom.sha256);
-            byte[] stored=CloudApi.bounded(new FileInputStream(new File(target,"release-envelope.json")),65536);
-            if(!java.util.Arrays.equals(stored,bytes)) throw new SecurityException("Versión local distinta del servidor");
-            select(latest.id);
-            pruneGenerations(latest.id,installed.directory.getName());
-            return new Game(target,parsed,latest.sequence);
+            try {
+                ReleaseCatalog.verifyFile(new File(target,"pokeemerald.gba"),latest.rom);
+                ReleaseCatalog.verifyFile(new File(target,"bridge_manifest.json"),latest.manifest);
+                JSONObject parsed=ReleaseCatalog.verifiedManifest(new File(target,"bridge_manifest.json"),latest.rom.sha256);
+                byte[] stored=CloudApi.bounded(new FileInputStream(new File(target,"release-envelope.json")),65536);
+                if(!java.util.Arrays.equals(stored,bytes)) throw new SecurityException("Versión local distinta del servidor");
+                select(latest.id);
+                if(installed!=null) pruneGenerations(latest.id,installed.directory.getName());
+                return new Game(target,parsed,latest.sequence);
+            } catch(Exception invalidTarget) {
+                if(Files.isSymbolicLink(target.toPath()) || !target.isDirectory()) throw invalidTarget;
+            }
         }
         File staging=directory(latest.id+".partial-"+UUID.randomUUID());
         if(!staging.mkdirs()) throw new IOException("No se pudo preparar la descarga");
@@ -127,9 +161,13 @@ final class RuntimeStore {
             api.download("/v1/releases/"+latest.id+"/artifacts/compatibility-manifest",manifest,latest.manifest.size,latest.manifest.sha256);
             JSONObject parsed=ReleaseCatalog.verifiedManifest(manifest,latest.rom.sha256);
             writeSynced(new File(staging,"release-envelope.json"),bytes);
+            if(target.exists()) {
+                File damaged=directory(latest.id+".damaged-"+UUID.randomUUID());
+                Files.move(target.toPath(),damaged.toPath(),StandardCopyOption.ATOMIC_MOVE);
+            }
             Files.move(staging.toPath(),target.toPath(),StandardCopyOption.ATOMIC_MOVE);
             select(latest.id);
-            pruneGenerations(latest.id,installed.directory.getName());
+            if(installed!=null) pruneGenerations(latest.id,installed.directory.getName());
             return new Game(target,parsed,latest.sequence);
         } finally {
             if(staging.exists()) {
