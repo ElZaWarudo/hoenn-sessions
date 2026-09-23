@@ -13,6 +13,23 @@ use coop_protocol::{
 };
 use thiserror::Error;
 
+/// Additive parser for the inactive schema-two co-op payload.
+pub mod v2;
+
+pub use v2::{SaveV2Error, ValidatedSaveV2};
+
+/// Validates a complete Flash1M image using the explicit schema-two parser.
+///
+/// Existing [`parse`] and [`validate_character_save`] callers remain
+/// schema-one-only; callers must opt into this API when reading a migrated
+/// schema-two save.
+pub fn parse_v2(
+    bytes: &[u8],
+    expected_registry: RegistryContract,
+) -> Result<ValidatedSaveV2, SaveV2Error> {
+    v2::parse_v2(bytes, expected_registry)
+}
+
 /// `Flash1M` save data, excluding mGBA's optional real-time-clock trailer.
 pub const FLASH_IMAGE_SIZE: usize = 128 * 1024;
 /// Optional mGBA RTC trailer length.
@@ -206,6 +223,7 @@ pub struct ValidatedSave {
     raw: Box<[u8]>,
     selected_slot: SaveSlot,
     counter: u32,
+    logical_sector_offsets: [usize; SECTORS_PER_SLOT],
     save_block3: [u8; SAVE_BLOCK3_CAPACITY],
     character_lineage: CharacterLineage,
     coop: CoopSaveV1,
@@ -248,6 +266,21 @@ impl ValidatedSave {
     #[must_use]
     pub const fn counter(&self) -> u32 {
         self.counter
+    }
+
+    /// Returns the checksummed payload for a logical sector in the ROM-selected
+    /// slot.
+    ///
+    /// The returned slice excludes the sector footer and is bounded by the
+    /// frozen payload length for that logical sector. Physical sector order is
+    /// never exposed, and an out-of-range logical ID returns `None`.
+    #[must_use]
+    pub fn logical_sector_payload(&self, logical_id: u8) -> Option<&[u8]> {
+        let logical_index = usize::from(logical_id);
+        let sector_offset = *self.logical_sector_offsets.get(logical_index)?;
+        let payload_size = *LOGICAL_SECTOR_DATA_SIZES.get(logical_index)?;
+        let payload_end = sector_offset.checked_add(payload_size)?;
+        self.raw.get(sector_offset..payload_end)
     }
 
     /// `SaveBlock3` chunks reassembled by logical sector ID, never by physical
@@ -530,6 +563,7 @@ pub enum CoopSaveError {
 struct ValidatedSlot {
     slot: SaveSlot,
     counter: u32,
+    logical_sector_offsets: [usize; SECTORS_PER_SLOT],
     save_block3: [u8; SAVE_BLOCK3_CAPACITY],
     character_lineage: CharacterLineage,
 }
@@ -602,6 +636,7 @@ pub fn parse(
         raw: bytes.into(),
         selected_slot: selected.slot,
         counter: selected.counter,
+        logical_sector_offsets: selected.logical_sector_offsets,
         save_block3: selected.save_block3,
         character_lineage: selected.character_lineage,
         coop,
@@ -727,6 +762,7 @@ fn validate_slot(flash: &[u8], slot: SaveSlot) -> Result<ValidatedSlot, SlotErro
     Ok(ValidatedSlot {
         slot,
         counter,
+        logical_sector_offsets,
         save_block3,
         character_lineage,
     })

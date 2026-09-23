@@ -1994,6 +1994,181 @@ static ALWAYS_INLINE struct PokemonSubstruct3 *GetSubstruct3(struct BoxPokemon *
     return &(GetSubstruct(boxMon, boxMon->personality, SUBSTRUCT_TYPE_3)->type3);
 }
 
+#define MET_LOCATION_V2_MARKER_NONE (0)
+#define MET_LOCATION_V2_MARKER_250 (0x20)
+#define MET_LOCATION_V2_MARKER_256 (0x21)
+
+static bool32 DecodeBoxMonMetLocationV2(u16 marker, u8 metLocation, u16 *location)
+{
+    if (location == NULL)
+        return FALSE;
+
+    switch (marker)
+    {
+    case MET_LOCATION_V2_MARKER_NONE:
+        // Values 250..255 are the legacy V1 encodings.  Keep their meanings
+        // distinct from the V2 range by exposing them as reserved values.
+        if (metLocation < 250)
+            *location = metLocation;
+        else if (metLocation == 250)
+            *location = MET_LOCATION_V2_NONE;
+        else
+            *location = MET_LOCATION_V2_LEGACY_251 + (metLocation - 251);
+        return TRUE;
+    case MET_LOCATION_V2_MARKER_250:
+        if (metLocation > 5)
+            return FALSE;
+        *location = 250 + metLocation;
+        return TRUE;
+    case MET_LOCATION_V2_MARKER_256:
+        if (metLocation > 44)
+            return FALSE;
+        *location = 256 + metLocation;
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static bool32 EncodeBoxMonMetLocationV2(u16 location, u16 *marker, u8 *metLocation)
+{
+    if (marker == NULL || metLocation == NULL)
+        return FALSE;
+
+    if (location < 250)
+    {
+        *marker = MET_LOCATION_V2_MARKER_NONE;
+        *metLocation = location;
+    }
+    else if (location <= 255)
+    {
+        *marker = MET_LOCATION_V2_MARKER_250;
+        *metLocation = location - 250;
+    }
+    else if (location <= MET_LOCATION_V2_MAX)
+    {
+        *marker = MET_LOCATION_V2_MARKER_256;
+        *metLocation = location - 256;
+    }
+    else if (location == MET_LOCATION_V2_NONE)
+    {
+        *marker = MET_LOCATION_V2_MARKER_NONE;
+        *metLocation = 250;
+    }
+    else if (location >= MET_LOCATION_V2_LEGACY_251
+          && location <= MET_LOCATION_V2_LEGACY_255)
+    {
+        *marker = MET_LOCATION_V2_MARKER_NONE;
+        *metLocation = 251 + (location - MET_LOCATION_V2_LEGACY_251);
+    }
+    else
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+bool32 NormalizeLegacyBoxMonMetLocation(struct BoxPokemon *boxMon)
+{
+    struct BoxPokemon normalized;
+    struct PokemonSubstruct0 *substruct0;
+    u16 checksum;
+
+    if (boxMon == NULL)
+        return FALSE;
+
+    // Work on a copy so a corrupt occupied Pokemon is never left decrypted
+    // or partially normalized when validation fails.
+    normalized = *boxMon;
+    checksum = CalculateBoxMonChecksumDecrypt(&normalized);
+    substruct0 = GetSubstruct0(&normalized);
+
+    // An occupied slot must pass checksum validation before its decrypted
+    // species can be used to classify it as empty.  This prevents a
+    // contradictory occupied header from bypassing validation when corruption
+    // makes the decrypted species zero.
+    if (boxMon->hasSpecies && checksum != normalized.checksum)
+        return FALSE;
+
+    // A zeroed or otherwise unoccupied slot is already safe to migrate.  Do
+    // not require a checksum for it, since empty storage need not be sealed.
+    if (substruct0->species == SPECIES_NONE)
+    {
+        if (boxMon->hasSpecies)
+            return FALSE;
+        return TRUE;
+    }
+
+    if (checksum != normalized.checksum)
+        return FALSE;
+
+    if (substruct0->unused_02 == 0)
+        return TRUE;
+
+    substruct0->unused_02 = 0;
+    normalized.checksum = CalculateBoxMonChecksum(&normalized);
+    EncryptBoxMon(&normalized);
+    *boxMon = normalized;
+    return TRUE;
+}
+
+bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location)
+{
+    struct BoxPokemon decoded;
+    struct PokemonSubstruct0 *substruct0;
+    struct PokemonSubstruct3 *substruct3;
+
+    if (boxMon == NULL || location == NULL)
+        return FALSE;
+
+    decoded = *boxMon;
+    if (CalculateBoxMonChecksumDecrypt(&decoded) != decoded.checksum)
+        return FALSE;
+
+    substruct0 = GetSubstruct0(&decoded);
+    if (substruct0->species == SPECIES_NONE)
+        return FALSE;
+
+    substruct3 = GetSubstruct3(&decoded);
+    return DecodeBoxMonMetLocationV2(substruct0->unused_02, substruct3->metLocation, location);
+}
+
+bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location)
+{
+    struct BoxPokemon updated;
+    struct PokemonSubstruct0 *substruct0;
+    struct PokemonSubstruct3 *substruct3;
+    u16 marker;
+    u8 metLocation;
+    u16 oldLocation;
+
+    if (boxMon == NULL
+     || !EncodeBoxMonMetLocationV2(location, &marker, &metLocation))
+        return FALSE;
+
+    updated = *boxMon;
+    if (CalculateBoxMonChecksumDecrypt(&updated) != updated.checksum)
+        return FALSE;
+
+    substruct0 = GetSubstruct0(&updated);
+    if (substruct0->species == SPECIES_NONE)
+        return FALSE;
+
+    substruct3 = GetSubstruct3(&updated);
+    // Refuse to overwrite an invalid existing marker.  Migration must clear
+    // V1 data explicitly before any V2 producer writes a wide location.
+    if (!DecodeBoxMonMetLocationV2(substruct0->unused_02, substruct3->metLocation, &oldLocation))
+        return FALSE;
+
+    substruct0->unused_02 = marker;
+    substruct3->metLocation = metLocation;
+    updated.checksum = CalculateBoxMonChecksum(&updated);
+    EncryptBoxMon(&updated);
+    *boxMon = updated;
+    return TRUE;
+}
+
 static bool32 IsBadEgg(struct BoxPokemon *boxMon)
 {
     if (boxMon->isBadEgg)

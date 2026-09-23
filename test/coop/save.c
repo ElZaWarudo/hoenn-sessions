@@ -11,6 +11,24 @@
 #include "test/test.h"
 
 static EWRAM_DATA struct CoopSaveV1 sSaveSnapshot;
+static EWRAM_DATA struct CoopSaveV2 sV2SaveSnapshot;
+
+static void InitializeValidV2Save(struct CoopSaveV2 *save)
+{
+    u32 i;
+
+    memset(save, 0, sizeof(*save));
+    save->magic = COOP_SAVE_MAGIC;
+    save->schema_version = COOP_SAVE_V2_SCHEMA_VERSION;
+    save->struct_size = sizeof(*save);
+    save->registry_version = COOP_IDENTITY_REGISTRY_VERSION;
+    memcpy(save->registry_digest, gCoopIdentityRegistryDigest,
+           sizeof(save->registry_digest));
+    for (i = 0; i < ARRAY_COUNT(save->regional_progress); i++)
+        save->regional_progress[i].region = i + 1;
+    save->cormoria_progress.region = COOP_SAVE_V2_CORMORIA_REGION;
+    save->crc32 = CoopSaveV2_CalculateCrc(save);
+}
 
 static u16 FailSaveSectorProgram(u16 sector, u8 *data)
 {
@@ -67,6 +85,66 @@ TEST("Cloud Coop save CRC32 matches the canonical check vector")
     EXPECT_EQ(CoopSave_Crc32(sCheckVector, sizeof(sCheckVector) - 1), 0xCBF43926u);
     EXPECT_EQ(CoopSave_Crc32(NULL, 0), 0);
     EXPECT_EQ(CoopSave_Crc32(NULL, 1), 0);
+    EXPECT_EQ(CoopSaveV2_CalculateCrc(NULL), 0);
+}
+
+TEST("Cloud Coop schema V2 validates its additive Cormoria record")
+{
+    InitializeValidV2Save(&sV2SaveSnapshot);
+
+    EXPECT_EQ(sizeof(struct CoopSaveV2), COOP_SAVE_V2_SIZE);
+    EXPECT(CoopSaveV2_Validate(&sV2SaveSnapshot));
+    EXPECT_EQ(sV2SaveSnapshot.crc32,
+              CoopSaveV2_CalculateCrc(&sV2SaveSnapshot));
+
+    /* The normalization bit is intentionally an eligibility concern.  A
+     * structurally valid pre-normalization payload must still validate. */
+    EXPECT_EQ(sV2SaveSnapshot.status_flags, 0);
+}
+
+TEST("Cloud Coop schema V2 rejects invalid headers and seals")
+{
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.schema_version = COOP_SAVE_SCHEMA_VERSION;
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.struct_size = COOP_SAVE_V2_SIZE - 1;
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.crc32 ^= 1;
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.status_flags = COOP_SAVE_V2_STATUS_KNOWN_MASK | (1u << 2);
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+}
+
+TEST("Cloud Coop schema V2 rejects noncanonical Cormoria records and tail")
+{
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.cormoria_progress.region = COOP_REGION_HOENN;
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.cormoria_progress.reserved = 1;
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.reserved_tail[0] = 1;
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
+
+    InitializeValidV2Save(&sV2SaveSnapshot);
+    sV2SaveSnapshot.reserved_tail[COOP_SAVE_V2_RESERVED_TAIL_SIZE - 1] = 1;
+    sV2SaveSnapshot.crc32 = CoopSaveV2_CalculateCrc(&sV2SaveSnapshot);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
 }
 
 TEST("Cloud Coop new save initializes a sealed region-qualified V1 record")

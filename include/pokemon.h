@@ -295,6 +295,27 @@ struct Pokemon
     u16 spDefense;
 };
 
+// V2 met-location values are carried by the existing metLocation byte and
+// the six bits reserved as PokemonSubstruct0::unused_02.  These helpers are
+// intentionally separate from MON_DATA_MET_LOCATION: callers may only use
+// them after a save-format migration has established that the marker is V2.
+#define MET_LOCATION_V2_MAX (300)
+#define MET_LOCATION_V2_NONE (301)
+#define MET_LOCATION_V2_LEGACY_251 (0x3FFB)
+#define MET_LOCATION_V2_LEGACY_252 (0x3FFC)
+#define MET_LOCATION_V2_LEGACY_253 (0x3FFD)
+#define MET_LOCATION_V2_LEGACY_254 (0x3FFE)
+#define MET_LOCATION_V2_LEGACY_255 (0x3FFF)
+
+// Returns FALSE for a corrupt or empty Pokemon, an invalid V2 marker, or an
+// unsupported logical value.  A failed operation leaves the BoxPokemon
+// unchanged.  NormalizeLegacyBoxMonMetLocation is the explicit V1 to V2
+// boundary and clears all six legacy-unused marker bits after validating the
+// checksum.
+bool32 NormalizeLegacyBoxMonMetLocation(struct BoxPokemon *boxMon);
+bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location);
+bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location);
+
 struct MonSpritesGfxManager
 {
     u32 numSprites:4;

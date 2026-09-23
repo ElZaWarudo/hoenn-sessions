@@ -12,6 +12,16 @@
 #define COOP_SAVE_V1_SIZE 672
 #define COOP_SAVE_BLOCK3_OFFSET 4
 
+/* The V2 layout is additive and intentionally inactive until its loader and
+ * copy-on-migrate path are ready.  Keep the V1 constants above frozen. */
+#define COOP_SAVE_V2_SCHEMA_VERSION 2
+#define COOP_SAVE_V2_SIZE COOP_SAVE_V1_SIZE
+#define COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET 604
+#define COOP_SAVE_V2_CORMORIA_REGION 5u
+#define COOP_SAVE_V2_RESERVED_TAIL_OFFSET 612
+#define COOP_SAVE_V2_RESERVED_TAIL_SIZE 56
+#define COOP_SAVE_V2_CRC32_OFFSET 668
+
 #define COOP_SAVE_TRAINER_BITS_SIZE 256
 #define COOP_SAVE_EVENT_BITS_SIZE 256
 #define COOP_SAVE_FLY_BITS_SIZE 16
@@ -20,6 +30,12 @@
 
 #define COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS (1u << 0)
 #define COOP_SAVE_STATUS_KNOWN_MASK COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS
+
+/* This flag is valid only in schema V2.  V1 validation must continue to use
+ * COOP_SAVE_STATUS_KNOWN_MASK above. */
+#define COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED (1u << 1)
+#define COOP_SAVE_V2_STATUS_KNOWN_MASK \
+    (COOP_SAVE_STATUS_KNOWN_MASK | COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED)
 
 #define COOP_SAVE_DESCRIPTOR_MAGIC 0x31445343u /* little-endian ASCII "CSD1" */
 #define COOP_SAVE_DESCRIPTOR_VERSION 1
@@ -47,6 +63,27 @@ struct CoopSaveV1
     /* 0x244 */ u8 fly_bits[COOP_SAVE_FLY_BITS_SIZE];
     /* 0x254 */ u8 gym_bits[COOP_SAVE_GYM_BITS_SIZE];
     /* 0x25C */ u8 reserved[COOP_SAVE_RESERVED_SIZE];
+    /* 0x29C */ u32 crc32;
+};
+
+/* Inactive schema V2 storage layout.  The first four progress records and all
+ * shared fields intentionally retain their V1 offsets. */
+struct CoopSaveV2
+{
+    /* 0x000 */ u32 magic;
+    /* 0x004 */ u16 schema_version;
+    /* 0x006 */ u16 struct_size;
+    /* 0x008 */ u32 registry_version;
+    /* 0x00C */ u8 registry_digest[COOP_IDENTITY_REGISTRY_DIGEST_SIZE];
+    /* 0x01C */ u32 save_generation;
+    /* 0x020 */ u32 status_flags;
+    /* 0x024 */ struct CoopSaveRegionalProgress regional_progress[4];
+    /* 0x044 */ u8 trainer_bits[COOP_SAVE_TRAINER_BITS_SIZE];
+    /* 0x144 */ u8 event_bits[COOP_SAVE_EVENT_BITS_SIZE];
+    /* 0x244 */ u8 fly_bits[COOP_SAVE_FLY_BITS_SIZE];
+    /* 0x254 */ u8 gym_bits[COOP_SAVE_GYM_BITS_SIZE];
+    /* 0x25C */ struct CoopSaveRegionalProgress cormoria_progress;
+    /* 0x264 */ u8 reserved_tail[COOP_SAVE_V2_RESERVED_TAIL_SIZE];
     /* 0x29C */ u32 crc32;
 };
 
@@ -107,6 +144,25 @@ _Static_assert(offsetof(struct CoopSaveV1, gym_bits) == 596, "gym bits offset");
 _Static_assert(offsetof(struct CoopSaveV1, reserved) == 604, "reserved bytes offset");
 _Static_assert(offsetof(struct CoopSaveV1, crc32) == 668, "save CRC offset");
 
+_Static_assert(sizeof(struct CoopSaveV2) == COOP_SAVE_V2_SIZE, "CoopSaveV2 ABI size");
+_Static_assert(offsetof(struct CoopSaveV2, magic) == offsetof(struct CoopSaveV1, magic), "V2 magic offset");
+_Static_assert(offsetof(struct CoopSaveV2, schema_version) == offsetof(struct CoopSaveV1, schema_version), "V2 schema offset");
+_Static_assert(offsetof(struct CoopSaveV2, struct_size) == offsetof(struct CoopSaveV1, struct_size), "V2 struct size offset");
+_Static_assert(offsetof(struct CoopSaveV2, registry_version) == offsetof(struct CoopSaveV1, registry_version), "V2 registry offset");
+_Static_assert(offsetof(struct CoopSaveV2, registry_digest) == offsetof(struct CoopSaveV1, registry_digest), "V2 registry digest offset");
+_Static_assert(offsetof(struct CoopSaveV2, save_generation) == offsetof(struct CoopSaveV1, save_generation), "V2 generation offset");
+_Static_assert(offsetof(struct CoopSaveV2, status_flags) == offsetof(struct CoopSaveV1, status_flags), "V2 status offset");
+_Static_assert(offsetof(struct CoopSaveV2, regional_progress) == offsetof(struct CoopSaveV1, regional_progress), "V2 regional progress offset");
+_Static_assert(offsetof(struct CoopSaveV2, trainer_bits) == offsetof(struct CoopSaveV1, trainer_bits), "V2 trainer bits offset");
+_Static_assert(offsetof(struct CoopSaveV2, event_bits) == offsetof(struct CoopSaveV1, event_bits), "V2 event bits offset");
+_Static_assert(offsetof(struct CoopSaveV2, fly_bits) == offsetof(struct CoopSaveV1, fly_bits), "V2 fly bits offset");
+_Static_assert(offsetof(struct CoopSaveV2, gym_bits) == offsetof(struct CoopSaveV1, gym_bits), "V2 gym bits offset");
+_Static_assert(offsetof(struct CoopSaveV2, cormoria_progress) == COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET, "V2 Cormoria progress offset");
+_Static_assert(sizeof(((struct CoopSaveV2 *)0)->cormoria_progress) == sizeof(struct CoopSaveRegionalProgress), "V2 Cormoria progress size");
+_Static_assert(offsetof(struct CoopSaveV2, reserved_tail) == COOP_SAVE_V2_RESERVED_TAIL_OFFSET, "V2 reserved tail offset");
+_Static_assert(sizeof(((struct CoopSaveV2 *)0)->reserved_tail) == COOP_SAVE_V2_RESERVED_TAIL_SIZE, "V2 reserved tail size");
+_Static_assert(offsetof(struct CoopSaveV2, crc32) == COOP_SAVE_V2_CRC32_OFFSET, "V2 save CRC offset");
+
 _Static_assert(sizeof(struct CoopSaveSchemaDescriptor) == 64, "save descriptor ABI size");
 _Static_assert(offsetof(struct CoopSaveSchemaDescriptor, registry_version) == 32, "descriptor registry offset");
 _Static_assert(offsetof(struct CoopSaveSchemaDescriptor, registry_digest) == 36, "descriptor digest offset");
@@ -119,6 +175,10 @@ void CoopSave_InitializeCurrent(void);
 void CoopSave_ResetRuntimeState(void);
 enum CoopSaveLoadResult CoopSave_Load(void);
 bool8 CoopSave_Validate(const struct CoopSaveV1 *save);
+/* Additive schema-two validation remains inactive until migration and the
+ * selected-slot runtime path are ready.  These helpers are pure: they do not
+ * update gSaveBlock3Ptr or cached online state. */
+bool8 CoopSaveV2_Validate(const struct CoopSaveV2 *save);
 bool8 CoopSave_Seal(struct CoopSaveV1 *save);
 bool8 CoopSave_PrepareForWrite(void);
 /* True only when the most recent canonical-save preparation succeeded.  The
@@ -137,5 +197,6 @@ bool8 CoopSave_GetGymDefeated(u16 ordinal);
 bool8 CoopSave_SetGymDefeated(u16 ordinal, bool8 defeated);
 u32 CoopSave_Crc32(const void *data, u32 length);
 u32 CoopSave_CalculateCrc(const struct CoopSaveV1 *save);
+u32 CoopSaveV2_CalculateCrc(const struct CoopSaveV2 *save);
 
 #endif /* GUARD_COOP_SAVE_H */

@@ -19,6 +19,7 @@ fn stock_mgba_first_save_matches_linked_rom_sector_checksums() {
     assert_eq!(save.coop().save_generation, 1);
     assert!(save.coop().online_eligible());
     assert!(save.rtc_trailer().is_some());
+    assert_eq!(save.raw_bytes(), bytes);
 }
 
 fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {
@@ -210,6 +211,41 @@ fn parses_rotated_slots_and_exposes_frozen_payload() {
     );
     assert_eq!(parsed.raw_bytes(), bytes);
     assert!(parsed.rtc_trailer().is_none());
+}
+
+#[test]
+fn exposes_selected_logical_sector_payload_after_rotation() {
+    let mut bytes = valid_image(20, 21);
+
+    // Give the same logical sector different valid bytes in each physical
+    // slot. The newer second slot must be the only source for the view.
+    let first_sector = logical_sector_mut(&mut bytes, SaveSlot::First, 7);
+    first_sector[123] = 0x11;
+    let checksum = sector_checksum(&first_sector[..LOGICAL_SECTOR_DATA_SIZES[7]]);
+    write_u16(first_sector, SECTOR_CHECKSUM_OFFSET, checksum);
+
+    let second_sector = logical_sector_mut(&mut bytes, SaveSlot::Second, 7);
+    second_sector[123] = 0x22;
+    let checksum = sector_checksum(&second_sector[..LOGICAL_SECTOR_DATA_SIZES[7]]);
+    write_u16(second_sector, SECTOR_CHECKSUM_OFFSET, checksum);
+
+    let parsed = parse(&bytes, TEST_REGISTRY).unwrap();
+    for logical in 0..SECTORS_PER_SLOT {
+        let logical_id = u8::try_from(logical).unwrap();
+        let payload = parsed
+            .logical_sector_payload(logical_id)
+            .expect("validated logical sector must be available");
+        assert_eq!(payload.len(), LOGICAL_SECTOR_DATA_SIZES[logical]);
+        assert_eq!(payload[0], logical_id.wrapping_mul(17));
+    }
+    assert_eq!(parsed.logical_sector_payload(7).unwrap()[123], 0x22);
+    assert!(
+        parsed
+            .logical_sector_payload(SECTORS_PER_SLOT as u8)
+            .is_none()
+    );
+    assert!(parsed.logical_sector_payload(u8::MAX).is_none());
+    assert_eq!(parsed.raw_bytes(), bytes);
 }
 
 #[test]
@@ -660,4 +696,254 @@ fn checksum_ignores_partial_words_and_uses_end_around_fold() {
     assert_eq!(sector_checksum(&[1, 2, 3]), 0);
     assert_eq!(sector_checksum(&[0xff; 4]), 0xfffe);
     assert_eq!(sector_checksum(&[0xff; 8]), 0xfffd);
+}
+
+fn v2_payload(normalized: bool, migration_ambiguous: bool) -> Vec<u8> {
+    let mut payload = coop_payload(41);
+    write_u16(
+        &mut payload,
+        COOP_SCHEMA_OFFSET,
+        v2::COOP_SAVE_V2_SCHEMA_VERSION,
+    );
+    let mut status_flags = 0;
+    if normalized {
+        status_flags |= v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED;
+    }
+    if migration_ambiguous {
+        status_flags |= COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS;
+    }
+    write_u32(&mut payload, COOP_STATUS_FLAGS_OFFSET, status_flags);
+    payload[v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = RegionId::Cormoria.wire();
+    write_u32(
+        &mut payload,
+        v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 4,
+        500,
+    );
+    let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+    write_u32(&mut payload, COOP_CRC_OFFSET, crc);
+    payload.to_vec()
+}
+
+fn v2_payload_array(normalized: bool, migration_ambiguous: bool) -> [u8; COOP_SAVE_V1_SIZE] {
+    v2_payload(normalized, migration_ambiguous)
+        .try_into()
+        .expect("schema-two payload has the frozen ABI size")
+}
+
+#[test]
+fn parse_v2_selects_newest_rotated_v2_slot_and_exposes_views() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let older_v2 = v2_payload_array(true, false);
+    let newer_v2 = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 13, &older_v2);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 2, &newer_v2);
+
+    let parsed = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+
+    assert_eq!(parsed.selected_slot(), SaveSlot::Second);
+    assert_eq!(parsed.counter(), 21);
+    assert_eq!(
+        parsed.coop().regional_progress[4].region,
+        RegionId::Cormoria
+    );
+    assert_eq!(parsed.coop().regional_progress[4].story_checkpoint, 500);
+    assert!(parsed.coop().met_locations_normalized());
+    assert_eq!(parsed.raw_bytes(), bytes);
+    assert_eq!(
+        parsed.logical_sector_payload(2).unwrap()[0],
+        2_u8.wrapping_mul(17)
+    );
+}
+
+#[test]
+fn parse_v2_does_not_fallback_when_newer_slot_is_v1() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let older_v2 = v2_payload_array(true, false);
+    let newer_v1 = coop_payload(42);
+    write_slot(&mut bytes, SaveSlot::First, 20, 5, &older_v2);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 8, &newer_v1);
+
+    assert_eq!(
+        parse_v2(&bytes, TEST_REGISTRY),
+        Err(SaveV2Error::Coop(v2::CoopSaveV2Error::SchemaVersion {
+            actual: 1
+        }))
+    );
+}
+
+#[test]
+fn parse_v2_fails_closed_on_newer_bad_crc_without_rollback() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let older_v2 = v2_payload_array(true, false);
+    let newer_v2 = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 5, &older_v2);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 8, &newer_v2);
+    rewrite_payload(&mut bytes, SaveSlot::Second, |payload| {
+        payload[COOP_CRC_OFFSET] ^= 1;
+    });
+
+    assert!(matches!(
+        parse_v2(&bytes, TEST_REGISTRY),
+        Err(SaveV2Error::Coop(v2::CoopSaveV2Error::Crc32 { .. }))
+    ));
+}
+
+#[test]
+fn parse_v2_retains_rtc_trailer_and_v1_api_rejects_schema_two() {
+    let mut bytes = vec![0xff; FLASH_IMAGE_SIZE];
+    let payload = v2_payload_array(true, false);
+    write_slot(&mut bytes, SaveSlot::First, 20, 5, &payload);
+    write_slot(&mut bytes, SaveSlot::Second, 21, 8, &payload);
+    let trailer = array::from_fn::<_, RTC_TRAILER_SIZE, _>(|index| 0xa0 ^ index as u8);
+    bytes.extend_from_slice(&trailer);
+
+    let parsed = parse_v2(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(parsed.rtc_trailer(), Some(&trailer));
+    assert_eq!(parsed.into_raw_bytes().as_ref(), bytes);
+    assert!(matches!(
+        parse(&bytes, TEST_REGISTRY),
+        Err(SaveError::Coop(CoopSaveError::SchemaVersion { actual: 2 }))
+    ));
+}
+
+#[test]
+fn parses_v2_payload_with_five_ordered_regions_and_registry_contract() {
+    let payload = v2_payload(true, false);
+    let parsed = v2::parse_payload(&payload, TEST_REGISTRY).unwrap();
+
+    assert_eq!(parsed.regional_progress.len(), 5);
+    assert_eq!(
+        parsed
+            .regional_progress
+            .iter()
+            .map(|progress| progress.region)
+            .collect::<Vec<_>>(),
+        vec![
+            RegionId::Hoenn,
+            RegionId::Kanto,
+            RegionId::Johto,
+            RegionId::Sevii,
+            RegionId::Cormoria,
+        ]
+    );
+    assert_eq!(parsed.regional_progress[4].story_checkpoint, 500);
+    assert!(parsed.met_locations_normalized());
+    assert!(!parsed.migration_ambiguous());
+    assert!(parsed.online_eligible());
+}
+
+#[test]
+fn v2_rejects_schema_versions_and_payload_lengths() {
+    for schema in [1, 3] {
+        let mut payload = v2_payload(true, false);
+        write_u16(&mut payload, COOP_SCHEMA_OFFSET, schema);
+        let crc = crc32fast::hash(&payload[..COOP_CRC_OFFSET]);
+        write_u32(&mut payload, COOP_CRC_OFFSET, crc);
+        assert_eq!(
+            v2::parse_payload(&payload, TEST_REGISTRY),
+            Err(v2::CoopSaveV2Error::SchemaVersion { actual: schema })
+        );
+    }
+
+    let mut embedded_size = v2_payload(true, false);
+    write_u16(&mut embedded_size, COOP_STRUCT_SIZE_OFFSET, 671);
+    let crc = crc32fast::hash(&embedded_size[..COOP_CRC_OFFSET]);
+    write_u32(&mut embedded_size, COOP_CRC_OFFSET, crc);
+    assert_eq!(
+        v2::parse_payload(&embedded_size, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::StructSize { actual: 671 })
+    );
+
+    let payload = v2_payload(true, false);
+    for invalid in [&payload[..0], &payload[..COOP_SAVE_V1_SIZE - 1]] {
+        assert_eq!(
+            v2::parse_payload(invalid, TEST_REGISTRY),
+            Err(v2::CoopSaveV2Error::InvalidLength {
+                actual: invalid.len()
+            })
+        );
+    }
+    let mut oversized = payload.clone();
+    oversized.push(0);
+    assert_eq!(
+        v2::parse_payload(&oversized, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::InvalidLength {
+            actual: COOP_SAVE_V1_SIZE + 1
+        })
+    );
+}
+
+#[test]
+fn v2_rejects_crc_unknown_status_and_cormoria_record_errors() {
+    let mut crc = v2_payload(true, false);
+    crc[COOP_CRC_OFFSET] ^= 1;
+    assert!(matches!(
+        v2::parse_payload(&crc, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::Crc32 { .. })
+    ));
+
+    let mut unknown_status = v2_payload(true, false);
+    write_u32(
+        &mut unknown_status,
+        COOP_STATUS_FLAGS_OFFSET,
+        v2::COOP_SAVE_V2_STATUS_KNOWN_MASK | (1 << 2),
+    );
+    let crc = crc32fast::hash(&unknown_status[..COOP_CRC_OFFSET]);
+    write_u32(&mut unknown_status, COOP_CRC_OFFSET, crc);
+    assert!(matches!(
+        v2::parse_payload(&unknown_status, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::UnknownStatusFlags { .. })
+    ));
+
+    let mut wrong_region = v2_payload(true, false);
+    wrong_region[v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = RegionId::Sevii.wire();
+    let crc = crc32fast::hash(&wrong_region[..COOP_CRC_OFFSET]);
+    write_u32(&mut wrong_region, COOP_CRC_OFFSET, crc);
+    assert!(matches!(
+        v2::parse_payload(&wrong_region, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::RegionOrder {
+            record: 4,
+            expected: RegionId::Cormoria,
+            actual: RegionId::Sevii,
+        })
+    ));
+}
+
+#[test]
+fn v2_rejects_reserved_fifth_record_and_tail_bytes() {
+    let mut fifth_reserved = v2_payload(true, false);
+    fifth_reserved[v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 1] = 1;
+    let crc = crc32fast::hash(&fifth_reserved[..COOP_CRC_OFFSET]);
+    write_u32(&mut fifth_reserved, COOP_CRC_OFFSET, crc);
+    assert_eq!(
+        v2::parse_payload(&fifth_reserved, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::ReservedByte {
+            offset: v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET + 1,
+            value: 1,
+        })
+    );
+
+    let mut tail = v2_payload(true, false);
+    tail[v2::COOP_SAVE_V2_RESERVED_TAIL_OFFSET + v2::COOP_SAVE_V2_RESERVED_TAIL_SIZE - 1] = 1;
+    let crc = crc32fast::hash(&tail[..COOP_CRC_OFFSET]);
+    write_u32(&mut tail, COOP_CRC_OFFSET, crc);
+    assert_eq!(
+        v2::parse_payload(&tail, TEST_REGISTRY),
+        Err(v2::CoopSaveV2Error::ReservedByte {
+            offset: COOP_CRC_OFFSET - 1,
+            value: 1,
+        })
+    );
+}
+
+#[test]
+fn v2_online_eligibility_requires_normalization_and_no_ambiguity() {
+    let missing = v2::parse_payload(&v2_payload(false, false), TEST_REGISTRY).unwrap();
+    assert!(!missing.met_locations_normalized());
+    assert!(!missing.online_eligible());
+
+    let ambiguous = v2::parse_payload(&v2_payload(true, true), TEST_REGISTRY).unwrap();
+    assert!(ambiguous.met_locations_normalized());
+    assert!(ambiguous.migration_ambiguous());
+    assert!(!ambiguous.online_eligible());
 }

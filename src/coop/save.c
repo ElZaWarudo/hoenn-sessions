@@ -165,6 +165,49 @@ static bool8 HasValidBody(const struct CoopSaveV1 *save)
                                    gCoopGymIdentityRegistry, COOP_GYM_IDENTITY_COUNT);
 }
 
+static bool8 HasCompatibleV2Header(const struct CoopSaveV2 *save)
+{
+    return save != NULL
+        && save->magic == COOP_SAVE_MAGIC
+        && save->schema_version == COOP_SAVE_V2_SCHEMA_VERSION
+        && save->struct_size == sizeof(*save)
+        && save->registry_version == COOP_IDENTITY_REGISTRY_VERSION
+        && memcmp(save->registry_digest, sRegistryDigest, sizeof(sRegistryDigest)) == 0;
+}
+
+static bool8 HasValidV2Body(const struct CoopSaveV2 *save)
+{
+    u32 i;
+
+    if (!HasCompatibleV2Header(save)
+     || (save->status_flags & ~COOP_SAVE_V2_STATUS_KNOWN_MASK) != 0)
+        return FALSE;
+
+    for (i = 0; i < ARRAY_COUNT(save->regional_progress); i++)
+    {
+        if (save->regional_progress[i].region != GetRegionForSlot(i)
+         || save->regional_progress[i].reserved != 0
+         || (save->regional_progress[i].badge_mask & ~GetAssignedBadgeMask(GetRegionForSlot(i))) != 0)
+            return FALSE;
+    }
+
+    if (save->cormoria_progress.region != COOP_SAVE_V2_CORMORIA_REGION
+     || save->cormoria_progress.reserved != 0
+     || (save->cormoria_progress.badge_mask
+         & ~GetAssignedBadgeMask(COOP_SAVE_V2_CORMORIA_REGION)) != 0)
+        return FALSE;
+
+    return BytesHaveValue(save->reserved_tail, sizeof(save->reserved_tail), 0)
+        && BitsContainOnlyAssigned(save->trainer_bits, sizeof(save->trainer_bits),
+                                   gCoopTrainerIdentityRegistry, COOP_TRAINER_IDENTITY_COUNT)
+        && BitsContainOnlyAssigned(save->event_bits, sizeof(save->event_bits),
+                                   gCoopEventIdentityRegistry, COOP_EVENT_IDENTITY_COUNT)
+        && BitsContainOnlyAssigned(save->fly_bits, sizeof(save->fly_bits),
+                                   gCoopFlyPointIdentityRegistry, COOP_FLY_IDENTITY_COUNT)
+        && BitsContainOnlyAssigned(save->gym_bits, sizeof(save->gym_bits),
+                                   gCoopGymIdentityRegistry, COOP_GYM_IDENTITY_COUNT);
+}
+
 u32 CoopSave_Crc32(const void *data, u32 length)
 {
     const u8 *bytes = data;
@@ -197,6 +240,13 @@ u32 CoopSave_CalculateCrc(const struct CoopSaveV1 *save)
     return CoopSave_Crc32(save, offsetof(struct CoopSaveV1, crc32));
 }
 
+u32 CoopSaveV2_CalculateCrc(const struct CoopSaveV2 *save)
+{
+    if (save == NULL)
+        return 0;
+    return CoopSave_Crc32(save, offsetof(struct CoopSaveV2, crc32));
+}
+
 bool8 CoopSave_Seal(struct CoopSaveV1 *save)
 {
     if (!HasValidBody(save))
@@ -216,6 +266,12 @@ bool8 CoopSave_Validate(const struct CoopSaveV1 *save)
 {
     return HasValidBody(save)
         && save->crc32 == CoopSave_CalculateCrc(save);
+}
+
+bool8 CoopSaveV2_Validate(const struct CoopSaveV2 *save)
+{
+    return HasValidV2Body(save)
+        && save->crc32 == CoopSaveV2_CalculateCrc(save);
 }
 
 void CoopSave_Initialize(struct CoopSaveV1 *save)
