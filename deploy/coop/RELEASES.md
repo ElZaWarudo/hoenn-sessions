@@ -104,9 +104,16 @@ The workflow validates SSH grammars and uses `StrictHostKeyChecking yes`.
 Never replace pinned host keys with an in-run key scan.
 The release-key gate checks the protected private seed against the release
 public key before either Windows artifact publication or runtime release.
-Pushes to `main` update only the runtime and server components on the VPS. The
-Windows installer job runs only for an explicit `workflow_dispatch`, so normal
-server deployments do not rebuild or publish a desktop installer.
+Pushes to `main` update the runtime and server components on the VPS. The
+Windows installer job also runs when installer or desktop inputs have changed
+since the last published MSI; an explicit `workflow_dispatch` forces a build.
+Comparison with the published MSI revision retries changes missed by a failed
+or skipped run. Changes to protected workflow variables without a source change
+require a manual dispatch. A successful installer run copies its verified MSI
+to the private `/srv/hoenn/installers/<commit>-<run-number>/` store, checks its
+SHA-256, and atomically updates `/srv/hoenn/installers/current`. Container UID
+10001 receives read-only access through `setfacl`. The account page serves this
+MSI only after login.
 Android clients authenticate to download the ROM and matching manifest from the
 signed release envelope. A new signed APK is published only when Android client
 code has changed since the last published APK, or on a manual dispatch for a fresh release. The
@@ -125,12 +132,13 @@ unknown-publisher warning. Ed25519 release-envelope signing remains mandatory.
 Changing to any unknown signing mode fails closed; returning to `authenticode`
 requires a reviewed workflow change.
 
-The unsigned artifact is named `HoennSessions-UNSIGNED-PRIVATE-PILOT.msi` and
-is restricted to invited testers. Download it only with `hashes.json` and
-`provenance.json` from the same authenticated Actions run. Before bypassing the
-Windows unknown-publisher warning, confirm the repository, commit, run id, and
-attempt in provenance and verify the MSI SHA-256. Do not rename or forward the
-MSI separately from that evidence.
+The Actions artifact is named `HoennSessions-UNSIGNED-PRIVATE-PILOT.msi` and
+includes `hashes.json` and `provenance.json`. The account page downloads the
+same verified bytes as `HoennSessions.msi` and shows the pilot signing warning.
+For provenance verification, fetch the matching Actions artifact, confirm the
+repository, commit, run id, and attempt, and compare its MSI SHA-256 with the
+downloaded file and the private installer metadata. Do not forward the MSI
+without that evidence.
 
 Installer checkout, restore, and unsigned staging run before either narrow
 Authenticode step receives secrets. The PFX bytes are imported into the CurrentUser\My

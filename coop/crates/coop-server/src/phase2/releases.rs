@@ -32,6 +32,10 @@ pub const ANDROID_DIRECTORY: &str = "android";
 pub const ANDROID_CURRENT_FILE: &str = "android/current";
 pub const ANDROID_METADATA_FILE: &str = "metadata.json";
 pub const ANDROID_APK_FILE: &str = "app-release.apk";
+pub const INSTALLER_DIRECTORY: &str = "installers";
+pub const INSTALLER_CURRENT_FILE: &str = "installers/current";
+pub const INSTALLER_METADATA_FILE: &str = "metadata.json";
+pub const INSTALLER_MSI_FILE: &str = "HoennSessions.msi";
 /// The maximum exact envelope size accepted by the distributor.
 pub const MAX_ENVELOPE_BYTES: u64 = 1024 * 1024;
 /// The maximum size of one streamed artifact.
@@ -86,6 +90,26 @@ pub(crate) async fn android_apk(
     })
 }
 
+/// Serves metadata for the latest privately published Windows installer.
+pub(crate) async fn installer_latest(State(app): State<Phase2App>, headers: HeaderMap) -> Response {
+    private_response(match installer_latest_inner(&app, &headers) {
+        Ok(response) => response,
+        Err(error) => error.into_response(),
+    })
+}
+
+/// Streams the installer from a fixed, private path after authentication.
+pub(crate) async fn installer_msi(
+    State(app): State<Phase2App>,
+    headers: HeaderMap,
+    AxumPath(release_id): AxumPath<String>,
+) -> Response {
+    private_response(match installer_msi_inner(&app, &headers, &release_id) {
+        Ok(response) => response,
+        Err(error) => error.into_response(),
+    })
+}
+
 /// Streams one fixed artifact from a named release generation.
 pub(crate) async fn artifact(
     State(app): State<Phase2App>,
@@ -135,6 +159,51 @@ fn android_latest_inner(app: &Phase2App, headers: &HeaderMap) -> Result<Response
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::CONTENT_LENGTH, bytes.len().to_string())
         .body(Body::from(bytes))
+        .map_err(|_| Phase2Error::Internal)
+}
+
+fn installer_latest_inner(app: &Phase2App, headers: &HeaderMap) -> Result<Response, Phase2Error> {
+    super::actor(headers, app)?;
+    reject_range(headers)?;
+    let root = configured_root(app)?;
+    let release_id = marker_release_id(root, Path::new(INSTALLER_CURRENT_FILE))?;
+    let relative = PathBuf::from(INSTALLER_DIRECTORY)
+        .join(release_id)
+        .join(INSTALLER_METADATA_FILE);
+    let bytes = read_bounded(&resolve_under(root, &relative)?, 8192)?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_LENGTH, bytes.len().to_string())
+        .body(Body::from(bytes))
+        .map_err(|_| Phase2Error::Internal)
+}
+
+fn installer_msi_inner(
+    app: &Phase2App,
+    headers: &HeaderMap,
+    release_id: &str,
+) -> Result<Response, Phase2Error> {
+    super::actor(headers, app)?;
+    reject_range(headers)?;
+    validate_release_id(release_id)?;
+    let root = configured_root(app)?;
+    let relative = PathBuf::from(INSTALLER_DIRECTORY)
+        .join(release_id)
+        .join(INSTALLER_MSI_FILE);
+    let (file, length) = open_bounded(&resolve_under(root, &relative)?, MAX_ARTIFACT_BYTES)?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/x-msi")
+        .header(
+            header::CONTENT_DISPOSITION,
+            "attachment; filename=\"HoennSessions.msi\"",
+        )
+        .header(header::CONTENT_LENGTH, length.to_string())
+        .body(Body::from_stream(artifact_stream(
+            tokio::fs::File::from_std(file),
+            length,
+        )))
         .map_err(|_| Phase2Error::Internal)
 }
 
@@ -333,7 +402,8 @@ fn artifact_stream(
         if remaining == 0 {
             return None;
         }
-        let amount = remaining.min(STREAM_CHUNK_BYTES as u64) as usize;
+        let amount = usize::try_from(remaining.min(STREAM_CHUNK_BYTES as u64))
+            .expect("stream chunk size fits usize");
         let mut chunk = vec![0_u8; amount];
         match file.read(&mut chunk).await {
             Ok(0) => Some((
@@ -353,6 +423,10 @@ fn artifact_stream(
     })
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "map_err passes io::Error by value"
+)]
 fn map_io_error(error: io::Error) -> Phase2Error {
     if error.kind() == io::ErrorKind::NotFound {
         Phase2Error::NotFound

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoenn Sessions · Private pilot</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101b19; color: #f0eee6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    main { width: min(100%, 480px); }
+    .eyebrow { color: #9ccdb7; font-size: .78rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { font-size: clamp(2rem, 7vw, 3rem); line-height: 1.05; margin: .4rem 0 1rem; }
+    p { color: #b9c9c1; line-height: 1.5; }
+    .panel { border: 1px solid #3b5b4f; border-radius: 16px; padding: 24px; background: #192b25; }
+    nav { display: flex; gap: 8px; margin-bottom: 20px; }
+    button, a.download { cursor: pointer; border: 1px solid #608b75; border-radius: 8px; padding: 11px 15px; background: #294e3b; color: #fff; font: inherit; text-decoration: none; }
+    button:hover, a.download:hover { background: #37684e; }
+    button:disabled { opacity: .55; cursor: wait; }
+    nav button[aria-selected="true"] { background: #a8ddb7; color: #10251b; }
+    label { display: block; font-size: .88rem; margin: 14px 0 6px; }
+    input { width: 100%; padding: 12px; border: 1px solid #6a8c78; border-radius: 8px; background: #10221b; color: #fff; font: inherit; }
+    input:focus-visible, button:focus-visible { outline: 2px solid #c8eea6; outline-offset: 2px; }
+    form button { width: 100%; margin-top: 20px; }
+    #message { min-height: 1.5em; color: #f3c4a2; }
+    #invitation { overflow-wrap: anywhere; padding: 12px; border: 1px dashed #83b795; border-radius: 8px; user-select: all; }
+    .actions { display: grid; gap: 10px; margin-top: 20px; }
+    .actions button { width: 100%; text-align: left; }
+    .quiet { background: transparent; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Private pilot</div>
+  <h1>Hoenn Sessions</h1>
+  <p>Create your player account with a single-use invitation, or sign in to invite a friend and get the game.</p>
+  <div class="panel" id="entry">
+    <nav aria-label="Account action"><button id="login-tab" type="button" aria-selected="true">Sign in</button><button id="register-tab" type="button" aria-selected="false">Create account</button></nav>
+    <form id="login-form">
+      <label for="login-name">Username</label><input id="login-name" required minlength="3" maxlength="32" autocomplete="username">
+      <label for="login-password">Password</label><input id="login-password" type="password" required minlength="8" autocomplete="current-password">
+      <button type="submit">Sign in</button>
+    </form>
+    <form id="register-form" hidden>
+      <label for="register-name">Username</label><input id="register-name" required minlength="3" maxlength="32" autocomplete="username">
+      <label for="register-password">Password</label><input id="register-password" type="password" required minlength="8" autocomplete="new-password">
+      <label for="register-invite">Invitation code</label><input id="register-invite" required minlength="4" maxlength="128" autocomplete="off">
+      <button type="submit">Create account</button>
+    </form>
+  </div>
+  <div class="panel" id="member" hidden>
+    <p>Signed in as <strong id="member-name"></strong></p>
+    <button type="button" id="invite-button">Generate invitation code</button>
+    <p id="invitation" hidden></p>
+    <div class="actions">
+      <button type="button" id="apk-button">Download Android APK</button>
+      <button type="button" id="msi-button">Download Windows MSI</button>
+    </div>
+    <p>Windows may show an unknown publisher warning for the private pilot installer.</p>
+    <button type="button" class="quiet" id="logout-button">Sign out</button>
+  </div>
+  <p id="message" role="status" aria-live="polite"></p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  let session = null;
+  let refreshPromise = null;
+  let sessionGeneration = 0;
+  const message = (text) => { $('message').textContent = text; };
+  const showMember = (name, tokens) => {
+    sessionGeneration += 1;
+    session = tokens;
+    $('member-name').textContent = name;
+    $('entry').hidden = true;
+    $('member').hidden = false;
+    $('invitation').hidden = true;
+    message('');
+  };
+  const showEntry = () => {
+    sessionGeneration += 1;
+    session = null;
+    $('entry').hidden = false;
+    $('member').hidden = true;
+    $('invitation').textContent = '';
+  };
+  const parse = async (response) => {
+    if (!response.ok) {
+      const errors = {400:'Please check the entered values.', 401:'Sign in again or check your credentials and invitation.', 403:'You can have up to five unused invitations.', 404:'This download is not available yet.', 409:'That code or username has already been used.', 503:'The service is busy. Try again shortly.'};
+      throw new Error(errors[response.status] || 'The request failed. Please try again.');
+    }
+    return response.json();
+  };
+  const post = async (path, body, token) => parse(await fetch(path, {
+    method:'POST', headers:{'Content-Type':'application/json', ...(token ? {Authorization:`Bearer ${token}`} : {})},
+    body:body === null ? undefined : JSON.stringify(body), cache:'no-store'
+  }));
+  const access = async () => {
+    if (!session) throw new Error('Sign in first.');
+    if (Date.now() + 30000 >= session.access_expires_at) {
+      const generation = sessionGeneration;
+      try {
+        if (!refreshPromise) {
+          let pending;
+          pending = post('/v1/auth/refresh', {api_version:1, refresh_token:session.refresh_token})
+            .then((tokens) => {
+              if (sessionGeneration !== generation) throw new Error('Session ended.');
+              session = tokens;
+              return tokens;
+            })
+            .finally(() => { if (refreshPromise === pending) refreshPromise = null; });
+          refreshPromise = pending;
+        }
+        await refreshPromise;
+      }
+      catch (error) { if (sessionGeneration === generation) showEntry(); throw error; }
+    }
+    return session.access_token;
+  };
+  const run = async (button, operation) => {
+    button.disabled = true; message('Working…');
+    try { await operation(); } catch (error) { message(error.message || 'The request failed.'); }
+    finally { button.disabled = false; }
+  };
+  const tab = (register) => {
+    $('login-form').hidden = register;
+    $('register-form').hidden = !register;
+    $('login-tab').setAttribute('aria-selected', String(!register));
+    $('register-tab').setAttribute('aria-selected', String(register));
+    message('');
+  };
+  $('login-tab').onclick = () => tab(false);
+  $('register-tab').onclick = () => tab(true);
+  $('login-form').onsubmit = (event) => {
+    event.preventDefault();
+    const name = $('login-name').value.trim();
+    run($('login-form').querySelector('button'), async () => {
+      const tokens = await post('/v1/auth/login', {api_version:1, username:name, password:$('login-password').value});
+      $('login-password').value = '';
+      showMember(name, tokens);
+    });
+  };
+  $('register-form').onsubmit = (event) => {
+    event.preventDefault();
+    run($('register-form').querySelector('button'), async () => {
+      const name = $('register-name').value.trim();
+      const password = $('register-password').value;
+      await post('/v1/auth/register', {api_version:1, username:name, password, invitation_code:$('register-invite').value.trim()});
+      const tokens = await post('/v1/auth/login', {api_version:1, username:name, password});
+      $('register-password').value = '';
+      $('register-invite').value = '';
+      showMember(name, tokens);
+    });
+  };
+  $('invite-button').onclick = () => run($('invite-button'), async () => {
+    const result = await post('/v1/auth/invitations', null, await access());
+    $('invitation').textContent = result.invitation_code;
+    $('invitation').hidden = false;
+    message('Copy this code now. It can create one account within seven days.');
+  });
+  const download = async (platform) => {
+    const token = await access();
+    const latestPath = platform === 'android' ? '/v1/releases/android/latest' : '/v1/releases/windows-x86_64/installer/latest';
+    const latest = await parse(await fetch(latestPath, {headers:{Authorization:`Bearer ${token}`}, cache:'no-store'}));
+    const id = encodeURIComponent(latest.release_id);
+    const path = platform === 'android' ? `/v1/releases/android/${id}/apk` : `/v1/releases/windows-x86_64/installer/${id}/msi`;
+    const response = await fetch(path, {headers:{Authorization:`Bearer ${await access()}`}, cache:'no-store'});
+    if (!response.ok) { await parse(response); return; }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = platform === 'android' ? 'HoennSessions.apk' : 'HoennSessions.msi';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    message('Download started.');
+  };
+  $('apk-button').onclick = () => run($('apk-button'), () => download('android'));
+  $('msi-button').onclick = () => run($('msi-button'), () => download('windows-x86_64'));
+  $('logout-button').onclick = async () => {
+    const token = session && session.refresh_token;
+    showEntry();
+    message('Signed out.');
+    if (token) { try { await post('/v1/auth/logout', {api_version:1, refresh_token:token}); } catch (_) {} }
+  };
+})();
+</script>
+</body>
+</html>

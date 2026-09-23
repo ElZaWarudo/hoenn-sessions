@@ -84,6 +84,7 @@ mod firebase;
 pub(crate) mod group_travel;
 mod online;
 mod persistent;
+mod portal;
 pub mod presence;
 pub mod production;
 pub(crate) mod realtime;
@@ -274,8 +275,13 @@ impl Phase2App {
         Self::new(config).expect("test config is local")
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "route table is easier to audit in one place"
+    )]
     pub fn router(&self) -> Router {
         let router = Router::new()
+            .route("/", get(portal::page))
             .route("/health/ready", get(readiness))
             .merge(
                 Router::new()
@@ -283,6 +289,7 @@ impl Phase2App {
                     .route("/v1/auth/login", post(login))
                     .route("/v1/auth/refresh", post(refresh))
                     .route("/v1/auth/logout", post(logout))
+                    .route("/v1/auth/invitations", post(portal::create_invitation))
                     .route("/v1/sessions/acquire", post(acquire))
                     .route("/v1/sessions/heartbeat", post(heartbeat))
                     .route("/v1/sessions/reconnect", post(reconnect))
@@ -324,7 +331,18 @@ impl Phase2App {
                 Router::new()
                     .route("/v1/releases/windows-x86_64/latest", get(releases::latest))
                     .route("/v1/releases/android/latest", get(releases::android_latest))
-                    .route("/v1/releases/android/{release_id}/apk", get(releases::android_apk))
+                    .route(
+                        "/v1/releases/android/{release_id}/apk",
+                        get(releases::android_apk),
+                    )
+                    .route(
+                        "/v1/releases/windows-x86_64/installer/latest",
+                        get(releases::installer_latest),
+                    )
+                    .route(
+                        "/v1/releases/windows-x86_64/installer/{release_id}/msi",
+                        get(releases::installer_msi),
+                    )
                     .route(
                         "/v1/releases/{release_id}/artifacts/{artifact_id}",
                         get(releases::artifact),
@@ -1976,6 +1994,37 @@ mod tests {
             app.logout(LogoutRequest::new(rotated.refresh_token)),
             Ok(LogoutResponse::default())
         );
+    }
+
+    #[test]
+    fn member_invitation_expires_and_frees_issuer_slot() {
+        let (app, clock) = deterministic_app();
+        app.add_invitation("bootstrap-expiry").expect("bootstrap");
+        let registered = app
+            .register(
+                RegisterRequest::new(
+                    "ExpiryTester",
+                    password(),
+                    InvitationCode::new("bootstrap-expiry").expect("invite"),
+                )
+                .expect("register request"),
+            )
+            .expect("registration");
+        let actor = AuthenticatedActor {
+            user_id: registered.user_id,
+            character_id: registered.character_id,
+        };
+        let code = auth::create_invitation(&app.store, actor).expect("member invitation");
+        clock.advance(auth::MEMBER_INVITATION_TTL_MS);
+        let expired = RegisterRequest::new(
+            "LatePlayer",
+            password(),
+            InvitationCode::new(code).expect("code"),
+        )
+        .expect("request");
+        assert_eq!(app.register(expired), Err(Phase2Error::Authentication));
+        let next = auth::create_invitation(&app.store, actor).expect("expired code was pruned");
+        assert!(!next.is_empty());
     }
 
     #[test]
