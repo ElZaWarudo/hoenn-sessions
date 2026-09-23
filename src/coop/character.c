@@ -23,6 +23,8 @@
 
 // A tagged value in an unused persistent var preserves the existing save layout.
 #define CHARACTER_SAVE_TAG 0xCA00
+#define CHARACTERS_PER_PAGE 6
+#define LEGACY_CHARACTER_COUNT 176
 
 static const struct {
     u16 graphicsId;
@@ -37,14 +39,52 @@ static const struct {
     {OBJ_EVENT_GFX_NORMAN, COMPOUND_STRING("Norman")},
     {OBJ_EVENT_GFX_YOUNGSTER, COMPOUND_STRING("Youngster")},
     {OBJ_EVENT_GFX_LASS, COMPOUND_STRING("Lass")},
-    {OBJ_EVENT_GFX_PROF_BIRCH, COMPOUND_STRING("Prof. Birch")},
+    {OBJ_EVENT_GFX_PROF_BIRCH, COMPOUND_STRING("Birch")},
     {OBJ_EVENT_GFX_HIKER, COMPOUND_STRING("Hiker")},
     {OBJ_EVENT_GFX_SAILOR, COMPOUND_STRING("Sailor")},
 };
 _Static_assert(ARRAY_COUNT(sFeaturedCharacters) == COOP_PRESENCE_AVATAR_SAILOR, "featured roster size");
 
+// Append Johto choices so existing saved and network avatar ids keep their meaning.
+static const struct {
+    u16 graphicsId;
+    const u8 *name;
+} sJohtoCharacters[] = {
+    {OBJ_EVENT_GFX_JOHTO_SILVER, COMPOUND_STRING("Silver")},
+    {OBJ_EVENT_GFX_JOHTO_SUPER_NERD, COMPOUND_STRING("Nerd")},
+    {OBJ_EVENT_GFX_JOHTO_KIMONO_GIRL, COMPOUND_STRING("Kimono")},
+    {OBJ_EVENT_GFX_JOHTO_KURT, COMPOUND_STRING("Kurt")},
+    {OBJ_EVENT_GFX_JOHTO_BATTLE_GIRL, COMPOUND_STRING("B.Girl")},
+    {OBJ_EVENT_GFX_JOHTO_SAGE, COMPOUND_STRING("Sage")},
+    {OBJ_EVENT_GFX_JOHTO_ATTENDANT, COMPOUND_STRING("Attendant")},
+    {OBJ_EVENT_GFX_JOHTO_EUSINE, COMPOUND_STRING("Eusine")},
+    {OBJ_EVENT_GFX_JOHTO_ENGINEER, COMPOUND_STRING("Engineer")},
+    {OBJ_EVENT_GFX_JOHTO_FIREBREATHER, COMPOUND_STRING("Firebr.")},
+    {OBJ_EVENT_GFX_JOHTO_JUGGLER, COMPOUND_STRING("Juggler")},
+    {OBJ_EVENT_GFX_JOHTO_ARCHER, COMPOUND_STRING("Archer")},
+    {OBJ_EVENT_GFX_JOHTO_SCIENTIST_M, COMPOUND_STRING("Sci. M")},
+    {OBJ_EVENT_GFX_JOHTO_PROF_ELM, COMPOUND_STRING("Elm")},
+    {OBJ_EVENT_GFX_JOHTO_SCIENTIST_F, COMPOUND_STRING("Sci. F")},
+    {OBJ_EVENT_GFX_JOHTO_NURSE_CHANSEY, COMPOUND_STRING("Chansey")},
+    {OBJ_EVENT_GFX_JOHTO_FALKNER, COMPOUND_STRING("Falkner")},
+    {OBJ_EVENT_GFX_JOHTO_BUGSY, COMPOUND_STRING("Bugsy")},
+    {OBJ_EVENT_GFX_JOHTO_BURGLAR, COMPOUND_STRING("Burglar")},
+    {OBJ_EVENT_GFX_JOHTO_WHITNEY, COMPOUND_STRING("Whitney")},
+    {OBJ_EVENT_GFX_JOHTO_ATTENDANT_M, COMPOUND_STRING("Att. M")},
+    {OBJ_EVENT_GFX_JOHTO_PROTON, COMPOUND_STRING("Proton")},
+    {OBJ_EVENT_GFX_JOHTO_ARIANA, COMPOUND_STRING("Ariana")},
+    {OBJ_EVENT_GFX_JOHTO_PETREL, COMPOUND_STRING("Petrel")},
+    {OBJ_EVENT_GFX_JOHTO_MORTY, COMPOUND_STRING("Morty")},
+    {OBJ_EVENT_GFX_JOHTO_JASMINE, COMPOUND_STRING("Jasmine")},
+    {OBJ_EVENT_GFX_JOHTO_CHUCK, COMPOUND_STRING("Chuck")},
+    {OBJ_EVENT_GFX_JOHTO_PRYCE, COMPOUND_STRING("Pryce")},
+    {OBJ_EVENT_GFX_JOHTO_CLAIR, COMPOUND_STRING("Clair")},
+    {OBJ_EVENT_GFX_JOHTO_JANINE, COMPOUND_STRING("Janine")},
+};
+_Static_assert(LEGACY_CHARACTER_COUNT + ARRAY_COUNT(sJohtoCharacters) == COOP_CHARACTER_COUNT, "character roster size");
+
 static EWRAM_DATA u8 sWindow;
-static EWRAM_DATA u8 sPreview;
+static EWRAM_DATA u8 sPreviews[CHARACTERS_PER_PAGE];
 static EWRAM_DATA u8 sChoice;
 static EWRAM_DATA bool8 sRosterInitialized;
 static EWRAM_DATA u16 sCharacterGraphicsIds[COOP_CHARACTER_COUNT];
@@ -94,11 +134,13 @@ static void InitCharacterRoster(void)
         return;
     for (u32 i = 0; i < ARRAY_COUNT(sFeaturedCharacters); i++)
         sCharacterGraphicsIds[count++] = sFeaturedCharacters[i].graphicsId;
-    for (u32 graphicsId = 0; graphicsId < NUM_OBJ_EVENT_GFX && count < COOP_CHARACTER_COUNT; graphicsId++)
+    for (u32 graphicsId = 0; graphicsId < NUM_OBJ_EVENT_GFX && count < LEGACY_CHARACTER_COUNT; graphicsId++)
     {
         if (!IsFeaturedGraphicsId(graphicsId) && IsSelectableGraphicsId(graphicsId))
             sCharacterGraphicsIds[count++] = graphicsId;
     }
+    for (u32 i = 0; i < ARRAY_COUNT(sJohtoCharacters); i++)
+        sCharacterGraphicsIds[count++] = sJohtoCharacters[i].graphicsId;
     sRosterInitialized = TRUE;
 }
 
@@ -144,10 +186,13 @@ u16 CoopCharacter_OverrideNormalGraphics(u16 original)
 
 static void RemovePreview(void)
 {
-    if (sPreview != MAX_SPRITES)
+    for (u32 i = 0; i < CHARACTERS_PER_PAGE; i++)
     {
-        FieldEffectFreeGraphicsResources(&gSprites[sPreview]);
-        sPreview = MAX_SPRITES;
+        if (sPreviews[i] != MAX_SPRITES)
+        {
+            FieldEffectFreeGraphicsResources(&gSprites[sPreviews[i]]);
+            sPreviews[i] = MAX_SPRITES;
+        }
     }
 }
 
@@ -158,37 +203,71 @@ static void Print(const u8 *text, u8 x, u8 y)
 
 static void Draw(void)
 {
-    u8 avatar = sChoice == 0 ? DefaultAvatar() : sChoice;
+    u8 page = sChoice / CHARACTERS_PER_PAGE;
     RemovePreview();
     FillWindowPixelBuffer(sWindow, PIXEL_FILL(1));
     Print(COMPOUND_STRING("CHARACTER"), 8, 0);
-    if (sChoice == 0)
-        Print(COMPOUND_STRING("Original appearance"), 8, 20);
-    else if (sChoice <= ARRAY_COUNT(sFeaturedCharacters))
-        Print(sFeaturedCharacters[sChoice - 1].name, 8, 20);
-    else
+    ConvertIntToDecimalStringN(gStringVar1, page + 1, STR_CONV_MODE_LEFT_ALIGN, 2);
+    ConvertIntToDecimalStringN(gStringVar2, (COOP_CHARACTER_COUNT / CHARACTERS_PER_PAGE) + 1, STR_CONV_MODE_LEFT_ALIGN, 2);
+    StringExpandPlaceholders(gStringVar4, COMPOUND_STRING("Page {STR_VAR_1}/{STR_VAR_2}"));
+    Print(gStringVar4, 120, 0);
+    Print(COMPOUND_STRING("Walking only. Save to keep."), 8, 14);
+    for (u32 i = 0; i < CHARACTERS_PER_PAGE; i++)
     {
-        ConvertIntToDecimalStringN(gStringVar1, sChoice, STR_CONV_MODE_LEFT_ALIGN, 3);
-        ConvertIntToDecimalStringN(gStringVar2, COOP_CHARACTER_COUNT, STR_CONV_MODE_LEFT_ALIGN, 3);
-        StringExpandPlaceholders(gStringVar4, COMPOUND_STRING("Appearance {STR_VAR_1}/{STR_VAR_2}"));
-        Print(gStringVar4, 8, 20);
+        // Reserve sprite resources for the highlighted choice first.
+        u8 slot = (sChoice % CHARACTERS_PER_PAGE + i) % CHARACTERS_PER_PAGE;
+        u16 choice = page * CHARACTERS_PER_PAGE + slot;
+        u8 column = slot % 3;
+        u8 row = slot / 3;
+        u8 x = 4 + column * 68;
+        u8 y = 55 + row * 57;
+        u8 avatar;
+
+        if (choice > COOP_CHARACTER_COUNT)
+            continue;
+        if (choice == sChoice)
+            Print(COMPOUND_STRING(">"), x, y);
+        if (choice == 0)
+            Print(COMPOUND_STRING("Original"), x + 8, y);
+        else if (choice <= ARRAY_COUNT(sFeaturedCharacters))
+            Print(sFeaturedCharacters[choice - 1].name, x + 8, y);
+        else if (choice > LEGACY_CHARACTER_COUNT)
+            Print(sJohtoCharacters[choice - LEGACY_CHARACTER_COUNT - 1].name, x + 8, y);
+        else
+        {
+            ConvertIntToDecimalStringN(gStringVar1, choice, STR_CONV_MODE_LEFT_ALIGN, 3);
+            StringExpandPlaceholders(gStringVar4, COMPOUND_STRING("No. {STR_VAR_1}"));
+            Print(gStringVar4, x + 8, y);
+        }
+        avatar = choice == 0 ? DefaultAvatar() : choice;
+        sPreviews[slot] = CreateObjectGraphicsSprite(CoopCharacter_GetGraphicsId(avatar), SpriteCallbackDummy,
+                                                     48 + column * 68, 44 + row * 57, 0);
+        if (sPreviews[slot] != MAX_SPRITES)
+        {
+            gSprites[sPreviews[slot]].oam.priority = 0;
+            StartSpriteAnim(&gSprites[sPreviews[slot]], ANIM_STD_GO_SOUTH);
+        }
+        else
+        {
+            u16 graphicsId = CoopCharacter_GetGraphicsId(avatar);
+            const struct ObjectEventGraphicsInfo *info = GetObjectEventGraphicsInfo(graphicsId);
+            u16 tileTag = info->tileTag;
+            u8 palette = IndexOfSpritePaletteTag(info->paletteTag);
+
+            if (palette != 0xFF)
+                FieldEffectFreePaletteIfUnused(palette);
+            if (tileTag == TAG_NONE && info->compressed)
+                tileTag = COMP_OW_TILE_TAG_BASE + graphicsId;
+            if (tileTag != TAG_NONE)
+            {
+                u16 tileStart = GetSpriteTileStartByTag(tileTag);
+                if (tileStart != TAG_NONE)
+                    FieldEffectFreeTilesIfUnused(tileStart);
+            }
+        }
     }
-    Print(COMPOUND_STRING("LEFT/RIGHT: choose"), 8, 80);
-    Print(COMPOUND_STRING("A: use     B: cancel"), 8, 96);
-    Print(COMPOUND_STRING("Walking appearance only."), 8, 116);
-    Print(COMPOUND_STRING("Save your game to keep it."), 8, 130);
-    sPreview = CreateObjectGraphicsSprite(CoopCharacter_GetGraphicsId(avatar), SpriteCallbackDummy, 120, 66, 0);
-    if (sPreview != MAX_SPRITES)
-    {
-        gSprites[sPreview].oam.priority = 0;
-        StartSpriteAnim(&gSprites[sPreview], ANIM_STD_GO_SOUTH);
-    }
-    else
-    {
-        u8 palette = IndexOfSpritePaletteTag(GetObjectEventGraphicsInfo(CoopCharacter_GetGraphicsId(avatar))->paletteTag);
-        if (palette != 0xFF) FieldEffectFreePaletteIfUnused(palette);
-        Print(COMPOUND_STRING("Preview unavailable"), 8, 48);
-    }
+    Print(COMPOUND_STRING("D-PAD: choose  L/R: page"), 8, 124);
+    Print(COMPOUND_STRING("A: use  B: cancel"), 8, 136);
     CopyWindowToVram(sWindow, COPYWIN_GFX);
 }
 
@@ -205,19 +284,46 @@ static void Close(u8 taskId)
 static void Task_Character(u8 taskId)
 {
     if (JOY_NEW(B_BUTTON)) { Close(taskId); return; }
-    if (JOY_NEW(DPAD_LEFT | DPAD_UP))
+    if (JOY_NEW(DPAD_LEFT))
     {
         sChoice = sChoice == 0 ? COOP_CHARACTER_COUNT : sChoice - 1;
         Draw();
     }
-    else if (JOY_NEW(DPAD_RIGHT | DPAD_DOWN))
+    else if (JOY_NEW(DPAD_RIGHT))
     {
         sChoice = (sChoice + 1) % (COOP_CHARACTER_COUNT + 1);
+        Draw();
+    }
+    else if (JOY_NEW(DPAD_UP) && sChoice >= 3)
+    {
+        sChoice -= 3;
+        Draw();
+    }
+    else if (JOY_NEW(DPAD_DOWN) && sChoice + 3 <= COOP_CHARACTER_COUNT)
+    {
+        sChoice += 3;
+        Draw();
+    }
+    else if (JOY_NEW(L_BUTTON | R_BUTTON))
+    {
+        u8 pageCount = (COOP_CHARACTER_COUNT / CHARACTERS_PER_PAGE) + 1;
+        u8 slot = sChoice % CHARACTERS_PER_PAGE;
+        u8 page = sChoice / CHARACTERS_PER_PAGE;
+
+        if (JOY_NEW(L_BUTTON))
+            page = page == 0 ? pageCount - 1 : page - 1;
+        else
+            page = (page + 1) % pageCount;
+        sChoice = page * CHARACTERS_PER_PAGE + slot;
+        if (sChoice > COOP_CHARACTER_COUNT)
+            sChoice = COOP_CHARACTER_COUNT;
         Draw();
     }
     if (JOY_NEW(A_BUTTON))
     {
         struct ObjectEvent *player = &gObjectEvents[gPlayerAvatar.objectEventId];
+        // Release preview sheets and palettes before changing the live player sprite.
+        RemovePreview();
         CoopCharacter_SetSelection(sChoice);
         // Specialized states retain their native graphics until returning on foot.
         if (gPlayerAvatar.flags & PLAYER_AVATAR_FLAG_ON_FOOT)
@@ -236,7 +342,8 @@ void CoopCharacter_Open(void)
     sWindow = AddWindow(&sWindowTemplate);
     if (sWindow == WINDOW_NONE) goto fail;
     CreateTask(Task_Character, 0x50);
-    sPreview = MAX_SPRITES;
+    for (u32 i = 0; i < CHARACTERS_PER_PAGE; i++)
+        sPreviews[i] = MAX_SPRITES;
     sChoice = CoopCharacter_GetSelection();
     PutWindowTilemap(sWindow);
     DrawStdWindowFrame(sWindow, FALSE);

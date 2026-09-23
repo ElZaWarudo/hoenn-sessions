@@ -11,7 +11,7 @@
 #include "constants/vars.h"
 #include "test/test.h"
 
-_Static_assert(COOP_CHARACTER_COUNT == 176, "all compatible field characters are selectable");
+_Static_assert(COOP_CHARACTER_COUNT == 206, "legacy and Johto characters are selectable");
 
 TEST("Cloud Coop Character validates persistent choices without changing identity")
 {
@@ -77,25 +77,40 @@ TEST("Cloud Coop Character roster provides all player direction and run animatio
     }
 }
 
-TEST("Cloud Coop Character can preview the complete roster without exhausting graphics memory")
+TEST("Cloud Coop Character can show six previews per page without exhausting graphics memory")
 {
-    u32 i;
+    u32 page, slot;
+    u8 sprites[6];
 
     ResetSpriteData();
     FreeAllSpritePalettes();
-    for (i = 1; i <= COOP_CHARACTER_COUNT; i++)
+    for (page = 0; page <= COOP_CHARACTER_COUNT / 6; page++)
     {
-        u8 spriteId = CreateObjectGraphicsSprite(
-            CoopCharacter_GetGraphicsId(i),
-            SpriteCallbackDummy,
-            120,
-            66,
-            0);
-        EXPECT_NE(spriteId, MAX_SPRITES);
-        if (spriteId == MAX_SPRITES)
-            break;
-        StartSpriteAnim(&gSprites[spriteId], ANIM_STD_GO_SOUTH);
-        FieldEffectFreeGraphicsResources(&gSprites[spriteId]);
+        for (slot = 0; slot < 6; slot++)
+        {
+            u32 choice = page * 6 + slot;
+            sprites[slot] = MAX_SPRITES;
+            if (choice > COOP_CHARACTER_COUNT)
+                continue;
+            if (choice == 0)
+                choice = COOP_PRESENCE_AVATAR_BRENDAN;
+            sprites[slot] = CreateObjectGraphicsSprite(
+                CoopCharacter_GetGraphicsId(choice), SpriteCallbackDummy,
+                48 + (slot % 3) * 68, 44 + (slot / 3) * 57, 0);
+            EXPECT_NE(sprites[slot], MAX_SPRITES);
+            if (sprites[slot] != MAX_SPRITES)
+                StartSpriteAnim(&gSprites[sprites[slot]], ANIM_STD_GO_SOUTH);
+        }
+        for (slot = 0; slot < 6; slot++)
+            if (sprites[slot] != MAX_SPRITES)
+                FieldEffectFreeGraphicsResources(&gSprites[sprites[slot]]);
     }
-    EXPECT_EQ(i, COOP_CHARACTER_COUNT + 1);
+}
+
+TEST("Cloud Coop Character appends Johto appearances without changing legacy ids")
+{
+    EXPECT_EQ(CoopCharacter_GetGraphicsId(1), OBJ_EVENT_GFX_BRENDAN_NORMAL);
+    EXPECT_EQ(CoopCharacter_GetGraphicsId(177), OBJ_EVENT_GFX_JOHTO_SILVER);
+    EXPECT_EQ(CoopCharacter_GetGraphicsId(191), OBJ_EVENT_GFX_JOHTO_SCIENTIST_F);
+    EXPECT_EQ(CoopCharacter_GetGraphicsId(206), OBJ_EVENT_GFX_JOHTO_JANINE);
 }
