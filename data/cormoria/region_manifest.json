@@ -22049,7 +22049,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/AncientMirroh_Caves_B1F/map.json:object_events[0]"
         ]
@@ -22063,7 +22063,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SSElegant/map.json:object_events[1]"
         ]
@@ -22077,7 +22077,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CeramBaseCamp_House1/map.json:object_events[1]",
           "data/maps/Championship_R1/map.json:object_events[1]"
@@ -22092,7 +22092,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[27]"
         ]
@@ -22106,7 +22106,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/DoroaTown_Houses/map.json:object_events[3]"
         ]
@@ -22120,7 +22120,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/PellucaCityRestaurant/map.json:object_events[12]"
         ]
@@ -22134,7 +22134,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity_DetectiveAcademy/map.json:object_events[21]",
           "data/maps/GalecrestCity_DetectiveAcademy/map.json:object_events[22]",
@@ -22150,7 +22150,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity/map.json:object_events[10]",
           "data/maps/RivetshoreQuarry/map.json:object_events[10]",
@@ -22192,7 +22192,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R3/map.json:object_events[1]",
           "data/maps/RivetshoreQuarry/map.json:object_events[33]"
@@ -22207,7 +22207,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtCeram_Caves/map.json:object_events[6]"
         ]
@@ -22221,7 +22221,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RangerInstitute/map.json:object_events[15]"
         ]
@@ -22235,7 +22235,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CeramBaseCamp/map.json:object_events[12]",
           "data/maps/GastreeCity/map.json:object_events[9]",
@@ -22252,7 +22252,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/LilyPondCave/map.json:object_events[0]",
           "data/maps/LilyPondCave/map.json:object_events[6]"
@@ -22267,7 +22267,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Pokemart/map.json:object_events[7]"
         ]
@@ -22281,7 +22281,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_ResearchFacility/map.json:object_events[12]"
         ]
@@ -22295,7 +22295,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/FennilahlTown/map.json:object_events[6]"
         ]
@@ -22309,7 +22309,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GastreeCity_House1/map.json:object_events[1]"
         ]
@@ -22323,7 +22323,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[33]"
         ]
@@ -22337,7 +22337,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/VilethornWoods/map.json:object_events[30]"
         ]
@@ -22351,7 +22351,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R5/map.json:object_events[1]"
         ]
@@ -22365,7 +22365,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[36]"
         ]
@@ -22379,7 +22379,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Hotel_Rooms/map.json:object_events[5]"
         ]
@@ -22393,7 +22393,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity/map.json:object_events[36]",
           "data/maps/MirrohBaseCamp_PokemonCenter/map.json:object_events[5]",
@@ -22424,7 +22424,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity_DetectiveAcademy/map.json:object_events[17]",
           "data/maps/GalecrestCity_DetectiveAcademy/map.json:object_events[19]",
@@ -22440,7 +22440,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtCeram/map.json:object_events[17]"
         ]
@@ -22454,7 +22454,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CarabrueTown/map.json:object_events[4]"
         ]
@@ -22468,7 +22468,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[25]"
         ]
@@ -22482,7 +22482,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity_HousesRich/map.json:object_events[10]"
         ]
@@ -22496,7 +22496,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_Sharpedo/map.json:object_events[2]"
         ]
@@ -22510,7 +22510,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtMirrohExterior/map.json:object_events[5]",
           "data/maps/SSElegant/map.json:object_events[16]",
@@ -22528,7 +22528,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/FennilahlTown/map.json:object_events[7]",
           "data/maps/GalecrestCity_DetectiveAcademy/map.json:object_events[16]",
@@ -22546,7 +22546,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_ResearchFacility/map.json:object_events[13]",
           "data/maps/RivetshoreCity_Houses/map.json:object_events[8]"
@@ -22561,7 +22561,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R2_Lobby/map.json:object_events[4]",
           "data/maps/MtMirrohExterior/map.json:object_events[11]"
@@ -22576,7 +22576,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/PellucaCity/map.json:object_events[27]",
           "data/maps/PellucaCity/map.json:object_events[28]",
@@ -22594,7 +22594,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/FennilahlTown_PokemonCenter/map.json:object_events[3]"
         ]
@@ -22608,7 +22608,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CeramBaseCamp/map.json:object_events[8]"
         ]
@@ -22622,7 +22622,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R1_Lobby/map.json:object_events[7]",
           "data/maps/PellucaCityHouses/map.json:object_events[7]"
@@ -22637,7 +22637,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route4/map.json:object_events[20]"
         ]
@@ -22651,7 +22651,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route3_Underpass_Extended/map.json:object_events[6]"
         ]
@@ -22665,7 +22665,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/PellucaCityRestaurant/map.json:object_events[13]"
         ]
@@ -22679,7 +22679,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Corridor/map.json:object_events[9]",
           "data/maps/SSElegant_Rooms/map.json:object_events[8]"
@@ -22694,7 +22694,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/LilyPondCave/map.json:object_events[4]"
         ]
@@ -22708,7 +22708,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/LilyPondCave/map.json:object_events[5]"
         ]
@@ -22722,7 +22722,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver/map.json:object_events[5]",
           "data/maps/IvyRiver/map.json:object_events[6]",
@@ -22740,7 +22740,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CarabrueTown/map.json:object_events[5]",
           "data/maps/CeramBaseCamp/map.json:object_events[13]",
@@ -22764,7 +22764,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity/map.json:object_events[44]",
           "data/maps/Route3_Underpass/map.json:object_events[11]"
@@ -22779,7 +22779,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Corridor/map.json:object_events[10]"
         ]
@@ -22793,7 +22793,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity_Sewers/map.json:object_events[23]"
         ]
@@ -22807,7 +22807,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Corridor/map.json:object_events[6]"
         ]
@@ -22821,7 +22821,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R1_Lobby/map.json:object_events[6]"
         ]
@@ -22835,7 +22835,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity_BlindOrphanage/map.json:object_events[8]",
           "data/maps/SilversunCity_Houses/map.json:object_events[7]"
@@ -22850,7 +22850,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CarabrueTown_TenebrisLab/map.json:object_events[11]",
           "data/maps/CarabrueTown_TenebrisLab_Finale/map.json:object_events[6]"
@@ -22865,7 +22865,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity/map.json:object_events[9]"
         ]
@@ -22879,7 +22879,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CarabrueTown_Home2F/map.json:object_events[1]"
         ]
@@ -22893,7 +22893,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R3_Lobby/map.json:object_events[3]"
         ]
@@ -22907,7 +22907,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Legends/map.json:object_events[5]",
           "data/maps/Legends/map.json:object_events[6]"
@@ -22922,7 +22922,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/WinterlilyHollow_Houses/map.json:object_events[4]"
         ]
@@ -22936,7 +22936,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohBaseCamp/map.json:object_events[10]",
           "data/maps/MirrohBaseCamp/map.json:object_events[11]"
@@ -22951,7 +22951,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_Sharpedo/map.json:object_events[3]"
         ]
@@ -22965,7 +22965,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/LilyPondCave/map.json:object_events[8]",
           "data/maps/MirrohBaseCamp_Houses/map.json:object_events[3]"
@@ -22980,7 +22980,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Legends/map.json:object_events[7]",
           "data/maps/PellucaCityRestaurant/map.json:object_events[15]",
@@ -22996,7 +22996,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity_HousesPoor/map.json:object_events[6]"
         ]
@@ -23010,7 +23010,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Rivetshore_Lookout/map.json:object_events[1]"
         ]
@@ -23024,7 +23024,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/AncientMirroh_Tower_4F/map.json:object_events[3]",
           "data/maps/UnchartedIsland/map.json:object_events[33]"
@@ -23039,7 +23039,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreQuarry_Interior/map.json:object_events[11]",
           "data/maps/RivetshoreQuarry_Interior/map.json:object_events[13]",
@@ -23057,7 +23057,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Pokemart/map.json:object_events[8]",
           "data/maps/MirrohFightingDojo/map.json:object_events[4]"
@@ -23072,7 +23072,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity_Leader_Basement/map.json:object_events[0]"
         ]
@@ -23086,7 +23086,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[26]"
         ]
@@ -23100,7 +23100,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohInterior_2F/map.json:object_events[20]",
           "data/maps/PellucaCity/map.json:object_events[23]"
@@ -23115,7 +23115,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[22]",
           "data/maps/MirrohPeak/map.json:object_events[17]",
@@ -23131,7 +23131,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/UnchartedIsland/map.json:object_events[23]"
         ]
@@ -23145,7 +23145,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GastreeCity/map.json:object_events[12]"
         ]
@@ -23159,7 +23159,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity/map.json:object_events[12]"
         ]
@@ -23173,7 +23173,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R2_Lobby/map.json:object_events[5]"
         ]
@@ -23187,7 +23187,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[35]",
           "data/maps/RangerInstitute/map.json:object_events[17]"
@@ -23202,7 +23202,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/FennilahlTown_House3/map.json:object_events[2]"
         ]
@@ -23216,7 +23216,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtMirrohExterior/map.json:object_events[12]"
         ]
@@ -23230,7 +23230,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SSElegant_Common/map.json:object_events[3]"
         ]
@@ -23244,7 +23244,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity/map.json:object_events[12]"
         ]
@@ -23258,7 +23258,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CarabrueTown_TenebrisLab/map.json:object_events[12]"
         ]
@@ -23272,7 +23272,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/LilyPond/map.json:object_events[0]",
           "data/maps/WinterlilyHollow/map.json:object_events[4]",
@@ -23288,7 +23288,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreQuarry/map.json:object_events[32]"
         ]
@@ -23302,7 +23302,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Venue/map.json:object_events[9]",
           "data/maps/RivetshoreCity_Harbor/map.json:object_events[5]",
@@ -23318,7 +23318,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity_Sewers/map.json:object_events[18]"
         ]
@@ -23332,7 +23332,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity/map.json:object_events[11]"
         ]
@@ -23346,7 +23346,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity/map.json:object_events[35]"
         ]
@@ -23360,7 +23360,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity_BlindOrphanage/map.json:object_events[10]"
         ]
@@ -23374,7 +23374,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Legends/map.json:object_events[8]",
           "data/maps/Legends/map.json:object_events[9]"
@@ -23389,7 +23389,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route8_House/map.json:object_events[2]"
         ]
@@ -23403,7 +23403,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[11]",
           "data/maps/RangerInstitute/map.json:object_events[16]"
@@ -23418,7 +23418,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity_Construction/map.json:object_events[13]",
           "data/maps/RivetshoreQuarry/map.json:object_events[29]"
@@ -23433,7 +23433,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CeramBaseCamp_PokemonCenter/map.json:object_events[3]",
           "data/maps/MirrohInterior_1F/map.json:object_events[27]"
@@ -23448,7 +23448,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R2/map.json:object_events[1]",
           "data/maps/IvyRiver_Main/map.json:object_events[7]"
@@ -23463,7 +23463,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GastreeCity/map.json:object_events[13]"
         ]
@@ -23477,7 +23477,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity_BlindOrphanage/map.json:object_events[9]",
           "data/maps/VilethornWoods/map.json:object_events[17]",
@@ -23494,7 +23494,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/FennilahlTown_House3/map.json:object_events[3]"
         ]
@@ -23508,7 +23508,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohFightingDojo/map.json:object_events[5]"
         ]
@@ -23522,7 +23522,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Corridor/map.json:object_events[7]"
         ]
@@ -23536,7 +23536,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohInterior_2F/map.json:object_events[23]"
         ]
@@ -23550,7 +23550,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_ResearchFacility/map.json:object_events[10]"
         ]
@@ -23564,7 +23564,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity_Houses/map.json:object_events[7]"
         ]
@@ -23578,7 +23578,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RangerInstitute/map.json:object_events[18]"
         ]
@@ -23592,7 +23592,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/PellucaCity/map.json:object_events[25]"
         ]
@@ -23606,7 +23606,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_Sharpedo/map.json:object_events[0]"
         ]
@@ -23620,7 +23620,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[34]"
         ]
@@ -23634,7 +23634,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GastreeCity_TeaHouse/map.json:object_events[6]"
         ]
@@ -23648,7 +23648,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtCeram_Caves/map.json:object_events[3]"
         ]
@@ -23662,7 +23662,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route3/map.json:object_events[11]"
         ]
@@ -23676,7 +23676,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GastreeCity/map.json:object_events[11]",
           "data/maps/GastreeCity/map.json:object_events[15]",
@@ -23693,7 +23693,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity_StorageBay/map.json:object_events[0]"
         ]
@@ -23707,7 +23707,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CeramBaseCamp_Main/map.json:object_events[14]",
           "data/maps/Championship_Hotel/map.json:object_events[6]",
@@ -23724,7 +23724,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohInterior_B1F/map.json:object_events[0]",
           "data/maps/WinterlilyHollow/map.json:object_events[6]"
@@ -23739,7 +23739,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GastreeCity_TeaHouse/map.json:object_events[5]"
         ]
@@ -23753,7 +23753,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohInterior_2F/map.json:object_events[19]",
           "data/maps/WinterlilyHollow/map.json:object_events[5]"
@@ -23768,7 +23768,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/PellucaCity/map.json:object_events[33]"
         ]
@@ -23782,7 +23782,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_ResearchFacility/map.json:object_events[11]"
         ]
@@ -23796,7 +23796,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/RivetshoreCity/map.json:object_events[11]"
         ]
@@ -23810,7 +23810,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/CeramBaseCamp/map.json:object_events[10]"
         ]
@@ -23824,7 +23824,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Venue/map.json:object_events[10]",
           "data/maps/IvyRiver/map.json:object_events[10]",
@@ -23844,7 +23844,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity/map.json:object_events[34]"
         ]
@@ -23858,7 +23858,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_R1_Lobby/map.json:object_events[5]"
         ]
@@ -23872,7 +23872,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtMirrohExterior/map.json:object_events[10]"
         ]
@@ -23886,7 +23886,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship_Corridor/map.json:object_events[8]"
         ]
@@ -23900,7 +23900,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route8_House/map.json:object_events[1]"
         ]
@@ -23914,7 +23914,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity_Sewers/map.json:object_events[14]"
         ]
@@ -23928,7 +23928,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtCeram_Caves/map.json:object_events[4]"
         ]
@@ -23942,7 +23942,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route6/map.json:object_events[30]"
         ]
@@ -23956,7 +23956,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/SilversunCity/map.json:object_events[10]"
         ]
@@ -23970,7 +23970,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MirrohInterior_2F/map.json:object_events[24]",
           "data/maps/PellucaCity_GameCorner/map.json:object_events[13]"
@@ -23985,7 +23985,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/GalecrestCity_DetectiveAcademy/map.json:object_events[18]"
         ]
@@ -23999,7 +23999,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[24]"
         ]
@@ -24013,7 +24013,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/IvyRiver_ZarudeForest/map.json:object_events[0]"
         ]
@@ -24027,7 +24027,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Route6_ZeraoraCave/map.json:object_events[0]"
         ]
@@ -24041,7 +24041,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/Championship/map.json:object_events[3]",
           "data/maps/Championship_R4/map.json:object_events[1]",
@@ -24058,7 +24058,7 @@
         "host_species_definition": "include/constants/species.h",
         "host_species_header_sha256": "41031bbda0fd3316bbfb4e598d97d18347e34ba97d865fefdc4c3bcd9ae46cdb",
         "host_constructor_definition": "include/constants/event_objects.h",
-        "host_constructor_header_sha256": "ad6469b9b34fd6fff58cf4806eb60ed20b34a41c94f8ce6f32247a7d69e45732",
+        "host_constructor_header_sha256": "387c1aa83e8d8c0f9b30c5fde1c6043e7594901db1cf3f7fbb4b2900f2dda526",
         "owners": [
           "data/maps/MtCeram/map.json:object_events[22]"
         ]
