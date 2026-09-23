@@ -72,7 +72,15 @@ The pinned donor inventory passed all 15 tests and a fresh `--check`: 165 maps/l
 
 The split-world generator is committed at `bc15ca2fc0`. Five tests compiled the generator and assembled its output for both world selections. Map and layout IDs retain their slots; main, Cormoria and shared content produce the expected table entries. Invalid world metadata is rejected. The default world build with `ROM_WORLD=1` completed in `/home/teb/codex-builds/cormoria-build` using `make -j8 modern`; linked usage remained ROM 31,597,600, EWRAM 243,352 and IWRAM 28,648 bytes. Its padded ROM SHA-256 is `8bd4ca588f1a4e4fa15ab350ee37b4072900e3e1444108080771c0af2b1ea266` and ELF SHA-256 is `4f79d6f9f2870aece60185263eee4f040f2d6f269601c1c8f66927d11ec32ee3`. Those hashes differ from the unchanged baseline. The emitted map/layout content for world 1 was text-equivalent after stripping the new assembly guards; linked symbol differences begin in ARM veneer ordering. This is a resource regression check, not byte identity.
 
-The Cormoria build profile selects its own output name and ROM header identity, but the region has not yet been imported. A bootable Cormoria ROM, safe foreign-map handoff, migrated saves and co-op travel are still pending; do not distribute a world-2 build from this checkpoint.
+The Cormoria build profile selects its own output name and ROM header identity, but the region has not yet been imported. A bootable Cormoria campaign, safe foreign-map handoff, new traveling V2 saves and co-op travel are still pending; do not distribute a world-2 build from this checkpoint.
+
+## Registry-backed Cormoria profile baseline — 2026-09-23
+
+The native WSL snapshot at `/home/teb/codex-builds/cormoria-wide-header-734a` contains the verified wide-section and world-registry patches, the region-map predicate correction, and the Makefile recursion correction. It predates the later account/download portal merge, which did not touch ROM sources. A first `make -s -j8 modern ROM_WORLD=cormoria` attempt exposed that the top-level generation recursion omitted `ROM_WORLD`; the parent and child repeatedly rewrote `.map_version` as worlds 2 and 1. Passing the resolved world bit into that recursion removed the loop. The rerun compiled and linked `pokeemerald-cormoria.gba` successfully.
+
+The linked Cormoria-profile ROM uses 29,249,476 of 33,554,432 bytes (87.17%), leaving 4,304,956 bytes before donor content. EWRAM uses 243,444 of 262,144 bytes and IWRAM uses 28,648 of 32,768 bytes. The ROM header title is `CORMORIA`, game code `BPCO`; padded ROM SHA-256 is `db6b517eeb4a9dee6157019482f8c28deb29c9988b973f5caecfc50912203908`, and ELF SHA-256 is `2b90dbd3f81b83b42b0361759f01e4213aba3c7de015548100942f9f16533ac2`.
+
+This is a build-profile and resource baseline. The donor's 165 maps and quest runtime remain unregistered, and no cross-ROM travel has been observed.
 
 ## Main synchronization — 2026-09-23
 

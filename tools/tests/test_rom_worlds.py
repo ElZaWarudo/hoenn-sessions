@@ -143,6 +143,24 @@ class RomWorldTests(unittest.TestCase):
                       selected("ROM_WORLD=third", "TITLE=WRONG", "GAME_CODE=XXXX",
                                "MAP_VERSION=firered").stdout)
 
+        # The real build scans generated files in a recursive make. Its child
+        # must receive both the resolved world bit and base-game version.
+        third = self.registry["worlds"][-1]
+        third.update({"game_version": "FIRERED", "map_version": "firered",
+                      "build_name": "firered-third"})
+        self.write("data/rom_worlds.json", self.registry)
+        recursive_line = next(line for line in (ROOT / "Makefile").read_text().splitlines()
+                              if "$(MAKE)" in line and " generated | sed " in line)
+        (self.root / "Makefile").write_text(
+            selector_block + "\nifneq ($(MAKECMDGOALS),generated)\n"
+            + recursive_line + "\nendif\n"
+            + ".PHONY: firered generated\nfirered:\n\t@echo parent $(ROM_WORLD)\n"
+            + "generated:\n\t@echo child $(ROM_WORLD) $(GAME_VERSION) $(MAP_VERSION)\n")
+        result = subprocess.run(["make", "-s", "firered", "ROM_WORLD=third"],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("child 4 FIRERED firered", result.stdout)
+
     def test_third_world_and_explicit_membership(self):
         self.registry["worlds"].append({"name": "third", "world_id": 7, "build_bit": 4,
                                         "game_version": "EMERALD", "map_version": "emerald",
