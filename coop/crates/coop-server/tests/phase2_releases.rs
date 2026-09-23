@@ -35,7 +35,7 @@ impl Drop for Fixture {
     }
 }
 
-async fn fixture() -> TestResult<Fixture> {
+fn fixture() -> TestResult<Fixture> {
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let root = std::env::temp_dir().join(format!("coop-release-api-{stamp}"));
     fs::create_dir_all(&root)?;
@@ -49,6 +49,14 @@ async fn fixture() -> TestResult<Fixture> {
         b"{\"release_id\":\"apk-one\",\"version_code\":4}",
     )?;
     fs::write(android.join(releases::ANDROID_APK_FILE), b"private-apk")?;
+    let installer = root.join(releases::INSTALLER_DIRECTORY).join("msi-one");
+    fs::create_dir_all(&installer)?;
+    fs::write(root.join(releases::INSTALLER_CURRENT_FILE), b"msi-one\n")?;
+    fs::write(
+        installer.join(releases::INSTALLER_METADATA_FILE),
+        b"{\"release_id\":\"msi-one\"}",
+    )?;
+    fs::write(installer.join(releases::INSTALLER_MSI_FILE), b"private-msi")?;
 
     let config = Phase2Config::local(
         vec![0x55; 32],
@@ -115,8 +123,169 @@ fn assert_private_no_store(headers: &HeaderMap) {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines, reason = "covers the complete invitation and registration HTTP flow")]
+async fn portal_invitation_requires_login_and_registers_once() -> TestResult<()> {
+    let fixture = fixture()?;
+    let page = fixture
+        .app
+        .router()
+        .oneshot(Request::builder().uri("/").body(Body::empty())?)
+        .await?;
+    assert_eq!(page.status(), StatusCode::OK);
+    assert!(
+        page.headers()[header::CONTENT_TYPE]
+            .to_str()?
+            .starts_with("text/html")
+    );
+    let uri = "/v1/auth/invitations";
+    let unauthorized = fixture
+        .app
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    let response = fixture
+        .app
+        .router()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", fixture.access_token),
+                )
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let bytes = response.into_body().collect().await?.to_bytes();
+    let code = serde_json::from_slice::<serde_json::Value>(&bytes)?["invitation_code"]
+        .as_str()
+        .ok_or("missing invitation code")?
+        .to_owned();
+    let invite = |token: &str| {
+        Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+    };
+    for _ in 0..4 {
+        assert_eq!(
+            fixture
+                .app
+                .router()
+                .oneshot(invite(&fixture.access_token)?)
+                .await?
+                .status(),
+            StatusCode::CREATED
+        );
+    }
+    assert_eq!(
+        fixture
+            .app
+            .router()
+            .oneshot(invite(&fixture.access_token)?)
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    let registration = RegisterRequest::new(
+        "SecondPlayer",
+        Password::new("another-password")?,
+        InvitationCode::new(code)?,
+    )?;
+    let body = serde_json::to_vec(&registration)?;
+    let register = || {
+        Request::builder()
+            .method("POST")
+            .uri("/v1/auth/register")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.clone()))
+    };
+    assert_eq!(
+        fixture.app.router().oneshot(register()?).await?.status(),
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        fixture.app.router().oneshot(register()?).await?.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        fixture
+            .app
+            .router()
+            .oneshot(invite(&fixture.access_token)?)
+            .await?
+            .status(),
+        StatusCode::CREATED
+    );
+    let second = fixture.app.login(LoginRequest::new(
+        "SecondPlayer",
+        Password::new("another-password")?,
+    )?)?;
+    assert_eq!(
+        fixture
+            .app
+            .router()
+            .oneshot(invite(second.access_token.expose_secret())?)
+            .await?
+            .status(),
+        StatusCode::CREATED
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn windows_installer_is_private_and_streamed_from_fixed_path() -> TestResult<()> {
+    let fixture = fixture()?;
+    for uri in [
+        "/v1/releases/windows-x86_64/installer/latest",
+        "/v1/releases/windows-x86_64/installer/msi-one/msi",
+    ] {
+        let (status, headers, _) = request(fixture.app.router(), uri, None, None).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_private_no_store(&headers);
+        let (status, _, _) = request(
+            fixture.app.router(),
+            uri,
+            Some(&fixture.access_token),
+            Some("bytes=0-1"),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    let (status, _, metadata) = request(
+        fixture.app.router(),
+        "/v1/releases/windows-x86_64/installer/latest",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(metadata, b"{\"release_id\":\"msi-one\"}");
+    let (status, headers, bytes) = request(
+        fixture.app.router(),
+        "/v1/releases/windows-x86_64/installer/msi-one/msi",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, b"private-msi");
+    assert_eq!(headers[header::CONTENT_TYPE], "application/x-msi");
+    Ok(())
+}
+
+#[tokio::test]
 async fn android_apk_and_metadata_are_authenticated_and_path_closed() -> TestResult<()> {
-    let fixture = fixture().await?;
+    let fixture = fixture()?;
     let latest = "/v1/releases/android/latest";
     let apk = "/v1/releases/android/apk-one/apk";
     for uri in [latest, apk] {
@@ -159,7 +328,7 @@ async fn android_apk_and_metadata_are_authenticated_and_path_closed() -> TestRes
 
 #[tokio::test]
 async fn latest_authenticates_before_filesystem_and_preserves_exact_bytes() -> TestResult<()> {
-    let fixture = fixture().await?;
+    let fixture = fixture()?;
     let uri = "/v1/releases/windows-x86_64/latest";
     let (status, headers, _body) = request(fixture.app.router(), uri, None, None).await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -187,7 +356,7 @@ async fn latest_authenticates_before_filesystem_and_preserves_exact_bytes() -> T
 
 #[tokio::test]
 async fn every_fixed_mapping_streams_exact_bytes_and_unknown_ids_fail() -> TestResult<()> {
-    let fixture = fixture().await?;
+    let fixture = fixture()?;
     for (artifact_id, _) in releases::FIXED_ARTIFACTS {
         let uri = format!("/v1/releases/release-one/artifacts/{artifact_id}");
         let (status, headers, body) = request(
@@ -230,7 +399,7 @@ async fn every_fixed_mapping_streams_exact_bytes_and_unknown_ids_fail() -> TestR
 
 #[tokio::test]
 async fn current_switch_and_path_bounds_fail_closed() -> TestResult<()> {
-    let fixture = fixture().await?;
+    let fixture = fixture()?;
     write_release(&fixture.root, "release-two", b"signed-envelope-two")?;
     let current_tmp = fixture.root.join("current.tmp");
     fs::write(&current_tmp, b"release-two\n")?;
@@ -328,7 +497,7 @@ async fn current_switch_and_path_bounds_fail_closed() -> TestResult<()> {
 async fn symlink_artifacts_are_rejected() -> TestResult<()> {
     use std::os::unix::fs::symlink;
 
-    let fixture = fixture().await?;
+    let fixture = fixture()?;
     let outside = fixture.root.join("outside.bin");
     fs::write(&outside, b"outside")?;
     let rom = fixture
