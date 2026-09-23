@@ -1,4 +1,5 @@
 #include "global.h"
+#include "data.h"
 #include "coop/character.h"
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
