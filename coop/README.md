@@ -143,14 +143,15 @@ legal local ROM build, generate the address artifacts:
 python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
 ```
 
-The generated `dist/bridge_manifest.json` uses outer schema 3 and identifies
-the official mGBA 0.10.5 Windows x64 Qt artifact: archive SHA-256
-`b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a` and
+The generated `dist/bridge_manifest.json` uses outer schema 4 and identifies
+the official mGBA 0.11.0 Windows x64 Qt artifact: archive SHA-256
+`ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b` and
 executable SHA-256
-`5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247`. The launcher
+`743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546`. The launcher
 owns executable identity validation before probing or spawning mGBA. Lua gets
 only the generated address projection and does not receive or validate those
-host executable digests.
+host executable digests. (Android embeds a separately pinned 0.10.5 core; the
+Windows emulator metadata in the shared ROM manifest is not its version.)
 
 Before creating `session.lua` or starting the sidecar, the launcher must hash
 the selected ROM and require an exact match with `game_build.rom_sha256` in
@@ -158,11 +159,12 @@ the selected ROM and require an exact match with `game_build.rom_sha256` in
 does not replace this whole-file launcher check or the launcher-owned mGBA
 identity check.
 
-Open the matching ROM in the validated official mGBA 0.10.5 Windows x64 Qt
-build, choose **Tools → Scripting**, and manually load `bridge/main.lua`.
-Stock mGBA 0.10.5 requires this UI action; there is no supported script autoload
-command-line flag. Generated addresses, session secrets, ROMs, saves,
-savestates, and BIOS files must remain uncommitted.
+The launcher starts the validated official mGBA 0.11.0 Windows x64 Qt build
+with the matching ROM and passes `--script` for the materialized bridge
+script. Only when running stock mGBA without the launcher, choose
+**Tools → Scripting** and manually load `bridge/main.lua`. Generated
+addresses, session secrets, ROMs, saves, savestates, and BIOS files must
+remain uncommitted.
 
 ## Social presence: follower, pings, emotes
 

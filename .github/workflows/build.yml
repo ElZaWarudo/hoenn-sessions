@@ -390,12 +390,22 @@ jobs:
           lua5.4 bridge/tests/memory_test.lua
           lua5.4 bridge/tests/protocol_test.lua
 
+  tools-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python tool suites
+        run: |
+          python3 -m unittest discover -s tools/tests -p "test_*.py"
+
   # Gate job: satisfies the "build" branch protection rule.
   # Validate intentional skips as well as failures; a skipped gate is not a pass.
   build:
     if: always() && github.actor != 'allcontributors[bot]'
     runs-on: ubuntu-24.04
-    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, installer-package-smoke, bridge-lua]
+    needs: [changes, build-emerald, build-firered, build-leafgreen, release, build-test-rom, test, rust, installer-package-smoke, bridge-lua, tools-tests]
     steps:
       - name: Check every required job
         env:
@@ -417,6 +427,7 @@ jobs:
               for name in names:
                   assert jobs[name]['result'] == expected, f'{name}: {jobs[name]["result"]}, expected {expected}'
           assert jobs['bridge-lua']['result'] == 'success', f'bridge-lua: {jobs["bridge-lua"]["result"]}, expected success'
+          assert jobs['tools-tests']['result'] == 'success', f'tools-tests: {jobs["tools-tests"]["result"]}, expected success'
           print('All required builds and tests passed.')
           PY
 
