@@ -27,8 +27,25 @@ public final class OverlaySmoke extends Instrumentation {
                 overlay.dispatchTouchEvent(up);up.recycle();
                 check(!overlay.fastForwardHeld(),"Fast-forward stayed active after release");
                 check(!overlay.fastForwardHeld(),"Fast-forward behaved as a toggle");
+
+                float[] a=overlay.controlCenter("A"),b=overlay.controlCenter("B");
+                down=MotionEvent.obtain(now,now+200,MotionEvent.ACTION_DOWN,a[0],a[1],0);
+                overlay.dispatchTouchEvent(down);down.recycle();
+                check(overlay.keys()==1,"A did not activate on press");
+                MotionEvent move=MotionEvent.obtain(now,now+250,MotionEvent.ACTION_MOVE,b[0],b[1],0);
+                overlay.dispatchTouchEvent(move);move.recycle();
+                check(overlay.keys()==2,"Dragging from A to B did not switch buttons");
+                move=MotionEvent.obtain(now,now+300,MotionEvent.ACTION_MOVE,1170,540,0);
+                overlay.dispatchTouchEvent(move);move.recycle();
+                check(overlay.keys()==0,"Dragging away did not release B");
+                move=MotionEvent.obtain(now,now+350,MotionEvent.ACTION_MOVE,a[0],a[1],0);
+                overlay.dispatchTouchEvent(move);move.recycle();
+                check(overlay.keys()==1,"Dragging back did not activate A");
+                up=MotionEvent.obtain(now,now+400,MotionEvent.ACTION_UP,a[0],a[1],0);
+                overlay.dispatchTouchEvent(up);up.recycle();
+                check(overlay.keys()==0,"A stayed active after release");
             });
-            result.putString("overlay","PASS: optional control activates on press and stops on release");
+            result.putString("overlay","PASS: controls follow finger movement and release correctly");
         } catch(Throwable error) { result.putString("failure",error.toString()); }
         finally {
             SharedPreferences.Editor restore=preferences.edit().clear();

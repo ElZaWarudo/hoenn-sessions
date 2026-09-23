@@ -291,7 +291,7 @@ async fn run(
         workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
         bridge_lua_dir: bridge,
     };
-    let acquired = SessionLifecycle::acquire_with_keychain(&api, auth, config, vault.clone()).await;
+    let acquired = SessionLifecycle::acquire_replacing_same_client(&api, auth, config, vault.clone()).await;
     let mut session = match acquired {
         Ok(session) => session,
         Err(error) => {

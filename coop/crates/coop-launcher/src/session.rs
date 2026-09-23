@@ -492,6 +492,8 @@ pub trait CloudApi: AuthApi {
 pub enum SessionError {
     #[error("cloud request failed")]
     Cloud,
+    #[error("previous session is still active")]
+    AcquireConflict,
     #[error("cloud authorization expired")]
     Unauthorized,
     #[error("requested artifact was not found")]
@@ -1619,7 +1621,7 @@ impl SessionLifecycle {
         auth: AuthSession,
         config: SessionConfig,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, None).await
+        Self::acquire_inner(api, auth, config, None, false).await
     }
 
     /// Acquires a session with rotating-token support enabled.  Every
@@ -1636,7 +1638,23 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain)).await
+        Self::acquire_inner(api, auth, config, Some(keychain), false).await
+    }
+
+    /// Replaces a prior lease from this same client instance. Android uses
+    /// this after an APK install has terminated its previous process.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when authentication, fencing, package verification,
+    /// or workspace materialization fails.
+    pub async fn acquire_replacing_same_client<A: CloudApi>(
+        api: &A,
+        auth: AuthSession,
+        config: SessionConfig,
+        keychain: Arc<dyn RefreshTokenStore>,
+    ) -> Result<Self, SessionError> {
+        Self::acquire_inner(api, auth, config, Some(keychain), true).await
     }
 
     async fn acquire_inner<A: CloudApi>(
@@ -1644,13 +1662,17 @@ impl SessionLifecycle {
         mut auth: AuthSession,
         config: SessionConfig,
         keychain: Option<Arc<dyn RefreshTokenStore>>,
+        replace_same_client: bool,
     ) -> Result<Self, SessionError> {
         let idempotency_key = random_idempotency_key()?;
-        let request = AcquireLeaseRequest::new(
+        let mut request = AcquireLeaseRequest::new(
             auth.character_id,
             config.client_instance_id,
             idempotency_key,
         );
+        if replace_same_client {
+            request = request.replacing_same_client();
+        }
         refresh_if_needed(&mut auth, api, keychain.as_ref()).await?;
         let lease = match api.acquire(&auth, request).await {
             Err(SessionError::Unauthorized) => {
@@ -4656,6 +4678,7 @@ mod lifecycle_tests {
         reconnect_epoch: Mutex<Option<u32>>,
         reconnect_transport_once: Mutex<bool>,
         reconnect_requests: Mutex<Vec<ReconnectLeaseRequest>>,
+        acquire_requests: Mutex<Vec<coop_cloud::AcquireLeaseRequest>>,
         heartbeats: Mutex<usize>,
         heartbeat_requests: Mutex<Vec<HeartbeatLeaseRequest>>,
         heartbeat_unauthorized_remaining: Mutex<usize>,
@@ -4695,6 +4718,7 @@ mod lifecycle_tests {
                 reconnect_epoch: Mutex::new(None),
                 reconnect_transport_once: Mutex::new(false),
                 reconnect_requests: Mutex::new(Vec::new()),
+                acquire_requests: Mutex::new(Vec::new()),
                 heartbeats: Mutex::new(0),
                 heartbeat_requests: Mutex::new(Vec::new()),
                 heartbeat_unauthorized_remaining: Mutex::new(0),
@@ -4832,8 +4856,9 @@ mod lifecycle_tests {
         fn acquire<'a>(
             &'a self,
             _auth: &'a crate::AuthSession,
-            _request: coop_cloud::AcquireLeaseRequest,
+            request: coop_cloud::AcquireLeaseRequest,
         ) -> CloudFuture<'a, LeaseContract> {
+            self.acquire_requests.lock().unwrap().push(request);
             let lease = self.lease;
             Box::pin(async move { Ok(lease) })
         }
@@ -5121,6 +5146,13 @@ mod lifecycle_tests {
     }
 
     async fn bootstrap(fail_prepare: bool) -> (TempDir, SessionLifecycle, Arc<TestCloud>) {
+        bootstrap_with_replacement(fail_prepare, false).await
+    }
+
+    async fn bootstrap_with_replacement(
+        fail_prepare: bool,
+        replace_same_client: bool,
+    ) -> (TempDir, SessionLifecycle, Arc<TestCloud>) {
         let root = tempdir().unwrap();
         let bridge = root.path().join("bridge");
         std::fs::create_dir_all(&bridge).unwrap();
@@ -5173,10 +5205,15 @@ mod lifecycle_tests {
             workspace_parent: root.path().join("sessions"),
             bridge_lua_dir: bridge,
         };
-        let session =
+        let session = if replace_same_client {
+            SessionLifecycle::acquire_replacing_same_client(cloud.as_ref(), auth, config, keychain)
+                .await
+                .unwrap()
+        } else {
             SessionLifecycle::acquire_with_keychain(cloud.as_ref(), auth, config, keychain)
                 .await
-                .unwrap();
+                .unwrap()
+        };
         // Tests below inject emulator output through the fixed-file writer.
         // Revision-zero bootstrap intentionally starts without a SAV.
         let character_save = session.workspace.path().join("character.sav");
@@ -5186,6 +5223,14 @@ mod lifecycle_tests {
             Err(error) => panic!("could not clear bootstrap SAV: {error}"),
         }
         (root, session, cloud)
+    }
+
+    #[tokio::test]
+    async fn android_acquire_requests_same_client_replacement() {
+        let (_, _, cloud) = bootstrap_with_replacement(false, true).await;
+        let requests = cloud.acquire_requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].replace_same_client);
     }
 
     fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {

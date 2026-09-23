@@ -328,6 +328,11 @@ mod tests {
             id(ClientInstanceId::new),
             id(IdempotencyKey::new),
         );
+        let plain = serde_json::to_value(request).unwrap();
+        assert!(plain.get("replace_same_client").is_none());
+        let replacement = request.replacing_same_client();
+        assert_eq!(serde_json::to_value(replacement).unwrap()["replace_same_client"], true);
+        assert_eq!(serde_json::from_value::<AcquireLeaseRequest>(plain).unwrap(), request);
         let mut wire = serde_json::to_value(request).unwrap();
         wire["session_id"] = json!(id(SessionId::new).to_string());
         wire["session_epoch"] = json!(1);

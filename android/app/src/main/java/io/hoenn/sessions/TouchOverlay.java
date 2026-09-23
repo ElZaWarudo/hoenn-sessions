@@ -108,7 +108,13 @@ final class TouchOverlay extends View {
         if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_POINTER_DOWN){
             int index=hit(event.getX(pointer),event.getY(pointer));pointers.put(id,index);if(editing&&index>=0)move(index,event.getX(pointer),event.getY(pointer));
         }else if(action==MotionEvent.ACTION_MOVE){
-            for(int i=0;i<event.getPointerCount();i++){Integer index=pointers.get(event.getPointerId(i));if(editing&&index!=null&&index>=0)move(index,event.getX(i),event.getY(i));}
+            for(int i=0;i<event.getPointerCount();i++){
+                int pointerId=event.getPointerId(i);
+                Integer index=pointers.get(pointerId);
+                if(index==null)continue;
+                if(editing){if(index>=0)move(index,event.getX(i),event.getY(i));}
+                else pointers.put(pointerId,hit(event.getX(i),event.getY(i)));
+            }
         }else if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP){pointers.remove(id);if(editing)save();}
         else if(action==MotionEvent.ACTION_CANCEL)clearTouches();
         rebuildKeys();invalidate();return true;
