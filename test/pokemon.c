@@ -656,15 +656,13 @@ TEST("BoxPokemon encryption works")
     EXPECT_EQ(GetMonData(&mon, MON_DATA_OT_GENDER), 0);
 }
 
-TEST("V2 met locations preserve legacy data and round-trip wide values")
+TEST("V2 met locations round-trip wide and reserved values")
 {
     struct Pokemon mon;
     struct Pokemon before;
     struct BoxPokemon empty = {0};
-    struct BoxPokemon emptyBefore = empty;
     u16 requested;
     u16 actual;
-    u32 legacy;
 
     CreateMon(&mon, SPECIES_WOBBUFFET, 50, 0x12345678, OTID_STRUCT_PRESET(0x87654321));
     PARAMETRIZE { requested = 0; }
@@ -684,22 +682,6 @@ TEST("V2 met locations preserve legacy data and round-trip wide values")
     EXPECT(GetBoxMonMetLocationV2(&mon.box, &actual));
     EXPECT_EQ(actual, requested);
 
-    // Existing V1 callers still read and write the raw byte.  A legacy byte
-    // written after a V2 marker is exactly the collision normalization must
-    // resolve before a copied save can use the wide codec.
-    legacy = 253;
-    EXPECT(SetBoxMonMetLocationV2(&mon.box, 250));
-    SetMonData(&mon, MON_DATA_MET_LOCATION, &legacy);
-    EXPECT_EQ(GetMonData(&mon, MON_DATA_MET_LOCATION), legacy);
-    before = mon;
-    EXPECT(!GetBoxMonMetLocationV2(&mon.box, &actual));
-    EXPECT(!SetBoxMonMetLocationV2(&mon.box, 0));
-    EXPECT(memcmp(&mon, &before, sizeof(mon)) == 0);
-    EXPECT(NormalizeLegacyBoxMonMetLocation(&mon.box));
-    EXPECT_EQ(GetMonData(&mon, MON_DATA_MET_LOCATION), legacy);
-    EXPECT(GetBoxMonMetLocationV2(&mon.box, &actual));
-    EXPECT_EQ(actual, MET_LOCATION_V2_LEGACY_253);
-
     // Invalid values and invalid current markers fail without changing the
     // encrypted bytes or checksum.
     before = mon;
@@ -710,34 +692,9 @@ TEST("V2 met locations preserve legacy data and round-trip wide values")
     mon.box.secure.raw[0] ^= 1;
     before = mon;
     EXPECT(!GetBoxMonMetLocationV2(&mon.box, &actual));
-    EXPECT(!NormalizeLegacyBoxMonMetLocation(&mon.box));
+    EXPECT(!SetBoxMonMetLocationV2(&mon.box, 0));
     EXPECT(memcmp(&mon, &before, sizeof(mon)) == 0);
 
-    EXPECT(NormalizeLegacyBoxMonMetLocation(&empty));
-    EXPECT(memcmp(&empty, &emptyBefore, sizeof(empty)) == 0);
     EXPECT(!GetBoxMonMetLocationV2(&empty, &actual));
     EXPECT(!SetBoxMonMetLocationV2(&empty, 0));
-}
-
-TEST("V2 met location rejects occupied species-none checksum mismatch")
-{
-    struct Pokemon mon;
-    struct Pokemon before;
-    u32 species = SPECIES_NONE;
-    u32 hasSpecies = TRUE;
-    u16 checksum;
-
-    CreateMon(&mon, SPECIES_WOBBUFFET, 50, 0x12345678, OTID_STRUCT_PRESET(0x87654321));
-    SetMonData(&mon, MON_DATA_SPECIES, &species);
-    SetMonData(&mon, MON_DATA_SANITY_HAS_SPECIES, &hasSpecies);
-    EXPECT_EQ(GetMonData(&mon, MON_DATA_SPECIES), SPECIES_NONE);
-    EXPECT_EQ(GetMonData(&mon, MON_DATA_SANITY_HAS_SPECIES), TRUE);
-
-    checksum = GetMonData(&mon, MON_DATA_CHECKSUM);
-    checksum ^= 1;
-    SetMonData(&mon, MON_DATA_CHECKSUM, &checksum);
-    before = mon;
-
-    EXPECT(!NormalizeLegacyBoxMonMetLocation(&mon.box));
-    EXPECT(memcmp(&mon, &before, sizeof(mon)) == 0);
 }

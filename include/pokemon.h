@@ -308,11 +308,9 @@ struct Pokemon
 #define MET_LOCATION_V2_LEGACY_255 (0x3FFF)
 
 // Returns FALSE for a corrupt or empty Pokemon, an invalid V2 marker, or an
-// unsupported logical value.  A failed operation leaves the BoxPokemon
-// unchanged.  NormalizeLegacyBoxMonMetLocation is the explicit V1 to V2
-// boundary and clears all six legacy-unused marker bits after validating the
-// checksum.
-bool32 NormalizeLegacyBoxMonMetLocation(struct BoxPokemon *boxMon);
+// unsupported logical value. A failed operation leaves the BoxPokemon
+// unchanged. Callers must first establish the owning save is V2; raw Pokemon
+// bytes alone cannot distinguish V1 marker collisions.
 bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location);
 bool32 SetBoxMonMetLocationV2(struct BoxPokemon *boxMon, u16 location);
 

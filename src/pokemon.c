@@ -2069,50 +2069,6 @@ static bool32 EncodeBoxMonMetLocationV2(u16 location, u16 *marker, u8 *metLocati
     return TRUE;
 }
 
-bool32 NormalizeLegacyBoxMonMetLocation(struct BoxPokemon *boxMon)
-{
-    struct BoxPokemon normalized;
-    struct PokemonSubstruct0 *substruct0;
-    u16 checksum;
-
-    if (boxMon == NULL)
-        return FALSE;
-
-    // Work on a copy so a corrupt occupied Pokemon is never left decrypted
-    // or partially normalized when validation fails.
-    normalized = *boxMon;
-    checksum = CalculateBoxMonChecksumDecrypt(&normalized);
-    substruct0 = GetSubstruct0(&normalized);
-
-    // An occupied slot must pass checksum validation before its decrypted
-    // species can be used to classify it as empty.  This prevents a
-    // contradictory occupied header from bypassing validation when corruption
-    // makes the decrypted species zero.
-    if (boxMon->hasSpecies && checksum != normalized.checksum)
-        return FALSE;
-
-    // A zeroed or otherwise unoccupied slot is already safe to migrate.  Do
-    // not require a checksum for it, since empty storage need not be sealed.
-    if (substruct0->species == SPECIES_NONE)
-    {
-        if (boxMon->hasSpecies)
-            return FALSE;
-        return TRUE;
-    }
-
-    if (checksum != normalized.checksum)
-        return FALSE;
-
-    if (substruct0->unused_02 == 0)
-        return TRUE;
-
-    substruct0->unused_02 = 0;
-    normalized.checksum = CalculateBoxMonChecksum(&normalized);
-    EncryptBoxMon(&normalized);
-    *boxMon = normalized;
-    return TRUE;
-}
-
 bool32 GetBoxMonMetLocationV2(const struct BoxPokemon *boxMon, u16 *location)
 {
     struct BoxPokemon decoded;
