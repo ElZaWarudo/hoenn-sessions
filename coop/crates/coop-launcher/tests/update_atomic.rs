@@ -426,6 +426,61 @@ fn opens_the_highest_accepted_generation_after_cold_restart() {
 }
 
 #[test]
+fn cold_open_heals_a_marker_orphaned_by_a_crash_before_head_persist() {
+    let directory = tempdir().unwrap();
+    let store = GenerationStore::new(directory.path()).unwrap();
+    let (trusted, first, first_payloads) = verify_fixture("release-a");
+    store.install(&first, first_payloads).unwrap();
+    let (_trusted, second, second_payloads) = verify_fixture("release-b");
+    store.install(&second, second_payloads).unwrap();
+
+    // Simulate a crash after the marker rename was synced but before the
+    // head record was persisted: the marker (and its complete generation)
+    // survived, the head did not.
+    let heads: Vec<_> = store
+        .generations_path()
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".accepted-head-"))
+        })
+        .collect();
+    assert!(!heads.is_empty(), "install persists head records");
+    for head in &heads {
+        fs::remove_file(head).unwrap();
+    }
+    drop(store);
+
+    let restarted = GenerationStore::new(directory.path()).unwrap();
+    let current = restarted
+        .open_accepted_current(&trusted, unix_now())
+        .expect("orphan marker heals instead of bricking the store");
+    assert!(current.reused());
+    assert_eq!(current.release_id(), "release-b");
+
+    // The heal is durable and the store accepts further installs.
+    let healed: Vec<_> = restarted
+        .generations_path()
+        .read_dir()
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(".accepted-head-"))
+        })
+        .collect();
+    assert!(!healed.is_empty(), "heal persists rebuilt head records");
+    let (_trusted, third, third_payloads) = verify_fixture("release-c");
+    let installed = restarted.install(&third, third_payloads).unwrap();
+    assert!(!installed.reused());
+    assert_eq!(installed.release_id(), "release-c");
+}
+
+#[test]
 fn cold_open_blocks_when_the_newest_accepted_marker_is_deleted() {
     let directory = tempdir().unwrap();
     let store = GenerationStore::new(directory.path()).unwrap();
