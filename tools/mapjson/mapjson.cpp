@@ -509,7 +509,25 @@ void process_event_constants(const vector<string> &map_filepaths, string output_
     write_text_file(output_ids_file, ids_file_text.str());
 }
 
-string generate_groups_text(Json groups_data, vector<string> &invalid_maps) {
+// Stable IDs are common to both ROMs. Membership affects linked content only.
+int rom_world_mask(const Json &data, const string &owner) {
+    auto field = data.object_items().find("rom_world");
+    if (field == data.object_items().end())
+        return 1; // Existing maps/layouts belong to the main world.
+    if (field->second.is_string()) {
+        const string world = field->second.string_value();
+        if (world == "main") return 1;
+        if (world == "cormoria") return 2;
+        if (world == "shared") return 3;
+    }
+    FATAL_ERROR("%s: rom_world must be main, cormoria, or shared\n", owner.c_str());
+}
+
+void begin_rom_world(ostringstream &text, int mask) {
+    text << "\t.if (ROM_WORLD & " << mask << ")\n";
+}
+
+string generate_groups_text(Json groups_data, vector<string> &invalid_maps, const map<string, int> &worlds) {
     ostringstream text;
 
     text << get_generated_warning("data/maps/map_groups.json", true);
@@ -517,20 +535,19 @@ string generate_groups_text(Json groups_data, vector<string> &invalid_maps) {
     vector<string> valid_groups;
     for (auto &key : groups_data["group_order"].array_items()) {
         string group = json_to_string(key);
-        vector<string> valid_maps;
         auto maps = groups_data[group].array_items();
-        for (Json &map_name : maps) {
-            string map_name_str = json_to_string(map_name);
-            auto it = find(invalid_maps.begin(), invalid_maps.end(), map_name_str);
-            if (it == invalid_maps.end()) {
-                valid_maps.push_back(map_name_str);
-            }
-        }
-
-        if (valid_maps.size() > 0) {
+        if (!maps.empty()) {
             text << group << "::\n";
-            for (string map : valid_maps)
-                text << "\t.4byte " << map << "\n";
+            for (const Json &map_name : maps) {
+                const string name = json_to_string(map_name);
+                if (find(invalid_maps.begin(), invalid_maps.end(), name) != invalid_maps.end()) {
+                    text << "\t.4byte NULL\n";
+                    continue;
+                }
+                begin_rom_world(text, worlds.at(name));
+                text << "\t.4byte " << name << "\n"
+                     << "\t.else\n\t.4byte NULL\n\t.endif\n";
+            }
             text << "\n";
             valid_groups.push_back(group);
         }
@@ -549,7 +566,7 @@ string generate_groups_text(Json groups_data, vector<string> &invalid_maps) {
     return text.str();
 }
 
-string generate_connections_text(Json groups_data, vector<string> &invalid_maps, string include_path) {
+string generate_connections_text(Json groups_data, vector<string> &invalid_maps, string include_path, const map<string, int> &worlds) {
     vector<Json> map_names;
 
     for (auto &group : groups_data["group_order"].array_items()) {
@@ -578,13 +595,16 @@ string generate_connections_text(Json groups_data, vector<string> &invalid_maps,
 
     text << get_generated_warning("data/maps/map_groups.json", true);
 
-    for (Json map_name : map_names)
+    for (Json map_name : map_names) {
+        begin_rom_world(text, worlds.at(json_to_string(map_name)));
         text << "\t.include \"" << include_path << "/" <<  json_to_string(map_name) << "/connections.inc\"\n";
+        text << "\t.endif\n";
+    }
 
     return text.str();
 }
 
-string generate_headers_text(Json groups_data, vector<string> &invalid_maps, string include_path) {
+string generate_headers_text(Json groups_data, vector<string> &invalid_maps, string include_path, const map<string, int> &worlds) {
     vector<string> map_names;
 
     for (auto &group : groups_data["group_order"].array_items()) {
@@ -600,13 +620,16 @@ string generate_headers_text(Json groups_data, vector<string> &invalid_maps, str
 
     text << get_generated_warning("data/maps/map_groups.json", true);
 
-    for (string map_name : map_names)
+    for (string map_name : map_names) {
+        begin_rom_world(text, worlds.at(map_name));
         text << "\t.include \"" << include_path << "/" << map_name << "/header.inc\"\n";
+        text << "\t.endif\n";
+    }
 
     return text.str();
 }
 
-string generate_events_text(Json groups_data, vector<string> &invalid_maps, string include_path) {
+string generate_events_text(Json groups_data, vector<string> &invalid_maps, string include_path, const map<string, int> &worlds) {
     vector<string> map_names;
 
     for (auto &group : groups_data["group_order"].array_items()) {
@@ -623,8 +646,11 @@ string generate_events_text(Json groups_data, vector<string> &invalid_maps, stri
 
     text << get_generated_warning(include_path + "/map_groups.json", true);
 
-    for (string map_name : map_names)
+    for (string map_name : map_names) {
+        begin_rom_world(text, worlds.at(map_name));
         text << "\t.include \"" << include_path << "/" << map_name << "/events.inc\"\n";
+        text << "\t.endif\n";
+    }
 
     return text.str();
 }
@@ -774,10 +800,22 @@ void process_groups(string groups_filepath, vector<string> &map_filepaths, strin
     if (groups_data == Json())
         FATAL_ERROR("%s\n", err.c_str());
 
-    string groups_text = generate_groups_text(groups_data, invalid_maps);
-    string connections_text = generate_connections_text(groups_data, invalid_maps, output_asm);
-    string headers_text = generate_headers_text(groups_data, invalid_maps, output_asm);
-    string events_text = generate_events_text(groups_data, invalid_maps, output_asm);
+    map<string, int> worlds;
+    const string maps_dir = file_parent(groups_filepath) + sep;
+    for (const auto &group : groups_data["group_order"].array_items()) {
+        for (const auto &map_name : groups_data[json_to_string(group)].array_items()) {
+            const string name = json_to_string(map_name);
+            const string path = maps_dir + name + sep + "map.json";
+            const Json data = Json::parse(read_text_file(path), err);
+            if (data == Json())
+                FATAL_ERROR("%s: %s\n", path.c_str(), err.c_str());
+            worlds[name] = rom_world_mask(data, path);
+        }
+    }
+    string groups_text = generate_groups_text(groups_data, invalid_maps, worlds);
+    string connections_text = generate_connections_text(groups_data, invalid_maps, output_asm, worlds);
+    string headers_text = generate_headers_text(groups_data, invalid_maps, output_asm, worlds);
+    string events_text = generate_events_text(groups_data, invalid_maps, output_asm, worlds);
     string map_header_text = generate_map_constants_text(groups_filepath, groups_data, valid_map_ids);
 
     clean_heal_locations(valid_map_ids);
@@ -803,6 +841,7 @@ string generate_layout_headers_text(Json layouts_data) {
             layout_version = "emerald";
         }
         string layoutName = json_to_string(layout, "name");
+        begin_rom_world(text, rom_world_mask(layout, layoutName));
         string border_label = layoutName + "_Border";
         string blockdata_label = layoutName + "_Blockdata";
         text << border_label << "::\n"
@@ -833,7 +872,7 @@ string generate_layout_headers_text(Json layouts_data) {
             text << "\t.2byte 0\n"
                  << "\t.byte 0\n";
         }
-        text << "\n";
+        text << "\t.endif\n\n";
     }
 
     return text.str();
@@ -856,7 +895,9 @@ string generate_layouts_table_text(Json layouts_data) {
         }
         string layout_name = json_to_string(layout, "name", true);
         if (layout_name.empty()) layout_name = "NULL";
+        begin_rom_world(text, rom_world_mask(layout, layout_name));
         text << "\t.4byte " << layout_name << "\n";
+        text << "\t.else\n\t.4byte NULL\n\t.endif\n";
     }
 
     return text.str();

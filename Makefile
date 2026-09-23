@@ -3,6 +3,7 @@ TITLE        ?= POKEMON EMER
 GAME_CODE    ?= BPEE
 BUILD_NAME   ?= emerald
 MAP_VERSION  ?= emerald
+ROM_WORLD    ?= 1
 
 ifeq (firered, $(or $(BUILD), $(MAKECMDGOALS)))
   	GAME_VERSION 	:= FIRERED
@@ -18,6 +19,18 @@ ifeq (leafgreen, $(or $(BUILD), $(MAKECMDGOALS)))
 	BUILD_NAME  	:= leafgreen
 	MAP_VERSION 	:= firered
 endif
+endif
+
+ifneq ($(filter $(ROM_WORLD),1 2),$(ROM_WORLD))
+$(error ROM_WORLD must be 1 (main) or 2 (Cormoria))
+endif
+ifeq ($(ROM_WORLD),2)
+  ifneq ($(GAME_VERSION),EMERALD)
+$(error The Cormoria world currently requires GAME_VERSION=EMERALD)
+  endif
+  override BUILD_NAME := emerald-cormoria
+  TITLE := CORMORIA
+  GAME_CODE := BPCO
 endif
 
 # GBA rom header
@@ -144,7 +157,7 @@ TEST_BUILDDIR = $(OBJ_DIR)/$(TEST_SUBDIR)
 SHELL := bash -o pipefail
 
 # Set flags for tools
-ASFLAGS := -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym $(GAME_VERSION)=1
+ASFLAGS := -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym $(GAME_VERSION)=1 --defsym ROM_WORLD=$(ROM_WORLD)
 
 INCLUDE_DIRS := include
 INCLUDE_CPP_ARGS := $(INCLUDE_DIRS:%=-iquote %)
@@ -155,7 +168,7 @@ O_LEVEL ?= g
 else
 O_LEVEL ?= 2
 endif
-CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=1 -DTESTING=$(TEST) -D$(GAME_VERSION) -std=gnu17
+CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=1 -DTESTING=$(TEST) -D$(GAME_VERSION) -DROM_WORLD=$(ROM_WORLD) -std=gnu17
 ifeq ($(RELEASE),1)
 	override CPPFLAGS += -DRELEASE
 	ifeq ($(USE_LTO_ON_RELEASE),1)
