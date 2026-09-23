@@ -518,6 +518,55 @@ fn cold_open_rejects_tampered_envelope_artifact_and_extra_file() {
     ));
 }
 
+#[test]
+fn repairs_damaged_accepted_release_without_lowering_sequence_floor() {
+    const NOW: i64 = 1_800_000_000;
+    let directory = tempdir().unwrap();
+    let store = GenerationStore::new(directory.path()).unwrap();
+    let (trusted, release, payloads) = verify_fixture_at("release-repair", 4, NOW);
+    let installed = store.install_at(&release, &payloads, NOW).unwrap();
+    let held = store.open_accepted_current(&trusted, NOW).unwrap();
+    let rom = installed.path().join(ArtifactIdentity::Rom.destination());
+    fs::write(&rom, b"damaged").unwrap();
+    assert!(matches!(
+        store.open_accepted_current(&trusted, NOW),
+        Err(UpdateError::InvalidCompleteGeneration(_))
+    ));
+    assert!(matches!(
+        store.install_at(&release, &payloads, NOW),
+        Err(UpdateError::InvalidCompleteGeneration(_))
+    ));
+    // A running accepted generation holds no-delete guards. Repair resumes
+    // only after that process exits and releases them.
+    assert!(matches!(
+        store.repair_accepted_at(&release, &payloads, NOW),
+        Err(UpdateError::ActivationIo(_))
+    ));
+    drop(held);
+    store.repair_accepted_at(&release, &payloads, NOW).unwrap();
+    assert_eq!(
+        store.open_accepted_current(&trusted, NOW).unwrap().release_id(),
+        release.release_id()
+    );
+
+    fs::write(installed.path().join(update::SIGNED_RELEASE_ENVELOPE), b"{}").unwrap();
+    assert!(matches!(
+        store.open_accepted_current(&trusted, NOW),
+        Err(UpdateError::MalformedEnvelope)
+    ));
+    store.repair_accepted_at(&release, &payloads, NOW).unwrap();
+    assert_eq!(
+        store.open_accepted_current(&trusted, NOW).unwrap().release_id(),
+        release.release_id()
+    );
+
+    let (_trusted, older, older_payloads) = verify_fixture_at("release-older", 3, NOW);
+    assert!(matches!(
+        store.install_at(&older, older_payloads, NOW),
+        Err(UpdateError::ReleaseRollback { .. })
+    ));
+}
+
 #[cfg(windows)]
 #[test]
 fn accepted_current_guard_blocks_desktop_and_sidecar_replacement() {

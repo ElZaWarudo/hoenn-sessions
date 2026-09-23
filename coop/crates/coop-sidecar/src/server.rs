@@ -4836,7 +4836,8 @@ fn can_reconnect_after(error: &SidecarError) -> bool {
                 ControlError::LineClosed
                     | ControlError::Connection(_)
                     | ControlError::WriteConnection(_)
-                    | ControlError::WriteTimeout,
+                    | ControlError::WriteTimeout
+                    | ControlError::ReadTimeout,
             )
     )
 }
@@ -10337,7 +10338,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authenticated_control_oversize_and_partial_commands_terminate_session() {
+    async fn authenticated_control_oversize_is_fatal_but_partial_timeout_reconnects() {
         let server = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
             .unwrap();
@@ -10385,15 +10386,39 @@ mod tests {
         let mut bridge = TcpStream::connect(descriptor.address()).await.unwrap();
         write_handshake(&mut bridge, &descriptor, descriptor.secret()).await;
         control.write_all(b"{\"type\":").await.unwrap();
-        // Keep the authenticated connection open: the decoder must report a
-        // bounded read timeout rather than confusing an incomplete line with
-        // an immediate peer disconnect.
-        assert!(matches!(
-            timeout(Duration::from_secs(4), server_task)
+        // No command is applied from an incomplete line. The launcher may
+        // authenticate a fresh control stream while the bridge stays alive.
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        assert!(!server_task.is_finished());
+        let mut replacement = TcpStream::connect(descriptor.control_address())
+            .await
+            .unwrap();
+        write_control_handshake(
+            &mut replacement,
+            &descriptor,
+            descriptor.control_secret(),
+            TEST_SESSION_EPOCH,
+        )
+        .await;
+        send_command(
+            &mut replacement,
+            &shutdown("00000000-0000-4000-8000-000000000123", TEST_SESSION_EPOCH),
+        )
+        .await;
+        assert_command_result(
+            &mut replacement,
+            "00000000-0000-4000-8000-000000000123",
+            CommandStatus::Applied,
+            None,
+        )
+        .await;
+        bridge.shutdown().await.unwrap();
+        assert!(
+            timeout(Duration::from_secs(2), server_task)
                 .await
                 .unwrap()
-                .unwrap(),
-            Err(SidecarError::Control(ControlError::ReadTimeout))
-        ));
+                .unwrap()
+                .is_ok()
+        );
     }
 }

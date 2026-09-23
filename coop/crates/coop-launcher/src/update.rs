@@ -932,6 +932,50 @@ impl GenerationStore {
         })
     }
 
+    /// Restores the exact signed bytes of an already accepted generation.
+    ///
+    /// A damaged artifact may make the bootstrapper select MSI-owned
+    /// onboarding. The accepted marker remains the rollback floor, and each
+    /// replacement file is synced and renamed independently so an interrupted
+    /// repair can be retried without accepting a different release.
+    ///
+    /// # Errors
+    ///
+    /// Rejects mismatched releases, unsafe paths, invalid downloads, or I/O
+    /// failures. The caller must have verified the signed release envelope.
+    pub fn repair_accepted_at<S: ArtifactSource>(
+        &self,
+        release: &VerifiedRelease,
+        source: S,
+        now: i64,
+    ) -> Result<InstalledGeneration, UpdateError> {
+        release.descriptor.validate_at(now)?;
+        let artifacts = validate_payloads(release, source.collect_entries()?)?;
+        self.validate_store()?;
+        let marker = self
+            .load_current_marker()?
+            .ok_or(UpdateError::NoAcceptedGeneration)?;
+        if !marker.matches_release(release) {
+            return Err(UpdateError::SequenceConflict);
+        }
+        let target = self.generations.join(release.release_id());
+        reject_unsafe_components(&target)?;
+        ensure_real_directory(&target)?;
+        for identity in FIXED_ARTIFACT_IDENTITIES {
+            let bytes = artifacts
+                .get(&identity)
+                .expect("validate_payloads checked every fixed identity");
+            repair_existing_file(&target.join(identity.destination()), bytes)?;
+        }
+        repair_existing_file(&target.join(SIGNED_RELEASE_ENVELOPE), release.signed_envelope())?;
+        validate_complete_generation(&target, release)?;
+        Ok(InstalledGeneration {
+            path: target,
+            release_id: release.release_id().to_owned(),
+            reused: true,
+        })
+    }
+
     fn persist_current_marker(&self, release: &VerifiedRelease) -> Result<(), UpdateError> {
         let marker = CompletionMarker::from_release(release);
         let bytes = marker.encode();
@@ -1439,6 +1483,62 @@ fn write_fixed_artifact(
     file.write_all(bytes).map_err(UpdateError::StagingIo)?;
     file.sync_all().map_err(UpdateError::StagingIo)?;
     Ok(())
+}
+
+fn repair_existing_file(path: &Path, bytes: &[u8]) -> Result<(), UpdateError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| UpdateError::UnsafeStorePath(path.to_path_buf()))?;
+    reject_unsafe_components(parent)?;
+    ensure_real_directory(parent)?;
+    for entry in fs::read_dir(parent).map_err(UpdateError::StagingIo)? {
+        let entry = entry.map_err(UpdateError::StagingIo)?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let suffix = name.strip_prefix(".repair-");
+        if suffix.is_some_and(|suffix| {
+            suffix.len() == 32
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        }) {
+            let metadata = fs::symlink_metadata(entry.path()).map_err(UpdateError::StagingIo)?;
+            if link_or_reparse(&metadata) || !metadata.is_file() {
+                return Err(UpdateError::SymlinkOrReparse(entry.path()));
+            }
+            fs::remove_file(entry.path()).map_err(UpdateError::StagingIo)?;
+        }
+    }
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if link_or_reparse(&metadata) || !metadata.is_file() => {
+            return Err(UpdateError::SymlinkOrReparse(path.to_path_buf()));
+        }
+        Ok(metadata) if metadata.len() == bytes.len() as u64 => {
+            if fs::read(path).map_err(UpdateError::StagingIo)? == bytes {
+                return Ok(());
+            }
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(UpdateError::StagingIo(error)),
+    }
+    let temporary = parent.join(format!(".repair-{}", Uuid::new_v4().simple()));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(UpdateError::StagingIo)?;
+        file.write_all(bytes).map_err(UpdateError::StagingIo)?;
+        file.sync_all().map_err(UpdateError::StagingIo)?;
+        drop(file);
+        fs::rename(&temporary, path).map_err(UpdateError::ActivationIo)?;
+        sync_directory(parent)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn write_completion_marker(staging: &Path, release: &VerifiedRelease) -> Result<(), UpdateError> {

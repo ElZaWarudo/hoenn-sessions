@@ -422,7 +422,16 @@ impl BackendActor {
                 self.store.validate_generation(&latest.verified).is_ok()
             }
             Ok(_) => false,
-            Err(UpdateError::NoAcceptedGeneration) => false,
+            Err(UpdateError::NoAcceptedGeneration)
+            | Err(UpdateError::InvalidCompleteGeneration(_))
+            | Err(UpdateError::MalformedEnvelope)
+            | Err(UpdateError::MalformedDescriptor)
+            | Err(UpdateError::UnsupportedSchema(_))
+            | Err(UpdateError::UnsupportedPlatform(_))
+            | Err(UpdateError::KeyIdMismatch)
+            | Err(UpdateError::SignatureInvalid)
+            | Err(UpdateError::InvalidReleaseId(_))
+            | Err(UpdateError::ReleaseExpired(_)) => false,
             Err(_) => {
                 let _ = events.send(BackendEvent::ReleaseCheckFailed(
                     coop_launcher::ServiceFailure::NotReady,
@@ -482,10 +491,18 @@ impl BackendActor {
                 return;
             }
         };
-        match self
+        let installed = self
             .store
-            .install_at(&pending.verified, pending.artifacts, now)
-        {
+            .install_at(&pending.verified, &pending.artifacts, now);
+        let installed = match installed {
+            Err(UpdateError::InvalidCompleteGeneration(_)) => self.store.repair_accepted_at(
+                &pending.verified,
+                pending.artifacts,
+                now,
+            ),
+            result => result,
+        };
+        match installed {
             Ok(_) => {
                 // The desktop executable is itself one of the signed artifacts;
                 // the stable bootstrapper must select it after this process exits.
