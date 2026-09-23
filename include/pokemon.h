@@ -298,7 +298,7 @@ struct Pokemon
 // V2 met-location values are carried by the existing metLocation byte and
 // the six bits reserved as PokemonSubstruct0::unused_02.  These helpers are
 // intentionally separate from MON_DATA_MET_LOCATION: callers may only use
-// them after a save-format migration has established that the marker is V2.
+// them after a validated V2 save has established that the marker is V2.
 #define MET_LOCATION_V2_MAX (300)
 #define MET_LOCATION_V2_NONE (301)
 #define MET_LOCATION_V2_LEGACY_251 (0x3FFB)
