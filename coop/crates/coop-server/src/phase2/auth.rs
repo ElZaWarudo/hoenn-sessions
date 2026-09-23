@@ -16,6 +16,8 @@ use super::storage::{
 };
 use super::{AuthenticatedActor, Phase2Error};
 
+pub(super) const MEMBER_INVITATION_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
+
 /// Inserts a single-use invitation fingerprint.  The code itself is never
 /// retained. This is intentionally an explicit bootstrap operation.
 pub(crate) fn add_invitation(store: &Store, code: &str) -> Result<(), Phase2Error> {
@@ -26,6 +28,63 @@ pub(crate) fn add_invitation(store: &Store, code: &str) -> Result<(), Phase2Erro
         }
         state.invitations.insert(fingerprint, false);
         Ok(())
+    })
+}
+
+/// Creates a fresh single-use account code for an authenticated member.
+pub(crate) fn create_invitation(
+    store: &Store,
+    actor: AuthenticatedActor,
+) -> Result<String, Phase2Error> {
+    let code = store.random_token()?;
+    let fingerprint = store.invitation_fingerprint(&code);
+    let now = store.now();
+    let expires_at = now
+        .checked_add(MEMBER_INVITATION_TTL_MS)
+        .ok_or(Phase2Error::Internal)?;
+    store.write_transaction(|state| {
+        let user = state
+            .users_by_id
+            .get(&actor.user_id)
+            .ok_or(Phase2Error::Authentication)?;
+        if user.disabled || user.character_id != actor.character_id {
+            return Err(Phase2Error::Authentication);
+        }
+        let expired: Vec<_> = state
+            .invitation_expires_at
+            .iter()
+            .filter_map(|(fingerprint, expiry)| (*expiry <= now).then_some(*fingerprint))
+            .collect();
+        for fingerprint in expired {
+            state.invitation_expires_at.remove(&fingerprint);
+            state.invitation_issuers.remove(&fingerprint);
+            state.invitations.remove(&fingerprint);
+        }
+        if state
+            .invitation_issuers
+            .values()
+            .filter(|issuer| **issuer == actor.user_id)
+            .count()
+            >= 5
+        {
+            return Err(Phase2Error::Forbidden);
+        }
+        if state
+            .invitations
+            .values()
+            .filter(|consumed| !**consumed)
+            .count()
+            >= 256
+        {
+            return Err(Phase2Error::Busy);
+        }
+        if state.invitations.contains_key(&fingerprint) {
+            return Err(Phase2Error::Conflict);
+        }
+        state.invitations.insert(fingerprint, false);
+        state.invitation_issuers.insert(fingerprint, actor.user_id);
+        state.invitation_expires_at.insert(fingerprint, expires_at);
+        Ok(code.clone())
     })
 }
 
@@ -41,12 +100,17 @@ pub(crate) fn registration_admissible(
         .map_err(|_| Phase2Error::Authentication)?;
     let username = request.username.as_str();
     let invitation = store.invitation_fingerprint(request.invitation_code.expose_secret());
+    let now = store.now();
     store.read_transaction(|state| {
         Ok::<bool, Phase2Error>(
             state
                 .invitations
                 .get(&invitation)
                 .is_some_and(|consumed| !*consumed)
+                && state
+                    .invitation_expires_at
+                    .get(&invitation)
+                    .is_none_or(|expiry| *expiry > now)
                 && !state.users_by_name.contains_key(username),
         )
     })
@@ -65,6 +129,7 @@ pub(crate) fn register(
     }
     let password = Zeroizing::new(request.password.expose_secret().to_owned());
     let invitation = store.invitation_fingerprint(request.invitation_code.expose_secret());
+    let now = store.now();
     let password_phc = store.config.password_engine.hash(&password)?;
     let user_id = store.user_id()?;
     let character_id = store.character_id()?;
@@ -81,7 +146,13 @@ pub(crate) fn register(
             .invitations
             .get(&invitation)
             .ok_or(Phase2Error::Authentication)?;
-        if already_consumed || state.users_by_name.contains_key(&username) {
+        if already_consumed
+            || state
+                .invitation_expires_at
+                .get(&invitation)
+                .is_some_and(|expiry| *expiry <= now)
+            || state.users_by_name.contains_key(&username)
+        {
             return Err(Phase2Error::Authentication);
         }
         if state.users_by_id.contains_key(&user_id) || state.characters.contains_key(&character_id)
@@ -91,6 +162,8 @@ pub(crate) fn register(
         if let Some(consumed) = state.invitations.get_mut(&invitation) {
             *consumed = true;
         }
+        state.invitation_issuers.remove(&invitation);
+        state.invitation_expires_at.remove(&invitation);
         state.characters.insert(
             character_id,
             super::storage::CharacterRecord {

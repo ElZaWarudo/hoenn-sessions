@@ -371,6 +371,80 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  publish-installer:
+    needs: [installer]
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download verified installer
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          pattern: hoenn-private-pilot-installer-*-${{ github.run_number }}
+          path: installer
+          merge-multiple: true
+
+      - name: Configure pinned SSH identity
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          test -n "$VPS_SSH_KEY" && test -n "$VPS_KNOWN_HOSTS"
+          case "$VPS_HOST" in "" | *[!A-Za-z0-9.:_-]*) exit 1 ;; esac
+          case "$VPS_USER" in "" | *[!A-Za-z0-9_.-]*) exit 1 ;; esac
+          case "$VPS_PORT" in "" | *[!0-9]*) exit 1 ;; esac
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/hoenn_release
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/hoenn_release ~/.ssh/known_hosts
+          {
+            echo 'Host hoenn-vps'
+            echo "  HostName $VPS_HOST"
+            echo "  User $VPS_USER"
+            echo "  Port ${VPS_PORT:-22}"
+            echo '  IdentityFile ~/.ssh/hoenn_release'
+            echo '  StrictHostKeyChecking yes'
+          } > ~/.ssh/config
+
+      - name: Publish private MSI
+        env:
+          RELEASE_ID: ${{ github.sha }}-${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          cp installer/HoennSessions*.msi HoennSessions.msi
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          installer = pathlib.Path('HoennSessions.msi')
+          metadata = dict(release_id=os.environ['RELEASE_ID'], size=installer.stat().st_size,
+                          sha256=hashlib.sha256(installer.read_bytes()).hexdigest())
+          pathlib.Path('metadata.json').write_text(json.dumps(metadata, sort_keys=True, separators=(',', ':')) + '\n')
+          PY
+          ssh hoenn-vps "if [ ! -d /srv/hoenn/installers ]; then install -d -m 700 /srv/hoenn/installers; fi; install -d -m 700 /srv/hoenn/installers/$RELEASE_ID.incoming"
+          scp HoennSessions.msi metadata.json "hoenn-vps:/srv/hoenn/installers/$RELEASE_ID.incoming/"
+          ssh hoenn-vps "RELEASE_ID=$RELEASE_ID python3 -" <<'PY'
+          import hashlib, json, os, pathlib, shutil
+          root = pathlib.Path('/srv/hoenn/installers')
+          release_id = os.environ['RELEASE_ID']
+          incoming = root / (release_id + '.incoming')
+          target = root / release_id
+          metadata = json.loads((incoming / 'metadata.json').read_text())
+          installer = incoming / 'HoennSessions.msi'
+          if metadata['release_id'] != release_id or installer.stat().st_size != metadata['size'] or hashlib.sha256(installer.read_bytes()).hexdigest() != metadata['sha256']:
+              raise SystemExit('installer integrity check failed')
+          if target.exists():
+              if (target / 'metadata.json').read_bytes() != (incoming / 'metadata.json').read_bytes() or hashlib.sha256((target / 'HoennSessions.msi').read_bytes()).hexdigest() != metadata['sha256']:
+                  raise SystemExit('published installer conflicts with existing release')
+              shutil.rmtree(incoming)
+          else:
+              incoming.rename(target)
+          os.chmod(target, 0o700)
+          for path in target.iterdir():
+              os.chmod(path, 0o600)
+          PY
+          ssh hoenn-vps "setfacl -m u:10001:r-x /srv/hoenn/installers /srv/hoenn/installers/$RELEASE_ID && setfacl -m u:10001:r-- /srv/hoenn/installers/$RELEASE_ID/metadata.json /srv/hoenn/installers/$RELEASE_ID/HoennSessions.msi && printf '%s\\n' '$RELEASE_ID' > /srv/hoenn/installers/.current.next && chmod 600 /srv/hoenn/installers/.current.next && setfacl -m u:10001:r-- /srv/hoenn/installers/.current.next && mv /srv/hoenn/installers/.current.next /srv/hoenn/installers/current"
+
   release:
     needs: [validate, release-key-gate]
     runs-on: ubuntu-24.04

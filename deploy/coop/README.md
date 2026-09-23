@@ -53,11 +53,20 @@ securely together with the release image and matching bridge manifest. Read the
 bootstrap invitation locally from `secrets/bootstrap_invite` to register the
 first player; do not paste secrets into logs or public issue trackers.
 
-To invite another player, replace only `secrets/bootstrap_invite` with a newly
-generated code (`openssl rand -hex 24`), keep its mode 0444, and recreate the
-server container so the new secret file is mounted. Each code admits one account.
-Reusing a consumed code across restarts does not reactivate it. Do not regenerate
-the signing key or pepper when adding invitations.
+Open `https://<COOP_DOMAIN>/` to register the first player with the bootstrap
+invitation. After signing in, that player can generate a fresh single-use code
+for another player. The page also offers the current private Android APK and
+Windows MSI. Tokens stay in the page's memory, so a reload requires signing in
+again. The server stores only invitation fingerprints; each code admits one
+account within seven days. Each player may have five unused codes at a time;
+consuming or expiring one frees a slot. Reusing a consumed code across restarts does not reactivate it. Do not
+regenerate the signing key or pepper when adding invitations.
+
+The Android release job publishes APKs when the client changes. The Windows
+installer is built and privately published on a manual `Production release`
+workflow dispatch. Until an installer has been published, the MSI button reports
+that the download is unavailable. The server streams both files only after
+bearer authentication; Caddy's optional `/download/*` block stays disabled.
 
 For Android, enter the HTTPS server URL, signing key ID `pilot-v1`, and the
 64-character `public_key_hex` printed in the server's startup log. Share that

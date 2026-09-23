@@ -826,6 +826,10 @@ pub struct State {
     pub(crate) users_by_id: HashMap<UserId, UserRecord>,
     pub(crate) characters: HashMap<CharacterId, CharacterRecord>,
     pub(crate) invitations: HashMap<[u8; 32], bool>,
+    #[serde(default)]
+    pub(crate) invitation_issuers: HashMap<[u8; 32], UserId>,
+    #[serde(default)]
+    pub(crate) invitation_expires_at: HashMap<[u8; 32], u64>,
     pub(crate) access: HashMap<[u8; 32], AccessRecord>,
     pub(crate) refresh: HashMap<[u8; 32], RefreshRecord>,
     pub(crate) families: HashMap<RefreshFamilyId, FamilyRecord>,
