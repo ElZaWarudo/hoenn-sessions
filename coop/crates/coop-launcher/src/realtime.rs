@@ -15,7 +15,7 @@ use coop_cloud::{
     MintRealtimeTicketRequest, MintRealtimeTicketResponse, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES,
     UnixTimestampMillis,
 };
-use coop_protocol::{LocalPresenceStateV1, PresenceInteractionV1};
+use coop_protocol::{LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceInteractionV1};
 use coop_sidecar::{
     RealtimeEndpoint, RealtimeGrant, RealtimeInputError, RealtimeOutcome, RealtimeOwner,
     RealtimeOwnerEvent, realtime_channel, run_realtime,
@@ -122,6 +122,7 @@ pub(crate) struct RealtimeCoordinator {
     interaction_sequence: u64,
     ready_interaction_watermark: Option<u64>,
     pending_interactions: VecDeque<(u64, PresenceInteractionV1)>,
+    pending_signals: VecDeque<(u64, LocalSignalV1)>,
     terminal_outcome: Option<RealtimeOutcome>,
     planned_recovery: bool,
     #[cfg(test)]
@@ -162,6 +163,7 @@ impl RealtimeCoordinator {
             interaction_sequence: 0,
             ready_interaction_watermark: None,
             pending_interactions: VecDeque::new(),
+            pending_signals: VecDeque::new(),
             terminal_outcome: None,
             planned_recovery: false,
             #[cfg(test)]
@@ -251,6 +253,12 @@ impl RealtimeCoordinator {
             }
             self.classify_input(self.owner.interact(interaction))?;
         }
+        while let Some((sequence, signal)) = self.pending_signals.pop_front() {
+            if sequence <= watermark {
+                continue;
+            }
+            self.classify_input(self.owner.signal(signal))?;
+        }
         self.interaction_ready = true;
         Ok(())
     }
@@ -270,6 +278,35 @@ impl RealtimeCoordinator {
         state: LocalPresenceStateV1,
     ) -> Result<(), RealtimeCoordinatorError> {
         self.classify_input(self.owner.update_state(state))
+    }
+
+    pub(crate) fn update_companion(
+        &self,
+        companion: LocalCompanionV1,
+    ) -> Result<(), RealtimeCoordinatorError> {
+        self.classify_input(self.owner.update_companion(companion))
+    }
+
+    /// Drops pre-readiness signals and preserves FIFO after readiness,
+    /// mirroring the interaction gate. Pre-ready inputs share one ordering
+    /// counter so the readiness watermark applies to both queues.
+    pub(crate) fn signal(&mut self, signal: LocalSignalV1) -> Result<(), RealtimeCoordinatorError> {
+        self.interaction_sequence = self
+            .interaction_sequence
+            .checked_add(1)
+            .ok_or(RealtimeCoordinatorError::Terminated)?;
+        if !self.server_ready {
+            return Ok(());
+        }
+        if !self.interaction_ready {
+            if self.pending_signals.len() == coop_sidecar::MAX_SIGNAL_QUEUE {
+                return Err(RealtimeCoordinatorError::Input);
+            }
+            self.pending_signals
+                .push_back((self.interaction_sequence, signal));
+            return Ok(());
+        }
+        self.classify_input(self.owner.signal(signal))
     }
 
     /// Drops pre-readiness interactions and preserves FIFO after readiness.
@@ -389,6 +426,7 @@ impl RealtimeCoordinator {
         self.server_ready = false;
         self.interaction_ready = false;
         self.pending_interactions.clear();
+        self.pending_signals.clear();
         self.owner.stop();
     }
 
@@ -444,6 +482,12 @@ fn map_owner_event(
         )),
         RealtimeOwnerEvent::Despawn(despawn) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
             ControlCommand::RemotePlayerDespawn(despawn),
+        )),
+        RealtimeOwnerEvent::Companion(companion) if *ready => Ok(
+            RealtimeCoordinatorEvent::Lifecycle(ControlCommand::RemoteCompanion(companion)),
+        ),
+        RealtimeOwnerEvent::Signal(signal) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
+            ControlCommand::RemoteSocialSignal(signal),
         )),
         _ => Err(RealtimeCoordinatorError::Terminated),
     }

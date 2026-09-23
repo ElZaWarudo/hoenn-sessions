@@ -342,8 +342,21 @@ where
                         probe.notify_one();
                     }
                 }
-                RawSupervisorEvent::Control(ControlEvent::InteractRemotePlayer(_)) => {
-                    // Interactions have no meaning until server readiness.
+                RawSupervisorEvent::Control(
+                    ControlEvent::InteractRemotePlayer(_) | ControlEvent::SocialSignal(_),
+                ) => {
+                    // Interactions and signals have no meaning until server readiness.
+                }
+                RawSupervisorEvent::Control(ControlEvent::CompanionState(_)) => {
+                    // Companion state is latest-value cached in the pump and
+                    // forwarded after cutover; only fail closed here.
+                    let latest = children.control().latest_companion_state();
+                    if children.control().reset_latched()
+                        || children.control().lifecycle_generation() != generation
+                        || latest.as_ref().is_none_or(|latest| latest.0 != generation)
+                    {
+                        return Err(SessionError::Realtime);
+                    }
                 }
                 RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                     children.control().send(&ControlCommand::OnlineStatus {
@@ -2461,7 +2474,10 @@ impl SessionLifecycle {
                 observation = children.observe_raw() => {
                     match observation.map_err(SessionError::Control)? {
                         RawSupervisorEvent::Control(
-                            ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_),
+                            ControlEvent::PlayerState(_)
+                            | ControlEvent::InteractRemotePlayer(_)
+                            | ControlEvent::CompanionState(_)
+                            | ControlEvent::SocialSignal(_),
                         ) => {}
                         RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                             self.start_online(api, online, &mut children.control(), request).await?;
@@ -2786,6 +2802,21 @@ impl SessionLifecycle {
                                 result = Err(SessionError::Realtime);
                             }
                         }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::CompanionState(_))) => {
+                            if Self::update_companion_from_control(children.control(), realtime)
+                                .is_err()
+                            {
+                                result = Err(SessionError::Realtime);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::SocialSignal(signal))) => {
+                            if children.control().reset_latched()
+                                || children.control().lifecycle_generation() != generation
+                                || realtime.signal(signal).is_err()
+                            {
+                                result = Err(SessionError::Realtime);
+                            }
+                        }
                         Ok(RawSupervisorEvent::Control(
                             ready @ ControlEvent::CheckpointReady { .. },
                         )) => {
@@ -2954,7 +2985,7 @@ impl SessionLifecycle {
                     RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
                         self.checkpoint_with_deadline(api, &mut children.control(), ready).await?;
                     }
-                    RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_)) => {}
+                    RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_) | ControlEvent::CompanionState(_) | ControlEvent::SocialSignal(_)) => {}
                     RawSupervisorEvent::Control(_) => return Err(SessionError::Realtime),
                     child @ (RawSupervisorEvent::SidecarExited(_) | RawSupervisorEvent::MgbaExited(_)) => {
                         children.settle_raw(child).await?;
@@ -3024,7 +3055,7 @@ impl SessionLifecycle {
                                 }
                                 return Ok(true);
                             },
-                    RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_)) => {},
+                    RawSupervisorEvent::Control(ControlEvent::PlayerState(_) | ControlEvent::InteractRemotePlayer(_) | ControlEvent::CompanionState(_) | ControlEvent::SocialSignal(_)) => {},
                     RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request)) => {
                         children.control().send(&ControlCommand::OnlineStatus {
                             session_epoch: self.lease.session_epoch.value(),
@@ -3388,6 +3419,16 @@ impl SessionLifecycle {
                         .map_err(|_| SessionError::Realtime)?;
                     priority = RealtimeSource::Realtime;
                 }
+                CheckpointInput::Control(Ok(ControlEvent::CompanionState(_))) => {
+                    Self::update_companion_from_control(control, realtime)?;
+                    priority = RealtimeSource::Realtime;
+                }
+                CheckpointInput::Control(Ok(ControlEvent::SocialSignal(signal))) => {
+                    realtime
+                        .signal(signal)
+                        .map_err(|_| SessionError::Realtime)?;
+                    priority = RealtimeSource::Realtime;
+                }
                 CheckpointInput::Control(Ok(
                     ControlEvent::RomPresenceReset
                     | ControlEvent::OnlineRequest(_)
@@ -3460,11 +3501,42 @@ impl SessionLifecycle {
                 }
             }
         }
+        if let ControlCommand::RemoteCompanion(companion) = &command {
+            // Companion records are latest-value like updates and coalesce
+            // the same way; signals always pass through.
+            for previous in buffered.iter_mut().rev() {
+                let ControlCommand::RemoteCompanion(previous) = previous else {
+                    break;
+                };
+                if previous.handle() == companion.handle() {
+                    *previous = *companion;
+                    return Ok(());
+                }
+            }
+        }
         if buffered.len() == coop_sidecar::MAX_OWNER_EVENT_QUEUE {
             return Err(SessionError::Realtime);
         }
         buffered.push(command);
         Ok(())
+    }
+
+    fn update_companion_from_control(
+        control: &ControlChannel,
+        realtime: &mut RealtimeCoordinator,
+    ) -> Result<(), SessionError> {
+        let Some((generation, _, companion)) = control.latest_companion_state() else {
+            return Err(SessionError::Realtime);
+        };
+        if control.reset_latched() || generation != realtime.generation() {
+            return Err(SessionError::Realtime);
+        }
+        if realtime.recovery_needed() {
+            return Ok(());
+        }
+        realtime
+            .update_companion(companion)
+            .map_err(|_| SessionError::Realtime)
     }
 
     fn update_realtime_from_control(
@@ -3542,6 +3614,12 @@ impl SessionLifecycle {
             ControlEvent::InteractRemotePlayer(interaction) => realtime
                 .interact(interaction)
                 .map_err(|_| SessionError::Realtime),
+            ControlEvent::CompanionState(_) => {
+                Self::update_companion_from_control(control, realtime)
+            }
+            ControlEvent::SocialSignal(signal) => {
+                realtime.signal(signal).map_err(|_| SessionError::Realtime)
+            }
             ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
             | ControlEvent::GroupTravel(_)
@@ -5232,7 +5310,9 @@ mod lifecycle_tests {
                 | coop_sidecar::control::ControlCommand::GroupTravel { .. }
                 | coop_sidecar::control::ControlCommand::PresenceRearm(_)
                 | coop_sidecar::control::ControlCommand::RemotePlayerUpdate(_)
-                | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_) => {
+                | coop_sidecar::control::ControlCommand::RemotePlayerDespawn(_)
+                | coop_sidecar::control::ControlCommand::RemoteCompanion(_)
+                | coop_sidecar::control::ControlCommand::RemoteSocialSignal(_) => {
                     panic!("checkpoint fixture must not receive presence lifecycle")
                 }
             };

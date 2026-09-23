@@ -15,6 +15,8 @@ pub mod presence;
 pub use presence::*;
 pub mod online;
 pub use online::*;
+pub mod social;
+pub use social::*;
 pub mod group_travel;
 pub use group_travel::*;
 

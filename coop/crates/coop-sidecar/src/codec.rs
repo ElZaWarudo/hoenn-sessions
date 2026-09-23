@@ -34,6 +34,8 @@ pub enum MessageType {
     SaveDataUpdated = 0x000D,
     OnlineRequest = 0x000E,
     GroupTravelClient = 0x000F,
+    CompanionState = 0x0010,
+    SocialSignal = 0x0011,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -49,6 +51,8 @@ pub enum MessageType {
     CheckpointGranted = 0x010C,
     OnlineStatus = 0x010D,
     GroupTravelServer = 0x010E,
+    RemoteCompanion = 0x010F,
+    RemoteSocialSignal = 0x0110,
 }
 
 impl MessageType {
@@ -69,7 +73,9 @@ impl MessageType {
             | Self::CheckpointReady
             | Self::SaveDataUpdated
             | Self::OnlineRequest
-            | Self::GroupTravelClient => Direction::RomToSidecar,
+            | Self::GroupTravelClient
+            | Self::CompanionState
+            | Self::SocialSignal => Direction::RomToSidecar,
             Self::SessionReady
             | Self::RemotePlayerSpawn
             | Self::RemotePlayerUpdate
@@ -84,7 +90,9 @@ impl MessageType {
             | Self::AbortBattle
             | Self::CheckpointGranted
             | Self::OnlineStatus
-            | Self::GroupTravelServer => Direction::SidecarToRom,
+            | Self::GroupTravelServer
+            | Self::RemoteCompanion
+            | Self::RemoteSocialSignal => Direction::SidecarToRom,
         }
     }
 }
@@ -109,6 +117,8 @@ impl TryFrom<u16> for MessageType {
             0x000D => Self::SaveDataUpdated,
             0x000E => Self::OnlineRequest,
             0x000F => Self::GroupTravelClient,
+            0x0010 => Self::CompanionState,
+            0x0011 => Self::SocialSignal,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -124,6 +134,8 @@ impl TryFrom<u16> for MessageType {
             0x010C => Self::CheckpointGranted,
             0x010D => Self::OnlineStatus,
             0x010E => Self::GroupTravelServer,
+            0x010F => Self::RemoteCompanion,
+            0x0110 => Self::RemoteSocialSignal,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -421,6 +433,26 @@ mod tests {
         assert_eq!(
             BridgeFrame::decode_for(&golden, Direction::RomToSidecar).unwrap(),
             frame
+        );
+    }
+
+    #[test]
+    fn social_message_types_preserve_direction() {
+        let companion = BridgeFrame::new(MessageType::CompanionState, 5, 9, &[0_u8; 8]).unwrap();
+        let signal = BridgeFrame::new(MessageType::SocialSignal, 6, 9, &[0_u8; 12]).unwrap();
+        let remote_companion =
+            BridgeFrame::new(MessageType::RemoteCompanion, 7, 9, &[0_u8; 16]).unwrap();
+        let remote_signal =
+            BridgeFrame::new(MessageType::RemoteSocialSignal, 8, 9, &[0_u8; 20]).unwrap();
+        assert_eq!(companion.direction(), Direction::RomToSidecar);
+        assert_eq!(signal.direction(), Direction::RomToSidecar);
+        assert_eq!(remote_companion.direction(), Direction::SidecarToRom);
+        assert_eq!(remote_signal.direction(), Direction::SidecarToRom);
+        assert!(companion.ensure_direction(Direction::SidecarToRom).is_err());
+        assert!(
+            remote_signal
+                .ensure_direction(Direction::RomToSidecar)
+                .is_err()
         );
     }
 

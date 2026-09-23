@@ -2558,3 +2558,230 @@ TEST("Cloud Coop presence rejects each zero identity field independently")
                            COOP_PRESENCE_INTERACTION_WARP_SEQUENCE_OFFSET,
                            sizeof(u32), &interactionOutput, interactionSnapshot);
 }
+
+TEST("Cloud Coop social codecs encode companion and signal golden bytes")
+{
+    static const u8 localCompanionBytes[COOP_PRESENCE_LOCAL_COMPANION_SIZE] = {
+        25, 0, 0, 1, 7, 0, 0, 0,
+    };
+    static const u8 remoteCompanionBytes[COOP_PRESENCE_REMOTE_COMPANION_SIZE] = {
+        239, 205, 171, 137, 103, 69, 35, 1, 9, 0, 0, 0, 150, 0, 2, 0,
+    };
+    static const u8 localSignalBytes[COOP_PRESENCE_LOCAL_SIGNAL_SIZE] = {
+        1, 0, 10, 0, 252, 255, 0, 0, 3, 0, 0, 0,
+    };
+    static const u8 remoteSignalBytes[COOP_PRESENCE_REMOTE_SIGNAL_SIZE] = {
+        239, 205, 171, 137, 103, 69, 35, 1, 12, 0, 0, 0, 2, 3, 0, 0,
+        0, 0, 0, 0,
+    };
+    struct CoopPresenceLocalCompanion localCompanion = {
+        .species = 25, .form = 0, .flags = 1, .source_sequence = 7,
+    };
+    struct CoopPresenceRemoteCompanion remoteCompanion = {
+        .handle = 0x0123456789abcdefULL, .server_sequence = 9,
+        .species = 150, .form = 2, .flags = 0,
+    };
+    struct CoopPresenceLocalSignal localSignal = {
+        .kind = COOP_PRESENCE_SIGNAL_PING, .emote = COOP_PRESENCE_EMOTE_NONE,
+        .x = 10, .y = -4, .source_sequence = 3,
+    };
+    struct CoopPresenceRemoteSignal remoteSignal = {
+        .handle = 0x0123456789abcdefULL, .server_sequence = 12,
+        .kind = COOP_PRESENCE_SIGNAL_EMOTE, .emote = COOP_PRESENCE_EMOTE_HEART,
+        .x = 0, .y = 0,
+    };
+    struct CoopPresenceLocalCompanion decodedLocalCompanion = {0};
+    struct CoopPresenceRemoteCompanion decodedRemoteCompanion = {0};
+    struct CoopPresenceLocalSignal decodedLocalSignal = {0};
+    struct CoopPresenceRemoteSignal decodedRemoteSignal = {0};
+    u8 bytes[COOP_PRESENCE_REMOTE_SIGNAL_SIZE];
+
+    EXPECT_EQ(COOP_PRESENCE_LOCAL_COMPANION_SIZE, 8);
+    EXPECT_EQ(COOP_PRESENCE_REMOTE_COMPANION_SIZE, 16);
+    EXPECT_EQ(COOP_PRESENCE_LOCAL_SIGNAL_SIZE, 12);
+    EXPECT_EQ(COOP_PRESENCE_REMOTE_SIGNAL_SIZE, 20);
+
+    EXPECT(CoopPresence_EncodeLocalCompanion(&localCompanion, bytes,
+                                             COOP_PRESENCE_LOCAL_COMPANION_SIZE));
+    EXPECT(BytesEqual(bytes, localCompanionBytes, COOP_PRESENCE_LOCAL_COMPANION_SIZE));
+    EXPECT(CoopPresence_DecodeLocalCompanion(bytes, COOP_PRESENCE_LOCAL_COMPANION_SIZE,
+                                             &decodedLocalCompanion));
+    EXPECT_EQ(decodedLocalCompanion.species, 25);
+    EXPECT_EQ(decodedLocalCompanion.form, 0);
+    EXPECT_EQ(decodedLocalCompanion.flags, 1);
+    EXPECT_EQ(decodedLocalCompanion.source_sequence, 7);
+
+    EXPECT(CoopPresence_EncodeRemoteCompanion(&remoteCompanion, bytes,
+                                              COOP_PRESENCE_REMOTE_COMPANION_SIZE));
+    EXPECT(BytesEqual(bytes, remoteCompanionBytes, COOP_PRESENCE_REMOTE_COMPANION_SIZE));
+    EXPECT(CoopPresence_DecodeRemoteCompanion(bytes, COOP_PRESENCE_REMOTE_COMPANION_SIZE,
+                                              &decodedRemoteCompanion));
+    EXPECT_EQ(decodedRemoteCompanion.handle, remoteCompanion.handle);
+    EXPECT_EQ(decodedRemoteCompanion.server_sequence, 9);
+    EXPECT_EQ(decodedRemoteCompanion.species, 150);
+    EXPECT_EQ(decodedRemoteCompanion.form, 2);
+    EXPECT_EQ(decodedRemoteCompanion.flags, 0);
+
+    EXPECT(CoopPresence_EncodeLocalSignal(&localSignal, bytes,
+                                          COOP_PRESENCE_LOCAL_SIGNAL_SIZE));
+    EXPECT(BytesEqual(bytes, localSignalBytes, COOP_PRESENCE_LOCAL_SIGNAL_SIZE));
+    EXPECT(CoopPresence_DecodeLocalSignal(bytes, COOP_PRESENCE_LOCAL_SIGNAL_SIZE,
+                                          &decodedLocalSignal));
+    EXPECT_EQ(decodedLocalSignal.kind, COOP_PRESENCE_SIGNAL_PING);
+    EXPECT_EQ(decodedLocalSignal.emote, COOP_PRESENCE_EMOTE_NONE);
+    EXPECT_EQ(decodedLocalSignal.x, 10);
+    EXPECT_EQ(decodedLocalSignal.y, -4);
+    EXPECT_EQ(decodedLocalSignal.source_sequence, 3);
+
+    EXPECT(CoopPresence_EncodeRemoteSignal(&remoteSignal, bytes,
+                                           COOP_PRESENCE_REMOTE_SIGNAL_SIZE));
+    EXPECT(BytesEqual(bytes, remoteSignalBytes, COOP_PRESENCE_REMOTE_SIGNAL_SIZE));
+    EXPECT(CoopPresence_DecodeRemoteSignal(bytes, COOP_PRESENCE_REMOTE_SIGNAL_SIZE,
+                                           &decodedRemoteSignal));
+    EXPECT_EQ(decodedRemoteSignal.handle, remoteSignal.handle);
+    EXPECT_EQ(decodedRemoteSignal.server_sequence, 12);
+    EXPECT_EQ(decodedRemoteSignal.kind, COOP_PRESENCE_SIGNAL_EMOTE);
+    EXPECT_EQ(decodedRemoteSignal.emote, COOP_PRESENCE_EMOTE_HEART);
+    EXPECT_EQ(decodedRemoteSignal.x, 0);
+    EXPECT_EQ(decodedRemoteSignal.y, 0);
+}
+
+TEST("Cloud Coop social codecs reject malformed companion and signal input")
+{
+    struct CoopPresenceLocalCompanion localCompanion = {
+        .species = 25, .form = 0, .flags = 1, .source_sequence = 7,
+    };
+    struct CoopPresenceLocalCompanion decodedLocalCompanion = {
+        .species = 1, .form = 1, .flags = 1, .source_sequence = 1,
+    };
+    struct CoopPresenceLocalSignal localSignal = {
+        .kind = COOP_PRESENCE_SIGNAL_PING, .emote = COOP_PRESENCE_EMOTE_NONE,
+        .x = 10, .y = -4, .source_sequence = 3,
+    };
+    struct CoopPresenceLocalSignal decodedLocalSignal = {
+        .kind = COOP_PRESENCE_SIGNAL_EMOTE, .emote = COOP_PRESENCE_EMOTE_HEART,
+        .x = 1, .y = 1, .source_sequence = 1,
+    };
+    struct CoopPresenceRemoteCompanion remoteCompanion = {
+        .handle = 0x0123456789abcdefULL, .server_sequence = 9,
+        .species = 150, .form = 2, .flags = 0,
+    };
+    struct CoopPresenceRemoteSignal remoteSignal = {
+        .handle = 0x0123456789abcdefULL, .server_sequence = 12,
+        .kind = COOP_PRESENCE_SIGNAL_EMOTE, .emote = COOP_PRESENCE_EMOTE_HEART,
+        .x = 0, .y = 0,
+    };
+    struct CoopPresenceRemoteCompanion decodedRemoteCompanion = {
+        .handle = 1, .server_sequence = 1,
+        .species = 1, .form = 1, .flags = 0,
+    };
+    struct CoopPresenceRemoteSignal decodedRemoteSignal = {
+        .handle = 1, .server_sequence = 1,
+        .kind = COOP_PRESENCE_SIGNAL_PING, .emote = COOP_PRESENCE_EMOTE_NONE,
+        .x = 1, .y = 1,
+    };
+    u8 bytes[COOP_PRESENCE_REMOTE_SIGNAL_SIZE];
+    u8 snapshot[COOP_PRESENCE_REMOTE_SIGNAL_SIZE];
+    u32 i;
+
+    EXPECT(CoopPresence_EncodeLocalCompanion(&localCompanion, bytes,
+                                             COOP_PRESENCE_LOCAL_COMPANION_SIZE));
+    for (i = 0; i < COOP_PRESENCE_LOCAL_COMPANION_SIZE; i++)
+        snapshot[i] = bytes[i];
+
+    /* Zero species, reserved flag bits, out-of-range form, zero sequence. */
+    bytes[COOP_PRESENCE_LOCAL_COMPANION_SPECIES_OFFSET] = 0;
+    bytes[COOP_PRESENCE_LOCAL_COMPANION_SPECIES_OFFSET + 1] = 0;
+    EXPECT(!CoopPresence_DecodeLocalCompanion(bytes, COOP_PRESENCE_LOCAL_COMPANION_SIZE,
+                                              &decodedLocalCompanion));
+    EXPECT_EQ(decodedLocalCompanion.species, 1);
+    for (i = 0; i < COOP_PRESENCE_LOCAL_COMPANION_SIZE; i++)
+        bytes[i] = snapshot[i];
+    bytes[COOP_PRESENCE_LOCAL_COMPANION_FLAGS_OFFSET] = 0x02;
+    EXPECT(!CoopPresence_DecodeLocalCompanion(bytes, COOP_PRESENCE_LOCAL_COMPANION_SIZE,
+                                              &decodedLocalCompanion));
+    for (i = 0; i < COOP_PRESENCE_LOCAL_COMPANION_SIZE; i++)
+        bytes[i] = snapshot[i];
+    bytes[COOP_PRESENCE_LOCAL_COMPANION_FORM_OFFSET] = COOP_PRESENCE_COMPANION_FORM_MAX + 1;
+    EXPECT(!CoopPresence_DecodeLocalCompanion(bytes, COOP_PRESENCE_LOCAL_COMPANION_SIZE,
+                                              &decodedLocalCompanion));
+    for (i = 0; i < COOP_PRESENCE_LOCAL_COMPANION_SIZE; i++)
+        bytes[i] = snapshot[i];
+    EXPECT(!CoopPresence_DecodeLocalCompanion(bytes, COOP_PRESENCE_LOCAL_COMPANION_SIZE - 1,
+                                              &decodedLocalCompanion));
+    EXPECT_EQ(decodedLocalCompanion.source_sequence, 1);
+
+    /* Remote companion rejects zero handle and zero sequence. */
+    EXPECT(CoopPresence_EncodeRemoteCompanion(&remoteCompanion, bytes,
+                                              COOP_PRESENCE_REMOTE_COMPANION_SIZE));
+    for (i = 0; i < 8; i++)
+        bytes[COOP_PRESENCE_REMOTE_COMPANION_HANDLE_OFFSET + i] = 0;
+    EXPECT(!CoopPresence_DecodeRemoteCompanion(bytes, COOP_PRESENCE_REMOTE_COMPANION_SIZE,
+                                               &decodedRemoteCompanion));
+    EXPECT_EQ(decodedRemoteCompanion.species, 1);
+    EXPECT(CoopPresence_EncodeRemoteCompanion(&remoteCompanion, bytes,
+                                              COOP_PRESENCE_REMOTE_COMPANION_SIZE));
+
+    /* Local signal rejects reserved bytes, mixed bodies, unknown ordinals. */
+    EXPECT(CoopPresence_EncodeLocalSignal(&localSignal, bytes,
+                                          COOP_PRESENCE_LOCAL_SIGNAL_SIZE));
+    for (i = 0; i < COOP_PRESENCE_LOCAL_SIGNAL_SIZE; i++)
+        snapshot[i] = bytes[i];
+    bytes[COOP_PRESENCE_LOCAL_SIGNAL_RESERVED_OFFSET] = 1;
+    EXPECT(!CoopPresence_DecodeLocalSignal(bytes, COOP_PRESENCE_LOCAL_SIGNAL_SIZE,
+                                           &decodedLocalSignal));
+    EXPECT_EQ(decodedLocalSignal.kind, COOP_PRESENCE_SIGNAL_EMOTE);
+    for (i = 0; i < COOP_PRESENCE_LOCAL_SIGNAL_SIZE; i++)
+        bytes[i] = snapshot[i];
+    bytes[COOP_PRESENCE_LOCAL_SIGNAL_EMOTE_OFFSET] = COOP_PRESENCE_EMOTE_HEART;
+    EXPECT(!CoopPresence_DecodeLocalSignal(bytes, COOP_PRESENCE_LOCAL_SIGNAL_SIZE,
+                                           &decodedLocalSignal));
+    for (i = 0; i < COOP_PRESENCE_LOCAL_SIGNAL_SIZE; i++)
+        bytes[i] = snapshot[i];
+    bytes[COOP_PRESENCE_LOCAL_SIGNAL_KIND_OFFSET] = 0;
+    EXPECT(!CoopPresence_DecodeLocalSignal(bytes, COOP_PRESENCE_LOCAL_SIGNAL_SIZE,
+                                           &decodedLocalSignal));
+    for (i = 0; i < COOP_PRESENCE_LOCAL_SIGNAL_SIZE; i++)
+        bytes[i] = snapshot[i];
+    bytes[COOP_PRESENCE_LOCAL_SIGNAL_EMOTE_OFFSET] = COOP_PRESENCE_EMOTE_MAX + 1;
+    EXPECT(!CoopPresence_DecodeLocalSignal(bytes, COOP_PRESENCE_LOCAL_SIGNAL_SIZE,
+                                           &decodedLocalSignal));
+
+    /* Remote signal rejects reserved tail and emote coordinates. */
+    EXPECT(CoopPresence_EncodeRemoteSignal(&remoteSignal, bytes,
+                                           COOP_PRESENCE_REMOTE_SIGNAL_SIZE));
+    for (i = 0; i < COOP_PRESENCE_REMOTE_SIGNAL_SIZE; i++)
+        snapshot[i] = bytes[i];
+    bytes[COOP_PRESENCE_REMOTE_SIGNAL_RESERVED_OFFSET + 1] = 1;
+    EXPECT(!CoopPresence_DecodeRemoteSignal(bytes, COOP_PRESENCE_REMOTE_SIGNAL_SIZE,
+                                            &decodedRemoteSignal));
+    EXPECT_EQ(decodedRemoteSignal.x, 1);
+    for (i = 0; i < COOP_PRESENCE_REMOTE_SIGNAL_SIZE; i++)
+        bytes[i] = snapshot[i];
+    bytes[COOP_PRESENCE_REMOTE_SIGNAL_X_OFFSET] = 1;
+    EXPECT(!CoopPresence_DecodeRemoteSignal(bytes, COOP_PRESENCE_REMOTE_SIGNAL_SIZE,
+                                            &decodedRemoteSignal));
+
+    /* Encoders reject mixed bodies without touching the output. */
+    {
+        struct CoopPresenceLocalSignal mixed = localSignal;
+        u8 canary[COOP_PRESENCE_LOCAL_SIGNAL_SIZE];
+        u8 out[COOP_PRESENCE_LOCAL_SIGNAL_SIZE];
+
+        for (i = 0; i < sizeof(out); i++)
+        {
+            out[i] = (u8)(0xA0 + i);
+            canary[i] = out[i];
+        }
+        mixed.emote = COOP_PRESENCE_EMOTE_STAR;
+        EXPECT(!CoopPresence_EncodeLocalSignal(&mixed, out, sizeof(out)));
+        EXPECT(BytesEqual(out, canary, sizeof(out)));
+        mixed = localSignal;
+        mixed.kind = COOP_PRESENCE_SIGNAL_EMOTE;
+        mixed.emote = COOP_PRESENCE_EMOTE_NONE;
+        mixed.x = 0;
+        mixed.y = 0;
+        EXPECT(!CoopPresence_EncodeLocalSignal(&mixed, out, sizeof(out)));
+        EXPECT(BytesEqual(out, canary, sizeof(out)));
+    }
+}

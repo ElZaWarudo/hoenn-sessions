@@ -11,7 +11,7 @@ use std::{
 };
 
 use coop_cloud::{BridgeAbiVersion, ProtocolVersion};
-use coop_protocol::{LocalPresenceStateV1, sequence_is_newer};
+use coop_protocol::{LocalCompanionV1, LocalPresenceStateV1, sequence_is_newer};
 use coop_sidecar::{
     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, GAME_PROTOCOL_VERSION, MAX_DESCRIPTOR_BYTES,
     SessionDescriptor,
@@ -1512,6 +1512,8 @@ struct PresenceSnapshot {
     generation: u32,
     revision: u32,
     state: Option<LocalPresenceStateV1>,
+    companion_revision: u32,
+    companion: Option<LocalCompanionV1>,
     reset_generation: Option<u32>,
     lifecycle_permit: bool,
     reset_latched: bool,
@@ -1627,6 +1629,7 @@ pub struct ControlChannel {
     #[allow(dead_code)]
     lifecycle_tx: mpsc::Sender<LifecycleWrite>,
     interaction_rx: mpsc::Receiver<(u32, coop_protocol::PresenceInteractionV1)>,
+    signal_rx: mpsc::Receiver<(u32, coop_protocol::LocalSignalV1)>,
     snapshot_rx: watch::Receiver<PresenceSnapshot>,
     terminal_rx: mpsc::Receiver<ControlTerminalCause>,
     stop_tx: watch::Sender<bool>,
@@ -1640,6 +1643,7 @@ pub struct ControlChannel {
     pending_critical: Option<ControlEvent>,
     observed_reset_generation: Option<u32>,
     observed_state: Option<(u32, u32)>,
+    observed_companion: Option<(u32, u32)>,
 }
 
 impl std::fmt::Debug for ControlChannel {
@@ -1702,6 +1706,8 @@ impl ControlChannel {
             ControlCommand::RemotePlayerSpawn(_)
                 | ControlCommand::RemotePlayerUpdate(_)
                 | ControlCommand::RemotePlayerDespawn(_)
+                | ControlCommand::RemoteCompanion(_)
+                | ControlCommand::RemoteSocialSignal(_)
         ) {
             return Err(ProcessError::InvalidArgument);
         }
@@ -1724,6 +1730,8 @@ impl ControlChannel {
             self.shared.snapshot_tx.send_modify(|snapshot| {
                 snapshot.lifecycle_permit = false;
                 snapshot.state = None;
+                snapshot.companion = None;
+                snapshot.companion_revision = 0;
             });
         }
         if let Some(cause) = self.shared.terminal() {
@@ -1788,6 +1796,8 @@ impl ControlChannel {
             ControlCommand::RemotePlayerSpawn(_)
                 | ControlCommand::RemotePlayerUpdate(_)
                 | ControlCommand::RemotePlayerDespawn(_)
+                | ControlCommand::RemoteCompanion(_)
+                | ControlCommand::RemoteSocialSignal(_)
         ) || generation != self.lifecycle_generation()
         {
             return Err(ProcessError::InvalidArgument);
@@ -1886,6 +1896,13 @@ impl ControlChannel {
             .map(|state| (snapshot.generation, snapshot.revision, state))
     }
 
+    pub(crate) fn latest_companion_state(&self) -> Option<(u32, u32, LocalCompanionV1)> {
+        let snapshot = self.shared.current_snapshot();
+        snapshot
+            .companion
+            .map(|companion| (snapshot.generation, snapshot.companion_revision, companion))
+    }
+
     pub(crate) fn reset_latched(&self) -> bool {
         self.shared.current_snapshot().reset_latched
     }
@@ -1925,6 +1942,9 @@ impl ControlChannel {
             if let Some(event) = self.take_presence_event() {
                 return Ok(event);
             }
+            if let Some(event) = self.take_companion_event() {
+                return Ok(event);
+            }
             if let Ok(event) = self.critical_rx.try_recv() {
                 #[cfg(test)]
                 self.wait_after_critical_dequeue().await;
@@ -1937,6 +1957,12 @@ impl ControlChannel {
             if let Ok((generation, interaction)) = self.interaction_rx.try_recv() {
                 if generation == self.lifecycle_generation() && !self.reset_latched() {
                     return Ok(ControlEvent::InteractRemotePlayer(interaction));
+                }
+                continue;
+            }
+            if let Ok((generation, signal)) = self.signal_rx.try_recv() {
+                if generation == self.lifecycle_generation() && !self.reset_latched() {
+                    return Ok(ControlEvent::SocialSignal(signal));
                 }
                 continue;
             }
@@ -1979,6 +2005,16 @@ impl ControlChannel {
                             && !self.reset_latched()
                         {
                             return Ok(ControlEvent::InteractRemotePlayer(interaction));
+                        }
+                    }
+                    None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
+                },
+                signal = self.signal_rx.recv() => match signal {
+                    Some((generation, signal)) => {
+                        if generation == self.lifecycle_generation()
+                            && !self.reset_latched()
+                        {
+                            return Ok(ControlEvent::SocialSignal(signal));
                         }
                     }
                     None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
@@ -2090,6 +2126,27 @@ impl ControlChannel {
         Some(ControlEvent::PlayerState(state))
     }
 
+    fn take_companion_event(&mut self) -> Option<ControlEvent> {
+        if self.take_reset_notification().is_some() {
+            return Some(ControlEvent::RomPresenceReset);
+        }
+        let snapshot = self.snapshot_rx.borrow().clone();
+        let companion = snapshot.companion?;
+        let current = (snapshot.generation, snapshot.companion_revision);
+        let newer = match self.observed_companion {
+            Some((generation, revision)) if generation == snapshot.generation => {
+                sequence_is_newer(snapshot.companion_revision, revision)
+            }
+            Some((generation, _)) => snapshot.generation != generation,
+            None => true,
+        };
+        if !newer {
+            return None;
+        }
+        self.observed_companion = Some(current);
+        Some(ControlEvent::CompanionState(companion))
+    }
+
     async fn shutdown_until(&mut self, deadline: tokio::time::Instant) -> Result<(), ProcessError> {
         let _ = self.stop_tx.send(true);
         let mut first_error = None;
@@ -2147,6 +2204,7 @@ impl ControlChannel {
         let (lifecycle_tx, lifecycle_rx) = mpsc::channel(LIFECYCLE_WRITE_CAPACITY);
         let (critical_event_tx, critical_event_rx) = mpsc::channel(CRITICAL_EVENT_CAPACITY);
         let (interaction_tx, interaction_rx) = mpsc::channel(INTERACTION_EVENT_CAPACITY);
+        let (signal_tx, signal_rx) = mpsc::channel(INTERACTION_EVENT_CAPACITY);
         let (online_tx, online_rx) = mpsc::channel(8);
         let (terminal_tx, terminal_rx) = mpsc::channel(TERMINAL_SIGNAL_CAPACITY);
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -2154,6 +2212,8 @@ impl ControlChannel {
             generation: 0,
             revision: 0,
             state: None,
+            companion_revision: 0,
+            companion: None,
             reset_generation: None,
             // Realtime activation is the sole lifecycle opener. Ordinary
             // pre-Ready control traffic remains critical-only.
@@ -2180,6 +2240,7 @@ impl ControlChannel {
                 reader,
                 critical_event_tx,
                 interaction_tx,
+                signal_tx,
                 online_tx,
                 reader_shared,
                 reader_stop,
@@ -2209,6 +2270,7 @@ impl ControlChannel {
             critical_rx: critical_event_rx,
             lifecycle_tx,
             interaction_rx,
+            signal_rx,
             snapshot_rx,
             terminal_rx,
             stop_tx,
@@ -2222,6 +2284,7 @@ impl ControlChannel {
             pending_critical: None,
             observed_reset_generation: None,
             observed_state: None,
+            observed_companion: None,
         }
     }
 }
@@ -2255,6 +2318,7 @@ async fn run_control_reader(
     mut stream: tokio::net::tcp::OwnedReadHalf,
     critical_tx: mpsc::Sender<ControlEvent>,
     interaction_tx: mpsc::Sender<(u32, coop_protocol::PresenceInteractionV1)>,
+    signal_tx: mpsc::Sender<(u32, coop_protocol::LocalSignalV1)>,
     online_tx: mpsc::Sender<(u32, coop_protocol::OnlineRequest)>,
     shared: Arc<PumpShared>,
     mut stop_rx: watch::Receiver<bool>,
@@ -2381,6 +2445,53 @@ async fn run_control_reader(
                     }
                 }
             }
+            ControlEvent::CompanionState(companion) => {
+                if shared
+                    .pending_rearm
+                    .lock()
+                    .map_or(true, |pending| pending.is_some())
+                {
+                    continue;
+                }
+                if companion.validate().is_err() {
+                    shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+                    break;
+                }
+                shared.snapshot_tx.send_modify(|snapshot| {
+                    if !snapshot.reset_latched
+                        && (snapshot.companion_revision == 0
+                            || sequence_is_newer(
+                                companion.source_sequence(),
+                                snapshot.companion_revision,
+                            ))
+                    {
+                        snapshot.companion_revision = companion.source_sequence();
+                        snapshot.companion = Some(companion);
+                    }
+                });
+            }
+            ControlEvent::SocialSignal(signal) => {
+                if signal.validate().is_err() {
+                    shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+                    break;
+                }
+                let snapshot = shared.current_snapshot();
+                if snapshot.reset_latched {
+                    continue;
+                }
+                let generation = snapshot.generation;
+                match signal_tx.try_send((generation, signal)) {
+                    Ok(()) => {}
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        shared.set_terminal(ControlTerminalCause::InteractionOverflow);
+                        break;
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        shared.set_terminal(ControlTerminalCause::ReaderClosed);
+                        break;
+                    }
+                }
+            }
             ControlEvent::RomPresenceReset => {
                 if !apply_presence_reset(&shared) {
                     break;
@@ -2417,6 +2528,8 @@ fn apply_presence_rearmed(
             snapshot.generation = generation;
             snapshot.revision = 0;
             snapshot.state = None;
+            snapshot.companion_revision = 0;
+            snapshot.companion = None;
             snapshot.lifecycle_permit = false;
         } else {
             valid = false;
@@ -2444,6 +2557,8 @@ fn apply_presence_reset(shared: &PumpShared) -> bool {
             snapshot.generation = next;
             snapshot.revision = 0;
             snapshot.state = None;
+            snapshot.companion_revision = 0;
+            snapshot.companion = None;
             snapshot.reset_generation = Some(next);
             snapshot.lifecycle_permit = false;
             snapshot.reset_latched = true;
@@ -3609,6 +3724,8 @@ impl SupervisedChildren {
                 | ControlEvent::CheckpointExpired { .. }
                 | ControlEvent::PlayerState(_)
                 | ControlEvent::InteractRemotePlayer(_)
+                | ControlEvent::CompanionState(_)
+                | ControlEvent::SocialSignal(_)
                 | ControlEvent::OnlineRequest(_)
                 | ControlEvent::PresenceRearmed { .. } => {}
                 // A semantic travel record cannot be discarded to reach a
@@ -4846,6 +4963,8 @@ mod tests {
             generation: 0,
             revision: 0,
             state: None,
+            companion_revision: 0,
+            companion: None,
             reset_generation: None,
             lifecycle_permit: false,
             reset_latched: false,

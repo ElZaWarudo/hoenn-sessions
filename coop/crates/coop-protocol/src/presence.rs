@@ -335,6 +335,11 @@ impl AvatarId {
         self.0
     }
 
+    /// Converts a wire ordinal into this avatar id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PresenceError::UnknownEnum`] for an unassigned ordinal.
     pub const fn from_wire(value: u8) -> Result<Self, PresenceError> {
         if value >= Self::Brendan.0 && value <= Self::MAX {
             Ok(Self(value))

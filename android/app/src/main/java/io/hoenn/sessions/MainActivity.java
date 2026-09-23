@@ -1,5 +1,6 @@
 package io.hoenn.sessions;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.*;
@@ -241,6 +242,8 @@ public final class MainActivity extends Activity {
             showMenu();
         }else finish();
     }
+    // Android 13+ uses the registered OnBackInvokedCallback; this handles older devices.
+    @SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){handleBack();}
     @Override protected void onPause(){resumed=false;hostHandler.removeCallbacks(resumeRetry);controller.clear();if(game!=null){game.keys=0;if(NativeSession.isActive() || pendingStart){restartAfterPause=true;NativeSession.stop();}else game.stop();}super.onPause();}
     @Override protected void onDestroy(){destroyed=true;hostHandler.removeCallbacks(resumeRetry);if(Build.VERSION.SDK_INT>=33 && backCallback!=null)getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);inputManager.unregisterInputDeviceListener(controllerDevices);NativeSession.stop();worker.shutdown();super.onDestroy();}

@@ -12,8 +12,9 @@ use std::{
 };
 
 use coop_protocol::{
-    GroupTravelClientRecord, GroupTravelServerRecord, LocalPresenceStateV1, PresenceInteractionV1,
-    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+    GroupTravelClientRecord, GroupTravelServerRecord, LocalCompanionV1, LocalPresenceStateV1,
+    LocalSignalV1, PresenceInteractionV1, RemoteCompanionV1, RemotePlayerDespawnV1,
+    RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -173,6 +174,10 @@ pub enum ControlCommand {
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     #[serde(rename = "remote_player_despawn")]
     RemotePlayerDespawn(RemotePlayerDespawnV1),
+    #[serde(rename = "remote_companion")]
+    RemoteCompanion(RemoteCompanionV1),
+    #[serde(rename = "remote_social_signal")]
+    RemoteSocialSignal(RemoteSignalV1),
     #[serde(rename = "group_travel")]
     GroupTravel {
         session_epoch: u32,
@@ -291,6 +296,10 @@ pub enum ControlEvent {
     PlayerState(LocalPresenceStateV1),
     #[serde(rename = "interact_remote_player")]
     InteractRemotePlayer(PresenceInteractionV1),
+    #[serde(rename = "companion_state")]
+    CompanionState(LocalCompanionV1),
+    #[serde(rename = "social_signal")]
+    SocialSignal(LocalSignalV1),
     #[serde(rename = "rom_presence_reset")]
     RomPresenceReset,
     #[serde(rename = "group_travel")]
@@ -337,6 +346,10 @@ enum ControlEventWire {
     PlayerState(LocalPresenceStateV1),
     #[serde(rename = "interact_remote_player")]
     InteractRemotePlayer(PresenceInteractionV1),
+    #[serde(rename = "companion_state")]
+    CompanionState(LocalCompanionV1),
+    #[serde(rename = "social_signal")]
+    SocialSignal(LocalSignalV1),
     #[serde(rename = "rom_presence_reset")]
     RomPresenceReset {},
     #[serde(rename = "group_travel")]
@@ -395,6 +408,8 @@ impl<'de> Deserialize<'de> for ControlEvent {
             },
             ControlEventWire::PlayerState(value) => Self::PlayerState(value),
             ControlEventWire::InteractRemotePlayer(value) => Self::InteractRemotePlayer(value),
+            ControlEventWire::CompanionState(value) => Self::CompanionState(value),
+            ControlEventWire::SocialSignal(value) => Self::SocialSignal(value),
             ControlEventWire::RomPresenceReset {} => Self::RomPresenceReset,
             ControlEventWire::GroupTravel(value) => Self::GroupTravel(value),
         })
@@ -682,8 +697,10 @@ async fn read_bounded_line_with_prefix(
 mod tests {
     use super::*;
     use coop_protocol::{
-        CanonicalUsername, DespawnReason, LocalPresenceStateV1, PresenceHandle,
-        PresenceInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+        CanonicalUsername, DespawnReason, EmoteId, LocalCompanionV1, LocalPresenceStateV1,
+        LocalSignalV1, PresenceHandle, PresenceInteractionV1, RemoteCompanionV1,
+        RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1,
+        SignalKind,
     };
     use serde_json::Value;
     use tokio::net::TcpStream;
@@ -700,7 +717,7 @@ mod tests {
         .unwrap()
     }
 
-    fn presence_commands() -> [ControlCommand; 3] {
+    fn presence_commands() -> [ControlCommand; 5] {
         let state = local_presence_state();
         [
             ControlCommand::RemotePlayerSpawn(
@@ -723,14 +740,32 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            ControlCommand::RemoteCompanion(
+                RemoteCompanionV1::new(PresenceHandle::new(1).unwrap(), 4, 25, 0, 1).unwrap(),
+            ),
+            ControlCommand::RemoteSocialSignal(
+                RemoteSignalV1::new(
+                    PresenceHandle::new(1).unwrap(),
+                    5,
+                    SignalKind::Ping,
+                    EmoteId::None,
+                    6,
+                    7,
+                )
+                .unwrap(),
+            ),
         ]
     }
 
-    fn presence_events() -> [ControlEvent; 3] {
+    fn presence_events() -> [ControlEvent; 5] {
         [
             ControlEvent::PlayerState(local_presence_state()),
             ControlEvent::InteractRemotePlayer(
                 PresenceInteractionV1::new(PresenceHandle::new(1).unwrap(), 2, 3, -4, 5).unwrap(),
+            ),
+            ControlEvent::CompanionState(LocalCompanionV1::new(25, 0, 1, 7).unwrap()),
+            ControlEvent::SocialSignal(
+                LocalSignalV1::new(SignalKind::Emote, EmoteId::Heart, 0, 0, 8).unwrap(),
             ),
             ControlEvent::RomPresenceReset,
         ]
@@ -854,6 +889,8 @@ mod tests {
             let round_trip = if record["type"] == "rom_presence_reset"
                 || record["type"] == "player_state"
                 || record["type"] == "interact_remote_player"
+                || record["type"] == "companion_state"
+                || record["type"] == "social_signal"
             {
                 serde_json::from_slice::<ControlEvent>(&line[..line.len() - 1])
                     .map(|event| serde_json::to_value(event).unwrap())

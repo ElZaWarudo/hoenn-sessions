@@ -17,6 +17,10 @@
 #define COOP_PRESENCE_UPDATE_SIZE 40
 #define COOP_PRESENCE_DESPAWN_SIZE 16
 #define COOP_PRESENCE_INTERACTION_SIZE 20
+#define COOP_PRESENCE_LOCAL_COMPANION_SIZE 8
+#define COOP_PRESENCE_REMOTE_COMPANION_SIZE 16
+#define COOP_PRESENCE_LOCAL_SIGNAL_SIZE 12
+#define COOP_PRESENCE_REMOTE_SIGNAL_SIZE 20
 
 /* Versioned spellings keep the wire revision explicit at call sites. */
 #define COOP_PRESENCE_WORLD_LOCATION_V1_SIZE COOP_PRESENCE_WORLD_LOCATION_SIZE
@@ -26,6 +30,10 @@
 #define COOP_PRESENCE_UPDATE_V1_SIZE COOP_PRESENCE_UPDATE_SIZE
 #define COOP_PRESENCE_DESPAWN_V1_SIZE COOP_PRESENCE_DESPAWN_SIZE
 #define COOP_PRESENCE_INTERACTION_V1_SIZE COOP_PRESENCE_INTERACTION_SIZE
+#define COOP_PRESENCE_LOCAL_COMPANION_V1_SIZE COOP_PRESENCE_LOCAL_COMPANION_SIZE
+#define COOP_PRESENCE_REMOTE_COMPANION_V1_SIZE COOP_PRESENCE_REMOTE_COMPANION_SIZE
+#define COOP_PRESENCE_LOCAL_SIGNAL_V1_SIZE COOP_PRESENCE_LOCAL_SIGNAL_SIZE
+#define COOP_PRESENCE_REMOTE_SIGNAL_V1_SIZE COOP_PRESENCE_REMOTE_SIGNAL_SIZE
 
 #define COOP_PRESENCE_WORLD_LOCATION_REGION_OFFSET 0
 #define COOP_PRESENCE_WORLD_LOCATION_MAP_GROUP_OFFSET 1
@@ -67,6 +75,35 @@
 #define COOP_PRESENCE_INTERACTION_WARP_SEQUENCE_OFFSET 12
 #define COOP_PRESENCE_INTERACTION_X_OFFSET 16
 #define COOP_PRESENCE_INTERACTION_Y_OFFSET 18
+
+#define COOP_PRESENCE_LOCAL_COMPANION_SPECIES_OFFSET 0
+#define COOP_PRESENCE_LOCAL_COMPANION_FORM_OFFSET 2
+#define COOP_PRESENCE_LOCAL_COMPANION_FLAGS_OFFSET 3
+#define COOP_PRESENCE_LOCAL_COMPANION_SOURCE_SEQUENCE_OFFSET 4
+
+#define COOP_PRESENCE_REMOTE_COMPANION_HANDLE_OFFSET 0
+#define COOP_PRESENCE_REMOTE_COMPANION_SERVER_SEQUENCE_OFFSET 8
+#define COOP_PRESENCE_REMOTE_COMPANION_SPECIES_OFFSET 12
+#define COOP_PRESENCE_REMOTE_COMPANION_FORM_OFFSET 14
+#define COOP_PRESENCE_REMOTE_COMPANION_FLAGS_OFFSET 15
+
+#define COOP_PRESENCE_LOCAL_SIGNAL_KIND_OFFSET 0
+#define COOP_PRESENCE_LOCAL_SIGNAL_EMOTE_OFFSET 1
+#define COOP_PRESENCE_LOCAL_SIGNAL_X_OFFSET 2
+#define COOP_PRESENCE_LOCAL_SIGNAL_Y_OFFSET 4
+#define COOP_PRESENCE_LOCAL_SIGNAL_RESERVED_OFFSET 6
+#define COOP_PRESENCE_LOCAL_SIGNAL_SOURCE_SEQUENCE_OFFSET 8
+
+#define COOP_PRESENCE_REMOTE_SIGNAL_HANDLE_OFFSET 0
+#define COOP_PRESENCE_REMOTE_SIGNAL_SERVER_SEQUENCE_OFFSET 8
+#define COOP_PRESENCE_REMOTE_SIGNAL_KIND_OFFSET 12
+#define COOP_PRESENCE_REMOTE_SIGNAL_EMOTE_OFFSET 13
+#define COOP_PRESENCE_REMOTE_SIGNAL_X_OFFSET 14
+#define COOP_PRESENCE_REMOTE_SIGNAL_Y_OFFSET 16
+#define COOP_PRESENCE_REMOTE_SIGNAL_RESERVED_OFFSET 18
+
+#define COOP_PRESENCE_COMPANION_FLAG_SHINY 0x01
+#define COOP_PRESENCE_COMPANION_FORM_MAX 63
 
 #define COOP_PRESENCE_USERNAME_MAX 32
 
@@ -125,6 +162,27 @@ enum CoopPresenceDespawnReason
     COOP_PRESENCE_DESPAWN_PARTITION_LEFT = 6,
 };
 
+enum CoopPresenceSignalKind
+{
+    COOP_PRESENCE_SIGNAL_PING = 1,
+    COOP_PRESENCE_SIGNAL_EMOTE = 2,
+};
+
+enum CoopPresenceEmoteId
+{
+    COOP_PRESENCE_EMOTE_NONE = 0,
+    COOP_PRESENCE_EMOTE_EXCLAIM = 1,
+    COOP_PRESENCE_EMOTE_QUESTION = 2,
+    COOP_PRESENCE_EMOTE_HEART = 3,
+    COOP_PRESENCE_EMOTE_MUSIC = 4,
+    COOP_PRESENCE_EMOTE_SWEAT = 5,
+    COOP_PRESENCE_EMOTE_ANGER = 6,
+    COOP_PRESENCE_EMOTE_SLEEP = 7,
+    COOP_PRESENCE_EMOTE_STAR = 8,
+};
+
+#define COOP_PRESENCE_EMOTE_MAX COOP_PRESENCE_EMOTE_STAR
+
 /* bytes[0..length) are content and bytes[length] is the required terminator.
  * Later bytes are nonsemantic; encoders canonicalize unused wire padding. */
 struct CoopPresenceUsername
@@ -179,6 +237,42 @@ struct CoopPresenceInteraction
     u64 handle;
     u32 observed_server_sequence;
     u32 observed_warp_sequence;
+    s16 x;
+    s16 y;
+};
+
+struct CoopPresenceLocalCompanion
+{
+    u16 species;
+    u8 form;
+    u8 flags;
+    u32 source_sequence;
+};
+
+struct CoopPresenceRemoteCompanion
+{
+    u64 handle;
+    u32 server_sequence;
+    u16 species;
+    u8 form;
+    u8 flags;
+};
+
+struct CoopPresenceLocalSignal
+{
+    u8 kind;
+    u8 emote;
+    s16 x;
+    s16 y;
+    u32 source_sequence;
+};
+
+struct CoopPresenceRemoteSignal
+{
+    u64 handle;
+    u32 server_sequence;
+    u8 kind;
+    u8 emote;
     s16 x;
     s16 y;
 };
@@ -251,6 +345,22 @@ bool8 CoopPresence_EncodeDespawn(const struct CoopPresenceDespawn *value,
                                  u8 *bytes, u32 length);
 bool8 CoopPresence_DecodeInteraction(const u8 *bytes, u32 length,
                                      struct CoopPresenceInteraction *out);
+bool8 CoopPresence_DecodeLocalCompanion(const u8 *bytes, u32 length,
+                                        struct CoopPresenceLocalCompanion *out);
+bool8 CoopPresence_EncodeLocalCompanion(const struct CoopPresenceLocalCompanion *value,
+                                        u8 *bytes, u32 length);
+bool8 CoopPresence_DecodeRemoteCompanion(const u8 *bytes, u32 length,
+                                         struct CoopPresenceRemoteCompanion *out);
+bool8 CoopPresence_EncodeRemoteCompanion(const struct CoopPresenceRemoteCompanion *value,
+                                         u8 *bytes, u32 length);
+bool8 CoopPresence_DecodeLocalSignal(const u8 *bytes, u32 length,
+                                     struct CoopPresenceLocalSignal *out);
+bool8 CoopPresence_EncodeLocalSignal(const struct CoopPresenceLocalSignal *value,
+                                     u8 *bytes, u32 length);
+bool8 CoopPresence_DecodeRemoteSignal(const u8 *bytes, u32 length,
+                                      struct CoopPresenceRemoteSignal *out);
+bool8 CoopPresence_EncodeRemoteSignal(const struct CoopPresenceRemoteSignal *value,
+                                      u8 *bytes, u32 length);
 
 bool8 CoopPresence_SequenceIsNewer(u32 candidate, u32 reference);
 u32 CoopPresence_NextSequence(u32 current);

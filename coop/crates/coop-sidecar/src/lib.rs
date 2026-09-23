@@ -14,9 +14,9 @@ pub use codec::{
 };
 pub use realtime::{
     CONNECT_TIMEOUT, MAX_INTERACTION_QUEUE, MAX_OWNER_EVENT_QUEUE, MAX_REALTIME_ENDPOINT_BYTES,
-    MAX_REMOTE_PLAYERS, PRESENCE_TICK, READY_TIMEOUT, RealtimeDriver, RealtimeEndpoint,
-    RealtimeError, RealtimeGrant, RealtimeInputError, RealtimeOutcome, RealtimeOwner,
-    RealtimeOwnerEvent, WRITE_TIMEOUT, realtime_channel, run_realtime,
+    MAX_REMOTE_PLAYERS, MAX_SIGNAL_QUEUE, PRESENCE_TICK, READY_TIMEOUT, RealtimeDriver,
+    RealtimeEndpoint, RealtimeError, RealtimeGrant, RealtimeInputError, RealtimeOutcome,
+    RealtimeOwner, RealtimeOwnerEvent, WRITE_TIMEOUT, realtime_channel, run_realtime,
 };
 pub use server::{
     BridgeDescriptor, ControlDescriptor, HANDSHAKE_ACCEPTED_LINE, LocalSidecar,

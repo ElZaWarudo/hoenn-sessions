@@ -42,13 +42,13 @@ static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
 static bool8 IsOutboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_ROM_READY
-        && type <= COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_CLIENT;
+        && type <= COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL;
 }
 
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_SERVER;
+        && type <= COOP_BRIDGE_MESSAGE_REMOTE_SOCIAL_SIGNAL;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -850,7 +850,9 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
 
     if (message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN
      || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_UPDATE
-     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN)
+     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_DESPAWN
+     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_COMPANION
+     || message->type == COOP_BRIDGE_MESSAGE_REMOTE_SOCIAL_SIGNAL)
     {
         if (!IsCloudSessionActive()
          || message->session_epoch != sCoopNetRuntime.session_epoch

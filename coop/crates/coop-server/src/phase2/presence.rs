@@ -16,9 +16,10 @@ use std::{
 
 use coop_cloud::{CharacterId, RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 use coop_protocol::{
-    CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1, PresenceHandle,
-    PresenceInteractionV1, RegionId, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
-    RemotePlayerUpdateV1, WorldLocation,
+    CanonicalUsername, DespawnReason, Direction, LocalCompanionV1, LocalPresenceStateV1,
+    LocalSignalV1, PresenceHandle, PresenceInteractionV1, RegionId, RemoteCompanionV1,
+    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1,
+    WorldLocation,
 };
 use thiserror::Error;
 
@@ -99,6 +100,8 @@ pub enum PresenceOutboundV1 {
     Spawn(RemotePlayerSpawnV1),
     Update(RemotePlayerUpdateV1),
     Despawn(RemotePlayerDespawnV1),
+    Companion(RemoteCompanionV1),
+    Signal(RemoteSignalV1),
 }
 
 impl PresenceOutboundV1 {
@@ -108,6 +111,8 @@ impl PresenceOutboundV1 {
             Self::Spawn(value) => value.handle(),
             Self::Update(value) => value.handle(),
             Self::Despawn(value) => value.handle(),
+            Self::Companion(value) => value.handle(),
+            Self::Signal(value) => value.handle(),
         }
     }
 
@@ -117,6 +122,8 @@ impl PresenceOutboundV1 {
             Self::Spawn(value) => value.server_sequence(),
             Self::Update(value) => value.server_sequence(),
             Self::Despawn(value) => value.server_sequence(),
+            Self::Companion(value) => value.server_sequence(),
+            Self::Signal(value) => value.server_sequence(),
         }
     }
 }
@@ -205,6 +212,9 @@ struct PresenceEntry {
     advertised: bool,
     queue: VecDeque<PresenceOutboundV1>,
     dropped_updates: u32,
+    companion: Option<LocalCompanionV1>,
+    last_signal_source_sequence: u32,
+    social_sequence: u32,
 }
 
 type VisiblePeer = (PresenceHandle, LocalPresenceStateV1, CanonicalUsername, u32);
@@ -299,11 +309,45 @@ impl PresenceState {
         self.entries.insert(handle, entry);
     }
 
+    /// Enqueues a stored companion record so a newcomer sees the follower
+    /// at once. Best effort like any transient record; returns false only
+    /// when the stored record no longer constructs, which callers treat as
+    /// an internal failure.
+    fn enqueue_companion_catchup(
+        &mut self,
+        receiver: PresenceHandle,
+        subject: PresenceHandle,
+    ) -> bool {
+        let Some((companion, social_sequence)) = self.entries.get(&subject).and_then(|entry| {
+            entry
+                .companion
+                .map(|companion| (companion, entry.social_sequence))
+        }) else {
+            return true;
+        };
+        let Ok(remote) = RemoteCompanionV1::new(
+            subject,
+            social_sequence,
+            companion.species(),
+            companion.form(),
+            companion.flags(),
+        ) else {
+            return false;
+        };
+        let _ = self.enqueue(receiver, PresenceOutboundV1::Companion(remote));
+        true
+    }
+
     fn enqueue(&mut self, receiver: PresenceHandle, event: PresenceOutboundV1) -> bool {
         let Some(entry) = self.entries.get_mut(&receiver) else {
             return true;
         };
         let is_update = matches!(event, PresenceOutboundV1::Update(_));
+        // Companion and signal records are transient social state. Like
+        // position updates they are lossy under backpressure and never
+        // disconnect a slow receiver (only updates increment the drop
+        // counter); unlike updates they refresh on the next submit instead
+        // of the next tick.
         if let Some(last) = entry.queue.back_mut() {
             let same_subject = last.handle() == event.handle();
             if same_subject {
@@ -325,6 +369,17 @@ impl PresenceState {
                         }
                     }
                     (PresenceOutboundV1::Spawn(existing), PresenceOutboundV1::Spawn(new)) => {
+                        *existing = new;
+                        return true;
+                    }
+                    (
+                        PresenceOutboundV1::Companion(existing),
+                        PresenceOutboundV1::Companion(new),
+                    ) => {
+                        *existing = new;
+                        return true;
+                    }
+                    (PresenceOutboundV1::Signal(existing), PresenceOutboundV1::Signal(new)) => {
                         *existing = new;
                         return true;
                     }
@@ -750,6 +805,9 @@ impl PresenceService {
             advertised,
             queue: VecDeque::new(),
             dropped_updates: 0,
+            companion: None,
+            last_signal_source_sequence: 0,
+            social_sequence: 0,
         };
         let existing_visible = state.visible_peers(&partition, None);
         if advertised {
@@ -773,6 +831,10 @@ impl PresenceService {
                 return Err(PresenceServiceError::Internal);
             };
             let _ = state.enqueue(handle, PresenceOutboundV1::Spawn(spawn));
+            if !state.enqueue_companion_catchup(handle, other_handle) {
+                state.clear_fail_closed();
+                return Err(PresenceServiceError::Internal);
+            }
         }
         if advertised {
             let Some(new_entry) = state.entries.get(&handle) else {
@@ -920,6 +982,9 @@ impl PresenceService {
                 state.remove_entry(connection.handle, DespawnReason::Disconnected);
                 return Err(PresenceServiceError::Internal);
             }
+            if !state.enqueue_companion_catchup(connection.handle, other_handle) {
+                return Err(PresenceServiceError::Internal);
+            }
         }
         if is_advertised {
             let spawn =
@@ -1012,6 +1077,128 @@ impl PresenceService {
         submitted: LocalPresenceStateV1,
     ) -> Result<PresenceSubmitOutcome, PresenceServiceError> {
         self.submit_state(connection, submitted)
+    }
+
+    /// Submits a newer follower-companion state. Unlike pose publication,
+    /// companion fanout is event-driven: accepted submits are fanned out to
+    /// visible partition peers immediately instead of waiting for a tick.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an inactive capability or invalid companion.
+    pub fn submit_companion(
+        &self,
+        connection: PresenceConnection,
+        submitted: LocalCompanionV1,
+    ) -> Result<PresenceSubmitOutcome, PresenceServiceError> {
+        submitted
+            .validate()
+            .map_err(|_| PresenceServiceError::InvalidState)?;
+        let _gate = self.lock_gate()?;
+        let mut state = self.lock_state();
+        let Some(entry) = state.entries.get(&connection.handle) else {
+            return Err(PresenceServiceError::NotConnected);
+        };
+        if entry.connection.generation != connection.generation {
+            return Err(PresenceServiceError::NotConnected);
+        }
+        if let Some(current) = entry.companion
+            && !coop_protocol::sequence_is_newer(
+                submitted.source_sequence(),
+                current.source_sequence(),
+            )
+        {
+            return Ok(PresenceSubmitOutcome::Ignored);
+        }
+        let partition = entry.partition.clone();
+        let advertised = entry.advertised;
+        let social_sequence = coop_protocol::next_sequence(entry.social_sequence);
+        let entry = state
+            .entries
+            .get_mut(&connection.handle)
+            .ok_or(PresenceServiceError::NotConnected)?;
+        entry.companion = Some(submitted);
+        entry.social_sequence = social_sequence;
+        if !advertised {
+            return Ok(PresenceSubmitOutcome::Accepted);
+        }
+        let remote = RemoteCompanionV1::new(
+            connection.handle,
+            social_sequence,
+            submitted.species(),
+            submitted.form(),
+            submitted.flags(),
+        )
+        .map_err(|_| PresenceServiceError::Internal)?;
+        state.fanout_best_effort(
+            &partition,
+            connection.handle,
+            &PresenceOutboundV1::Companion(remote),
+        );
+        Ok(PresenceSubmitOutcome::Accepted)
+    }
+
+    /// Submits a ping/emote signal for immediate best-effort fanout to
+    /// visible partition peers. Signals are transient: they are never
+    /// persisted, never tick-published, and may be dropped under
+    /// backpressure without disconnecting anyone.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an inactive capability, an invalid signal, a
+    /// stale/duplicate source sequence, or an unadvertised initiator.
+    pub fn submit_signal(
+        &self,
+        connection: PresenceConnection,
+        submitted: LocalSignalV1,
+    ) -> Result<PresenceSubmitOutcome, PresenceServiceError> {
+        submitted
+            .validate()
+            .map_err(|_| PresenceServiceError::InvalidState)?;
+        let _gate = self.lock_gate()?;
+        let now_ms = self.inner.store.now();
+        let mut state = self.lock_state();
+        let Some(entry) = state.entries.get(&connection.handle) else {
+            return Err(PresenceServiceError::NotConnected);
+        };
+        if entry.connection.generation != connection.generation {
+            return Err(PresenceServiceError::NotConnected);
+        }
+        if !entry.advertised
+            || entry.lease_expires_at_ms <= now_ms
+            || now_ms.saturating_sub(entry.last_accepted_at_ms) >= PRESENCE_STALE_MS
+        {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        }
+        if !coop_protocol::sequence_is_newer(
+            submitted.source_sequence(),
+            entry.last_signal_source_sequence,
+        ) {
+            return Ok(PresenceSubmitOutcome::Ignored);
+        }
+        let partition = entry.partition.clone();
+        let social_sequence = coop_protocol::next_sequence(entry.social_sequence);
+        let entry = state
+            .entries
+            .get_mut(&connection.handle)
+            .ok_or(PresenceServiceError::NotConnected)?;
+        entry.last_signal_source_sequence = submitted.source_sequence();
+        entry.social_sequence = social_sequence;
+        let remote = RemoteSignalV1::new(
+            connection.handle,
+            social_sequence,
+            submitted.kind(),
+            submitted.emote(),
+            submitted.x(),
+            submitted.y(),
+        )
+        .map_err(|_| PresenceServiceError::Internal)?;
+        state.fanout_best_effort(
+            &partition,
+            connection.handle,
+            &PresenceOutboundV1::Signal(remote),
+        );
+        Ok(PresenceSubmitOutcome::Accepted)
     }
 
     /// Idempotently removes one connection and informs its visible peers.

@@ -21,6 +21,8 @@ protocol.types = {
   SAVE_DATA_UPDATED = 0x000D,
   ONLINE_REQUEST = 0x000E,
   GROUP_TRAVEL_CLIENT = 0x000F,
+  COMPANION_STATE = 0x0010,
+  SOCIAL_SIGNAL = 0x0011,
   SESSION_READY = 0x0100,
   REMOTE_PLAYER_SPAWN = 0x0101,
   REMOTE_PLAYER_UPDATE = 0x0102,
@@ -36,6 +38,8 @@ protocol.types = {
   CHECKPOINT_GRANTED = 0x010C,
   ONLINE_STATUS = 0x010D,
   GROUP_TRAVEL_SERVER = 0x010E,
+  REMOTE_COMPANION = 0x010F,
+  REMOTE_SOCIAL_SIGNAL = 0x0110,
 }
 
 local function is_integer(value)
@@ -45,13 +49,13 @@ end
 function protocol.is_outbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.ROM_READY
-    and message_type <= protocol.types.GROUP_TRAVEL_CLIENT
+    and message_type <= protocol.types.SOCIAL_SIGNAL
 end
 
 function protocol.is_inbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.SESSION_READY
-    and message_type <= protocol.types.GROUP_TRAVEL_SERVER
+    and message_type <= protocol.types.REMOTE_SOCIAL_SIGNAL
 end
 
 protocol.GROUP_TRAVEL_RECORD_SIZE = 32
