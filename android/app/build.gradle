@@ -13,13 +13,12 @@ android {
     ndkVersion '27.2.12479018'
     defaultConfig {
         buildConfigField 'String', 'ROM_SHA256', '"' + releaseManifest.game_build.rom_sha256 + '"'
-        buildConfigField 'String', 'GAME_BUILD', '"' + releaseManifest.game_build.id + '"'
-        buildConfigField 'int', 'BRIDGE_ADDRESS', releaseManifest.net_bridge.address.toString()
-        buildConfigField 'int', 'SAVE_GENERATION_ADDRESS', releaseManifest.save.generation_address.toString()
+        buildConfigField 'String', 'RELEASE_KEY_ID', '"' + (System.getenv('HOENN_RELEASE_TRUST_KEY_ID') ?: 'release-pilot-v1') + '"'
+        buildConfigField 'String', 'RELEASE_PUBLIC_KEY_HEX', '"' + (System.getenv('HOENN_RELEASE_TRUST_KEY_HEX') ?: 'b160132e926809403c3f6bcfe7b75fc54be73cbf2687491956bbc8d8a91aeb88') + '"'
         applicationId 'io.hoenn.sessions'
         minSdk 28
         targetSdk 36
-        versionCode 3
+        versionCode = Integer.parseInt(System.getenv('HOENN_ANDROID_VERSION_CODE') ?: '3')
         versionName '0.3'
         ndk { abiFilters 'x86_64', 'arm64-v8a' }
         externalNativeBuild { cmake { arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON' } }

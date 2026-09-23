@@ -385,6 +385,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 2
 
       - name: Resolve image name
         id: image
@@ -499,6 +501,41 @@ jobs:
               ;;
           esac
 
+      - name: Decide whether Android app code needs an APK
+        id: android-change
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          if [ '${{ github.event_name }}' = workflow_dispatch ]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          else
+            published="$(ssh hoenn-vps 'cat /srv/hoenn/android/current 2>/dev/null || true')"
+            if ! [[ "$published" =~ ^[0-9a-f]{40}$ ]]; then
+              echo 'build=true' >> "$GITHUB_OUTPUT"
+            else
+              published_trust="$(ssh hoenn-vps "cat /srv/hoenn/android/$published/android-release-trust.txt 2>/dev/null || true")"
+              if [ "$published_trust" != "$RELEASE_KEY_ID:${RELEASE_PUBLIC_KEY_HEX,,}" ]; then
+                echo 'build=true' >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              git fetch --no-tags --depth=1 origin "$published"
+              if git diff --name-only "$published" HEAD -- \
+                android/app/src/main/ android/app/build.gradle \
+                android/build-rust.py android/build-ci.sh android/gradle.properties \
+                android/build.gradle android/settings.gradle android/gradle/wrapper/ \
+                coop/crates/coop-android/ coop/crates/coop-sidecar/ \
+                coop/crates/coop-launcher/ coop/crates/coop-cloud/ \
+                coop/crates/coop-protocol/ coop/crates/coop-save/ Cargo.toml Cargo.lock \
+                | grep -q .; then
+                echo 'build=true' >> "$GITHUB_OUTPUT"
+              else
+                echo 'build=false' >> "$GITHUB_OUTPUT"
+              fi
+            fi
+          fi
+
       - name: Install ARM/GBA toolchain
         if: steps.status.outputs.state == 'ABSENT'
         run: |
@@ -571,23 +608,26 @@ jobs:
           PY
 
       - name: Set up Android Java
-        if: steps.status.outputs.state == 'ABSENT'
+        if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Set up Android SDK
-        if: steps.status.outputs.state == 'ABSENT'
+        if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           log-accepted-android-sdk-licenses: 'false'
 
       - name: Build signed Android APK from the server ROM and manifest
-        if: steps.status.outputs.state == 'ABSENT'
+        if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
         env:
           ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HOENN_RELEASE_TRUST_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          HOENN_RELEASE_TRUST_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+          HOENN_ANDROID_VERSION_CODE: ${{ github.run_number }}
         run: bash android/build-ci.sh release
 
       - name: Build coop-sidecar (Windows x86_64)
@@ -730,14 +770,24 @@ jobs:
           scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
           ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
 
-      # APK contains the ROM. Keep it private and outside the Windows envelope.
-      # This runs only for a fresh release, matching the ROM/server build above.
+      # APKs remain private; a new one is needed only when Android client code changes.
       - name: Store signed Android APK privately on VPS
-        if: steps.status.outputs.state == 'ABSENT'
+        if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
+        env:
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
         run: |
-          ssh hoenn-vps 'mkdir -p /srv/hoenn/android/${{ github.sha }} && chmod 700 /srv/hoenn/android /srv/hoenn/android/${{ github.sha }}'
+          ssh hoenn-vps 'command -v setfacl >/dev/null && mkdir -p /srv/hoenn/android/${{ github.sha }} && chmod 700 /srv/hoenn/android /srv/hoenn/android/${{ github.sha }} && setfacl -m u:10001:r-x /srv/hoenn/android /srv/hoenn/android/${{ github.sha }}'
           scp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/app-release.apk.sha256 hoenn-vps:/srv/hoenn/android/${{ github.sha }}/
-          ssh hoenn-vps 'chmod 600 /srv/hoenn/android/${{ github.sha }}/*'
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          apk = pathlib.Path('android/app/build/outputs/apk/release/app-release.apk')
+          metadata = dict(release_id=os.environ['GITHUB_SHA'], version_code=int(os.environ['GITHUB_RUN_NUMBER']), size=apk.stat().st_size, sha256=hashlib.sha256(apk.read_bytes()).hexdigest())
+          pathlib.Path('android-apk-metadata.json').write_text(json.dumps(metadata, sort_keys=True, separators=(',', ':')) + '\n')
+          pathlib.Path('android-release-trust.txt').write_text(os.environ['RELEASE_KEY_ID'] + ':' + os.environ['RELEASE_PUBLIC_KEY_HEX'].lower() + '\n')
+          PY
+          scp android-apk-metadata.json android-release-trust.txt hoenn-vps:/srv/hoenn/android/${{ github.sha }}/
+          ssh hoenn-vps 'mv /srv/hoenn/android/${{ github.sha }}/android-apk-metadata.json /srv/hoenn/android/${{ github.sha }}/metadata.json && chmod 600 /srv/hoenn/android/${{ github.sha }}/* && setfacl -m u:10001:r-- /srv/hoenn/android/${{ github.sha }}/metadata.json /srv/hoenn/android/${{ github.sha }}/app-release.apk'
 
       # ROM travels runner -> VPS only; nothing is uploaded as a GH artifact.
       - name: Upload release to VPS staging
@@ -825,6 +875,37 @@ jobs:
           else
             ssh hoenn-vps "$REMOTE"
           fi
+
+      - name: Publish latest Android APK after release promotion
+        run: |
+          ssh hoenn-vps "RELEASE_SHA='${{ github.sha }}' python3 -" <<'PY'
+          import hashlib, json, os, pathlib
+          import subprocess
+          os.umask(0o077)
+          root = pathlib.Path('/srv/hoenn/android')
+          release_id = os.environ['RELEASE_SHA']
+          candidate = root / release_id
+          metadata = candidate / 'metadata.json'
+          apk = candidate / 'app-release.apk'
+          if metadata.is_file() and apk.is_file():
+              proposed = json.loads(metadata.read_text())
+              digest = hashlib.sha256()
+              with apk.open('rb') as stream:
+                  for block in iter(lambda: stream.read(1024 * 1024), b''):
+                      digest.update(block)
+              if proposed['release_id'] != release_id or apk.stat().st_size != proposed['size'] or digest.hexdigest() != proposed['sha256']:
+                  raise SystemExit('APK metadata does not match its release')
+              marker = root / 'current'
+              current_id = marker.read_text().strip() if marker.is_file() else ''
+              current_metadata = root / current_id / 'metadata.json'
+              current_version = json.loads(current_metadata.read_text())['version_code'] if current_metadata.is_file() else 0
+              if proposed['version_code'] > current_version:
+                  temporary = root / 'current.tmp'
+                  temporary.write_text(release_id + '\n')
+                  temporary.chmod(0o600)
+                  subprocess.run(['setfacl', '-m', 'u:10001:r--', str(temporary)], check=True)
+                  temporary.replace(marker)
+          PY
 
       # A manual run can reuse a release signed by an earlier run for this
       # commit. The installer floor must use that signed sequence, not today's

@@ -30,6 +30,7 @@ final class SecureCredentialStore {
     private static final String KEY_ALIAS = "hoenn-sessions-refresh-v1";
     private static final String PREFS = "secure_session_v1";
     private static final String ACCOUNT = "account";
+    static final String TOKEN_SERVICE = "pokecrossroads-coop-launcher";
     private static Context app;
 
     private SecureCredentialStore() { }
@@ -83,8 +84,7 @@ final class SecureCredentialStore {
 
     static synchronized boolean store(String service, String username, String token) {
         try {
-            preferences().edit().putString(tokenKey(service,username), encrypt(token)).commit();
-            return true;
+            return preferences().edit().putString(tokenKey(service,username), encrypt(token)).commit();
         } catch (Exception ignored) {
             return false;
         }
@@ -136,7 +136,7 @@ final class SecureCredentialStore {
     static synchronized void clearLocalAccount() {
         Account account = loadAccount();
         SharedPreferences.Editor editor = preferences().edit().remove(ACCOUNT);
-        if (account != null) try { editor.remove(tokenKey("pokecrossroads-coop-launcher",account.username)); } catch(Exception ignored) { }
+        if (account != null) try { editor.remove(tokenKey(TOKEN_SERVICE,account.username)); } catch(Exception ignored) { }
         editor.apply();
     }
 }
