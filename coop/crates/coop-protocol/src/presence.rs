@@ -328,7 +328,7 @@ impl AvatarId {
     pub const Birch: Self = Self(10);
     pub const Hiker: Self = Self(11);
     pub const Sailor: Self = Self(12);
-    pub const MAX: u8 = 176;
+    pub const MAX: u8 = 206;
 
     #[must_use]
     pub const fn wire(self) -> u8 {
@@ -1769,14 +1769,14 @@ mod tests {
         assert_eq!(MovementMode::from_wire(2), Ok(MovementMode::Run));
         assert_eq!(AnimationId::from_wire(1), Ok(AnimationId::Locomotion));
         assert_eq!(AvatarId::from_wire(2), Ok(AvatarId::May));
-        for value in 1..=176 {
+        for value in 1..=AvatarId::MAX {
             let avatar = AvatarId::from_wire(value).expect("selectable character");
             assert_eq!(avatar.wire(), value);
             let json = serde_json::to_string(&avatar).unwrap();
             assert_eq!(serde_json::from_str::<AvatarId>(&json).unwrap(), avatar);
         }
         assert!(AvatarId::from_wire(0).is_err());
-        assert!(AvatarId::from_wire(177).is_err());
+        assert!(AvatarId::from_wire(AvatarId::MAX + 1).is_err());
         assert_eq!(PlayerState::from_wire(0), Ok(PlayerState::Hidden));
         assert_eq!(
             DespawnReason::from_wire(6),
