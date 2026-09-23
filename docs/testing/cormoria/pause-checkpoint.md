@@ -1,10 +1,10 @@
 # User-requested pause — 2026-09-22; resumed 2026-09-23
 
-The user requested “pause when you can,” then explicitly said “Continue” on 2026-09-23. The pause ended. This file preserves the earlier checkpoint; current verification is appended to `baseline.md`.
+The user requested “pause when you can,” then explicitly said “Continue” on 2026-09-23. The pause ended. This file preserves the earlier checkpoint; current verification is appended to `baseline.md`. Later on 2026-09-23 the user removed legacy-save migration from scope while keeping lossless player-data transfer on every trip between ROM regions. The active plan supersedes older save-preservation instructions below.
 
 ## Settled direction
 
-Automatic travel between two ROMs, sharing Pokémon, items, menus and co-op. The user chose to combine the best parts of both games. The communicated implementation direction is a shared Hoenn Sessions engine/roster/progression/co-op, plus Dreamstone's expanded bag, quest journal and Cormoria content, with separate world-content builds. The latest request, “would be good if you preserve the saves,” supersedes earlier permission to require new saves: preserve original files and existing progress, migrate only copies, and verify compatibility before use. This updates the requirements only; implementation remains paused. The active brief is `docs/plans/2026-09-22-cormoria-two-roms.md`; the older combined-ROM plan is superseded.
+Automatic travel between ROMs, sharing Pokémon, items, menus and co-op. The user chose to combine the best parts of both games. The implementation direction is a shared Hoenn Sessions engine/roster/progression/co-op, plus Dreamstone's expanded bag, quest journal and Cormoria content, with separate world-content builds. Legacy saves need not migrate; new V2 characters must retain all shared player data when traveling in either direction. The active brief is `docs/plans/2026-09-22-cormoria-two-roms.md`; the older combined-ROM plan is superseded.
 
 Canonical worktree: `C:\Users\Mayor\.codex\worktrees\dreamstone-region-assessment\hoenn-sessions`, branch `codex/dreamstone-region`. HEAD remains `7a95b80b18` (the original plan-only commit); subsequent work is uncommitted. Leave the unrelated original checkout untouched.
 
@@ -21,7 +21,7 @@ Canonical worktree: `C:\Users\Mayor\.codex\worktrees\dreamstone-region-assessmen
 
 First inspect status and any final worker checkpoint. Finish post-fix U1 validation, inspect its actual files and integrate a path-limited commit. Then finish and integrate the split-world prototype, including Makefile selection, required shared maps, unavailable-map handling and a default-world regression build. Do not publish a Cormoria build with an empty world as a finished feature.
 
-The shared bag/save/section changes, full campaign adaptation, launcher handoff, common menus and observed co-op round trip are still outstanding. Earlier U2/U3/U4 readiness notes exist in task history; update them for the agreed shared-engine, two-ROM design and existing-save preservation before implementation. Earlier proposals to reject all legacy saves without a migration path are superseded. U3's final save layout must account for the expanded bag before freezing offsets.
+The shared bag/save/section changes, full campaign adaptation, launcher handoff, common menus and observed co-op round trip are still outstanding. Earlier U2/U3/U4 readiness notes exist in task history; update them for the agreed shared-engine, new-V2-save design before implementation. The final save layout must account for the expanded bag before freezing offsets.
 
 Final worker checkpoints: U1 completed regeneration, then stopped its active verification; no process remains. The latest inventory has 122 native bindings, 172 audio identities and 195 allocated trainers (one added through macro discovery). Final corpus/check, allocation review and independent follow-up remain pending. U3 stopped its read-only shell without edits: expanded bag adds 540 bytes, provisionally leaving 2,792 bytes in the current final sector for Cormoria state. U3 also found a stale mGBA 0.10.5 pin in the server save admission code and a donor eight-array/seven-pocket-count inconsistency. These are investigation findings, not implemented fixes.
 
@@ -29,4 +29,4 @@ No automatic ROM switching, integrated Cormoria gameplay, player transfer or two
 
 ## Resumed work
 
-The final donor inventory verification passed (15 tests and pinned-source `--check`) and was committed at `ae19f1933e`. The split-world map/layout generator passed five assembled-output tests; the default world linked with unchanged resource usage and was committed at `bc15ca2fc0`. The user-required save preservation and the full campaign, travel, and co-op integration remain open.
+The final donor inventory verification passed (15 tests and pinned-source `--check`) and was committed at `ae19f1933e`. The split-world map/layout generator passed five assembled-output tests; the default world linked with unchanged resource usage and was committed at `bc15ca2fc0`. The full campaign, lossless travel for new V2 characters, and co-op integration remain open.

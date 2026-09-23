@@ -18,6 +18,7 @@ This replaces the single-binary strategy in [the combined-ROM plan](2026-09-22-1
 - The user chose to combine the best parts of both games. Build both ROMs from a shared Hoenn Sessions engine: retain its co-op, Pokémon roster and progression; adapt Dreamstone's expanded bag, quest journal and regional adventure. Menus, item definitions, Pokémon definitions and save structures must agree across both builds. World content is selected at build time.
 - Keep Dreamstone's campaign source pinned at `f7997186345885bfa23a170e5f573851fc034b9b`, with explicit import transformations and reproducible build inputs. Preserve its campaign and source attribution. The original donor build is a behavioral reference, not a compatible drop-in second ROM.
 - Treat each ROM and its matching save/bridge descriptor as a separate verified artifact. A shared release identity must not pretend that the ROM hashes or memory addresses are identical.
+- Model ROM travel through a world catalog with stable world IDs, artifact identity, save namespace, portal arrival and return positions, and bridge descriptor per world. The checkpoint, transfer, shutdown, launch and recovery code must take source and destination IDs rather than special-case Cormoria. Register Cormoria first; later regions add catalog/content entries and a schema version when their regional progress needs new fields.
 - Keep one active V2 player authority and one regional save per ROM. Every switch copies and verifies the current shared player state before the destination becomes active; neither direction may drop Pokémon, inventory, settings or co-op identity. Switching is a checkpointed transaction, not copying one game's entire save over the other.
 - Start two-ROM travel from a new V2 save in a distinct save namespace. Existing V1 saves are outside the travel contract; no legacy-save migration is required. Reject a V1 file presented as a traveling V2 character.
 - Introduce schema version two before enabling travel: `CoopSaveV1` has exactly four regional-progress records and requires bytes 604–667 to be zero. Put Cormoria's eight-byte regional record at 604–611 in V2, require 612–667 to remain zero, and keep the existing 672-byte size, bitset offsets and CRC at 668. New V2 saves set the met-location-format status bit at creation. Keep V1 validation frozen; both ROMs and the launcher must agree on the V2 descriptor. Independent format review found no current use of bytes 604–611; this layout also keeps the first-six-chunk link-save margin at 20 bytes.
@@ -27,18 +28,30 @@ This replaces the single-binary strategy in [the combined-ROM plan](2026-09-22-1
 - Stop the old emulator before activating the destination. Commit arrival only after destination import, save and bridge verification succeed. Failed or interrupted transitions retain the departure save and a recoverable transaction.
 - Preserve co-op character/group identity while replacing the ROM-specific bridge and presence location. Server compatibility must distinguish a compatible release family from exact ROM identity.
 
+## Shared player transfer contract
+
+| State | Travel rule |
+| --- | --- |
+| Player identity and settings | Carry trainer identity, appearance, options and common menu state to the destination. |
+| Pokémon | Carry the party, every PC box, fusion storage and Day Care Pokémon with held items, mail and exact V2 met locations. Validate every occupied Pokémon before committing arrival. |
+| Inventory and economy | Carry all shared bag pockets, PC items, registered item, money and coins through stable item identities. Region-only quest items retain their owning region's semantics. |
+| Pokédex and co-op | Carry shared collection progress and the co-op character/group identity. Establish a fresh ROM-specific bridge and presence session after launch. |
+| Regional world | Keep each world's position, quests, flags, badges, puzzles, NPC changes and services in that world's save. A return resumes that world without replacing its progress with another world's bytes. |
+
+The transfer schema describes fields and stable identities, not raw source-ROM save offsets. Validate the source and destination world catalog entries, release family, transfer schema and artifact hashes before copying. Stage destination writes, verify the result, and commit the world switch only after arrival succeeds. A later ROM region uses the same transaction and supplies its own catalog entry and regional-state schema.
+
 ## Execution units
 
 1. **Verify sources and split world builds.** Build the pinned donor as a reference and finish the campaign dependency inventory. Add separate world build profiles with stable map/layout identities and explicit absent-map handling. Both released profiles share the same engine and player-data definitions; each must fit the 32 MiB limit independently.
 2. **Integrate the common systems and Cormoria.** Adapt the full campaign, quest runtime, native features and items into the Cormoria build. Share the expanded bag, menus, Pokémon systems and five-region V2 save/co-op contract. Implement authenticated save-layout descriptors, player-field transfer validation and a recoverable transfer record. Prove both travel directions retain inventory, party, every PC box, fusion storage, Day Care Pokémon, mail, settings and co-op identity without changing either world's story bytes. Test mismatched identities, unsupported values, corrupt saves and interrupted writes.
-3. **Connect travel and co-op.** Route a portal request through checkpoint, shutdown, destination save preparation, ROM launch and arrival acknowledgement. Add the Cormoria bridge/catalog and compatible release-family checks. Connect common menu entry points and settings; preserve regional quest menus.
+3. **Connect travel and co-op.** Resolve portal source and destination through the world catalog, then checkpoint, transfer shared state, shut down, prepare the destination save, launch its ROM and acknowledge arrival. Add Cormoria's catalog/bridge entry and compatible release-family checks without embedding a two-world assumption in the transaction. Connect common menu entry points and settings; preserve regional quest menus.
 4. **Verify the player flow.** Exercise entering, catching a Pokémon, acquiring an item, saving and returning. Observe both ROMs and two-client presence/reconnection. Inject a failed launch and confirm recovery. Report actual observations separately from fixture tests.
 
 ## Completion evidence
 
 Both ROMs build from pinned inputs. A real round trip retains shared player data and independent campaign progress. Co-op reconnects to the correct world without duplicating a live player. Failure recovery loses neither Pokémon nor items. Changes have independent code review and focused regression coverage. Merely generating a manifest, writing a converter, or passing mocked orchestration tests does not establish completion.
 
-## Save compatibility checkpoint
+## New V2 save checkpoint
 
 The read-only `coop-save` view exposes payloads from the validated, selected logical sectors without rewriting the Flash1M image. Its 24 focused tests pass. An earlier wide met-location prototype failed independent review because checksum-valid legacy Pokémon can already carry the proposed escape marker, and it lost the old unused values 251 and 252. The corrected, independently reviewed V2-only codec is on this branch. It preserves those values, while the live getter and setter remain unchanged. Its focused Linux ROM test passed 27 tests, with one pre-existing `KNOWN_FAILING`. Travel must admit Pokémon only from a validated V2 player authority.
 
