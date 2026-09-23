@@ -536,12 +536,14 @@ fn repairs_damaged_accepted_release_without_lowering_sequence_floor() {
         store.install_at(&release, &payloads, NOW),
         Err(UpdateError::InvalidCompleteGeneration(_))
     ));
-    // A running accepted generation holds no-delete guards. Repair resumes
-    // only after that process exits and releases them.
+    // Windows guards deny replacement until the running process exits.
+    #[cfg(windows)]
     assert!(matches!(
         store.repair_accepted_at(&release, &payloads, NOW),
         Err(UpdateError::ActivationIo(_))
     ));
+    #[cfg(not(windows))]
+    store.repair_accepted_at(&release, &payloads, NOW).unwrap();
     drop(held);
     store.repair_accepted_at(&release, &payloads, NOW).unwrap();
     assert_eq!(
