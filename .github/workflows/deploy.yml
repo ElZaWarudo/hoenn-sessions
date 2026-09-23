@@ -134,7 +134,7 @@ jobs:
   # mutable runtime files, the ROM, mGBA, and sidecar never enter the MSI.
   installer:
     needs: [validate, release-key-gate, release]
-    if: github.event_name == 'workflow_dispatch'
+    if: needs.release.outputs.installer_build == 'true'
     runs-on: windows-latest
     env:
       HOENN_COOP_API_BASE: ${{ vars.COOP_API_BASE }}
@@ -373,7 +373,7 @@ jobs:
 
   publish-installer:
     needs: [installer]
-    if: github.event_name == 'workflow_dispatch'
+    if: needs.installer.result == 'success'
     runs-on: ubuntu-24.04
     steps:
       - name: Download verified installer
@@ -450,6 +450,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       release_sequence: ${{ steps.installer-release.outputs.sequence }}
+      installer_build: ${{ steps.installer-change.outputs.build }}
     env:
       RELEASE_ID: ${{ github.sha }}
       RELEASE_SEQUENCE: ${{ github.run_number }}
@@ -514,6 +515,43 @@ jobs:
             echo "  IdentityFile ~/.ssh/hoenn_release"
             echo "  StrictHostKeyChecking yes"
           } >> ~/.ssh/config
+
+      # Compare with the last published MSI, not just the preceding commit:
+      # a failed or skipped installer build must be retried on a later push.
+      - name: Decide whether installer inputs need an MSI
+        id: installer-change
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          published="$(ssh hoenn-vps 'if [ -f /srv/hoenn/installers/current ]; then cat /srv/hoenn/installers/current; else echo NONE; fi')"
+          if [ "$published" = NONE ]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$published" =~ ^[0-9a-f]{40}-[0-9]+$ ]]; then
+            echo 'error: invalid published installer marker' >&2
+            exit 1
+          fi
+          published_sha="${published%%-*}"
+          git fetch --no-tags --depth=1 origin "$published_sha"
+          if git diff --quiet "$published_sha" HEAD -- \
+            .github/workflows/deploy.yml installer/windows/ \
+            coop/crates/coop-bootstrapper/ coop/crates/coop-desktop/ \
+            coop/crates/coop-launcher/ coop/crates/coop-cloud/ \
+            coop/crates/coop-protocol/ coop/crates/coop-save/ \
+            coop/crates/coop-sidecar/ bridge/main.lua bridge/memory.lua \
+            bridge/protocol.lua Cargo.toml Cargo.lock \
+            android/app/src/main/assets/mgba-LICENSE.txt; then
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+          else
+            result=$?
+            if [ "$result" -ne 1 ]; then exit "$result"; fi
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          fi
 
       # The remote probe distinguishes an untouched commit from a pending
       # promotion whose association was published before its staging move,
@@ -985,7 +1023,7 @@ jobs:
       # commit. The installer floor must use that signed sequence, not today's
       # run number, or it would reject the only release available to players.
       - name: Read verified release sequence for installer
-        if: github.event_name == 'workflow_dispatch'
+        if: steps.installer-change.outputs.build == 'true'
         id: installer-release
         env:
           RELEASE_SHA: ${{ github.sha }}

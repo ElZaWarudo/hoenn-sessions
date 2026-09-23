@@ -63,10 +63,12 @@ consuming or expiring one frees a slot. Reusing a consumed code across restarts 
 regenerate the signing key or pepper when adding invitations.
 
 The Android release job publishes APKs when the client changes. The Windows
-installer is built and privately published on a manual `Production release`
-workflow dispatch. Until an installer has been published, the MSI button reports
-that the download is unavailable. The server streams both files only after
-bearer authentication; Caddy's optional `/download/*` block stays disabled.
+installer is built and privately published when its installer or desktop inputs
+change since the last published MSI. A manual `Production release` dispatch
+forces a fresh installer build. Until an installer has been published, the MSI
+button reports that the download is unavailable. The server streams both files
+only after bearer authentication; Caddy's optional `/download/*` block stays
+disabled.
 
 For Android, enter the HTTPS server URL, signing key ID `pilot-v1`, and the
 64-character `public_key_hex` printed in the server's startup log. Share that

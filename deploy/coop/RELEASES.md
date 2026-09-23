@@ -104,13 +104,16 @@ The workflow validates SSH grammars and uses `StrictHostKeyChecking yes`.
 Never replace pinned host keys with an in-run key scan.
 The release-key gate checks the protected private seed against the release
 public key before either Windows artifact publication or runtime release.
-Pushes to `main` update only the runtime and server components on the VPS. The
-Windows installer job runs only for an explicit `workflow_dispatch`, so normal
-server deployments do not rebuild or publish a desktop installer. A successful
-manual installer run copies its verified MSI to the private
-`/srv/hoenn/installers/<commit>-<run-number>/` store, checks its SHA-256, and atomically
-updates `/srv/hoenn/installers/current`. Container UID 10001 receives read-only
-access through `setfacl`. The account page serves this MSI only after login.
+Pushes to `main` update the runtime and server components on the VPS. The
+Windows installer job also runs when installer or desktop inputs have changed
+since the last published MSI; an explicit `workflow_dispatch` forces a build.
+Comparison with the published MSI revision retries changes missed by a failed
+or skipped run. Changes to protected workflow variables without a source change
+require a manual dispatch. A successful installer run copies its verified MSI
+to the private `/srv/hoenn/installers/<commit>-<run-number>/` store, checks its
+SHA-256, and atomically updates `/srv/hoenn/installers/current`. Container UID
+10001 receives read-only access through `setfacl`. The account page serves this
+MSI only after login.
 Android clients authenticate to download the ROM and matching manifest from the
 signed release envelope. A new signed APK is published only when Android client
 code has changed since the last published APK, or on a manual dispatch for a fresh release. The
