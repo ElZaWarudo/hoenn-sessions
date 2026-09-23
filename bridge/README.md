@@ -61,19 +61,22 @@ After linking a legal local ROM build, generate the address module and manifest:
 python tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
 ```
 
-The generated `dist/bridge_manifest.json` uses outer schema 3. In addition to
+The generated `dist/bridge_manifest.json` uses outer schema 4. In addition to
 the NetBridge ABI and whole-ROM SHA-256, it binds the linked `SaveBlock3`
 address, `CSP1` offset and size, generation and CRC offsets, the exact regional
-identity-registry version and digest, and the official mGBA 0.10.5 Windows x64
+identity-registry version and digest, and the official mGBA 0.11.0 Windows x64
 Qt artifact. Its archive SHA-256 is
-`b497a57c7d9093834dadc64f33a90f7c411439c21fdb8a0143255a45ea37563a`, and its
+`ea7cc0e8632cd80d28bdb55e37aacc58b2b018f564209f790e8cc3caed8c002b`, and its
 executable SHA-256 is
-`5a3c98c2984dd04bd0d7c9378cdfae937ae0d73a196c880bb2eecf3b254af247`. The launcher
+`743157a16a1cb478a2b45e6e20e9a482ea397c3820d7e8e27b1e048e85bd5546`. The launcher
 owns validation of that executable identity before probe/gameplay. Lua
 receives only the generated address projection; it does not receive or
 validate host executable digests. The embedded save schema remains `CSP1`
-version 1, and manifest schema 3 does not rename or migrate the persisted
-format.
+version 1, and manifest schema 4 does not rename or migrate the persisted
+format. (Android embeds a separately pinned 0.10.5 core; the Windows emulator
+metadata in the shared ROM manifest is not its version.) Regenerate the
+manifest from a linked ROM after every ROM rebuild; the release pipeline does
+this automatically and never substitutes the committed copy.
 
 ## Canonical save and compatible-state lifecycle
 
@@ -129,9 +132,11 @@ The sidecar refuses to start without this value and does not invent monotonic
 state on the launcher's behalf.
 
 The launcher must create ignored `bridge/session.lua` from the example, start
-the sidecar, and then manually choose **Tools → Scripting → Load Script** in
-stock mGBA 0.10.5 to load `bridge/main.lua` in the matching build. Do not rely
-on an unsupported script-autoload flag. Never commit the generated session
+the sidecar, and then launch the validated mGBA 0.11.0 build with the ROM; the
+launcher passes `--script` with the materialized bridge script, so no manual
+step is needed in the supervised flow. When running stock mGBA without the
+launcher, manually choose **Tools → Scripting → Load Script** to load
+`bridge/main.lua`. Never commit the generated session
 file, ROM, save, savestate, or BIOS.
 
 The `CSP1` payload keeps four ordered regional records for Hoenn, Kanto, Johto,

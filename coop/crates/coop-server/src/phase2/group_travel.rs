@@ -717,6 +717,12 @@ pub(crate) fn travel(
         }
         let definition = route_definition(request.route_id())?;
         let destination = definition.destination.clone();
+        // The consent proposal flow owns atomic group movement while a
+        // proposal is live. Legacy travel must not move the group out from
+        // under a pending proposal (or vice versa); the caller retries after
+        // the proposal resolves. Expired proposals are pruned first so only
+        // live ones fence this path.
+        prune_travel_proposal_state(state, now);
         let record = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
         if record.status != GroupStatus::Active || !record.group.contains(actor.character_id) {
             return Err(Phase2Error::NotFound);
@@ -726,6 +732,13 @@ pub(crate) fn travel(
             || state.active_group_by_member.get(&members[1]) != Some(&group_id)
         {
             return Err(Phase2Error::Internal);
+        }
+        if state.live_group_travel_by_group.contains_key(&group_id)
+            || members
+                .iter()
+                .any(|member| state.live_group_travel_by_member.contains_key(member))
+        {
+            return Err(Phase2Error::Conflict);
         }
         if record.zone != definition.source {
             return Err(Phase2Error::Forbidden);
@@ -2095,6 +2108,55 @@ mod tests {
             })
             .expect("state");
         assert_eq!(cancelled, GroupTravelProposalStatus::Cancelled);
+    }
+
+    #[test]
+    fn legacy_travel_conflicts_while_a_consent_proposal_is_live() {
+        let app = super::super::Phase2App::test();
+        let (first, first_lease, second, second_lease, group_id) = two_member_group(&app);
+        let source =
+            WorldZone::new(RegionId::Johto, "GOLDENROD_CITY_TRAIN_STATION", 1).expect("source");
+        set_consent_progress(&app, group_id, [first, second], source);
+        let proposal_request = GroupTravelProposalRequest::new_with_departure(
+            first_lease.fence(),
+            "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
+            GroupTravelDeparture::Train,
+            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+        )
+        .expect("request");
+        let proposal = create_travel_proposal(&app.store, first, group_id, &proposal_request)
+            .expect("proposal");
+        assert_eq!(proposal.status, GroupTravelProposalStatus::Pending);
+
+        // The group sits at a Johto station, not a legacy ferry source, so
+        // legacy travel would normally fail its zone check. While the
+        // proposal is live it must fail on the proposal fence instead.
+        let legacy = GroupTravelRequest::new(
+            first_lease.fence(),
+            "HOENN:SLATEPORT_SEVII_FERRY",
+            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+        )
+        .expect("travel request");
+        assert_eq!(
+            travel(&app.store, first, group_id, &legacy),
+            Err(Phase2Error::Conflict)
+        );
+
+        // Once the proposal resolves, legacy travel runs its normal checks
+        // again instead of staying fenced.
+        let decline = GroupTravelActionRequest::new(
+            second_lease.fence(),
+            GroupTravelAction::Decline,
+            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+        );
+        let declined =
+            act_on_travel_proposal(&app.store, second, group_id, proposal.proposal_id, &decline)
+                .expect("decline");
+        assert_eq!(declined.status, GroupTravelProposalStatus::Declined);
+        assert_eq!(
+            travel(&app.store, first, group_id, &legacy),
+            Err(Phase2Error::Forbidden)
+        );
     }
 
     #[test]
