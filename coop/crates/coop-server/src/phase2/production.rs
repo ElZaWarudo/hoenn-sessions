@@ -14,6 +14,14 @@ pub(super) async fn offload_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
+    if request.uri().path() == "/health/ready" {
+        return next.run(request).await;
+    }
+    let deadline = if request.uri().path().starts_with("/v1/auth/") {
+        Duration::from_secs(15)
+    } else {
+        Duration::from_secs(120)
+    };
     static CAPACITY: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
     let Ok(permit) = CAPACITY
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(32)))
@@ -25,7 +33,11 @@ pub(super) async fn offload_request(
     let runtime = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        runtime.block_on(next.run(request))
+        runtime.block_on(async {
+            tokio::time::timeout(deadline, next.run(request))
+                .await
+                .unwrap_or_else(|_| Phase2Error::Busy.into_response())
+        })
     })
     .await
     .unwrap_or_else(|_| Phase2Error::Internal.into_response())
@@ -159,26 +171,39 @@ async fn load_production_app() -> Result<Phase2App, Phase2Error> {
 /// Fails closed when required secrets, adapters, or the listener are unavailable.
 pub async fn serve_phase2_production(address: SocketAddr) -> Result<(), Phase2Error> {
     let app = load_production_app().await?;
+    let watchdog = app.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if watchdog.store.repository.is_fenced() || watchdog.store.objects.is_fenced() {
+                eprintln!("co-op persistent backend fenced; exiting for supervisor restart");
+                std::process::exit(1);
+            }
+        }
+    });
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .map_err(|_| Phase2Error::Internal)?;
+    let shutdown_signal = app.shutdown.clone();
     axum::serve(listener, app.router())
-        .with_graceful_shutdown(shutdown())
+        .with_graceful_shutdown(shutdown(shutdown_signal))
         .await
         .map_err(|_| Phase2Error::Internal)
 }
 
-async fn shutdown() {
+pub(super) async fn shutdown(notify: tokio::sync::watch::Sender<bool>) {
     #[cfg(unix)]
     {
         if let Ok(mut terminate) =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         {
             tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            notify.send_replace(true);
             return;
         }
     }
     let _ = tokio::signal::ctrl_c().await;
+    notify.send_replace(true);
 }
 
 #[cfg(test)]

@@ -7,13 +7,14 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use super::storage::{PostgresRepository, Repository, State, StorageError};
 
 const MAX_STATE_BYTES: usize = 32 * 1024 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(35);
+const ADMISSION_TIMEOUT: Duration = Duration::from_secs(2);
 type Job<T> = Box<dyn FnOnce(&mut T) + Send>;
 
 /// All socket work and client runtimes live on an owned OS thread. Waiting
@@ -93,28 +94,41 @@ impl<T: Send + 'static> IoWorker<T> {
         operation: impl FnOnce(&mut T) -> Result<R, StorageError> + Send + 'static,
     ) -> Result<R, StorageError> {
         blocking(|| {
-            // Queue time belongs to admission, not the active operation's
-            // socket deadline. HTTP admission bounds the number of waiters.
+            // Bound admission separately from the active operation's socket
+            // deadline. A stalled backend must not keep request slots waiting.
             // The guard protects no data, so a poisoned mutex is recovered
             // instead of failing every future operation: the next owner
             // simply re-establishes mutual exclusion.
-            let _admission = match self.admission.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => {
-                    let guard = poisoned.into_inner();
-                    self.admission.clear_poison();
-                    guard
+            let deadline = Instant::now() + ADMISSION_TIMEOUT;
+            let _admission = loop {
+                match self.admission.try_lock() {
+                    Ok(guard) => break guard,
+                    Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                        let guard = poisoned.into_inner();
+                        self.admission.clear_poison();
+                        break guard;
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(std::sync::TryLockError::WouldBlock) => return Err(StorageError::Busy),
                 }
             };
             if self.failed.load(Ordering::Acquire) {
                 return Err(StorageError::Transaction);
             }
             let (sender, receiver) = mpsc::sync_channel(1);
-            self.sender
-                .try_send(Box::new(move |client| {
-                    let _ = sender.send(operation(client));
-                }))
-                .map_err(|_| StorageError::Transaction)?;
+            let job: Job<T> = Box::new(move |client| {
+                let _ = sender.send(operation(client));
+            });
+            match self.sender.try_send(job) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    self.failed.store(true, Ordering::Release);
+                    return Err(StorageError::Transaction);
+                }
+                Err(mpsc::TrySendError::Full(_)) => return Err(StorageError::Busy),
+            }
             if let Ok(result) = receiver.recv_timeout(self.timeout) {
                 result
             } else {
@@ -137,12 +151,18 @@ fn encode(state: &State) -> Result<Vec<u8>, StorageError> {
     let mut bytes = Vec::new();
     ciborium::into_writer(state, &mut bytes).map_err(|_| StorageError::Transaction)?;
     if bytes.len() > MAX_STATE_BYTES {
-        return Err(StorageError::Transaction);
+        return Err(StorageError::StateTooLarge);
     }
     Ok(bytes)
 }
 
 impl PostgresStateRepository {
+    fn fence(&self, reason: &str) {
+        if !self.fenced.swap(true, Ordering::AcqRel) {
+            eprintln!("co-op persistent repository fenced: {reason}");
+        }
+    }
+
     /// Opens the database and exclusively owns the pilot runtime.
     ///
     /// # Errors
@@ -212,16 +232,38 @@ impl PostgresStateRepository {
                     .map(|_| ())
                     .map_err(|_| StorageError::Transaction)
             })
-            .inspect_err(|_| {
-                self.fenced.store(true, Ordering::Release);
+            .inspect_err(|error| {
+                if *error != StorageError::Busy {
+                    self.fence("database health probe failed");
+                }
             })
-            .map_err(|_| StorageError::Persistence)
+            .map_err(|error| {
+                if error == StorageError::Busy {
+                    StorageError::Busy
+                } else {
+                    StorageError::Persistence
+                }
+            })
     }
 }
 
 impl Repository for PostgresStateRepository {
+    fn check_ready(&self) -> Result<(), StorageError> {
+        if self.state.is_poisoned() {
+            self.fence("state mutex poisoned");
+            return Err(StorageError::Lock);
+        }
+        self.healthy()
+    }
+
     fn is_fenced(&self) -> bool {
-        self.fenced.load(Ordering::Acquire) || self.io.is_failed()
+        if self.state.is_poisoned() {
+            self.fence("state mutex poisoned");
+        }
+        if self.io.is_failed() {
+            self.fence("database worker failed");
+        }
+        self.fenced.load(Ordering::Acquire)
     }
 
     fn read_transaction(
@@ -229,7 +271,10 @@ impl Repository for PostgresStateRepository {
         operation: &mut dyn FnMut(&State) -> Result<(), StorageError>,
     ) -> Result<(), StorageError> {
         blocking(|| {
-            let state = self.state.lock().map_err(|_| StorageError::Lock)?;
+            let state = self.state.lock().map_err(|_| {
+                self.fence("state mutex poisoned");
+                StorageError::Lock
+            })?;
             self.healthy()?;
             operation(&state)
         })
@@ -240,8 +285,12 @@ impl Repository for PostgresStateRepository {
         operation: &mut dyn FnMut(&mut State) -> Result<(), StorageError>,
     ) -> Result<(), StorageError> {
         blocking(|| {
-            let mut state = self.state.lock().map_err(|_| StorageError::Lock)?;
+            let mut state = self.state.lock().map_err(|_| {
+                self.fence("state mutex poisoned");
+                StorageError::Lock
+            })?;
             self.healthy()?;
+            let previous = state.clone();
             // The service deliberately mutates replay revocations before
             // returning an authentication error. Commit those mutations too.
             let outcome = operation(&mut state);
@@ -252,10 +301,21 @@ impl Repository for PostgresStateRepository {
                 if changed != 1 { return Err(StorageError::Transaction); }
                 transaction.commit().map_err(|_| StorageError::Transaction)
             }));
-            if persisted.is_err() {
-                self.fenced.store(true, Ordering::Release);
+            match persisted {
+                Ok(()) => {}
+                Err(StorageError::StateTooLarge) => {
+                    *state = previous;
+                    return Err(StorageError::StateTooLarge);
+                }
+                Err(StorageError::Busy) => {
+                    *state = previous;
+                    return Err(StorageError::Busy);
+                }
+                Err(_) => {
+                    self.fence("database checkpoint failed");
+                    return Err(StorageError::Persistence);
+                }
             }
-            persisted.map_err(|_| StorageError::Persistence)?;
             outcome
         })
     }
@@ -290,6 +350,16 @@ mod tests {
             Ok(2)
         );
         assert_eq!(thread.join().expect("first caller"), Ok(1));
+    }
+
+    #[test]
+    fn waiting_for_admission_returns_busy_without_failing_worker() {
+        let worker = IoWorker::start(|| Ok(())).expect("worker");
+        let guard = worker.admission.lock().expect("admission");
+        assert_eq!(worker.run(|()| Ok(1)), Err(StorageError::Busy));
+        drop(guard);
+        assert!(!worker.is_failed());
+        assert_eq!(worker.run(|()| Ok(2)), Ok(2));
     }
 
     #[test]
