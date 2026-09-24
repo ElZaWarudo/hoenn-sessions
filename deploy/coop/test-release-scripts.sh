@@ -21,6 +21,9 @@ if ! "$PYTHON_BIN" -c 'pass' >/dev/null 2>&1; then
     exit 1
   fi
 fi
+# The shim below precedes system directories in PATH. Pin the interpreter's
+# absolute path first so a Linux `python3` shim cannot exec itself forever.
+PYTHON_BIN="$(command -v "$PYTHON_BIN")"
 PASS=0
 FAIL=0
 report() {
@@ -61,6 +64,10 @@ exec "$PYTHON_BIN" "$@"
 SH
 chmod +x "$ROOT/bin/python3"
 export PYTHON_BIN PATH="$ROOT/bin:$PATH"
+timeout 10s "$ROOT/bin/python3" -c 'pass' || {
+  echo "python3 test shim failed to start" >&2
+  exit 1
+}
 
 FULL_A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 FULL_B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
