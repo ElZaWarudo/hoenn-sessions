@@ -727,6 +727,12 @@ pub struct AcquireLeaseRequest {
     pub character_id: CharacterId,
     pub client_instance_id: ClientInstanceId,
     pub idempotency_key: IdempotencyKey,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub replace_same_client: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl AcquireLeaseRequest {
@@ -741,7 +747,15 @@ impl AcquireLeaseRequest {
             character_id,
             client_instance_id,
             idempotency_key,
+            replace_same_client: false,
         }
+    }
+
+    /// Explicitly replaces an existing lease from this client instance.
+    #[must_use]
+    pub const fn replacing_same_client(mut self) -> Self {
+        self.replace_same_client = true;
+        self
     }
 
     /// Returns the operation key used to make an acquire retry-safe.
