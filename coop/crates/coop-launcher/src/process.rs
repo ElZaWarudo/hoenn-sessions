@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use coop_cloud::{BridgeAbiVersion, ProtocolVersion};
+use coop_cloud::{BridgeAbiVersion, ProtocolVersion, Sha256Digest};
 use coop_protocol::{LocalCompanionV1, LocalPresenceStateV1, sequence_is_newer};
 use coop_sidecar::{
     BRIDGE_ABI_VERSION, BRIDGE_FRAME_SIZE, GAME_PROTOCOL_VERSION, MAX_DESCRIPTOR_BYTES,
@@ -372,6 +372,16 @@ impl CommandSpec {
             && self.rom_cleanup.is_some()
             && self.rom_marker_cleanup.is_some()
             && self.rom_implicit_save_path.is_some()
+    }
+
+    /// Returns the digest captured when this mGBA command was bound to its ROM.
+    /// The identity is immutable for the owned command, so callers can compare
+    /// it with a release-catalog digest before launching a verifier.
+    #[must_use]
+    pub(crate) fn staged_rom_sha256(&self) -> Option<Sha256Digest> {
+        self.rom_identity
+            .as_ref()
+            .map(|identity| Sha256Digest::from_bytes(identity.digest))
     }
 
     pub(crate) fn is_arrival_verifier(&self) -> bool {

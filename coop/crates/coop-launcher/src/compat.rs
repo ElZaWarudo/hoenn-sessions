@@ -117,6 +117,7 @@ pub struct SelectedRomWorld {
     pub world_id: RomWorldId,
     pub rom_path: PathBuf,
     pub bridge_path: PathBuf,
+    rom_sha256: Sha256Digest,
     bridge_manifest: BridgeManifest,
 }
 
@@ -167,6 +168,8 @@ impl TrustedRomCatalog {
             }
             // Validate every world before exposing a selection.
             let rom_path = release_artifact(&root, &world.rom_path, &world.rom_sha256)?;
+            let rom_sha256 = Sha256Digest::parse(&world.rom_sha256)
+                .map_err(|_| CompatibilityError::ReleaseCatalog)?;
             let (bridge_path, bridge_bytes) = release_artifact_bytes(
                 &root,
                 &world.bridge_path,
@@ -196,6 +199,7 @@ impl TrustedRomCatalog {
                     world_id: id,
                     rom_path,
                     bridge_path,
+                    rom_sha256,
                     bridge_manifest: manifest,
                 },
             );
@@ -243,6 +247,12 @@ struct ReleaseWorld {
 }
 
 impl SelectedRomWorld {
+    /// Digest pinned by the validated release catalog for this ROM world.
+    #[must_use]
+    pub const fn rom_sha256(&self) -> Sha256Digest {
+        self.rom_sha256
+    }
+
     /// Select a world from a catalog whose digest was pinned independently by
     /// release packaging. The same world/build/ROM binding is checked again
     /// against the validated bridge manifest before the session is created.
@@ -1168,6 +1178,7 @@ mod tests {
             SelectedRomWorld::from_catalog(&path, &digest, RomWorldId::new(7).unwrap()).unwrap();
         assert_eq!(selected.world_id.get(), 7);
         assert_eq!(selected.rom_path.file_name().unwrap(), "world-7.gba");
+        assert_eq!(selected.rom_sha256(), Sha256Digest::of_bytes(&[7_u8; 32]));
         let catalog = TrustedRomCatalog::load(&path, &digest).unwrap();
         assert_eq!(catalog.digest(), Sha256Digest::of_bytes(&bytes));
         assert_eq!(
