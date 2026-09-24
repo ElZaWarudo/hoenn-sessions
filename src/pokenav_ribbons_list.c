@@ -681,7 +681,7 @@ static void CreateRibbonMonsList(void)
     struct PokenavListTemplate template;
     template.list = (struct PokenavListItem *)GetMonRibbonMonListData();
     template.count = GetRibbonsMonListCount();
-    template.itemSize = sizeof(struct PokenavListItem);
+    template.itemSize = sizeof(struct PokenavMonListItem);
     template.startIndex = GetRibbonListMenuCurrIndex();
     template.item_X = 13;
     template.windowWidth = 17;

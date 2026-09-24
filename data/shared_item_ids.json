@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "host_prefix_count": 890,
+  "items": [
+    {
+      "id": 890,
+      "symbol": "ITEM_ANCIENT_STONE",
+      "introduced_by_world": "cormoria",
+      "donor_id": 852
+    },
+    {
+      "id": 891,
+      "symbol": "ITEM_APPOINTMENT_LETTER",
+      "introduced_by_world": "cormoria",
+      "donor_id": 732
+    },
+    {
+      "id": 892,
+      "symbol": "ITEM_ARCHAEOLENS",
+      "introduced_by_world": "cormoria",
+      "donor_id": 845
+    },
+    {
+      "id": 893,
+      "symbol": "ITEM_ARCHAEOLENS_2",
+      "introduced_by_world": "cormoria",
+      "donor_id": 855
+    },
+    {
+      "id": 894,
+      "symbol": "ITEM_BACKSTAGE_PASS",
+      "introduced_by_world": "cormoria",
+      "donor_id": 729
+    },
+    {
+      "id": 895,
+      "symbol": "ITEM_DETECTIVE_STUDENT_ID",
+      "introduced_by_world": "cormoria",
+      "donor_id": 832
+    },
+    {
+      "id": 896,
+      "symbol": "ITEM_DIAMOND",
+      "introduced_by_world": "cormoria",
+      "donor_id": 842
+    },
+    {
+      "id": 897,
+      "symbol": "ITEM_DRIFBLIM_TRAVELS_PASS",
+      "introduced_by_world": "cormoria",
+      "donor_id": 839
+    },
+    {
+      "id": 898,
+      "symbol": "ITEM_FAKE_STUDENT_ID",
+      "introduced_by_world": "cormoria",
+      "donor_id": 833
+    },
+    {
+      "id": 899,
+      "symbol": "ITEM_GACHA_TOKEN",
+      "introduced_by_world": "cormoria",
+      "donor_id": 847
+    },
+    {
+      "id": 900,
+      "symbol": "ITEM_HEAL_PASS",
+      "introduced_by_world": "cormoria",
+      "donor_id": 835
+    },
+    {
+      "id": 901,
+      "symbol": "ITEM_HISTORIAN_MEDAL",
+      "introduced_by_world": "cormoria",
+      "donor_id": 854
+    },
+    {
+      "id": 902,
+      "symbol": "ITEM_HM_SPLASH",
+      "introduced_by_world": "cormoria",
+      "donor_id": 682,
+      "machine_slot": "ITEM_HM10"
+    },
+    {
+      "id": 903,
+      "symbol": "ITEM_LAB_WELCOMEPACKAGE",
+      "introduced_by_world": "cormoria",
+      "donor_id": 829
+    },
+    {
+      "id": 904,
+      "symbol": "ITEM_NUZKIT",
+      "introduced_by_world": "cormoria",
+      "donor_id": 848
+    },
+    {
+      "id": 905,
+      "symbol": "ITEM_ORPHANAGE_BOOK",
+      "introduced_by_world": "cormoria",
+      "donor_id": 834
+    },
+    {
+      "id": 906,
+      "symbol": "ITEM_POCKET_BOY",
+      "introduced_by_world": "cormoria",
+      "donor_id": 846
+    },
+    {
+      "id": 907,
+      "symbol": "ITEM_POCKET_DRIVE",
+      "introduced_by_world": "cormoria",
+      "donor_id": 849
+    },
+    {
+      "id": 908,
+      "symbol": "ITEM_PURPLE_SCARF",
+      "introduced_by_world": "cormoria",
+      "donor_id": 416
+    },
+    {
+      "id": 909,
+      "symbol": "ITEM_RANGER_CARD",
+      "introduced_by_world": "cormoria",
+      "donor_id": 750
+    },
+    {
+      "id": 910,
+      "symbol": "ITEM_RANGER_CREST",
+      "introduced_by_world": "cormoria",
+      "donor_id": 853
+    },
+    {
+      "id": 911,
+      "symbol": "ITEM_RANGER_PACKAGE",
+      "introduced_by_world": "cormoria",
+      "donor_id": 831
+    },
+    {
+      "id": 912,
+      "symbol": "ITEM_RARE_SHARD",
+      "introduced_by_world": "cormoria",
+      "donor_id": 837
+    },
+    {
+      "id": 913,
+      "symbol": "ITEM_RETRO_DRIVE",
+      "introduced_by_world": "cormoria",
+      "donor_id": 850
+    },
+    {
+      "id": 914,
+      "symbol": "ITEM_SMUGGLER_EMBLEM",
+      "introduced_by_world": "cormoria",
+      "donor_id": 836
+    },
+    {
+      "id": 915,
+      "symbol": "ITEM_STRANGE_ROCK",
+      "introduced_by_world": "cormoria",
+      "donor_id": 737
+    },
+    {
+      "id": 916,
+      "symbol": "ITEM_SWAP_DRIVE",
+      "introduced_by_world": "cormoria",
+      "donor_id": 851
+    },
+    {
+      "id": 917,
+      "symbol": "ITEM_TIME_SEED",
+      "introduced_by_world": "cormoria",
+      "donor_id": 841
+    },
+    {
+      "id": 918,
+      "symbol": "ITEM_TIME_WATER",
+      "introduced_by_world": "cormoria",
+      "donor_id": 844
+    },
+    {
+      "id": 919,
+      "symbol": "ITEM_TREKKING_BOOTS",
+      "introduced_by_world": "cormoria",
+      "donor_id": 838
+    }
+  ]
+}

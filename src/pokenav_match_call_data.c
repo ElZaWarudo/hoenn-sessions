@@ -14,6 +14,10 @@
 
 // NPC below means non-trainer character (no rematch or check page)
 // Steven also uses this type but has a check page by using a MatchCallCheckPageOverride
+// These legacy static records store only the existing-world sections in a byte.
+// New worlds need a full-width record; 0xFF is the legacy sentinel, not a
+// general section identifier.
+#define MATCH_CALL_MAPSEC_NONE 0xFF
 enum
 {
     MC_TYPE_NPC,
@@ -117,11 +121,11 @@ static bool32 MatchCall_GetEnabled_Wally(match_call_t);
 static bool32 MatchCall_GetEnabled_Birch(match_call_t);
 static bool32 MatchCall_GetEnabled_Rival(match_call_t);
 
-static mapsec_u8_t MatchCall_GetMapSec_NPC(match_call_t);
-static mapsec_u8_t MatchCall_GetMapSec_Trainer(match_call_t);
-static mapsec_u8_t MatchCall_GetMapSec_Wally(match_call_t);
-static mapsec_u8_t MatchCall_GetMapSec_Birch(match_call_t);
-static mapsec_u8_t MatchCall_GetMapSec_Rival(match_call_t);
+static mapsec_u16_t MatchCall_GetMapSec_NPC(match_call_t);
+static mapsec_u16_t MatchCall_GetMapSec_Trainer(match_call_t);
+static mapsec_u16_t MatchCall_GetMapSec_Wally(match_call_t);
+static mapsec_u16_t MatchCall_GetMapSec_Birch(match_call_t);
+static mapsec_u16_t MatchCall_GetMapSec_Rival(match_call_t);
 
 static bool32 MatchCall_IsRematchable_NPC(match_call_t);
 static bool32 MatchCall_IsRematchable_Trainer(match_call_t);
@@ -242,7 +246,7 @@ static const struct MatchCallStructNPC sMomMatchCallHeader =
 static const struct MatchCallStructNPC sStevenMatchCallHeader =
 {
     .type = MC_TYPE_NPC,
-    .mapSec = MAPSEC_NONE,
+    .mapSec = MATCH_CALL_MAPSEC_NONE,
     .flag = FLAG_REGISTERED_STEVEN_POKENAV,
     .desc = COMPOUND_STRING("HARD AS ROCK"),
     .name = COMPOUND_STRING("STEVEN"),
@@ -333,16 +337,16 @@ static const struct MatchCallWally sWallyMatchCallHeader =
     },
     .locationData = (const struct MatchCallLocationOverride[]) {
         { FLAG_HIDE_MAUVILLE_CITY_WALLY,          MAPSEC_VERDANTURF_TOWN },
-        { FLAG_GROUDON_AWAKENED_MAGMA_HIDEOUT,    MAPSEC_NONE },
+        { FLAG_GROUDON_AWAKENED_MAGMA_HIDEOUT,    MATCH_CALL_MAPSEC_NONE },
         { FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY,  MAPSEC_VICTORY_ROAD },
-        { ALWAYS_AVAILABLE,                       MAPSEC_NONE }
+        { ALWAYS_AVAILABLE,                       MATCH_CALL_MAPSEC_NONE }
     }
 };
 
 static const struct MatchCallStructNPC sScottMatchCallHeader =
 {
     .type = 0,
-    .mapSec = MAPSEC_NONE,
+    .mapSec = MATCH_CALL_MAPSEC_NONE,
     .flag = FLAG_ENABLE_SCOTT_MATCH_CALL,
     .desc = COMPOUND_STRING("ELUSIVE EYES"),
     .name = COMPOUND_STRING("SCOTT"),
@@ -581,7 +585,7 @@ static bool32 (*const sMatchCallGetEnabledFuncs[])(match_call_t) = {
     MatchCall_GetEnabled_Birch
 };
 
-static mapsec_u8_t (*const sMatchCallGetMapSecFuncs[])(match_call_t) = {
+static mapsec_u16_t (*const sMatchCallGetMapSecFuncs[])(match_call_t) = {
     MatchCall_GetMapSec_NPC,
     MatchCall_GetMapSec_Trainer,
     MatchCall_GetMapSec_Wally,
@@ -764,7 +768,7 @@ static bool32 MatchCall_GetEnabled_Birch(match_call_t matchCall)
     return FlagGet(matchCall.birch->flag);
 }
 
-mapsec_u8_t MatchCall_GetMapSec(u32 idx)
+mapsec_u16_t MatchCall_GetMapSec(u32 idx)
 {
     match_call_t matchCall;
     u32 i;
@@ -776,17 +780,22 @@ mapsec_u8_t MatchCall_GetMapSec(u32 idx)
     return sMatchCallGetMapSecFuncs[i](matchCall);
 }
 
-static mapsec_u8_t MatchCall_GetMapSec_NPC(match_call_t matchCall)
+static mapsec_u16_t WidenMatchCallMapSec(mapsec_u8_t mapSec)
 {
-    return matchCall.npc->mapSec;
+    return mapSec == MATCH_CALL_MAPSEC_NONE ? MAPSEC_NONE : mapSec;
 }
 
-static mapsec_u8_t MatchCall_GetMapSec_Trainer(match_call_t matchCall)
+static mapsec_u16_t MatchCall_GetMapSec_NPC(match_call_t matchCall)
 {
-    return matchCall.trainer->mapSec;
+    return WidenMatchCallMapSec(matchCall.npc->mapSec);
 }
 
-static mapsec_u8_t MatchCall_GetMapSec_Wally(match_call_t matchCall)
+static mapsec_u16_t MatchCall_GetMapSec_Trainer(match_call_t matchCall)
+{
+    return WidenMatchCallMapSec(matchCall.trainer->mapSec);
+}
+
+static mapsec_u16_t MatchCall_GetMapSec_Wally(match_call_t matchCall)
 {
     s32 i;
 
@@ -795,15 +804,15 @@ static mapsec_u8_t MatchCall_GetMapSec_Wally(match_call_t matchCall)
         if (!FlagGet(matchCall.wally->locationData[i].flag))
             break;
     }
-    return matchCall.wally->locationData[i].mapSec;
+    return WidenMatchCallMapSec(matchCall.wally->locationData[i].mapSec);
 }
 
-static mapsec_u8_t MatchCall_GetMapSec_Rival(match_call_t matchCall)
+static mapsec_u16_t MatchCall_GetMapSec_Rival(match_call_t matchCall)
 {
     return MAPSEC_NONE;
 }
 
-static mapsec_u8_t MatchCall_GetMapSec_Birch(match_call_t matchCall)
+static mapsec_u16_t MatchCall_GetMapSec_Birch(match_call_t matchCall)
 {
     return MAPSEC_NONE;
 }

@@ -1,0 +1,50 @@
+Cormoria_GastreeCity_Pokemart_MapScripts::
+	.byte 0
+
+
+Cormoria_GastreeCity_Pokemart_EventScript_Clerk::
+# 4 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	lock
+# 5 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	faceplayer
+# 6 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	message Cormoria_gText_HowMayIServeYou
+# 7 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	waitmessage
+# 8 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	pokemart Cormoria_GastreeCity_Pokemart_Inventory
+# 9 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	msgbox Cormoria_gText_PleaseComeAgain, MSGBOX_DEFAULT
+# 10 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	release
+	end
+
+
+	.align 2
+# 14 "data//maps/GastreeCity_Pokemart/scripts.pory"
+Cormoria_GastreeCity_Pokemart_Inventory:
+# 15 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_POTION
+# 16 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_POKE_BALL
+# 17 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_ANTIDOTE
+# 18 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_REVIVE
+# 19 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_PARALYZE_HEAL
+# 20 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_ENERGY_POWDER
+# 21 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.2byte ITEM_REPEL
+	.2byte ITEM_NONE
+
+Cormoria_GastreeCity_Pokemart_NPC::
+# 25 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	msgbox Cormoria_GastreeCity_Pokemart_NPC_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_GastreeCity_Pokemart_NPC_Text_0:
+# 25 "data//maps/GastreeCity_Pokemart/scripts.pory"
+	.string "Don't forget to sell your extra items!$"

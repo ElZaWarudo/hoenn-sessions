@@ -1,0 +1,137 @@
+{
+  "id": "MAP_CORMORIA_ROUTE2_CAVES",
+  "name": "Cormoria_Route2_Caves",
+  "layout": "LAYOUT_CORMORIA_ROUTE2_CAVES",
+  "music": "MUS_RG_SEVII_CAVE",
+  "region_map_section": "MAPSEC_CORMORIA_VINE_CAVERNS",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERGROUND",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 27,
+      "y": 35,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_STARDUST",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_FENNILAHL_GREAT_BALL"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_TMHM_BALL",
+      "x": 19,
+      "y": 9,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_TM35",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_ROUTE_2_CAVE_STARDUST"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
+      "x": 20,
+      "y": 19,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Route2_Caves_EventScript_ClefairyBattle",
+      "flag": "Cormoria_FLAG_FENNILAHL_HIKER_GEAR_GET"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 5,
+      "y": 10,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE2",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE2_CAVES",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 9,
+      "y": 33,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE2_CAVES",
+      "dest_warp_id": "1"
+    }
+  ],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 18,
+      "elevation": 0,
+      "var": "VAR_TEMP_1",
+      "var_value": "0",
+      "script": "Cormoria_Route2_Caves_EventScript_ClefairyTrigger"
+    },
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 20,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Route2_Caves_EventScript_ClefairyTrigger"
+    },
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 16,
+      "elevation": 0,
+      "var": "VAR_TEMP_2",
+      "var_value": "0",
+      "script": "Cormoria_Route2_Caves_EventScript_ClefairyTrigger"
+    }
+  ],
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 35,
+      "y": 21,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_Route2_AncientCarving"
+    },
+    {
+      "type": "sign",
+      "x": 36,
+      "y": 21,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_Route2_AncientCarving"
+    },
+    {
+      "type": "sign",
+      "x": 37,
+      "y": 21,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_Route2_AncientCarving"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

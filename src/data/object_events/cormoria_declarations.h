@@ -1,0 +1,31 @@
+// Declarations for the authenticated Cormoria object-event graphics unit.
+
+extern const u32 gObjectEventPic_CormoriaGubukingNormalRunning[];
+extern const u16 gObjectEventPal_CormoriaGubuking[];
+extern const u32 gObjectEventPic_CormoriaShububuNormalRunning[];
+extern const u16 gObjectEventPal_CormoriaShububu[];
+extern const u32 gObjectEventPic_CormoriaLeaderAriana[];
+extern const u32 gObjectEventPic_CormoriaLeaderCarona[];
+extern const u32 gObjectEventPic_CormoriaLeaderGloria[];
+extern const u32 gObjectEventPic_CormoriaLeaderInger[];
+extern const u32 gObjectEventPic_CormoriaLeaderJania[];
+extern const u32 gObjectEventPic_CormoriaLeaderRaazi[];
+extern const u32 gObjectEventPic_CormoriaLeaderViniel[];
+extern const u32 gObjectEventPic_CormoriaBugCatcherF[];
+extern const u32 gObjectEventPic_CormoriaProfTenebris[];
+extern const u32 gObjectEventPic_CormoriaSkiierF[];
+extern const u32 gObjectEventPic_CormoriaTMHMBall[];
+
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaBugCatcherF;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaGubukingNormal;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderAriana;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderCarona;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderGloria;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderInger;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderJania;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderRaazi;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaLeaderViniel;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaProfTenebris;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaShububuNormal;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaSkiierF;
+extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_CormoriaTMHMBall;

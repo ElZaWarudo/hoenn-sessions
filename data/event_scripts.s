@@ -73,6 +73,12 @@
 #include "constants/tv.h"
 #include "constants/union_room.h"
 #include "constants/vars.h"
+#if ROM_WORLD == 2
+#include "constants/cormoria_event_ids.h"
+#include "cormoria/game_corner.h"
+#include "cormoria/extra_flags.h"
+#include "cormoria/quests.h"
+#endif
 #include "constants/weather.h"
 #include "constants/speaker_names.h"
 	.include "asm/macros.inc"
@@ -1163,10 +1169,16 @@ EventScript_SetBrineyLocation_Route109::
 
 @ scripts/notices.inc? signs.inc? See comment about text/notices.inc
 Common_EventScript_ShowPokemartSign::
+#if ROM_WORLD == 2
+Cormoria_Common_EventScript_ShowPokemartSign::
+#endif
 	msgbox gText_PokemartSign, MSGBOX_SIGN
 	end
 
 Common_EventScript_ShowPokemonCenterSign::
+#if ROM_WORLD == 2
+Cormoria_Common_EventScript_ShowPokemonCenterSign::
+#endif
 	msgbox gText_PokemonCenterSign, MSGBOX_SIGN
 	end
 
@@ -1207,6 +1219,9 @@ Common_EventScript_ShowBagIsFull::
 	end
 
 Common_EventScript_BagIsFull::
+#if ROM_WORLD == 2
+Cormoria_Common_EventScript_BagIsFull::
+#endif
 	msgbox gText_TooBadBagIsFull, MSGBOX_DEFAULT
 	return
 
@@ -1222,6 +1237,9 @@ Common_EventScript_ShowNoRoomForDecor::
 	end
 
 Common_EventScript_NoRoomForDecor::
+#if ROM_WORLD == 2
+Cormoria_Common_EventScript_NoRoomForDecor::
+#endif
 	msgbox gText_NoRoomLeftForAnother, MSGBOX_DEFAULT
 	return
 
@@ -1230,11 +1248,17 @@ Common_EventScript_SetAbnormalWeather::
 	return
 
 Common_EventScript_PlayGymBadgeFanfare::
+#if ROM_WORLD == 2
+Cormoria_Common_EventScript_PlayGymBadgeFanfare::
+#endif
 	playfanfare MUS_OBTAIN_BADGE
 	waitfanfare
 	return
 
 Common_EventScript_OutOfCenterPartyHeal::
+#if ROM_WORLD == 2
+Cormoria_Common_EventScript_OutOfCenterPartyHeal::
+#endif
 	fadescreenswapbuffers FADE_TO_BLACK
 	playfanfare MUS_HEAL
 	waitfanfare
@@ -1389,6 +1413,9 @@ gText_PokemonTrainerSchoolEmail::
 	.string "… … … … … …$"
 
 gText_PlayerHouseBootPC::
+#if ROM_WORLD == 2
+Cormoria_gText_PlayerHouseBootPC::
+#endif
 	.string "{PLAYER} booted up the PC.$"
 
 gText_PokeblockLinkCanceled::
@@ -1458,6 +1485,9 @@ gText_ComeBackWithSecretPower::
 	.string "you good stuff in secrecy.$"
 
 gText_PokerusExplanation::
+#if ROM_WORLD == 2
+Cormoria_gText_PokerusExplanation::
+#endif
 	.string "Your POKéMON may be infected with\n"
 	.string "POKéRUS.\p"
 	.string "Little is known about the POKéRUS\n"
@@ -2116,3 +2146,7 @@ Text_CoopGroupTravelOffer_GateOriginal:
 
 Text_CoopGroupTravelOffer_GateLater:
 	.string "Travel together through the gate\nto KANTO three years later?$"
+
+#if ROM_WORLD == 2
+    .include "data/cormoria/scripts.inc"
+#endif

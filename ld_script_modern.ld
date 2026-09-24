@@ -82,6 +82,7 @@ SECTIONS {
     .rodata :
     ALIGN(4)
     {
+        KEEP(*(.rodata.coop_player_transfer));
         *.o(.rodata*);
         *libgcc.a:*.o(.rodata*);
         *libc.a:*.o(.rodata*);

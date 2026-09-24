@@ -7,6 +7,8 @@
 #include "constants/maps.h"
 #include "constants/region_map_sections.h"
 #include "johto/save.h"
+#include "landmark.h"
+#include "pokenav.h"
 #include "save.h"
 #include "test/test.h"
 
@@ -65,6 +67,24 @@ TEST("Wide sections cannot alias an event island")
 {
     EXPECT(IsEventIslandMapSecId(MAPSEC_BIRTH_ISLAND));
     EXPECT(!IsEventIslandMapSecId(0x100 | MAPSEC_BIRTH_ISLAND));
+}
+
+TEST("Wide section sentinel survives map grid landmarks and Match Call")
+{
+    ClearForcedFlightRegion();
+    SetCurrentMap(MAP_GROUP(MAP_LITTLEROOT_TOWN), MAP_NUM(MAP_LITTLEROOT_TOWN), MAPSEC_LITTLEROOT_TOWN);
+    EXPECT_EQ(GetRegionMapSecIdAt(1, 2), MAPSEC_NONE);
+    EXPECT(GetLandmarkName(MAPSEC_NONE, 0, 0) == NULL);
+    EXPECT_EQ(MatchCall_GetMapSec(MC_HEADER_STEVEN), MAPSEC_NONE);
+    EXPECT_EQ(MatchCall_GetMapSec(MC_HEADER_MR_STONE), MAPSEC_RUSTBORO_CITY);
+}
+
+TEST("Wide Fly section without a destination cannot index the legacy table")
+{
+    struct RegionMap regionMap = { .mapSecId = MAPSEC_NONE };
+
+    EXPECT_EQ(FilterFlyDestination(&regionMap), WARP_ID_NONE);
+    EXPECT(!SetFlyDestination(&regionMap));
 }
 
 TEST("Forced Flight selects era-specific Kanto destinations")

@@ -997,11 +997,15 @@ static void Task_DoRecordMixing(u8 taskId)
         // Mixing Ruby/Sapphire records.
         SetContinueGameWarpStatusToDynamicWarp();
         WriteSaveBlock2();
+        if (Save_HandleBlockedLinkSave())
+            break;
         task->tState++;
         break;
     case 3:
         if (WriteSaveBlock1Sector())
         {
+            if (Save_HandleBlockedLinkSave())
+                break;
             ClearContinueGameWarpStatus2();
             task->tState = 4;
             task->data[1] = 0;

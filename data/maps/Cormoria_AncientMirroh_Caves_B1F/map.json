@@ -1,0 +1,116 @@
+{
+  "id": "MAP_CORMORIA_ANCIENT_MIRROH_CAVES_B1F",
+  "name": "Cormoria_AncientMirroh_Caves_B1F",
+  "layout": "LAYOUT_CORMORIA_ANCIENT_MIRROH_CAVES_B1F",
+  "music": "MUS_CAVE_OF_ORIGIN",
+  "region_map_section": "MAPSEC_CORMORIA_ANCIENT_CERAM",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERGROUND",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(AERODACTYL)",
+      "x": 14,
+      "y": 50,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_AncientMirroh_Aerodactyl",
+      "flag": "Cormoria_FLAG_ANCIENT_MIRROH_AERODACTYL"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_PROF_TENEBRIS",
+      "x": 29,
+      "y": 29,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_ANCIENT_MIRROH_PROF_TENEBRIS_INSIDE"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 51,
+      "y": 27,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_ICE_STONE",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_ANCIENTMIRROH_E"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 6,
+      "y": 33,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_AncientMirroh_Tenebris_Item",
+      "flag": "Cormoria_FLAG_ITEM_ANCIENTMIRROH_F"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 52,
+      "y": 5,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ANCIENT_MIRROH_CAVES_B1F",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 14,
+      "y": 53,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ANCIENT_MIRROH_CAVES_B1F",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 56,
+      "y": 36,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ANCIENT_MIRROH_CAVES",
+      "dest_warp_id": "2"
+    }
+  ],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 34,
+      "y": 21,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_AncientMirroh_Tenebris_Caves_Trigger"
+    }
+  ],
+  "bg_events": [
+    {
+      "type": "hidden_item",
+      "x": 46,
+      "y": 46,
+      "elevation": 0,
+      "item": "ITEM_STAR_PIECE",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_MIRROHPEAK_B"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

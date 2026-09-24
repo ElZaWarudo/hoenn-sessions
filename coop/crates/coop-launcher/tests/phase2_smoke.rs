@@ -24,9 +24,9 @@ use coop_launcher::{
     auth::AuthFuture, session::CloudFuture,
 };
 use coop_save::{
-    COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SCHEMA_VERSION, COOP_SAVE_V1_SIZE,
-    SAVE_BLOCK3_CAPACITY, SAVE_BLOCK3_CHUNK_OFFSET, SAVE_BLOCK3_CHUNK_SIZE, SECTOR_SIZE,
-    SECTORS_PER_SLOT, sector_checksum,
+    COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SIZE, SAVE_BLOCK3_CAPACITY,
+    SAVE_BLOCK3_CHUNK_OFFSET, SAVE_BLOCK3_CHUNK_SIZE, SECTOR_SIZE, SECTORS_PER_SLOT,
+    sector_checksum,
 };
 use coop_sidecar::control::ControlEvent;
 use coop_sidecar::{
@@ -66,23 +66,26 @@ fn crc32(bytes: &[u8]) -> u32 {
 fn valid_character_save(generation: u32) -> Vec<u8> {
     let mut payload = [0_u8; COOP_SAVE_V1_SIZE];
     write_u32(&mut payload, 0, COOP_SAVE_V1_MAGIC);
-    write_u16(&mut payload, 4, COOP_SAVE_V1_SCHEMA_VERSION);
+    write_u16(&mut payload, 4, coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION);
     write_u16(
         &mut payload,
         6,
         u16::try_from(COOP_SAVE_V1_SIZE).expect("frozen save ABI fits u16"),
     );
-    write_u32(&mut payload, 8, 1);
-    payload[12..28].copy_from_slice(&[
-        0x43, 0x91, 0x88, 0x33, 0xde, 0xc6, 0x46, 0xd6, 0xa5, 0x83, 0xd1, 0x24, 0x68, 0x6c, 0x85,
-        0x40,
-    ]);
+    write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
+    payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
     write_u32(&mut payload, 28, generation);
-    // The four records are ordered by the frozen protocol ABI.
+    write_u32(
+        &mut payload,
+        32,
+        coop_save::v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED,
+    );
+    // V2 retains the original four records and appends Cormoria.
     for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
         let offset = 36 + index * 8;
         payload[offset] = region;
     }
+    payload[coop_save::v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = 5;
     let payload_crc = crc32(&payload[..668]);
     write_u32(&mut payload, 668, payload_crc);
 
@@ -332,6 +335,7 @@ impl CloudApi for FakeCloud {
         self.record("finalize");
         let record = coop_cloud::SnapshotRecord::new(
             request.snapshot_id,
+            coop_launcher::session::RomWorldId::new(1).expect("registered Main ROM world ID"),
             SnapshotFence::new(
                 request.session_id,
                 request.character_id,
@@ -402,10 +406,10 @@ fn compatibility() -> BuildCompatibility {
             "generation_offset": 28,
             "generation_address": 33_554_464,
             "crc_offset": 668,
-            "schema_version": 1,
+            "schema_version": 2,
             "struct_size": 672,
-            "registry_version": 1,
-            "registry_digest": "43918833dec646d6a583d124686c8540"
+            "registry_version": 2,
+            "registry_digest": "45db54b5ddccf640bcf8c633b4510f4d"
         }
     }))
     .expect("bridge manifest");
@@ -466,6 +470,7 @@ async fn fixture() -> TestResult<(TempDir, SessionLifecycle, Arc<FakeCloud>)> {
     .await?;
     let config = SessionConfig {
         client_instance_id: client,
+        rom_world_id: coop_launcher::session::RomWorldId::new(1)?,
         manifest: compatibility(),
         trusted_manifest_key: TrustedManifestKey::new(
             "phase2-test-key",

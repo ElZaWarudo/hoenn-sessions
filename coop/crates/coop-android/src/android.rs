@@ -285,13 +285,18 @@ async fn run(
     };
     let config = SessionConfig {
         client_instance_id,
+        // This Android launcher path currently installs Main only. Future
+        // multi-ROM installs must obtain the ID from the trusted catalog.
+        rom_world_id: coop_launcher::session::RomWorldId::new(1)
+            .map_err(|_| "ID de región ROM no válido")?,
         manifest,
         trusted_manifest_key: key(),
         epoch_store,
         workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
         bridge_lua_dir: bridge,
     };
-    let acquired = SessionLifecycle::acquire_replacing_same_client(&api, auth, config, vault.clone()).await;
+    let acquired =
+        SessionLifecycle::acquire_replacing_same_client(&api, auth, config, vault.clone()).await;
     let mut session = match acquired {
         Ok(session) => session,
         Err(error) => {

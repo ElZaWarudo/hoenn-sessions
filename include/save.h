@@ -104,6 +104,9 @@ bool8 LinkFullSave_ReplaceLastSector(void);
 bool8 LinkFullSave_SetLastSectorSignature(void);
 bool8 WriteSaveBlock2(void);
 bool8 WriteSaveBlock1Sector(void);
+bool8 Save_IsOperationBlocked(void);
+bool8 Save_IsValidationRejected(void);
+bool8 Save_HandleBlockedLinkSave(void);
 u8 LoadGameSave(u8 saveType);
 u16 GetSaveBlocksPointersBaseOffset(void);
 u32 TryReadSpecialSaveSector(u8 sector, u8 *dst);
@@ -112,5 +115,9 @@ void Task_LinkFullSave(u8 taskId);
 
 // save_failed_screen.c
 void DoSaveFailedScreen(u8 saveType);
+void DoSaveRejectedScreen(void);
+#if TESTING
+bool8 SaveFailedScreen_TestIsLogicalRejection(void);
+#endif
 
 #endif // GUARD_SAVE_H

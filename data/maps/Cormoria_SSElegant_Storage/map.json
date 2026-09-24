@@ -1,0 +1,151 @@
+{
+  "id": "MAP_CORMORIA_SSELEGANT_STORAGE",
+  "name": "Cormoria_SSElegant_Storage",
+  "layout": "LAYOUT_CORMORIA_SSELEGANT_STORAGE",
+  "music": "MUS_RG_SS_ANNE",
+  "region_map_section": "MAPSEC_CORMORIA_SSELEGANT",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_NONE",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+      "x": 7,
+      "y": 3,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WALK_LEFT_AND_RIGHT",
+      "movement_range_x": 5,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_STORAGE_GAB_ZOROARK"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+      "x": 10,
+      "y": 11,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WALK_UP_AND_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 5,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_STORAGE_GAB_ZOROARK"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+      "x": 12,
+      "y": 3,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 5,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_STORAGE_GAB_ZOROARK"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SAILOR",
+      "x": 1,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WALK_RIGHT_AND_LEFT",
+      "movement_range_x": 5,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_STORAGE_GAB_ZOROARK"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_F",
+      "x": 12,
+      "y": 9,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 5,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_HIDE_GAB_BREECH_STORAGE"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LEADER_RAAZI",
+      "x": 12,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 5,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_HIDE_GAB_BREECH_STORAGE"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_HIKER",
+      "x": 13,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 5,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_HIDE_GAB_BREECH_STORAGE"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFABLE)",
+      "x": 14,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 5,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SSElegant_Storage_Catcher1",
+      "flag": "Cormoria_FLAG_HIDE_GAB_BREECH_STORAGE"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 13,
+      "y": 12,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 12,
+      "y": 12,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SSELEGANT",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [
+    {
+      "type": "hidden_item",
+      "x": 9,
+      "y": 2,
+      "elevation": 0,
+      "item": "ITEM_RARE_SHARD",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ELEGANT_A"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

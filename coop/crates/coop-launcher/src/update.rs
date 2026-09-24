@@ -967,7 +967,10 @@ impl GenerationStore {
                 .expect("validate_payloads checked every fixed identity");
             repair_existing_file(&target.join(identity.destination()), bytes)?;
         }
-        repair_existing_file(&target.join(SIGNED_RELEASE_ENVELOPE), release.signed_envelope())?;
+        repair_existing_file(
+            &target.join(SIGNED_RELEASE_ENVELOPE),
+            release.signed_envelope(),
+        )?;
         validate_complete_generation(&target, release)?;
         Ok(InstalledGeneration {
             path: target,

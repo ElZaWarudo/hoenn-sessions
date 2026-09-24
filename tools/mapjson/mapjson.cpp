@@ -44,11 +44,13 @@ enum
     MAP_ENGINE_REGION_HOENN_VALUE = 0,
     MAP_ENGINE_REGION_KANTO_VALUE = 1,
     MAP_ENGINE_REGION_JOHTO_VALUE = 2,
+    MAP_ENGINE_REGION_CORMORIA_VALUE = 3,
 };
 
 static_assert(MAP_ENGINE_REGION_HOENN_VALUE == 0, "Hoenn map header byte");
 static_assert(MAP_ENGINE_REGION_KANTO_VALUE == 1, "Kanto map header byte");
 static_assert(MAP_ENGINE_REGION_JOHTO_VALUE == 2, "Johto map header byte");
+static_assert(MAP_ENGINE_REGION_CORMORIA_VALUE == 3, "Cormoria map header byte");
 
 // expansion headers
 #include "../../include/config/frlg.h"
@@ -124,6 +126,27 @@ int get_map_engine_region_value(const Json &map_data) {
     string section = json_to_string(map_data, "region_map_section");
     bool has_region = map_data.object_items().find("region") != map_data.object_items().end();
     string region = has_region ? json_to_string(map_data, "region") : "REGION_HOENN";
+    string world = json_to_string(map_data, "rom_world", true);
+
+    /* Imported ROM worlds declare their own engine region explicitly. Extend
+     * this binding for each new world instead of inferring a ROM from its
+     * display section number, which can be aliased across worlds. */
+    struct WorldRegionBinding { const char *world; const char *region; const char *section_prefix; int engine_value; };
+    static const WorldRegionBinding world_regions[] = {
+        {"cormoria", "REGION_CORMORIA", "MAPSEC_CORMORIA_", MAP_ENGINE_REGION_CORMORIA_VALUE},
+    };
+    for (const auto &binding : world_regions) {
+        bool is_world = world == binding.world;
+        bool is_section = section.rfind(binding.section_prefix, 0) == 0;
+        bool is_region = region == binding.region;
+        if ((is_world || is_section || is_region) && (!is_world || !is_section || !has_region || !is_region))
+            FATAL_ERROR("Map world, engine region, and section disagree: '%s', '%s', '%s'.\n",
+                        world.c_str(), region.c_str(), section.c_str());
+        if (is_world)
+            return binding.engine_value;
+    }
+    if (!world.empty() && world != "hoenn")
+        FATAL_ERROR("Unregistered map ROM world '%s'.\n", world.c_str());
 
     /* A missing region must not silently assign a Johto section to Hoenn. */
     bool johto_section = section == "MAPSEC_NEW_BARK_TOWN"

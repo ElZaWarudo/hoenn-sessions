@@ -1,0 +1,260 @@
+{
+  "id": "MAP_CORMORIA_ROUTE1",
+  "name": "Cormoria_Route1",
+  "layout": "LAYOUT_CORMORIA_ROUTE1",
+  "music": "MUS_ROUTE101",
+  "region_map_section": "MAPSEC_CORMORIA_ROUTE1",
+  "requires_flash": false,
+  "weather": "WEATHER_VOLCANIC_ASH",
+  "map_type": "MAP_TYPE_HILL",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_CORMORIA_FENNILAHL_TOWN",
+      "offset": -14,
+      "direction": "right"
+    },
+    {
+      "map": "MAP_CORMORIA_CARABRUE_TOWN",
+      "offset": 17,
+      "direction": "left"
+    }
+  ],
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 24,
+      "y": 21,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_1"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 29,
+      "y": 19,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_2"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "x": 17,
+      "y": 30,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "5",
+      "script": "Cormoria_Route1_TrainerBattle_A",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE1_NORMAL"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_WOMAN_3",
+      "x": 14,
+      "y": 21,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WANDER_AROUND",
+      "movement_range_x": 2,
+      "movement_range_y": 2,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Route1_EventScripts_RandomDude",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BREAKABLE_ROCK",
+      "x": 28,
+      "y": 16,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_EventScript_RockSmash",
+      "flag": "Cormoria_FLAG_TEMP_2"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "x": 19,
+      "y": 15,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_Route1_TrainerBattle_B",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE1_NORMAL"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 31,
+      "y": 28,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_POTION",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_ROUTE_1_POTION"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BUG_CATCHER_F",
+      "x": 21,
+      "y": 6,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_Route1_TrainerBattle_C",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE1_NORMAL"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 21,
+      "y": 19,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_POKE_BALL",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_ROUTE_1_POKE_BALL"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+      "x": 17,
+      "y": 30,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "5",
+      "script": "Cormoria_Route1_TrainerBattle_Strong_A",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE1_STRONG"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_LASS",
+      "x": 19,
+      "y": 15,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "4",
+      "script": "Cormoria_Route1_TrainerBattle_Strong_B",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE1_STRONG"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BUG_CATCHER_F",
+      "x": 21,
+      "y": 6,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_Route1_TrainerBattle_Strong_C",
+      "flag": "Cormoria_FLAG_HIDE_ROUTE1_STRONG"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_TRICK_HOUSE_STATUE",
+      "x": 24,
+      "y": 16,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_AncientStatue_Route1",
+      "flag": "0"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 5,
+      "y": 7,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE1_HOUSE",
+      "dest_warp_id": "1"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [
+    {
+      "type": "hidden_item",
+      "x": 20,
+      "y": 21,
+      "elevation": 0,
+      "item": "ITEM_HEAL_BALL",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ROUTE1_B"
+    },
+    {
+      "type": "hidden_item",
+      "x": 29,
+      "y": 15,
+      "elevation": 3,
+      "item": "ITEM_RAWST_BERRY",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ROUTE1_C"
+    },
+    {
+      "type": "sign",
+      "x": 21,
+      "y": 22,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WoodSign_Route1_Middle"
+    },
+    {
+      "type": "sign",
+      "x": 7,
+      "y": 28,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WhiteSign_Route1_NextToCarabrue"
+    },
+    {
+      "type": "sign",
+      "x": 30,
+      "y": 3,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WhiteSign_Route1_NextToFennilahl"
+    },
+    {
+      "type": "hidden_item",
+      "x": 23,
+      "y": 18,
+      "elevation": 0,
+      "item": "ITEM_RARE_SHARD",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ROUTE1_A"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

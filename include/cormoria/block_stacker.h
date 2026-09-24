@@ -1,0 +1,5 @@
+#ifndef GUARD_CORMORIA_BLOCK_STACKER_H
+#define GUARD_CORMORIA_BLOCK_STACKER_H
+
+void StartBlockStacker(void);
+#endif // GUARD_CORMORIA_BLOCK_STACKER_H

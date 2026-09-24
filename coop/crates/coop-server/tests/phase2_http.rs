@@ -8,8 +8,10 @@
 
 use std::{
     error::Error,
+    fs,
     io::{ErrorKind, Read},
     net::SocketAddr,
+    path::PathBuf,
     process::{Child as StdChild, Command as StdCommand, Stdio},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -26,7 +28,7 @@ use coop_cloud::{
 };
 use coop_protocol::{
     AnimationId, AvatarId, DespawnReason, Direction, LocalPresenceStateV1, MovementMode,
-    PlayerState, PresenceHandle, PresencePoseV1, RegionId, WorldLocation,
+    PlayerState, PresenceHandle, PresencePoseV1, RegionId, RomWorldId, WorldLocation,
 };
 use coop_server::{Phase2App, Phase2Config};
 use futures_util::{SinkExt, StreamExt};
@@ -126,15 +128,46 @@ fn server_command(address: SocketAddr) -> StdCommand {
     command
 }
 
-fn configure_phase2(command: &mut StdCommand) {
+fn release_catalog() -> TestResult<(PathBuf, Sha256Digest)> {
+    let manifest: RealtimeBridgeManifest = serde_json::from_str(include_str!(
+        "../../../../dist/bridge_manifest.json"
+    ))?;
+    let catalog = serde_json::json!({
+        "schema_version": 1,
+        "worlds": [{
+            "world_id": 1,
+            "build": {
+                "game_build_id": manifest.game_build.id,
+                "rom_sha256": manifest.game_build.rom_sha256,
+                "mgba_version": "0.10.5",
+                "bridge_abi": manifest.net_bridge.abi_version,
+                "protocol_version": manifest.net_bridge.game_protocol_version
+            }
+        }]
+    });
+    let mut bytes = serde_json::to_vec(&catalog)?;
+    bytes.push(b'\n');
+    let path = std::env::temp_dir().join(format!(
+        "pokecrossroads-phase2-release-catalog-{}.json",
+        std::process::id()
+    ));
+    fs::write(&path, &bytes)?;
+    Ok((path, Sha256Digest::of_bytes(&bytes)))
+}
+
+fn configure_phase2(command: &mut StdCommand) -> TestResult<()> {
+    let (catalog_path, catalog_digest) = release_catalog()?;
     command
         .env("COOP_PHASE2_STORAGE_MODE", "phase2-local")
         .env("COOP_PHASE2_INVITE_PEPPER", INVITE_PEPPER)
         .env("COOP_PHASE2_SIGNING_KEY_HEX", SIGNING_KEY_HEX)
         .env("COOP_PHASE2_SIGNING_KEY_ID", SIGNING_KEY_ID)
         .env("COOP_PHASE2_BOOTSTRAP_INVITATION", INVITATION)
+        .env("COOP_PHASE2_RELEASE_CATALOG_PATH", catalog_path)
+        .env("COOP_PHASE2_RELEASE_CATALOG_SHA256", catalog_digest.as_hex())
         .env_remove("COOP_SERVER_MODE")
         .env_remove("COOP_SERVER_BIND_ADDR");
+    Ok(())
 }
 
 fn clear_phase2(command: &mut StdCommand) {
@@ -144,6 +177,8 @@ fn clear_phase2(command: &mut StdCommand) {
         "COOP_PHASE2_SIGNING_KEY_HEX",
         "COOP_PHASE2_SIGNING_KEY_ID",
         "COOP_PHASE2_BOOTSTRAP_INVITATION",
+        "COOP_PHASE2_RELEASE_CATALOG_PATH",
+        "COOP_PHASE2_RELEASE_CATALOG_SHA256",
     ] {
         command.env_remove(name);
     }
@@ -196,12 +231,8 @@ async fn assert_bad_configuration() -> TestResult<()> {
     let address = unused_loopback_address().await?;
     let mut malformed = server_command(address);
     clear_phase2(&mut malformed);
-    malformed
-        .env("COOP_PHASE2_STORAGE_MODE", "phase2-local")
-        .env("COOP_PHASE2_INVITE_PEPPER", INVITE_PEPPER)
-        .env("COOP_PHASE2_SIGNING_KEY_HEX", "not-a-signing-key")
-        .env("COOP_PHASE2_SIGNING_KEY_ID", SIGNING_KEY_ID)
-        .env("COOP_PHASE2_BOOTSTRAP_INVITATION", INVITATION);
+    configure_phase2(&mut malformed)?;
+    malformed.env("COOP_PHASE2_SIGNING_KEY_HEX", "not-a-signing-key");
     wait_for_failure(malformed.spawn()?, "invalid Phase 2 configuration").await?;
     Ok(())
 }
@@ -209,7 +240,7 @@ async fn assert_bad_configuration() -> TestResult<()> {
 async fn start_server() -> TestResult<(SocketAddr, ServerGuard)> {
     let requested = SocketAddr::from(([127, 0, 0, 1], 0));
     let mut command = server_command(requested);
-    configure_phase2(&mut command);
+    configure_phase2(&mut command)?;
     let child = command.spawn()?;
     let mut server = ServerGuard { child: Some(child) };
     let deadline = Instant::now() + STARTUP_TIMEOUT;
@@ -638,17 +669,22 @@ fn valid_character_sav() -> Vec<u8> {
     const SECTOR_COUNTER_OFFSET: usize = 4_092;
     const SECTOR_SIGNATURE: u32 = 0x0801_2025;
 
-    let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
+    let mut payload = [0_u8; coop_save::v2::COOP_SAVE_V2_SIZE];
     write_u32(&mut payload, 0, coop_save::COOP_SAVE_V1_MAGIC);
-    write_u16(&mut payload, 4, coop_save::COOP_SAVE_V1_SCHEMA_VERSION);
+    write_u16(&mut payload, 4, coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION);
     write_u16(
         &mut payload,
         6,
-        u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("CSP1 size fits u16"),
+        u16::try_from(coop_save::v2::COOP_SAVE_V2_SIZE).expect("CSP2 size fits u16"),
     );
     write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
     payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
     write_u32(&mut payload, 28, 1);
+    write_u32(
+        &mut payload,
+        32,
+        coop_save::v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED,
+    );
     for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
         let offset = 36 + index * 8;
         payload[offset] = region;
@@ -664,12 +700,14 @@ fn valid_character_sav() -> Vec<u8> {
             100 + u32::try_from(index).expect("regional fixture index fits u32"),
         );
     }
+    payload[coop_save::v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = 5;
     let crc = crc32fast::hash(&payload[..668]);
     write_u32(&mut payload, 668, crc);
 
     let mut save_block3 = [0xff; coop_save::SAVE_BLOCK3_CAPACITY];
     save_block3
-        [coop_save::COOP_SAVE_OFFSET..coop_save::COOP_SAVE_OFFSET + coop_save::COOP_SAVE_V1_SIZE]
+        [coop_save::COOP_SAVE_OFFSET
+            ..coop_save::COOP_SAVE_OFFSET + coop_save::v2::COOP_SAVE_V2_SIZE]
         .copy_from_slice(&payload);
     let mut bytes = vec![0xff; coop_save::FLASH_IMAGE_SIZE];
     for (slot, counter, rotation) in [(0_usize, 20_u32, 4_usize), (1, 21, 11)] {
@@ -891,11 +929,14 @@ async fn start_in_process_presence_server() -> TestResult<InProcessServer> {
         .await
         .map_err(|_| "in-process server listener bind timed out")??;
     let address = listener.local_addr()?;
+    let (catalog_path, catalog_digest) = release_catalog()?;
+    let catalog_bytes = fs::read(catalog_path)?;
     let config = Phase2Config::local(
         vec![0x07; 32],
         SigningPrivateKey::from_bytes([7; 32]),
         SIGNING_KEY_ID,
-    )?;
+    )?
+    .with_release_catalog_bytes(&catalog_bytes, catalog_digest)?;
     let app = Phase2App::new(config)?;
     app.add_invitation("two-websocket-invite-a")?;
     app.add_invitation("two-websocket-invite-b")?;
@@ -1650,6 +1691,10 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
     .await?;
     expect_status(&response, 401);
 
+    // Runtime admission binds this lease to the release-catalog build before
+    // the save endpoints will accept a checkpoint.
+    let _ticket = mint_http_ticket(address, &access, realtime_runtime(&lease)).await?;
+
     let sav = valid_character_sav();
     let pending = b"[]".to_vec();
     let sav_file = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &sav)?;
@@ -1658,6 +1703,7 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
     let idempotency_key = id(IdempotencyKey::new);
     let prepare = SnapshotPrepareRequest::new(
         snapshot_id,
+        RomWorldId::new(1).expect("main world ID is valid"),
         SnapshotPrepareFence::new(
             lease.session_id,
             lease.character_id,
@@ -1761,7 +1807,7 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
         expect_status(&response, 200);
         assert_eq!(response.body, expected);
     }
-    let parsed = coop_save::parse(
+    let parsed = coop_save::parse_v2(
         &sav,
         coop_save::RegistryContract::new(
             coop_protocol::IDENTITY_REGISTRY_VERSION,
@@ -1769,7 +1815,8 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
         ),
     )?;
     assert_eq!(parsed.raw_bytes(), sav);
-    assert_eq!(parsed.coop().regional_progress.len(), 4);
+    assert!(parsed.coop().online_eligible());
+    assert_eq!(parsed.coop().regional_progress.len(), 5);
     assert_eq!(
         parsed
             .coop()
@@ -1780,6 +1827,7 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
             (RegionId::Kanto, 2),
             (RegionId::Johto, 4),
             (RegionId::Sevii, 0),
+            (RegionId::Cormoria, 0),
         ]
     );
 

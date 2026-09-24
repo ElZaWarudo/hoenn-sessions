@@ -1,23 +1,24 @@
 //! Storage and infrastructure boundaries for authenticated Phase 2.
 
 use argon2::{
+    password_hash::{rand_core::OsRng, SaltString},
     Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::{SaltString, rand_core::OsRng},
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use coop_cloud::{
     CharacterCloudState, CharacterId, ClientInstanceId, CommitId, Group, GroupId,
     GroupInvitationId, GroupTravelProposalId, GroupTravelProposalView, IdempotencyKey,
-    LeaseContract, RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId, SigningPrivateKey,
+    LeaseContract, RefreshFamilyId, Revision, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    RuntimeBuildIdentity, RuntimeLeaseFence, SessionId, Sha256Digest, SigningPrivateKey,
     SnapshotFile, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
     SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
 };
-use coop_protocol::{RegionId, RegionalProgress, WorldZone};
+use coop_protocol::{RegionId, RegionalProgress, RomWorldId, WorldZone};
 use getrandom::fill as random_fill;
 use hmac::Mac;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt,
     sync::atomic::{AtomicU64, Ordering},
     sync::{Arc, RwLock},
@@ -50,6 +51,11 @@ pub const MAX_RELEASE_KEYS: usize = 256;
 pub const ACQUIRE_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 pub const MAX_ACQUIRE_HISTORY: usize = 256;
 pub const RESTORE_STAGE_TTL_MS: u64 = 5 * 60 * 1_000;
+pub const ROM_HANDOFF_STAGE_TTL_MS: u64 = 5 * 60 * 1_000;
+/// A source head can have only a bounded number of aborted handoff intents.
+/// Keeping these request tombstones until the source head advances closes the
+/// delayed-prepare replay window without allowing unbounded client growth.
+pub const MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER: usize = 64;
 pub const MAX_ACCESS_RECORDS_PER_CHARACTER: usize = 1_024;
 pub const MAX_REFRESH_RECORDS_PER_CHARACTER: usize = 1_024;
 pub const MAX_FAMILY_RECORDS_PER_CHARACTER: usize = 128;
@@ -489,6 +495,9 @@ pub struct Phase2Config {
     pub(crate) repository: Option<Arc<dyn Repository>>,
     pub(crate) object_store: Option<Arc<dyn ObjectStore>>,
     pub(crate) production: Option<ProductionConfig>,
+    pub(crate) release_catalog: Option<Arc<super::saves::build_catalog::TrustedBuildCatalog>>,
+    #[cfg(test)]
+    pub(crate) fixture_auto_bind: bool,
 }
 
 /// Validated connection identifiers required by the production adapters.
@@ -551,6 +560,61 @@ pub trait PostgresRepository: Repository {}
 /// Explicit marker for a Firebase-backed immutable object-store adapter.
 pub trait FirebaseObjectStore: ObjectStore {}
 impl Phase2Config {
+    #[cfg(test)]
+    pub(crate) fn with_legacy_test_runtime(mut self) -> Self {
+        let build = super::saves::current_runtime_build_identity().expect("test build manifest");
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .expect("test catalog JSON");
+        self = self
+            .with_release_catalog_bytes(&bytes, Sha256Digest::of_bytes(&bytes))
+            .expect("test catalog");
+        self.fixture_auto_bind = true;
+        self
+    }
+
+    /// Install a release catalog whose exact bytes match a separately trusted
+    /// digest. The caller must obtain the digest from release configuration,
+    /// never from the same client request as the catalog bytes.
+    ///
+    /// # Errors
+    /// Returns invalid configuration for a digest or catalog mismatch.
+    pub fn with_release_catalog_bytes(
+        mut self,
+        bytes: &[u8],
+        trusted_digest: Sha256Digest,
+    ) -> Result<Self, StorageError> {
+        let catalog = super::saves::build_catalog::TrustedBuildCatalog::from_release_bytes(
+            bytes,
+            trusted_digest,
+        )
+        .map_err(|_| StorageError::InvalidConfiguration)?;
+        self.release_catalog = Some(Arc::new(catalog));
+        Ok(self)
+    }
+
+    /// Install a pinned travel catalog and cache its release-owned arrival
+    /// images after digest, save-format, and map-location validation.
+    pub fn with_release_catalog_and_arrival_saves(
+        mut self,
+        bytes: &[u8],
+        trusted_digest: Sha256Digest,
+        release_root: &std::path::Path,
+    ) -> Result<Self, StorageError> {
+        let mut catalog = super::saves::build_catalog::TrustedBuildCatalog::from_release_bytes(
+            bytes,
+            trusted_digest,
+        )
+        .map_err(|_| StorageError::InvalidConfiguration)?;
+        catalog
+            .load_arrival_saves(release_root)
+            .map_err(|_| StorageError::InvalidConfiguration)?;
+        self.release_catalog = Some(Arc::new(catalog));
+        Ok(self)
+    }
+
     /// Creates a loopback-only local configuration with supplied secrets.
     ///
     /// # Errors
@@ -581,6 +645,9 @@ impl Phase2Config {
             repository: None,
             object_store: None,
             production: None,
+            release_catalog: None,
+            #[cfg(test)]
+            fixture_auto_bind: false,
         })
     }
     /// Selects persistent mode without secrets or adapters. This incomplete
@@ -599,6 +666,9 @@ impl Phase2Config {
             repository: None,
             object_store: None,
             production: None,
+            release_catalog: None,
+            #[cfg(test)]
+            fixture_auto_bind: false,
         }
     }
     /// Selects production mode with validated adapter connection settings.
@@ -675,7 +745,35 @@ pub(crate) struct CharacterRecord {
     /// Runtime world revision, independent from snapshot/save revision.
     pub world_revision: u64,
     pub active_snapshot: Option<SnapshotId>,
+    /// Last committed snapshot in each registered ROM world. The active head
+    /// remains `active_snapshot`; dormant heads preserve local campaigns for
+    /// a future fenced travel handoff.
+    #[serde(default)]
+    pub world_heads: BTreeMap<RomWorldId, SnapshotId>,
     pub last_session_epoch: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct RomHandoffStage {
+    pub request: RomHandoffPrepareRequest,
+    pub stage_id: SnapshotId,
+    pub source_world_id: RomWorldId,
+    pub destination_world_id: RomWorldId,
+    pub arrival_portal_id: String,
+    pub destination_save_sha256: Sha256Digest,
+    pub expires_at: u64,
+}
+
+/// Durable replay fence for an aborted ROM handoff.  The exact prepare
+/// request and stage identity remain reserved while its source snapshot is
+/// still the character's active head.  A later prepare with the same
+/// idempotency key can therefore never recreate an aborted stage after a
+/// lost abort response.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct RomHandoffAbortTombstone {
+    pub request: RomHandoffPrepareRequest,
+    pub stage_id: SnapshotId,
+    pub source_world_id: RomWorldId,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
@@ -761,6 +859,15 @@ pub(crate) struct LeaseRecord {
     pub released: bool,
     pub reconnect: Option<(IdempotencyKey, coop_cloud::LeaseFence, LeaseContract)>,
     pub release_keys: Vec<(IdempotencyKey, coop_cloud::LeaseFence)>,
+    #[serde(default)]
+    pub runtime_binding: Option<RuntimeWorldBinding>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RuntimeWorldBinding {
+    pub world_id: RomWorldId,
+    pub build: RuntimeBuildIdentity,
+    pub session: StableRuntimeSession,
 }
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct PreparedSnapshot {
@@ -844,6 +951,20 @@ pub struct State {
     pub(crate) restore_ops:
         HashMap<(CharacterId, IdempotencyKey), (SnapshotRestoreRequest, SnapshotRecord)>,
     pub(crate) restore_staging: HashMap<CharacterId, RestoreStage>,
+    #[serde(default)]
+    pub(crate) rom_handoff_staging: HashMap<CharacterId, RomHandoffStage>,
+    #[serde(default)]
+    pub(crate) rom_handoff_commits:
+        HashMap<(CharacterId, IdempotencyKey), (RomHandoffCommitRequest, SnapshotRecord)>,
+    /// Aborted handoff intents keyed by their exact source character and
+    /// idempotency key.  Entries are retained until that source head advances
+    /// and are bounded per character.
+    #[serde(default)]
+    pub(crate) rom_handoff_aborts: HashMap<(CharacterId, IdempotencyKey), RomHandoffAbortTombstone>,
+    /// Snapshots removed from history in the same transaction as a new handoff
+    /// head, awaiting idempotent object-store retirement after that commit.
+    #[serde(default)]
+    pub(crate) retiring_snapshots: HashMap<SnapshotId, SnapshotRecord>,
     pub(crate) retired_snapshots: HashSet<SnapshotId>,
     pub(crate) tickets: HashMap<[u8; 32], TicketRecord>,
     pub(crate) realtime_tickets: HashMap<[u8; 32], RealtimeTicketRecord>,

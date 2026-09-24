@@ -8,6 +8,10 @@ enum KantoSubRegion GetKantoSubregion(u32 mapSecId);
 
 static inline enum Region GetRegionForSectionId(u32 sectionId)
 {
+#if ROM_WORLD == 2
+    if (sectionId >= MAPSEC_CORMORIA_CARABRUE_TOWN && sectionId <= MAPSEC_CORMORIA_CHAMPIONSHIP_CORRIDOR)
+        return REGION_CORMORIA;
+#endif
     if (sectionId >= JOHTO_MAPSEC_START && sectionId <= JOHTO_MAPSEC_END)
         return REGION_JOHTO;
     if (sectionId >= KANTO_MAPSEC_START && sectionId < MAPSEC_SPECIAL_AREA)

@@ -11,6 +11,9 @@
 #include "constants/region_map_sections.h"
 #include "test/test.h"
 
+// These crossings require Johto and Kanto map headers, which only the Main ROM links.
+#if ROM_WORLD_ID == 1
+
 extern bool8 gFlightCallFromBag;
 
 static void SetCurrentMap(u16 map, u16 mapSecId)
@@ -248,3 +251,5 @@ TEST("Later initialization is requested and marked only after real setup")
     EXPECT(!JohtoTravel_NeedsLaterKantoInitialization());
     EXPECT(JohtoTravel_MarkLaterKantoInitialized());
 }
+
+#endif // ROM_WORLD_ID == 1

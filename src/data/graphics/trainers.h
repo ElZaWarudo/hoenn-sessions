@@ -488,6 +488,8 @@ const u16 gTrainerBackPicPalette_OldMan[] = INCBIN_U16("graphics/trainers/back_p
 
 const u8 gJohtoTrainerBackPic_Lance[] = INCBIN_U8("graphics/johto/trainers/back_pics/lance.4bpp");
 const u16 gJohtoTrainerBackPalette_Lance[16] = INCBIN_U16("graphics/johto/trainers/back_pics/lance.gbapal");
+const u8 gCormoriaTrainerBackPic_Gabrielle[] = INCBIN_U8("graphics/cormoria/trainers/back_pics/gabrielle.4bpp");
+const u16 gCormoriaTrainerBackPalette_Gabrielle[16] = INCBIN_U16("graphics/cormoria/trainers/back_pics/gabrielle.gbapal");
 
 
 static const union AnimCmd sAnimCmd_Hoenn[] =
@@ -625,6 +627,72 @@ const u16 gJohtoTrainerPalette_SAGE[] = INCBIN_U16("graphics/johto/trainers/sage
 const u32 gJohtoTrainerPic_SILVER[] = INCBIN_U32("graphics/johto/trainers/silver.4bpp.smol");
 const u16 gJohtoTrainerPalette_SILVER[] = INCBIN_U16("graphics/johto/trainers/silver.gbapal");
 
+/* BEGIN PINNED CORMORIA TRAINER PRESENTATION PIC_DATA */
+const u32 gCormoriaTrainerFrontPic_BACKPACKER[] = INCBIN_U32("graphics/trainers/cormoria/backpacker.4bpp.smol");
+const u16 gCormoriaTrainerPalette_BACKPACKER[] = INCBIN_U16("graphics/trainers/cormoria/backpacker.gbapal");
+const u32 gCormoriaTrainerFrontPic_BUG_CATCHER_F[] = INCBIN_U32("graphics/trainers/cormoria/bug_catcher_f.4bpp.smol");
+const u16 gCormoriaTrainerPalette_BUG_CATCHER_F[] = INCBIN_U16("graphics/trainers/cormoria/bug_catcher_f.gbapal");
+const u32 gCormoriaTrainerFrontPic_BUILDER[] = INCBIN_U32("graphics/trainers/cormoria/builder.4bpp.smol");
+const u16 gCormoriaTrainerPalette_BUILDER[] = INCBIN_U16("graphics/trainers/cormoria/builder.gbapal");
+const u32 gCormoriaTrainerFrontPic_BURGLAR[] = INCBIN_U32("graphics/trainers/cormoria/burglar.4bpp.smol");
+const u16 gCormoriaTrainerPalette_BURGLAR[] = INCBIN_U16("graphics/trainers/cormoria/burglar.gbapal");
+const u32 gCormoriaTrainerFrontPic_CADET_F[] = INCBIN_U32("graphics/trainers/cormoria/cadet_f.4bpp.smol");
+const u16 gCormoriaTrainerPalette_CADET_F[] = INCBIN_U16("graphics/trainers/cormoria/cadet_f.gbapal");
+const u32 gCormoriaTrainerFrontPic_CADET_M[] = INCBIN_U32("graphics/trainers/cormoria/cadet_m.4bpp.smol");
+const u16 gCormoriaTrainerPalette_CADET_M[] = INCBIN_U16("graphics/trainers/cormoria/cadet_m.gbapal");
+const u32 gCormoriaTrainerFrontPic_CHAMPION_LYNCH[] = INCBIN_U32("graphics/trainers/cormoria/lynch.4bpp.smol");
+const u16 gCormoriaTrainerPalette_CHAMPION_LYNCH[] = INCBIN_U16("graphics/trainers/cormoria/lynch.gbapal");
+const u32 gCormoriaTrainerFrontPic_COOL_GIRL[] = INCBIN_U32("graphics/trainers/cormoria/cool_girl.4bpp.smol");
+const u16 gCormoriaTrainerPalette_COOL_GIRL[] = INCBIN_U16("graphics/trainers/cormoria/cool_girl.gbapal");
+const u32 gCormoriaTrainerFrontPic_COOL_GUY[] = INCBIN_U32("graphics/trainers/cormoria/cool_guy.4bpp.smol");
+const u16 gCormoriaTrainerPalette_COOL_GUY[] = INCBIN_U16("graphics/trainers/cormoria/cool_guy.gbapal");
+const u32 gCormoriaTrainerFrontPic_ELECTRICIAN[] = INCBIN_U32("graphics/trainers/cormoria/electrician.4bpp.smol");
+const u16 gCormoriaTrainerPalette_ELECTRICIAN[] = INCBIN_U16("graphics/trainers/cormoria/electrician.gbapal");
+const u32 gCormoriaTrainerFrontPic_EMPLOYEE[] = INCBIN_U32("graphics/trainers/cormoria/employee.4bpp.smol");
+const u16 gCormoriaTrainerPalette_EMPLOYEE[] = INCBIN_U16("graphics/trainers/cormoria/employee.gbapal");
+const u32 gCormoriaTrainerFrontPic_FIREFIGHTER[] = INCBIN_U32("graphics/trainers/cormoria/firefighter.4bpp.smol");
+const u16 gCormoriaTrainerPalette_FIREFIGHTER[] = INCBIN_U16("graphics/trainers/cormoria/firefighter.gbapal");
+const u32 gCormoriaTrainerFrontPic_GUBUKING[] = INCBIN_U32("graphics/trainers/cormoria/gubuking.4bpp.smol");
+const u16 gCormoriaTrainerPalette_GUBUKING[] = INCBIN_U16("graphics/trainers/cormoria/gubuking_back.gbapal");
+const u32 gCormoriaTrainerFrontPic_JANIA_ARTIST[] = INCBIN_U32("graphics/trainers/cormoria/jania_artist.4bpp.smol");
+const u16 gCormoriaTrainerPalette_JANIA_ARTIST[] = INCBIN_U16("graphics/trainers/cormoria/jania_artist.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_ARIANA[] = INCBIN_U32("graphics/trainers/cormoria/leader_ariana.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_ARIANA[] = INCBIN_U16("graphics/trainers/cormoria/leader_ariana.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_CARONA[] = INCBIN_U32("graphics/trainers/cormoria/leader_carona.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_CARONA[] = INCBIN_U16("graphics/trainers/cormoria/leader_carona.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_GLORIA[] = INCBIN_U32("graphics/trainers/cormoria/leader_gloria.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_GLORIA[] = INCBIN_U16("graphics/trainers/cormoria/leader_gloria.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_INGER[] = INCBIN_U32("graphics/trainers/cormoria/leader_inger.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_INGER[] = INCBIN_U16("graphics/trainers/cormoria/leader_inger.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_JANIA[] = INCBIN_U32("graphics/trainers/cormoria/leader_jania.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_JANIA[] = INCBIN_U16("graphics/trainers/cormoria/leader_jania.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_RAAZI[] = INCBIN_U32("graphics/trainers/cormoria/leader_raazi.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_RAAZI[] = INCBIN_U16("graphics/trainers/cormoria/leader_raazi.gbapal");
+const u32 gCormoriaTrainerFrontPic_LEADER_VINIEL[] = INCBIN_U32("graphics/trainers/cormoria/leader_viniel.4bpp.smol");
+const u16 gCormoriaTrainerPalette_LEADER_VINIEL[] = INCBIN_U16("graphics/trainers/cormoria/leader_viniel.gbapal");
+const u32 gCormoriaTrainerFrontPic_MODEL[] = INCBIN_U32("graphics/trainers/cormoria/model.4bpp.smol");
+const u16 gCormoriaTrainerPalette_MODEL[] = INCBIN_U16("graphics/trainers/cormoria/model.gbapal");
+const u32 gCormoriaTrainerFrontPic_QWILSQUAD_BOSS[] = INCBIN_U32("graphics/trainers/cormoria/qwilsquad_boss.4bpp.smol");
+const u16 gCormoriaTrainerPalette_QWILSQUAD_BOSS[] = INCBIN_U16("graphics/trainers/cormoria/qwilsquad_boss.gbapal");
+const u32 gCormoriaTrainerFrontPic_RUE[] = INCBIN_U32("graphics/trainers/cormoria/rue.4bpp.smol");
+const u16 gCormoriaTrainerPalette_RUE[] = INCBIN_U16("graphics/trainers/cormoria/rue.gbapal");
+const u32 gCormoriaTrainerFrontPic_SHUBUBU[] = INCBIN_U32("graphics/trainers/cormoria/shububu.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SHUBUBU[] = INCBIN_U16("graphics/trainers/cormoria/shububu_back.gbapal");
+const u32 gCormoriaTrainerFrontPic_SKIIER_F[] = INCBIN_U32("graphics/trainers/cormoria/skiier_f.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SKIIER_F[] = INCBIN_U16("graphics/trainers/cormoria/skiier_f.gbapal");
+const u32 gCormoriaTrainerFrontPic_SOMBER_ADMIN_MELEA[] = INCBIN_U32("graphics/trainers/cormoria/somber_admin_melea.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SOMBER_ADMIN_MELEA[] = INCBIN_U16("graphics/trainers/cormoria/somber_grunt.gbapal");
+const u32 gCormoriaTrainerFrontPic_SOMBER_ADMIN_MOXIE[] = INCBIN_U32("graphics/trainers/cormoria/somber_admin_moxie.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SOMBER_ADMIN_MOXIE[] = INCBIN_U16("graphics/trainers/cormoria/somber_grunt.gbapal");
+const u32 gCormoriaTrainerFrontPic_SOMBER_GRUNT_DUO[] = INCBIN_U32("graphics/trainers/cormoria/somber_grunt_duo.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SOMBER_GRUNT_DUO[] = INCBIN_U16("graphics/trainers/cormoria/somber_grunt.gbapal");
+const u32 gCormoriaTrainerFrontPic_SOMBER_GRUNT_F[] = INCBIN_U32("graphics/trainers/cormoria/somber_grunt_f.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SOMBER_GRUNT_F[] = INCBIN_U16("graphics/trainers/cormoria/somber_grunt.gbapal");
+const u32 gCormoriaTrainerFrontPic_SOMBER_GRUNT_M[] = INCBIN_U32("graphics/trainers/cormoria/somber_grunt_m.4bpp.smol");
+const u16 gCormoriaTrainerPalette_SOMBER_GRUNT_M[] = INCBIN_U16("graphics/trainers/cormoria/somber_grunt.gbapal");
+const u32 gCormoriaTrainerFrontPic_WAITRESS[] = INCBIN_U32("graphics/trainers/cormoria/waitress.4bpp.smol");
+const u16 gCormoriaTrainerPalette_WAITRESS[] = INCBIN_U16("graphics/trainers/cormoria/waitress.gbapal");
+/* END PINNED CORMORIA TRAINER PRESENTATION PIC_DATA */
 const struct TrainerPicInfo gTrainerPicInfo[TRAINER_PIC_COUNT] =
 {
     [TRAINER_PIC_NONE] =
@@ -1349,5 +1417,141 @@ const struct TrainerPicInfo gTrainerPicInfo[TRAINER_PIC_COUNT] =
         .frontPic = TRAINER_FRONT_PIC(gTrainerFrontPic_EliteFourLanceFrlg, gTrainerPalette_EliteFourLanceFrlg, -32, 0),
         .backPic = TRAINER_BACK_PIC(4, gJohtoTrainerBackPic_Lance, gJohtoTrainerBackPalette_Lance, sBackAnims_Hoenn),
     },
+    [TRAINER_PIC_CORMORIA_GABRIELLE] =
+    {
+        // The donor has no Gabrielle front sprite; use the host's female trainer art in opponent views.
+        .frontPic = TRAINER_FRONT_PIC(gTrainerFrontPic_CoolTrainerF, gTrainerPalette_CoolTrainerF),
+        .backPic = TRAINER_BACK_PIC(4, gCormoriaTrainerBackPic_Gabrielle, gCormoriaTrainerBackPalette_Gabrielle, sBackAnims_Hoenn),
+    },
+/* BEGIN PINNED CORMORIA TRAINER PRESENTATION PIC_MAPPINGS */
+    [TRAINER_PIC_BACKPACKER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_BACKPACKER, gCormoriaTrainerPalette_BACKPACKER),
+    },
+    [TRAINER_PIC_BUG_CATCHER_F] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_BUG_CATCHER_F, gCormoriaTrainerPalette_BUG_CATCHER_F),
+    },
+    [TRAINER_PIC_BUILDER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_BUILDER, gCormoriaTrainerPalette_BUILDER),
+    },
+    [TRAINER_PIC_BURGLAR] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_BURGLAR, gCormoriaTrainerPalette_BURGLAR),
+    },
+    [TRAINER_PIC_CADET_F] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_CADET_F, gCormoriaTrainerPalette_CADET_F),
+    },
+    [TRAINER_PIC_CADET_M] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_CADET_M, gCormoriaTrainerPalette_CADET_M),
+    },
+    [TRAINER_PIC_CHAMPION_LYNCH] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_CHAMPION_LYNCH, gCormoriaTrainerPalette_CHAMPION_LYNCH),
+    },
+    [TRAINER_PIC_COOL_GIRL] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_COOL_GIRL, gCormoriaTrainerPalette_COOL_GIRL),
+    },
+    [TRAINER_PIC_COOL_GUY] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_COOL_GUY, gCormoriaTrainerPalette_COOL_GUY),
+    },
+    [TRAINER_PIC_ELECTRICIAN] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_ELECTRICIAN, gCormoriaTrainerPalette_ELECTRICIAN),
+    },
+    [TRAINER_PIC_EMPLOYEE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_EMPLOYEE, gCormoriaTrainerPalette_EMPLOYEE),
+    },
+    [TRAINER_PIC_FIREFIGHTER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_FIREFIGHTER, gCormoriaTrainerPalette_FIREFIGHTER),
+    },
+    [TRAINER_PIC_GUBUKING] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_GUBUKING, gCormoriaTrainerPalette_GUBUKING),
+    },
+    [TRAINER_PIC_JANIA_ARTIST] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_JANIA_ARTIST, gCormoriaTrainerPalette_JANIA_ARTIST),
+    },
+    [TRAINER_PIC_LEADER_ARIANA] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_ARIANA, gCormoriaTrainerPalette_LEADER_ARIANA),
+    },
+    [TRAINER_PIC_LEADER_CARONA] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_CARONA, gCormoriaTrainerPalette_LEADER_CARONA),
+    },
+    [TRAINER_PIC_LEADER_GLORIA] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_GLORIA, gCormoriaTrainerPalette_LEADER_GLORIA),
+    },
+    [TRAINER_PIC_LEADER_INGER] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_INGER, gCormoriaTrainerPalette_LEADER_INGER),
+    },
+    [TRAINER_PIC_LEADER_JANIA] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_JANIA, gCormoriaTrainerPalette_LEADER_JANIA),
+    },
+    [TRAINER_PIC_LEADER_RAAZI] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_RAAZI, gCormoriaTrainerPalette_LEADER_RAAZI),
+    },
+    [TRAINER_PIC_LEADER_VINIEL] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_LEADER_VINIEL, gCormoriaTrainerPalette_LEADER_VINIEL),
+    },
+    [TRAINER_PIC_MODEL] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_MODEL, gCormoriaTrainerPalette_MODEL),
+    },
+    [TRAINER_PIC_QWILSQUAD_BOSS] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_QWILSQUAD_BOSS, gCormoriaTrainerPalette_QWILSQUAD_BOSS),
+    },
+    [TRAINER_PIC_RUE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_RUE, gCormoriaTrainerPalette_RUE),
+    },
+    [TRAINER_PIC_SHUBUBU] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SHUBUBU, gCormoriaTrainerPalette_SHUBUBU),
+    },
+    [TRAINER_PIC_SKIIER_F] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SKIIER_F, gCormoriaTrainerPalette_SKIIER_F),
+    },
+    [TRAINER_PIC_SOMBER_ADMIN_MELEA] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SOMBER_ADMIN_MELEA, gCormoriaTrainerPalette_SOMBER_ADMIN_MELEA),
+    },
+    [TRAINER_PIC_SOMBER_ADMIN_MOXIE] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SOMBER_ADMIN_MOXIE, gCormoriaTrainerPalette_SOMBER_ADMIN_MOXIE),
+    },
+    [TRAINER_PIC_SOMBER_GRUNT_DUO] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SOMBER_GRUNT_DUO, gCormoriaTrainerPalette_SOMBER_GRUNT_DUO),
+    },
+    [TRAINER_PIC_SOMBER_GRUNT_F] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SOMBER_GRUNT_F, gCormoriaTrainerPalette_SOMBER_GRUNT_F),
+    },
+    [TRAINER_PIC_SOMBER_GRUNT_M] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_SOMBER_GRUNT_M, gCormoriaTrainerPalette_SOMBER_GRUNT_M),
+    },
+    [TRAINER_PIC_WAITRESS] =
+    {
+        .frontPic = TRAINER_FRONT_PIC(gCormoriaTrainerFrontPic_WAITRESS, gCormoriaTrainerPalette_WAITRESS),
+    },
+/* END PINNED CORMORIA TRAINER PRESENTATION PIC_MAPPINGS */
 
 };

@@ -59,9 +59,7 @@ pub(crate) fn acquire(
                 && state
                     .leases
                     .get(&request.character_id)
-                    .is_some_and(|lease| {
-                        lease.contract.fence() == record.contract.fence()
-                    })
+                    .is_some_and(|lease| lease.contract.fence() == record.contract.fence())
             {
                 return Ok(record.contract);
             }
@@ -130,6 +128,7 @@ pub(crate) fn acquire(
                 released: false,
                 reconnect: None,
                 release_keys: Vec::new(),
+                runtime_binding: None,
             },
         );
         state.acquire_history.insert(
@@ -274,6 +273,7 @@ pub(crate) fn reconnect(
         lease.contract = contract;
         lease.grace_until = grace_until;
         lease.reconnect = Some((request.idempotency_key, old_fence, contract));
+        lease.runtime_binding = None;
         Ok(contract)
     })
 }
@@ -334,6 +334,7 @@ pub(crate) fn release(
             .get_mut(&request.character_id)
             .ok_or(Phase2Error::Expired)?;
         lease.released = true;
+        lease.runtime_binding = None;
         lease
             .release_keys
             .push((request.idempotency_key, request_fence));

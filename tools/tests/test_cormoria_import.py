@@ -37,6 +37,26 @@ class ContractTests(unittest.TestCase):
             with self.assertRaisesRegex(import_world.ImportError, "omitted"):
                 import_world.source_bytes(donor, "map.json", {})
 
+            text_relative = "sound/songs/midi/midi.cfg"
+            text_source = donor / text_relative
+            text_source.parent.mkdir(parents=True)
+            crlf = b"first\r\nsecond\r\n"
+            text_record = {text_relative: {"bytes": len(crlf),
+                                           "sha256": hashlib.sha256(crlf).hexdigest()}}
+            text_source.write_bytes(crlf)
+            self.assertEqual(import_world.source_bytes(donor, text_relative, text_record),
+                             b"first\nsecond\n")
+            text_source.write_bytes(b"first\nsecond\n")
+            self.assertEqual(import_world.source_bytes(donor, text_relative, text_record),
+                             b"first\nsecond\n")
+            text_source.write_bytes(b"first\nchanged\n")
+            with self.assertRaisesRegex(import_world.ImportError, "hash mismatch"):
+                import_world.source_bytes(donor, text_relative, text_record)
+            unrelated = donor / "other.cfg"
+            unrelated.write_bytes(b"first\nsecond\n")
+            with self.assertRaisesRegex(import_world.ImportError, "hash mismatch"):
+                import_world.source_bytes(donor, "other.cfg", {"other.cfg": text_record[text_relative]})
+
     def test_identity_collision_and_manifest_pins(self):
         region, symbols, sources = import_world.load_manifests()
         self.assertEqual([len(region[key]) for key in ("maps", "layouts")], [165, 165])

@@ -7,6 +7,17 @@
 /charmap.txt text eol=lf
 /src/data/region_map/region_map_layout_johto.h text eol=lf
 
+# These files are authenticated against donor bytes and checked during the
+# Cormoria build; keep their line endings stable on Windows checkouts.
+/data/tilesets/cormoria/**/*.pal text eol=lf
+/data/tilesets/cormoria/asset_plan.json text eol=lf
+/data/tilesets/cormoria/rules.mk text eol=lf
+/src/data/tilesets/cormoria_imported.h text eol=lf
+/graphics/cormoria/snake/*.pal text eol=lf
+/graphics/cormoria/flappy_bird/*.pal text eol=lf
+/graphics/cormoria/mining/*.pal text eol=lf
+/graphics/cormoria/mining/**/*.pal text eol=lf
+
 # Review patches are immutable, digest-bound evidence; preserve their bytes
 # without treating whitespace inside the captured diff as current source.
 /docs/orchestration/**/*.patch -whitespace

@@ -1,0 +1,166 @@
+Cormoria_Common_EventScript_PkmnCenterNurse::
+	lock
+	faceplayer
+	setvar VAR_0x8004, 0
+	specialvar VAR_RESULT, CountPlayerTrainerStars
+	goto_if_eq VAR_RESULT, 4, Cormoria_EventScript_PkmnCenterNurse_GoldCard
+	goto Cormoria_EventScript_PkmnCenterNurse_HealPkmn
+	end
+
+Cormoria_EventScript_PkmnCenterNurse_Goodbye::
+	message Cormoria_gText_WeHopeToSeeYouAgain
+	return
+
+@ VAR_0x8004 is 1 when player has Gold Card; jumps are identical
+Cormoria_EventScript_PkmnCenterNurse_HealPkmn::
+	incrementgamestat GAME_STAT_USED_POKECENTER
+	call_if_eq VAR_0x8004, 0, Cormoria_EventScript_PkmnCenterNurse_IllTakeYourPkmn
+	call_if_eq VAR_0x8004, 1, Cormoria_EventScript_PkmnCenterNurse_IllTakeYourPkmn2
+	waitmessage
+	call Cormoria_EventScript_PkmnCenterNurse_TakeAndHealPkmn
+	goto_if_unset Cormoria_FLAG_POKERUS_EXPLAINED, Cormoria_EventScript_PkmnCenterNurse_CheckPokerus
+	goto Cormoria_EventScript_PkmnCenterNurse_CheckTrainerHillAndUnionRoom
+	end
+
+Cormoria_EventScript_PkmnCenterNurse_IllTakeYourPkmn::
+	message Cormoria_gText_IllTakeYourPkmn
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_IllTakeYourPkmn2::
+	message Cormoria_gText_IllTakeYourPkmn2
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_TakeAndHealPkmn::
+	hidefollower 0
+	applymovement VAR_0x800B, Cormoria_Movement_PkmnCenterNurse_Turn
+	waitmovement 0
+	dofieldeffect FLDEFF_POKECENTER_HEAL
+.if OW_UNION_DISABLE_CHECK == FALSE && OW_FLAG_MOVE_UNION_ROOM_CHECK != 0
+	setflag OW_FLAG_MOVE_UNION_ROOM_CHECK
+	call Cormoria_CableClub_OnResume
+	clearflag OW_FLAG_MOVE_UNION_ROOM_CHECK
+.endif
+	waitfieldeffect FLDEFF_POKECENTER_HEAL
+	applymovement VAR_0x800B, Cormoria_Common_Movement_WalkInPlaceFasterDown
+	waitmovement 0
+	special HealPlayerParty
+	callnative UpdateFollowingPokemon
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_CheckTrainerHillAndUnionRoom::
+	specialvar VAR_RESULT, PlayerNotAtTrainerHillEntrance
+	goto_if_eq VAR_RESULT, 0, Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn
+	specialvar VAR_RESULT, BufferUnionRoomPlayerName
+	copyvar VAR_0x8008, VAR_RESULT
+	goto_if_eq VAR_0x8008, 0, Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn
+	goto_if_eq VAR_0x8008, 1, Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn
+	end
+
+@ VAR_0x8004 is 1 when player has Gold Card
+Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn::
+	goto_if_eq VAR_0x8004, 1, Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn2
+	message Cormoria_gText_RestoredPkmnToFullHealth
+	waitmessage
+	waitbuttonpress
+	goto_if_unset Cormoria_FLAG_HEAL_PASS_EXPLAIN, Cormoria_EventScript_PkmnCenterNurse_ExplainHealPass
+
+	checkitem ITEM_HEAL_PASS
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_EventScript_PkmnCenterNurse_GiveHealPass
+
+	message Cormoria_gText_WeHopeToSeeYouAgain
+	waitbuttonpress
+	release
+	goto Cormoria_EventScript_PkmnCenterNurse_PlayerTurn
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn2::
+	message Cormoria_gText_ThankYouForWaiting
+	waitmessage
+	waitbuttonpress
+	message Cormoria_gText_WeHopeToSeeYouAgain2
+	waitmessage
+	waitbuttonpress
+	release
+	goto Cormoria_EventScript_PkmnCenterNurse_PlayerTurn	
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_ExplainHealPass::
+	setflag Cormoria_FLAG_HEAL_PASS_EXPLAIN
+	message Cormoria_gText_ExplainHealPass
+	waitmessage
+	waitbuttonpress
+	giveitem ITEM_HEAL_PASS
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_GiveHealPass::
+	message Cormoria_gText_TakeHealPass
+	waitbuttonpress
+	additem ITEM_HEAL_PASS
+	message Cormoria_gText_WeHopeToSeeYouAgain
+	waitbuttonpress
+	release
+	goto Cormoria_EventScript_PkmnCenterNurse_PlayerTurn
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_PlayerWaitingInUnionRoom::
+	goto_if_set FLAG_NURSE_UNION_ROOM_REMINDER, Cormoria_EventScript_PkmnCenterNurse_ReturnPkmn
+	msgbox Cormoria_gText_RestoredPkmnToFullHealth, MSGBOX_DEFAULT
+	setflag FLAG_NURSE_UNION_ROOM_REMINDER
+	message Cormoria_CableClub_Text_PlayerIsWaiting
+	waitmessage
+	applymovement VAR_0x800B, Cormoria_Movement_PkmnCenterNurse_Bow
+	waitmovement 0
+	message Cormoria_gText_WeHopeToSeeYouAgain
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_CheckPokerus::
+	specialvar VAR_RESULT, IsPokerusInParty
+	goto_if_eq VAR_RESULT, TRUE, Cormoria_EventScript_PkmnCenterNurse_ExplainPokerus
+	goto_if_eq VAR_RESULT, FALSE, Cormoria_EventScript_PkmnCenterNurse_CheckTrainerHillAndUnionRoom
+	end
+
+Cormoria_EventScript_PkmnCenterNurse_ExplainPokerus::
+	message Cormoria_gText_PokerusExplanation
+	setflag Cormoria_FLAG_POKERUS_EXPLAINED
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_GoldCard::
+	goto_if_set Cormoria_FLAG_NURSE_MENTIONS_GOLD_CARD, Cormoria_EventScript_PkmnCenterNurse_AskForUsual
+	setflag Cormoria_FLAG_NURSE_MENTIONS_GOLD_CARD
+	msgbox Cormoria_gText_WelcomeCutShort, MSGBOX_DEFAULT
+	playse SE_PIN
+	applymovement VAR_0x800B, Cormoria_Common_Movement_ExclamationMark
+	waitmovement 0
+	applymovement VAR_0x800B, Cormoria_Common_Movement_Delay48
+	waitmovement 0
+	msgbox Cormoria_gText_NoticesGoldCard, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, YES, Cormoria_EventScript_PkmnCenterNurse_GoldCardHealPkmn
+	message Cormoria_gText_WeHopeToSeeYouAgain2
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_AskForUsual::
+	msgbox Cormoria_gText_YouWantTheUsual, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, YES, Cormoria_EventScript_PkmnCenterNurse_GoldCardHealPkmn
+	message Cormoria_gText_WeHopeToSeeYouAgain2
+	return
+
+Cormoria_EventScript_PkmnCenterNurse_GoldCardHealPkmn::
+	setvar VAR_0x8004, 1
+	goto Cormoria_EventScript_PkmnCenterNurse_HealPkmn
+	end
+
+Cormoria_Movement_PkmnCenterNurse_Bow:
+	nurse_joy_bow
+	delay_4
+	step_end
+
+Cormoria_Movement_PkmnCenterNurse_Turn:
+	walk_in_place_faster_left
+	step_end
+
+
+Cormoria_EventScript_PkmnCenterNurse_PlayerTurn::
+   applymovement OBJ_EVENT_ID_PLAYER, Cormoria_Common_Movement_FaceDown
+   waitmovement 0
+   release
+   end

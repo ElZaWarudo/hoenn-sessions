@@ -19,11 +19,11 @@ const struct CoopSaveSchemaDescriptor gCoopSaveSchemaDescriptor =
     .descriptor_version = COOP_SAVE_DESCRIPTOR_VERSION,
     .descriptor_size = sizeof(struct CoopSaveSchemaDescriptor),
     .save_magic = COOP_SAVE_MAGIC,
-    .save_schema_version = COOP_SAVE_SCHEMA_VERSION,
-    .save_struct_size = sizeof(struct CoopSaveV1),
+    .save_schema_version = COOP_SAVE_V2_SCHEMA_VERSION,
+    .save_struct_size = sizeof(struct CoopSaveV2),
     .save_block3_offset = COOP_SAVE_BLOCK3_OFFSET,
-    .generation_offset = offsetof(struct CoopSaveV1, save_generation),
-    .crc32_offset = offsetof(struct CoopSaveV1, crc32),
+    .generation_offset = offsetof(struct CoopSaveV2, save_generation),
+    .crc32_offset = offsetof(struct CoopSaveV2, crc32),
     .sector_data_size = SECTOR_DATA_SIZE,
     .save_block3_chunk_size = SAVE_BLOCK_3_CHUNK_SIZE,
     .sector_size = SECTOR_SIZE,
@@ -31,12 +31,12 @@ const struct CoopSaveSchemaDescriptor gCoopSaveSchemaDescriptor =
     .save_slot_count = NUM_SAVE_SLOTS,
     .registry_version = COOP_IDENTITY_REGISTRY_VERSION,
     .registry_digest = COOP_IDENTITY_REGISTRY_DIGEST_BYTES,
-    .trainer_bits_offset = offsetof(struct CoopSaveV1, trainer_bits),
-    .event_bits_offset = offsetof(struct CoopSaveV1, event_bits),
-    .fly_bits_offset = offsetof(struct CoopSaveV1, fly_bits),
-    .gym_bits_offset = offsetof(struct CoopSaveV1, gym_bits),
-    .status_flags_offset = offsetof(struct CoopSaveV1, status_flags),
-    .regional_progress_offset = offsetof(struct CoopSaveV1, regional_progress),
+    .trainer_bits_offset = offsetof(struct CoopSaveV2, trainer_bits),
+    .event_bits_offset = offsetof(struct CoopSaveV2, event_bits),
+    .fly_bits_offset = offsetof(struct CoopSaveV2, fly_bits),
+    .gym_bits_offset = offsetof(struct CoopSaveV2, gym_bits),
+    .status_flags_offset = offsetof(struct CoopSaveV2, status_flags),
+    .regional_progress_offset = offsetof(struct CoopSaveV2, regional_progress),
 };
 
 static enum CoopRegion GetRegionForSlot(u32 slot)
@@ -47,6 +47,7 @@ static enum CoopRegion GetRegionForSlot(u32 slot)
         COOP_REGION_KANTO,
         COOP_REGION_JOHTO,
         COOP_REGION_SEVII,
+        COOP_REGION_CORMORIA,
     };
 
     if (slot >= ARRAY_COUNT(sRegions))
@@ -66,22 +67,12 @@ static bool8 BytesHaveValue(const u8 *bytes, u32 length, u8 value)
     return TRUE;
 }
 
-static bool8 IsLegacyOrErased(const struct CoopSaveV1 *save)
+static bool8 IsLegacyOrErased(const struct CoopSaveV2 *save)
 {
     const u8 *bytes = (const u8 *)save;
 
     return BytesHaveValue(bytes, sizeof(*save), 0)
         || BytesHaveValue(bytes, sizeof(*save), 0xFF);
-}
-
-static bool8 HasCompatibleHeader(const struct CoopSaveV1 *save)
-{
-    return save != NULL
-        && save->magic == COOP_SAVE_MAGIC
-        && save->schema_version == COOP_SAVE_SCHEMA_VERSION
-        && save->struct_size == sizeof(*save)
-        && save->registry_version == COOP_IDENTITY_REGISTRY_VERSION
-        && memcmp(save->registry_digest, sRegistryDigest, sizeof(sRegistryDigest)) == 0;
 }
 
 static bool8 IdentityOrdinalIsAssigned(const struct CoopIdentityRegistryEntry *entries,
@@ -136,33 +127,6 @@ static u16 GetAssignedBadgeMask(enum CoopRegion region)
             mask |= 1u << entry->badge_bit;
     }
     return mask;
-}
-
-static bool8 HasValidBody(const struct CoopSaveV1 *save)
-{
-    u32 i;
-
-    if (!HasCompatibleHeader(save)
-     || (save->status_flags & ~COOP_SAVE_STATUS_KNOWN_MASK) != 0)
-        return FALSE;
-
-    for (i = 0; i < ARRAY_COUNT(save->regional_progress); i++)
-    {
-        if (save->regional_progress[i].region != GetRegionForSlot(i)
-         || save->regional_progress[i].reserved != 0
-         || (save->regional_progress[i].badge_mask & ~GetAssignedBadgeMask(GetRegionForSlot(i))) != 0)
-            return FALSE;
-    }
-
-    return BytesHaveValue(save->reserved, sizeof(save->reserved), 0)
-        && BitsContainOnlyAssigned(save->trainer_bits, sizeof(save->trainer_bits),
-                                   gCoopTrainerIdentityRegistry, COOP_TRAINER_IDENTITY_COUNT)
-        && BitsContainOnlyAssigned(save->event_bits, sizeof(save->event_bits),
-                                   gCoopEventIdentityRegistry, COOP_EVENT_IDENTITY_COUNT)
-        && BitsContainOnlyAssigned(save->fly_bits, sizeof(save->fly_bits),
-                                   gCoopFlyPointIdentityRegistry, COOP_FLY_IDENTITY_COUNT)
-        && BitsContainOnlyAssigned(save->gym_bits, sizeof(save->gym_bits),
-                                   gCoopGymIdentityRegistry, COOP_GYM_IDENTITY_COUNT);
 }
 
 static bool8 HasCompatibleV2Header(const struct CoopSaveV2 *save)
@@ -247,34 +211,38 @@ u32 CoopSaveV2_CalculateCrc(const struct CoopSaveV2 *save)
     return CoopSave_Crc32(save, offsetof(struct CoopSaveV2, crc32));
 }
 
-bool8 CoopSave_Seal(struct CoopSaveV1 *save)
-{
-    if (!HasValidBody(save))
-    {
-        if (gSaveBlock3Ptr != NULL && save == &gSaveBlock3Ptr->coop)
-            sOnlineEnabled = FALSE;
-        return FALSE;
-    }
-
-    save->crc32 = CoopSave_CalculateCrc(save);
-    if (gSaveBlock3Ptr != NULL && save == &gSaveBlock3Ptr->coop)
-        sOnlineEnabled = (save->status_flags & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
-    return TRUE;
-}
-
-bool8 CoopSave_Validate(const struct CoopSaveV1 *save)
-{
-    return HasValidBody(save)
-        && save->crc32 == CoopSave_CalculateCrc(save);
-}
-
 bool8 CoopSaveV2_Validate(const struct CoopSaveV2 *save)
 {
     return HasValidV2Body(save)
         && save->crc32 == CoopSaveV2_CalculateCrc(save);
 }
 
-void CoopSave_Initialize(struct CoopSaveV1 *save)
+bool8 CoopSaveV2_Seal(struct CoopSaveV2 *save)
+{
+    if (!HasValidV2Body(save))
+        return FALSE;
+
+    save->crc32 = CoopSaveV2_CalculateCrc(save);
+    return TRUE;
+}
+
+bool8 CoopSave_Validate(const struct CoopSaveV2 *save)
+{
+    return CoopSaveV2_Validate(save);
+}
+
+bool8 CoopSave_Seal(struct CoopSaveV2 *save)
+{
+    bool8 sealed = CoopSaveV2_Seal(save);
+
+    if (gSaveBlock3Ptr != NULL && save == &gSaveBlock3Ptr->coop)
+        sOnlineEnabled = sealed
+            && (save->status_flags & COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED) != 0
+            && (save->status_flags & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
+    return sealed;
+}
+
+void CoopSaveV2_Initialize(struct CoopSaveV2 *save)
 {
     u32 i;
 
@@ -283,16 +251,18 @@ void CoopSave_Initialize(struct CoopSaveV1 *save)
 
     memset(save, 0, sizeof(*save));
     save->magic = COOP_SAVE_MAGIC;
-    save->schema_version = COOP_SAVE_SCHEMA_VERSION;
+    save->schema_version = COOP_SAVE_V2_SCHEMA_VERSION;
     save->struct_size = sizeof(*save);
     save->registry_version = COOP_IDENTITY_REGISTRY_VERSION;
     memcpy(save->registry_digest, sRegistryDigest, sizeof(sRegistryDigest));
+    save->status_flags = COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED;
     for (i = 0; i < ARRAY_COUNT(save->regional_progress); i++)
         save->regional_progress[i].region = GetRegionForSlot(i);
-    (void)CoopSave_Seal(save);
+    save->cormoria_progress.region = COOP_SAVE_V2_CORMORIA_REGION;
+    (void)CoopSaveV2_Seal(save);
 }
 
-static void CopyProgressFromSave(const struct CoopSaveV1 *save)
+static void CopyProgressFromSave(const struct CoopSaveV2 *save)
 {
     u32 i;
 
@@ -306,6 +276,16 @@ static void CopyProgressFromSave(const struct CoopSaveV1 *save)
         {
             progress->badge_mask = save->regional_progress[i].badge_mask;
             progress->story_checkpoint = save->regional_progress[i].story_checkpoint;
+        }
+    }
+    {
+        struct RegionalProgress *progress =
+            CoopProgress_GetRegion(&gCoopProgress, COOP_REGION_CORMORIA);
+
+        if (progress != NULL)
+        {
+            progress->badge_mask = save->cormoria_progress.badge_mask;
+            progress->story_checkpoint = save->cormoria_progress.story_checkpoint;
         }
     }
 }
@@ -335,8 +315,9 @@ static void InitializeCurrentWithStatus(u32 status_flags)
         return;
 
     CoopProgress_Init(&gCoopProgress);
-    CoopSave_Initialize(&gSaveBlock3Ptr->coop);
-    gSaveBlock3Ptr->coop.status_flags = status_flags;
+    CoopSaveV2_Initialize(&gSaveBlock3Ptr->coop);
+    if (status_flags != 0)
+        gSaveBlock3Ptr->coop.status_flags = status_flags;
     (void)CoopSave_Seal(&gSaveBlock3Ptr->coop);
     sSaveLoadResolved = TRUE;
 }
@@ -356,7 +337,7 @@ void CoopSave_ResetRuntimeState(void)
 
 enum CoopSaveLoadResult CoopSave_Load(void)
 {
-    struct CoopSaveV1 *save;
+    struct CoopSaveV2 *save;
 
     sOnlineEnabled = FALSE;
     sSavePreparationSucceeded = FALSE;
@@ -380,7 +361,8 @@ enum CoopSaveLoadResult CoopSave_Load(void)
     {
         CopyProgressFromSave(save);
         sSaveLoadResolved = TRUE;
-        sOnlineEnabled = (save->status_flags & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
+        sOnlineEnabled = (save->status_flags & COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED) != 0
+            && (save->status_flags & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
         return COOP_SAVE_LOAD_READY;
     }
 
@@ -389,7 +371,7 @@ enum CoopSaveLoadResult CoopSave_Load(void)
      * no stale progress may be presented to the bridge or gameplay. */
     CoopProgress_Init(&gCoopProgress);
     sSaveLoadResolved = TRUE;
-    if (!HasCompatibleHeader(save))
+    if (!HasCompatibleV2Header(save))
         return COOP_SAVE_LOAD_INCOMPATIBLE;
     return COOP_SAVE_LOAD_CORRUPT;
 }
@@ -406,13 +388,14 @@ bool8 CoopSave_LoadRuntimeProgress(void)
     }
 
     CopyProgressFromSave(&gSaveBlock3Ptr->coop);
-    sOnlineEnabled = (gSaveBlock3Ptr->coop.status_flags & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
+    sOnlineEnabled = (gSaveBlock3Ptr->coop.status_flags & COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED) != 0
+        && (gSaveBlock3Ptr->coop.status_flags & COOP_SAVE_STATUS_MIGRATION_AMBIGUOUS) == 0;
     return TRUE;
 }
 
 bool8 CoopSave_PrepareForWrite(void)
 {
-    struct CoopSaveV1 *save;
+    struct CoopSaveV2 *save;
     u32 i;
 
     sSavePreparationSucceeded = FALSE;
@@ -430,6 +413,10 @@ bool8 CoopSave_PrepareForWrite(void)
         sOnlineEnabled = FALSE;
         return FALSE;
     }
+    /* Generation is a monotonic cloud fence; wrapping would make a newer save
+     * appear older and could admit stale cross-ROM state. */
+    if (save->save_generation == 0xFFFFFFFFu)
+        return FALSE;
 
     for (i = 0; i < ARRAY_COUNT(save->regional_progress); i++)
     {
@@ -439,6 +426,8 @@ bool8 CoopSave_PrepareForWrite(void)
         save->regional_progress[i].badge_mask = progress->badge_mask;
         save->regional_progress[i].story_checkpoint = progress->story_checkpoint;
     }
+    save->cormoria_progress.badge_mask = gCoopProgress.regions[4].badge_mask;
+    save->cormoria_progress.story_checkpoint = gCoopProgress.regions[4].story_checkpoint;
     save->save_generation++;
     sSavePreparationSucceeded = CoopSave_Seal(save);
     return sSavePreparationSucceeded;

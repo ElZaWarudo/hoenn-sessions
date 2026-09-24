@@ -1,0 +1,142 @@
+{
+  "id": "MAP_CORMORIA_VICTORY_ROAD",
+  "name": "Cormoria_VictoryRoad",
+  "layout": "LAYOUT_CORMORIA_VICTORY_ROAD",
+  "music": "MUS_RG_VICTORY_ROAD",
+  "region_map_section": "MAPSEC_CORMORIA_VICTORY_CAPE",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_NONE",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_CORMORIA_VICTORY_ROAD_CORMORIA",
+      "offset": -28,
+      "direction": "up"
+    },
+    {
+      "map": "MAP_CORMORIA_CHAMPIONSHIP",
+      "offset": -11,
+      "direction": "down"
+    }
+  ],
+  "object_events": [],
+  "warp_events": [],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 19,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Normal"
+    },
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Normal"
+    },
+    {
+      "type": "trigger",
+      "x": 21,
+      "y": 12,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Normal"
+    },
+    {
+      "type": "trigger",
+      "x": 19,
+      "y": 14,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Shade"
+    },
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 14,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Shade"
+    },
+    {
+      "type": "trigger",
+      "x": 21,
+      "y": 14,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Shade"
+    },
+    {
+      "type": "trigger",
+      "x": 19,
+      "y": 49,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Shade"
+    },
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 49,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Shade"
+    },
+    {
+      "type": "trigger",
+      "x": 21,
+      "y": 49,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Shade"
+    },
+    {
+      "type": "trigger",
+      "x": 19,
+      "y": 51,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Rain"
+    },
+    {
+      "type": "trigger",
+      "x": 20,
+      "y": 51,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Rain"
+    },
+    {
+      "type": "trigger",
+      "x": 21,
+      "y": 51,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_VR_SetWeather_Rain"
+    }
+  ],
+  "bg_events": [],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

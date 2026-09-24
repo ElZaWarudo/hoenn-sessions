@@ -27,7 +27,7 @@ class JohtoLancePartnerTests(unittest.TestCase):
 
     def test_partner_ids_are_append_only_and_steven_block_is_preserved(self):
         constants = (ROOT / "include/constants/battle_partner.h").read_text(encoding="utf-8")
-        self.assertRegex(constants, r"#define PARTNER_NONE 0\s+#define PARTNER_STEVEN 1\s+#define PARTNER_LANCE 2\s+#define PARTNER_COUNT 3")
+        self.assertRegex(constants, r"#define PARTNER_NONE 0\s+#define PARTNER_STEVEN 1\s+#define PARTNER_LANCE 2\s+#define PARTNER_CORMORIA_GABRIELLE 3\s+#define PARTNER_COUNT 4")
         expected_steven = """=== PARTNER_STEVEN ===
 Name: STEVEN
 Class: Rival
@@ -70,7 +70,7 @@ EVs: 252 Atk / 252 SpA / 6 SpD
         self.assertTrue(before.endswith(expected_steven + "\n"))
 
         trainers = (ROOT / "include/constants/trainers.h").read_text(encoding="utf-8")
-        self.assertRegex(trainers, r"TRAINER_PIC_SILVER,\s+TRAINER_PIC_JOHTO_PARTNER_LANCE,\s+TRAINER_PIC_COUNT,")
+        self.assertRegex(trainers, r"TRAINER_PIC_SILVER,\s+TRAINER_PIC_JOHTO_PARTNER_LANCE,\s+TRAINER_PIC_CORMORIA_GABRIELLE,\s+TRAINER_PIC_COUNT,")
 
     def test_lance_source_party_is_exact_and_has_no_invented_items(self):
         self.assertRegex(self.lance, r"Name: LANCE\s+Class: Elite Four\s+Pic: Johto Partner Lance\s+Gender: Male\s+Music: Elite Four\s+AI: Basic Trainer\s+Multi Party: Half")

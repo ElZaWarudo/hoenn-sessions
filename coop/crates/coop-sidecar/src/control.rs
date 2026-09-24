@@ -157,6 +157,10 @@ impl<'de> Deserialize<'de> for CommandId {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlCommand {
+    /// Only accepted by an explicitly launched offline arrival verifier.
+    ArrivalChallenge {
+        nonce: [u8; 16],
+    },
     OnlineStatus {
         session_epoch: u32,
         status: coop_protocol::OnlineStatus,
@@ -263,6 +267,8 @@ pub enum CommandReason {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlEvent {
+    ArrivalVerifierReady {},
+    ArrivalProof(ArrivalProof),
     OnlineRequest(coop_protocol::OnlineRequest),
     PresenceRearmed {
         command_id: CommandId,
@@ -273,6 +279,12 @@ pub enum ControlEvent {
     CheckpointReady {
         session_epoch: u32,
         ready_sequence: u32,
+    },
+    #[serde(rename = "portal_travel_request")]
+    PortalTravelRequest {
+        session_epoch: u32,
+        portal_sequence: u32,
+        portal_id: String,
     },
     #[serde(rename = "save_data_updated")]
     SaveDataUpdated {
@@ -306,6 +318,54 @@ pub enum ControlEvent {
     GroupTravel(GroupTravelClientRecord),
 }
 
+/// Exact, canonical proof returned by the destination ROM after a V2 Continue.
+/// The digest covers the 128 KiB Flash image, excluding an optional RTC trailer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArrivalProof {
+    pub nonce: [u8; 16],
+    pub flash_sha256: [u8; 32],
+    pub world_id: u32,
+    pub save_generation: u32,
+    pub map_group: u8,
+    pub map_num: u8,
+}
+
+impl ArrivalProof {
+    #[must_use]
+    pub fn from_rom_payload(payload: &[u8]) -> Option<Self> {
+        if payload.len() != 64 || payload[58..].iter().any(|byte| *byte != 0) {
+            return None;
+        }
+        let nonce: [u8; 16] = payload[0..16].try_into().ok()?;
+        let flash_sha256: [u8; 32] = payload[16..48].try_into().ok()?;
+        let world_id = u32::from_le_bytes(payload[48..52].try_into().ok()?);
+        let save_generation = u32::from_le_bytes(payload[52..56].try_into().ok()?);
+        if nonce == [0; 16] || flash_sha256 == [0; 32] || world_id == 0 || save_generation == 0 {
+            return None;
+        }
+        Some(Self {
+            nonce,
+            flash_sha256,
+            world_id,
+            save_generation,
+            map_group: payload[56],
+            map_num: payload[57],
+        })
+    }
+}
+
+pub(crate) fn valid_portal_id(value: &str) -> bool {
+    value.len() <= 96
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_lowercase())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
 // Serde accepts unknown fields on an internally tagged unit variant even when
 // `deny_unknown_fields` is present.  Decode through an empty struct for the
 // fieldless reset so its canonical object remains strict as every other
@@ -313,6 +373,8 @@ pub enum ControlEvent {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ControlEventWire {
+    ArrivalVerifierReady {},
+    ArrivalProof(ArrivalProof),
     OnlineRequest(coop_protocol::OnlineRequest),
     PresenceRearmed {
         command_id: CommandId,
@@ -323,6 +385,12 @@ enum ControlEventWire {
     CheckpointReady {
         session_epoch: u32,
         ready_sequence: u32,
+    },
+    #[serde(rename = "portal_travel_request")]
+    PortalTravelRequest {
+        session_epoch: u32,
+        portal_sequence: u32,
+        portal_id: String,
     },
     #[serde(rename = "save_data_updated")]
     SaveDataUpdated {
@@ -362,6 +430,8 @@ impl<'de> Deserialize<'de> for ControlEvent {
         D: serde::Deserializer<'de>,
     {
         Ok(match ControlEventWire::deserialize(deserializer)? {
+            ControlEventWire::ArrivalVerifierReady {} => Self::ArrivalVerifierReady {},
+            ControlEventWire::ArrivalProof(value) => Self::ArrivalProof(value),
             ControlEventWire::OnlineRequest(value) => Self::OnlineRequest(value),
             ControlEventWire::PresenceRearmed {
                 command_id,
@@ -379,6 +449,20 @@ impl<'de> Deserialize<'de> for ControlEvent {
                 session_epoch,
                 ready_sequence,
             },
+            ControlEventWire::PortalTravelRequest {
+                session_epoch,
+                portal_sequence,
+                portal_id,
+            } => {
+                if session_epoch == 0 || portal_sequence == 0 || !valid_portal_id(&portal_id) {
+                    return Err(serde::de::Error::custom("invalid portal request"));
+                }
+                Self::PortalTravelRequest {
+                    session_epoch,
+                    portal_sequence,
+                    portal_id,
+                }
+            }
             ControlEventWire::SaveDataUpdated {
                 session_epoch,
                 ready_sequence,
@@ -538,7 +622,7 @@ impl ControlConnection {
         if handshake.control_version != CONTROL_PROTOCOL_VERSION {
             return Err(ControlError::IncompatibleVersion(handshake.control_version));
         }
-        if handshake.session_epoch == 0 || handshake.session_epoch != expected_epoch {
+        if handshake.session_epoch != expected_epoch {
             return Err(ControlError::InvalidSessionEpoch);
         }
         if !expected_secret.matches(&handshake.secret) {
@@ -704,6 +788,87 @@ mod tests {
     };
     use serde_json::Value;
     use tokio::net::TcpStream;
+
+    #[test]
+    fn arrival_verifier_ready_is_a_strict_fieldless_event() {
+        let event = ControlEvent::ArrivalVerifierReady {};
+        let encoded = serde_json::to_value(&event).unwrap();
+        assert_eq!(
+            encoded,
+            serde_json::json!({"type": "arrival_verifier_ready"})
+        );
+        assert_eq!(
+            serde_json::from_value::<ControlEvent>(encoded).unwrap(),
+            event
+        );
+        assert!(
+            serde_json::from_str::<ControlEvent>(
+                r#"{"type":"arrival_verifier_ready","extra":true}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn arrival_proof_requires_canonical_nonempty_fields() {
+        let mut payload = [0_u8; 64];
+        payload[..16].fill(0x11);
+        payload[16..48].fill(0x22);
+        payload[48..52].copy_from_slice(&1_u32.to_le_bytes());
+        payload[52..56].copy_from_slice(&2_u32.to_le_bytes());
+        payload[56] = 3;
+        payload[57] = 4;
+        let expected = ArrivalProof::from_rom_payload(&payload).unwrap();
+        assert_eq!(expected.nonce, [0x11; 16]);
+        assert_eq!(expected.flash_sha256, [0x22; 32]);
+        assert_eq!((expected.world_id, expected.save_generation), (1, 2));
+        assert_eq!((expected.map_group, expected.map_num), (3, 4));
+        assert!(ArrivalProof::from_rom_payload(&payload[..63]).is_none());
+        for range in [0..16, 16..48, 48..52, 52..56, 58..59] {
+            let mut invalid = payload;
+            if range.start == 58 {
+                invalid[58] = 1;
+            } else {
+                invalid[range].fill(0);
+            }
+            assert!(ArrivalProof::from_rom_payload(&invalid).is_none());
+        }
+    }
+
+    #[test]
+    fn portal_request_control_event_has_strict_ascii_identifier() {
+        let valid = r#"{"type":"portal_travel_request","session_epoch":7,"portal_sequence":12,"portal_id":"to_cormoria"}"#;
+        assert_eq!(
+            serde_json::from_str::<ControlEvent>(valid).unwrap(),
+            ControlEvent::PortalTravelRequest {
+                session_epoch: 7,
+                portal_sequence: 12,
+                portal_id: "to_cormoria".into(),
+            }
+        );
+        let oversized = "a".repeat(97);
+        for invalid in [
+            "",
+            "7start",
+            "To_cormoria",
+            "to-cormoria",
+            "to_é",
+            oversized.as_str(),
+        ] {
+            let payload = serde_json::json!({
+                "type": "portal_travel_request",
+                "session_epoch": 7,
+                "portal_sequence": 12,
+                "portal_id": invalid
+            });
+            assert!(serde_json::from_value::<ControlEvent>(payload).is_err());
+        }
+        for field in ["session_epoch", "portal_sequence"] {
+            let mut payload: Value = serde_json::from_str(valid).unwrap();
+            payload[field] = serde_json::json!(0);
+            assert!(serde_json::from_value::<ControlEvent>(payload).is_err());
+        }
+    }
 
     fn command_id() -> CommandId {
         CommandId::parse("00000000-0000-4000-8000-000000000001").unwrap()

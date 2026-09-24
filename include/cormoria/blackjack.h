@@ -1,0 +1,6 @@
+#ifndef GUARD_CORMORIA_BLACKJACK_H
+#define GUARD_CORMORIA_BLACKJACK_H
+
+void StartBlackJack(void);
+
+#endif // GUARD_CORMORIA_BLACKJACK_H

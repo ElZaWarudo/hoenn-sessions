@@ -28,9 +28,9 @@ local function validate_save_manifest(value)
     or value.coop_offset ~= 4
     or value.generation_offset ~= 28
     or value.crc_offset ~= 668
-    or value.schema_version ~= 1
+    or value.schema_version ~= 2
     or value.struct_size ~= 672
-    or value.registry_version ~= 1
+    or value.registry_version ~= 2
     or type(value.registry_digest) ~= "string"
     or #value.registry_digest ~= 32
     or value.registry_digest:match("^[0-9a-f]+$") == nil then
@@ -127,8 +127,7 @@ local initialization_frames = 0
 local MAX_INITIALIZATION_FRAMES = 300
 
 local function is_newer_u32(candidate, baseline)
-  local distance = (candidate - baseline) & 0xFFFFFFFF
-  return distance ~= 0 and distance < 0x80000000
+  return candidate > baseline
 end
 
 local function remove_readable_file(path)
@@ -252,6 +251,12 @@ function checkpoint:try_capture()
 end
 
 function checkpoint:allow_outbound(message)
+  if message.type == protocol.types.PORTAL_TRAVEL_REQUEST then
+    if not self.active_epoch or message.session_epoch ~= self.active_epoch or self.grant then
+      return nil, "portal travel request has no idle authenticated session"
+    end
+    return true
+  end
   if message.type ~= protocol.types.SAVE_DATA_UPDATED then return true end
   if not self.grant then
     return nil, "SAVE_DATA_UPDATED arrived without a current checkpoint grant"

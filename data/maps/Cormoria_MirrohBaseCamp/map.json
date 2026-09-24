@@ -1,0 +1,298 @@
+{
+  "id": "MAP_CORMORIA_MIRROH_BASE_CAMP",
+  "name": "Cormoria_MirrohBaseCamp",
+  "layout": "LAYOUT_CORMORIA_MIRROH_BASE_CAMP",
+  "music": "MUS_END",
+  "region_map_section": "MAPSEC_CORMORIA_MIRROH_BASE_CAMP",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_TOWN",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_CORMORIA_MT_MIRROH_EXTERIOR",
+      "offset": -34,
+      "direction": "up"
+    }
+  ],
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_CABLE_CAR",
+      "x": 42,
+      "y": 23,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BOY_3",
+      "x": 3,
+      "y": 12,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_EventScript_Vendor3",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BRANDON",
+      "x": 3,
+      "y": 19,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_EventScript_Vendor1",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_WOMAN_4",
+      "x": 8,
+      "y": 15,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_EventScript_Vendor2",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_OLD_WOMAN",
+      "x": 20,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_EventScript_NPC2",
+      "flag": "Cormoria_FLAG_HIDE_GRAVEYARD_HISTORIAN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_GIRL_2",
+      "x": 13,
+      "y": 10,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_EventScript_NPC1",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_PROF_BIRCH",
+      "x": 0,
+      "y": 45,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_Rue_Trigger",
+      "flag": "Cormoria_FLAG_MIRROHBASECAMP_MASTERBALL_RUE"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_PICNICKER",
+      "x": 18,
+      "y": 22,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_Trainer_A",
+      "flag": "Cormoria_FLAG_MIRROHBASECAMP_TRAINER_A"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_WOMAN_3",
+      "x": 18,
+      "y": 21,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_Trainer_B",
+      "flag": "Cormoria_FLAG_MIRROHBASECAMP_TRAINER_B"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAN_3",
+      "x": 18,
+      "y": 20,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_Trainer_C",
+      "flag": "Cormoria_FLAG_MIRROHBASECAMP_TRAINER_C"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GREAVARD)",
+      "x": 5,
+      "y": 2,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_RUN_IN_PLACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_Greavard_Outside",
+      "flag": "Cormoria_FLAG_MIRROH_GREAVARD_BLOCKER"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(GREAVARD)",
+      "x": 4,
+      "y": 2,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_RUN_IN_PLACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_MirrohBaseCamp_Greavard_Outside",
+      "flag": "Cormoria_FLAG_MIRROH_GREAVARD_BLOCKER"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(DRIFBLIM)",
+      "x": 15,
+      "y": 9,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WALK_IN_PLACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Common_EventScript_DrifblimTravels_All",
+      "flag": "0"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 32,
+      "y": 21,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_CABLE_CAR_STATION",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 31,
+      "y": 21,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_CABLE_CAR_STATION",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 12,
+      "y": 9,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_POKEMON_CENTER",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 13,
+      "y": 27,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_HOUSES",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 21,
+      "y": 27,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_HOUSES",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 18,
+      "y": 19,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_GYM",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 22,
+      "y": 6,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_GRAVEYARD",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 21,
+      "y": 6,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_MIRROH_BASE_CAMP_GRAVEYARD",
+      "dest_warp_id": "1"
+    }
+  ],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 13,
+      "y": 28,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_MirrohBaseCamp_Rue_Trigger"
+    }
+  ],
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 19,
+      "y": 27,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WhiteSign_MirrohBaseCamp_Martha"
+    },
+    {
+      "type": "sign",
+      "x": 28,
+      "y": 27,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WhiteSign_MirrohBaseCamp_Main"
+    },
+    {
+      "type": "sign",
+      "x": 14,
+      "y": 19,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WhiteSign_MirrohBaseCamp_Gym"
+    },
+    {
+      "type": "sign",
+      "x": 34,
+      "y": 21,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+      "script": "Cormoria_WhiteSign_CableCar_ToPelluca"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

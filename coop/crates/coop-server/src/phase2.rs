@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     fmt,
+    io::Read,
     net::SocketAddr,
     path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
@@ -19,8 +20,9 @@ use axum::{
 };
 use coop_cloud::{
     AcquireLeaseRequest, CharacterId, HeartbeatLeaseRequest, ReconnectLeaseRequest,
-    ReleaseLeaseRequest, SnapshotFinalizeRequest, SnapshotListRequest, SnapshotPrepareRequest,
-    SnapshotRestoreRequest,
+    ReleaseLeaseRequest, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus,
+    SnapshotFinalizeRequest, SnapshotListRequest, SnapshotPrepareRequest, SnapshotRestoreRequest,
 };
 use http_body_util::{BodyExt, Limited};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -265,6 +267,7 @@ impl Phase2App {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -314,7 +317,24 @@ impl Phase2App {
                         "/v1/characters/{character_id}/restore/{revision}",
                         post(restore_at),
                     )
-                    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024)),
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/prepare",
+                        post(prepare_rom_handoff),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/reconcile",
+                        post(reconcile_rom_handoff),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/commit",
+                        post(commit_rom_handoff),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/rom-handoff/{stage_id}",
+                        axum::routing::delete(abort_rom_handoff),
+                    )
+                    .layer(axum::extract::DefaultBodyLimit::max(64 * 1024))
+                    .layer(axum::middleware::from_fn(group_no_store)),
             )
             .merge(
                 Router::new()
@@ -470,6 +490,27 @@ impl Phase2App {
             .lock()
             .map_err(|_| Phase2Error::Internal)?;
         let result = sessions::acquire(&self.store, actor, &request);
+        #[cfg(test)]
+        if let Ok(contract) = &result {
+            if self.store.config.fixture_auto_bind {
+                let build = saves::current_runtime_build_identity()?;
+                self.store.write_transaction(|state| {
+                    let lease = state
+                        .leases
+                        .get_mut(&actor.character_id)
+                        .ok_or(Phase2Error::Internal)?;
+                    if lease.contract != *contract {
+                        return Err(Phase2Error::Internal);
+                    }
+                    lease.runtime_binding = Some(storage::RuntimeWorldBinding {
+                        world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+                        build,
+                        session: contract.stable_runtime_session(),
+                    });
+                    Ok(())
+                })?;
+            }
+        }
         if let Ok(contract) = &result {
             self.presence
                 .reconcile_lease_success(actor.character_id, contract);
@@ -574,6 +615,81 @@ impl Phase2App {
         let result = saves::finalize(&self.store, actor, &request);
         drop(request);
         result
+    }
+    /// Stages an immutable destination save while the source world remains active.
+    ///
+    /// # Errors
+    /// Returns a stale-fence, route, save-integrity, or storage error.
+    pub fn prepare_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        request: &RomHandoffPrepareRequest,
+    ) -> Result<RomHandoffPrepareResponse, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        saves::handoff::cleanup_abandoned(&self.store, actor, request)?;
+        saves::handoff::prepare(&self.store, actor, request)
+    }
+    /// Reconcile a persisted prepare key under the current source lease.
+    /// An expired stage is durably aborted before an `Aborted` response.
+    pub fn reconcile_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+        request: &RomHandoffRecoveryRequest,
+    ) -> Result<RomHandoffRecoveryStatus, Phase2Error> {
+        if request.api_version != coop_cloud::ApiVersion::V1
+            || request.character_id != actor.character_id
+            || request.character_id != fence.character_id
+        {
+            return Err(Phase2Error::InvalidRequest);
+        }
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        saves::handoff::recovery_status(&self.store, actor, fence, request.idempotency_key)
+    }
+    /// Promotes an acknowledged destination save and releases the source lease.
+    ///
+    /// # Errors
+    /// Returns a stale-fence, digest, stage, or storage error.
+    pub fn commit_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        request: &RomHandoffCommitRequest,
+    ) -> Result<coop_cloud::SnapshotRecord, Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        let (record, did_transition) = saves::handoff::commit(&self.store, actor, request)?;
+        if did_transition {
+            self.presence.reconcile_lease_release(actor.character_id);
+        }
+        Ok(record)
+    }
+    /// Abandons a staged destination without changing the source world.
+    ///
+    /// # Errors
+    /// Returns an ownership, stage, or storage error.
+    pub fn abort_rom_handoff(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+        stage_id: coop_cloud::SnapshotId,
+    ) -> Result<(), Phase2Error> {
+        let _gate = self
+            .store
+            .runtime_transition_gate
+            .lock()
+            .map_err(|_| Phase2Error::Internal)?;
+        saves::handoff::abort_fenced(&self.store, actor, fence, stage_id)
     }
     /// Lists bounded finalized snapshots under the active lease fence.
     ///
@@ -807,13 +923,22 @@ fn phase2_app_from_values(
     key_id: &str,
     bootstrap: &str,
     upload_base_url: String,
+    release_catalog: Option<(&[u8], coop_cloud::Sha256Digest)>,
+    release_root: Option<&std::path::Path>,
 ) -> Result<Phase2App, Phase2Error> {
     let signing =
         coop_cloud::SigningPrivateKey::parse_hex(signing).map_err(|_| Phase2Error::Internal)?;
     let invitation =
         coop_cloud::InvitationCode::new(bootstrap).map_err(|_| Phase2Error::Internal)?;
-    let config = Phase2Config::local(pepper.as_bytes().to_vec(), signing, key_id)?
+    let mut config = Phase2Config::local(pepper.as_bytes().to_vec(), signing, key_id)?
         .with_upload_base_url(upload_base_url);
+    if let Some((bytes, digest)) = release_catalog {
+        config = if let Some(root) = release_root {
+            config.with_release_catalog_and_arrival_saves(bytes, digest, root)?
+        } else {
+            config.with_release_catalog_bytes(bytes, digest)?
+        };
+    }
     let app = Phase2App::new(config)?;
     app.add_invitation(invitation.expose_secret())?;
     Ok(app)
@@ -871,12 +996,30 @@ fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error
     let bootstrap = zeroize::Zeroizing::new(
         std::env::var("COOP_PHASE2_BOOTSTRAP_INVITATION").map_err(|_| Phase2Error::Internal)?,
     );
+    let catalog_path =
+        std::env::var("COOP_PHASE2_RELEASE_CATALOG_PATH").map_err(|_| Phase2Error::Internal)?;
+    let catalog_digest = coop_cloud::Sha256Digest::parse(
+        &std::env::var("COOP_PHASE2_RELEASE_CATALOG_SHA256").map_err(|_| Phase2Error::Internal)?,
+    )
+    .map_err(|_| Phase2Error::Internal)?;
+    const MAX_RELEASE_CATALOG_BYTES: u64 = 64 * 1024;
+    let mut catalog_bytes = Vec::new();
+    std::fs::File::open(&catalog_path)
+        .map_err(|_| Phase2Error::Internal)?
+        .take(MAX_RELEASE_CATALOG_BYTES + 1)
+        .read_to_end(&mut catalog_bytes)
+        .map_err(|_| Phase2Error::Internal)?;
+    if catalog_bytes.len() as u64 > MAX_RELEASE_CATALOG_BYTES {
+        return Err(Phase2Error::Internal);
+    }
     phase2_app_from_values(
         pepper.as_str(),
         signing.as_str(),
         key_id.as_str(),
         bootstrap.as_str(),
         upload_base_url,
+        Some((&catalog_bytes, catalog_digest)),
+        std::path::Path::new(&catalog_path).parent(),
     )
 }
 
@@ -1071,6 +1214,63 @@ async fn finalize(
         return Err(Phase2Error::NotFound);
     }
     Ok(Json(app.finalize(actor(&headers, &app)?, request)?))
+}
+async fn prepare_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+    Phase2Json(request): Phase2Json<RomHandoffPrepareRequest>,
+) -> Result<Json<RomHandoffPrepareResponse>, Phase2Error> {
+    if request.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(
+        app.prepare_rom_handoff(actor(&headers, &app)?, &request)?,
+    ))
+}
+async fn reconcile_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+    Phase2Json(request): Phase2Json<RomHandoffRecoveryRequest>,
+) -> Result<Json<RomHandoffRecoveryStatus>, Phase2Error> {
+    if request.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    Ok(Json(app.reconcile_rom_handoff(actor, fence, &request)?))
+}
+async fn commit_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+    Phase2Json(request): Phase2Json<RomHandoffCommitRequest>,
+) -> Result<Json<coop_cloud::SnapshotRecord>, Phase2Error> {
+    if request.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(
+        app.commit_rom_handoff(actor(&headers, &app)?, &request)?,
+    ))
+}
+#[derive(Deserialize)]
+struct RomHandoffPath {
+    character_id: CharacterId,
+    stage_id: coop_cloud::SnapshotId,
+}
+async fn abort_rom_handoff(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<RomHandoffPath>,
+) -> Result<StatusCode, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    app.abort_rom_handoff(actor, fence, path.stage_id)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 async fn list(
     State(app): State<Phase2App>,
@@ -1311,6 +1511,7 @@ mod tests {
     use super::*;
     include!("phase2/persistence_tests.rs");
     include!("phase2/recovery_tests.rs");
+    include!("phase2/handoff_tests.rs");
     use coop_cloud::{
         ArtifactIdentity, ClientInstanceId, IdempotencyKey, InvitationCode, LeaseFence,
         LoginRequest, LogoutRequest, LogoutResponse, Password, ReconnectLeaseRequest,
@@ -1355,18 +1556,37 @@ mod tests {
         generation: u32,
         status_flags: u32,
     ) -> Vec<u8> {
-        let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
+        character_sav_with_generation_and_schema(
+            with_rtc,
+            generation,
+            status_flags,
+            coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION,
+        )
+    }
+
+    fn character_sav_with_generation_and_schema(
+        with_rtc: bool,
+        generation: u32,
+        status_flags: u32,
+        schema_version: u16,
+    ) -> Vec<u8> {
+        let mut payload = [0_u8; coop_save::v2::COOP_SAVE_V2_SIZE];
         write_u32(&mut payload, 0, coop_save::COOP_SAVE_V1_MAGIC);
-        write_u16(&mut payload, 4, coop_save::COOP_SAVE_V1_SCHEMA_VERSION);
+        write_u16(&mut payload, 4, schema_version);
         write_u16(
             &mut payload,
             6,
-            u16::try_from(coop_save::COOP_SAVE_V1_SIZE).expect("CSP1 size fits u16"),
+            u16::try_from(coop_save::v2::COOP_SAVE_V2_SIZE).expect("CSP2 size fits u16"),
         );
         write_u32(&mut payload, 8, coop_protocol::IDENTITY_REGISTRY_VERSION);
         payload[12..28].copy_from_slice(&coop_protocol::IDENTITY_REGISTRY_DIGEST);
         write_u32(&mut payload, 28, generation);
-        write_u32(&mut payload, 32, status_flags);
+        let normalized = if schema_version == coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION {
+            coop_save::v2::COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED
+        } else {
+            0
+        };
+        write_u32(&mut payload, 32, status_flags | normalized);
         for (index, region) in [1_u8, 2, 3, 4].into_iter().enumerate() {
             let offset = 36 + index * 8;
             payload[offset] = region;
@@ -1382,12 +1602,15 @@ mod tests {
                 100 + u32::try_from(index).expect("regional fixture index fits u32"),
             );
         }
+        if schema_version == coop_save::v2::COOP_SAVE_V2_SCHEMA_VERSION {
+            payload[coop_save::v2::COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET] = 5;
+        }
         let crc = crc32fast::hash(&payload[..668]);
         write_u32(&mut payload, 668, crc);
 
         let mut save_block3 = [0xff; coop_save::SAVE_BLOCK3_CAPACITY];
         save_block3[coop_save::COOP_SAVE_OFFSET
-            ..coop_save::COOP_SAVE_OFFSET + coop_save::COOP_SAVE_V1_SIZE]
+            ..coop_save::COOP_SAVE_OFFSET + coop_save::v2::COOP_SAVE_V2_SIZE]
             .copy_from_slice(&payload);
         let mut bytes = vec![0xff; coop_save::FLASH_IMAGE_SIZE];
         for (slot, counter, rotation) in [(0_usize, 20_u32, 4_usize), (1, 21, 11)] {
@@ -1476,6 +1699,7 @@ mod tests {
             SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"{}").expect("pending");
         let request = SnapshotPrepareRequest::new(
             id(SnapshotId::new),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -1500,6 +1724,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(clock.clone(), entropy)
         .with_password_engine(Arc::new(
             ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
@@ -1515,6 +1740,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -1664,6 +1890,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -1691,6 +1918,7 @@ mod tests {
             "local-test-key",
         )
         .expect("test config")
+        .with_legacy_test_runtime()
         .with_test_adapters(
             Arc::new(FixedClock::new(1_700_000_000_000)),
             Arc::new(FixedEntropy::new((0_u8..=255).collect())),
@@ -1834,6 +2062,26 @@ mod tests {
             .await
     }
 
+    fn test_release_catalog() -> saves::build_catalog::TrustedBuildCatalog {
+        let build = coop_cloud::RuntimeBuildIdentity::new(
+            coop_cloud::GameBuildId::new("test-main-v2").unwrap(),
+            coop_cloud::Sha256Digest::of_bytes(b"test-main-v2-rom"),
+            coop_cloud::MgbaVersion::new("0.10.5").unwrap(),
+            coop_cloud::BridgeAbiVersion::new(1).unwrap(),
+            coop_cloud::ProtocolVersion::new(1).unwrap(),
+        );
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .unwrap();
+        saves::build_catalog::TrustedBuildCatalog::from_release_bytes(
+            &bytes,
+            coop_cloud::Sha256Digest::of_bytes(&bytes),
+        )
+        .unwrap()
+    }
+
     fn assert_detached_signature_binds_metadata(envelope: &SignedManifestEnvelope) {
         let trusted = TrustedManifestKey::new(
             "local-test-key",
@@ -1902,6 +2150,7 @@ mod tests {
         let snapshot_id = id(SnapshotId::new);
         let prepare = SnapshotPrepareRequest::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 acquire.session_id,
                 registered.character_id,
@@ -1953,8 +2202,34 @@ mod tests {
             acquire.session_epoch,
             client,
         );
-        let envelope =
-            saves::resume_package(&app.store, actor, fence, None).expect("resume package");
+        let live = saves::resume_package(&app.store, actor, fence, None)
+            .expect("fixture-bound live resume package");
+        let catalog = test_release_catalog();
+        assert_eq!(
+            saves::resume_package_with_catalog(
+                &app.store,
+                actor,
+                fence,
+                None,
+                Some((&catalog, coop_protocol::RomWorldId::new(2).unwrap())),
+            ),
+            Err(Phase2Error::Internal),
+            "session world must match the snapshot before signing"
+        );
+        let envelope = saves::resume_package_with_catalog(
+            &app.store,
+            actor,
+            fence,
+            None,
+            Some((&catalog, coop_protocol::RomWorldId::new(1).unwrap())),
+        )
+        .expect("catalog-bound resume package");
+        assert_eq!(
+            live.manifest.rom_sha256,
+            saves::current_runtime_build_identity()
+                .expect("test build")
+                .rom_sha256
+        );
         assert_eq!(envelope.manifest.revision, Revision::new(1));
         assert_detached_signature_binds_metadata(&envelope);
         assert_eq!(
@@ -2443,6 +2718,32 @@ mod tests {
     }
 
     #[test]
+    fn character_sav_requires_current_v2_schema() {
+        let legacy = character_sav_with_generation_and_schema(
+            false,
+            1,
+            0,
+            coop_save::COOP_SAVE_V1_SCHEMA_VERSION,
+        );
+        let registry = coop_save::RegistryContract::new(
+            coop_protocol::IDENTITY_REGISTRY_VERSION,
+            coop_protocol::IDENTITY_REGISTRY_DIGEST,
+        );
+        assert!(coop_save::parse(&legacy, registry).is_ok());
+        let (app, _) = deterministic_app();
+        let (actor, lease, client) = account_and_lease(&app);
+        let (request, _, _) = snapshot_request_for_sav(lease, actor, client, &legacy);
+        let prepared = app.prepare(actor, request).expect("legacy length prepares");
+        assert_eq!(
+            app.upload(
+                &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+                legacy,
+            ),
+            Err(Phase2Error::InvalidRequest)
+        );
+    }
+
+    #[test]
     fn character_sav_accepts_both_exact_lengths_and_preserves_rtc_bytes() {
         for with_rtc in [false, true] {
             let (app, _) = deterministic_app();
@@ -2460,7 +2761,7 @@ mod tests {
                 &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
                 bytes.clone(),
             )
-            .expect("valid CSP1 uploads");
+            .expect("valid CSP2 uploads");
             app.upload(
                 &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
                 b"{}".to_vec(),
@@ -2481,7 +2782,7 @@ mod tests {
                 None,
             )
             .expect("finalize request");
-            let record = app.finalize(actor, finalize).expect("valid CSP1 finalizes");
+            let record = app.finalize(actor, finalize).expect("valid CSP2 finalizes");
             let active_fence = LeaseFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -2825,6 +3126,24 @@ mod tests {
         .expect("finalize request");
         let record = app.finalize(actor, finalize.clone()).expect("finalize");
         assert_eq!(app.finalize(actor, finalize.clone()), Ok(record.clone()));
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.characters[&actor.character_id]
+                    .world_heads
+                    .get(&record.rom_world_id)
+                    .copied())
+                .expect("world head"),
+            Some(record.snapshot_id)
+        );
+        let character = app
+            .store
+            .inspect_state(|state| state.characters[&actor.character_id].clone())
+            .expect("character");
+        let mut encoded = Vec::new();
+        ciborium::into_writer(&character, &mut encoded).expect("serialize world heads");
+        let decoded: storage::CharacterRecord =
+            ciborium::from_reader(encoded.as_slice()).expect("deserialize world heads");
+        assert_eq!(decoded.world_heads, character.world_heads);
         let before_finalize_conflict = app
             .store
             .inspect_state(|state| {
@@ -2864,6 +3183,15 @@ mod tests {
         let restored = app.restore(actor, &restore).expect("restore");
         assert_eq!(restored.snapshot.revision, Revision::new(2));
         assert_eq!(app.restore(actor, &restore), Ok(restored.clone()));
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.characters[&actor.character_id]
+                    .world_heads
+                    .get(&record.rom_world_id)
+                    .copied())
+                .expect("restored world head"),
+            Some(restored.snapshot.snapshot_id)
+        );
         let before_restore_conflict = app
             .store
             .inspect_state(|state| {
@@ -2902,6 +3230,25 @@ mod tests {
             saves::resume_artifact(&app.store, actor, restored_fence, "character.sav", None,)
                 .expect("restored artifact"),
             valid_character_sav(false)
+        );
+        let mut other_world = record.clone();
+        other_world.snapshot_id = id(SnapshotId::new);
+        other_world.rom_world_id = coop_protocol::RomWorldId::new(2).unwrap();
+        other_world.parent_revision = Revision::new(2);
+        other_world.revision = Revision::new(3);
+        app.store
+            .write_transaction(|state| {
+                state.snapshot_by_revision.insert(
+                    (actor.character_id, other_world.revision),
+                    other_world.snapshot_id,
+                );
+                state.snapshots.insert(other_world.snapshot_id, other_world);
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("historical other-world snapshot");
+        assert_eq!(
+            saves::resume_artifact(&app.store, actor, restored_fence, "character.sav", Some(3),),
+            Err(Phase2Error::Authentication)
         );
     }
 
@@ -3237,8 +3584,9 @@ mod tests {
             Err(Phase2Error::Conflict)
         );
 
-        let replacement = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new))
-            .replacing_same_client();
+        let replacement =
+            AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new))
+                .replacing_same_client();
         let second = app
             .acquire(actor, replacement)
             .expect("same client takes over");
@@ -3280,6 +3628,7 @@ mod tests {
         let snapshot_id = id(SnapshotId::new);
         let request = SnapshotPrepareRequest::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -3348,6 +3697,7 @@ mod tests {
         app.finalize(actor, finalize).expect("finalized");
         let duplicate = SnapshotPrepareRequest::new(
             prepared.snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -3632,6 +3982,7 @@ mod tests {
         let key = id(IdempotencyKey::new);
         let first = SnapshotPrepareRequest::new(
             snapshot_id,
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -3681,6 +4032,7 @@ mod tests {
         });
         let mut blocked = SnapshotPrepareRequest::new(
             id(SnapshotId::new),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -3797,6 +4149,8 @@ mod tests {
             "local-test-key",
             "bootstrap-one-use",
             "http://127.0.0.1:43127".to_owned(),
+            None,
+            None,
         )
         .expect("configured local app");
         let request = RegisterRequest::new(
@@ -3811,6 +4165,97 @@ mod tests {
             loopback_upload_base("127.0.0.1:43127".parse().expect("address")),
             "http://127.0.0.1:43127"
         );
+        let build = saves::current_runtime_build_identity().expect("test build");
+        let catalog = serde_json::to_vec(&serde_json::json!({
+            "schema_version": 1,
+            "worlds": [{"world_id": 1, "build": build}]
+        }))
+        .expect("catalog bytes");
+        let configured = phase2_app_from_values(
+            "pepper-pepper-pepper-pepper",
+            &signing_hex,
+            "local-test-key",
+            "bootstrap-catalog",
+            "http://127.0.0.1:43127".to_owned(),
+            Some((&catalog, coop_cloud::Sha256Digest::of_bytes(&catalog))),
+            None,
+        )
+        .expect("pinned catalog starts");
+        assert!(configured.store.config.release_catalog.is_some());
+        assert!(matches!(
+            phase2_app_from_values(
+                "pepper-pepper-pepper-pepper",
+                &signing_hex,
+                "local-test-key",
+                "bootstrap-catalog",
+                "http://127.0.0.1:43127".to_owned(),
+                Some((&catalog, coop_cloud::Sha256Digest::of_bytes(b"other"))),
+                None,
+            ),
+            Err(Phase2Error::Internal)
+        ));
+    }
+
+    #[test]
+    fn pinned_arrival_images_are_parsed_and_cached_at_startup() {
+        let bytes = valid_character_sav(false);
+        let root = std::env::temp_dir().join(format!(
+            "coop-arrival-template-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("template.sav");
+        std::fs::write(&path, &bytes).unwrap();
+        let mut value: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "phase2/saves/fixtures/travel-catalog-v3.json"
+        ))
+        .unwrap();
+        for world in value["worlds"].as_array_mut().unwrap() {
+            for arrival in world["arrivals"].as_array_mut().unwrap() {
+                arrival["template_sav_path"] = serde_json::json!("template.sav");
+                arrival["template_sav_sha256"] =
+                    serde_json::json!(coop_cloud::Sha256Digest::of_bytes(&bytes).as_hex());
+                arrival["map_group"] = serde_json::json!(255);
+                arrival["map_number"] = serde_json::json!(255);
+                arrival["warp_id"] = serde_json::json!(255);
+            }
+        }
+        let catalog = serde_json::to_vec(&value).unwrap();
+        let digest = coop_cloud::Sha256Digest::of_bytes(&catalog);
+        let config = Phase2Config::local(
+            b"pepper-pepper-pepper-pepper".to_vec(),
+            coop_cloud::SigningPrivateKey::parse_hex(&"07".repeat(32)).unwrap(),
+            "local-test-key",
+        )
+        .unwrap()
+        .with_release_catalog_and_arrival_saves(&catalog, digest, &root)
+        .unwrap();
+        let pinned = config.release_catalog.unwrap();
+        assert_eq!(
+            pinned.arrival_save(coop_protocol::RomWorldId::new(2).unwrap(), "from_previous"),
+            Some(bytes.as_slice())
+        );
+        std::fs::write(&path, b"changed after startup").unwrap();
+        assert_eq!(
+            pinned.arrival_save(coop_protocol::RomWorldId::new(2).unwrap(), "from_previous"),
+            Some(bytes.as_slice())
+        );
+        assert!(
+            Phase2Config::local(
+                b"pepper-pepper-pepper-pepper".to_vec(),
+                coop_cloud::SigningPrivateKey::parse_hex(&"07".repeat(32)).unwrap(),
+                "local-test-key",
+            )
+            .unwrap()
+            .with_release_catalog_and_arrival_saves(&catalog, digest, &root)
+            .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
 
     #[test]
@@ -3856,6 +4301,7 @@ mod tests {
             "local-test-key",
         )
         .expect("config")
+        .with_legacy_test_runtime()
         .with_adapters(
             Arc::new(InMemoryRepository::new()),
             Arc::new(InMemoryObjectStore::new()),
@@ -3908,6 +4354,7 @@ mod tests {
         let key = id(IdempotencyKey::new);
         let first = SnapshotPrepareRequest::new(
             id(SnapshotId::new),
+            coop_protocol::RomWorldId::new(1).unwrap(),
             SnapshotPrepareFence::new(
                 lease.session_id,
                 actor.character_id,
@@ -3984,7 +4431,8 @@ mod tests {
         )
         .expect("finalize");
         let record = app.finalize(actor, finalize).expect("finalize");
-        let historical = saves::resume_package(
+        let catalog = test_release_catalog();
+        let historical = saves::resume_package_with_catalog(
             &app.store,
             actor,
             LeaseFence::new(
@@ -3995,6 +4443,7 @@ mod tests {
                 client,
             ),
             Some(1),
+            Some((&catalog, coop_protocol::RomWorldId::new(1).unwrap())),
         )
         .expect("historical resume package");
         assert_eq!(historical.manifest.revision, Revision::new(1));
@@ -4405,6 +4854,37 @@ mod tests {
             client,
             id(IdempotencyKey::new),
         );
+        app.store
+            .write_transaction(|state| {
+                state
+                    .snapshots
+                    .get_mut(&first.snapshot_id)
+                    .unwrap()
+                    .rom_world_id = coop_protocol::RomWorldId::new(2).unwrap();
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("inject foreign-world snapshot");
+        assert_eq!(
+            app.restore(actor, &restore),
+            Err(Phase2Error::Authentication)
+        );
+        assert_eq!(
+            app.store
+                .inspect_state(|state| state.characters[&actor.character_id].revision)
+                .unwrap(),
+            first.revision,
+            "foreign-world restore must not advance the head"
+        );
+        app.store
+            .write_transaction(|state| {
+                state
+                    .snapshots
+                    .get_mut(&first.snapshot_id)
+                    .unwrap()
+                    .rom_world_id = coop_protocol::RomWorldId::new(1).unwrap();
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("restore fixture world");
         let restored = app.restore(actor, &restore).expect("restore");
         assert_eq!(restored.snapshot.revision, Revision::new(2));
         let restored_fence = LeaseFence::new(

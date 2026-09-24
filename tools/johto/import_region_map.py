@@ -217,7 +217,7 @@ def render_layout(rows: list[list[str]], mapping: dict[str, str]) -> str:
         f"// Source: {DONOR_REPOSITORY}@{DONOR_REVISION} ({DONOR_TREE})",
         f"// Inputs: PNG sha256:{PNG_SHA256}; BIN sha256:{BIN_SHA256};",
         f"// layout sha256:{LAYOUT_SHA256}; manifest-backed section renaming.",
-        "static const u8 sRegionMapSections_Johto[MAP_HEIGHT][MAP_WIDTH] = {",
+        "static const mapsec_u16_t sRegionMapSections_Johto[MAP_HEIGHT][MAP_WIDTH] = {",
     ]
     lines.extend("    {" + ", ".join(row) + "}," for row in mapped)
     lines.append("};")

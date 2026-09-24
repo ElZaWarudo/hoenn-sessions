@@ -1,0 +1,6 @@
+#ifndef GUARD_CORMORIA_VOLTORB_FLIP_H
+#define GUARD_CORMORIA_VOLTORB_FLIP_H
+
+void CB2_ShowVoltorbFlip(void);
+
+#endif // GUARD_CORMORIA_VOLTORB_FLIP_H

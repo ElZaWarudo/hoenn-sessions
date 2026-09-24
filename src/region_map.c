@@ -31,6 +31,10 @@
 #include "constants/weather.h"
 #include "item_menu.h"
 #include "johto/kanto_travel.h"
+#if ROM_WORLD == 2
+#include "constants/cormoria_event_ids.h"
+#include "cormoria/heal_locations.h"
+#endif
 
 extern bool8 gFlightCallFromBag;
 extern bool8 gSkipShowMonAnim;
@@ -130,6 +134,10 @@ static u8 GetActiveTopLevelRegion(void)
         return REGION_KANTO;
     case REGION_MAP_JOHTO:
         return REGION_JOHTO;
+#if ROM_WORLD == 2
+    case REGION_MAP_CORMORIA:
+        return REGION_CORMORIA;
+#endif
     case REGION_MAP_HOENN:
     default:
         return REGION_HOENN;
@@ -227,6 +235,11 @@ static const u32 sRegionMapBg_GfxLZ[] = INCBIN_U32("graphics/pokenav/region_map/
 static const u32 sRegionMapBg_TilemapLZ[] = INCBIN_U32("graphics/pokenav/region_map/map.bin.smolTM");
 static const u32 sRegionMapJohto_Gfx[] = INCBIN_U32("graphics/pokenav/region_map/johtomap.8bpp.smol");
 static const u32 sRegionMapJohto_Tilemap[] = INCBIN_U32("graphics/pokenav/region_map/johtomap.bin.smolTM");
+#if ROM_WORLD == 2
+static const u16 sRegionMapCormoria_Pal[] = INCBIN_U16("graphics/pokenav/region_map/map_cormoria.gbapal");
+static const u32 sRegionMapCormoria_Gfx[] = INCBIN_U32("graphics/pokenav/region_map/map_cormoria.8bpp.smol");
+static const u32 sRegionMapCormoria_Tilemap[] = INCBIN_U32("graphics/pokenav/region_map/map_cormoria.bin.smolTM");
+#endif
 static const u16 sRegionMapPlayerIcon_BrendanPal[] = INCBIN_U16("graphics/pokenav/region_map/brendan_icon.gbapal");
 static const u8 sRegionMapPlayerIcon_BrendanGfx[] = INCBIN_U8("graphics/pokenav/region_map/brendan_icon.4bpp");
 static const u16 sRegionMapPlayerIcon_MayPal[] = INCBIN_U16("graphics/pokenav/region_map/may_icon.gbapal");
@@ -242,6 +255,9 @@ static const u8 sRegionMapPlayerIcon_LeafGfx[] = INCBIN_U8("graphics/pokenav/reg
 #include "data/region_map/region_map_layout_sevii45.h"
 #include "data/region_map/region_map_layout_sevii67.h"
 #include "data/region_map/region_map_layout_johto.h"
+#if ROM_WORLD == 2
+#include "data/region_map/region_map_layout_cormoria.h"
+#endif
 #include "data/region_map/region_map_entries.h"
 
 static const mapsec_u16_t sRegionMap_SpecialPlaceLocations[][2] =
@@ -438,7 +454,10 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .dexMapGfx = sPokedexAreaMap_Gfx,
         .dexMapTilemap = sPokedexAreaMap_Tilemap,
         .dexMapPaletteSize = sizeof(sPokedexAreaMap_Pal),
+        .dexMapPaletteStart = 7,
         .regionMapPalette = sRegionMapBg_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapBg_Pal),
+        .regionMapPaletteStart = 7,
         .regionMapGfx = sRegionMapBg_GfxLZ,
         .regionMapTilemap = sRegionMapBg_TilemapLZ,
     },
@@ -448,7 +467,10 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .dexMapGfx = sPokedexAreaMapKanto_Gfx,
         .dexMapTilemap = sPokedexAreaMapKanto_Tilemap,
         .dexMapPaletteSize = sizeof(sPokedexAreaMapKanto_Pal),
+        .dexMapPaletteStart = 7,
         .regionMapPalette = sRegionMapKanto_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapKanto_Pal),
+        .regionMapPaletteStart = 7,
         .regionMapGfx = sRegionMapKanto_Gfx,
         .regionMapTilemap = sRegionMapKanto_Tilemap,
     },
@@ -458,7 +480,10 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .dexMapGfx = sPokedexAreaMapSevii123_Gfx,
         .dexMapTilemap = sPokedexAreaMapSevii123_Tilemap,
         .dexMapPaletteSize = sizeof(sPokedexAreaMapSevii123_Pal),
+        .dexMapPaletteStart = 7,
         .regionMapPalette = sRegionMapSevii123_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapSevii123_Pal),
+        .regionMapPaletteStart = 7,
         .regionMapGfx = sRegionMapSevii123_Gfx,
         .regionMapTilemap = sRegionMapSevii123_Tilemap,
     },
@@ -468,7 +493,10 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .dexMapGfx = sPokedexAreaMapSevii45_Gfx,
         .dexMapTilemap = sPokedexAreaMapSevii45_Tilemap,
         .dexMapPaletteSize = sizeof(sPokedexAreaMapSevii45_Pal),
+        .dexMapPaletteStart = 7,
         .regionMapPalette = sRegionMapSevii45_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapSevii45_Pal),
+        .regionMapPaletteStart = 7,
         .regionMapGfx = sRegionMapSevii45_Gfx,
         .regionMapTilemap = sRegionMapSevii45_Tilemap,
     },
@@ -478,7 +506,10 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .dexMapGfx = sPokedexAreaMapSevii67_Gfx,
         .dexMapTilemap = sPokedexAreaMapSevii67_Tilemap,
         .dexMapPaletteSize = sizeof(sPokedexAreaMapSevii67_Pal),
+        .dexMapPaletteStart = 7,
         .regionMapPalette = sRegionMapSevii67_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapSevii67_Pal),
+        .regionMapPaletteStart = 7,
         .regionMapGfx = sRegionMapSevii67_Gfx,
         .regionMapTilemap = sRegionMapSevii67_Tilemap,
     },
@@ -488,10 +519,28 @@ const struct RegionMapInfo gRegionMapInfos[] =
         .dexMapGfx = sRegionMapJohto_Gfx,
         .dexMapTilemap = sRegionMapJohto_Tilemap,
         .dexMapPaletteSize = sizeof(sRegionMapBg_Pal),
+        .dexMapPaletteStart = 7,
         .regionMapPalette = sRegionMapBg_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapBg_Pal),
+        .regionMapPaletteStart = 7,
         .regionMapGfx = sRegionMapJohto_Gfx,
         .regionMapTilemap = sRegionMapJohto_Tilemap,
     },
+#if ROM_WORLD == 2
+    [REGION_MAP_CORMORIA] =
+    {
+        .dexMapPalette = sRegionMapCormoria_Pal,
+        .dexMapGfx = sRegionMapCormoria_Gfx,
+        .dexMapTilemap = sRegionMapCormoria_Tilemap,
+        .dexMapPaletteSize = sizeof(sRegionMapCormoria_Pal),
+        .dexMapPaletteStart = 0,
+        .regionMapPalette = sRegionMapCormoria_Pal,
+        .regionMapPaletteSize = sizeof(sRegionMapCormoria_Pal),
+        .regionMapPaletteStart = 0,
+        .regionMapGfx = sRegionMapCormoria_Gfx,
+        .regionMapTilemap = sRegionMapCormoria_Tilemap,
+    },
+#endif
 };
 
 static const u8 sMapHealLocations[][3] =
@@ -887,7 +936,9 @@ bool8 LoadRegionMapGfx(void)
     case 2:
         regionMapType = GetActiveRegionMapType();
         if (!FreeTempTileDataBuffersIfPossible())
-            LoadPalette(gRegionMapInfos[regionMapType].regionMapPalette, BG_PLTT_ID(7), 3 * PLTT_SIZE_4BPP);
+            LoadPalette(gRegionMapInfos[regionMapType].regionMapPalette,
+                        BG_PLTT_ID(gRegionMapInfos[regionMapType].regionMapPaletteStart),
+                        gRegionMapInfos[regionMapType].regionMapPaletteSize);
         break;
     case 3:
         DecompressDataWithHeaderWram(sRegionMapCursorSmallGfxLZ, sRegionMap->cursorSmallImage);
@@ -944,8 +995,14 @@ bool8 LoadRegionMapGfx(void)
 
 void BlendRegionMap(u16 color, u32 coeff)
 {
-    BlendPalettes(0x380, coeff, color);
-    CpuCopy16(&gPlttBufferFaded[BG_PLTT_ID(7)], &gPlttBufferUnfaded[BG_PLTT_ID(7)], 3 * PLTT_SIZE_4BPP);
+    const struct RegionMapInfo *info = &gRegionMapInfos[GetActiveRegionMapType()];
+    u32 paletteCount = info->regionMapPaletteSize / PLTT_SIZE_4BPP;
+    u16 paletteMask = ((1u << paletteCount) - 1) << info->regionMapPaletteStart;
+
+    BlendPalettes(paletteMask, coeff, color);
+    CpuCopy16(&gPlttBufferFaded[BG_PLTT_ID(info->regionMapPaletteStart)],
+              &gPlttBufferUnfaded[BG_PLTT_ID(info->regionMapPaletteStart)],
+              info->regionMapPaletteSize);
 }
 
 void FreeRegionMapIconResources(void)
@@ -1305,6 +1362,10 @@ enum RegionMapType GetRegionMapType(u32 mapSecId)
         }
     case REGION_JOHTO:
         return REGION_MAP_JOHTO;
+#if ROM_WORLD == 2
+    case REGION_CORMORIA:
+        return REGION_MAP_CORMORIA;
+#endif
     case REGION_HOENN:
     default:
         return REGION_MAP_HOENN;
@@ -1395,6 +1456,10 @@ static mapsec_u16_t GetMapSecIdAt(u16 x, u16 y)
         }
     case REGION_JOHTO:
             return sRegionMapSections_Johto[y][x];
+#if ROM_WORLD == 2
+    case REGION_CORMORIA:
+            return sRegionMapSections_Cormoria[y][x];
+#endif
     case REGION_HOENN:
     default:
             return sRegionMap_MapSectionLayout[y][x];
@@ -1433,6 +1498,8 @@ static void InitMapBasedOnPlayerLocation(void)
     case MAP_TYPE_TOWN:
     case MAP_TYPE_CITY:
     case MAP_TYPE_ROUTE:
+    case MAP_TYPE_SNOW:
+    case MAP_TYPE_HILL:
     case MAP_TYPE_UNDERWATER:
     case MAP_TYPE_OCEAN_ROUTE:
         sRegionMap->mapSecId = gMapHeader.regionMapSectionId;
@@ -2348,6 +2415,19 @@ struct FlyLocation
 
 static const struct FlyLocation sFlyLocations[] =
 {
+#if ROM_WORLD == 2
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_CARABRUE_TOWN, MAPSEC_CORMORIA_CARABRUE_TOWN, HEAL_LOCATION_CORMORIA_CARABRUE_TOWN },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_FENNILAHL_TOWN, MAPSEC_CORMORIA_FENNILAHL_TOWN, HEAL_LOCATION_CORMORIA_FENNILAHL_TOWN },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_GASTREE_CITY, MAPSEC_CORMORIA_GASTREE_CITY, HEAL_LOCATION_CORMORIA_GASTREE_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_CERAM_BASE_CAMP, MAPSEC_CORMORIA_CERAM_BASE_CAMP, HEAL_LOCATION_CORMORIA_CERAM_BASE_CAMP },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_GALECREST_CITY, MAPSEC_CORMORIA_GALECREST_CITY, HEAL_LOCATION_CORMORIA_GALECREST_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_SILVERSUN_CITY, MAPSEC_CORMORIA_SILVERSUN_CITY, HEAL_LOCATION_CORMORIA_SILVERSUN_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_PELLUCA_CITY, MAPSEC_CORMORIA_PELLUCA_CITY, HEAL_LOCATION_CORMORIA_PELLUCA_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_MIRROH_BASE_CAMP, MAPSEC_CORMORIA_MIRROH_BASE_CAMP, HEAL_LOCATION_CORMORIA_MIRROH_BASE_CAMP },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_WINTERLILY_HOLLOW, MAPSEC_CORMORIA_WINTERLILY_HOLLOW, HEAL_LOCATION_CORMORIA_WINTERLILY_HOLLOW },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_RIVETSHORE_CITY, MAPSEC_CORMORIA_RIVETSHORE_CITY, HEAL_LOCATION_CORMORIA_RIVETSHORE_CITY },
+    { REGION_MAP_CORMORIA, KANTO_ERA_NONE, Cormoria_FLAG_VISITED_VICTORY_CAPE, MAPSEC_CORMORIA_VICTORY_CAPE, HEAL_LOCATION_CORMORIA_VICTORY_CAPE },
+#endif
     { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_NEWBARK_TOWN, MAPSEC_NEW_BARK_TOWN, HEAL_LOCATION_JOHTO_NEW_BARK_TOWN },
     { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_CHERRYGROVE_CITY, MAPSEC_JOHTO_CHERRYGROVE_CITY, HEAL_LOCATION_JOHTO_CHERRYGROVE_CITY },
     { REGION_MAP_JOHTO, KANTO_ERA_NONE, JOHTO_FLAG_VISITED_VIOLET_CITY, MAPSEC_JOHTO_VIOLET_CITY, HEAL_LOCATION_JOHTO_VIOLET_CITY },
@@ -2582,6 +2662,9 @@ static bool32 TryGetCampaignFlyLocationVisited(mapsec_u16_t mapSecId, bool32 *vi
     enum RegionMapType regionMapType = GetActiveRegionMapType();
 
     if (regionMapType != REGION_MAP_JOHTO
+#if ROM_WORLD == 2
+        && regionMapType != REGION_MAP_CORMORIA
+#endif
         && !(regionMapType == REGION_MAP_KANTO && GetActiveKantoEra() == KANTO_ERA_LATER))
         return FALSE;
 
@@ -2804,15 +2887,12 @@ static void CB_ExitFlyMap(void)
                 sFlyMap->choseFlyLocation = FALSE;
             }
 
-            if (sFlyMap->choseFlyLocation)
+            if (sFlyMap->choseFlyLocation && SetFlyDestination(&sFlyMap->regionMap))
             {
-                struct RegionMap *tempRegionMap = &sFlyMap->regionMap;
-
 				if (gFlightCallFromBag)
 					gSkipShowMonAnim = TRUE;
 
                 gFlightCallFromBag = FALSE;
-                SetFlyDestination(tempRegionMap);
                 ReturnToFieldFromFlyMapSelect();
             }
             else
@@ -2856,6 +2936,8 @@ u32 FilterFlyDestination(struct RegionMap* regionMap)
     case MAPSEC_EVER_GRANDE_CITY:
         return (FlagGet(FLAG_LANDMARK_POKEMON_LEAGUE) && regionMap->posWithinMapSec == 0 ? HEAL_LOCATION_EVER_GRANDE_CITY_POKEMON_LEAGUE : HEAL_LOCATION_EVER_GRANDE_CITY);
     default:
+        if (regionMap->mapSecId >= ARRAY_COUNT(sMapHealLocations))
+            return WARP_ID_NONE;
         if (sMapHealLocations[regionMap->mapSecId][2] != HEAL_LOCATION_NONE)
             return sMapHealLocations[regionMap->mapSecId][2];
         else
@@ -2863,12 +2945,20 @@ u32 FilterFlyDestination(struct RegionMap* regionMap)
     }
 }
 
-void SetFlyDestination(struct RegionMap *regionMap)
+bool8 SetFlyDestination(struct RegionMap *regionMap)
 {
     u32 flyDestination = FilterFlyDestination(regionMap);
 
     if (flyDestination != WARP_ID_NONE)
+    {
         SetWarpDestinationToHealLocation(flyDestination);
-    else
+        return TRUE;
+    }
+    else if (regionMap->mapSecId < ARRAY_COUNT(sMapHealLocations))
+    {
         SetWarpDestinationToMapWarp(sMapHealLocations[regionMap->mapSecId][0], sMapHealLocations[regionMap->mapSecId][1], WARP_ID_NONE);
+        return TRUE;
+    }
+
+    return FALSE;
 }

@@ -34,21 +34,18 @@
 // corresponding to each of these underlying types, and each typedef has a
 // name which indicates the underlying type.
 //
-// For a given family of typedefs, the smallest one should be considered
-// the "real" or "canonical" type. Continuing with Map Sections as our
-// example, the smallest type is an 8-bit integer, and so any values that
-// can't fit in an 8-bit integer will be truncated and lost at some point
-// within the codebase. Therefore mapsec_u8_t is the "canonical" type for
-// Map Sections, and the larger typedefs just exist to describe situations
-// where the game handles Map Sections inconsistently with that "canon."
+// Map-section IDs can exceed 255. Map headers and the active region-map path
+// carry u16 IDs; mapsec_u8_t remains only at legacy storage boundaries. A
+// caller must widen those boundaries or reject an unrepresentable section,
+// never rely on an implicit conversion.
 //
 
 // Map Sections are named areas that can appear in the region map. Each
 // individual map can be assigned to a Map Section as appropriate. The
 // possible values are in constants/region_map_sections.h.
 //
-// If you choose to widen Map Sections, be aware that Met Locations (below)
-// are based on Map Sections and will also be widened.
+// Met Locations (below) need an explicit codec for IDs outside their byte
+// representation; widening a map-section API does not widen Pokemon storage.
 typedef u8  mapsec_u8_t;
 typedef u16 mapsec_u16_t;
 typedef s16 mapsec_s16_t;

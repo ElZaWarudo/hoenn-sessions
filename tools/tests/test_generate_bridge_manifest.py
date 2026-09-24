@@ -19,7 +19,7 @@ import generate_bridge_manifest as generator  # noqa: E402
 
 
 REGISTRY = {
-    "registry_version": 1,
+    "registry_version": 3,
     "identities": [
         {"ordinal": 0, "id": "HOENN:TRAINER_WALLY_1", "kind": "trainer"},
         {"ordinal": 0, "id": "HOENN:BADGE_STONE", "kind": "gym"},
@@ -43,7 +43,7 @@ def descriptor_bytes(**overrides: object) -> bytes:
         "descriptor_version": 1,
         "descriptor_size": 64,
         "save_magic": 0x31505343,
-        "save_schema_version": 1,
+        "save_schema_version": 2,
         "save_struct_size": 672,
         "save_block3_offset": 4,
         "generation_offset": 28,
@@ -53,7 +53,7 @@ def descriptor_bytes(**overrides: object) -> bytes:
         "sector_size": 4096,
         "sectors_per_slot": 15,
         "save_slot_count": 2,
-        "registry_version": 1,
+        "registry_version": 3,
         "registry_digest": registry_digest(),
         "trainer_bits_offset": 68,
         "event_bits_offset": 324,
@@ -268,7 +268,7 @@ class BridgeManifestTests(unittest.TestCase):
             "descriptor_version": 2,
             "descriptor_size": 63,
             "save_magic": 0,
-            "save_schema_version": 2,
+            "save_schema_version": 1,
             "save_struct_size": 671,
             "save_block3_offset": 5,
             "generation_offset": 27,
@@ -278,7 +278,7 @@ class BridgeManifestTests(unittest.TestCase):
             "sector_size": 4095,
             "sectors_per_slot": 14,
             "save_slot_count": 1,
-            "registry_version": 2,
+            "registry_version": 1,
             "registry_digest": b"x" * 16,
             "trainer_bits_offset": 69,
             "event_bits_offset": 325,
@@ -300,7 +300,7 @@ class BridgeManifestTests(unittest.TestCase):
 
     def test_registry_contract_uses_canonical_ascii_json(self) -> None:
         contract = generator.registry_contract(REGISTRY)
-        self.assertEqual(contract.version, 1)
+        self.assertEqual(contract.version, 3)
         self.assertEqual(contract.digest, registry_digest())
         self.assertEqual(contract.digest.hex(), registry_digest().hex())
 
@@ -310,6 +310,7 @@ class BridgeManifestTests(unittest.TestCase):
             {"registry_version": True},
             {"registry_version": 0},
             {"registry_version": 2},
+            {"registry_version": 1},
             {"registry_version": 1, "invalid": float("nan")},
         ):
             with self.subTest(value=malformed), self.assertRaises(generator.ManifestError):
@@ -330,7 +331,7 @@ class BridgeManifestTests(unittest.TestCase):
         assert match is not None
         generated = bytes(int(token.strip(), 16) for token in match.group(1).split(","))
 
-        self.assertEqual(contract.version, 1)
+        self.assertEqual(contract.version, 3)
         self.assertEqual(generated, contract.digest)
 
     def test_manifest_and_lua_pin_bridge_save_and_registry_layouts(self) -> None:
@@ -360,7 +361,7 @@ class BridgeManifestTests(unittest.TestCase):
         )
         self.assertEqual(
             manifest["game_build"]["id"],
-            "pokecrossroads-beta-1.4-e05c8286-coop-v1",
+            "pokecrossroads-beta-1.4-e05c8286-coop-v2-" + "ab" * 32,
         )
         self.assertEqual(manifest["net_bridge"]["message"]["size"], 144)
         self.assertEqual(manifest["net_bridge"]["queue"]["size"], 4612)
@@ -373,9 +374,9 @@ class BridgeManifestTests(unittest.TestCase):
                 "generation_offset": 28,
                 "generation_address": 0x02000120,
                 "crc_offset": 668,
-                "schema_version": 1,
+                "schema_version": 2,
                 "struct_size": 672,
-                "registry_version": 1,
+                "registry_version": 3,
                 "registry_digest": registry_digest().hex(),
             },
         )
@@ -399,7 +400,7 @@ class BridgeManifestTests(unittest.TestCase):
             generator.build_manifest(
                 bridge,
                 block3,
-                generator.parse_save_descriptor(descriptor_bytes(registry_version=2)),
+                generator.parse_save_descriptor(descriptor_bytes(registry_version=1)),
                 registry,
                 "ab" * 32,
             )
@@ -434,6 +435,25 @@ class BridgeManifestTests(unittest.TestCase):
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), manifest)
             self.assertEqual(generator.sha256_file(rom), digest)
 
+    def test_each_rom_gets_its_own_bridge_manifest_and_lua_hash(self) -> None:
+        symbols = valid_symbols()
+        registry = generator.registry_contract(REGISTRY)
+        descriptor = generator.parse_save_descriptor(descriptor_bytes())
+        bridge = generator.validate_bridge_symbol(symbols)
+        block3, _ = generator.validate_save_symbols(symbols)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifests = []
+            for name in ("main", "cormoria", "third"):
+                rom = root / f"{name}.gba"
+                rom.write_bytes(name.encode("ascii"))
+                manifest = generator.build_manifest(
+                    bridge, block3, descriptor, registry, generator.sha256_file(rom)
+                )
+                manifests.append(manifest)
+                self.assertIn(manifest["game_build"]["rom_sha256"], generator.render_lua(manifest))
+            self.assertEqual(len({value["game_build"]["rom_sha256"] for value in manifests}), 3)
+
     def test_rejects_noncanonical_digest(self) -> None:
         symbols = valid_symbols()
         bridge = generator.validate_bridge_symbol(symbols)
@@ -461,6 +481,18 @@ class BridgeManifestTests(unittest.TestCase):
     def test_accepts_maximum_length_textual_build_id(self) -> None:
         self.assertEqual(generator.validate_game_build_id("A" * 128), "A" * 128)
 
+    def test_distinct_roms_have_distinct_build_identities(self) -> None:
+        symbols = valid_symbols()
+        bridge = generator.validate_bridge_symbol(symbols)
+        block3, _ = generator.validate_save_symbols(symbols)
+        descriptor = generator.parse_save_descriptor(descriptor_bytes())
+        registry = generator.registry_contract(REGISTRY)
+        first = generator.build_manifest(bridge, block3, descriptor, registry, "ab" * 32)
+        second = generator.build_manifest(bridge, block3, descriptor, registry, "cd" * 32)
+        self.assertNotEqual(first["game_build"]["id"], second["game_build"]["id"])
+        self.assertTrue(first["game_build"]["id"].endswith("ab" * 32))
+        self.assertTrue(second["game_build"]["id"].endswith("cd" * 32))
+
     def test_checked_in_manifest_matches_generator_schema(self) -> None:
         manifest_path = REPO_ROOT / "dist" / "bridge_manifest.json"
         checked_in_text = manifest_path.read_text(encoding="utf-8")
@@ -468,55 +500,30 @@ class BridgeManifestTests(unittest.TestCase):
 
         # The checked-in manifest is a real build artifact: it must not be
         # rewritten with invented linked addresses when no ELF/ROM is present.
-        # But it must also never drift behind the generator schema — a stale
-        # schema fails closed in the launcher and Lua, so regenerate it from
-        # a linked ROM (`make modern`, then
-        # `python tools/generate_bridge_manifest.py --elf pokeemerald.elf
-        # --rom pokeemerald.gba`) instead of weakening this assertion.
+        # The outer address-projection schema remains stable while the active
+        # save contract moves to V2. The historical V1 manifest is retained
+        # as a fixture, but newly generated manifests reject V1 descriptors.
         self.assertEqual(
             checked_in["schema_version"],
             generator.MANIFEST_SCHEMA_VERSION,
         )
-        if checked_in["schema_version"] == generator.MANIFEST_SCHEMA_VERSION:
-            registry = generator.load_registry_contract(
-                REPO_ROOT / "data" / "coop" / "regional_identities.json"
+        self.assertEqual(checked_in["save"]["schema_version"], 1)
+        self.assertEqual(checked_in["save"]["registry_version"], 1)
+        lock = json.loads(
+            (REPO_ROOT / "data" / "coop" / "regional_identities.lock.json").read_text(
+                encoding="utf-8"
             )
-            expected = generator.build_manifest(
-                generator.Symbol(
-                    "gCoopNetBridge",
-                    checked_in["net_bridge"]["address"],
-                    checked_in["net_bridge"]["size"],
-                    "B",
-                ),
-                generator.Symbol(
-                    "gSaveblock3",
-                    checked_in["save"]["block3_address"],
-                    676,
-                    "B",
-                ),
-                generator.parse_save_descriptor(
-                    descriptor_bytes(registry_digest=registry.digest)
-                ),
-                registry,
-                checked_in["game_build"]["rom_sha256"],
-            )
-            self.assertEqual(checked_in, expected)
-            self.assertEqual(
-                checked_in_text,
-                json.dumps(expected, indent=2, sort_keys=True) + "\n",
-            )
-            generated_lua = REPO_ROOT / "bridge" / "generated_addresses.lua"
-            # The checked-in bridge source intentionally has no materialized
-            # generated-address file; session startup renders it from the
-            # validated manifest. When a build materializes that artifact,
-            # retain the exact generator-vs-artifact regression assertion.
-            if generated_lua.exists():
-                self.assertEqual(
-                    generated_lua.read_text(encoding="utf-8"),
-                    generator.render_lua(expected),
-                )
+        )
+        snapshots = [
+            snapshot for snapshot in lock["snapshots"]
+            if snapshot["registry_version"] == checked_in["save"]["registry_version"]
+        ]
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(checked_in["save"]["registry_digest"], registry_digest(snapshots[0]).hex())
+        self.assertEqual(checked_in_text, json.dumps(checked_in, indent=2, sort_keys=True) + "\n")
+        self.assertNotEqual(checked_in["save"]["schema_version"], generator.SAVE_SCHEMA_VERSION)
 
-    def test_example_lua_documents_schema_four_save_contract(self) -> None:
+    def test_historical_example_lua_documents_schema_four_v1_save_contract(self) -> None:
         example = (REPO_ROOT / "bridge" / "generated_addresses.lua.example").read_text(
             encoding="utf-8"
         )

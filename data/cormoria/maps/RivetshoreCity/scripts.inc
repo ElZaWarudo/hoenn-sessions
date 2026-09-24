@@ -1,0 +1,1260 @@
+# 1 "data//maps/RivetshoreCity/scripts.pory"
+
+# 2 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_SPEEDBOAT, 1
+# 3 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_GAB, 28
+# 4 "data//maps/RivetshoreCity/scripts.pory"
+
+# 5 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_KOHLA, 21
+# 6 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, 22
+# 7 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET2, 23
+# 8 "data//maps/RivetshoreCity/scripts.pory"
+
+# 9 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER, 15
+# 10 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, 14
+# 11 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_GLORIA, 16
+# 12 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_CARONA, 17
+# 13 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_VINIEL, 18
+# 14 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, 19
+# 15 "data//maps/RivetshoreCity/scripts.pory"
+    .set Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, 20
+
+Cormoria_RivetshoreCity_MapScripts::
+# 20 "data//maps/RivetshoreCity/scripts.pory"
+	map_script MAP_SCRIPT_ON_TRANSITION, Cormoria_RivetshoreCity_MapScripts_MAP_SCRIPT_ON_TRANSITION
+	.byte 0
+
+Cormoria_RivetshoreCity_MapScripts_MAP_SCRIPT_ON_TRANSITION:
+# 21 "data//maps/RivetshoreCity/scripts.pory"
+	setflag Cormoria_FLAG_VISITED_RIVETSHORE_CITY
+	return
+
+
+Cormoria_RivetshoreCity_Gabrielle_Trigger::
+# 31 "data//maps/RivetshoreCity/scripts.pory"
+	goto_if_set Cormoria_FLAG_RIVETSHORE_GAB, Cormoria_RivetshoreCity_Gabrielle_Trigger_2
+# 33 "data//maps/RivetshoreCity/scripts.pory"
+	lockall
+# 35 "data//maps/RivetshoreCity/scripts.pory"
+	addobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_GAB
+# 37 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement OBJ_EVENT_ID_PLAYER, Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_0
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_GAB, Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_1
+# 39 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 41 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Gabrielle_Trigger_Text_0, Cormoria_RivetshoreCity_Gabrielle_Trigger_Text_1
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_GAB, Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_2
+# 44 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 45 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_GAB
+# 48 "data//maps/RivetshoreCity/scripts.pory"
+	setvar Cormoria_VAR_RIVETSHORE_CEO_QUEST, 0
+# 50 "data//maps/RivetshoreCity/scripts.pory"
+	setflag Cormoria_FLAG_RIVETSHORE_GAB
+# 51 "data//maps/RivetshoreCity/scripts.pory"
+	releaseall
+	end
+
+Cormoria_RivetshoreCity_Gabrielle_Trigger_2:
+	end
+
+
+Cormoria_RivetshoreCity_Assembly_Trigger::
+# 62 "data//maps/RivetshoreCity/scripts.pory"
+	goto_if_set Cormoria_FLAG_RIVETSHORE_ASSEMBLY, Cormoria_RivetshoreCity_Assembly_Trigger_2
+# 66 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_VINIEL
+# 67 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_CARONA
+# 70 "data//maps/RivetshoreCity/scripts.pory"
+	special SpawnCameraObject
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement OBJ_EVENT_ID_CAMERA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_0
+# 72 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 76 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1
+# 77 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 78 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_1
+# 80 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_2
+# 81 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 82 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_2, Cormoria_RivetshoreCity_Assembly_Trigger_Text_3
+# 83 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_3
+# 84 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 85 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_4, Cormoria_RivetshoreCity_Assembly_Trigger_Text_5
+# 86 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_7
+# 89 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1
+# 90 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 91 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_8
+# 92 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_GLORIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_4
+# 93 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 94 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_9, Cormoria_RivetshoreCity_Assembly_Trigger_Text_10
+# 99 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1
+# 100 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 101 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_11
+# 102 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 103 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 104 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_12
+# 105 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 106 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 107 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_13, Cormoria_RivetshoreCity_Assembly_Trigger_Text_14
+# 108 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 109 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 110 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_15, Cormoria_RivetshoreCity_Assembly_Trigger_Text_16
+# 112 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1
+# 113 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 114 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_17
+# 116 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_6
+# 117 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 118 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_13, Cormoria_RivetshoreCity_Assembly_Trigger_Text_18
+# 119 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_19
+# 121 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 122 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 123 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_20
+# 125 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_21
+# 126 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_7
+# 127 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 128 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_22
+# 129 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_KOHLA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1
+# 130 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 131 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_23, Cormoria_RivetshoreCity_Assembly_Trigger_Text_24
+# 133 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_GLORIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 134 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 135 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 136 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 137 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 138 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 139 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_9, Cormoria_RivetshoreCity_Assembly_Trigger_Text_25
+# 141 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_KOHLA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1
+# 142 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 143 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_23, Cormoria_RivetshoreCity_Assembly_Trigger_Text_26
+# 145 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 146 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 147 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_9, Cormoria_RivetshoreCity_Assembly_Trigger_Text_27
+# 149 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_8
+# 150 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 151 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_28
+# 154 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_2
+# 155 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 156 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_29
+# 157 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5
+# 158 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 159 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_30
+# 160 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_31
+# 161 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_6
+# 162 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 163 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_15, Cormoria_RivetshoreCity_Assembly_Trigger_Text_32
+# 164 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_33
+# 166 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_6
+# 167 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 168 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_34
+# 170 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_15, Cormoria_RivetshoreCity_Assembly_Trigger_Text_35
+# 171 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_4, Cormoria_RivetshoreCity_Assembly_Trigger_Text_36
+# 172 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_9, Cormoria_RivetshoreCity_Assembly_Trigger_Text_37
+# 173 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_13, Cormoria_RivetshoreCity_Assembly_Trigger_Text_38
+# 174 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_39
+# 176 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_8
+# 177 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 178 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_0, Cormoria_RivetshoreCity_Assembly_Trigger_Text_40
+# 181 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_KOHLA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9
+# 182 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_10
+# 183 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET2, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_10
+# 184 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 185 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_KOHLA
+# 187 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9
+# 188 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET2, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_10
+# 189 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 190 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET1
+# 192 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET2, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9
+# 193 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 194 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_DET2
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement OBJ_EVENT_ID_CAMERA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_11
+# 197 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 200 "data//maps/RivetshoreCity/scripts.pory"
+	playse SE_SHIP
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_SPEEDBOAT, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_12
+# 202 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement OBJ_EVENT_ID_CAMERA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_13
+# 205 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 207 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_2
+# 208 "data//maps/RivetshoreCity/scripts.pory"
+	movedelay
+# 209 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox_delay Cormoria_RivetshoreCity_Assembly_Trigger_Text_6, Cormoria_RivetshoreCity_Assembly_Trigger_Text_41
+# 211 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_14
+# 212 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_15
+# 213 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_16
+# 214 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_GLORIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_17
+# 215 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 216 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_GLORIA
+# 218 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_10
+# 219 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_18
+# 220 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9
+# 221 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 222 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_INGER
+# 224 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9
+# 225 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9
+# 226 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 227 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_ARIANA
+# 229 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA, Cormoria_RivetshoreCity_Assembly_Trigger_Movement_15
+# 230 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 231 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_JANIA
+# 234 "data//maps/RivetshoreCity/scripts.pory"
+	fadescreen FADE_TO_BLACK
+# 235 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject Cormoria_maps_RivetshoreCity_scripts_LOCALID_RAAZI
+# 236 "data//maps/RivetshoreCity/scripts.pory"
+	fadescreen FADE_FROM_BLACK
+# 238 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement OBJ_EVENT_ID_CAMERA, Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_2
+# 239 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 240 "data//maps/RivetshoreCity/scripts.pory"
+	special RemoveCameraObject
+# 243 "data//maps/RivetshoreCity/scripts.pory"
+	completesubquest QUEST_STOP_TEAM_SOMBER, SUB_QUEST_2
+# 244 "data//maps/RivetshoreCity/scripts.pory"
+	setflag Cormoria_FLAG_RIVETSHORE_ASSEMBLY
+# 245 "data//maps/RivetshoreCity/scripts.pory"
+	releaseall
+	end
+
+Cormoria_RivetshoreCity_Assembly_Trigger_2:
+	end
+
+
+Cormoria_RivetshoreCity_NPC_StorageBayDude::
+# 261 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_StorageBayDude_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_StorageBaySailor::
+# 267 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_StorageBaySailor_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_1::
+# 273 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_1_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_2::
+# 278 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_2_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_3::
+# 283 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_3_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_4::
+# 288 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_4_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_5::
+# 293 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_5_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_6::
+# 298 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_6_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_7::
+# 303 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_7_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_8::
+# 308 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_8_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_NPC_9::
+# 313 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_NPC_9_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_Market_Shop_1::
+# 326 "data//maps/RivetshoreCity/scripts.pory"
+	lock
+# 327 "data//maps/RivetshoreCity/scripts.pory"
+	faceplayer
+# 328 "data//maps/RivetshoreCity/scripts.pory"
+	message Cormoria_gText_HowMayIServeYou
+# 329 "data//maps/RivetshoreCity/scripts.pory"
+	waitmessage
+# 330 "data//maps/RivetshoreCity/scripts.pory"
+	pokemart Cormoria_RivetshoreCity_Mart_1
+# 331 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_gText_PleaseComeAgain, MSGBOX_DEFAULT
+# 332 "data//maps/RivetshoreCity/scripts.pory"
+	release
+	end
+
+
+Cormoria_RivetshoreCity_Market_Shop_2::
+# 338 "data//maps/RivetshoreCity/scripts.pory"
+	lock
+# 339 "data//maps/RivetshoreCity/scripts.pory"
+	faceplayer
+# 340 "data//maps/RivetshoreCity/scripts.pory"
+	message Cormoria_gText_HowMayIServeYou
+# 341 "data//maps/RivetshoreCity/scripts.pory"
+	waitmessage
+# 342 "data//maps/RivetshoreCity/scripts.pory"
+	pokemart Cormoria_RivetshoreCity_Mart_2
+# 343 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_gText_PleaseComeAgain, MSGBOX_DEFAULT
+# 344 "data//maps/RivetshoreCity/scripts.pory"
+	release
+	end
+
+
+Cormoria_RivetshoreCity_Market_Shop_Secret::
+# 351 "data//maps/RivetshoreCity/scripts.pory"
+	lock
+# 352 "data//maps/RivetshoreCity/scripts.pory"
+	faceplayer
+# 355 "data//maps/RivetshoreCity/scripts.pory"
+	goto_if_set Cormoria_FLAG_SYS_GAME_CLEAR, Cormoria_RivetshoreCity_Market_Shop_Secret_2
+# 389 "data//maps/RivetshoreCity/scripts.pory"
+	speakername Cormoria_RivetshoreCity_Market_Shop_Secret_Text_0
+# 390 "data//maps/RivetshoreCity/scripts.pory"
+	message Cormoria_RivetshoreCity_Market_Shop_Secret_Text_3
+# 391 "data//maps/RivetshoreCity/scripts.pory"
+	waitmessage
+# 392 "data//maps/RivetshoreCity/scripts.pory"
+	pokemart Cormoria_RivetshoreCity_Mart_Secret
+# 393 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_gText_PleaseComeAgain, MSGBOX_DEFAULT
+# 394 "data//maps/RivetshoreCity/scripts.pory"
+	release
+	end
+
+Cormoria_RivetshoreCity_Market_Shop_Secret_2:
+# 357 "data//maps/RivetshoreCity/scripts.pory"
+	goto_if_set Cormoria_FLAG_CHAMPION_GRETA_COMPLETE, Cormoria_RivetshoreCity_Market_Shop_Secret_4
+# 369 "data//maps/RivetshoreCity/scripts.pory"
+	speakername Cormoria_RivetshoreCity_Market_Shop_Secret_Text_0
+# 370 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_Market_Shop_Secret_Text_2
+# 371 "data//maps/RivetshoreCity/scripts.pory"
+	release
+# 372 "data//maps/RivetshoreCity/scripts.pory"
+	delay 8
+# 375 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement OBJ_EVENT_ID_PLAYER, Cormoria_RivetshoreCity_Market_Shop_Secret_Movement_0
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	applymovement 24, Cormoria_RivetshoreCity_Market_Shop_Secret_Movement_1
+# 377 "data//maps/RivetshoreCity/scripts.pory"
+	waitmovement 0
+# 379 "data//maps/RivetshoreCity/scripts.pory"
+	removeobject 24
+# 380 "data//maps/RivetshoreCity/scripts.pory"
+	setflag Cormoria_FLAG_CHAMPION_GRETA_SETUP
+# 381 "data//maps/RivetshoreCity/scripts.pory"
+	setflag Cormoria_FLAG_HIDE_CHAMPION_GRETA
+# 383 "data//maps/RivetshoreCity/scripts.pory"
+	releaseall
+	end
+
+Cormoria_RivetshoreCity_Market_Shop_Secret_4:
+# 359 "data//maps/RivetshoreCity/scripts.pory"
+	speakername Cormoria_RivetshoreCity_Market_Shop_Secret_Text_0
+# 360 "data//maps/RivetshoreCity/scripts.pory"
+	message Cormoria_RivetshoreCity_Market_Shop_Secret_Text_1
+# 361 "data//maps/RivetshoreCity/scripts.pory"
+	waitmessage
+# 362 "data//maps/RivetshoreCity/scripts.pory"
+	pokemart Cormoria_RivetshoreCity_Mart_Secret
+# 363 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_gText_PleaseComeAgain, MSGBOX_DEFAULT
+# 364 "data//maps/RivetshoreCity/scripts.pory"
+	release
+	end
+
+
+	.align 2
+# 398 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Mart_1:
+# 399 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_HYPER_POTION
+# 400 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_MAX_REVIVE
+# 401 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_FULL_RESTORE
+# 402 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_FULL_HEAL
+# 403 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_FLAME_ORB
+# 404 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_THICK_CLUB
+	.2byte ITEM_NONE
+
+	.align 2
+# 407 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Mart_2:
+# 408 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM19
+# 409 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM23
+# 410 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM26
+# 411 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM30
+# 412 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM33
+# 413 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM34
+# 414 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TM36
+	.2byte ITEM_NONE
+
+	.align 2
+# 417 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Mart_Secret:
+# 418 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_GALARICA_CUFF
+# 419 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_GALARICA_WREATH
+# 420 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_DUSK_STONE
+# 421 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_MOON_STONE
+# 422 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_PRISM_SCALE
+# 423 "data//maps/RivetshoreCity/scripts.pory"
+	.2byte ITEM_TIME_WATER
+	.2byte ITEM_NONE
+
+Cormoria_RivetshoreCity_Mareanie::
+# 438 "data//maps/RivetshoreCity/scripts.pory"
+	lockall
+# 439 "data//maps/RivetshoreCity/scripts.pory"
+	playmoncry SPECIES_MAREANIE, CRY_MODE_NORMAL
+# 440 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_Mareanie_Text_0
+# 441 "data//maps/RivetshoreCity/scripts.pory"
+	releaseall
+	end
+
+
+Cormoria_RivetshoreCity_Aron::
+# 445 "data//maps/RivetshoreCity/scripts.pory"
+	playmoncry SPECIES_ARON, CRY_MODE_NORMAL
+# 446 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_Aron_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_Geodude::
+# 450 "data//maps/RivetshoreCity/scripts.pory"
+	playmoncry SPECIES_GEODUDE, CRY_MODE_NORMAL
+# 451 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_Geodude_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_RivetshoreCity_Surskit::
+# 455 "data//maps/RivetshoreCity/scripts.pory"
+	playmoncry SPECIES_SURSKIT, CRY_MODE_NORMAL
+# 456 "data//maps/RivetshoreCity/scripts.pory"
+	msgbox Cormoria_RivetshoreCity_Surskit_Text_0, MSGBOX_NPC
+	end
+
+
+# 37 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_0:
+# 37 "data//maps/RivetshoreCity/scripts.pory"
+	face_left
+	step_end
+
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_1:
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 38 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+	step_end
+
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Gabrielle_Trigger_Movement_2:
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 43 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+	step_end
+
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_0:
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 71 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+	step_end
+
+# 76 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_1:
+# 76 "data//maps/RivetshoreCity/scripts.pory"
+	jump_in_place_down
+	step_end
+
+# 80 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_2:
+# 80 "data//maps/RivetshoreCity/scripts.pory"
+	jump_in_place_right
+	step_end
+
+# 83 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_3:
+# 83 "data//maps/RivetshoreCity/scripts.pory"
+	jump_in_place_left
+# 83 "data//maps/RivetshoreCity/scripts.pory"
+	emote_exclamation_mark
+	step_end
+
+# 92 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_4:
+# 92 "data//maps/RivetshoreCity/scripts.pory"
+	jump_in_place_left
+	step_end
+
+# 102 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_5:
+# 102 "data//maps/RivetshoreCity/scripts.pory"
+	emote_exclamation_mark
+	step_end
+
+# 116 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_6:
+# 116 "data//maps/RivetshoreCity/scripts.pory"
+	emote_question_mark
+	step_end
+
+# 126 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_7:
+# 126 "data//maps/RivetshoreCity/scripts.pory"
+	face_right
+	step_end
+
+# 149 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_8:
+# 149 "data//maps/RivetshoreCity/scripts.pory"
+	face_down
+	step_end
+
+# 181 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_9:
+# 181 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+	step_end
+
+# 182 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_10:
+# 182 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+	step_end
+
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_11:
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+# 196 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+	step_end
+
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_12:
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+# 201 "data//maps/RivetshoreCity/scripts.pory"
+	walk_fast_right
+	step_end
+
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_13:
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 204 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+	step_end
+
+# 211 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_14:
+# 211 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 211 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+	step_end
+
+# 212 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_15:
+# 212 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+# 212 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+	step_end
+
+# 213 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_16:
+# 213 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+# 213 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+	step_end
+
+# 214 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_17:
+# 214 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 214 "data//maps/RivetshoreCity/scripts.pory"
+	walk_up
+	step_end
+
+# 219 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Assembly_Trigger_Movement_18:
+# 219 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+	step_end
+
+# 375 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Market_Shop_Secret_Movement_0:
+# 375 "data//maps/RivetshoreCity/scripts.pory"
+	walk_left
+# 375 "data//maps/RivetshoreCity/scripts.pory"
+	face_right
+	step_end
+
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+Cormoria_RivetshoreCity_Market_Shop_Secret_Movement_1:
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_down
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+# 376 "data//maps/RivetshoreCity/scripts.pory"
+	walk_right
+	step_end
+
+Cormoria_RivetshoreCity_Gabrielle_Trigger_Text_0:
+# 41 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Gabrielle$"
+
+Cormoria_RivetshoreCity_Gabrielle_Trigger_Text_1:
+# 41 "data//maps/RivetshoreCity/scripts.pory"
+	.string "{PLAYER}! I knew you'd come.\p"
+	.string "Listen - I overheard some of the Gym\n"
+	.string "Leaders by the harbor talking about\l"
+	.string "their plans. I don't know much but\l"
+	.string "they're planning to sail east from here!\p"
+	.string "There's a cruise set to depart soon.\n"
+	.string "We can follow them!\p"
+	.string "I got my ticket already so hurry up and\n"
+	.string "buy yours before they sell out!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_0:
+# 78 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Detective$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_1:
+# 78 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Thank you gym leaders for assembling\n"
+	.string "here on such short notice.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_2:
+# 82 "data//maps/RivetshoreCity/scripts.pory"
+	.string "???$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_3:
+# 82 "data//maps/RivetshoreCity/scripts.pory"
+	.string "It's our duty, detectives.\n"
+	.string "No need to thank us.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_4:
+# 85 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Ariana$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_5:
+# 85 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Easy for you to say, Raazi!\p"
+	.string "You live here. Inger and I came all the\n"
+	.string "way from the other side of Cormoria!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_6:
+# 86 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Raazi$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_7:
+# 86 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Which is also your duty.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_8:
+# 91 "data//maps/RivetshoreCity/scripts.pory"
+	.string "I don't see all of you though.\n"
+	.string "Who's missing?$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_9:
+# 94 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Gloria$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_10:
+# 94 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Viniel and Carona sent word - they're on\n"
+	.string "their way. They'll take some time,\l"
+	.string "considering how remote they are.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_11:
+# 101 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Unfortunately we don't have time to\n"
+	.string "wait for them.\p"
+	.string "Allow us to explain the current\n"
+	.string "situation as it stands.\p"
+	.string "You all know about the disappearance\n"
+	.string "of Professor Tenebris in connection\l"
+	.string "with the dreamstones and Team Somber's\l"
+	.string "involvement in this case.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_12:
+# 104 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Yes.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_13:
+# 107 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Jania$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_14:
+# 107 "data//maps/RivetshoreCity/scripts.pory"
+	.string "I hope the Professor is safe,\n"
+	.string "wherever she is.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_15:
+# 110 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Inger$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_16:
+# 110 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Just you watch - I'm going to teach\n"
+	.string "Team Somber a lesson!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_17:
+# 114 "data//maps/RivetshoreCity/scripts.pory"
+	.string "We regret to say that despite all our\n"
+	.string "efforts, not a single trace of the\l"
+	.string "Professor has yet been found.\p"
+	.string "Nobody has seen her anywhere. Our\n"
+	.string "working theory is that Team Somber is\l"
+	.string "holding her captive somewhere...\p"
+	.string "...and that leads us to today.\p"
+	.string "A massive uptick in geological activity\n"
+	.string "was recorded by the Pokémon Ranger\l"
+	.string "Institute yesterday.\p"
+	.string "The heat signatures were off the\n"
+	.string "charts. Ravine, the Ranger Head says\l"
+	.string "it's like the start of a region-wide\l"
+	.string "drought.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_18:
+# 118 "data//maps/RivetshoreCity/scripts.pory"
+	.string "The location?$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_19:
+# 119 "data//maps/RivetshoreCity/scripts.pory"
+	.string "An uncharted island off the coast.\n"
+	.string "Further east from here.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_20:
+# 123 "data//maps/RivetshoreCity/scripts.pory"
+	.string "So that explains the heatwave\n"
+	.string "we had here yesterday.\p"
+	.string "It must have been Team Somber's doing.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_21:
+# 125 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Kohla here has been working the case.\p"
+	.string "He's handed over his Gym Leader duties\n"
+	.string "to the next Ace Rookie, and is now\l"
+	.string "pursuing Team Somber full-time.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_22:
+# 128 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Kohla - go on and tell them about the\n"
+	.string "Ancient Terror.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_23:
+# 131 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Kohla$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_24:
+# 131 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Right, yes, well.\p"
+	.string "Ahem.\p"
+	.string "So, well...they...they've captured the\n"
+	.string "Ancient Terror.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_25:
+# 139 "data//maps/RivetshoreCity/scripts.pory"
+	.string "What? How?$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_26:
+# 143 "data//maps/RivetshoreCity/scripts.pory"
+	.string "My...ex-colleague and I chased them\n"
+	.string "into Ancient Cormoria through a\l"
+	.string "dreamstone and Melea captured the\l"
+	.string "Ancient Terror with a Master Ball!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_27:
+# 147 "data//maps/RivetshoreCity/scripts.pory"
+	.string "They were strong enough without\n"
+	.string "it...but with the Ancient Terror, they'll\l"
+	.string "be unstoppable!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_28:
+# 151 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Yes...which is why we need the combined\n"
+	.string "power of the eight strongest trainers\l"
+	.string "in all of Cormoria.\p"
+	.string "We think this heatwave has something\n"
+	.string "to do with the Ancient Terror...and we\l"
+	.string "also believe worse is on the way.\p"
+	.string "That's why we need to get to this\n"
+	.string "uncharted island ASAP!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_29:
+# 156 "data//maps/RivetshoreCity/scripts.pory"
+	.string "We should wait for Viniel and Carona\n"
+	.string "however. Without Medicham and\l"
+	.string "Manectric, we'll lose a lot of firepower.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_30:
+# 159 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Time is of the essence, Raazi.\n"
+	.string "We need someone to go now.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_31:
+# 160 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Then I propose Kohla.\p"
+	.string "He's a star and I can personally\n"
+	.string "vouch for his strength.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_32:
+# 163 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Did he beat you, Raazi?$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_33:
+# 164 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Yes. He's a fearsome trainer.\p"
+	.string "Not to mention - he's been fighting\n"
+	.string "Team Somber from the start.\p"
+	.string "His dedication to the cause is far\n"
+	.string "beyond the rest of us combined.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_34:
+# 168 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Right then. Those in favour of sending\n"
+	.string "Kohla ahead?$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_35:
+# 170 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Yeah!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_36:
+# 171 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Of course!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_37:
+# 172 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Without question.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_38:
+# 173 "data//maps/RivetshoreCity/scripts.pory"
+	.string "He's the best choice.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_39:
+# 174 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Needless to say, detective,\n"
+	.string "we're all in favour.\p"
+	.string "Kohla, you have the respect of all the\n"
+	.string "other leaders in Cormoria.\p"
+	.string "We're counting on you.\p"
+	.string "I'm not going to ask whether you're up\n"
+	.string "to the task...because I know you are.$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_40:
+# 178 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Kohla - you're coming with us on the\n"
+	.string "speedboat then.\p"
+	.string "There's a cruise ship that's scheduled\n"
+	.string "to leave soon. The other Gym Leaders\l"
+	.string "can follow us on that.\p"
+	.string "Let's get to it!$"
+
+Cormoria_RivetshoreCity_Assembly_Trigger_Text_41:
+# 209 "data//maps/RivetshoreCity/scripts.pory"
+	.string "I'm heading back to the quarry.\n"
+	.string "The rest of you - wait in the harbor.$"
+
+Cormoria_RivetshoreCity_NPC_StorageBayDude_Text_0:
+# 261 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Hehehe...when that sailor isn't looking,\n"
+	.string "I'll sneak in and stow away on board the\l"
+	.string "S.S. Elegant!$"
+
+Cormoria_RivetshoreCity_NPC_StorageBaySailor_Text_0:
+# 267 "data//maps/RivetshoreCity/scripts.pory"
+	.string "This is the storage bay. We're loading\n"
+	.string "supplies for the S.S. Elegant!\p"
+	.string "What - you trying to stow away?\p"
+	.string "Scram!$"
+
+Cormoria_RivetshoreCity_NPC_1_Text_0:
+# 273 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Look! Look! My footprints stay on the\n"
+	.string "sand.$"
+
+Cormoria_RivetshoreCity_NPC_2_Text_0:
+# 278 "data//maps/RivetshoreCity/scripts.pory"
+	.string "They've turned this town into a\n"
+	.string "monstrosity! It used to be a beautiful\l"
+	.string "fishing spot until they built the quarry\l"
+	.string "and drove all the Pokémon away.$"
+
+Cormoria_RivetshoreCity_NPC_3_Text_0:
+# 283 "data//maps/RivetshoreCity/scripts.pory"
+	.string "I wanted to go on the SS Elegant cruise\n"
+	.string "but I couldn't get a ticket!$"
+
+Cormoria_RivetshoreCity_NPC_4_Text_0:
+# 288 "data//maps/RivetshoreCity/scripts.pory"
+	.string "My house has rickety stairs! I'm going\n"
+	.string "to sue Rivetshore Construction.$"
+
+Cormoria_RivetshoreCity_NPC_5_Text_0:
+# 293 "data//maps/RivetshoreCity/scripts.pory"
+	.string "I heard there was a secret shopkeeper\n"
+	.string "selling rare items here!\p"
+	.string "But these shopkeepers just have the\n"
+	.string "regular stuff...was it just a rumour?$"
+
+Cormoria_RivetshoreCity_NPC_6_Text_0:
+# 298 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Whose boat is that floating over there?$"
+
+Cormoria_RivetshoreCity_NPC_7_Text_0:
+# 303 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Today's a great day to walk at the\n"
+	.string "harbor, but yesterday was so hot!$"
+
+Cormoria_RivetshoreCity_NPC_8_Text_0:
+# 308 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Shoo, child! Don't disturb me.$"
+
+Cormoria_RivetshoreCity_NPC_9_Text_0:
+# 313 "data//maps/RivetshoreCity/scripts.pory"
+	.string "What am I doing here? Enjoying the sea\n"
+	.string "breeze, of course!\p"
+	.string "...\p"
+	.string "Fine. My boat drifted away so I'm\n"
+	.string "waiting to get picked up.$"
+
+Cormoria_RivetshoreCity_Market_Shop_Secret_Text_0:
+# 359 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Greta$"
+
+Cormoria_RivetshoreCity_Market_Shop_Secret_Text_1:
+# 360 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Hello {PLAYER}!\n"
+	.string "What'll you buy today?$"
+
+Cormoria_RivetshoreCity_Market_Shop_Secret_Text_2:
+# 370 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Look who it is! All of Cormoria is\n"
+	.string "buzzing with the news!\p"
+	.string "How do you feel?\n"
+	.string "Don't bother telling me - I know the\l"
+	.string "feeling all too well.\p"
+	.string "I know why you've come. The first thing\n"
+	.string "I did was go to Ravine too, and we're all\l"
+	.string "cut from the same cloth.\p"
+	.string "But let's not do this here.\n"
+	.string "Come find me where we first met!$"
+
+Cormoria_RivetshoreCity_Market_Shop_Secret_Text_3:
+# 390 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Hello {PLAYER}! Surprised?\n"
+	.string "I'm done traveling. I think a storefront\l"
+	.string "is better for business. But I couldn't\l"
+	.string "get a spot at the market!\p"
+	.string "What'll you buy today?$"
+
+Cormoria_RivetshoreCity_Mareanie_Text_0:
+# 440 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Mareanie is peering into the water...\n"
+	.string "It must be looking for a Corsola!$"
+
+Cormoria_RivetshoreCity_Aron_Text_0:
+# 446 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Aron is scurrying around!\n"
+	.string "It's hard to squeeze through...$"
+
+Cormoria_RivetshoreCity_Geodude_Text_0:
+# 451 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Geodude thumps itself with its arms!\n"
+	.string "Guess it doesn't hurt much.$"
+
+Cormoria_RivetshoreCity_Surskit_Text_0:
+# 456 "data//maps/RivetshoreCity/scripts.pory"
+	.string "Surskit shkips around nervously...is it\n"
+	.string "looking out for the prankster Pokémon?$"

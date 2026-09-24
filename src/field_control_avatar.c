@@ -23,6 +23,7 @@
 #include "follower_npc.h"
 #include "item_menu.h"
 #include "johto/events.h"
+#include "world/events.h"
 #include "johto/field_moves.h"
 #include "link.h"
 #include "match_call.h"
@@ -486,7 +487,9 @@ static const u8 *GetInteractedBackgroundEventScript(struct MapPosition *position
     case BG_EVENT_HIDDEN_ITEM:
         if (bgEvent->bgUnion.hiddenItem.underfoot == TRUE)
             return NULL;
-        gSpecialVar_0x8004 = bgEvent->bgUnion.hiddenItem.hiddenItemId + FLAG_HIDDEN_ITEMS_START;
+        gSpecialVar_0x8004 = WorldEvent_GetHiddenItemFlag(bgEvent);
+        if (gSpecialVar_0x8004 == 0)
+            return NULL;
         gSpecialVar_0x8005 = bgEvent->bgUnion.hiddenItem.item;
         gSpecialVar_0x8009 = bgEvent->bgUnion.hiddenItem.quantity;
         if (FlagGet(gSpecialVar_0x8004) == TRUE)
@@ -1168,6 +1171,14 @@ static s8 GetWarpEventAtPosition(struct MapHeader *mapHeader, u16 x, u16 y, u8 e
 
 static bool32 ShouldTriggerScriptRun(const struct CoordEvent *coordEvent)
 {
+    /* Coordinate triggers have no type field. Regional flags own 0x8000-0x8fff;
+     * script commands may still use the overlapping special variable IDs. */
+    if (WorldEvent_IsVariableId(coordEvent->trigger))
+        return VarGet(coordEvent->trigger) == coordEvent->index;
+    if (WorldEvent_IsFlagId(coordEvent->trigger))
+        return FlagGet(coordEvent->trigger) == coordEvent->index;
+    if (WorldEvent_IsReservedId(coordEvent->trigger))
+        return FALSE;
     if (JohtoEvent_IsVariableId(coordEvent->trigger))
         return VarGet(coordEvent->trigger) == coordEvent->index;
     if (JohtoEvent_IsFlagId(coordEvent->trigger))

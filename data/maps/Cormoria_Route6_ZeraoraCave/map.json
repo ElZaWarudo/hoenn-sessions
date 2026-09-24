@@ -1,0 +1,60 @@
+{
+  "id": "MAP_CORMORIA_ROUTE6_ZERAORA_CAVE",
+  "name": "Cormoria_Route6_ZeraoraCave",
+  "layout": "LAYOUT_CORMORIA_ROUTE6_ZERAORA_CAVE",
+  "music": "MUS_MT_CHIMNEY",
+  "region_map_section": "MAPSEC_CORMORIA_STATIC_CAVE",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERGROUND",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(ZERAORA)",
+      "x": 18,
+      "y": 4,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Route6_Zeraora",
+      "flag": "Cormoria_FLAG_ZERAORA"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 18,
+      "y": 23,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE6",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 31,
+      "y": 18,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE6_ZERAORA_CAVE_B1F",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [
+    {
+      "type": "hidden_item",
+      "x": 3,
+      "y": 8,
+      "elevation": 0,
+      "item": "ITEM_RARE_SHARD",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ZERAORA_A"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

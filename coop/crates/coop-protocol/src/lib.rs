@@ -19,6 +19,8 @@ pub mod social;
 pub use social::*;
 pub mod group_travel;
 pub use group_travel::*;
+pub mod rom_world;
+pub use rom_world::RomWorldId;
 
 pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
 pub use identity_catalog::{

@@ -36,6 +36,8 @@ pub enum MessageType {
     GroupTravelClient = 0x000F,
     CompanionState = 0x0010,
     SocialSignal = 0x0011,
+    PortalTravelRequest = 0x0012,
+    ArrivalProof = 0x0013,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -53,6 +55,7 @@ pub enum MessageType {
     GroupTravelServer = 0x010E,
     RemoteCompanion = 0x010F,
     RemoteSocialSignal = 0x0110,
+    ArrivalChallenge = 0x0111,
 }
 
 impl MessageType {
@@ -75,7 +78,9 @@ impl MessageType {
             | Self::OnlineRequest
             | Self::GroupTravelClient
             | Self::CompanionState
-            | Self::SocialSignal => Direction::RomToSidecar,
+            | Self::SocialSignal
+            | Self::PortalTravelRequest
+            | Self::ArrivalProof => Direction::RomToSidecar,
             Self::SessionReady
             | Self::RemotePlayerSpawn
             | Self::RemotePlayerUpdate
@@ -92,7 +97,8 @@ impl MessageType {
             | Self::OnlineStatus
             | Self::GroupTravelServer
             | Self::RemoteCompanion
-            | Self::RemoteSocialSignal => Direction::SidecarToRom,
+            | Self::RemoteSocialSignal
+            | Self::ArrivalChallenge => Direction::SidecarToRom,
         }
     }
 }
@@ -119,6 +125,8 @@ impl TryFrom<u16> for MessageType {
             0x000F => Self::GroupTravelClient,
             0x0010 => Self::CompanionState,
             0x0011 => Self::SocialSignal,
+            0x0012 => Self::PortalTravelRequest,
+            0x0013 => Self::ArrivalProof,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -136,6 +144,7 @@ impl TryFrom<u16> for MessageType {
             0x010E => Self::GroupTravelServer,
             0x010F => Self::RemoteCompanion,
             0x0110 => Self::RemoteSocialSignal,
+            0x0111 => Self::ArrivalChallenge,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -454,6 +463,19 @@ mod tests {
                 .ensure_direction(Direction::RomToSidecar)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn portal_request_frame_preserves_id_and_rom_direction() {
+        let frame =
+            BridgeFrame::new(MessageType::PortalTravelRequest, 6, 9, b"to_cormoria").unwrap();
+        assert_eq!(frame.direction(), Direction::RomToSidecar);
+        assert_eq!(frame.payload(), b"to_cormoria");
+        assert_eq!(
+            BridgeFrame::decode_for(&frame.encode(), Direction::RomToSidecar).unwrap(),
+            frame
+        );
+        assert!(BridgeFrame::decode_for(&frame.encode(), Direction::SidecarToRom).is_err());
     }
 
     #[test]

@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from tools.cormoria import region_manifest
+from tools import shared_item_registry
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFESTS = Path("data/cormoria")
@@ -27,6 +28,9 @@ PINNED_SHA256 = {
 EXPECTED_COUNTS = (165, 165, 51, 59)
 EXPECTED_GROUP_COUNTS = (28, 32, 40, 31, 30, 4)
 EXTERNAL_EDGES = {"MAP_DYNAMIC", "MAP_ROUTE112", "MAP_ROUTE117_POKEMON_DAY_CARE"}
+# These two donor source formats are text, and Git checks them out with CRLF
+# on Windows. Their pinned source records describe those CRLF bytes.
+LINE_ENDING_TEXT_PATHS = {"sound/songs/midi/midi.cfg", "src/data/trainers.party"}
 CAMPAIGN_DATA_FILES = {
     "src/data/heal_locations.h", "src/data/heal_locations_pkm_center.h",
     "src/data/mining_minigame.h", "src/data/partner_parties.h",
@@ -88,6 +92,13 @@ def source_bytes(donor: Path, relative: str, indexed: dict[str, dict[str, Any]])
         raise ImportError(f"missing or escaping source: {relative}")
     data = path.read_bytes()
     record = indexed[relative]
+    if relative in LINE_ENDING_TEXT_PATHS:
+        if b"\r" in data.replace(b"\r\n", b""):
+            raise ImportError(f"invalid source line endings: {relative}")
+        normalized = data.replace(b"\r\n", b"\n")
+        pinned = normalized.replace(b"\n", b"\r\n")
+        if len(pinned) == record["bytes"] and digest(pinned) == record["sha256"]:
+            return normalized
     if len(data) != record["bytes"] or digest(data) != record["sha256"]:
         raise ImportError(f"source hash mismatch: {relative}")
     return data
@@ -211,7 +222,9 @@ def rewrite_script(text: str, lookup: dict[str, str]) -> str:
         for index, chunk in enumerate(chunks))
 
 
-def build_stage(donor: Path, output: Path, root: Path = ROOT) -> dict[str, Any]:
+def build_stage(donor: Path, output: Path, root: Path = ROOT, *,
+                previous_item_registry: bytes | None = None,
+                trusted_previous_sha256: str | None = None) -> dict[str, Any]:
     donor = donor.resolve(strict=True)
     output = output.resolve()
     if output == root.resolve() or output.is_relative_to(root.resolve()) or output.is_relative_to(donor):
@@ -219,6 +232,8 @@ def build_stage(donor: Path, output: Path, root: Path = ROOT) -> dict[str, Any]:
     if output.exists():
         raise ImportError(f"refusing to overwrite stage output: {output}")
     region, symbols, sources = load_manifests(root)
+    shared_item_registry.validate(root, previous_bytes=previous_item_registry,
+                                  trusted_previous_sha256=trusted_previous_sha256)
     provenance = region_manifest.verify_donor(donor)
     if provenance != region["provenance"]:
         raise ImportError("donor tree differs from pinned manifests")
@@ -307,9 +322,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--donor", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--previous-shared-items", type=Path)
+    parser.add_argument("--trusted-previous-sha256")
     args = parser.parse_args(argv)
     try:
-        index = build_stage(args.donor, args.output)
+        prior = args.previous_shared_items.read_bytes() if args.previous_shared_items else None
+        index = build_stage(args.donor, args.output, previous_item_registry=prior,
+                            trusted_previous_sha256=args.trusted_previous_sha256)
     except (ImportError, region_manifest.ManifestError, OSError, KeyError, ValueError) as error:
         print(f"Cormoria staging error: {error}", file=sys.stderr)
         return 1

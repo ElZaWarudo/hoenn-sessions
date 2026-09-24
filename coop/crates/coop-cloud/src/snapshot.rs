@@ -1,5 +1,6 @@
 //! Revisioned snapshot contracts with CAS and session fencing.
 
+use coop_protocol::RomWorldId;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{self, SeqAccess, Visitor},
@@ -736,6 +737,7 @@ fn pending_digest(files: &[SnapshotFile]) -> Result<Sha256Digest, SnapshotError>
 pub struct SnapshotRecord {
     pub api_version: ApiVersion,
     pub snapshot_id: crate::SnapshotId,
+    pub rom_world_id: RomWorldId,
     pub session_id: SessionId,
     pub character_id: CharacterId,
     pub parent_revision: Revision,
@@ -751,6 +753,7 @@ pub struct SnapshotRecord {
 struct SerializableSnapshotRecord<'a> {
     api_version: ApiVersion,
     snapshot_id: crate::SnapshotId,
+    rom_world_id: RomWorldId,
     session_id: SessionId,
     character_id: CharacterId,
     parent_revision: Revision,
@@ -771,6 +774,7 @@ impl Serialize for SnapshotRecord {
         SerializableSnapshotRecord {
             api_version: self.api_version,
             snapshot_id: self.snapshot_id,
+            rom_world_id: self.rom_world_id,
             session_id: self.session_id,
             character_id: self.character_id,
             parent_revision: self.parent_revision,
@@ -790,6 +794,7 @@ impl Serialize for SnapshotRecord {
 struct WireSnapshotRecord {
     api_version: ApiVersion,
     snapshot_id: crate::SnapshotId,
+    rom_world_id: RomWorldId,
     session_id: SessionId,
     character_id: CharacterId,
     parent_revision: Revision,
@@ -811,6 +816,7 @@ impl<'de> Deserialize<'de> for SnapshotRecord {
         let record = Self {
             api_version: wire.api_version,
             snapshot_id: wire.snapshot_id,
+            rom_world_id: wire.rom_world_id,
             session_id: wire.session_id,
             character_id: wire.character_id,
             parent_revision: wire.parent_revision,
@@ -839,6 +845,7 @@ impl SnapshotRecord {
     )]
     pub fn new(
         snapshot_id: crate::SnapshotId,
+        rom_world_id: RomWorldId,
         fence: SnapshotFence,
         parent_revision: Revision,
         revision: Revision,
@@ -858,6 +865,7 @@ impl SnapshotRecord {
         Ok(Self {
             api_version: ApiVersion::V1,
             snapshot_id,
+            rom_world_id,
             session_id: fence.session_id,
             character_id: fence.character_id,
             parent_revision,
@@ -928,6 +936,7 @@ impl SnapshotFence {
 pub struct SnapshotPrepareRequest {
     pub api_version: ApiVersion,
     pub snapshot_id: crate::SnapshotId,
+    pub rom_world_id: RomWorldId,
     pub session_id: SessionId,
     pub character_id: CharacterId,
     pub expected_parent_revision: Revision,
@@ -942,6 +951,7 @@ pub struct SnapshotPrepareRequest {
 struct SerializableSnapshotPrepareRequest<'a> {
     api_version: ApiVersion,
     snapshot_id: crate::SnapshotId,
+    rom_world_id: RomWorldId,
     session_id: SessionId,
     character_id: CharacterId,
     expected_parent_revision: Revision,
@@ -961,6 +971,7 @@ impl Serialize for SnapshotPrepareRequest {
         SerializableSnapshotPrepareRequest {
             api_version: self.api_version,
             snapshot_id: self.snapshot_id,
+            rom_world_id: self.rom_world_id,
             session_id: self.session_id,
             character_id: self.character_id,
             expected_parent_revision: self.expected_parent_revision,
@@ -979,6 +990,7 @@ impl Serialize for SnapshotPrepareRequest {
 struct WireSnapshotPrepareRequest {
     api_version: ApiVersion,
     snapshot_id: crate::SnapshotId,
+    rom_world_id: RomWorldId,
     session_id: SessionId,
     character_id: CharacterId,
     expected_parent_revision: Revision,
@@ -999,6 +1011,7 @@ impl SnapshotPrepareRequest {
     /// pending-commits digest does not match the declared artifact.
     pub fn new(
         snapshot_id: crate::SnapshotId,
+        rom_world_id: RomWorldId,
         fence: SnapshotPrepareFence,
         files: Vec<SnapshotFile>,
         pending_commits_sha256: Sha256Digest,
@@ -1011,6 +1024,7 @@ impl SnapshotPrepareRequest {
         Ok(Self {
             api_version: ApiVersion::V1,
             snapshot_id,
+            rom_world_id,
             session_id: fence.session_id,
             character_id: fence.character_id,
             expected_parent_revision: fence.expected_parent_revision,
@@ -1053,6 +1067,7 @@ impl<'de> Deserialize<'de> for SnapshotPrepareRequest {
         let request = Self {
             api_version: wire.api_version,
             snapshot_id: wire.snapshot_id,
+            rom_world_id: wire.rom_world_id,
             session_id: wire.session_id,
             character_id: wire.character_id,
             expected_parent_revision: wire.expected_parent_revision,
@@ -1642,6 +1657,98 @@ pub struct SnapshotRestoreRequest {
     pub expected_revision: Revision,
     pub session_epoch: SessionEpoch,
     pub client_instance_id: ClientInstanceId,
+    pub idempotency_key: IdempotencyKey,
+}
+
+/// Begin a world-neutral ROM handoff from the current finalized checkpoint.
+/// The server resolves the destination from `portal_id`; the caller cannot
+/// choose a world, save template, artifact path, or transfer descriptor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RomHandoffPrepareRequest {
+    pub api_version: ApiVersion,
+    pub character_id: CharacterId,
+    pub session_id: SessionId,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+    pub expected_revision: Revision,
+    pub source_snapshot_id: crate::SnapshotId,
+    pub portal_id: String,
+    pub idempotency_key: IdempotencyKey,
+}
+
+impl RomHandoffPrepareRequest {
+    pub fn valid_portal_id(&self) -> bool {
+        self.portal_id.len() <= 96
+            && self
+                .portal_id
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_lowercase())
+            && self
+                .portal_id
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    }
+}
+
+/// The destination save is staged but the source world remains authoritative.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RomHandoffPrepareResponse {
+    pub api_version: ApiVersion,
+    pub stage_id: crate::SnapshotId,
+    pub destination_world_id: RomWorldId,
+    pub arrival_portal_id: String,
+    pub destination_save_sha256: Sha256Digest,
+    pub destination_save: Vec<u8>,
+}
+
+/// Reconcile one persisted prepare intent after a lost response. The server
+/// authenticates the current source lease through the request fence.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RomHandoffRecoveryRequest {
+    pub api_version: ApiVersion,
+    pub character_id: CharacterId,
+    pub idempotency_key: IdempotencyKey,
+}
+
+/// A staged result can be retried with the same prepare key; an aborted
+/// result proves the source head remained authoritative and supplies the
+/// stage identity needed to settle the local journal.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RomHandoffRecoveryStatus {
+    Staged {
+        stage_id: crate::SnapshotId,
+        source_snapshot_id: crate::SnapshotId,
+        source_world_id: RomWorldId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+    },
+    Aborted {
+        stage_id: crate::SnapshotId,
+        source_snapshot_id: crate::SnapshotId,
+        source_world_id: RomWorldId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+    },
+}
+
+/// Acknowledges that the destination ROM loaded the staged save. A stale or
+/// mismatched acknowledgment cannot advance the active-world pointer.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RomHandoffCommitRequest {
+    pub api_version: ApiVersion,
+    pub character_id: CharacterId,
+    pub session_id: SessionId,
+    pub session_epoch: SessionEpoch,
+    pub client_instance_id: ClientInstanceId,
+    pub expected_revision: Revision,
+    pub stage_id: crate::SnapshotId,
+    pub destination_save_sha256: Sha256Digest,
     pub idempotency_key: IdempotencyKey,
 }
 

@@ -6,6 +6,11 @@
 #include "constants/maps.h"
 
 #include "data/heal_locations.h"
+#if ROM_WORLD == 2
+#include "cormoria/heal_locations.h"
+#include "cormoria/heal_locations_data.h"
+STATIC_ASSERT(ARRAY_COUNT(sCormoriaHealLocations) == NUM_CORMORIA_HEAL_LOCATIONS - HEAL_LOCATION_CORMORIA_CARABRUE_TOWN, CormoriaHealLocationCountMismatch);
+#endif
 
 u32 GetHealLocationIndexByMap(u16 mapGroup, u16 mapNum)
 {
@@ -16,6 +21,13 @@ u32 GetHealLocationIndexByMap(u16 mapGroup, u16 mapNum)
         if (sHealLocations[i].mapGroup == mapGroup && sHealLocations[i].mapNum == mapNum)
             return i + 1;
     }
+#if ROM_WORLD == 2
+    for (i = 0; i < ARRAY_COUNT(sCormoriaHealLocations); i++)
+    {
+        if (sCormoriaHealLocations[i].mapGroup == mapGroup && sCormoriaHealLocations[i].mapNum == mapNum)
+            return HEAL_LOCATION_CORMORIA_CARABRUE_TOWN + i;
+    }
+#endif
     return HEAL_LOCATION_NONE;
 }
 
@@ -23,10 +35,7 @@ const struct HealLocation *GetHealLocationByMap(u16 mapGroup, u16 mapNum)
 {
     u32 index = GetHealLocationIndexByMap(mapGroup, mapNum);
 
-    if (index == HEAL_LOCATION_NONE)
-        return NULL;
-    else
-        return &sHealLocations[index - 1];
+    return GetHealLocation(index);
 }
 
 u32 GetHealLocationIndexByWarpData(struct WarpData *warp)
@@ -40,6 +49,16 @@ u32 GetHealLocationIndexByWarpData(struct WarpData *warp)
         && sHealLocations[i].y == warp->y)
             return i + 1;
     }
+#if ROM_WORLD == 2
+    for (i = 0; i < ARRAY_COUNT(sCormoriaHealLocations); i++)
+    {
+        if (sCormoriaHealLocations[i].mapGroup == warp->mapGroup
+         && sCormoriaHealLocations[i].mapNum == warp->mapNum
+         && sCormoriaHealLocations[i].x == warp->x
+         && sCormoriaHealLocations[i].y == warp->y)
+            return HEAL_LOCATION_CORMORIA_CARABRUE_TOWN + i;
+    }
+#endif
     return HEAL_LOCATION_NONE;
 }
 
@@ -47,10 +66,13 @@ const struct HealLocation *GetHealLocation(u32 index)
 {
     if (index == HEAL_LOCATION_NONE)
         return NULL;
-    else if (index > ARRAY_COUNT(sHealLocations))
-        return NULL;
-    else
+    else if (index <= ARRAY_COUNT(sHealLocations))
         return &sHealLocations[index - 1];
+#if ROM_WORLD == 2
+    else if (index < NUM_CORMORIA_HEAL_LOCATIONS)
+        return &sCormoriaHealLocations[index - HEAL_LOCATION_CORMORIA_CARABRUE_TOWN];
+#endif
+    return NULL;
 }
 
 static bool32 IsLastHealLocation(u32 healLocation)
@@ -79,6 +101,10 @@ bool32 IsLastHealLocationPlayerHouse()
 
 u32 GetHealNpcLocalId(u32 healLocationId)
 {
+#if ROM_WORLD == 2
+    if (healLocationId >= HEAL_LOCATION_CORMORIA_CARABRUE_TOWN)
+        return LOCALID_NONE;
+#endif
     if (healLocationId == HEAL_LOCATION_NONE || healLocationId >= NUM_HEAL_LOCATIONS)
         return LOCALID_NONE;
 

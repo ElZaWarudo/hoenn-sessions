@@ -718,7 +718,7 @@ TEST("Cloud Coop newer live same epoch SESSION_READY cuts over pending presence"
     };
     struct MapHeader saved_map_header = gMapHeader;
     struct BackupMapLayout saved_backup_map_layout = gBackupMapLayout;
-    struct CoopSaveV1 saved_coop_save;
+    struct CoopSaveV2 saved_coop_save;
     struct PlayerAvatar saved_player_avatar = gPlayerAvatar;
     struct SaveBlock1 *saved_save_block1 = gSaveBlock1Ptr;
     struct ObjectEvent saved_object_event0 = gObjectEvents[0];
@@ -911,6 +911,54 @@ TEST("Cloud Coop checkpoint request is online-only and requires drained queues")
     EXPECT_EQ(CoopNetBridge_RequestCheckpoint(), COOP_CHECKPOINT_REQUEST_STARTED);
     EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+}
+
+TEST("Cloud Coop portal request validates stable ID and precedes checkpoint ready")
+{
+    struct CoopBridgeMessage message;
+    char max_id[97];
+    u32 i;
+
+    InitTestBridge();
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EstablishTestCloudSession();
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(NULL), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(""), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("To_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to-cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria/evil"), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    for (i = 0; i < 96; i++)
+        max_id[i] = 'a';
+    max_id[96] = '\0';
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(max_id), COOP_CHECKPOINT_REQUEST_STARTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_WAITING_FOR_GRANT);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 96);
+    EXPECT_EQ(message.session_epoch, 17);
+    EXPECT(memcmp(message.payload, max_id, 96) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+    EXPECT_EQ(message.length, 0);
+    EXPECT_EQ(message.session_epoch, 17);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+}
+
+TEST("Cloud Coop portal request rejects overlong ID without publishing intent")
+{
+    char overlong_id[98];
+    u32 i;
+
+    EstablishTestCloudSession();
+    for (i = 0; i < 97; i++)
+        overlong_id[i] = 'a';
+    overlong_id[97] = '\0';
+    EXPECT_EQ(CoopNetBridge_RequestPortalTravel(overlong_id), COOP_CHECKPOINT_REQUEST_REJECTED);
+    EXPECT_EQ(CoopNetBridge_GetCheckpointState(), COOP_CHECKPOINT_STATE_IDLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
 }
 
 TEST("Cloud Coop checkpoint grant accepts only a fresh empty current epoch")

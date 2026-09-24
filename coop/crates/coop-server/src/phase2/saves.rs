@@ -1,40 +1,49 @@
 //! Fixed-artifact snapshot lifecycle and signed resume packages.
 
 use coop_cloud::{
-    ArtifactIdentity, BridgeAbiVersion, CreatedAt, GameBuildId, ManifestBuildInfo, MgbaVersion,
-    ProtocolVersion, ResumePackageManifest, Revision, RuntimeBuildIdentity, Sha256Digest,
-    SignedManifestEnvelope, SnapshotFence, SnapshotFile, SnapshotFinalizeRequest, SnapshotId,
-    SnapshotListRequest, SnapshotListResponse, SnapshotPrepareRequest, SnapshotPrepareResponse,
-    SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse, UploadMethod, UploadTarget,
+    ArtifactIdentity, CreatedAt, ManifestBuildInfo, ResumePackageManifest, Revision,
+    RuntimeBuildIdentity, SignedManifestEnvelope, SnapshotFence, SnapshotFile,
+    SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest, SnapshotListResponse,
+    SnapshotPrepareRequest, SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest,
+    SnapshotRestoreResponse, UploadMethod, UploadTarget,
 };
+#[cfg(test)]
+use coop_cloud::{BridgeAbiVersion, GameBuildId, MgbaVersion, ProtocolVersion, Sha256Digest};
+#[cfg(test)]
 use serde::Deserialize;
 use std::collections::HashSet;
 use subtle::ConstantTimeEq;
 
 use super::storage::{
     MAX_CHARACTER_SAV, MAX_PENDING_COMMITS, MAX_RESUME_RESPONSE, MAX_RESUME_SS1,
-    MAX_RETIRED_SNAPSHOTS, MAX_SNAPSHOT_STORAGE_BYTES, MAX_SNAPSHOTS_PER_CHARACTER,
-    PreparedSnapshot, RESTORE_STAGE_TTL_MS, Store, TicketRecord, UploadObjectRecord,
-    commit_id_allowed, is_artifact_size_allowed,
+    MAX_RETIRED_SNAPSHOTS, PreparedSnapshot, RESTORE_STAGE_TTL_MS, Store, TicketRecord,
+    UploadObjectRecord, commit_id_allowed, is_artifact_size_allowed,
 };
 use super::{AuthenticatedActor, Phase2Error};
 
+pub(super) mod build_catalog;
+pub(super) mod handoff;
+
+#[cfg(test)]
 #[derive(Deserialize)]
 struct BridgeManifest {
     game_build: BuildInfo,
     net_bridge: NetBridge,
 }
+#[cfg(test)]
 #[derive(Deserialize)]
 struct BuildInfo {
     id: String,
     rom_sha256: String,
 }
+#[cfg(test)]
 #[derive(Deserialize)]
 struct NetBridge {
     abi_version: u16,
     game_protocol_version: u16,
 }
 
+#[cfg(test)]
 fn bridge_manifest() -> Result<BridgeManifest, Phase2Error> {
     serde_json::from_str(include_str!("../../../../../dist/bridge_manifest.json"))
         .map_err(|_| Phase2Error::Internal)
@@ -57,6 +66,9 @@ fn active_lease(
     fence: coop_cloud::LeaseFence,
     now: u64,
 ) -> Result<&super::storage::LeaseRecord, Phase2Error> {
+    if state.rom_handoff_staging.contains_key(&fence.character_id) {
+        return Err(Phase2Error::Conflict);
+    }
     if !owner(state, actor, fence.character_id) {
         return Err(Phase2Error::NotFound);
     }
@@ -71,7 +83,61 @@ fn active_lease(
     Ok(lease)
 }
 
+fn validate_runtime_binding(
+    catalog: &build_catalog::TrustedBuildCatalog,
+    lease: &super::storage::LeaseRecord,
+    claimed_world: coop_protocol::RomWorldId,
+) -> Result<(), Phase2Error> {
+    let binding = lease
+        .runtime_binding
+        .as_ref()
+        .ok_or(Phase2Error::Authentication)?;
+    if binding.session != lease.contract.stable_runtime_session()
+        || binding.world_id != claimed_world
+        || catalog.for_snapshot(Some(claimed_world), Some(binding.world_id)) != Ok(&binding.build)
+    {
+        return Err(Phase2Error::Authentication);
+    }
+    Ok(())
+}
+
+fn validate_restore_world(
+    store: &Store,
+    lease: &super::storage::LeaseRecord,
+    source: &SnapshotRecord,
+) -> Result<(), Phase2Error> {
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
+    validate_runtime_binding(catalog, lease, source.rom_world_id)
+}
+
 fn active_lease_identity(
+    state: &super::storage::State,
+    actor: AuthenticatedActor,
+    character_id: coop_cloud::CharacterId,
+    session_id: coop_cloud::SessionId,
+    session_epoch: coop_cloud::SessionEpoch,
+    client_instance_id: coop_cloud::ClientInstanceId,
+    now: u64,
+) -> Result<super::storage::LeaseRecord, Phase2Error> {
+    if state.rom_handoff_staging.contains_key(&character_id) {
+        return Err(Phase2Error::Conflict);
+    }
+    active_lease_identity_for_handoff(
+        state,
+        actor,
+        character_id,
+        session_id,
+        session_epoch,
+        client_instance_id,
+        now,
+    )
+}
+
+fn active_lease_identity_for_handoff(
     state: &super::storage::State,
     actor: AuthenticatedActor,
     character_id: coop_cloud::CharacterId,
@@ -154,6 +220,7 @@ fn remove_prepared(state: &mut super::storage::State, snapshot_id: SnapshotId) {
 /// Returns the one server-pinned build identity used by both resume packages
 /// and runtime presence admission.  Keeping this parser in one place prevents
 /// the two trust boundaries from drifting apart.
+#[cfg(test)]
 pub(crate) fn current_runtime_build_identity() -> Result<RuntimeBuildIdentity, Phase2Error> {
     let manifest = bridge_manifest()?;
     Ok(RuntimeBuildIdentity::new(
@@ -251,6 +318,11 @@ pub(crate) fn prepare(
     request
         .validate()
         .map_err(|_| Phase2Error::InvalidRequest)?;
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
     let now = store.now();
     let expiry = now
         .checked_add(super::storage::UPLOAD_TTL_MS)
@@ -274,6 +346,13 @@ pub(crate) fn prepare(
         )
     })?;
     cleanup_expired_prepared_for_character(store, actor, request.character_id, fence, now)?;
+    handoff::drain_retirements(store, actor)?;
+    if !requested_was_expired {
+        store.read_transaction(|state| {
+            let lease = active_lease(state, actor, fence, now)?;
+            validate_runtime_binding(catalog, lease, request.rom_world_id)
+        })?;
+    }
     store.write_transaction(|state| {
         // Authenticate and fence the character before touching any caller-named
         // or globally expired records. Cleanup is observable state mutation.
@@ -287,7 +366,9 @@ pub(crate) fn prepare(
         if character.revision != request.expected_parent_revision {
             return Err(Phase2Error::Conflict);
         }
-        if state.retired_snapshots.contains(&request.snapshot_id) {
+        if state.retired_snapshots.contains(&request.snapshot_id)
+            || state.retiring_snapshots.contains_key(&request.snapshot_id)
+        {
             return Err(if requested_was_expired {
                 Phase2Error::Expired
             } else {
@@ -301,7 +382,8 @@ pub(crate) fn prepare(
         {
             return Err(Phase2Error::Expired);
         }
-        active_lease(state, actor, fence, now)?;
+        let lease = active_lease(state, actor, fence, now)?;
+        validate_runtime_binding(catalog, lease, request.rom_world_id)?;
         let operation = (request.character_id, request.idempotency_key);
         if let Some(existing_id) = state.prepare_ops.get(&operation).copied() {
             if let Some(existing) = state.prepared.get(&existing_id) {
@@ -344,7 +426,14 @@ pub(crate) fn prepare(
         {
             return Err(Phase2Error::Busy);
         }
-        ensure_snapshot_quota(state, request.character_id, &request.files, None, None)?;
+        handoff::can_make_snapshot_room(
+            state,
+            request.character_id,
+            &request.files,
+            None,
+            None,
+            None,
+        )?;
         let prepared = prepared_with_targets(store, state, actor, request, expiry)?;
         state
             .prepared
@@ -380,7 +469,7 @@ fn ticket_limit(ticket: &TicketRecord) -> u64 {
     }
 }
 
-type VerifiedSourceObjects = (Vec<(ArtifactIdentity, Vec<u8>)>, coop_save::ValidatedSave);
+type VerifiedSourceObjects = (Vec<(ArtifactIdentity, Vec<u8>)>, coop_save::ValidatedSaveV2);
 
 fn identity_registry_contract() -> coop_save::RegistryContract {
     coop_save::RegistryContract::new(
@@ -392,16 +481,16 @@ fn identity_registry_contract() -> coop_save::RegistryContract {
 fn validate_character_sav(
     bytes: &[u8],
     revision: Revision,
-) -> Result<coop_save::ValidatedSave, Phase2Error> {
-    let save =
-        coop_save::validate_character_save(bytes, revision.value(), identity_registry_contract())
-            .map_err(|_| Phase2Error::InvalidRequest)?;
-    match save {
-        coop_save::CharacterSave::Version1(save) if save.coop().online_eligible() => Ok(*save),
-        coop_save::CharacterSave::ErasedRevisionZero(_) | coop_save::CharacterSave::Version1(_) => {
-            Err(Phase2Error::InvalidRequest)
-        }
+) -> Result<coop_save::ValidatedSaveV2, Phase2Error> {
+    if revision == Revision::initial() {
+        return Err(Phase2Error::InvalidRequest);
     }
+    let save = coop_save::parse_v2(bytes, identity_registry_contract())
+        .map_err(|_| Phase2Error::InvalidRequest)?;
+    if !save.coop().online_eligible() {
+        return Err(Phase2Error::InvalidRequest);
+    }
+    Ok(save)
 }
 
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
@@ -821,6 +910,39 @@ fn cleanup_expired_prepared_for_character(
     Ok(())
 }
 
+/// Recover expired snapshot and restore stages before cross-ROM travel.
+/// Remote cleanup must succeed before either durable declaration is removed.
+pub(super) fn cleanup_expired_staging_for_handoff(
+    store: &Store,
+    actor: AuthenticatedActor,
+    request: &coop_cloud::RomHandoffPrepareRequest,
+) -> Result<(), Phase2Error> {
+    let now = store.now();
+    let fence = coop_cloud::LeaseFence::new(
+        request.session_id,
+        request.character_id,
+        request.expected_revision,
+        request.session_epoch,
+        request.client_instance_id,
+    );
+    cleanup_expired_prepared_for_character(store, actor, request.character_id, fence, now)?;
+    let expired = store.read_transaction(|state| {
+        Ok::<Option<super::storage::RestoreStage>, Phase2Error>(
+            state
+                .restore_staging
+                .get(&request.character_id)
+                .filter(|stage| stage.expires_at <= now)
+                .cloned(),
+        )
+    })?;
+    if let Some(stage) = expired {
+        let keys = recover_restore_objects(store, &stage.request, stage.snapshot_id)?;
+        cleanup_restore_objects(store, &keys)?;
+        clear_restore_stage(store, &stage.request, stage.snapshot_id)?;
+    }
+    Ok(())
+}
+
 fn cleanup_prepared_objects(
     store: &Store,
     character_id: coop_cloud::CharacterId,
@@ -918,10 +1040,12 @@ fn recover_prepared_object(
 
 fn finalized_record(
     request: &SnapshotFinalizeRequest,
+    rom_world_id: coop_protocol::RomWorldId,
     now: u64,
 ) -> Result<SnapshotRecord, Phase2Error> {
     SnapshotRecord::new(
         request.snapshot_id,
+        rom_world_id,
         SnapshotFence::new(
             request.session_id,
             request.character_id,
@@ -964,7 +1088,7 @@ fn restore_preflight(
     now: u64,
 ) -> Result<RestorePreflight, Phase2Error> {
     store.read_transaction(|state| {
-        let _lease = active_lease_identity(
+        let lease = active_lease_identity(
             state,
             actor,
             request.character_id,
@@ -977,6 +1101,7 @@ fn restore_preflight(
             .restore_ops
             .get(&(request.character_id, request.idempotency_key))
         {
+            validate_restore_world(store, &lease, record)?;
             return if known == request {
                 Ok(RestorePreflight::Replay(restore_response(record.clone())))
             } else {
@@ -999,6 +1124,7 @@ fn restore_preflight(
         if source.character_id != request.character_id {
             return Err(Phase2Error::NotFound);
         }
+        validate_restore_world(store, &lease, &source)?;
         Ok(RestorePreflight::Source(character, source))
     })
 }
@@ -1038,7 +1164,7 @@ fn verify_uploaded_objects(
     snapshot_id: coop_cloud::SnapshotId,
     revision: Revision,
     files: &[SnapshotFile],
-) -> Result<coop_save::ValidatedSave, Phase2Error> {
+) -> Result<coop_save::ValidatedSaveV2, Phase2Error> {
     let mut validated_save = None;
     for file in files {
         let key = Store::object_key(character_id, snapshot_id, file.artifact);
@@ -1058,7 +1184,7 @@ fn snapshot_save(
     store: &Store,
     character_id: coop_cloud::CharacterId,
     snapshot: &SnapshotRecord,
-) -> Result<coop_save::ValidatedSave, Phase2Error> {
+) -> Result<coop_save::ValidatedSaveV2, Phase2Error> {
     let file = snapshot
         .files
         .iter()
@@ -1075,7 +1201,7 @@ fn validate_finalize_save(
     store: &Store,
     character_id: coop_cloud::CharacterId,
     request: &SnapshotFinalizeRequest,
-    incoming: &coop_save::ValidatedSave,
+    incoming: &coop_save::ValidatedSaveV2,
 ) -> Result<(), Phase2Error> {
     if request.revision == Revision::new(1) {
         if request.expected_parent_revision != Revision::initial()
@@ -1111,8 +1237,13 @@ fn validate_finalize_save(
     })?;
     let first_save = snapshot_save(store, character_id, &first)?;
     let current_save = snapshot_save(store, character_id, &current)?;
+    let next_generation = current_save
+        .coop()
+        .save_generation
+        .checked_add(1)
+        .ok_or(Phase2Error::Conflict)?;
     if incoming.character_lineage() != first_save.character_lineage()
-        || incoming.coop().save_generation != current_save.coop().save_generation.wrapping_add(1)
+        || incoming.coop().save_generation != next_generation
     {
         return Err(Phase2Error::Conflict);
     }
@@ -1231,37 +1362,6 @@ fn prepared_storage_usage(
                 .checked_add(files_storage_usage(&prepared.request.files)?)
                 .ok_or(Phase2Error::Internal)
         })
-}
-
-fn ensure_snapshot_quota(
-    state: &super::storage::State,
-    character_id: coop_cloud::CharacterId,
-    files: &[SnapshotFile],
-    excluded_snapshot: Option<SnapshotId>,
-    excluded_restore_stage: Option<SnapshotId>,
-) -> Result<(), Phase2Error> {
-    let snapshot_count = state
-        .snapshots
-        .values()
-        .filter(|snapshot| snapshot.character_id == character_id)
-        .count();
-    if snapshot_count >= MAX_SNAPSHOTS_PER_CHARACTER {
-        return Err(Phase2Error::Busy);
-    }
-    let used = snapshot_storage_usage(state, character_id)?;
-    let prepared = prepared_storage_usage(state, character_id, excluded_snapshot)?;
-    let restore_staging =
-        restore_staging_storage_usage(state, character_id, excluded_restore_stage)?;
-    let requested = files_storage_usage(files)?;
-    let total = used
-        .checked_add(prepared)
-        .and_then(|total| total.checked_add(restore_staging))
-        .and_then(|total| total.checked_add(requested))
-        .ok_or(Phase2Error::Internal)?;
-    if total > MAX_SNAPSHOT_STORAGE_BYTES {
-        return Err(Phase2Error::Busy);
-    }
-    Ok(())
 }
 
 fn restore_staging_storage_usage(
@@ -1409,7 +1509,7 @@ pub(crate) fn finalize(
         &request.files,
     )?;
     validate_finalize_save(store, request.character_id, request, &incoming_save)?;
-    let snapshot = finalized_record(request, now)?;
+    let snapshot = finalized_record(request, prepared.request.rom_world_id, now)?;
 
     store.write_transaction(|state| {
         let lease = active_lease_identity(
@@ -1456,13 +1556,6 @@ pub(crate) fn finalize(
             return Err(Phase2Error::Conflict);
         }
         let uploaded_keys = uploaded_object_keys_for_finalize(state, request)?;
-        ensure_snapshot_quota(
-            state,
-            request.character_id,
-            &request.files,
-            Some(request.snapshot_id),
-            None,
-        )?;
         let new_contract = coop_cloud::LeaseContract::new(
             coop_cloud::LeaseFence::new(
                 lease.contract.session_id,
@@ -1475,6 +1568,14 @@ pub(crate) fn finalize(
             lease.contract.heartbeat_interval_ms,
         )
         .map_err(|_| Phase2Error::Internal)?;
+        handoff::make_snapshot_room(
+            state,
+            request.character_id,
+            &request.files,
+            Some(request.snapshot_id),
+            None,
+            None,
+        )?;
         state
             .snapshots
             .insert(request.snapshot_id, snapshot.clone());
@@ -1489,6 +1590,9 @@ pub(crate) fn finalize(
         if let Some(character) = state.characters.get_mut(&request.character_id) {
             character.revision = request.revision;
             character.active_snapshot = Some(request.snapshot_id);
+            character
+                .world_heads
+                .insert(snapshot.rom_world_id, request.snapshot_id);
         }
         if let Some(lease) = state.leases.get_mut(&request.character_id) {
             lease.contract = new_contract;
@@ -1561,7 +1665,7 @@ fn reserve_restore(
         .checked_add(RESTORE_STAGE_TTL_MS)
         .ok_or(Phase2Error::Internal)?;
     store.write_transaction(|state| {
-        let _ = active_lease_identity(
+        let lease = active_lease_identity(
             state,
             actor,
             request.character_id,
@@ -1570,6 +1674,7 @@ fn reserve_restore(
             request.client_instance_id,
             now,
         )?;
+        validate_restore_world(store, &lease, source)?;
         if let Some((known, record)) = state
             .restore_ops
             .get(&(request.character_id, request.idempotency_key))
@@ -1597,13 +1702,21 @@ fn reserve_restore(
         if current_character.revision != request.expected_revision
             || current_source != source
             || state.snapshots.contains_key(&snapshot_id)
+            || state.retiring_snapshots.contains_key(&snapshot_id)
             || state
                 .snapshot_by_revision
                 .contains_key(&(request.character_id, revision))
         {
             return Err(Phase2Error::Conflict);
         }
-        ensure_snapshot_quota(state, request.character_id, &source.files, None, None)?;
+        handoff::can_make_snapshot_room(
+            state,
+            request.character_id,
+            &source.files,
+            None,
+            None,
+            Some(request.snapshot_id),
+        )?;
         let storage_bytes = files_storage_usage(&source.files)?;
         state.restore_staging.insert(
             request.character_id,
@@ -1726,6 +1839,7 @@ fn commit_restore(
             request.client_instance_id,
             store.now(),
         )?;
+        validate_restore_world(store, &lease, source)?;
         if let Some((known, record)) = state
             .restore_ops
             .get(&(request.character_id, request.idempotency_key))
@@ -1764,13 +1878,6 @@ fn commit_restore(
         // Reservation and commit are separate object-store phases. Recheck
         // the full quota while excluding this stage's own reserved bytes so a
         // concurrent prepare cannot make a restore over-commit storage.
-        ensure_snapshot_quota(
-            state,
-            request.character_id,
-            &source.files,
-            None,
-            Some(snapshot_id),
-        )?;
         let contract = coop_cloud::LeaseContract::new(
             coop_cloud::LeaseFence::new(
                 lease.contract.session_id,
@@ -1783,6 +1890,14 @@ fn commit_restore(
             lease.contract.heartbeat_interval_ms,
         )
         .map_err(|_| Phase2Error::Internal)?;
+        handoff::make_snapshot_room(
+            state,
+            request.character_id,
+            &source.files,
+            None,
+            Some(snapshot_id),
+            Some(request.snapshot_id),
+        )?;
         state.snapshots.insert(snapshot_id, snapshot.clone());
         state
             .snapshot_by_revision
@@ -1790,6 +1905,9 @@ fn commit_restore(
         if let Some(character) = state.characters.get_mut(&request.character_id) {
             character.revision = revision;
             character.active_snapshot = Some(snapshot_id);
+            character
+                .world_heads
+                .insert(snapshot.rom_world_id, snapshot_id);
         }
         if let Some(lease) = state.leases.get_mut(&request.character_id) {
             lease.contract = contract;
@@ -1817,6 +1935,7 @@ pub(crate) fn restore(
         RestorePreflight::Replay(response) => return Ok(response),
         RestorePreflight::Source(character, source) => (character, source),
     };
+    handoff::drain_retirements(store, actor)?;
     let revision = character
         .revision
         .next()
@@ -1824,6 +1943,7 @@ pub(crate) fn restore(
     let snapshot_id = store.snapshot_id()?;
     let snapshot = SnapshotRecord::new(
         snapshot_id,
+        source.rom_world_id,
         SnapshotFence::new(
             request.session_id,
             request.character_id,
@@ -2013,6 +2133,43 @@ pub(crate) fn resume_package(
     fence: coop_cloud::LeaseFence,
     revision: Option<u64>,
 ) -> Result<SignedManifestEnvelope, Phase2Error> {
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
+    let now = store.now();
+    let session_world = store.read_transaction(|state| {
+        let lease = active_lease(state, actor, fence, now)?;
+        let binding = lease
+            .runtime_binding
+            .as_ref()
+            .ok_or(Phase2Error::Authentication)?;
+        validate_runtime_binding(catalog, lease, binding.world_id)?;
+        Ok::<_, Phase2Error>(binding.world_id)
+    })?;
+    resume_package_with_catalog(
+        store,
+        actor,
+        fence,
+        revision,
+        Some((catalog, session_world)),
+    )
+}
+
+/// The caller must supply a catalog from trusted release configuration and a
+/// world bound to the authenticated runtime session. The snapshot's own world
+/// field is only a client claim until both agree.
+pub(crate) fn resume_package_with_catalog(
+    store: &Store,
+    actor: AuthenticatedActor,
+    fence: coop_cloud::LeaseFence,
+    revision: Option<u64>,
+    release: Option<(
+        &build_catalog::TrustedBuildCatalog,
+        coop_protocol::RomWorldId,
+    )>,
+) -> Result<SignedManifestEnvelope, Phase2Error> {
     let now = store.now();
     let selected = store.read_transaction(|state| {
         active_lease(state, actor, fence, now)?;
@@ -2037,7 +2194,11 @@ pub(crate) fn resume_package(
         .ok_or(Phase2Error::NotFound)?
         .clone())
     })?;
-    let build_identity = current_runtime_build_identity()?;
+    // A V2 save does not identify its ROM world. Until snapshot metadata is
+    // durably bound to a world and a separately pinned release catalog is
+    // installed, signing the old single-ROM identity would authorize the
+    // wrong ROM for Cormoria or a future world.
+    let build_identity = snapshot_build_identity(&selected, release)?;
     let sav = selected
         .files
         .iter()
@@ -2106,6 +2267,20 @@ pub(crate) fn resume_package(
     .map_err(|_| Phase2Error::Internal)
 }
 
+fn snapshot_build_identity(
+    snapshot: &SnapshotRecord,
+    release: Option<(
+        &build_catalog::TrustedBuildCatalog,
+        coop_protocol::RomWorldId,
+    )>,
+) -> Result<RuntimeBuildIdentity, Phase2Error> {
+    let (catalog, session_world) = release.ok_or(Phase2Error::Internal)?;
+    catalog
+        .for_snapshot(Some(snapshot.rom_world_id), Some(session_world))
+        .cloned()
+        .map_err(|_| Phase2Error::Internal)
+}
+
 pub(crate) fn resume_artifact(
     store: &Store,
     actor: AuthenticatedActor,
@@ -2120,8 +2295,13 @@ pub(crate) fn resume_artifact(
         _ => return Err(Phase2Error::NotFound),
     };
     let now = store.now();
+    let catalog = store
+        .config
+        .release_catalog
+        .as_ref()
+        .ok_or(Phase2Error::Internal)?;
     let (selected, file) = store.read_transaction(|state| {
-        active_lease(state, actor, fence, now)?;
+        let lease = active_lease(state, actor, fence, now)?;
         let character = state
             .characters
             .get(&fence.character_id)
@@ -2137,6 +2317,7 @@ pub(crate) fn resume_artifact(
                 .and_then(|id| state.snapshots.get(&id)),
         }
         .ok_or(Phase2Error::NotFound)?;
+        validate_runtime_binding(catalog, lease, selected.rom_world_id)?;
         let file = selected
             .files
             .iter()

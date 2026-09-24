@@ -52,6 +52,17 @@ enum DifficultyLevel GetTrainerDifficultyLevel(u16 trainerId)
     if (difficulty < DIFFICULTY_MIN || difficulty > DIFFICULTY_MAX)
         return DIFFICULTY_NORMAL;
 
+    if (CormoriaTrainer_IsId(trainerId))
+    {
+        if (CormoriaTrainer_GetStructAtDifficulty(difficulty, trainerId) != NULL)
+            return difficulty;
+        if (CormoriaTrainer_GetStructAtDifficulty(DIFFICULTY_NORMAL, trainerId) != NULL)
+            return DIFFICULTY_NORMAL;
+        if (CormoriaTrainer_GetStructAtDifficulty(DIFFICULTY_EASY, trainerId) != NULL)
+            return DIFFICULTY_EASY;
+        return DIFFICULTY_NORMAL;
+    }
+
     if (difficulty == DIFFICULTY_NORMAL)
         return DIFFICULTY_NORMAL;
 

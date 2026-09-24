@@ -720,6 +720,12 @@ enum BattleEnvironments BattleSetup_GetEnvironmentId(void)
 
     tileBehavior = MapGridGetMetatileBehaviorAt(x, y);
 
+    // These Cormoria map types choose their battle scene regardless of the tile.
+    if (gMapHeader.mapType == MAP_TYPE_SNOW)
+        return BATTLE_ENVIRONMENT_SNOW;
+    if (gMapHeader.mapType == MAP_TYPE_HILL)
+        return BATTLE_ENVIRONMENT_MOUNTAIN;
+
     if (MetatileBehavior_IsTallGrass(tileBehavior))
         return BATTLE_ENVIRONMENT_GRASS;
     if (MetatileBehavior_IsLongGrass(tileBehavior))

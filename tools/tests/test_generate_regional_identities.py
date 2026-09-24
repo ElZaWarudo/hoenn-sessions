@@ -27,9 +27,18 @@ class RegionalIdentityGeneratorTests(unittest.TestCase):
 
     def test_checked_in_outputs_are_current_and_digest_is_stable(self) -> None:
         registry = generator.validate_registry(self.source)
-        self.assertEqual(registry.version, 1)
-        self.assertEqual(registry.digest.hex(), "43918833dec646d6a583d124686c8540")
-        self.assertEqual(len(registry.entries), 912)
+        self.assertEqual(registry.version, 3)
+        self.assertEqual(registry.digest.hex(), "17a333e34f21d9067a2307372524d9b0")
+        self.assertEqual(len(registry.entries), 1114)
+        cormoria_badges = [
+            entry for entry in registry.entries
+            if entry.region == "CORMORIA" and entry.kind == "badge"
+        ]
+        self.assertEqual([entry.badge_bit for entry in cormoria_badges], list(range(8)))
+        self.assertEqual(
+            [entry.legacy_value for entry in cormoria_badges],
+            list(range(0x8009, 0x8011)),
+        )
         result = subprocess.run(
             [sys.executable, str(GENERATOR_PATH), "--check"],
             cwd=ROOT,
@@ -44,6 +53,18 @@ class RegionalIdentityGeneratorTests(unittest.TestCase):
         original = generator.canonical_registry_bytes(self.source)
         reordered = generator.canonical_registry_bytes(reversed_root)
         self.assertEqual(original, reordered)
+
+    def test_v1_lock_snapshot_keeps_original_region_and_identity_assignments(self) -> None:
+        lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+        self.assertEqual([snapshot["registry_version"] for snapshot in lock["snapshots"]], [1, 2, 3])
+        historical = generator.validate_registry(lock["snapshots"][0])
+        self.assertEqual(historical.digest.hex(), "43918833dec646d6a583d124686c8540")
+        self.assertEqual(len(historical.entries), 912)
+        self.assertEqual(
+            [region["wire"] for region in lock["snapshots"][1]["regions"]],
+            [1, 2, 3, 4, 5],
+        )
+        self.assertEqual(len(generator.validate_registry(lock["snapshots"][2]).entries), 1114)
 
     def test_explicit_ordinals_cannot_have_gaps_or_sorted_reassignment(self) -> None:
         broken = copy.deepcopy(self.source)
@@ -145,13 +166,13 @@ class RegionalIdentityGeneratorTests(unittest.TestCase):
         lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
 
         deleted_event = copy.deepcopy(self.source)
-        deleted_event["registry_version"] = 2
+        deleted_event["registry_version"] = 4
         deleted_event["identities"].pop()
         with self.assertRaisesRegex(generator.RegistryError, "cannot be removed"):
             generator.updated_lock_history(lock, deleted_event)
 
         deleted_trainer = copy.deepcopy(self.source)
-        deleted_trainer["registry_version"] = 2
+        deleted_trainer["registry_version"] = 4
         trainer_index = max(
             index
             for index, entry in enumerate(deleted_trainer["identities"])
@@ -162,7 +183,7 @@ class RegionalIdentityGeneratorTests(unittest.TestCase):
             generator.updated_lock_history(lock, deleted_trainer)
 
         renamed = copy.deepcopy(self.source)
-        renamed["registry_version"] = 2
+        renamed["registry_version"] = 4
         brock = next(
             entry
             for entry in renamed["identities"]
@@ -175,7 +196,7 @@ class RegionalIdentityGeneratorTests(unittest.TestCase):
     def test_lock_accepts_only_a_new_trailing_assignment_and_version(self) -> None:
         lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
         appended = copy.deepcopy(self.source)
-        appended["registry_version"] = 2
+        appended["registry_version"] = 4
         appended["identities"].append(
             {
                 "kind": "event",
@@ -185,11 +206,11 @@ class RegionalIdentityGeneratorTests(unittest.TestCase):
             }
         )
         updated = generator.updated_lock_history(lock, appended)
-        self.assertEqual(len(updated["snapshots"]), 2)
+        self.assertEqual(len(updated["snapshots"]), 4)
         self.assertEqual(updated["snapshots"][-1], appended)
 
         skipped = copy.deepcopy(appended)
-        skipped["registry_version"] = 3
+        skipped["registry_version"] = 5
         with self.assertRaisesRegex(generator.RegistryError, "exactly one"):
             generator.updated_lock_history(lock, skipped)
 

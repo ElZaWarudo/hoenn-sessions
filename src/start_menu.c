@@ -1620,11 +1620,15 @@ static void Task_SaveAfterLinkBattle(u8 taskId)
         case 1:
             SetContinueGameWarpStatusToDynamicWarp();
             WriteSaveBlock2();
+            if (Save_HandleBlockedLinkSave())
+                break;
             *state = 2;
             break;
         case 2:
             if (WriteSaveBlock1Sector())
             {
+                if (Save_HandleBlockedLinkSave())
+                    break;
                 ClearContinueGameWarpStatus2();
                 *state = 3;
                 gSoftResetDisabled = FALSE;

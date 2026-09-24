@@ -3,6 +3,7 @@
 #include "johto/daily_events.h"
 #include "johto/events.h"
 #include "pokedex.h"
+#include "world/events.h"
 
 #define SPECIAL_FLAGS_SIZE  (NUM_SPECIAL_FLAGS / 8)  // 8 flags per byte
 #define TEMP_FLAGS_SIZE     (NUM_TEMP_FLAGS / 8)
@@ -188,22 +189,25 @@ u16 *GetVarPointer(u16 id)
     /* The whole Johto window must be rejected before any legacy or testing
      * array arithmetic.  Johto values are accessed through VarGet/VarSet so
      * writes can reseal the persistent record. */
-    if (JohtoEvent_IsReservedId(id))
+    if (JohtoEvent_IsReservedId(id) || WorldEvent_IsVariableId(id))
         return NULL;
     if (id < VARS_START)
         return NULL;
-    else if (id < SPECIAL_VARS_START)
+    else if (id <= VARS_END)
         return &gSaveBlock1Ptr->vars[id - VARS_START];
 #if TESTING
-    else if (id >= TESTING_VARS_START)
+    else if (id >= TESTING_VARS_START && id < TESTING_VARS_START + TEST_VARS_SIZE / sizeof(u16))
         return &sTestVars[id - TESTING_VARS_START];
 #endif // TESTING
-    else
+    else if (id >= SPECIAL_VARS_START && id <= SPECIAL_VARS_END)
         return gSpecialVars[id - SPECIAL_VARS_START];
+    return NULL;
 }
 
 u16 VarGet(u16 id)
 {
+    if (WorldEvent_IsVariableId(id))
+        return WorldEvent_GetVariable(id);
     if (JohtoEvent_IsVariableId(id))
         return JohtoEvent_GetVariable(id);
     if (JohtoEvent_IsReservedId(id))
@@ -217,6 +221,8 @@ u16 VarGet(u16 id)
 
 u16 VarGetIfExist(u16 id)
 {
+    if (WorldEvent_IsVariableId(id))
+        return WorldEvent_GetVariable(id);
     if (JohtoEvent_IsVariableId(id))
         return JohtoEvent_GetVariable(id);
     if (JohtoEvent_IsReservedId(id))
@@ -230,6 +236,8 @@ u16 VarGetIfExist(u16 id)
 
 bool8 VarSet(u16 id, u16 value)
 {
+    if (WorldEvent_IsVariableId(id))
+        return WorldEvent_SetVariable(id, value);
     if (JohtoEvent_IsVariableId(id))
         return JohtoEvent_SetVariable(id, value);
     if (JohtoEvent_IsReservedId(id))
@@ -252,22 +260,30 @@ u8 *GetFlagPointer(u16 id)
     /* Never expose a writable pointer into the Johto record.  The reserved
      * range also includes cross-kind and one-past IDs which must not reach the
      * legacy or TESTING storage arithmetic below. */
-    if (JohtoEvent_IsReservedId(id))
+    if (JohtoEvent_IsReservedId(id) || WorldEvent_IsReservedId(id))
         return NULL;
     if (id == 0)
         return NULL;
-    else if (id < SPECIAL_FLAGS_START)
+    else if (id < FLAGS_COUNT)
         return &gSaveBlock1Ptr->flags[id / 8];
 #if TESTING
-    else if (id >= TESTING_FLAGS_START)
+    else if (id >= TESTING_FLAGS_START && id < TESTING_FLAGS_START + TEST_FLAGS_SIZE * 8)
         return &sTestFlags[(id - TESTING_FLAGS_START) / 8];
 #endif // TESTING
-    else
+    else if (id >= SPECIAL_FLAGS_START && id <= SPECIAL_FLAGS_END)
         return &sSpecialFlags[(id - SPECIAL_FLAGS_START) / 8];
+    return NULL;
 }
 
 u8 FlagSet(u16 id)
 {
+    if (WorldEvent_IsFlagId(id))
+    {
+        (void)WorldEvent_SetFlag(id, TRUE);
+        return 0;
+    }
+    if (WorldEvent_IsReservedId(id))
+        return 0;
     if (JohtoEvent_IsFlagId(id))
     {
         (void)JohtoEvent_SetFlag(id, TRUE);
@@ -284,6 +300,13 @@ u8 FlagSet(u16 id)
 
 u8 FlagToggle(u16 id)
 {
+    if (WorldEvent_IsFlagId(id))
+    {
+        (void)WorldEvent_SetFlag(id, !WorldEvent_GetFlag(id));
+        return 0;
+    }
+    if (WorldEvent_IsReservedId(id))
+        return 0;
     if (JohtoEvent_IsFlagId(id))
     {
         (void)JohtoEvent_SetFlag(id, !JohtoEvent_GetFlag(id));
@@ -300,6 +323,13 @@ u8 FlagToggle(u16 id)
 
 u8 FlagClear(u16 id)
 {
+    if (WorldEvent_IsFlagId(id))
+    {
+        (void)WorldEvent_SetFlag(id, FALSE);
+        return 0;
+    }
+    if (WorldEvent_IsReservedId(id))
+        return 0;
     if (JohtoEvent_IsFlagId(id))
     {
         (void)JohtoEvent_SetFlag(id, FALSE);
@@ -316,6 +346,10 @@ u8 FlagClear(u16 id)
 
 bool8 FlagGet(u16 id)
 {
+    if (WorldEvent_IsFlagId(id))
+        return WorldEvent_GetFlag(id);
+    if (WorldEvent_IsReservedId(id))
+        return FALSE;
     if (JohtoEvent_IsFlagId(id))
         return JohtoEvent_GetFlag(id);
     if (JohtoEvent_IsReservedId(id))

@@ -1,0 +1,515 @@
+{
+  "id": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+  "name": "Cormoria_SilversunCity_SomberHQ",
+  "layout": "LAYOUT_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+  "music": "MUS_RG_ROCKET_HIDEOUT",
+  "region_map_section": "MAPSEC_CORMORIA_SILVERSUN_CITY",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_INDOOR",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_PROF_BIRCH",
+      "x": 48,
+      "y": 16,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_F",
+      "x": 50,
+      "y": 16,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_F",
+      "x": 48,
+      "y": 15,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_NONE",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 48,
+      "y": 17,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 5,
+      "y": 8,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_A",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 11,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_B",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 44,
+      "y": 2,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_C",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 51,
+      "y": 20,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_D",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 21,
+      "y": 36,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_WALK_LEFT_AND_RIGHT",
+      "movement_range_x": 3,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_F",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 10,
+      "y": 41,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT_AND_RIGHT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_E",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 5,
+      "y": 34,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_LEFT",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_Grunt_H",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAGMA_MEMBER_M",
+      "x": 50,
+      "y": 45,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NORMAL",
+      "trainer_sight_or_berry_tree_id": "3",
+      "script": "Cormoria_SomberHQ_NPCGrunt",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MANIAC",
+      "x": 48,
+      "y": 10,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SomberHQ_NPC1",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MANIAC",
+      "x": 53,
+      "y": 10,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SomberHQ_NPC2",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAN_4",
+      "x": 49,
+      "y": 46,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SomberHQ_NPC3",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MAN_3",
+      "x": 50,
+      "y": 46,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SomberHQ_NPC4",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_NURSE",
+      "x": 24,
+      "y": 46,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SomberHQ_EventScript_NPCNurse",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 27,
+      "y": 46,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_HP_UP",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_SOMBERHQ_D"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 25,
+      "y": 43,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_BLACK_GLASSES",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_SOMBERHQ_C"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 41,
+      "y": 43,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_REVIVE",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_SOMBERHQ_E"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_TMHM_BALL",
+      "x": 37,
+      "y": 7,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_TM76",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_SOMBERHQ_B"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 37,
+      "y": 2,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_SUPER_POTION",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_SOMBERHQ_A"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_MANIAC",
+      "x": 48,
+      "y": 37,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_UP",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_SomberHQ_NPC_Counterfeiter",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CHANSEY)",
+      "x": 23,
+      "y": 46,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "Cormoria_Common_EventScript_ChanseyOnRoute",
+      "flag": "Cormoria_FLAG_SILVERSUN_SOMBERHQ_MAIN"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 13,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "1"
+    },
+    {
+      "x": 51,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 42,
+      "y": 21,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "3"
+    },
+    {
+      "x": 2,
+      "y": 42,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 23,
+      "y": 29,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "5"
+    },
+    {
+      "x": 54,
+      "y": 36,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "4"
+    },
+    {
+      "x": 45,
+      "y": 48,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "7"
+    },
+    {
+      "x": 3,
+      "y": 37,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "6"
+    },
+    {
+      "x": 3,
+      "y": 29,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "9"
+    },
+    {
+      "x": 32,
+      "y": 1,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "8"
+    },
+    {
+      "x": 32,
+      "y": 3,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "11"
+    },
+    {
+      "x": 42,
+      "y": 16,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "10"
+    },
+    {
+      "x": 38,
+      "y": 11,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "13"
+    },
+    {
+      "x": 13,
+      "y": 35,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "12"
+    },
+    {
+      "x": 22,
+      "y": 48,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "15"
+    },
+    {
+      "x": 57,
+      "y": 42,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SOMBER_HQ",
+      "dest_warp_id": "14"
+    },
+    {
+      "x": 1,
+      "y": 14,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_THEATER",
+      "dest_warp_id": "7"
+    },
+    {
+      "x": 2,
+      "y": 14,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_THEATER",
+      "dest_warp_id": "7"
+    },
+    {
+      "x": 43,
+      "y": 36,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_SILVERSUN_CITY_SEWERS",
+      "dest_warp_id": "1"
+    }
+  ],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 44,
+      "y": 16,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_SilversunCity_SomberHQ_EventScript_Main_Trigger0"
+    },
+    {
+      "type": "trigger",
+      "x": 44,
+      "y": 17,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_SilversunCity_SomberHQ_EventScript_Main_Trigger1"
+    },
+    {
+      "type": "trigger",
+      "x": 43,
+      "y": 16,
+      "elevation": 0,
+      "var": "VAR_TEMP_E",
+      "var_value": "0",
+      "script": "Cormoria_SomberHQ_SaveGameTrigger"
+    },
+    {
+      "type": "trigger",
+      "x": 43,
+      "y": 17,
+      "elevation": 0,
+      "var": "VAR_TEMP_E",
+      "var_value": "0",
+      "script": "Cormoria_SomberHQ_SaveGameTrigger"
+    }
+  ],
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 48,
+      "y": 36,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_NORTH",
+      "script": "Cormoria_SomberHQ_NPC_CounterfeitMachine"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

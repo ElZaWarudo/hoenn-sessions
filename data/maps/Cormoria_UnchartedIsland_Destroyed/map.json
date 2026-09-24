@@ -1,0 +1,22 @@
+{
+  "id": "MAP_CORMORIA_UNCHARTED_ISLAND_DESTROYED",
+  "name": "Cormoria_UnchartedIsland_Destroyed",
+  "layout": "LAYOUT_CORMORIA_UNCHARTED_ISLAND_DESTROYED",
+  "music": "MUS_DUMMY",
+  "region_map_section": "MAPSEC_CORMORIA_UNCHARTED_ISLAND",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_NONE",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [],
+  "warp_events": [],
+  "coord_events": [],
+  "bg_events": [],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

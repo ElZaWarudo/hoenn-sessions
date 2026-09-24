@@ -426,6 +426,27 @@ const struct TrainerClass gTrainerClasses[TRAINER_CLASS_COUNT] =
     [TRAINER_CLASS_POLICEMAN] = { _("OFFICER"), 5, BALL_POKE },
     [TRAINER_CLASS_ROCKET_ADMIN] = { _("ROCKET ADMIN"), 5, BALL_POKE },
     [TRAINER_CLASS_SAGE] = { _("SAGE"), 5, BALL_POKE },
+/* BEGIN PINNED CORMORIA TRAINER PRESENTATION CLASS_DATA */
+    [TRAINER_CLASS_ACE_ROOKIE] = { _("Ace Rookie") },
+    [TRAINER_CLASS_ARTIST] = {_("Artist") },
+    [TRAINER_CLASS_BACKPACKER] = {_("Backpacker") },
+    [TRAINER_CLASS_BUG_CATCHER_F] = {_("Bug Catcher") },
+    [TRAINER_CLASS_BUILDER] = {_("Builder") },
+    [TRAINER_CLASS_BURGLAR] = {_("Burglar") },
+    [TRAINER_CLASS_CADET] = {_("DA Cadet") },
+    [TRAINER_CLASS_CONTENDER] = {_("Contender")},
+    [TRAINER_CLASS_COOL_GIRL] = {_("Cool Girl") },
+    [TRAINER_CLASS_ELECTRICIAN] = {_("Electrician") },
+    [TRAINER_CLASS_EMPLOYEE] = {_("Employee") },
+    [TRAINER_CLASS_FIREFIGHTER] = {_("Firefighter") },
+    [TRAINER_CLASS_KOHLA_FINAL] = {_("Ace Rookie")},
+    [TRAINER_CLASS_MODEL] = {_("Model") },
+    [TRAINER_CLASS_RUE] = {_("Asst. Prof.") },
+    [TRAINER_CLASS_SKIIER] = {_("Skiier") },
+    [TRAINER_CLASS_SOMBER_ADMIN] = {_("Somber Admin") },
+    [TRAINER_CLASS_TEAM_SOMBER] = {_("Team Somber") },
+    [TRAINER_CLASS_WAITRESS] = {_("Waitress") },
+/* END PINNED CORMORIA TRAINER PRESENTATION CLASS_DATA */
 
 };
 

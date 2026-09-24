@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "johto/rival.h"
 #include "johto/trainers.h"
+#include "cormoria/trainers.h"
 
 #define MAX_TRAINER_ITEMS 4
 
@@ -259,6 +260,11 @@ static inline bool32 IsSpecialTrainer(u16 trainerId)
 
 static inline u16 SanitizeTrainerId(u16 trainerId)
 {
+    if (CormoriaTrainer_IsPopulated(trainerId))
+        return trainerId;
+    if (CormoriaTrainer_IsId(trainerId))
+        return TRAINER_NONE;
+
     if (JohtoTrainer_IsPopulated(trainerId))
         return trainerId;
 
@@ -302,6 +308,16 @@ static inline const struct Trainer *GetTrainerStructFromId(u16 trainerId)
 
         difficulty = GetTrainerDifficultyLevel(trainerId);
         trainer = JohtoTrainer_GetStructAtDifficulty(difficulty, trainerId);
+        if (trainer != NULL)
+            return trainer;
+        return &gTrainers[DIFFICULTY_NORMAL][TRAINER_NONE];
+    }
+    else if (CormoriaTrainer_IsId(trainerId))
+    {
+        const struct Trainer *trainer;
+
+        difficulty = GetTrainerDifficultyLevel(trainerId);
+        trainer = CormoriaTrainer_GetStructAtDifficulty(difficulty, trainerId);
         if (trainer != NULL)
             return trainer;
         return &gTrainers[DIFFICULTY_NORMAL][TRAINER_NONE];

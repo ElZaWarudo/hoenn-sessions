@@ -26,6 +26,7 @@ enum InGameTradeID
     INGAME_TRADE_JOHTO_MACHOP,
     INGAME_TRADE_JOHTO_VOLTORB,
     INGAME_TRADE_JOHTO_MR_MIME,
+    INGAME_TRADE_CORMORIA_WIMPOD,
 };
 
 // Return values for CanTradeSelectedMon and CanSpinTradeMon

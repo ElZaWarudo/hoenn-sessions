@@ -48,6 +48,7 @@ endif
 ifneq ($(word 5,$(ROM_WORLD_SETTINGS)),-)
   override MAP_VERSION := $(word 5,$(ROM_WORLD_SETTINGS))
 endif
+override ROM_WORLD_ID := $(word 6,$(ROM_WORLD_SETTINGS))
 
 # GBA rom header
 MAKER_CODE  := 01
@@ -173,7 +174,7 @@ TEST_BUILDDIR = $(OBJ_DIR)/$(TEST_SUBDIR)
 SHELL := bash -o pipefail
 
 # Set flags for tools
-ASFLAGS := -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym $(GAME_VERSION)=1 --defsym ROM_WORLD=$(ROM_WORLD)
+ASFLAGS := -mcpu=arm7tdmi -march=armv4t -meabi=5 --defsym MODERN=1 --defsym $(GAME_VERSION)=1 --defsym ROM_WORLD=$(ROM_WORLD) --defsym ROM_WORLD_ID=$(ROM_WORLD_ID)
 
 INCLUDE_DIRS := include
 INCLUDE_CPP_ARGS := $(INCLUDE_DIRS:%=-iquote %)
@@ -184,7 +185,7 @@ O_LEVEL ?= g
 else
 O_LEVEL ?= 2
 endif
-CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=1 -DTESTING=$(TEST) -D$(GAME_VERSION) -DROM_WORLD=$(ROM_WORLD) -std=gnu17
+CPPFLAGS := $(INCLUDE_CPP_ARGS) -Wno-trigraphs -DMODERN=1 -DTESTING=$(TEST) -D$(GAME_VERSION) -DROM_WORLD=$(ROM_WORLD) -DROM_WORLD_ID=$(ROM_WORLD_ID) -std=gnu17
 ifeq ($(RELEASE),1)
 	override CPPFLAGS += -DRELEASE
 	ifeq ($(USE_LTO_ON_RELEASE),1)
@@ -350,6 +351,9 @@ DATA_ASM_SRCS := $(wildcard $(DATA_ASM_SUBDIR)/*.s)
 DATA_ASM_OBJS := $(patsubst $(DATA_ASM_SUBDIR)/%.s,$(DATA_ASM_BUILDDIR)/%.o,$(DATA_ASM_SRCS))
 
 MID_SRCS := $(wildcard $(MID_SUBDIR)/*.mid)
+ifneq ($(ROM_WORLD),2)
+MID_SRCS := $(filter-out $(MID_SUBDIR)/mus_hgss_casino.mid $(MID_SUBDIR)/mus_casino_plus_1.mid,$(MID_SRCS))
+endif
 MID_OBJS := $(patsubst $(MID_SUBDIR)/%.mid,$(MID_BUILDDIR)/%.o,$(MID_SRCS))
 
 OBJS     := $(C_OBJS) $(C_ASM_OBJS) $(ASM_OBJS) $(DATA_ASM_OBJS) $(MID_OBJS)
@@ -437,6 +441,7 @@ endif
 
 # Other rules
 include graphics_file_rules.mk
+include data/tilesets/cormoria/rules.mk
 include map_data_rules.mk
 include spritesheet_rules.mk
 include json_data_rules.mk

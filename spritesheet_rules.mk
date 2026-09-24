@@ -450,6 +450,56 @@ $(OBJEVENTGFXDIR)/people/woman_5.4bpp: %.4bpp: %.png
 $(OBJEVENTGFXDIR)/people/youngster.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -mwidth 2 -mheight 4
 
+# BEGIN CORMORIA OBJECT GRAPHICS RULES
+# These recipes mirror the pinned Dreamstone source dimensions.  The PNGs are
+# kept under a regional directory so future ROM worlds can add their own
+# object set without replacing a shared Hoenn asset.
+graphics/object_events/cormoria/gubuking/walking.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/gubuking/running.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/shububu/walking.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/shububu/running.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/ball_tmhm.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/bug_catcher_f.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/prof_tenebris.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/skiier_f.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_ariana.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_carona.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_gloria.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_inger.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_jania.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_raazi.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+
+graphics/object_events/cormoria/leader_viniel.4bpp: %.4bpp: %.png
+	$(GFX) $< $@ -mwidth 2 -mheight 4
+# END CORMORIA OBJECT GRAPHICS RULES
+
 $(OBJEVENTGFXDIR)/people/agatha.4bpp: %.4bpp: %.png
 	$(GFX) $< $@ -mwidth 2 -mheight 4
 

@@ -495,11 +495,10 @@ impl BackendActor {
             .store
             .install_at(&pending.verified, &pending.artifacts, now);
         let installed = match installed {
-            Err(UpdateError::InvalidCompleteGeneration(_)) => self.store.repair_accepted_at(
-                &pending.verified,
-                pending.artifacts,
-                now,
-            ),
+            Err(UpdateError::InvalidCompleteGeneration(_)) => {
+                self.store
+                    .repair_accepted_at(&pending.verified, pending.artifacts, now)
+            }
             result => result,
         };
         match installed {
@@ -837,6 +836,10 @@ impl BackendActor {
             .map_err(|_| BackendError::Store)?;
         Ok(SessionConfig {
             client_instance_id,
+            // Current desktop generation contains Main only; a Cormoria
+            // generation must supply its world ID from the trusted catalog.
+            rom_world_id: coop_launcher::session::RomWorldId::new(1)
+                .map_err(|_| BackendError::Store)?,
             manifest: compatibility,
             trusted_manifest_key: self.config.runtime.manifest_key.clone(),
             epoch_store: EpochStore::new(self.config.paths.epoch_file()),
@@ -871,6 +874,10 @@ async fn run_runtime(
                 };
             }
         },
+        // Current desktop generation contains Main only. Do not infer this
+        // stable ID from co-op region or the ROM content-build selector.
+        rom_world_id: coop_launcher::session::RomWorldId::new(1)
+            .expect("registered Main ROM world ID"),
         manifest: compatibility,
         trusted_manifest_key,
         epoch_store: EpochStore::new(paths.epoch_file()),

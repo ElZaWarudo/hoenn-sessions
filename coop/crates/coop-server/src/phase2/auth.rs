@@ -172,6 +172,7 @@ pub(crate) fn register(
                 revision: Revision::initial(),
                 world_revision: 0,
                 active_snapshot: None,
+                world_heads: Default::default(),
                 last_session_epoch: 0,
             },
         );

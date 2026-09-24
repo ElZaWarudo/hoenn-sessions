@@ -353,6 +353,31 @@ impl CommandSpec {
         Ok(self)
     }
 
+    /// Binds the explicitly offline verifier mode to a captured sidecar
+    /// template without recapturing or weakening its executable identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless this is an unbound sidecar template.
+    pub fn with_arrival_verifier(mut self) -> Result<Self, ProcessError> {
+        if self.mgba || !self.args.is_empty() {
+            return Err(ProcessError::InvalidArgument);
+        }
+        self.args = vec!["--arrival-verifier".into()];
+        Ok(self)
+    }
+
+    pub(crate) fn owns_staged_rom(&self) -> bool {
+        self.mgba
+            && self.rom_cleanup.is_some()
+            && self.rom_marker_cleanup.is_some()
+            && self.rom_implicit_save_path.is_some()
+    }
+
+    pub(crate) fn is_arrival_verifier(&self) -> bool {
+        !self.mgba && self.args == ["--arrival-verifier"]
+    }
+
     /// # Errors
     ///
     /// Returns an error when the executable or ROM path is invalid.
@@ -1434,10 +1459,23 @@ pub fn validate_descriptor(
     descriptor: &SessionDescriptor,
     expected_epoch: u32,
 ) -> Result<(), ProcessError> {
-    if expected_epoch == 0
-        || descriptor.version() != 1
-        || descriptor.session_epoch() != expected_epoch
-    {
+    if expected_epoch == 0 {
+        return Err(ProcessError::Descriptor);
+    }
+    validate_descriptor_fields(descriptor, expected_epoch)
+}
+
+fn validate_arrival_verifier_descriptor(
+    descriptor: &SessionDescriptor,
+) -> Result<(), ProcessError> {
+    validate_descriptor_fields(descriptor, 0)
+}
+
+fn validate_descriptor_fields(
+    descriptor: &SessionDescriptor,
+    expected_epoch: u32,
+) -> Result<(), ProcessError> {
+    if descriptor.version() != 1 || descriptor.session_epoch() != expected_epoch {
         return Err(ProcessError::Descriptor);
     }
     let bridge = descriptor.bridge();
@@ -1488,6 +1526,23 @@ pub fn materialize_bridge_session(
     expected_epoch: u32,
 ) -> Result<(), ProcessError> {
     validate_descriptor(descriptor, expected_epoch)?;
+    write_bridge_session(workspace, bridge_source, descriptor)
+}
+
+fn materialize_arrival_verifier_bridge_session(
+    workspace: &SessionWorkspace,
+    bridge_source: &Path,
+    descriptor: &SessionDescriptor,
+) -> Result<(), ProcessError> {
+    validate_arrival_verifier_descriptor(descriptor)?;
+    write_bridge_session(workspace, bridge_source, descriptor)
+}
+
+fn write_bridge_session(
+    workspace: &SessionWorkspace,
+    bridge_source: &Path,
+    descriptor: &SessionDescriptor,
+) -> Result<(), ProcessError> {
     workspace
         .copy_bridge_inputs(bridge_source)
         .map_err(|_| ProcessError::Descriptor)?;
@@ -2390,7 +2445,10 @@ async fn run_control_reader(
                     break;
                 }
             }
-            ControlEvent::CheckpointReady { .. }
+            ControlEvent::ArrivalVerifierReady { .. }
+            | ControlEvent::ArrivalProof(_)
+            | ControlEvent::CheckpointReady { .. }
+            | ControlEvent::PortalTravelRequest { .. }
             | ControlEvent::SaveDataUpdated { .. }
             | ControlEvent::CheckpointExpired { .. }
             | ControlEvent::GroupTravel(_)
@@ -3266,6 +3324,46 @@ fn spawn_mgba(spec: &CommandSpec) -> io::Result<MgbaChild> {
         .map(|child| MgbaChild::Tokio(Box::new(child)))
 }
 
+#[derive(Clone, Copy)]
+enum StartupMode {
+    Gameplay(u32),
+    ArrivalVerifier,
+}
+
+impl StartupMode {
+    fn matches_sidecar(self, sidecar: &CommandSpec) -> bool {
+        match self {
+            Self::Gameplay(epoch) => {
+                epoch != 0 && sidecar.args == ["--session-epoch", &epoch.to_string()]
+            }
+            Self::ArrivalVerifier => sidecar.args == ["--arrival-verifier"],
+        }
+    }
+
+    fn validate_descriptor(self, descriptor: &SessionDescriptor) -> Result<(), ProcessError> {
+        match self {
+            Self::Gameplay(epoch) => validate_descriptor(descriptor, epoch),
+            Self::ArrivalVerifier => validate_arrival_verifier_descriptor(descriptor),
+        }
+    }
+
+    fn materialize_bridge(
+        self,
+        workspace: &SessionWorkspace,
+        bridge_source: &Path,
+        descriptor: &SessionDescriptor,
+    ) -> Result<(), ProcessError> {
+        match self {
+            Self::Gameplay(epoch) => {
+                materialize_bridge_session(workspace, bridge_source, descriptor, epoch)
+            }
+            Self::ArrivalVerifier => {
+                materialize_arrival_verifier_bridge_session(workspace, bridge_source, descriptor)
+            }
+        }
+    }
+}
+
 impl SupervisedChildren {
     #[cfg(test)]
     pub(crate) fn for_test(sidecar: Child, mgba: Child, control: ControlChannel) -> Self {
@@ -3307,7 +3405,7 @@ impl SupervisedChildren {
         mgba: CommandSpec,
         expected_epoch: u32,
     ) -> Result<Self, ProcessError> {
-        Self::start_internal(sidecar, mgba, expected_epoch, None).await
+        Self::start_internal(sidecar, mgba, StartupMode::Gameplay(expected_epoch), None).await
     }
 
     /// Starts both children after copying the checked-in bridge and writing
@@ -3331,7 +3429,31 @@ impl SupervisedChildren {
         Self::start_internal(
             sidecar,
             mgba,
-            expected_epoch,
+            StartupMode::Gameplay(expected_epoch),
+            Some((workspace, bridge_source)),
+        )
+        .await
+    }
+
+    /// Starts an explicitly offline epoch-zero arrival verifier with the
+    /// same guarded bridge, mGBA, and child-reaping path as gameplay startup.
+    /// The sidecar spec must come from `sidecar_template` followed by
+    /// `with_arrival_verifier`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when process identity, descriptor authentication,
+    /// bridge materialization, or child startup fails.
+    pub async fn start_arrival_verifier_with_bridge(
+        sidecar: CommandSpec,
+        mgba: CommandSpec,
+        workspace: &SessionWorkspace,
+        bridge_source: &Path,
+    ) -> Result<Self, ProcessError> {
+        Self::start_internal(
+            sidecar,
+            mgba,
+            StartupMode::ArrivalVerifier,
             Some((workspace, bridge_source)),
         )
         .await
@@ -3340,12 +3462,11 @@ impl SupervisedChildren {
     async fn start_internal(
         sidecar: CommandSpec,
         mgba: CommandSpec,
-        expected_epoch: u32,
+        mode: StartupMode,
         bridge: Option<(&SessionWorkspace, &Path)>,
     ) -> Result<Self, ProcessError> {
         let mut mgba = mgba;
-        if expected_epoch == 0
-            || sidecar.args != ["--session-epoch", &expected_epoch.to_string()]
+        if !mode.matches_sidecar(&sidecar)
             || !sidecar.executable.is_absolute()
             || !mgba.executable.is_absolute()
             || sidecar.identity.is_none()
@@ -3365,7 +3486,7 @@ impl SupervisedChildren {
             return Err(startup_cleanup(error, &mut mgba));
         }
         let (mut startup_child, mut control) =
-            Self::start_sidecar(&sidecar, expected_epoch, &mut mgba, bridge).await?;
+            Self::start_sidecar(&sidecar, mode, &mut mgba, bridge).await?;
         // Revalidate immediately before contained CreateProcessW. The
         // existing executable guard held by `mgba` closes the substitution
         // interval between compatibility probing and gameplay startup.
@@ -3434,7 +3555,7 @@ impl SupervisedChildren {
 
     async fn start_sidecar(
         sidecar: &CommandSpec,
-        expected_epoch: u32,
+        mode: StartupMode,
         mgba: &mut CommandSpec,
         bridge: Option<(&SessionWorkspace, &Path)>,
     ) -> Result<(StartupChildGuard, ControlChannel), ProcessError> {
@@ -3485,7 +3606,7 @@ impl SupervisedChildren {
             )
             .await);
         };
-        if let Err(error) = validate_descriptor(&descriptor, expected_epoch) {
+        if let Err(error) = mode.validate_descriptor(&descriptor) {
             return Err(startup_failure_with_cleanup(error, startup_child.child_mut(), mgba).await);
         }
         let mut control = match ControlChannel::connect(&descriptor).await {
@@ -3497,8 +3618,7 @@ impl SupervisedChildren {
             }
         };
         if let Some((workspace, bridge_source)) = bridge
-            && let Err(error) =
-                materialize_bridge_session(workspace, bridge_source, &descriptor, expected_epoch)
+            && let Err(error) = mode.materialize_bridge(workspace, bridge_source, &descriptor)
         {
             return Err(startup_failure_with_control(
                 error,
@@ -3731,7 +3851,11 @@ impl SupervisedChildren {
                 // A semantic travel record cannot be discarded to reach a
                 // shutdown ACK. Force the recovery path; a committed proposal
                 // remains server-owned and is replayed on the next session.
-                ControlEvent::GroupTravel(_) | ControlEvent::RomPresenceReset => return false,
+                ControlEvent::ArrivalVerifierReady { .. }
+                | ControlEvent::ArrivalProof(_)
+                | ControlEvent::GroupTravel(_)
+                | ControlEvent::PortalTravelRequest { .. }
+                | ControlEvent::RomPresenceReset => return false,
             }
         }
     }
@@ -4832,8 +4956,9 @@ mod tests {
     };
     #[cfg(windows)]
     use super::{
-        materialize_bridge_session, staged_rom_marker_contents, staged_rom_marker_path,
-        validate_executable_identity,
+        StartupMode, materialize_arrival_verifier_bridge_session, materialize_bridge_session,
+        staged_rom_marker_contents, staged_rom_marker_path, validate_arrival_verifier_descriptor,
+        validate_descriptor, validate_executable_identity,
     };
     #[cfg(windows)]
     use crate::session::SessionWorkspace;
@@ -5098,6 +5223,26 @@ mod tests {
         });
         let stream = tokio::net::TcpStream::connect(address).await.unwrap();
         (ControlChannel::from_stream_for_test(stream), server)
+    }
+
+    #[tokio::test]
+    async fn control_pump_delivers_arrival_verifier_events_on_critical_lane() {
+        let proof = ControlEvent::ArrivalProof(coop_sidecar::control::ArrivalProof {
+            nonce: [1; 16],
+            flash_sha256: [2; 32],
+            world_id: 3,
+            save_generation: 4,
+            map_group: 5,
+            map_num: 6,
+        });
+        let (mut control, server) =
+            control_event_pair(vec![ControlEvent::ArrivalVerifierReady {}, proof.clone()]).await;
+        assert_eq!(
+            control.receive_bounded().await.unwrap(),
+            ControlEvent::ArrivalVerifierReady {}
+        );
+        assert_eq!(control.receive().await.unwrap(), proof);
+        server.await.unwrap();
     }
 
     #[tokio::test]
@@ -5741,6 +5886,78 @@ mod tests {
         drop(sidecar);
     }
 
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn arrival_verifier_mode_accepts_only_its_explicit_epoch_zero_descriptor() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("sidecar.exe");
+        fs::write(&executable, b"captured sidecar executable").unwrap();
+        let template = CommandSpec::sidecar_template(&executable).unwrap();
+        let original_identity = template.identity.clone();
+        let verifier = template.with_arrival_verifier().unwrap();
+        assert_eq!(verifier.identity, original_identity);
+        assert_eq!(verifier.args, ["--arrival-verifier"]);
+        assert!(StartupMode::ArrivalVerifier.matches_sidecar(&verifier));
+        assert!(!StartupMode::Gameplay(0).matches_sidecar(&verifier));
+        assert!(matches!(
+            verifier.clone().with_session_epoch(0),
+            Err(ProcessError::InvalidArgument)
+        ));
+        assert!(matches!(
+            verifier.clone().with_arrival_verifier(),
+            Err(ProcessError::InvalidArgument)
+        ));
+
+        let sidecar = LocalSidecar::bind_arrival_verifier().await.unwrap();
+        let descriptor = sidecar.session_descriptor();
+        assert!(validate_arrival_verifier_descriptor(&descriptor).is_ok());
+        assert!(matches!(
+            validate_descriptor(&descriptor, 0),
+            Err(ProcessError::Descriptor)
+        ));
+        let workspace = SessionWorkspace::create(directory.path()).unwrap();
+        let bridge = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../bridge")
+            .canonicalize()
+            .unwrap();
+        materialize_arrival_verifier_bridge_session(&workspace, &bridge, &descriptor).unwrap();
+        assert!(workspace.path().join("session.lua").exists());
+        assert!(matches!(
+            materialize_bridge_session(&workspace, &bridge, &descriptor, 0),
+            Err(ProcessError::Descriptor)
+        ));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn arrival_verifier_descriptor_rejects_epoch_and_endpoint_forgery() {
+        let sidecar = LocalSidecar::bind_arrival_verifier().await.unwrap();
+        let descriptor = sidecar.session_descriptor();
+        for (path, replacement) in [
+            ("session_epoch", serde_json::json!(1)),
+            ("bridge", serde_json::json!({"host": "127.0.0.2"})),
+            ("control", serde_json::json!({"host": "127.0.0.2"})),
+        ] {
+            let mut value = serde_json::to_value(&descriptor).unwrap();
+            if path == "session_epoch" {
+                value[path] = replacement;
+            } else {
+                value[path]["host"] = replacement["host"].clone();
+            }
+            if let Ok(forged) = serde_json::from_value(value) {
+                assert!(matches!(
+                    validate_arrival_verifier_descriptor(&forged),
+                    Err(ProcessError::Descriptor)
+                ));
+            }
+        }
+        let gameplay = LocalSidecar::bind_with_epoch(7).await.unwrap();
+        assert!(matches!(
+            validate_arrival_verifier_descriptor(&gameplay.session_descriptor()),
+            Err(ProcessError::Descriptor)
+        ));
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn existing_executable_binding_fails_closed_as_unsupported_platform() {
@@ -6341,6 +6558,66 @@ mod tests {
         assert!(!rom.exists());
         assert!(!marker.exists());
         assert!(!rom.with_extension("sav").exists());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn verifier_start_failure_cleans_staged_rom_and_marker() {
+        let directory = tempdir().unwrap();
+        let sidecar_path = directory.path().join("invalid-sidecar.exe");
+        let mgba_path = directory.path().join("mgba.exe");
+        let rom = directory.path().join("verifier.gba");
+        fs::write(&sidecar_path, b"invalid executable image").unwrap();
+        fs::write(&mgba_path, b"bound emulator image").unwrap();
+        fs::write(&rom, b"bound verifier rom").unwrap();
+        let marker = staged_rom_marker_path(&rom);
+        fs::write(&marker, staged_rom_marker_contents(&rom).unwrap()).unwrap();
+        let sidecar = CommandSpec::sidecar_template(&sidecar_path)
+            .unwrap()
+            .with_arrival_verifier()
+            .unwrap();
+        let mgba = CommandSpec::mgba_owned_staged(&mgba_path, &rom, &marker).unwrap();
+        let workspace = SessionWorkspace::create(directory.path()).unwrap();
+        let bridge = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../bridge")
+            .canonicalize()
+            .unwrap();
+
+        // The fake emulator fails the pinned executable digest before either
+        // child starts; ownership cleanup must still remove its staged ROM.
+        assert!(matches!(
+            SupervisedChildren::start_arrival_verifier_with_bridge(
+                sidecar, mgba, &workspace, &bridge
+            )
+            .await,
+            Err(ProcessError::MgbaIdentity)
+        ));
+        assert!(!rom.exists());
+        assert!(!marker.exists());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn ordinary_start_with_bridge_rejects_epoch_zero_before_spawn() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("invalid-sidecar.exe");
+        let rom = directory.path().join("game.gba");
+        fs::write(&executable, b"invalid executable image").unwrap();
+        fs::write(&rom, b"bound game rom").unwrap();
+        let sidecar = CommandSpec::sidecar_template(&executable)
+            .unwrap()
+            .with_arrival_verifier()
+            .unwrap();
+        let mgba = CommandSpec::mgba(&executable, &rom).unwrap();
+        let workspace = SessionWorkspace::create(directory.path()).unwrap();
+        let bridge = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../bridge")
+            .canonicalize()
+            .unwrap();
+        assert!(matches!(
+            SupervisedChildren::start_with_bridge(sidecar, mgba, 0, &workspace, &bridge).await,
+            Err(ProcessError::InvalidArgument)
+        ));
     }
 
     #[cfg(windows)]

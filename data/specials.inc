@@ -678,3 +678,18 @@ gSpecials::
 	def_special Special_CoopGroupTravelGetOffer
 	def_special Special_CoopGroupTravelRespond
 	def_special Special_CoopGroupTravelCancel
+#if ROM_WORLD == 2
+	def_special StartGacha
+	def_special StartBlackJack
+	def_special StartDerby
+	def_special GetNewDerby
+	def_special Special_ViewVoltorbFlip
+	def_special SetMonPokeball
+	def_special StartCredits
+	def_special ChangeBoxPokemonNickname
+	def_special StartFly
+	def_special StartSnake
+	def_special StartFlappyBird
+	def_special StartMining
+	def_special StartBlockStacker
+#endif

@@ -44,12 +44,14 @@ REGIONS: Final = {
     "KANTO": "Kanto",
     "JOHTO": "Johto",
     "SEVII": "Sevii",
+    "CORMORIA": "Cormoria",
 }
 REGION_WIRE_ORDINALS: Final = {
     "HOENN": 1,
     "KANTO": 2,
     "JOHTO": 3,
     "SEVII": 4,
+    "CORMORIA": 5,
 }
 KIND_ORDER: Final = ("trainer", "gym", "badge", "fly", "event")
 KIND_PREFIX: Final = {
@@ -312,8 +314,13 @@ def validate_registry(value: Any) -> Registry:
     regions_value = value["regions"]
     if not isinstance(regions_value, list):
         raise RegistryError("regions must be an array")
+    # The frozen v1 snapshot predates Cormoria. Preserve its digest while
+    # requiring the fifth wire region in every registry version from v2 on.
+    supported_regions = list(REGION_WIRE_ORDINALS.items())
+    if version == 1:
+        supported_regions = supported_regions[:4]
     expected_regions = [
-        {"id": token, "wire": wire} for token, wire in REGION_WIRE_ORDINALS.items()
+        {"id": token, "wire": wire} for token, wire in supported_regions
     ]
     if regions_value != expected_regions:
         raise RegistryError(
@@ -382,6 +389,8 @@ def validate_registry(value: Any) -> Registry:
                 raw_entry["ordinal"], f"{context}.ordinal", 0, 0xFFFF
             )
         region, local_key = parse_qualified_id(raw_entry["id"], kind, context)
+        if region not in {entry["id"] for entry in expected_regions}:
+            raise RegistryError(f"{context}.id has region unavailable in registry v{version}")
         qualified_id = raw_entry["id"]
         if qualified_id in seen_ids:
             raise RegistryError(f"duplicate qualified identity {qualified_id}")
@@ -408,11 +417,25 @@ def validate_registry(value: Any) -> Registry:
             )
             legacy_symbol_raw = raw_entry["legacy_symbol"]
             expected_prefix = "TRAINER_" if kind == "trainer" else "FLAG_"
-            if (
-                not isinstance(legacy_symbol_raw, str)
-                or not LOCAL_KEY_PATTERN.fullmatch(legacy_symbol_raw)
-                or not legacy_symbol_raw.startswith(expected_prefix)
-            ):
+            if region == "CORMORIA" and kind == "trainer":
+                expected_prefix = "Cormoria_TRAINER_"
+                valid_symbol = (
+                    isinstance(legacy_symbol_raw, str)
+                    and re.fullmatch(r"Cormoria_TRAINER_[A-Z0-9_]+", legacy_symbol_raw)
+                )
+            elif region == "CORMORIA" and kind == "badge":
+                expected_prefix = "Cormoria_FLAG_"
+                valid_symbol = (
+                    isinstance(legacy_symbol_raw, str)
+                    and re.fullmatch(r"Cormoria_FLAG_[A-Z0-9_]+", legacy_symbol_raw)
+                )
+            else:
+                valid_symbol = (
+                    isinstance(legacy_symbol_raw, str)
+                    and LOCAL_KEY_PATTERN.fullmatch(legacy_symbol_raw)
+                    and legacy_symbol_raw.startswith(expected_prefix)
+                )
+            if not valid_symbol:
                 raise RegistryError(
                     f"{context}.legacy_symbol must use the {expected_prefix} prefix"
                 )
@@ -597,6 +620,7 @@ def render_c_source(registry: Registry) -> str:
         "/* Do not edit; update data/coop/regional_identities.json. */",
         '#include "global.h"',
         '#include "constants/flags.h"',
+        '#include "constants/cormoria_event_ids.h"',
         '#include "constants/opponents.h"',
         '#include "coop/generated_regional_identities.h"',
         "",

@@ -253,6 +253,10 @@ gScriptCmdTable::
 	script_cmd_table_entry SCR_OP_DYNMULTIPUSH                  ScrCmd_dynmultipush,                requests_effects=1  @ 0xe4
 	script_cmd_table_entry SCR_OP_HIDEFOLLOWER                  ScrCmd_hidefollower,                requests_effects=1  @ 0xe5
 	script_cmd_table_entry SCR_OP_GETBRAILLESTRINGWIDTH         ScrCmd_getbraillestringwidth,       requests_effects=1  @ 0xe6
+	script_cmd_table_entry SCR_OP_CORMORIA_QUESTMENU             ScrCmd_CormoriaQuestMenu,           requests_effects=1  @ 0xe7
+	script_cmd_table_entry SCR_OP_CORMORIA_SUBQUESTMENU          ScrCmd_CormoriaSubquestMenu,        requests_effects=1  @ 0xe8
+	script_cmd_table_entry SCR_OP_CORMORIA_RETURNQUESTSTATE      ScrCmd_CormoriaReturnQuestState,    requests_effects=1  @ 0xe9
+	script_cmd_table_entry SCR_OP_CORMORIA_CHECKPARTYMOVE        ScrCmd_CormoriaCheckPartyMove,      requests_effects=1  @ 0xea
 
 	.if ALLOCATE_SCRIPT_CMD_TABLE
 gScriptCmdTableEnd::

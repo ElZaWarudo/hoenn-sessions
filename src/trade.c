@@ -4723,13 +4723,16 @@ static void CB2_SaveAndEndTrade(void)
         DrawTextOnTradeWindow(0, gStringVar4, 0);
         break;
     case 50:
+        SetContinueGameWarpStatusToDynamicWarp();
+        if (LinkFullSave_Init())
+        {
+            (void)Save_HandleBlockedLinkSave();
+            break;
+        }
         if (!InUnionRoom())
             IncrementGameStat(GAME_STAT_POKEMON_TRADES);
         if (gWirelessCommType)
             MysteryGift_TryIncrementStat(CARD_STAT_NUM_TRADES, gLinkPlayers[GetMultiplayerId() ^ 1].trainerId);
-
-        SetContinueGameWarpStatusToDynamicWarp();
-        LinkFullSave_Init();
         gMain.state++;
         sTradeAnim->timer = 0;
         break;
@@ -4740,6 +4743,8 @@ static void CB2_SaveAndEndTrade(void)
     case 52:
         if (LinkFullSave_WriteSector())
         {
+            if (Save_HandleBlockedLinkSave())
+                break;
             ClearContinueGameWarpStatus2();
             gMain.state = 4;
         }
@@ -4752,6 +4757,8 @@ static void CB2_SaveAndEndTrade(void)
         break;
     case 4:
         LinkFullSave_ReplaceLastSector();
+        if (Save_HandleBlockedLinkSave())
+            break;
         gMain.state = 40;
         sTradeAnim->timer = 0;
         break;
@@ -4780,6 +4787,8 @@ static void CB2_SaveAndEndTrade(void)
         if (_IsLinkTaskFinished())
         {
             LinkFullSave_SetLastSectorSignature();
+            if (Save_HandleBlockedLinkSave())
+                break;
             gMain.state = 5;
         }
         break;
@@ -5022,11 +5031,15 @@ static void CB2_SaveAndEndWirelessTrade(void)
     case 2:
         if (_IsLinkTaskFinished())
         {
-            gMain.state = 3;
             StringExpandPlaceholders(gStringVar4, gText_SavingDontTurnOffPower);
             DrawTextOnTradeWindow(0, gStringVar4, 0);
+            if (LinkFullSave_Init())
+            {
+                (void)Save_HandleBlockedLinkSave();
+                break;
+            }
+            gMain.state = 3;
             IncrementGameStat(GAME_STAT_POKEMON_TRADES);
-            LinkFullSave_Init();
             sTradeAnim->timer = 0;
         }
         break;
@@ -5037,6 +5050,8 @@ static void CB2_SaveAndEndWirelessTrade(void)
     case 4:
         if (LinkFullSave_WriteSector())
         {
+            if (Save_HandleBlockedLinkSave())
+                break;
             gMain.state = 5;
         }
         else
@@ -5047,6 +5062,8 @@ static void CB2_SaveAndEndWirelessTrade(void)
         break;
     case 5:
         LinkFullSave_ReplaceLastSector();
+        if (Save_HandleBlockedLinkSave())
+            break;
         gMain.state = 6;
         sTradeAnim->timer = 0;
         break;
@@ -5075,6 +5092,8 @@ static void CB2_SaveAndEndWirelessTrade(void)
         if (_IsLinkTaskFinished())
         {
             LinkFullSave_SetLastSectorSignature();
+            if (Save_HandleBlockedLinkSave())
+                break;
             gMain.state = 9;
         }
         break;

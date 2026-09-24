@@ -482,6 +482,26 @@ enum
     OBJ_EVENT_GFX_JOHTO_SHARED_WOMAN_3,
     OBJ_EVENT_GFX_JOHTO_SHARED_WORKER_M,
     OBJ_EVENT_GFX_JOHTO_SHARED_YOUNGSTER,
+
+    /* CORMORIA_OBJECT_GRAPHICS_IDS
+     *
+     * These IDs are append-only regional identities.  The Cormoria map
+     * corpus uses the donor spellings directly, so the names stay stable
+     * while the pointer table and assets are selected by ROM_WORLD.
+     */
+    OBJ_EVENT_GFX_BUG_CATCHER_F,
+    OBJ_EVENT_GFX_GUBUKING_NORMAL,
+    OBJ_EVENT_GFX_LEADER_ARIANA,
+    OBJ_EVENT_GFX_LEADER_CARONA,
+    OBJ_EVENT_GFX_LEADER_GLORIA,
+    OBJ_EVENT_GFX_LEADER_INGER,
+    OBJ_EVENT_GFX_LEADER_JANIA,
+    OBJ_EVENT_GFX_LEADER_RAAZI,
+    OBJ_EVENT_GFX_LEADER_VINIEL,
+    OBJ_EVENT_GFX_PROF_TENEBRIS,
+    OBJ_EVENT_GFX_SHUBUBU_NORMAL,
+    OBJ_EVENT_GFX_SKIIER_F,
+    OBJ_EVENT_GFX_TMHM_BALL,
     NUM_OBJ_EVENT_GFX,
 };
 
@@ -722,6 +742,10 @@ enum
 #define OBJ_EVENT_PAL_TAG_JOHTO_SHARED_RED                   0x1246
 #define OBJ_EVENT_PAL_TAG_JOHTO_SHARED_ROCKET_1              0x1247
 #define OBJ_EVENT_PAL_TAG_JOHTO_SHARED_TOWER_BEAM            0x1248
+
+/* CORMORIA_OBJECT_GRAPHICS_PALETTE_TAGS */
+#define OBJ_EVENT_PAL_TAG_CORMORIA_GUBUKING                  0x1300
+#define OBJ_EVENT_PAL_TAG_CORMORIA_SHUBUBU                   0x1301
 #define OBJ_EVENT_PAL_TAG_NONE                    0x11FF
 
 // This + localId is used as the tileTag

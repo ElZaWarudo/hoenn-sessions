@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod arrival_verifier;
 pub mod auth;
 pub mod compat;
 pub mod desktop;
@@ -12,18 +13,19 @@ pub mod online;
 pub mod process;
 pub mod realtime;
 pub mod recovery;
+pub mod rom_travel;
 pub mod session;
 pub mod update;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
 
 pub use auth::{AuthApi, AuthError, AuthSession};
-pub use compat::{BuildCompatibility, CompatibilityError};
+pub use compat::{BuildCompatibility, CompatibilityError, SelectedRomWorld};
+pub use coop_cloud::TrustedManifestKey;
 pub use desktop::{
-    AuthFlow, AuthRequest, AuthFailure, BlockReason, BootstrapInput, Command,
-    CommandRejection, Controller, Dispatch, Effect, RecoveryReason, RecoveryResult,
-    ReleaseReadiness, RetryTarget, Secret, ServiceFailure, SignOutFailure, StartFailure,
-    State, Status, UiModel, UpdateFailure,
+    AuthFailure, AuthFlow, AuthRequest, BlockReason, BootstrapInput, Command, CommandRejection,
+    Controller, Dispatch, Effect, RecoveryReason, RecoveryResult, ReleaseReadiness, RetryTarget,
+    Secret, ServiceFailure, SignOutFailure, StartFailure, State, Status, UiModel, UpdateFailure,
 };
 pub use epoch::{EpochError, EpochRecord, EpochStore};
 pub use group_travel::{GroupTravelError, GroupTravelFuture};
@@ -43,21 +45,23 @@ pub use recovery::{
 };
 pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};
 pub use update::{
-    AcceptedGeneration, ArtifactIdentity, ArtifactPayload, ArtifactSet, GenerationArtifact, GenerationHandoff,
-    GenerationStore, InstalledGeneration, ReleaseDescriptor, ReleaseStore, SignedReleaseEnvelope,
-    TrustedReleaseKey, UpdateError, VerifiedRelease, MAX_ARTIFACT_BYTES, MAX_ENVELOPE_BYTES,
+    AcceptedGeneration, ArtifactIdentity, ArtifactPayload, ArtifactSet, GenerationArtifact,
+    GenerationHandoff, GenerationStore, InstalledGeneration, MAX_ARTIFACT_BYTES,
+    MAX_ENVELOPE_BYTES, ReleaseDescriptor, ReleaseStore, SignedReleaseEnvelope, TrustedReleaseKey,
+    UpdateError, VerifiedRelease,
 };
-pub use coop_cloud::TrustedManifestKey;
 
 use std::time::Duration;
 
 use coop_cloud::{
-    AcquireLeaseRequest, ArtifactIdentity as CloudArtifactIdentity, CharacterId, HeartbeatLeaseRequest, LeaseContract,
-    LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, PrepareSnapshotRequest,
-    ReconnectLeaseRequest, RefreshRequest, RefreshResponse, RegisterRequest, RegisterResponse,
-    ReleaseLeaseRequest, Revision, SignedManifestEnvelope, SnapshotFinalizeRequest,
-    SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord,
-    SnapshotRestoreRequest, SnapshotRestoreResponse, UploadTarget,
+    AcquireLeaseRequest, ArtifactIdentity as CloudArtifactIdentity, CharacterId,
+    HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest,
+    LogoutResponse, PrepareSnapshotRequest, ReconnectLeaseRequest, RefreshRequest, RefreshResponse,
+    RegisterRequest, RegisterResponse, ReleaseLeaseRequest, Revision, RomHandoffCommitRequest,
+    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
+    RomHandoffRecoveryStatus, SignedManifestEnvelope, SnapshotFinalizeRequest, SnapshotListRequest,
+    SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest,
+    SnapshotRestoreResponse, UploadTarget,
 };
 use reqwest::{Client, Method, StatusCode, Url};
 use thiserror::Error;
@@ -271,6 +275,32 @@ async fn bounded_body(
     Ok(body)
 }
 
+/// Correlates the finalized commit response with the request fence and
+/// lineage before exposing it to the coordinator. The commit request does
+/// not carry a destination world, so the coordinator must compare
+/// `rom_world_id` with the prepared handoff response separately.
+fn validate_committed_handoff(
+    request: &RomHandoffCommitRequest,
+    response: &SnapshotRecord,
+) -> Result<(), SessionError> {
+    response.validate().map_err(|_| SessionError::Cloud)?;
+    let next_revision = request
+        .expected_revision
+        .next()
+        .map_err(|_| SessionError::Cloud)?;
+    if response.api_version != coop_cloud::ApiVersion::V1
+        || response.snapshot_id != request.stage_id
+        || response.character_id != request.character_id
+        || response.session_id != request.session_id
+        || response.session_epoch != request.session_epoch
+        || response.parent_revision != request.expected_revision
+        || response.revision != next_revision
+    {
+        return Err(SessionError::Cloud);
+    }
+    Ok(())
+}
+
 type AResult<'a, T> = auth::AuthFuture<'a, T>;
 
 impl AuthApi for ReqwestCloudApi {
@@ -332,6 +362,155 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn reconcile_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        character_id: CharacterId,
+        idempotency_key: coop_cloud::IdempotencyKey,
+    ) -> session::CloudFuture<'a, RomHandoffRecoveryStatus> {
+        Box::pin(async move {
+            let fence = auth.active_fence().ok_or(SessionError::Lease)?;
+            if fence.character_id != character_id {
+                return Err(SessionError::Lease);
+            }
+            let url = self
+                .url(&format!(
+                    "v1/characters/{character_id}/rom-handoff/reconcile"
+                ))
+                .map_err(|_| SessionError::Cloud)?;
+            let request = RomHandoffRecoveryRequest {
+                api_version: coop_cloud::ApiVersion::V1,
+                character_id,
+                idempotency_key,
+            };
+            let response: RomHandoffRecoveryStatus = self
+                .send_json(
+                    self.authenticated_with_fence(Method::POST, url, auth, fence)
+                        .map_err(map_cloud_error)?
+                        .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            let (revision, key) = match &response {
+                RomHandoffRecoveryStatus::Staged {
+                    expected_revision,
+                    idempotency_key,
+                    ..
+                }
+                | RomHandoffRecoveryStatus::Aborted {
+                    expected_revision,
+                    idempotency_key,
+                    ..
+                } => (expected_revision, idempotency_key),
+            };
+            if *revision != fence.current_revision || *key != idempotency_key {
+                return Err(SessionError::Cloud);
+            }
+            Ok(response)
+        })
+    }
+    fn prepare_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: RomHandoffPrepareRequest,
+    ) -> session::CloudFuture<'a, RomHandoffPrepareResponse> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/characters/{}/rom-handoff/prepare",
+                    request.character_id
+                ))
+                .map_err(|_| SessionError::Cloud)?;
+            let response: RomHandoffPrepareResponse = self
+                .send_json(
+                    self.authenticated_with_fence(
+                        Method::POST,
+                        url,
+                        auth,
+                        LeaseFence::new(
+                            request.session_id,
+                            request.character_id,
+                            request.expected_revision,
+                            request.session_epoch,
+                            request.client_instance_id,
+                        ),
+                    )
+                    .map_err(map_cloud_error)?
+                    .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            if response.api_version != coop_cloud::ApiVersion::V1
+                || response.destination_save_sha256
+                    != coop_cloud::Sha256Digest::of_bytes(&response.destination_save)
+            {
+                return Err(SessionError::Cloud);
+            }
+            Ok(response)
+        })
+    }
+    fn commit_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: RomHandoffCommitRequest,
+    ) -> session::CloudFuture<'a, SnapshotRecord> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/characters/{}/rom-handoff/commit",
+                    request.character_id
+                ))
+                .map_err(|_| SessionError::Cloud)?;
+            let response = self
+                .send_json(
+                    self.authenticated_with_fence(
+                        Method::POST,
+                        url,
+                        auth,
+                        LeaseFence::new(
+                            request.session_id,
+                            request.character_id,
+                            request.expected_revision,
+                            request.session_epoch,
+                            request.client_instance_id,
+                        ),
+                    )
+                    .map_err(map_cloud_error)?
+                    .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_cloud_error)?;
+            validate_committed_handoff(&request, &response)?;
+            Ok(response)
+        })
+    }
+    fn abort_rom_handoff<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        character_id: CharacterId,
+        stage_id: coop_cloud::SnapshotId,
+    ) -> session::CloudFuture<'a, ()> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/characters/{character_id}/rom-handoff/{stage_id}"
+                ))
+                .map_err(|_| SessionError::Cloud)?;
+            let fence = auth.active_fence().ok_or(SessionError::Lease)?;
+            if fence.character_id != character_id {
+                return Err(SessionError::Lease);
+            }
+            self.send_empty(
+                self.authenticated_with_fence(Method::DELETE, url, auth, fence)
+                    .map_err(map_cloud_error)?,
+            )
+            .await
+            .map_err(map_cloud_error)
+        })
+    }
     fn group_travel_create(
         &self,
         token: coop_cloud::AccessToken,
@@ -703,12 +882,16 @@ impl CloudApi for ReqwestCloudApi {
 
 #[cfg(test)]
 mod tests {
-    use super::{HttpClientError, ReqwestCloudApi, bounded_body, map_acquire_error, map_cloud_error};
+    use super::{
+        HttpClientError, ReqwestCloudApi, bounded_body, map_acquire_error, map_cloud_error,
+    };
     use crate::{AuthError, AuthSession, CloudApi, RefreshTokenStore, SessionError};
     use coop_cloud::{
-        AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
-        LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId, RefreshToken,
-        SessionEpoch, SessionId, UnixTimestampMillis, UploadTarget, UserId,
+        AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId,
+        HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId,
+        RefreshToken, RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
+        RomHandoffRecoveryStatus, SessionEpoch, SessionId, SnapshotFence, SnapshotFile, SnapshotId,
+        SnapshotRecord, UnixTimestampMillis, UploadTarget, UserId,
     };
     use reqwest::StatusCode;
     use std::sync::Arc;
@@ -934,6 +1117,243 @@ mod tests {
         )
         .unwrap();
         api.upload(&target, b"save-bytes".to_vec()).await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rom_handoff_prepare_commit_and_abort_use_fenced_character_routes() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (user_id, character_id, session_id, client_instance_id, family_id) = test_ids();
+        let stage_id = SnapshotId::new(Uuid::from_u128(206)).unwrap();
+        let source_id = SnapshotId::new(Uuid::from_u128(207)).unwrap();
+        let prepare_key = coop_cloud::IdempotencyKey::new(Uuid::from_u128(208)).unwrap();
+        let digest = coop_cloud::Sha256Digest::of_bytes(b"destination");
+        let login = LoginResponse::new(
+            user_id,
+            character_id,
+            AccessToken::new("http-access").unwrap(),
+            RefreshToken::new("http-refresh").unwrap(),
+            family_id,
+            UnixTimestampMillis::new(4_000_000_000_000),
+            UnixTimestampMillis::new(4_000_000_100_000),
+        )
+        .unwrap();
+        let response = RomHandoffPrepareResponse {
+            api_version: coop_cloud::ApiVersion::V1,
+            stage_id,
+            destination_world_id: coop_protocol::RomWorldId::new(2).unwrap(),
+            arrival_portal_id: "from_previous".to_owned(),
+            destination_save_sha256: digest,
+            destination_save: b"destination".to_vec(),
+        };
+        let login_body = serde_json::to_vec(&login).unwrap();
+        let mut bad_response = response.clone();
+        bad_response.destination_save_sha256 = coop_cloud::Sha256Digest::of_bytes(b"wrong");
+        let bad_response_body = serde_json::to_vec(&bad_response).unwrap();
+        let response_body = serde_json::to_vec(&response).unwrap();
+        let recovery = RomHandoffRecoveryStatus::Aborted {
+            stage_id,
+            source_snapshot_id: source_id,
+            source_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+            expected_revision: coop_cloud::Revision::new(1),
+            idempotency_key: prepare_key,
+        };
+        let recovery_body = serde_json::to_vec(&recovery).unwrap();
+        let commit_record = |snapshot_id, parent_revision, revision| {
+            SnapshotRecord::new(
+                snapshot_id,
+                coop_protocol::RomWorldId::new(2).unwrap(),
+                SnapshotFence::new(session_id, character_id, SessionEpoch::new(1).unwrap()),
+                parent_revision,
+                revision,
+                vec![
+                    SnapshotFile::from_bytes(CloudArtifactIdentity::CharacterSav, b"destination")
+                        .unwrap(),
+                    SnapshotFile::from_bytes(CloudArtifactIdentity::PendingCommits, b"[]").unwrap(),
+                ],
+                coop_cloud::Sha256Digest::of_bytes(b"[]"),
+                None,
+                UnixTimestampMillis::new(4_000_000_000_000),
+            )
+            .unwrap()
+        };
+        let wrong_stage_body = serde_json::to_vec(&commit_record(
+            SnapshotId::new(Uuid::from_u128(210)).unwrap(),
+            coop_cloud::Revision::new(1),
+            coop_cloud::Revision::new(2),
+        ))
+        .unwrap();
+        let wrong_revision_body = serde_json::to_vec(&commit_record(
+            stage_id,
+            coop_cloud::Revision::new(2),
+            coop_cloud::Revision::new(3),
+        ))
+        .unwrap();
+        let committed_body = serde_json::to_vec(&commit_record(
+            stage_id,
+            coop_cloud::Revision::new(1),
+            coop_cloud::Revision::new(2),
+        ))
+        .unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = read_http_request(&mut stream).await;
+            write_response(&mut stream, "200 OK", &login_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            let lower = request.to_ascii_lowercase();
+            assert!(request.starts_with(&format!(
+                "POST /v1/characters/{character_id}/rom-handoff/reconcile HTTP/1.1\r\n"
+            )));
+            assert!(lower.contains("authorization: bearer http-access"));
+            assert!(lower.contains(&format!("x-coop-session-id: {session_id}")));
+            assert!(lower.contains("x-coop-session-epoch: 1"));
+            assert!(lower.contains(&format!("x-coop-client-instance-id: {client_instance_id}")));
+            assert!(request.contains(&format!("\"idempotency_key\":\"{prepare_key}\"")));
+            write_response(&mut stream, "200 OK", &recovery_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            assert!(request.starts_with(&format!(
+                "POST /v1/characters/{character_id}/rom-handoff/prepare HTTP/1.1\r\n"
+            )));
+            write_response(&mut stream, "200 OK", &bad_response_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            let lower = request.to_ascii_lowercase();
+            assert!(request.starts_with(&format!(
+                "POST /v1/characters/{character_id}/rom-handoff/prepare HTTP/1.1\r\n"
+            )));
+            assert!(lower.contains("authorization: bearer http-access"));
+            assert!(lower.contains(&format!("x-coop-session-id: {session_id}")));
+            assert!(lower.contains("x-coop-session-epoch: 1"));
+            assert!(lower.contains(&format!("x-coop-client-instance-id: {client_instance_id}")));
+            assert!(request.contains("\"portal_id\":\"to_next\""));
+            write_response(&mut stream, "200 OK", &response_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            assert!(request.starts_with(&format!(
+                "POST /v1/characters/{character_id}/rom-handoff/commit HTTP/1.1\r\n"
+            )));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer http-access")
+            );
+            write_response(&mut stream, "200 OK", &wrong_stage_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            assert!(request.starts_with(&format!(
+                "POST /v1/characters/{character_id}/rom-handoff/commit HTTP/1.1\r\n"
+            )));
+            write_response(&mut stream, "200 OK", &wrong_revision_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            assert!(request.starts_with(&format!(
+                "POST /v1/characters/{character_id}/rom-handoff/commit HTTP/1.1\r\n"
+            )));
+            write_response(&mut stream, "200 OK", &committed_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut stream).await;
+            assert!(request.starts_with(&format!(
+                "DELETE /v1/characters/{character_id}/rom-handoff/{stage_id} HTTP/1.1\r\n"
+            )));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer http-access")
+            );
+            let lower = request.to_ascii_lowercase();
+            assert!(lower.contains(&format!("x-coop-session-id: {session_id}")));
+            assert!(lower.contains("x-coop-session-epoch: 1"));
+            assert!(lower.contains(&format!("x-coop-client-instance-id: {client_instance_id}")));
+            write_response(&mut stream, "204 No Content", b"").await;
+        });
+        let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{}", address.port())).unwrap();
+        let mut auth = AuthSession::login(
+            &api,
+            &TestKeychain,
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        auth.set_active_fence(coop_cloud::LeaseFence::new(
+            session_id,
+            character_id,
+            coop_cloud::Revision::new(1),
+            SessionEpoch::new(1).unwrap(),
+            client_instance_id,
+        ));
+        assert_eq!(
+            api.reconcile_rom_handoff(&auth, character_id, prepare_key)
+                .await
+                .unwrap(),
+            recovery
+        );
+        let request = RomHandoffPrepareRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            character_id,
+            session_id,
+            session_epoch: SessionEpoch::new(1).unwrap(),
+            client_instance_id,
+            expected_revision: coop_cloud::Revision::new(1),
+            source_snapshot_id: source_id,
+            portal_id: "to_next".to_owned(),
+            idempotency_key: prepare_key,
+        };
+        assert!(
+            api.prepare_rom_handoff(&auth, request.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            api.prepare_rom_handoff(&auth, request).await.unwrap(),
+            response
+        );
+        let commit_request = RomHandoffCommitRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            character_id,
+            session_id,
+            session_epoch: SessionEpoch::new(1).unwrap(),
+            client_instance_id,
+            expected_revision: coop_cloud::Revision::new(1),
+            stage_id,
+            destination_save_sha256: digest,
+            idempotency_key: coop_cloud::IdempotencyKey::new(Uuid::from_u128(208)).unwrap(),
+        };
+        assert!(matches!(
+            api.commit_rom_handoff(
+                &auth,
+                RomHandoffCommitRequest {
+                    stage_id: SnapshotId::new(Uuid::from_u128(211)).unwrap(),
+                    ..commit_request.clone()
+                }
+            )
+            .await,
+            Err(SessionError::Cloud)
+        ));
+        assert!(matches!(
+            api.commit_rom_handoff(&auth, commit_request.clone()).await,
+            Err(SessionError::Cloud)
+        ));
+        assert_eq!(
+            api.commit_rom_handoff(&auth, commit_request)
+                .await
+                .unwrap()
+                .snapshot_id,
+            stage_id
+        );
+        api.abort_rom_handoff(&auth, character_id, stage_id)
+            .await
+            .unwrap();
         server.await.unwrap();
     }
 

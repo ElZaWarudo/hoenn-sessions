@@ -1,10 +1,9 @@
-//! Additive, read-only validation for the schema-two co-op payload.
+//! Schema-two validation and an inactive, crate-private sector writer.
 //!
 //! Schema two keeps the version-one fields byte-identical and consumes the
 //! former reserved area for a fifth, Cormoria progress record.  This module
-//! deliberately parses only an already reassembled payload; the active
-//! whole-image parser and writer remain schema-one APIs until migration and
-//! runtime support are complete.
+//! deliberately keeps projection private to this crate until transfer
+//! ownership and rekey rules are complete.
 
 use coop_protocol::{
     IdentityKind, RegionId,
@@ -117,6 +116,246 @@ impl ValidatedSaveV2 {
     pub const fn coop(&self) -> &CoopSaveV2 {
         &self.coop
     }
+
+    /// Clone this image and patch only explicitly approved, checksummed bytes
+    /// of its ROM-selected logical sectors. This is a low-level projection
+    /// primitive; it does not decide field ownership or authorize travel.
+    ///
+    /// The caller must supply an audited allowlist. Sector footers, the other
+    /// slot, SaveBlock3, and the optional RTC trailer are never patch targets.
+    /// The result is reparsed and must retain the destination character and
+    /// schema-two co-op state.
+    ///
+    /// # Errors
+    ///
+    /// Rejects empty, overlapping, out-of-range or unapproved patches, and
+    /// any result that fails full save validation or changes protected state.
+    #[allow(dead_code)] // Dormant until the audited transfer adapter exists.
+    pub(crate) fn project_selected_sectors(
+        &self,
+        approved: &[ApprovedSectorSpan],
+        patches: &[SelectedSectorPatch<'_>],
+    ) -> Result<Self, SectorProjectionError> {
+        if patches.is_empty() || approved.is_empty() {
+            return Err(SectorProjectionError::InvalidPatch);
+        }
+        let mut touched = [false; super::SECTORS_PER_SLOT];
+        let mut ranges = Vec::with_capacity(patches.len());
+        for patch in patches {
+            let logical = usize::from(patch.logical_id);
+            let Some(&payload_size) = super::LOGICAL_SECTOR_DATA_SIZES.get(logical) else {
+                return Err(SectorProjectionError::InvalidPatch);
+            };
+            let Some(end) = patch.offset.checked_add(patch.bytes.len()) else {
+                return Err(SectorProjectionError::InvalidPatch);
+            };
+            if patch.bytes.is_empty() || end > payload_size {
+                return Err(SectorProjectionError::InvalidPatch);
+            }
+            let authorized = approved.iter().any(|span| {
+                span.logical_id == patch.logical_id
+                    && span.offset <= patch.offset
+                    && span
+                        .offset
+                        .checked_add(span.len)
+                        .is_some_and(|limit| end <= limit && limit <= payload_size)
+            });
+            if !authorized
+                || ranges.iter().any(|&(id, start, stop)| {
+                    id == patch.logical_id && patch.offset < stop && start < end
+                })
+            {
+                return Err(SectorProjectionError::UnapprovedOrOverlapping);
+            }
+            ranges.push((patch.logical_id, patch.offset, end));
+            touched[logical] = true;
+        }
+
+        let mut raw = self.raw.to_vec();
+        for patch in patches {
+            let sector = self.logical_sector_offsets[usize::from(patch.logical_id)];
+            let start = sector + patch.offset;
+            raw[start..start + patch.bytes.len()].copy_from_slice(patch.bytes);
+        }
+        for (logical, changed) in touched.into_iter().enumerate() {
+            if changed {
+                let sector = self.logical_sector_offsets[logical];
+                let checksum = super::sector_checksum(
+                    &raw[sector..sector + super::LOGICAL_SECTOR_DATA_SIZES[logical]],
+                );
+                raw[sector + super::SECTOR_CHECKSUM_OFFSET
+                    ..sector + super::SECTOR_CHECKSUM_OFFSET + 2]
+                    .copy_from_slice(&checksum.to_le_bytes());
+            }
+        }
+
+        let reparsed = parse_v2(&raw, self.coop.registry)?;
+        if reparsed.selected_slot != self.selected_slot
+            || reparsed.counter != self.counter
+            || reparsed.logical_sector_offsets != self.logical_sector_offsets
+            || !reparsed
+                .character_lineage
+                .same_trainer(self.character_lineage)
+            || reparsed.coop != self.coop
+        {
+            return Err(SectorProjectionError::ProtectedStateChanged);
+        }
+        Ok(reparsed)
+    }
+
+    /// Copy one already validated co-op record into this image's selected
+    /// SaveBlock3 chunks. Only a journaled caller may decide that `source` is
+    /// authoritative; this primitive does not make that decision or write a
+    /// file. The source CRC is already sealed by `parse_v2` and is validated
+    /// again after the logical chunks are mapped into destination sectors.
+    pub(crate) fn project_coop_from(&self, source: &Self) -> Result<Self, SectorProjectionError> {
+        if !self
+            .character_lineage
+            .same_trainer(source.character_lineage)
+            || self.coop.registry != source.coop.registry
+        {
+            return Err(SectorProjectionError::SourceMismatch);
+        }
+        let mut raw = self.raw.to_vec();
+        let start = super::COOP_SAVE_OFFSET;
+        for (index, &byte) in source.save_block3[start..start + COOP_SAVE_V2_SIZE]
+            .iter()
+            .enumerate()
+        {
+            let save_block3_offset = start + index;
+            let logical = save_block3_offset / super::SAVE_BLOCK3_CHUNK_SIZE;
+            let chunk_offset = save_block3_offset % super::SAVE_BLOCK3_CHUNK_SIZE;
+            let sector = self.logical_sector_offsets[logical];
+            raw[sector + super::SAVE_BLOCK3_CHUNK_OFFSET + chunk_offset] = byte;
+        }
+        let reparsed = parse_v2(&raw, self.coop.registry)?;
+        if reparsed.selected_slot != self.selected_slot
+            || reparsed.counter != self.counter
+            || reparsed.logical_sector_offsets != self.logical_sector_offsets
+            || reparsed.character_lineage != self.character_lineage
+            || reparsed.coop != source.coop
+        {
+            return Err(SectorProjectionError::ProtectedStateChanged);
+        }
+        Ok(reparsed)
+    }
+
+    /// Bind a newly created destination-world save template to the source
+    /// trainer before the first shared-player projection. The travel
+    /// coordinator must prove that this template has never been active for a
+    /// character; this primitive does not make that authority decision.
+    /// Existing destination saves must go straight to shared projection.
+    /// Only the selected slot's stable name, gender, and trainer ID change.
+    #[allow(dead_code)] // Dormant until the one-time travel coordinator fences first arrival.
+    pub(crate) fn bind_fresh_template_trainer(
+        &self,
+        source: &Self,
+    ) -> Result<Self, SectorProjectionError> {
+        if self.coop.registry != source.coop.registry {
+            return Err(SectorProjectionError::SourceMismatch);
+        }
+        let source_identity = source.character_lineage;
+        let mut raw = self.raw.to_vec();
+        let sector = self.logical_sector_offsets[0];
+        raw[sector + super::PLAYER_NAME_OFFSET
+            ..sector + super::PLAYER_NAME_OFFSET + super::PLAYER_NAME_SIZE]
+            .copy_from_slice(&source_identity.player_name);
+        raw[sector + super::PLAYER_GENDER_OFFSET] = source_identity.player_gender;
+        raw[sector + super::PLAYER_TRAINER_ID_OFFSET
+            ..sector + super::PLAYER_TRAINER_ID_OFFSET + super::PLAYER_TRAINER_ID_SIZE]
+            .copy_from_slice(&source_identity.player_trainer_id);
+        let checksum =
+            super::sector_checksum(&raw[sector..sector + super::LOGICAL_SECTOR_DATA_SIZES[0]]);
+        raw[sector + super::SECTOR_CHECKSUM_OFFSET..sector + super::SECTOR_CHECKSUM_OFFSET + 2]
+            .copy_from_slice(&checksum.to_le_bytes());
+        let reparsed = parse_v2(&raw, self.coop.registry)?;
+        if reparsed.selected_slot != self.selected_slot
+            || reparsed.counter != self.counter
+            || reparsed.logical_sector_offsets != self.logical_sector_offsets
+            || reparsed.coop != self.coop
+            || !reparsed.character_lineage.same_trainer(source_identity)
+            || reparsed.character_lineage.player_region != self.character_lineage.player_region
+        {
+            return Err(SectorProjectionError::ProtectedStateChanged);
+        }
+        Ok(reparsed)
+    }
+
+    /// Advance the projected co-op checkpoint generation exactly once for a
+    /// server-owned world handoff. The caller must first project the active
+    /// source's shared state, then submit this result under the same fenced
+    /// handoff; this method does not authorize either operation.
+    #[allow(dead_code)] // Dormant until the fenced handoff uses this primitive.
+    pub(crate) fn advance_transfer_generation(&self) -> Result<Self, SectorProjectionError> {
+        let generation = self
+            .coop
+            .save_generation
+            .checked_add(1)
+            .ok_or(SectorProjectionError::GenerationExhausted)?;
+        let start = super::COOP_SAVE_OFFSET;
+        let mut record = self.save_block3[start..start + COOP_SAVE_V2_SIZE].to_vec();
+        record[COOP_GENERATION_OFFSET..COOP_GENERATION_OFFSET + 4]
+            .copy_from_slice(&generation.to_le_bytes());
+        let crc = crc32fast::hash(&record[..COOP_CRC_OFFSET]);
+        record[COOP_CRC_OFFSET..COOP_CRC_OFFSET + 4].copy_from_slice(&crc.to_le_bytes());
+        let mut raw = self.raw.to_vec();
+        for (index, &byte) in record.iter().enumerate() {
+            let save_block3_offset = start + index;
+            let logical = save_block3_offset / super::SAVE_BLOCK3_CHUNK_SIZE;
+            let chunk_offset = save_block3_offset % super::SAVE_BLOCK3_CHUNK_SIZE;
+            let sector = self.logical_sector_offsets[logical];
+            raw[sector + super::SAVE_BLOCK3_CHUNK_OFFSET + chunk_offset] = byte;
+        }
+        let reparsed = parse_v2(&raw, self.coop.registry)?;
+        let mut expected_coop = self.coop.clone();
+        expected_coop.save_generation = generation;
+        expected_coop.crc32 = crc;
+        if reparsed.selected_slot != self.selected_slot
+            || reparsed.counter != self.counter
+            || reparsed.logical_sector_offsets != self.logical_sector_offsets
+            || reparsed.character_lineage != self.character_lineage
+            || reparsed.coop != expected_coop
+        {
+            return Err(SectorProjectionError::ProtectedStateChanged);
+        }
+        Ok(reparsed)
+    }
+}
+
+/// An audited writable interval in one selected logical sector's normal
+/// checksummed payload. Approval must come from a separate ownership policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)] // Dormant projection contract.
+pub(crate) struct ApprovedSectorSpan {
+    pub logical_id: u8,
+    pub offset: usize,
+    pub len: usize,
+}
+
+/// Replacement bytes for a selected logical sector's normal payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)] // Dormant projection contract.
+pub(crate) struct SelectedSectorPatch<'a> {
+    pub logical_id: u8,
+    pub offset: usize,
+    pub bytes: &'a [u8],
+}
+
+/// Selected-slot projection failure. A failed projection returns no image.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum SectorProjectionError {
+    #[error("co-op source has a different character or identity registry")]
+    SourceMismatch,
+    #[error("patch is empty or outside a checksummed logical-sector payload")]
+    InvalidPatch,
+    #[error("patch is unapproved or overlaps another patch")]
+    UnapprovedOrOverlapping,
+    #[error("projected image failed schema-two validation: {0}")]
+    Validation(#[from] SaveV2Error),
+    #[error("co-op save generation cannot advance")]
+    GenerationExhausted,
+    #[error("projection changed the selected slot, character lineage, or regional co-op state")]
+    ProtectedStateChanged,
 }
 
 /// Whole-image schema-two validation failure.

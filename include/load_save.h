@@ -4,8 +4,10 @@
 #include "pokemon_storage_system.h"
 #include "save.h"
 #include "johto/save.h"
+#include "world/event_save.h"
 
 #define SAVEBLOCK_MOVE_RANGE    128
+#define WORLD_EVENT_SAVE_SERIALIZED_TAIL_SIZE (JOHTO_SAVE_SERIALIZED_TAIL_SIZE + WORLD_EVENT_SAVE_V1_SIZE)
 
 /**
  * These structs are to prevent them from being reordered on newer or modern
@@ -20,6 +22,7 @@ struct SaveBlock2ASLR {
 struct SaveBlock1ASLR {
     struct SaveBlock1 block;
     struct JohtoSaveV1 johto;
+    struct WorldEventSaveV1 world_event;
     u8 aslr[SAVEBLOCK_MOVE_RANGE];
 };
 

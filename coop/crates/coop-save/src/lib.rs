@@ -13,9 +13,13 @@ use coop_protocol::{
 };
 use thiserror::Error;
 
+// The high-level arrival projection is deliberately small: callers choose the
+// source and destination saves, but the crate owns every field-level write.
+mod transfer;
 /// Additive parser for the inactive schema-two co-op payload.
 pub mod v2;
 
+pub use transfer::{TransferDescriptorPair, TransferError, project_arrival};
 pub use v2::{SaveV2Error, ValidatedSaveV2};
 
 /// Validates a complete Flash1M image using the explicit schema-two parser.
@@ -103,7 +107,7 @@ const PLAYER_TRAINER_ID_SIZE: usize = 4;
 /// Number of bytes from the normal sector payload covered by the game's
 /// additive checksum for each logical sector.
 pub const LOGICAL_SECTOR_DATA_SIZES: [usize; SECTORS_PER_SLOT] = [
-    3892, 3968, 3968, 3968, 3968, 636, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2400,
+    3892, 3968, 3968, 3968, 3968, 2976, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 3968, 2400,
 ];
 
 /// Expected identity-registry metadata embedded in `CoopSaveV1`.
@@ -172,6 +176,16 @@ pub struct CharacterLineage {
     pub player_region: u8,
     /// Four-byte immutable trainer ID generated with the character.
     pub player_trainer_id: [u8; PLAYER_TRAINER_ID_SIZE],
+}
+
+impl CharacterLineage {
+    /// Compare stable trainer identity before an audited projection updates
+    /// the starting-region/avatar choice in another ROM save.
+    pub(crate) fn same_trainer(self, other: Self) -> bool {
+        self.player_name == other.player_name
+            && self.player_gender == other.player_gender
+            && self.player_trainer_id == other.player_trainer_id
+    }
 }
 
 impl CoopSaveV1 {

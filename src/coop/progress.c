@@ -15,6 +15,8 @@ static s32 GetRegionSlot(enum CoopRegion region)
         return 2;
     case COOP_REGION_SEVII:
         return 3;
+    case COOP_REGION_CORMORIA:
+        return 4;
     default:
         return -1;
     }

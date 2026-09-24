@@ -105,7 +105,7 @@ struct RuntimeFixtureBackup
     struct LinkPlayerObjectEvent link_player_object_events[4];
     struct PlayerAvatar player_avatar;
     struct SaveBlock1 *save_block1;
-    struct CoopSaveV1 coop_save;
+    struct CoopSaveV2 coop_save;
     struct Coords16 save_position;
     struct WarpData save_location;
     MainCallback callback1;

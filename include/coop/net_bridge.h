@@ -38,6 +38,10 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_CLIENT = 15,
     COOP_BRIDGE_MESSAGE_COMPANION_STATE = 16,
     COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL = 17,
+    /* Raw ASCII portal ID (1..96 bytes), followed by CHECKPOINT_READY. */
+    COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST = 18,
+    /* Offline verifier proof; carries COOP_ARRIVAL_PROOF_PAYLOAD_SIZE bytes. */
+    COOP_BRIDGE_MESSAGE_ARRIVAL_PROOF = 19,
 
     COOP_BRIDGE_MESSAGE_SESSION_READY = 0x0100,
     COOP_BRIDGE_MESSAGE_REMOTE_PLAYER_SPAWN = 0x0101,
@@ -56,6 +60,8 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_GROUP_TRAVEL_SERVER = 0x010E,
     COOP_BRIDGE_MESSAGE_REMOTE_COMPANION = 0x010F,
     COOP_BRIDGE_MESSAGE_REMOTE_SOCIAL_SIGNAL = 0x0110,
+    /* Epoch-0 verifier challenge; carries exactly a 16-byte nonce. */
+    COOP_BRIDGE_MESSAGE_ARRIVAL_CHALLENGE = 0x0111,
 };
 
 enum CoopBridgeStatus
@@ -194,6 +200,11 @@ enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);
 enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
+/* Begins a cloud checkpoint for travel through a catalog portal. The ID is
+ * [a-z][a-z0-9_]*, 1..96 bytes. A successful request queues the portal intent
+ * before CHECKPOINT_READY; no travel occurs before the saved checkpoint is
+ * authenticated and committed by the host. */
+enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id);
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void);
 bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
 /* Called by the normal save path after TrySavingData has completed. A failed

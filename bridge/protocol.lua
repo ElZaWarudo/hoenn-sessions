@@ -23,6 +23,8 @@ protocol.types = {
   GROUP_TRAVEL_CLIENT = 0x000F,
   COMPANION_STATE = 0x0010,
   SOCIAL_SIGNAL = 0x0011,
+  PORTAL_TRAVEL_REQUEST = 0x0012,
+  ARRIVAL_PROOF = 0x0013,
   SESSION_READY = 0x0100,
   REMOTE_PLAYER_SPAWN = 0x0101,
   REMOTE_PLAYER_UPDATE = 0x0102,
@@ -40,6 +42,7 @@ protocol.types = {
   GROUP_TRAVEL_SERVER = 0x010E,
   REMOTE_COMPANION = 0x010F,
   REMOTE_SOCIAL_SIGNAL = 0x0110,
+  ARRIVAL_CHALLENGE = 0x0111,
 }
 
 local function is_integer(value)
@@ -49,13 +52,13 @@ end
 function protocol.is_outbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.ROM_READY
-    and message_type <= protocol.types.SOCIAL_SIGNAL
+    and message_type <= protocol.types.ARRIVAL_PROOF
 end
 
 function protocol.is_inbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.SESSION_READY
-    and message_type <= protocol.types.REMOTE_SOCIAL_SIGNAL
+    and message_type <= protocol.types.ARRIVAL_CHALLENGE
 end
 
 protocol.GROUP_TRAVEL_RECORD_SIZE = 32
@@ -141,6 +144,26 @@ function protocol.is_known(message_type)
   return protocol.is_outbound(message_type) or protocol.is_inbound(message_type)
 end
 
+function protocol.valid_portal_id(payload)
+  return type(payload) == "string"
+    and #payload >= 1 and #payload <= 96
+    and payload:match("^[a-z][a-z0-9_]*$") ~= nil
+end
+
+function protocol.decode_arrival_proof(payload)
+  if type(payload) ~= "string" or #payload ~= 64 then
+    return nil, "arrival proof must contain exactly 64 bytes"
+  end
+  local nonce, digest, world_id, generation, map_group, map_num, reserved =
+    string.unpack("<c16c32I4I4I1I1c6", payload)
+  if all_zero(nonce) or all_zero(digest) or world_id == 0 or generation == 0
+    or not all_zero(reserved) then
+    return nil, "arrival proof contains invalid or reserved fields"
+  end
+  return {nonce = nonce, save_sha256 = digest, world_id = world_id,
+    save_generation = generation, map_group = map_group, map_num = map_num}
+end
+
 function protocol.crc32(bytes)
   local crc = 0xFFFFFFFF
   for index = 1, #bytes do
@@ -179,6 +202,18 @@ function protocol.encode(message)
   if type(payload) ~= "string" or #payload > protocol.PAYLOAD_SIZE then
     return nil, "payload must be a string no longer than 128 bytes"
   end
+  if message.type == protocol.types.PORTAL_TRAVEL_REQUEST
+    and ((message.session_epoch or 0) == 0 or not protocol.valid_portal_id(payload)) then
+    return nil, "portal travel request needs an active epoch and a valid portal ID"
+  end
+  if message.type == protocol.types.ARRIVAL_CHALLENGE
+    and ((message.session_epoch or 0) ~= 0 or #payload ~= 16 or all_zero(payload)) then
+    return nil, "arrival challenge needs a nonzero epoch-0 nonce"
+  end
+  if message.type == protocol.types.ARRIVAL_PROOF
+    and ((message.session_epoch or 0) ~= 0 or not protocol.decode_arrival_proof(payload)) then
+    return nil, "arrival proof needs an epoch-0 64-byte payload"
+  end
 
   local prefix = string.pack("<I2I2I4I4", message.type, #payload, message.sequence,
     message.session_epoch or 0)
@@ -216,7 +251,19 @@ function protocol.decode(bytes, expected_direction)
   end
 
   local payload = string.sub(bytes, offset, offset + length - 1)
-  if message_type == protocol.types.GROUP_TRAVEL_CLIENT then
+  if message_type == protocol.types.PORTAL_TRAVEL_REQUEST then
+    if session_epoch == 0 or not protocol.valid_portal_id(payload) then
+      return nil, "portal travel request needs an active epoch and a valid portal ID"
+    end
+  elseif message_type == protocol.types.ARRIVAL_CHALLENGE then
+    if session_epoch ~= 0 or length ~= 16 or all_zero(payload) then
+      return nil, "arrival challenge needs a nonzero epoch-0 nonce"
+    end
+  elseif message_type == protocol.types.ARRIVAL_PROOF then
+    if session_epoch ~= 0 or not protocol.decode_arrival_proof(payload) then
+      return nil, "arrival proof needs an epoch-0 64-byte payload"
+    end
+  elseif message_type == protocol.types.GROUP_TRAVEL_CLIENT then
     local _, group_error = protocol.decode_group_travel(payload, "outbound")
     if group_error then return nil, group_error end
   elseif message_type == protocol.types.GROUP_TRAVEL_SERVER then

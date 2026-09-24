@@ -105,9 +105,9 @@ class RomWorldTests(unittest.TestCase):
                 self.assertIn("rom_world", result.stderr)
 
     def test_registry_selects_worlds_and_rejects_invalid_builds(self):
-        self.assertEqual(self.resolve("main").stdout.strip(), "1 - - - -")
+        self.assertEqual(self.resolve("main").stdout.strip(), "1 - - - - 1")
         self.assertEqual(self.resolve("2").stdout.strip(),
-                         "2 emerald-cormoria CORMORIA BPCO emerald")
+                         "2 emerald-cormoria CORMORIA BPCO emerald 2")
         for selector, version in (("3", "EMERALD"), ("unknown", "EMERALD"),
                                   ("cormoria", "FIRERED")):
             with self.subTest(selector=selector, version=version):
@@ -120,15 +120,15 @@ class RomWorldTests(unittest.TestCase):
                         self.root / "tools/rom_world_registry.py")
         selector_block = (ROOT / "Makefile").read_text().split("# GBA rom header", 1)[0]
         (self.root / "selector.mk").write_text(selector_block + "\n.PHONY: selected\nselected:\n"
-            "\t@echo ROM_WORLD=$(ROM_WORLD) BUILD_NAME=$(BUILD_NAME) TITLE=$(TITLE) "
+            "\t@echo ROM_WORLD=$(ROM_WORLD) ROM_WORLD_ID=$(ROM_WORLD_ID) BUILD_NAME=$(BUILD_NAME) TITLE=$(TITLE) "
             "GAME_CODE=$(GAME_CODE) MAP_VERSION=$(MAP_VERSION)\n")
 
         def selected(*variables):
             return subprocess.run(["make", "-s", "-f", "selector.mk", "selected", *variables],
                                   cwd=self.root, capture_output=True, text=True)
 
-        self.assertIn("ROM_WORLD=1 BUILD_NAME=emerald", selected("ROM_WORLD=main").stdout)
-        self.assertIn("ROM_WORLD=2 BUILD_NAME=emerald-cormoria TITLE=CORMORIA",
+        self.assertIn("ROM_WORLD=1 ROM_WORLD_ID=1 BUILD_NAME=emerald", selected("ROM_WORLD=main").stdout)
+        self.assertIn("ROM_WORLD=2 ROM_WORLD_ID=2 BUILD_NAME=emerald-cormoria TITLE=CORMORIA",
                       selected("ROM_WORLD=2").stdout)
         self.assertNotEqual(selected("ROM_WORLD=3").returncode, 0)
         self.assertNotEqual(selected("ROM_WORLD=cormoria", "GAME_VERSION=FIRERED").returncode, 0)
@@ -137,7 +137,7 @@ class RomWorldTests(unittest.TestCase):
                                         "build_name": "emerald-third", "title": "THIRD WORLD",
                                         "game_code": "BPTH"})
         self.write("data/rom_worlds.json", self.registry)
-        self.assertIn("ROM_WORLD=4 BUILD_NAME=emerald-third TITLE=THIRD WORLD GAME_CODE=BPTH",
+        self.assertIn("ROM_WORLD=4 ROM_WORLD_ID=7 BUILD_NAME=emerald-third TITLE=THIRD WORLD GAME_CODE=BPTH",
                       selected("ROM_WORLD=third").stdout)
         self.assertIn("TITLE=THIRD WORLD GAME_CODE=BPTH MAP_VERSION=emerald",
                       selected("ROM_WORLD=third", "TITLE=WRONG", "GAME_CODE=XXXX",
@@ -186,7 +186,7 @@ class RomWorldTests(unittest.TestCase):
         self.assertEqual(struct.unpack("<6I", self.assemble(source, 7)[:24]),
                          (101, 102, 103, 104, 105, 106))
         self.assertEqual(self.resolve("third").stdout.strip(),
-                         "4 emerald-third THIRD~WORLD BPTH emerald")
+                         "4 emerald-third THIRD~WORLD BPTH emerald 7")
 
     def test_invalid_registry_rejected_by_build_and_generator(self):
         cases = (
@@ -229,6 +229,39 @@ class RomWorldTests(unittest.TestCase):
                 self.write("data/rom_worlds.json", self.registry)
                 self.assertNotEqual(self.resolve("third", check=False).returncode, 0)
                 self.assertNotEqual(self.groups(check=False).returncode, 0)
+
+    def test_identity_lock_reserves_retired_ids_and_requires_new_entries(self):
+        self.registry["identity_lock"] = "rom_world_ids.lock.json"
+        self.write("data/rom_worlds.json", self.registry)
+        self.assertIn("identity lock is missing", self.resolve("cormoria", check=False).stderr)
+        self.write("data/rom_world_ids.lock.json", {
+            "schema_version": 1,
+            "worlds": [{"name": "main", "world_id": 1},
+                       {"name": "cormoria", "world_id": 2},
+                       {"name": "retired", "world_id": 7}],
+        })
+        self.assertEqual(self.resolve("cormoria").returncode, 0)
+        third = {"name": "third", "world_id": 7, "build_bit": 4,
+                 "game_version": "EMERALD", "map_version": "emerald",
+                 "build_name": "emerald-third", "title": "THIRD", "game_code": "BPTH"}
+        self.registry["worlds"].append(third)
+        self.write("data/rom_worlds.json", self.registry)
+        self.assertIn("retired ROM world ID", self.resolve("third", check=False).stderr)
+        third["world_id"] = 8
+        self.write("data/rom_worlds.json", self.registry)
+        self.assertIn("missing from the identity lock", self.resolve("third", check=False).stderr)
+        self.write("data/rom_world_ids.lock.json", {
+            "schema_version": 1,
+            "worlds": [{"name": "main", "world_id": 1},
+                       {"name": "cormoria", "world_id": 2},
+                       {"name": "retired", "world_id": 7},
+                       {"name": "third", "world_id": 8}],
+        })
+        self.assertEqual(self.resolve("third").stdout.strip(),
+                         "4 emerald-third THIRD BPTH emerald 8")
+        self.registry["worlds"][1]["world_id"] = 9
+        self.write("data/rom_worlds.json", self.registry)
+        self.assertIn("changed its locked world_id", self.resolve("cormoria", check=False).stderr)
 
     def test_legacy_maps_default_to_main_world(self):
         for name in self.names:

@@ -46,6 +46,7 @@ mod durable {
                     "persistent-test",
                 )
                 .expect("config")
+                .with_legacy_test_runtime()
                 .with_password_engine(Arc::new(
                     ArgonPasswordEngine::new(8192, 1, 1).expect("test hash"),
                 ))

@@ -13,7 +13,10 @@ enum RegionMapType
     REGION_MAP_SEVII123,
     REGION_MAP_SEVII45,
     REGION_MAP_SEVII67,
-    REGION_MAP_JOHTO
+    REGION_MAP_JOHTO,
+#if ROM_WORLD == 2
+    REGION_MAP_CORMORIA,
+#endif
 };
 
 enum KantoEra
@@ -52,6 +55,9 @@ struct RegionMapInfo
     const u32 *regionMapGfx;
     const u16 *regionMapPalette;
     u16 dexMapPaletteSize;
+    u8 dexMapPaletteStart;
+    u16 regionMapPaletteSize;
+    u8 regionMapPaletteStart;
 };
 
 struct RegionMap {
@@ -154,7 +160,7 @@ bool32 CanFlyToRegionMapSection(mapsec_u16_t mapSecId);
 
 //Pokenav Fly funcs
 u32 FilterFlyDestination(struct RegionMap* regionMap);
-void SetFlyDestination(struct RegionMap* regionMap);
+bool8 SetFlyDestination(struct RegionMap* regionMap);
 
 extern const struct RegionMapLocation gRegionMapEntries[];
 extern const struct RegionMapInfo gRegionMapInfos[];

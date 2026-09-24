@@ -7,27 +7,17 @@
 #include "coop/save.h"
 #include "gba/flash_internal.h"
 #include "load_save.h"
+#include "new_game.h"
 #include "save.h"
 #include "test/test.h"
 
-static EWRAM_DATA struct CoopSaveV1 sSaveSnapshot;
+static EWRAM_DATA struct CoopSaveV2 sSaveSnapshot;
 static EWRAM_DATA struct CoopSaveV2 sV2SaveSnapshot;
+static EWRAM_DATA struct CoopSaveV1 sV1SaveSnapshot;
 
 static void InitializeValidV2Save(struct CoopSaveV2 *save)
 {
-    u32 i;
-
-    memset(save, 0, sizeof(*save));
-    save->magic = COOP_SAVE_MAGIC;
-    save->schema_version = COOP_SAVE_V2_SCHEMA_VERSION;
-    save->struct_size = sizeof(*save);
-    save->registry_version = COOP_IDENTITY_REGISTRY_VERSION;
-    memcpy(save->registry_digest, gCoopIdentityRegistryDigest,
-           sizeof(save->registry_digest));
-    for (i = 0; i < ARRAY_COUNT(save->regional_progress); i++)
-        save->regional_progress[i].region = i + 1;
-    save->cormoria_progress.region = COOP_SAVE_V2_CORMORIA_REGION;
-    save->crc32 = CoopSaveV2_CalculateCrc(save);
+    CoopSaveV2_Initialize(save);
 }
 
 static u16 FailSaveSectorProgram(u16 sector, u8 *data)
@@ -65,8 +55,8 @@ TEST("Cloud Coop saved progress and descriptor layouts are byte exact")
     EXPECT_EQ(gCoopSaveSchemaDescriptor.descriptor_magic, COOP_SAVE_DESCRIPTOR_MAGIC);
     EXPECT_EQ(gCoopSaveSchemaDescriptor.descriptor_version, COOP_SAVE_DESCRIPTOR_VERSION);
     EXPECT_EQ(gCoopSaveSchemaDescriptor.save_magic, COOP_SAVE_MAGIC);
-    EXPECT_EQ(gCoopSaveSchemaDescriptor.save_schema_version, COOP_SAVE_SCHEMA_VERSION);
-    EXPECT_EQ(gCoopSaveSchemaDescriptor.save_struct_size, sizeof(struct CoopSaveV1));
+    EXPECT_EQ(gCoopSaveSchemaDescriptor.save_schema_version, COOP_SAVE_V2_SCHEMA_VERSION);
+    EXPECT_EQ(gCoopSaveSchemaDescriptor.save_struct_size, sizeof(struct CoopSaveV2));
     EXPECT_EQ(gCoopSaveSchemaDescriptor.save_block3_offset, 4);
     EXPECT_EQ(gCoopSaveSchemaDescriptor.generation_offset, 28);
     EXPECT_EQ(gCoopSaveSchemaDescriptor.crc32_offset, 668);
@@ -97,9 +87,50 @@ TEST("Cloud Coop schema V2 validates its additive Cormoria record")
     EXPECT_EQ(sV2SaveSnapshot.crc32,
               CoopSaveV2_CalculateCrc(&sV2SaveSnapshot));
 
+    EXPECT_EQ(sV2SaveSnapshot.status_flags, COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED);
+
     /* The normalization bit is intentionally an eligibility concern.  A
      * structurally valid pre-normalization payload must still validate. */
-    EXPECT_EQ(sV2SaveSnapshot.status_flags, 0);
+    sV2SaveSnapshot.status_flags = 0;
+    EXPECT(CoopSaveV2_Seal(&sV2SaveSnapshot));
+    EXPECT(CoopSaveV2_Validate(&sV2SaveSnapshot));
+}
+
+TEST("Cloud Coop fresh V2 initializer seals all five independent regions")
+{
+    u32 i;
+
+    CoopSaveV2_Initialize(&sV2SaveSnapshot);
+    EXPECT(CoopSaveV2_Validate(&sV2SaveSnapshot));
+    EXPECT_EQ(sV2SaveSnapshot.save_generation, 0);
+    EXPECT_EQ(sV2SaveSnapshot.status_flags, COOP_SAVE_STATUS_MET_LOCATION_NORMALIZED);
+    for (i = 0; i < ARRAY_COUNT(sV2SaveSnapshot.regional_progress); i++)
+    {
+        EXPECT_EQ(sV2SaveSnapshot.regional_progress[i].region, i + 1);
+        EXPECT_EQ(sV2SaveSnapshot.regional_progress[i].story_checkpoint, 0);
+        sV2SaveSnapshot.regional_progress[i].story_checkpoint = 10 + i;
+    }
+    EXPECT_EQ(sV2SaveSnapshot.cormoria_progress.region, COOP_SAVE_V2_CORMORIA_REGION);
+    EXPECT_EQ(sV2SaveSnapshot.cormoria_progress.story_checkpoint, 0);
+    sV2SaveSnapshot.cormoria_progress.story_checkpoint = 15;
+    sV2SaveSnapshot.save_generation = 1;
+    EXPECT(CoopSaveV2_Seal(&sV2SaveSnapshot));
+    EXPECT(CoopSaveV2_Validate(&sV2SaveSnapshot));
+    EXPECT_EQ(sV2SaveSnapshot.cormoria_progress.story_checkpoint, 15);
+    for (i = 0; i < ARRAY_COUNT(sV2SaveSnapshot.regional_progress); i++)
+        EXPECT_EQ(sV2SaveSnapshot.regional_progress[i].story_checkpoint, 10 + i);
+}
+
+TEST("Cloud Coop V2 seal rejects malformed records without changing the CRC")
+{
+    u32 sealedCrc;
+
+    CoopSaveV2_Initialize(&sV2SaveSnapshot);
+    sealedCrc = sV2SaveSnapshot.crc32;
+    sV2SaveSnapshot.cormoria_progress.reserved = 1;
+    EXPECT(!CoopSaveV2_Seal(&sV2SaveSnapshot));
+    EXPECT_EQ(sV2SaveSnapshot.crc32, sealedCrc);
+    EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
 }
 
 TEST("Cloud Coop schema V2 rejects invalid headers and seals")
@@ -147,7 +178,7 @@ TEST("Cloud Coop schema V2 rejects noncanonical Cormoria records and tail")
     EXPECT(!CoopSaveV2_Validate(&sV2SaveSnapshot));
 }
 
-TEST("Cloud Coop new save initializes a sealed region-qualified V1 record")
+TEST("Cloud Coop new save initializes a sealed five-region V2 record")
 {
     u32 i;
 
@@ -157,18 +188,20 @@ TEST("Cloud Coop new save initializes a sealed region-qualified V1 record")
     EXPECT(CoopSave_IsOnlineEnabled());
     EXPECT_EQ(CoopSave_GetGeneration(), 0);
     EXPECT_EQ(gSaveBlock3Ptr->coop.magic, COOP_SAVE_MAGIC);
-    EXPECT_EQ(gSaveBlock3Ptr->coop.schema_version, COOP_SAVE_SCHEMA_VERSION);
-    EXPECT_EQ(gSaveBlock3Ptr->coop.struct_size, sizeof(struct CoopSaveV1));
+    EXPECT_EQ(gSaveBlock3Ptr->coop.schema_version, COOP_SAVE_V2_SCHEMA_VERSION);
+    EXPECT_EQ(gSaveBlock3Ptr->coop.struct_size, sizeof(struct CoopSaveV2));
     EXPECT_EQ(gSaveBlock3Ptr->coop.registry_version, COOP_IDENTITY_REGISTRY_VERSION);
-    for (i = 0; i < COOP_PROGRESS_REGION_COUNT; i++)
+    for (i = 0; i < ARRAY_COUNT(gSaveBlock3Ptr->coop.regional_progress); i++)
     {
         EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[i].region, i + 1);
         EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[i].reserved, 0);
         EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[i].badge_mask, 0);
         EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[i].story_checkpoint, 0);
     }
+    EXPECT_EQ(gSaveBlock3Ptr->coop.cormoria_progress.region, COOP_REGION_CORMORIA);
+    EXPECT_EQ(gSaveBlock3Ptr->coop.cormoria_progress.story_checkpoint, 0);
     EXPECT_EQ(gSaveBlock3Ptr->coop.crc32,
-              CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop));
+              CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop));
 }
 
 TEST("Cloud Coop clearing a save resets cached online state and permits offline trainer progress")
@@ -209,6 +242,30 @@ TEST("Cloud Coop zeroed and erased legacy records initialize fail closed")
     EXPECT_EQ(gCoopProgress.regions[1].story_checkpoint, 0);
 }
 
+TEST("Cloud Coop rejects a V1-shaped record as travel authority")
+{
+    u32 i;
+
+    memset(&sV1SaveSnapshot, 0, sizeof(sV1SaveSnapshot));
+    sV1SaveSnapshot.magic = COOP_SAVE_MAGIC;
+    sV1SaveSnapshot.schema_version = COOP_SAVE_SCHEMA_VERSION;
+    sV1SaveSnapshot.struct_size = sizeof(sV1SaveSnapshot);
+    sV1SaveSnapshot.registry_version = COOP_IDENTITY_REGISTRY_VERSION;
+    memcpy(sV1SaveSnapshot.registry_digest, gCoopIdentityRegistryDigest,
+           sizeof(sV1SaveSnapshot.registry_digest));
+    for (i = 0; i < ARRAY_COUNT(sV1SaveSnapshot.regional_progress); i++)
+        sV1SaveSnapshot.regional_progress[i].region = i + 1;
+    sV1SaveSnapshot.crc32 = CoopSave_CalculateCrc(&sV1SaveSnapshot);
+    EXPECT_EQ(sV1SaveSnapshot.schema_version, COOP_SAVE_SCHEMA_VERSION);
+    EXPECT_EQ(sV1SaveSnapshot.crc32, CoopSave_CalculateCrc(&sV1SaveSnapshot));
+    memcpy(&gSaveBlock3Ptr->coop, &sV1SaveSnapshot, sizeof(sV1SaveSnapshot));
+
+    EXPECT_EQ(CoopSave_Load(), COOP_SAVE_LOAD_INCOMPATIBLE);
+    EXPECT(!CoopSave_IsOnlineEnabled());
+    EXPECT(!CoopSave_PrepareForWrite());
+    EXPECT_EQ(memcmp(&gSaveBlock3Ptr->coop, &sV1SaveSnapshot, sizeof(sV1SaveSnapshot)), 0);
+}
+
 TEST("Cloud Coop valid save reloads independent regional progress")
 {
     CoopSave_InitializeCurrent();
@@ -220,6 +277,7 @@ TEST("Cloud Coop valid save reloads independent regional progress")
     gSaveBlock3Ptr->coop.regional_progress[2].story_checkpoint = 33;
     gSaveBlock3Ptr->coop.regional_progress[3].badge_mask = 0;
     gSaveBlock3Ptr->coop.regional_progress[3].story_checkpoint = 44;
+    gSaveBlock3Ptr->coop.cormoria_progress.story_checkpoint = 55;
     EXPECT(CoopSave_Seal(&gSaveBlock3Ptr->coop));
 
     CoopProgress_Init(&gCoopProgress);
@@ -232,6 +290,7 @@ TEST("Cloud Coop valid save reloads independent regional progress")
     EXPECT_EQ(gCoopProgress.regions[2].story_checkpoint, 33);
     EXPECT_EQ(gCoopProgress.regions[3].badge_mask, 0);
     EXPECT_EQ(gCoopProgress.regions[3].story_checkpoint, 44);
+    EXPECT_EQ(gCoopProgress.regions[4].story_checkpoint, 55);
 }
 
 TEST("Cloud Coop prepare synchronizes progress and advances sealed generation")
@@ -241,6 +300,7 @@ TEST("Cloud Coop prepare synchronizes progress and advances sealed generation")
     gCoopProgress.regions[0].story_checkpoint = 1234;
     gCoopProgress.regions[3].badge_mask = 0;
     gCoopProgress.regions[3].story_checkpoint = 5678;
+    gCoopProgress.regions[4].story_checkpoint = 9012;
 
     EXPECT(CoopSave_PrepareForWrite());
     EXPECT(CoopSave_WasPreparedForWrite());
@@ -249,14 +309,17 @@ TEST("Cloud Coop prepare synchronizes progress and advances sealed generation")
     EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[0].story_checkpoint, 1234);
     EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[3].badge_mask, 0);
     EXPECT_EQ(gSaveBlock3Ptr->coop.regional_progress[3].story_checkpoint, 5678);
+    EXPECT_EQ(gSaveBlock3Ptr->coop.cormoria_progress.story_checkpoint, 9012);
     EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
 
     gSaveBlock3Ptr->coop.save_generation = UINT_MAX;
     EXPECT(CoopSave_Seal(&gSaveBlock3Ptr->coop));
-    EXPECT(CoopSave_PrepareForWrite());
-    EXPECT(CoopSave_WasPreparedForWrite());
-    EXPECT_EQ(CoopSave_GetGeneration(), 0);
+    sSaveSnapshot = gSaveBlock3Ptr->coop;
+    EXPECT(!CoopSave_PrepareForWrite());
+    EXPECT(!CoopSave_WasPreparedForWrite());
+    EXPECT_EQ(CoopSave_GetGeneration(), UINT_MAX);
     EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
+    EXPECT_EQ(memcmp(&sSaveSnapshot, &gSaveBlock3Ptr->coop, sizeof(sSaveSnapshot)), 0);
 }
 
 TEST("Cloud Coop corrupt and future records stay untouched and offline")
@@ -276,7 +339,7 @@ TEST("Cloud Coop corrupt and future records stay untouched and offline")
     CoopSave_InitializeCurrent();
     CoopProgress_Init(&gCoopProgress);
     gCoopProgress.regions[1].story_checkpoint = 77;
-    gSaveBlock3Ptr->coop.schema_version = COOP_SAVE_SCHEMA_VERSION + 1;
+    gSaveBlock3Ptr->coop.schema_version = COOP_SAVE_V2_SCHEMA_VERSION + 1;
     sSaveSnapshot = gSaveBlock3Ptr->coop;
     EXPECT_EQ(CoopSave_Load(), COOP_SAVE_LOAD_INCOMPATIBLE);
     EXPECT(!CoopSave_IsOnlineEnabled());
@@ -288,29 +351,29 @@ TEST("Cloud Coop corrupt and future records stay untouched and offline")
 TEST("Cloud Coop rejects noncanonical saved bodies even with a matching CRC")
 {
     CoopSave_InitializeCurrent();
-    gSaveBlock3Ptr->coop.status_flags = COOP_SAVE_STATUS_KNOWN_MASK << 1;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.status_flags = 1u << 2;
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
     EXPECT_EQ(CoopSave_Load(), COOP_SAVE_LOAD_CORRUPT);
 
     CoopSave_InitializeCurrent();
     gSaveBlock3Ptr->coop.regional_progress[0].region = COOP_REGION_KANTO;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
 
     CoopSave_InitializeCurrent();
     gSaveBlock3Ptr->coop.regional_progress[0].reserved = 1;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
 
     CoopSave_InitializeCurrent();
     gSaveBlock3Ptr->coop.regional_progress[0].badge_mask = 0x100;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
 
     CoopSave_InitializeCurrent();
-    gSaveBlock3Ptr->coop.reserved[0] = 1;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.reserved_tail[0] = 1;
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
 }
 
@@ -324,19 +387,19 @@ TEST("Cloud Coop rejects identity tails and unassigned regional badges")
     gSaveBlock3Ptr->coop.event_bits[COOP_SAVE_EVENT_BITS_SIZE - 1] = 0x80;
     gSaveBlock3Ptr->coop.fly_bits[COOP_SAVE_FLY_BITS_SIZE - 1] = 0x80;
     gSaveBlock3Ptr->coop.gym_bits[COOP_SAVE_GYM_BITS_SIZE - 1] = 0x80;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
 
     CoopSave_InitializeCurrent();
     gSaveBlock3Ptr->coop.regional_progress[3].badge_mask = 1;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(!CoopSave_Validate(&gSaveBlock3Ptr->coop));
 
     CoopSave_InitializeCurrent();
     gSaveBlock3Ptr->coop.regional_progress[0].badge_mask = 0xFF;
     gSaveBlock3Ptr->coop.regional_progress[1].badge_mask = 0xFF;
     gSaveBlock3Ptr->coop.regional_progress[2].badge_mask = 0xFF;
-    gSaveBlock3Ptr->coop.crc32 = CoopSave_CalculateCrc(&gSaveBlock3Ptr->coop);
+    gSaveBlock3Ptr->coop.crc32 = CoopSaveV2_CalculateCrc(&gSaveBlock3Ptr->coop);
     EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
 }
 
@@ -350,6 +413,61 @@ TEST("Cloud Coop invalid runtime progress cannot corrupt a sealed record")
     EXPECT_EQ(memcmp(&sSaveSnapshot, &gSaveBlock3Ptr->coop, sizeof(sSaveSnapshot)), 0);
     EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
 }
+
+TEST("Cloud Coop V2 writes and reloads all five regional checkpoints")
+{
+    u32 i;
+
+    CoopSave_InitializeCurrent();
+    for (i = 0; i < COOP_PROGRESS_REGION_COUNT; i++)
+        gCoopProgress.regions[i].story_checkpoint = 100 + i;
+
+    EXPECT(CoopSave_PrepareForWrite());
+    EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
+    CoopProgress_Init(&gCoopProgress);
+    EXPECT_EQ(CoopSave_Load(), COOP_SAVE_LOAD_READY);
+    for (i = 0; i < COOP_PROGRESS_REGION_COUNT; i++)
+        EXPECT_EQ(gCoopProgress.regions[i].story_checkpoint, 100 + i);
+    EXPECT_EQ(gSaveBlock3Ptr->coop.cormoria_progress.story_checkpoint, 104);
+}
+
+TEST("Cloud Coop persists assigned Cormoria badges and rejects unassigned bits")
+{
+    CoopSave_InitializeCurrent();
+    gCoopProgress.regions[4].badge_mask = 0x81;
+    EXPECT(CoopSave_PrepareForWrite());
+    EXPECT_EQ(gSaveBlock3Ptr->coop.cormoria_progress.badge_mask, 0x81);
+    EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
+
+    sSaveSnapshot = gSaveBlock3Ptr->coop;
+    gCoopProgress.regions[4].badge_mask = 0x100;
+
+    EXPECT(!CoopSave_PrepareForWrite());
+    EXPECT_EQ(memcmp(&sSaveSnapshot, &gSaveBlock3Ptr->coop, sizeof(sSaveSnapshot)), 0);
+    EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
+}
+
+#if ROM_WORLD == 2
+TEST("Cloud Coop Cormoria fresh game starts in Carabrue home with a V2 authority")
+{
+    struct MapHeader savedHeader = gMapHeader;
+    struct WarpData savedLocation = gSaveBlock1Ptr->location;
+    struct Coords16 savedPosition = gSaveBlock1Ptr->pos;
+
+    NewGame_WarpToStart();
+    EXPECT_EQ(gSaveBlock1Ptr->location.mapGroup,
+              MAP_GROUP(MAP_CORMORIA_CARABRUE_TOWN_HOME1F));
+    EXPECT_EQ(gSaveBlock1Ptr->location.mapNum,
+              MAP_NUM(MAP_CORMORIA_CARABRUE_TOWN_HOME1F));
+    gMapHeader = savedHeader;
+    gSaveBlock1Ptr->location = savedLocation;
+    gSaveBlock1Ptr->pos = savedPosition;
+
+    CoopSave_InitializeCurrent();
+    EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
+    EXPECT(CoopSave_IsOnlineEnabled());
+}
+#endif
 
 TEST("Cloud Coop failed full saves restore the prepared generation for retry")
 {
@@ -390,6 +508,17 @@ TEST("Cloud Coop migration ambiguity preserves play but disables cloud authority
     EXPECT_EQ(CoopSave_Load(), COOP_SAVE_LOAD_READY);
     EXPECT(CoopSave_PrepareForWrite());
     EXPECT_EQ(CoopSave_GetGeneration(), 1);
+    EXPECT(!CoopSave_IsOnlineEnabled());
+}
+
+TEST("Cloud Coop V2 without normalized locations cannot claim travel authority")
+{
+    CoopSave_InitializeCurrent();
+    gSaveBlock3Ptr->coop.status_flags = 0;
+    EXPECT(CoopSave_Seal(&gSaveBlock3Ptr->coop));
+    EXPECT(CoopSave_Validate(&gSaveBlock3Ptr->coop));
+    EXPECT(!CoopSave_IsOnlineEnabled());
+    EXPECT_EQ(CoopSave_Load(), COOP_SAVE_LOAD_READY);
     EXPECT(!CoopSave_IsOnlineEnabled());
 }
 

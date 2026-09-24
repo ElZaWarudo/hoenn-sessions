@@ -41,6 +41,8 @@ enum
 };
 
 static EWRAM_DATA u16 sSaveFailedType = {0};
+static EWRAM_DATA bool8 sLogicalSaveRejection = FALSE;
+static const u8 sTextSaveRejected[] = _("Save was not completed.\nProgress was not saved.");
 static EWRAM_DATA u16 sClockInfo[2] = {0};
 static EWRAM_DATA u8 sWindowIds[2] = {0};
 
@@ -158,12 +160,30 @@ static void SaveFailedScreenTextPrint(const u8 *text, u8 x, u8 y)
 void DoSaveFailedScreen(u8 saveType)
 {
     SetMainCallback2(CB2_SaveFailedScreen);
+    sLogicalSaveRejection = FALSE;
     sSaveFailedType = saveType;
     sClockInfo[CLOCK_RUNNING] = FALSE;
     sClockInfo[DEBUG_TIMER] = 0;
     sWindowIds[TEXT_WIN_ID] = 0;
     sWindowIds[CLOCK_WIN_ID] = 0;
 }
+
+void DoSaveRejectedScreen(void)
+{
+    SetMainCallback2(CB2_SaveFailedScreen);
+    sLogicalSaveRejection = TRUE;
+    sClockInfo[CLOCK_RUNNING] = FALSE;
+    sClockInfo[DEBUG_TIMER] = 0;
+    sWindowIds[TEXT_WIN_ID] = 0;
+    sWindowIds[CLOCK_WIN_ID] = 0;
+}
+
+#if TESTING
+bool8 SaveFailedScreen_TestIsLogicalRejection(void)
+{
+    return sLogicalSaveRejection;
+}
+#endif
 
 static void VBlankCB(void)
 {
@@ -233,7 +253,7 @@ static void CB2_SaveFailedScreen(void)
         FillWindowPixelBuffer(sWindowIds[TEXT_WIN_ID], PIXEL_FILL(1));
         CopyWindowToVram(sWindowIds[CLOCK_WIN_ID], COPYWIN_GFX); // again?
         CopyWindowToVram(sWindowIds[TEXT_WIN_ID], COPYWIN_MAP);
-        SaveFailedScreenTextPrint(gText_SaveFailedCheckingBackup, 1, 0);
+        SaveFailedScreenTextPrint(sLogicalSaveRejection ? sTextSaveRejected : gText_SaveFailedCheckingBackup, 1, 0);
         BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, RGB_BLACK);
         EnableInterrupts(1);
         SetVBlankCallback(VBlankCB);
@@ -256,6 +276,15 @@ static void CB2_SaveFailedScreen(void)
 static void CB2_WipeSave(void)
 {
     u8 wipeTries = 0;
+
+    /* A rejected in-memory record is not a failed flash sector. Never enter
+     * the physical-sector wipe/retry path or print a save-complete message. */
+    if (sLogicalSaveRejection)
+    {
+        sClockInfo[CLOCK_RUNNING] = FALSE;
+        SetMainCallback2(CB2_FadeAndReturnToTitleScreen);
+        return;
+    }
 
     sClockInfo[CLOCK_RUNNING] = TRUE;
 

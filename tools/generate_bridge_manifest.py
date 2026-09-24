@@ -49,7 +49,7 @@ BRIDGE_MAGIC = 0x504B434F
 BRIDGE_ABI_VERSION = 1
 GAME_PROTOCOL_VERSION = 1
 GAME_BUILD_ID = 0x00010000
-GAME_BUILD_TEXT_ID = "pokecrossroads-beta-1.4-e05c8286-coop-v1"
+GAME_BUILD_TEXT_ID = "pokecrossroads-beta-1.4-e05c8286-coop-v2"
 BRIDGE_SIZE = 9244
 MESSAGE_SIZE = 144
 QUEUE_SIZE = 4612
@@ -63,7 +63,7 @@ SAVE_DESCRIPTOR_MAGIC = 0x31445343
 SAVE_DESCRIPTOR_VERSION = 1
 SAVE_DESCRIPTOR_SIZE = 64
 SAVE_MAGIC = 0x31505343
-SAVE_SCHEMA_VERSION = 1
+SAVE_SCHEMA_VERSION = 2
 SAVE_STRUCT_SIZE = 672
 SAVE_BLOCK3_OFFSET = 4
 SAVE_GENERATION_OFFSET = 28
@@ -76,7 +76,7 @@ SAVE_SLOT_COUNT = 2
 SAVE_BLOCK3_PERSISTED_SECTORS = 6
 SAVE_BLOCK3_MIN_SIZE = SAVE_BLOCK3_OFFSET + SAVE_STRUCT_SIZE
 SAVE_BLOCK3_MAX_SIZE = SAVE_BLOCK3_CHUNK_SIZE * SAVE_BLOCK3_PERSISTED_SECTORS
-REGISTRY_VERSION = 1
+REGISTRY_VERSION = 3
 SAVE_TRAINER_BITS_OFFSET = 68
 SAVE_EVENT_BITS_OFFSET = 324
 SAVE_FLY_BITS_OFFSET = 580
@@ -395,8 +395,8 @@ def registry_contract(value: Any) -> RegistryContract:
         raise ManifestError("identity registry version must be an integer")
     if version != REGISTRY_VERSION:
         raise ManifestError(
-            f"identity registry version {version} does not match supported version "
-            f"{REGISTRY_VERSION}"
+            f"identity registry version {version} must be {REGISTRY_VERSION} "
+            "for a newly generated bridge manifest"
         )
     try:
         canonical = canonical_registry_bytes(value)
@@ -552,7 +552,12 @@ def build_manifest(
             }
         ),
         "game_build": {
-            "id": validate_game_build_id(GAME_BUILD_TEXT_ID),
+            # A release can contain several ROMs from the same engine build.
+            # Bind the textual identity to the exact artifact so a later
+            # world cannot alias Main's runtime/presence build identity.
+            "id": validate_game_build_id(
+                f"{validate_game_build_id(GAME_BUILD_TEXT_ID)}-{rom_sha256}"
+            ),
             "numeric_id": GAME_BUILD_ID,
             "rom_sha256": rom_sha256,
         },

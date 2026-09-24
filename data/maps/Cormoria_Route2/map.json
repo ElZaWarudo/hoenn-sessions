@@ -1,0 +1,130 @@
+{
+  "id": "MAP_CORMORIA_ROUTE2",
+  "name": "Cormoria_Route2",
+  "layout": "LAYOUT_CORMORIA_ROUTE2",
+  "music": "MUS_ROUTE104",
+  "region_map_section": "MAPSEC_CORMORIA_ROUTE2",
+  "requires_flash": false,
+  "weather": "WEATHER_VOLCANIC_ASH",
+  "map_type": "MAP_TYPE_ROUTE",
+  "allow_cycling": true,
+  "allow_escaping": false,
+  "allow_running": true,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": [
+    {
+      "map": "MAP_CORMORIA_FENNILAHL_TOWN",
+      "offset": -4,
+      "direction": "up"
+    },
+    {
+      "map": "MAP_CORMORIA_VICTORY_ROAD_CORMORIA",
+      "offset": 4,
+      "direction": "right"
+    }
+  ],
+  "object_events": [
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BERRY_TREE",
+      "x": 22,
+      "y": 11,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_BERRY_TREE_GROWTH",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "Cormoria_BERRY_TREE_ROUTE2_PECHA",
+      "script": "Cormoria_BerryTreeScript",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_BERRY_TREE",
+      "x": 23,
+      "y": 11,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_BERRY_TREE_GROWTH",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "Cormoria_BERRY_TREE_ROUTE2_ORAN",
+      "script": "Cormoria_BerryTreeScript",
+      "flag": "0"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_SPECIES(CLEFAIRY)",
+      "x": 8,
+      "y": 25,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+      "movement_range_x": 0,
+      "movement_range_y": 0,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "0",
+      "script": "NULL",
+      "flag": "Cormoria_FLAG_FENNILAHL_CLEFAIRY_FIRST_SIGHTING"
+    },
+    {
+      "graphics_id": "OBJ_EVENT_GFX_POKE_BALL",
+      "x": 30,
+      "y": 25,
+      "elevation": 0,
+      "movement_type": "MOVEMENT_TYPE_LOOK_AROUND",
+      "movement_range_x": 1,
+      "movement_range_y": 1,
+      "trainer_type": "TRAINER_TYPE_NONE",
+      "trainer_sight_or_berry_tree_id": "ITEM_ANTIDOTE",
+      "script": "Cormoria_Common_EventScript_FindItem",
+      "flag": "Cormoria_FLAG_ITEM_ROUTE_2_POTION"
+    }
+  ],
+  "warp_events": [
+    {
+      "x": 6,
+      "y": 24,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_ROUTE2_CAVES",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [
+    {
+      "type": "trigger",
+      "x": 9,
+      "y": 18,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Route2_Clefairy_Trigger0"
+    },
+    {
+      "type": "trigger",
+      "x": 10,
+      "y": 18,
+      "elevation": 0,
+      "var": "VAR_TEMP_0",
+      "var_value": "0",
+      "script": "Cormoria_Route2_Clefairy_Trigger0"
+    }
+  ],
+  "bg_events": [
+    {
+      "type": "hidden_item",
+      "x": 32,
+      "y": 19,
+      "elevation": 0,
+      "item": "ITEM_POTION",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_ROUTE2_A"
+    },
+    {
+      "type": "hidden_item",
+      "x": 16,
+      "y": 4,
+      "elevation": 0,
+      "item": "ITEM_PARALYZE_HEAL",
+      "flag": "Cormoria_FLAG_HIDDEN_ITEM_FENNILAHL_TOWN_A"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

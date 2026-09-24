@@ -73,6 +73,26 @@ static void QueueAnimTiles_MauvilleGym_ElectricGates(u16);
 static void QueueAnimTiles_SootopolisGym_Waterfalls(u16);
 static void QueueAnimTiles_EliteFour_GroundLights(u16);
 static void QueueAnimTiles_EliteFour_WallLights(u16);
+#if ROM_WORLD == 2
+static void TilesetAnim_MauvilleGameCorner(u16);
+static void QueueAnimTiles_MauvilleGameCorner_Lights(u16);
+
+static const u16 sCormoriaGameCornerLightFrame0[] = INCBIN_U16("data/tilesets/cormoria/secondary/mauville_game_corner/anim/lights/light_anim_0.4bpp");
+static const u16 sCormoriaGameCornerLightFrame1[] = INCBIN_U16("data/tilesets/cormoria/secondary/mauville_game_corner/anim/lights/light_anim_1.4bpp");
+static const u16 sCormoriaGameCornerLightFrame2[] = INCBIN_U16("data/tilesets/cormoria/secondary/mauville_game_corner/anim/lights/light_anim_2.4bpp");
+static const u16 sCormoriaGameCornerLightFrame3[] = INCBIN_U16("data/tilesets/cormoria/secondary/mauville_game_corner/anim/lights/light_anim_3.4bpp");
+static const u16 sCormoriaGameCornerLightFrame4[] = INCBIN_U16("data/tilesets/cormoria/secondary/mauville_game_corner/anim/lights/light_anim_4.4bpp");
+static const u16 sCormoriaGameCornerLightFrame5[] = INCBIN_U16("data/tilesets/cormoria/secondary/mauville_game_corner/anim/lights/light_anim_5.4bpp");
+
+static const u16 *const sCormoriaGameCornerLightFrames[] = {
+    sCormoriaGameCornerLightFrame0,
+    sCormoriaGameCornerLightFrame1,
+    sCormoriaGameCornerLightFrame2,
+    sCormoriaGameCornerLightFrame3,
+    sCormoriaGameCornerLightFrame4,
+    sCormoriaGameCornerLightFrame5,
+};
+#endif
 
 const u16 gTilesetAnims_General_Flower_Frame1[] = INCBIN_U16("data/tilesets/primary/general/anim/flower/1.4bpp");
 const u16 gTilesetAnims_General_Flower_Frame0[] = INCBIN_U16("data/tilesets/primary/general/anim/flower/0.4bpp");
@@ -834,6 +854,15 @@ void InitTilesetAnim_BattleDome(void)
     sSecondaryTilesetAnimCallback = TilesetAnim_BattleDome;
 }
 
+#if ROM_WORLD == 2
+void InitTilesetAnim_MauvilleGameCorner(void)
+{
+    sSecondaryTilesetAnimCounter = 0;
+    sSecondaryTilesetAnimCounterMax = 128;
+    sSecondaryTilesetAnimCallback = TilesetAnim_MauvilleGameCorner;
+}
+#endif
+
 static void TilesetAnim_Rustboro(u16 timer)
 {
     if (timer % 8 == 0)
@@ -868,6 +897,14 @@ static void TilesetAnim_Slateport(u16 timer)
     if (timer % 16 == 0)
         QueueAnimTiles_Slateport_Balloons(timer / 16);
 }
+
+#if ROM_WORLD == 2
+static void TilesetAnim_MauvilleGameCorner(u16 timer)
+{
+    if (timer % 16 == 0)
+        QueueAnimTiles_MauvilleGameCorner_Lights(timer / 16);
+}
+#endif
 
 static void TilesetAnim_Mauville(u16 timer)
 {
@@ -960,6 +997,14 @@ static void QueueAnimTiles_General_LandWaterEdge(u16 timer)
     u16 i = timer % ARRAY_COUNT(gTilesetAnims_General_LandWaterEdge);
     AppendTilesetAnimToBuffer(gTilesetAnims_General_LandWaterEdge[i], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(480)), 10 * TILE_SIZE_4BPP);
 }
+
+#if ROM_WORLD == 2
+static void QueueAnimTiles_MauvilleGameCorner_Lights(u16 timer)
+{
+    u16 frame = timer % ARRAY_COUNT(sCormoriaGameCornerLightFrames);
+    AppendTilesetAnimToBuffer(sCormoriaGameCornerLightFrames[frame], (u16 *)(BG_VRAM + TILE_OFFSET_4BPP(521)), 0x40);
+}
+#endif
 
 static void QueueAnimTiles_Lavaridge_Steam(u8 timer)
 {

@@ -1,0 +1,68 @@
+{
+  "id": "MAP_CORMORIA_THE_OTHER_HOUSE",
+  "name": "Cormoria_TheOtherHouse",
+  "layout": "LAYOUT_CORMORIA_THE_OTHER_HOUSE",
+  "music": "MUS_LITTLEROOT",
+  "region_map_section": "MAPSEC_CORMORIA_THE_OTHER_HOUSE",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_NONE",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": false,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 2,
+      "y": 8,
+      "elevation": 0,
+      "dest_map": "MAP_DYNAMIC",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 1,
+      "y": 8,
+      "elevation": 0,
+      "dest_map": "MAP_DYNAMIC",
+      "dest_warp_id": "0"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_THE_OTHER_HOUSE",
+      "dest_warp_id": "3"
+    },
+    {
+      "x": 2,
+      "y": 18,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_THE_OTHER_HOUSE",
+      "dest_warp_id": "2"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [
+    {
+      "type": "sign",
+      "x": 5,
+      "y": 18,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_NORTH",
+      "script": "Cormoria_TheOtherHouse_Game"
+    },
+    {
+      "type": "sign",
+      "x": 6,
+      "y": 18,
+      "elevation": 0,
+      "player_facing_dir": "BG_EVENT_PLAYER_FACING_NORTH",
+      "script": "Cormoria_TheOtherHouse_TV"
+    }
+  ],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

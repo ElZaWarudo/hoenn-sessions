@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "default_world": "main",
+  "identity_lock": "rom_world_ids.lock.json",
   "worlds": [
     {
       "name": "main",

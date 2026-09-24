@@ -35,6 +35,35 @@ local session_ready = assert(protocol.encode({
 assert(protocol.decode(session_ready, "outbound") == nil)
 assert(protocol.decode(session_ready, "inbound") ~= nil)
 
+local nonce = string.char(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+local arrival_challenge = assert(protocol.encode({
+  type = protocol.types.ARRIVAL_CHALLENGE,
+  sequence = 2,
+  session_epoch = 0,
+  payload = nonce,
+}))
+assert(assert(protocol.decode(arrival_challenge, "inbound")).payload == nonce)
+assert(protocol.decode(arrival_challenge, "outbound") == nil)
+assert(protocol.encode({type = protocol.types.ARRIVAL_CHALLENGE,
+  sequence = 2, session_epoch = 1, payload = nonce}) == nil)
+assert(protocol.encode({type = protocol.types.ARRIVAL_CHALLENGE,
+  sequence = 2, session_epoch = 0, payload = string.rep("\0", 16)}) == nil)
+
+local arrival_payload = nonce .. string.rep("\xA5", 32)
+  .. string.pack("<I4I4I1I1", 2, 7, 3, 4) .. string.rep("\0", 6)
+local arrival = assert(protocol.decode_arrival_proof(arrival_payload))
+assert(arrival.nonce == nonce and arrival.world_id == 2 and arrival.save_generation == 7)
+assert(arrival.map_group == 3 and arrival.map_num == 4)
+local arrival_proof = assert(protocol.encode({type = protocol.types.ARRIVAL_PROOF,
+  sequence = 3, session_epoch = 0, payload = arrival_payload}))
+assert(assert(protocol.decode(arrival_proof, "outbound")).payload == arrival_payload)
+assert(protocol.decode(arrival_proof, "inbound") == nil)
+assert(protocol.encode({type = protocol.types.ARRIVAL_PROOF,
+  sequence = 3, session_epoch = 1, payload = arrival_payload}) == nil)
+assert(protocol.encode({type = protocol.types.ARRIVAL_PROOF,
+  sequence = 3, session_epoch = 0, payload = arrival_payload:sub(1, 63) .. "\1"}) == nil)
+assert(protocol.decode_arrival_proof(string.rep("\0", 64)) == nil)
+
 local proposal = string.rep("\xA5", 16)
 for route = 1, 6 do
   local departure = route <= 2 and 1 or (route <= 4 and 2 or 4)
@@ -79,6 +108,7 @@ assert(protocol.decode(travel_frame, "outbound") == nil)
 
 assert(protocol.is_outbound(protocol.types.COMPANION_STATE))
 assert(protocol.is_outbound(protocol.types.SOCIAL_SIGNAL))
+assert(protocol.is_outbound(protocol.types.PORTAL_TRAVEL_REQUEST))
 assert(not protocol.is_outbound(protocol.types.REMOTE_COMPANION))
 assert(not protocol.is_inbound(protocol.types.SOCIAL_SIGNAL))
 assert(protocol.is_inbound(protocol.types.REMOTE_COMPANION))
@@ -97,5 +127,28 @@ local remote_signal_frame = assert(protocol.encode({
 }))
 assert(protocol.decode(remote_signal_frame, "inbound"))
 assert(protocol.decode(remote_signal_frame, "outbound") == nil)
+
+local portal_frame = assert(protocol.encode({
+  type = protocol.types.PORTAL_TRAVEL_REQUEST, sequence = 5, session_epoch = 1,
+  payload = "to_cormoria",
+}))
+assert(assert(protocol.decode(portal_frame, "outbound")).payload == "to_cormoria")
+assert(protocol.decode(portal_frame, "inbound") == nil)
+assert(protocol.encode({ type = protocol.types.PORTAL_TRAVEL_REQUEST,
+  sequence = 6, session_epoch = 0, payload = "to_cormoria" }) == nil)
+for _, invalid in ipairs({"", "To_cormoria", "to-cormoria", "to/cormoria",
+  "to_cormoria\0", string.rep("a", 97)}) do
+  assert(protocol.encode({ type = protocol.types.PORTAL_TRAVEL_REQUEST,
+    sequence = 6, session_epoch = 1, payload = invalid }) == nil)
+end
+assert(protocol.encode({ type = protocol.types.PORTAL_TRAVEL_REQUEST,
+  sequence = 6, session_epoch = 1, payload = string.rep("a", 96) }) ~= nil)
+
+-- The decoder must also reject malformed but checksummed frames from a ROM.
+local invalid_payload = "To_cormoria"
+local prefix = string.pack("<I2I2I4I4", protocol.types.PORTAL_TRAVEL_REQUEST,
+  #invalid_payload, 7, 1) .. invalid_payload
+  .. string.rep("\0", protocol.PAYLOAD_SIZE - #invalid_payload)
+assert(protocol.decode(prefix .. string.pack("<I4", protocol.crc32(prefix)), "outbound") == nil)
 
 print("bridge protocol tests passed")

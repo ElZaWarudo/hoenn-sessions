@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "repository": "https://github.com/dsmyst/dreamstone-mysteries",
+    "revision": "f7997186345885bfa23a170e5f573851fc034b9b",
+    "tree": "f75c219630afdf552875547c196705fa5d787586"
+  },
+  "files": [
+    {
+      "path": "src/graphics.c",
+      "git_blob": "90d15d9c313f54a8797d6017cf1201b3a7b18c9a",
+      "bytes": 154224,
+      "sha256": "dcec4c9f5c87bf4feaa64f151de659cff9ecc41d058d2c657228dd1c90358c33"
+    },
+    {
+      "path": "data/tilesets/primary/general/tiles.png",
+      "git_blob": "2c36fe3917419f908ef46c1bf0191001b6e556fb",
+      "bytes": 7822,
+      "sha256": "a06abe85473cd48121c4e626562d91fc295aee8f0e361de5d85acf02e6500e34"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/00.pal",
+      "git_blob": "0fd74602ed32c75dc2d812f4a0c53bc09438d2c6",
+      "bytes": 198,
+      "sha256": "424a32d1079a61b6b9b4f1e879dd68108708905e8312d18edd134af3918407fd"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/01.pal",
+      "git_blob": "194e037dbeee59fa1595337c1ec6f1bedb84f635",
+      "bytes": 195,
+      "sha256": "1607ab0990c9cd786b1260c7313ca54d0dc1d51e27bbc93384b99583881a4d42"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/02.pal",
+      "git_blob": "4c41030f6616f54eb02817595244a01f9eb1f887",
+      "bytes": 187,
+      "sha256": "8a469b137e6fc97823ab46b903c0ab80c466212cd430340586ccde22afbee949"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/03.pal",
+      "git_blob": "32d6914d8403bc9a5d01aeae088545a6cd1ba29c",
+      "bytes": 194,
+      "sha256": "821f0a62f0ce995c96e9eaa0b4a32a1cd61e4db1f3216bfbe1fd588cf33b7583"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/04.pal",
+      "git_blob": "d8051b7bac4270ff05973bf0c43f775ba864fef9",
+      "bytes": 192,
+      "sha256": "f99602126046eed3f20545a34ddd46fa6e5fcb96f032b410fa8d5251c7450e22"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/05.pal",
+      "git_blob": "90adedf53ea98fa908c98f120c161f2eb82c3a40",
+      "bytes": 197,
+      "sha256": "53b599be1554c4e1a0684f2339409ee4032ac8507696dae1836a10152f925177"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/06.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/07.pal",
+      "git_blob": "6c4ea8beaac80c3a2b47e8b62d2fee7406941939",
+      "bytes": 116,
+      "sha256": "75869eaa61747c23984c7f76735cfa77e3950d663ad9cc9dc6ad751210442bd0"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/08.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/09.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/10.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/11.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/12.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/13.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/14.pal",
+      "git_blob": "4b0812f094038215e9d7d7ea63170299929a834b",
+      "bytes": 113,
+      "sha256": "226f0ddc9a6d3b26b78e138333dfde67d39aa7ac95a257e9e53c766fb6035675"
+    },
+    {
+      "path": "data/tilesets/primary/general/palettes/15.pal",
+      "git_blob": "e7717d74eabffda41647b2d2a2ca7169ca4ad4c3",
+      "bytes": 184,
+      "sha256": "64b87ff3eb44caada2f27f7b1e3195db1935f86460ec78e4bc3b3cffcb0e3251"
+    }
+  ]
+}

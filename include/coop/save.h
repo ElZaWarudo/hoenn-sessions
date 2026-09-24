@@ -12,8 +12,8 @@
 #define COOP_SAVE_V1_SIZE 672
 #define COOP_SAVE_BLOCK3_OFFSET 4
 
-/* The V2 layout is additive and intentionally inactive until its loader and
- * copy-on-migrate path are ready.  Keep the V1 constants above frozen. */
+/* V2 is the live fresh-save layout. Keep V1 constants frozen for rejecting
+ * pre-V2 records without guessing how their region-local state migrated. */
 #define COOP_SAVE_V2_SCHEMA_VERSION 2
 #define COOP_SAVE_V2_SIZE COOP_SAVE_V1_SIZE
 #define COOP_SAVE_V2_CORMORIA_PROGRESS_OFFSET 604
@@ -66,7 +66,7 @@ struct CoopSaveV1
     /* 0x29C */ u32 crc32;
 };
 
-/* Inactive schema V2 storage layout.  The first four progress records and all
+/* Active schema V2 storage layout. The first four progress records and all
  * shared fields intentionally retain their V1 offsets. */
 struct CoopSaveV2
 {
@@ -170,16 +170,15 @@ _Static_assert(offsetof(struct CoopSaveSchemaDescriptor, regional_progress_offse
 
 extern const struct CoopSaveSchemaDescriptor gCoopSaveSchemaDescriptor;
 
-void CoopSave_Initialize(struct CoopSaveV1 *save);
 void CoopSave_InitializeCurrent(void);
 void CoopSave_ResetRuntimeState(void);
 enum CoopSaveLoadResult CoopSave_Load(void);
-bool8 CoopSave_Validate(const struct CoopSaveV1 *save);
-/* Additive schema-two validation remains inactive until migration and the
- * selected-slot runtime path are ready.  These helpers are pure: they do not
- * update gSaveBlock3Ptr or cached online state. */
+bool8 CoopSave_Validate(const struct CoopSaveV2 *save);
+/* V2 helpers are also usable on detached records. */
 bool8 CoopSaveV2_Validate(const struct CoopSaveV2 *save);
-bool8 CoopSave_Seal(struct CoopSaveV1 *save);
+void CoopSaveV2_Initialize(struct CoopSaveV2 *save);
+bool8 CoopSaveV2_Seal(struct CoopSaveV2 *save);
+bool8 CoopSave_Seal(struct CoopSaveV2 *save);
 bool8 CoopSave_PrepareForWrite(void);
 /* True only when the most recent canonical-save preparation succeeded.  The
  * flash writer uses this to abort cloud saves before touching any sector. */

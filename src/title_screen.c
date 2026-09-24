@@ -1,6 +1,7 @@
 #include "global.h"
 #include "battle.h"
 #include "config/quickstart.h"
+#include "coop/arrival_proof.h"
 #include "quickstart.h"
 #include "title_screen.h"
 #include "sprite.h"
@@ -683,7 +684,7 @@ static void MainCB2(void)
 static void Task_TitleScreenPhase1(u8 taskId)
 {
     // Skip to next phase when A, B, Start, or Select is pressed
-    if (JOY_NEW(A_B_START) || gTasks[taskId].tSkipToNext)
+    if (CoopArrivalProof_IsAwaitingContinue() || JOY_NEW(A_B_START) || gTasks[taskId].tSkipToNext)
     {
         gTasks[taskId].tSkipToNext = TRUE;
         gTasks[taskId].tCounter = 0;
@@ -737,7 +738,7 @@ static void Task_TitleScreenPhase2(u8 taskId)
     u32 yPos;
 
     // Skip to next phase when A, B, Start, or Select is pressed
-    if (JOY_NEW(A_B_START) || gTasks[taskId].tSkipToNext)
+    if (CoopArrivalProof_IsAwaitingContinue() || JOY_NEW(A_B_START) || gTasks[taskId].tSkipToNext)
     {
         gTasks[taskId].tSkipToNext = TRUE;
         gTasks[taskId].tCounter = 0;
@@ -788,6 +789,14 @@ static void Task_TitleScreenPhase2(u8 taskId)
 // Show Rayquaza silhouette and process main title screen input
 static void Task_TitleScreenPhase3(u8 taskId)
 {
+    if (CoopArrivalProof_IsAwaitingContinue())
+    {
+        FadeOutBGM(4);
+        BeginNormalPaletteFade(PALETTES_ALL, 0, 0, 16, RGB_WHITEALPHA);
+        SetMainCallback2(CB2_GoToMainMenu);
+        return;
+    }
+
     if (QUICKSTART && JOY_NEW(SELECT_BUTTON))
         Quickstart();
 

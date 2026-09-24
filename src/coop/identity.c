@@ -5,6 +5,7 @@
 #include "constants/opponents.h"
 #include "johto/save.h"
 #include "johto/trainers.h"
+#include "world/events.h"
 
 _Static_assert(COOP_TRAINER_IDENTITY_COUNT <= COOP_TRAINER_IDENTITY_CAPACITY,
                "trainer registry exceeds persisted capacity");
@@ -71,6 +72,20 @@ static enum CoopIdentityAccessResult ResolveActiveTrainer(u16 legacy_trainer_id,
     if (legacy_trainer_id == COOP_IDENTITY_LEGACY_NONE)
         return COOP_IDENTITY_ACCESS_REJECTED;
 
+    /* Each added ROM owns this trainer-ID window and its own regional save.
+     * Cloud play additionally requires a qualified identity entry for the
+     * active map region; an unregistered world fails closed. */
+    if (WorldEvent_IsTrainerId(legacy_trainer_id))
+    {
+        *ordinal = legacy_trainer_id - WORLD_EVENT_TRAINER_START;
+        if (!CoopSave_IsOnlineEnabled())
+            return COOP_IDENTITY_ACCESS_HANDLED;
+        if (!CoopRegion_TryGetActive(&region)
+         || !CoopIdentity_ResolveTrainerOrdinal(region, legacy_trainer_id, ordinal))
+            return COOP_IDENTITY_ACCESS_REJECTED;
+        return COOP_IDENTITY_ACCESS_HANDLED;
+    }
+
     /* Johto runtime IDs are never valid legacy flag indexes.  An imported
      * record may use its local ordinal offline; cloud play additionally needs
      * the active region's qualified registry entry. */
@@ -115,7 +130,10 @@ enum CoopIdentityAccessResult CoopIdentity_GetTrainerDefeated(u16 legacy_trainer
     result = ResolveActiveTrainer(legacy_trainer_id, &ordinal);
     if (result == COOP_IDENTITY_ACCESS_HANDLED)
     {
-        if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN
+        if (WorldEvent_IsTrainerId(legacy_trainer_id)
+         && !CoopSave_IsOnlineEnabled())
+            *defeated = WorldEvent_GetTrainerDefeated(legacy_trainer_id);
+        else if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN
          && !CoopSave_IsOnlineEnabled())
             *defeated = JohtoSave_GetTrainerDefeated(ordinal);
         else
@@ -135,7 +153,10 @@ enum CoopIdentityAccessResult CoopIdentity_SetTrainerDefeated(u16 legacy_trainer
     {
         bool8 saved;
 
-        if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN
+        if (WorldEvent_IsTrainerId(legacy_trainer_id)
+         && !CoopSave_IsOnlineEnabled())
+            saved = WorldEvent_SetTrainerDefeated(legacy_trainer_id, defeated);
+        else if (legacy_trainer_id >= JOHTO_TRAINER_ID_MIN
          && !CoopSave_IsOnlineEnabled())
             saved = JohtoSave_SetTrainerDefeated(ordinal, defeated);
         else

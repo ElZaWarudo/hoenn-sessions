@@ -12,7 +12,7 @@ use coop_cloud::TrustedManifestKey;
 use coop_launcher::{
     CommandSpec, ReqwestCloudApi, SupervisedChildren,
     auth::AuthSession,
-    compat::BuildCompatibility,
+    compat::{BuildCompatibility, SelectedRomWorld},
     epoch::EpochStore,
     keychain::{OsKeychain, RefreshTokenStore},
     process::{
@@ -25,7 +25,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 enum CliError {
     #[error(
-        "usage: coop-launcher --api-base <url> --username <name> --manifest <path> --rom <path> --mgba <path> --manifest-key <path> --manifest-key-id <id> [--password-stdin]"
+        "usage: coop-launcher --api-base <url> --username <name> (--manifest <path> --rom <path> | --release-catalog <path> --world-id <id>) --mgba <path> --manifest-key <path> --manifest-key-id <id> [--password-stdin]"
     )]
     Usage,
     #[error("missing or invalid CLI value")]
@@ -44,8 +44,10 @@ const MAX_ROM_BYTES: u64 = 64 * 1024 * 1024;
 struct Options {
     api_base: String,
     username: String,
-    manifest: PathBuf,
-    rom: PathBuf,
+    manifest: Option<PathBuf>,
+    rom: Option<PathBuf>,
+    release_catalog: Option<PathBuf>,
+    world_id: Option<u16>,
     mgba: PathBuf,
     manifest_key: PathBuf,
     manifest_key_id: String,
@@ -60,6 +62,8 @@ fn parse_options() -> Result<Options, CliError> {
     let private_root = env::temp_dir().join("pokecrossroads-coop-launcher");
     let mut api_base = None;
     let mut username = None;
+    let mut release_catalog = None;
+    let mut world_id = None;
     let mut manifest = None;
     let mut rom = None;
     let mut mgba = None;
@@ -81,8 +85,12 @@ fn parse_options() -> Result<Options, CliError> {
         match flag.to_str() {
             Some("--api-base") => api_base = Some(value),
             Some("--username") => username = Some(value),
+            Some("--release-catalog") => release_catalog = Some(PathBuf::from(value)),
             Some("--manifest") => manifest = Some(PathBuf::from(value)),
             Some("--rom") => rom = Some(PathBuf::from(value)),
+            Some("--world-id") => {
+                world_id = Some(value.parse::<u16>().map_err(|_| CliError::Value)?)
+            }
             Some("--mgba") => mgba = Some(PathBuf::from(value)),
             Some("--manifest-key") => manifest_key = Some(PathBuf::from(value)),
             Some("--manifest-key-id") => manifest_key_id = Some(value),
@@ -96,8 +104,10 @@ fn parse_options() -> Result<Options, CliError> {
     Ok(Options {
         api_base: api_base.ok_or(CliError::Usage)?,
         username: username.ok_or(CliError::Usage)?,
-        manifest: manifest.ok_or(CliError::Usage)?,
-        rom: rom.ok_or(CliError::Usage)?,
+        manifest,
+        rom,
+        release_catalog,
+        world_id,
         mgba: mgba.ok_or(CliError::Usage)?,
         manifest_key: manifest_key.ok_or(CliError::Usage)?,
         manifest_key_id: manifest_key_id.ok_or(CliError::Usage)?,
@@ -107,6 +117,49 @@ fn parse_options() -> Result<Options, CliError> {
         bridge,
         sidecar,
     })
+}
+
+fn select_rom_inputs(
+    options: &Options,
+) -> Result<
+    (
+        PathBuf,
+        PathBuf,
+        coop_launcher::session::RomWorldId,
+        Option<SelectedRomWorld>,
+    ),
+    CliError,
+> {
+    match (
+        &options.manifest,
+        &options.rom,
+        &options.release_catalog,
+        options.world_id,
+    ) {
+        (Some(manifest), Some(rom), None, None) => Ok((
+            manifest.clone(),
+            rom.clone(),
+            coop_launcher::session::RomWorldId::new(1).map_err(|_| CliError::Runtime)?,
+            None,
+        )),
+        (None, None, Some(catalog), Some(world_id)) => {
+            // Release packaging must compile this digest into the launcher.
+            // A caller-supplied digest would authenticate nothing.
+            let trusted_sha256 =
+                option_env!("COOP_RELEASE_CATALOG_SHA256").ok_or(CliError::Runtime)?;
+            let requested =
+                coop_launcher::session::RomWorldId::new(world_id).map_err(|_| CliError::Value)?;
+            let selected = SelectedRomWorld::from_catalog(catalog, trusted_sha256, requested)
+                .map_err(|_| CliError::Runtime)?;
+            Ok((
+                selected.bridge_path.clone(),
+                selected.rom_path.clone(),
+                selected.world_id,
+                Some(selected),
+            ))
+        }
+        _ => Err(CliError::Usage),
+    }
 }
 
 fn repository_root() -> Result<PathBuf, CliError> {
@@ -378,6 +431,7 @@ async fn run() -> Result<(), CliError> {
         return Err(error);
     }
     let options = parse_options()?;
+    let (manifest_path, rom_path, world_id, selected) = select_rom_inputs(&options)?;
     let repository = repository_root()?;
     let workspace = validate_workspace_parent(&options.workspace, &repository)?;
     let epoch = validate_epoch_path(&options.epoch, &repository)?;
@@ -385,7 +439,7 @@ async fn run() -> Result<(), CliError> {
     let mgba = canonicalize_executable(&options.mgba)?;
     let sidecar = canonicalize_executable(&options.sidecar)?;
     let private_root = private_temp_root()?;
-    let (verified_rom, verified_rom_marker) = stage_verified_rom(&options.rom, &private_root)?;
+    let (verified_rom, verified_rom_marker) = stage_verified_rom(&rom_path, &private_root)?;
     // Capture executable identities before any asynchronous authentication or
     // lease work. The process supervisor revalidates these bindings at the
     // exact spawn boundary while retaining the bound file/ancestor handles.
@@ -396,8 +450,13 @@ async fn run() -> Result<(), CliError> {
     };
     let sidecar_template =
         CommandSpec::sidecar_template(&sidecar).map_err(|_| CliError::Runtime)?;
-    let compatibility = BuildCompatibility::validate(&options.manifest, &verified_rom, &mgba)
+    let compatibility = BuildCompatibility::validate(&manifest_path, &verified_rom, &mgba)
         .map_err(|_| CliError::Runtime)?;
+    if let Some(selected) = selected {
+        selected
+            .check_compatibility(&compatibility)
+            .map_err(|_| CliError::Runtime)?;
+    }
     let key = TrustedManifestKey::new(
         options.manifest_key_id,
         parse_public_key(&read_manifest_key(&options.manifest_key)?)?,
@@ -425,6 +484,7 @@ async fn run() -> Result<(), CliError> {
     let config = SessionConfig {
         client_instance_id: coop_cloud::ClientInstanceId::new(uuid::Uuid::new_v4())
             .map_err(|_| CliError::Runtime)?,
+        rom_world_id: world_id,
         manifest: compatibility,
         trusted_manifest_key: key,
         epoch_store: EpochStore::new(epoch),
@@ -521,6 +581,33 @@ fn platform_error() -> Option<CliError> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn main_only_cli_keeps_working_without_a_catalog_digest() {
+        let mut options = Options {
+            api_base: String::new(),
+            username: String::new(),
+            manifest: Some(PathBuf::from("bridge_manifest.json")),
+            rom: Some(PathBuf::from("game.gba")),
+            release_catalog: None,
+            world_id: None,
+            mgba: PathBuf::new(),
+            manifest_key: PathBuf::new(),
+            manifest_key_id: String::new(),
+            password_stdin: false,
+            workspace: PathBuf::new(),
+            epoch: PathBuf::new(),
+            bridge: PathBuf::new(),
+            sidecar: PathBuf::new(),
+        };
+        let (manifest, rom, world, selected) = select_rom_inputs(&options).unwrap();
+        assert_eq!(manifest, PathBuf::from("bridge_manifest.json"));
+        assert_eq!(rom, PathBuf::from("game.gba"));
+        assert_eq!(world.get(), 1);
+        assert!(selected.is_none());
+        options.world_id = Some(2);
+        assert!(matches!(select_rom_inputs(&options), Err(CliError::Usage)));
+    }
 
     #[test]
     fn epoch_path_is_confined_to_private_temp_root() {

@@ -2813,6 +2813,218 @@
 	.4byte \name
 	.endm
 
+	@ Dreamstone uses speakername for the same namebox behavior.
+	.macro speakername name:req
+	setspeaker \name
+	.endm
+
+	@ The donor Pory sources emit this two-argument dialogue command but do
+	@ not define its assembler macro. Show the named line and leave a short
+	@ cutscene beat after the acknowledged message.
+	.macro msgbox_delay speaker:req, text:req
+	setspeaker \speaker
+	msgbox \text
+	delay 16
+	.endm
+
+	@ A movement must finish before its following dialogue or action begins.
+	.macro movedelay
+	waitmovement 0
+	delay 16
+	.endm
+
+	@ Dreamstone also permits a carried TM/HM when no party member knows the move.
+	.macro checkpartymove move:req
+	.byte SCR_OP_CORMORIA_CHECKPARTYMOVE
+	.2byte \move
+	.endm
+
+	@ Cormoria quest adapters. These use opcodes after the host table: 0xe5
+	@ and 0xe6 are already assigned to hidefollower and braille width.
+#ifndef CORMORIA_QUEST_MENU_OPEN
+#define CORMORIA_QUEST_MENU_OPEN 0
+#define CORMORIA_QUEST_MENU_UNLOCK_QUEST 1
+#define CORMORIA_QUEST_MENU_SET_ACTIVE 2
+#define CORMORIA_QUEST_MENU_SET_REWARD 3
+#define CORMORIA_QUEST_MENU_COMPLETE_QUEST 4
+#define CORMORIA_QUEST_MENU_CHECK_UNLOCKED 5
+#define CORMORIA_QUEST_MENU_CHECK_INACTIVE 6
+#define CORMORIA_QUEST_MENU_CHECK_ACTIVE 7
+#define CORMORIA_QUEST_MENU_CHECK_REWARD 8
+#define CORMORIA_QUEST_MENU_CHECK_COMPLETE 9
+#define CORMORIA_QUEST_MENU_BUFFER_QUEST_NAME 10
+#endif
+#ifndef QUEST_MENU_OPEN
+#define QUEST_MENU_OPEN CORMORIA_QUEST_MENU_OPEN
+#define QUEST_MENU_UNLOCK_QUEST CORMORIA_QUEST_MENU_UNLOCK_QUEST
+#define QUEST_MENU_SET_ACTIVE CORMORIA_QUEST_MENU_SET_ACTIVE
+#define QUEST_MENU_SET_REWARD CORMORIA_QUEST_MENU_SET_REWARD
+#define QUEST_MENU_COMPLETE_QUEST CORMORIA_QUEST_MENU_COMPLETE_QUEST
+#define QUEST_MENU_CHECK_UNLOCKED CORMORIA_QUEST_MENU_CHECK_UNLOCKED
+#define QUEST_MENU_CHECK_INACTIVE CORMORIA_QUEST_MENU_CHECK_INACTIVE
+#define QUEST_MENU_CHECK_ACTIVE CORMORIA_QUEST_MENU_CHECK_ACTIVE
+#define QUEST_MENU_CHECK_REWARD CORMORIA_QUEST_MENU_CHECK_REWARD
+#define QUEST_MENU_CHECK_COMPLETE CORMORIA_QUEST_MENU_CHECK_COMPLETE
+#define QUEST_MENU_BUFFER_QUEST_NAME CORMORIA_QUEST_MENU_BUFFER_QUEST_NAME
+#endif
+
+	.macro questmenu case:req, questId:req
+	.byte SCR_OP_CORMORIA_QUESTMENU
+	.byte \case
+	.byte \questId
+	.endm
+
+	.macro subquestmenu case:req, parentId:req, childId:req
+	.byte SCR_OP_CORMORIA_SUBQUESTMENU
+	.byte \case
+	.2byte \parentId
+	.2byte \childId
+	.endm
+
+	.macro returnqueststate questId:req
+	.byte SCR_OP_CORMORIA_RETURNQUESTSTATE
+	.byte \questId
+	.endm
+
+	.macro openquestmenu
+	questmenu QUEST_MENU_OPEN, 0
+	.endm
+
+	@ Starts the specified quest.
+	.macro startquest quest:req
+	closemessage
+	delay 30
+	questmenu QUEST_MENU_SET_ACTIVE, \quest
+	questmenu QUEST_MENU_BUFFER_QUEST_NAME, \quest
+	bufferstring 1 Cormoria_gText_QuestActive
+	playfanfare MUS_LEVEL_UP
+	msgbox Cormoria_gText_QuestAnnounce, MSGBOX_SIGN
+	waitfanfare
+	.endm
+
+	@ Completes the specified quest.
+	.macro completequest quest:req
+	closemessage
+	delay 30
+	questmenu QUEST_MENU_COMPLETE_QUEST, \quest
+	questmenu QUEST_MENU_BUFFER_QUEST_NAME, \quest
+	bufferstring 1 Cormoria_gText_QuestComplete
+	playfanfare MUS_SLOTS_WIN
+	message Cormoria_gText_QuestAnnounce
+	waitfanfare
+	release
+	.endm
+
+	.macro goto_if_quest_inactive quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_INACTIVE, \quest
+	goto_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro goto_if_quest_active quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_ACTIVE, \quest
+	goto_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro goto_if_quest_reward quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_REWARD, \quest
+	goto_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro goto_if_quest_complete quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_COMPLETE, \quest
+	goto_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro goto_if_quest_not_inactive quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_INACTIVE, \quest
+	goto_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro goto_if_quest_not_active quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_ACTIVE, \quest
+	goto_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro goto_if_quest_not_reward quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_REWARD, \quest
+	goto_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro goto_if_quest_not_complete quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_COMPLETE, \quest
+	goto_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro call_if_quest_inactive quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_INACTIVE, \quest
+	call_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro call_if_quest_active quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_ACTIVE, \quest
+	call_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro call_if_quest_reward quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_REWARD, \quest
+	call_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro call_if_quest_complete quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_COMPLETE, \quest
+	call_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro call_if_quest_not_inactive quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_INACTIVE, \quest
+	call_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro call_if_quest_not_active quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_ACTIVE, \quest
+	call_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro call_if_quest_not_reward quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_REWARD, \quest
+	call_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro call_if_quest_not_complete quest:req, dest:req
+	questmenu QUEST_MENU_CHECK_COMPLETE, \quest
+	call_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro completesubquest quest:req, subquest:req
+	closemessage
+	subquestmenu QUEST_MENU_COMPLETE_QUEST, \quest, \subquest
+	questmenu QUEST_MENU_BUFFER_QUEST_NAME, \quest
+	bufferstring 1 Cormoria_gText_QuestUpdated
+	playfanfare MUS_LEVEL_UP
+	msgbox Cormoria_gText_QuestAnnounce, MSGBOX_SIGN
+	waitfanfare
+	.endm
+
+	.macro goto_if_subquest_complete parent:req, child:req, dest:req
+	subquestmenu QUEST_MENU_CHECK_COMPLETE, \parent, \child
+	goto_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro call_if_subquest_complete parent:req, child:req, dest:req
+	subquestmenu QUEST_MENU_CHECK_COMPLETE, \parent, \child
+	call_if_eq VAR_RESULT, TRUE, \dest
+	.endm
+
+	.macro goto_if_subquest_not_complete parent:req, child:req, dest:req
+	subquestmenu QUEST_MENU_CHECK_COMPLETE, \parent, \child
+	goto_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
+	.macro call_if_subquest_not_complete parent:req, child:req, dest:req
+	subquestmenu QUEST_MENU_CHECK_COMPLETE, \parent, \child
+	call_if_eq VAR_RESULT, FALSE, \dest
+	.endm
+
 	@ Gives a random berry between the index ranges
 	.macro giverandomberry loBerry:req, hiBerry:req
 	.if \loBerry == 0 || \loBerry > NUM_BERRIES

@@ -1,0 +1,37 @@
+{
+  "id": "MAP_CORMORIA_IVE_RIVER_CAVES",
+  "name": "Cormoria_IveRiver_Caves",
+  "layout": "LAYOUT_CORMORIA_IVE_RIVER_CAVES",
+  "music": "MUS_SAFARI_ZONE",
+  "region_map_section": "MAPSEC_CORMORIA_IVY_RIVER_UNDERPASS",
+  "requires_flash": false,
+  "weather": "WEATHER_NONE",
+  "map_type": "MAP_TYPE_UNDERGROUND",
+  "allow_cycling": false,
+  "allow_escaping": false,
+  "allow_running": false,
+  "show_map_name": true,
+  "battle_scene": "MAP_BATTLE_SCENE_NORMAL",
+  "connections": 0,
+  "object_events": [],
+  "warp_events": [
+    {
+      "x": 10,
+      "y": 19,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_IVY_RIVER",
+      "dest_warp_id": "2"
+    },
+    {
+      "x": 27,
+      "y": 27,
+      "elevation": 0,
+      "dest_map": "MAP_CORMORIA_IVY_RIVER_MAIN",
+      "dest_warp_id": "0"
+    }
+  ],
+  "coord_events": [],
+  "bg_events": [],
+  "rom_world": "cormoria",
+  "region": "REGION_CORMORIA"
+}

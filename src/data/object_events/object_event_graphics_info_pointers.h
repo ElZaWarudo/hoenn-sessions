@@ -1,5 +1,8 @@
 #include "johto_declarations.h"
 #include "johto_shared_declarations.h"
+#if ROM_WORLD == 2
+#include "cormoria_declarations.h"
+#endif
 extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_BrendanNormal;
 extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_BrendanMachBike;
 extern const struct ObjectEventGraphicsInfo gObjectEventGraphicsInfo_BrendanSurfing;
@@ -794,6 +797,9 @@ const struct ObjectEventGraphicsInfo *const gObjectEventGraphicsInfoPointers[NUM
     [OBJ_EVENT_GFX_SS_ANNE]                  = &gObjectEventGraphicsInfo_SSAnne,
 #include "johto_pointers.inc"
 #include "johto_shared_pointers.inc"
+#if ROM_WORLD == 2
+#include "cormoria_pointers.inc"
+#endif
 };
 
 const struct ObjectEventGraphicsInfo *const gMauvilleOldManGraphicsInfoPointers[] = {

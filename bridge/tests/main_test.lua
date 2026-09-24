@@ -104,7 +104,7 @@ function client:send(bytes, first, last)
   if #bytes == protocol.MESSAGE_SIZE then
     local decoded = assert(protocol.decode(bytes, "outbound"))
     if decoded.type == protocol.types.SAVE_DATA_UPDATED then
-      assert(state_capture_count == outbound_commits + 1)
+      assert(state_capture_count == outbound_commits - 1)
     end
   end
   return last
@@ -194,7 +194,7 @@ dofile = function(path)
         crc_offset = 668,
         schema_version = save_schema,
         struct_size = 672,
-        registry_version = 1,
+        registry_version = 2,
         registry_digest = "0123456789abcdef0123456789abcdef",
       },
     }
@@ -225,12 +225,12 @@ assert(not stale_manifest_ok)
 assert(tostring(stale_manifest_error):match("address projection schema"))
 
 manifest_schema = 4
-save_schema = 2
+save_schema = 1
 local stale_save_ok, stale_save_error = pcall(original_dofile, "bridge/main.lua")
 assert(not stale_save_ok)
 assert(tostring(stale_save_error):match("compatible co%-op save schema"))
 
-save_schema = 1
+save_schema = 2
 -- A permanently missing/mismatched ABI fails once, closes the socket, and
 -- leaves the ROM queues untouched, rather than retrying forever.
 assert(pcall(original_dofile, "bridge/main.lua"))
@@ -302,6 +302,38 @@ assert(#error_messages == 0)
 savedata_callback()
 assert(state_capture_count == 0)
 
+-- The portal ID is forwarded in the authenticated epoch before the ordinary
+-- checkpoint request; neither frame by itself authorizes a ROM switch.
+local portal_request = assert(protocol.encode({
+  type = protocol.types.PORTAL_TRAVEL_REQUEST,
+  sequence = 8,
+  session_epoch = 7,
+  payload = "to_cormoria",
+}))
+outbound_message = {
+  bytes = portal_request,
+  decoded = assert(protocol.decode(portal_request, "outbound")),
+  read_index = 2,
+}
+frame_callback()
+assert(#send_calls == 4)
+assert(send_calls[4].bytes == portal_request)
+assert(outbound_commits == 1)
+local portal_checkpoint_ready = assert(protocol.encode({
+  type = protocol.types.CHECKPOINT_READY,
+  sequence = 9,
+  session_epoch = 7,
+}))
+outbound_message = {
+  bytes = portal_checkpoint_ready,
+  decoded = assert(protocol.decode(portal_checkpoint_ready, "outbound")),
+  read_index = 3,
+}
+frame_callback()
+assert(#send_calls == 5)
+assert(send_calls[5].bytes == portal_checkpoint_ready)
+assert(outbound_commits == 2)
+
 generation = 10
 local checkpoint_granted = assert(protocol.encode({
   type = protocol.types.CHECKPOINT_GRANTED,
@@ -332,21 +364,20 @@ outbound_message = {
 
 frame_callback()
 assert(state_capture_count == 0)
-assert(#send_calls == 3)
-assert(outbound_commits == 0)
+assert(#send_calls == 5)
+assert(outbound_commits == 2)
 
 savedata_callback()
 assert(state_capture_count == 1)
-assert(#send_calls == 3)
+assert(#send_calls == 5)
 
 frame_callback()
-assert(#send_calls == 4)
-assert(send_calls[4].bytes == save_data_updated)
-assert(outbound_commits == 1)
+assert(#send_calls == 6)
+assert(send_calls[6].bytes == save_data_updated)
+assert(outbound_commits == 3)
 
--- A wrapping u32 generation is newer, and failed optional state capture still
--- forwards the canonical SAV completion only after the attempt returns.
-generation = 0xFFFFFFFF
+-- A later non-wrapping generation forwards only after optional state capture
+-- has been attempted. The ROM now rejects generation overflow.
 local wrap_grant = assert(protocol.encode({
   type = protocol.types.CHECKPOINT_GRANTED,
   sequence = 3,
@@ -355,7 +386,7 @@ local wrap_grant = assert(protocol.encode({
 incoming_chunks[1] = wrap_grant
 receive_callback()
 frame_callback()
-generation = 0
+generation = 12
 local wrapped_update = assert(protocol.encode({
   type = protocol.types.SAVE_DATA_UPDATED,
   sequence = 3,
@@ -368,16 +399,16 @@ outbound_message = {
   read_index = 5,
 }
 frame_callback()
-assert(#send_calls == 4)
+assert(#send_calls == 6)
 savedata_callback()
 assert(state_capture_count == 2)
 assert(#warning_messages == 3)
 assert(warning_messages[3]:match("state capture failed"))
 assert(original_io_open(resume_output_path, "rb") == nil)
 frame_callback()
-assert(#send_calls == 5)
-assert(send_calls[5].bytes == wrapped_update)
-assert(outbound_commits == 2)
+assert(#send_calls == 7)
+assert(send_calls[7].bytes == wrapped_update)
+assert(outbound_commits == 4)
 
 -- Legacy empty completion payloads fail closed and are never sent.
 local next_grant = assert(protocol.encode({
@@ -388,7 +419,7 @@ local next_grant = assert(protocol.encode({
 incoming_chunks[1] = next_grant
 receive_callback()
 frame_callback()
-generation = 12
+generation = 13
 local malformed_update = assert(protocol.encode({
   type = protocol.types.SAVE_DATA_UPDATED,
   sequence = 4,
@@ -402,8 +433,8 @@ outbound_message = {
 local malformed_ok, malformed_error = pcall(frame_callback)
 assert(not malformed_ok)
 assert(tostring(malformed_error):match("must carry one little%-endian u32 generation"))
-assert(#send_calls == 5)
-assert(outbound_commits == 2)
+assert(#send_calls == 7)
+assert(outbound_commits == 4)
 
 -- Backpressure bounds Lua memory while the ROM cannot drain its inbound queue,
 -- as happens transiently during map loads and is amplified by fast-forward.

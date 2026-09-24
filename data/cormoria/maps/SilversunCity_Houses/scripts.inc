@@ -1,0 +1,437 @@
+Cormoria_SilversunCity_Houses_MapScripts::
+	.byte 0
+
+
+Cormoria_SilversunCity_Houses_Smeargle::
+# 9 "data//maps/SilversunCity_Houses/scripts.pory"
+	playmoncry SPECIES_SMEARGLE, CRY_MODE_NORMAL
+# 10 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Smeargle_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_Houses_Artist::
+# 15 "data//maps/SilversunCity_Houses/scripts.pory"
+	lockall
+# 16 "data//maps/SilversunCity_Houses/scripts.pory"
+	faceplayer
+# 17 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ARTIST, 2
+	goto_if_eq Cormoria_SilversunCity_Houses_Artist_2
+Cormoria_SilversunCity_Houses_Artist_1:
+# 22 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ARTIST, 1
+	goto_if_eq Cormoria_SilversunCity_Houses_Artist_5
+Cormoria_SilversunCity_Houses_Artist_4:
+# 48 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ARTIST, 0
+	goto_if_eq Cormoria_SilversunCity_Houses_Artist_8
+Cormoria_SilversunCity_Houses_Artist_7:
+# 88 "data//maps/SilversunCity_Houses/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_Houses_Artist_2:
+# 18 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 19 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_1, MSGBOX_NPC
+	goto Cormoria_SilversunCity_Houses_Artist_1
+
+Cormoria_SilversunCity_Houses_Artist_5:
+# 23 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 24 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_2, MSGBOX_YESNO
+# 25 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_Houses_Artist_10
+# 43 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 44 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_7, MSGBOX_NPC
+	goto Cormoria_SilversunCity_Houses_Artist_4
+
+Cormoria_SilversunCity_Houses_Artist_8:
+# 49 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_8
+# 50 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_9
+# 51 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 52 "data//maps/SilversunCity_Houses/scripts.pory"
+	delay 16
+# 53 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 54 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_10
+# 55 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 56 "data//maps/SilversunCity_Houses/scripts.pory"
+	delay 8
+# 57 "data//maps/SilversunCity_Houses/scripts.pory"
+	applymovement 2, Cormoria_SilversunCity_Houses_Artist_Movement_0
+# 58 "data//maps/SilversunCity_Houses/scripts.pory"
+	waitmovement 0
+# 59 "data//maps/SilversunCity_Houses/scripts.pory"
+	delay 20
+# 60 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 61 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_11
+# 62 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 63 "data//maps/SilversunCity_Houses/scripts.pory"
+	delay 16
+# 64 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 65 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_12, MSGBOX_YESNO
+# 66 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 67 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_Houses_Artist_13
+# 79 "data//maps/SilversunCity_Houses/scripts.pory"
+	applymovement 2, Cormoria_SilversunCity_Houses_Artist_Movement_0
+# 80 "data//maps/SilversunCity_Houses/scripts.pory"
+	waitmovement 0
+# 81 "data//maps/SilversunCity_Houses/scripts.pory"
+	delay 24
+# 82 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 83 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_14, MSGBOX_NPC
+# 84 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+	goto Cormoria_SilversunCity_Houses_Artist_7
+
+Cormoria_SilversunCity_Houses_Artist_10:
+	checkitem ITEM_BLACK_SLUDGE
+# 0 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare VAR_RESULT, 0
+	goto_if_ne Cormoria_SilversunCity_Houses_Artist_16
+# 39 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 40 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_6, MSGBOX_NPC
+	goto Cormoria_SilversunCity_Houses_Artist_4
+
+Cormoria_SilversunCity_Houses_Artist_13:
+# 68 "data//maps/SilversunCity_Houses/scripts.pory"
+	applymovement 2, Cormoria_SilversunCity_Houses_Artist_Movement_0
+# 69 "data//maps/SilversunCity_Houses/scripts.pory"
+	waitmovement 0
+# 70 "data//maps/SilversunCity_Houses/scripts.pory"
+	delay 24
+# 71 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 72 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_13, MSGBOX_NPC
+# 73 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 75 "data//maps/SilversunCity_Houses/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ARTIST, 1
+# 76 "data//maps/SilversunCity_Houses/scripts.pory"
+	startquest QUEST_SILVERSUN_ARTIST
+	goto Cormoria_SilversunCity_Houses_Artist_7
+
+Cormoria_SilversunCity_Houses_Artist_16:
+# 27 "data//maps/SilversunCity_Houses/scripts.pory"
+	removeitem ITEM_BLACK_SLUDGE
+# 28 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername NULL
+# 29 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_3
+# 30 "data//maps/SilversunCity_Houses/scripts.pory"
+	completequest QUEST_SILVERSUN_ARTIST
+# 31 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 32 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_4
+# 33 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 34 "data//maps/SilversunCity_Houses/scripts.pory"
+	giveitem ITEM_TM73
+# 35 "data//maps/SilversunCity_Houses/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ARTIST, 2
+# 36 "data//maps/SilversunCity_Houses/scripts.pory"
+	speakername Cormoria_SilversunCity_Houses_Artist_Text_0
+# 37 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Artist_Text_5, MSGBOX_NPC
+	goto Cormoria_SilversunCity_Houses_Artist_4
+
+
+Cormoria_SilversunCity_Houses_Tutor::
+# 94 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Tutor_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_Houses_NPC1::
+# 108 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_NPC1_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_Houses_NPC2::
+# 112 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_NPC2_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_Houses_NPC3::
+# 116 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_NPC3_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_Houses_DuskullNPC1::
+# 136 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare Cormoria_VAR_SEWERS_DUSKULL, 4
+	goto_if_eq Cormoria_SilversunCity_Houses_DuskullNPC1_2
+# 145 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_DuskullNPC1_Text_1, MSGBOX_NPC
+Cormoria_SilversunCity_Houses_DuskullNPC1_1:
+	end
+
+Cormoria_SilversunCity_Houses_DuskullNPC1_2:
+# 137 "data//maps/SilversunCity_Houses/scripts.pory"
+	lockall
+# 140 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_DuskullNPC1_Text_0, MSGBOX_NPC
+# 141 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 142 "data//maps/SilversunCity_Houses/scripts.pory"
+	giveegg SPECIES_HONEDGE
+# 143 "data//maps/SilversunCity_Houses/scripts.pory"
+	setvar Cormoria_VAR_SEWERS_DUSKULL, 4
+	goto Cormoria_SilversunCity_Houses_DuskullNPC1_1
+
+
+Cormoria_SilversunCity_Houses_Husband::
+# 151 "data//maps/SilversunCity_Houses/scripts.pory"
+	compare Cormoria_VAR_SEWERS_DUSKULL, 4
+	goto_if_eq Cormoria_SilversunCity_Houses_Husband_2
+# 161 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_DuskullNPC1_Text_1, MSGBOX_NPC
+Cormoria_SilversunCity_Houses_Husband_1:
+	end
+
+Cormoria_SilversunCity_Houses_Husband_2:
+# 154 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Husband_Text_0, MSGBOX_NPC
+# 155 "data//maps/SilversunCity_Houses/scripts.pory"
+	release
+# 157 "data//maps/SilversunCity_Houses/scripts.pory"
+	giveitem ITEM_SMUGGLER_EMBLEM
+# 158 "data//maps/SilversunCity_Houses/scripts.pory"
+	completequest QUEST_SILVERSUN_WIFE
+# 159 "data//maps/SilversunCity_Houses/scripts.pory"
+	setvar Cormoria_VAR_SEWERS_DUSKULL, 5
+	goto Cormoria_SilversunCity_Houses_Husband_1
+
+
+Cormoria_SilversunCity_Houses_Wife::
+# 168 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Wife_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_Houses_Furfrou::
+# 174 "data//maps/SilversunCity_Houses/scripts.pory"
+	msgbox Cormoria_SilversunCity_Houses_Furfrou_Text_0, MSGBOX_NPC
+	end
+
+
+# 57 "data//maps/SilversunCity_Houses/scripts.pory"
+Cormoria_SilversunCity_Houses_Artist_Movement_0:
+# 57 "data//maps/SilversunCity_Houses/scripts.pory"
+	emote_exclamation_mark
+	step_end
+
+Cormoria_SilversunCity_Houses_Smeargle_Text_0:
+# 10 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Smeargle is holding the teacup with its\n"
+	.string "tail and sipping tea! With a tail like\l"
+	.string "that, no wonder it can draw so well.$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_0:
+# 18 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Arsalan$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_1:
+# 19 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Where's my masterpiece?\p"
+	.string "I only just got the Black Sludge!\n"
+	.string "Don't hurry me, you philistine!$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_2:
+# 24 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Yes yes. Have you brought me the Black\n"
+	.string "Sludge?$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_3:
+# 29 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "{PLAYER} gave Arsalan a Black Sludge.$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_4:
+# 32 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Amazing! You are a life-saver. Here, I\n"
+	.string "must repay you somehow. Take this, have\l"
+	.string "it!$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_5:
+# 37 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "I have no need of it. Why should my art\n"
+	.string "hide behind a facade? But you, my dear\l"
+	.string "helpful philistine, might benefit from\l"
+	.string "it. For the right Pokémon, it can be a\l"
+	.string "powerful move.\p"
+	.string "Farewell!$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_6:
+# 40 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "But you do not have it! An artist's eyes\n"
+	.string "cannot be fooled.$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_7:
+# 44 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Just use the regular black paint, you\n"
+	.string "say? Pah! Philistine!$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_8:
+# 49 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "???$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_9:
+# 50 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Myself, I have no patience for theater.\n"
+	.string "No no! Although Gloria is fantastic.\l"
+	.string "Such style and technique! I admire her\l"
+	.string "interpretation of the morbid.\p"
+	.string "Me?\p"
+	.string "My creativity compels me to bring the\n"
+	.string "world to life through paint and brush!$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_10:
+# 54 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Yes yes! I am indeed none other than\n"
+	.string "the legendary Arsalan. My works adorn\l"
+	.string "the most prestigious walls in Cormoria!\p"
+	.string "...$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_11:
+# 61 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "You haven't heard of me?\n"
+	.string "Uncultured, you are!$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_12:
+# 65 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "But Arsalan is struggling now.\p"
+	.string "Why, you ask?\p"
+	.string "Well well.\p"
+	.string "You see, I am trying to paint something\n"
+	.string "never done before - the night itself!\l"
+	.string "And for this, I need a paint so dark it\l"
+	.string "swallows you. These regular paints\l"
+	.string "aren't worthy of being on my canvas.\l"
+	.string "I need to create a unique shade of\l"
+	.string "black using some Black Sludge.\p"
+	.string "Will you help me?$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_13:
+# 72 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Arsalan is most pleased!\n"
+	.string "I eagerly await your return.$"
+
+Cormoria_SilversunCity_Houses_Artist_Text_14:
+# 83 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Just use the regular paint, you say?\p"
+	.string "Pah! Philistine!$"
+
+Cormoria_SilversunCity_Houses_Tutor_Text_0:
+# 94 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "I'm the sole proprietor of Drifblim\n"
+	.string "Travels Pvt. Ltd.\p"
+	.string "...\p"
+	.string "Want a pass? Sure thing.\n"
+	.string "All it'll cost you is ¥99999.\p"
+	.string "Haven't got the money?\p"
+	.string "Then scram, kid!\n"
+	.string "I'm doing business here.$"
+
+Cormoria_SilversunCity_Houses_NPC1_Text_0:
+# 108 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Silversun City is right between the\n"
+	.string "always foggy Vilethorn Woods and the\l"
+	.string "always raining Route 6! We should be\l"
+	.string "called Silvershade City instead.$"
+
+Cormoria_SilversunCity_Houses_NPC2_Text_0:
+# 112 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "They say dangerous Pokémon come out\n"
+	.string "from the sewers from time to time, like\l"
+	.string "the Sewer Scourge. Apparently that's\l"
+	.string "not even a Pokémon, it's an evil spirit!\l"
+	.string "I don't let my child play near it!$"
+
+Cormoria_SilversunCity_Houses_NPC3_Text_0:
+# 116 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "I want a Toxel as my first Pokémon but\n"
+	.string "Mom will never let me have one.$"
+
+Cormoria_SilversunCity_Houses_DuskullNPC1_Text_0:
+# 140 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Thank you for saving my wife. She's\n"
+	.string "blind, so she needs a Pokémon to assist\l"
+	.string "her. But the orphanage was short of\l"
+	.string "Pokémon, and we couldn't wait. So we\l"
+	.string "bought an egg at the black market.\l"
+	.string "That's when she got lost. She took a\l"
+	.string "wrong turn somewhere and I didn't pay\l"
+	.string "attention.\p"
+	.string "But thanks to you, both of us are safe\n"
+	.string "and we have a new member of the family!\l"
+	.string "With Furfrou around, my wife can do\l"
+	.string "things normally now. We're eternally\l"
+	.string "grateful.\p"
+	.string "...\p"
+	.string "We want you to have this. The black\n"
+	.string "market dealer gave it to us but we don't\l"
+	.string "need it.$"
+
+Cormoria_SilversunCity_Houses_DuskullNPC1_Text_1:
+# 145 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "I'm never going to the sewers\n"
+	.string "again...but we did what we had to do.$"
+
+Cormoria_SilversunCity_Houses_Husband_Text_0:
+# 154 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Thank you for saving my wife. She's\n"
+	.string "blind, so she needs a Pokémon to assist\l"
+	.string "her. But the orphanage was short of\l"
+	.string "Pokémon, and we couldn't wait. So we\l"
+	.string "bought an egg at the black market.\l"
+	.string "That's when she got lost. She took a\l"
+	.string "wrong turn somewhere and I didn't pay\l"
+	.string "attention.\p"
+	.string "But thanks to you, both of us are safe\n"
+	.string "and we have a new member of the family!\l"
+	.string "With Furfrou around, my wife can live\l"
+	.string "better. We're eternally grateful.\p"
+	.string "...\p"
+	.string "Please take this. It was hard to get,\n"
+	.string "but we won't need it any more, because\l"
+	.string "we'll never go into the black market\l"
+	.string "again.$"
+
+Cormoria_SilversunCity_Houses_Wife_Text_0:
+# 168 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Furfrou helps me a ton around the\n"
+	.string "house.$"
+
+Cormoria_SilversunCity_Houses_Furfrou_Text_0:
+# 174 "data//maps/SilversunCity_Houses/scripts.pory"
+	.string "Furfrou is patiently waiting by its\n"
+	.string "owner.$"

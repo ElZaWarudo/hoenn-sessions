@@ -1,0 +1,1012 @@
+Cormoria_SilversunCity_BlindOrphanage_MapScripts::
+	.byte 0
+
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart::
+# 5 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 6 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 9 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_2
+# 13 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_5
+# 18 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 4
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_8
+# 23 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 3
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_11
+# 51 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 2
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_14
+# 74 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_21
+# 79 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+# 80 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_10, MSGBOX_NPC
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_2:
+# 10 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_0, MSGBOX_NPC
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_5:
+# 14 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_0, MSGBOX_NPC
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_8:
+# 19 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_1, MSGBOX_NPC
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_11:
+# 24 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_2, MSGBOX_YESNO
+# 25 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_17
+# 29 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	checkitem ITEM_ORPHANAGE_BOOK
+# 30 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_27
+# 43 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_6, MSGBOX_NPC
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_16:
+# 47 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_14:
+# 52 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_2, MSGBOX_YESNO
+# 53 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_24
+# 57 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	checkitem ITEM_ORPHANAGE_BOOK
+# 58 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_30
+# 66 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_6, MSGBOX_NPC
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_23:
+# 70 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_17:
+# 26 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_3
+	goto Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_16
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_21:
+# 75 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_9, MSGBOX_NPC
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_24:
+# 54 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_3
+	goto Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_23
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_27:
+# 31 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	removeitem ITEM_ORPHANAGE_BOOK
+# 32 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_4, MSGBOX_SIGN
+# 33 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 34 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_5
+# 35 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 36 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 4
+# 39 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto_if_set Cormoria_FLAG_SILVERSUN_BRAILLE_1_DONE, Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_33
+	goto Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_16
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_30:
+# 59 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	removeitem ITEM_ORPHANAGE_BOOK
+# 60 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_7, MSGBOX_SIGN
+# 61 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 62 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_8
+# 63 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 64 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+	goto Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_23
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_33:
+# 40 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 3
+	goto Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_16
+
+
+Cormoria_SilversunCity_Book1::
+# 85 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 86 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_BrailleBook1
+# 87 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 88 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 90 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+	goto_if_eq Cormoria_SilversunCity_Book1_2
+Cormoria_SilversunCity_Book1_1:
+# 99 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_Book1_2:
+# 91 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_0, MSGBOX_YESNO
+# 92 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_Book1_4
+	goto Cormoria_SilversunCity_Book1_1
+
+Cormoria_SilversunCity_Book1_4:
+# 93 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 2
+# 94 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_1
+# 95 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	additem ITEM_ORPHANAGE_BOOK
+	goto Cormoria_SilversunCity_Book1_1
+
+
+Cormoria_SilversunCity_Book2::
+# 104 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 105 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_BrailleBook2
+# 106 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 107 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 109 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+	goto_if_eq Cormoria_SilversunCity_Book2_2
+Cormoria_SilversunCity_Book2_1:
+# 118 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_Book2_2:
+# 110 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_0, MSGBOX_YESNO
+# 111 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_Book2_4
+	goto Cormoria_SilversunCity_Book2_1
+
+Cormoria_SilversunCity_Book2_4:
+# 112 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 2
+# 113 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_1
+# 114 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	additem ITEM_ORPHANAGE_BOOK
+	goto Cormoria_SilversunCity_Book2_1
+
+
+Cormoria_SilversunCity_Book3::
+# 123 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 124 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_BrailleBook3
+# 125 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 126 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 128 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+	goto_if_eq Cormoria_SilversunCity_Book3_2
+Cormoria_SilversunCity_Book3_1:
+# 137 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_Book3_2:
+# 129 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_0, MSGBOX_YESNO
+# 130 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_Book3_4
+	goto Cormoria_SilversunCity_Book3_1
+
+Cormoria_SilversunCity_Book3_4:
+# 131 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 3
+# 132 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_1
+# 133 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	additem ITEM_ORPHANAGE_BOOK
+	goto Cormoria_SilversunCity_Book3_1
+
+
+Cormoria_SilversunCity_Book4::
+# 142 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 143 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_BrailleBook4
+# 144 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 145 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 147 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 1
+	goto_if_eq Cormoria_SilversunCity_Book4_2
+Cormoria_SilversunCity_Book4_1:
+# 156 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_Book4_2:
+# 148 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_0, MSGBOX_YESNO
+# 149 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_Book4_4
+	goto Cormoria_SilversunCity_Book4_1
+
+Cormoria_SilversunCity_Book4_4:
+# 150 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 2
+# 151 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_Book1_Text_1
+# 152 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	additem ITEM_ORPHANAGE_BOOK
+	goto Cormoria_SilversunCity_Book4_1
+
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart::
+# 162 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto_if_set Cormoria_FLAG_SILVERSUN_BRAILLE_1_DONE, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_2
+# 168 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 169 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 171 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_5
+# 177 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_8
+# 184 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 185 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_3, MSGBOX_YESNO
+# 187 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_11
+# 199 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 200 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_5
+# 201 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 202 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 30
+# 203 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	applymovement 5, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Movement_0
+# 204 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 205 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_6
+# 206 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 207 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 24
+# 208 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	applymovement 8, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Movement_1
+# 209 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 24
+# 210 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_7
+# 211 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_8
+# 212 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 213 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 16
+# 214 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 215 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_9
+# 216 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 219 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_Braille_Quiz1
+# 220 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 221 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 222 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_7
+# 223 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_10
+# 224 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 225 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 226 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_11
+# 227 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 231 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_Braille_Quiz2
+# 232 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 233 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 234 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_7
+# 235 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_12
+# 236 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 237 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 238 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_11
+# 239 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 242 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	braillemessage Cormoria_Silversun_Braille_Quiz3
+# 243 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitbuttonpress
+# 244 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	closebraillemessage
+# 245 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_7
+# 246 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_13
+# 247 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 248 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 16
+# 249 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 250 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_14
+# 251 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 252 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 16
+# 253 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 256 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 257 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_15
+# 258 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	dynmultichoice 0, 0, TRUE, 4, 0, DYN_MULTICHOICE_CB_NONE, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_16, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_17, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_18, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_19
+# 260 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_14
+# 272 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 273 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_21
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_13:
+# 276 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_2:
+# 163 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 164 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_1, MSGBOX_NPC
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_5:
+# 172 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 173 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_2
+# 174 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_8:
+# 178 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 179 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_2
+# 180 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_11:
+# 188 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 189 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_4
+# 190 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 191 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	applymovement 5, Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Movement_0
+# 192 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitmovement 0
+# 193 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 195 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_14:
+# 261 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0
+# 262 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_20
+# 263 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 265 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setflag Cormoria_FLAG_SILVERSUN_BRAILLE_1_DONE
+# 267 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_BRAILLE_BOOK, 4
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_17
+	goto Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_13
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_17:
+# 268 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 3
+	goto Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_13
+
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_1::
+# 283 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 284 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 285 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	speakername Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_7
+# 286 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_NPC_1_Text_0
+# 287 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_2::
+# 292 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 293 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 294 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_NPC_2_Text_0
+# 295 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_3::
+# 300 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 301 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 302 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_NPC_3_Text_0
+# 303 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_5::
+# 308 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 309 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 310 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_NPC_5_Text_0
+# 311 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_6::
+# 316 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 317 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 318 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_NPC_6_Text_0
+# 319 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_Ralts::
+# 324 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	playmoncry SPECIES_RALTS, CRY_MODE_NORMAL
+# 325 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_Ralts_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_Noibat::
+# 330 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	playmoncry SPECIES_NOIBAT, CRY_MODE_NORMAL
+# 331 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_Noibat_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_Furfrou::
+# 336 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	playmoncry SPECIES_FURFROU, CRY_MODE_NORMAL
+# 337 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_Furfrou_Text_0, MSGBOX_NPC
+	end
+
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest::
+# 356 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	lockall
+# 357 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	faceplayer
+# 359 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 4
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_OldManQuest_2
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_1:
+# 363 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_OldManQuest_5
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_4:
+# 369 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 3
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_OldManQuest_8
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_7:
+# 375 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 2
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_OldManQuest_11
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_10:
+# 381 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_OldManQuest_14
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_13:
+# 394 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	releaseall
+	end
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_2:
+# 360 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_0
+	goto Cormoria_SilversunCity_BlindOrphanage_OldManQuest_1
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_5:
+# 364 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_1
+# 365 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 1
+# 366 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	delay 24
+	goto Cormoria_SilversunCity_BlindOrphanage_OldManQuest_4
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_8:
+# 370 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_2
+# 371 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_Reward
+	goto Cormoria_SilversunCity_BlindOrphanage_OldManQuest_7
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_11:
+# 376 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_3
+# 377 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+	goto Cormoria_SilversunCity_BlindOrphanage_OldManQuest_10
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_14:
+# 382 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_4, MSGBOX_YESNO
+# 383 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_OldManQuest_16
+# 390 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_6
+	goto Cormoria_SilversunCity_BlindOrphanage_OldManQuest_13
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_16:
+# 384 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_5
+# 385 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	release
+# 387 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 2
+	goto Cormoria_SilversunCity_BlindOrphanage_OldManQuest_13
+
+
+Cormoria_SilversunCity_BlindOrphanage_Reward::
+# 402 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	message Cormoria_SilversunCity_BlindOrphanage_Reward_Text_0
+# 403 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	waitmessage
+# 404 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	dynmultichoice 0, 0, TRUE, 2, 0, DYN_MULTICHOICE_CB_NONE, Cormoria_SilversunCity_BlindOrphanage_Reward_Text_1, Cormoria_SilversunCity_BlindOrphanage_Reward_Text_2
+# 406 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 0
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_Reward_1
+# 409 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_RewardB
+	return
+
+Cormoria_SilversunCity_BlindOrphanage_Reward_1:
+# 407 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_RewardA
+	return
+
+
+Cormoria_SilversunCity_BlindOrphanage_RewardA::
+# 413 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar VAR_0x8006, ITEM_WISE_GLASSES
+# 414 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	showitemdescription
+# 415 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_RewardA_Text_0, MSGBOX_YESNO
+# 416 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_RewardA_1
+# 421 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	hideitemdescription
+# 422 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_Reward
+	return
+
+Cormoria_SilversunCity_BlindOrphanage_RewardA_1:
+# 417 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	hideitemdescription
+# 418 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	giveitem ITEM_WISE_GLASSES
+# 419 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_RewardEnd
+	return
+
+
+Cormoria_SilversunCity_BlindOrphanage_RewardB::
+# 426 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar VAR_0x8006, ITEM_MUSCLE_BAND
+# 427 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	showitemdescription
+# 428 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_RewardA_Text_0, MSGBOX_YESNO
+# 429 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	compare VAR_RESULT, 1
+	goto_if_eq Cormoria_SilversunCity_BlindOrphanage_RewardB_1
+# 434 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	hideitemdescription
+# 435 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_Reward
+	return
+
+Cormoria_SilversunCity_BlindOrphanage_RewardB_1:
+# 430 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	hideitemdescription
+# 431 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	giveitem ITEM_MUSCLE_BAND
+# 432 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	goto Cormoria_SilversunCity_BlindOrphanage_RewardEnd
+	return
+
+
+Cormoria_SilversunCity_BlindOrphanage_RewardEnd::
+# 439 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	setvar Cormoria_VAR_SILVERSUN_ORPHANAGE_MAINQUEST, 4
+# 440 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	msgbox Cormoria_SilversunCity_BlindOrphanage_RewardEnd_Text_0, MSGBOX_NPC
+	end
+
+
+# 191 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Movement_0:
+# 191 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	face_left
+	step_end
+
+# 208 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Movement_1:
+# 208 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	jump_in_place_right
+	step_end
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_0:
+# 10 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I'm looking for a book on all the\n"
+	.string "Pokémon in Cormoria! But I'm too short\l"
+	.string "to touch the braille on the covers...$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_1:
+# 19 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "This book is hard to understand! I wish\n"
+	.string "I could touch all these Pokémon so I\l"
+	.string "know what they feel like. But the\l"
+	.string "teacher says that's dangerous too!\l"
+	.string "What if I touch a Pincurchin or a\l"
+	.string "Corsola?$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_2:
+# 24 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Is it you? Did you bring the book?$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_3:
+# 26 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "...oh, okay. That's fine.$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_4:
+# 32 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "{PLAYER} gave the boy a copy of\n"
+	.string "POKéMON A TO Z.$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_5:
+# 34 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Yayy! Thank you!$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_6:
+# 43 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Hey, you didn't bring a book!$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_7:
+# 60 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "{PLAYER} gave the boy a book.$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_8:
+# 62 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Hey, this isn't it! I want the right\n"
+	.string "book!$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_9:
+# 75 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I want a book on all the Pokémon in\n"
+	.string "Cormoria!$"
+
+Cormoria_SilversunCity_BlindOrphanage_PokedexGameStart_Text_10:
+# 80 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I'm looking for a book on all the\n"
+	.string "Pokémon in Cormoria! But I'm too short\l"
+	.string "to touch the braille on the book covers.\l"
+	.string "If you find me one, can you bring it to\l"
+	.string "me?$"
+
+Cormoria_SilversunCity_Book1_Text_0:
+# 91 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Take this book?$"
+
+Cormoria_SilversunCity_Book1_Text_1:
+# 94 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "{PLAYER} took a book from the shelf.$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_0:
+# 163 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Teacher$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_1:
+# 164 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Sheena is preparing for her next test.$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_2:
+# 173 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I work at the Silversun Theater, but on\n"
+	.string "the weekends, I teach braille to the\l"
+	.string "children here. It's very fulfilling!$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_3:
+# 185 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Sheena is about to take a braille test.\n"
+	.string "Would you like to help us out?$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_4:
+# 189 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Okay.\n"
+	.string "Sheena, let's continue.$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_5:
+# 200 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Great. Sheena has to read three\n"
+	.string "sentences in braille correctly.\l"
+	.string "I'll give Sheena the questions, and you\l"
+	.string "keep a tally of her answers, okay?$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_6:
+# 205 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Are you ready Sheena?$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_7:
+# 210 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Sheena$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_8:
+# 211 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Yes!$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_9:
+# 215 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Okay then. Here's the first question!$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_10:
+# 223 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I got it! I got it!\n"
+	.string "AN APPLIN A DAY KEEPS THE DOCTOR AT\l"
+	.string "BAY.$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_11:
+# 226 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Next question!$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_12:
+# 235 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I got it! I got it!\n"
+	.string "ROLY POLY WITH ROLYCOLY.$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_13:
+# 246 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I got it! I got it!\p"
+	.string "FEEBAS EVOLVES WITH A WIND SAIL.$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_14:
+# 250 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "And that's all the questions!$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_15:
+# 257 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "So how many did SHEEA get right?$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_16:
+# 258 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "0/3$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_17:
+# 258 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "1/3$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_18:
+# 258 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "2/3$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_19:
+# 258 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "3/3$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_20:
+# 262 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Yes...looks like Sheena needs more\n"
+	.string "practice.\p"
+	.string "Thanks for volunteering.\p"
+	.string "Thank you!$"
+
+Cormoria_SilversunCity_BlindOrphanage_BrailleGameStart_Text_21:
+# 273 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "That doesn't seem right. Are you sure\n"
+	.string "you checked her answers correctly?$"
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_1_Text_0:
+# 286 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I'm learning braille!$"
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_2_Text_0:
+# 294 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Sometimes I imagine what colors look\n"
+	.string "like when Ralts sends me warm thoughts.\p"
+	.string "Is yellow warm?$"
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_3_Text_0:
+# 302 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Many of our children may not see the\n"
+	.string "world, but they feel it - especially\l"
+	.string "when a Pokémon is by their side.$"
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_5_Text_0:
+# 310 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I gave my Noibat to the orphanage.\n"
+	.string "It helps the kids walk around at night.$"
+
+Cormoria_SilversunCity_BlindOrphanage_NPC_6_Text_0:
+# 318 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "I listen to people's footsteps. Yours\n"
+	.string "sound...bouncy. Are you happy today?$"
+
+Cormoria_SilversunCity_BlindOrphanage_Ralts_Text_0:
+# 325 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Ralts is focused intently on its\n"
+	.string "child...perhaps its sending some warm\l"
+	.string "thoughts across.$"
+
+Cormoria_SilversunCity_BlindOrphanage_Noibat_Text_0:
+# 331 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Noibat looks bored...it must be waiting\n"
+	.string "for night-time!$"
+
+Cormoria_SilversunCity_BlindOrphanage_Furfrou_Text_0:
+# 337 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Furfrou barks! And barks again!$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_0:
+# 360 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Thanks to the efforts of you and\n"
+	.string "everyone else here, the children are\l"
+	.string "doing well.$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_1:
+# 364 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Ah, a visitor? You'll have to speak up,\n"
+	.string "my ears aren't what they used to be...\p"
+	.string "Welcome to my little dream. This place...\n"
+	.string "it's more than walls and windows. It's\l"
+	.string "where light finds those who've never\l"
+	.string "seen it. They told me it was impossible.\l"
+	.string "Blind children with Pokémon was too\l"
+	.string "dangerous, they said. And yet, look\l"
+	.string "around. There's more trust in these\l"
+	.string "halls than in half the world.$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_2:
+# 370 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "The orphanage is really impressed with\n"
+	.string "your work, {PLAYER}. We're ever so\l"
+	.string "grateful. Please accept something as a\l"
+	.string "token of your time. Since we often\l"
+	.string "receive donations, we have many things\l"
+	.string "lying around.$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_3:
+# 376 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "How's the volunteering going?$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_4:
+# 382 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "You've got the look of someone with\n"
+	.string "a kind heart - and strong legs.\l"
+	.string "Both are useful around here.\p"
+	.string "Would you consider volunteering here\n"
+	.string "for a while? The children and their\l"
+	.string "Pokémon could use a little extra care.$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_5:
+# 384 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Excellent! Kindness like yours is what\n"
+	.string "keeps us going. You won't have to do\l"
+	.string "much - just lend a hand here and there.\l"
+	.string "Please ask around to see who's in need\l"
+	.string "of help. Speak to me once finished.$"
+
+Cormoria_SilversunCity_BlindOrphanage_OldManQuest_Text_6:
+# 390 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Oh well. Whenever you'd like to, we're\n"
+	.string "always looking for help!$"
+
+Cormoria_SilversunCity_BlindOrphanage_Reward_Text_0:
+# 402 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Perhaps you may find one of these\n"
+	.string "useful?$"
+
+Cormoria_SilversunCity_BlindOrphanage_Reward_Text_1:
+# 404 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Wise Glasses$"
+
+Cormoria_SilversunCity_BlindOrphanage_Reward_Text_2:
+# 404 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Muscle Band$"
+
+Cormoria_SilversunCity_BlindOrphanage_RewardA_Text_0:
+# 415 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Are you sure?$"
+
+Cormoria_SilversunCity_BlindOrphanage_RewardEnd_Text_0:
+# 440 "data//maps/SilversunCity_BlindOrphanage/scripts.pory"
+	.string "Please visit us again!$"

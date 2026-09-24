@@ -265,6 +265,9 @@ static void (*const sCameraObjectFuncs[])(struct Sprite *) = {
 #include "data/object_events/object_event_graphics.h"
 #include "data/object_events/johto_assets.h"
 #include "data/object_events/johto_shared_assets.h"
+#if ROM_WORLD == 2
+#include "data/object_events/cormoria_assets.h"
+#endif
 
 // movement type callbacks
 static void (*const sMovementTypeCallbacks[])(struct Sprite *) =
@@ -486,12 +489,18 @@ const u8 gInitialMovementTypeFacingDirections[NUM_MOVEMENT_TYPES] = {
 #include "data/object_events/object_event_graphics_info_pointers.h"
 #include "data/field_effects/field_effect_object_template_pointers.h"
 #include "data/object_events/object_event_pic_tables.h"
+#if ROM_WORLD == 2
+#include "data/object_events/cormoria_pic_tables.h"
+#endif
 #include "data/object_events/object_event_anims.h"
 #include "data/object_events/base_oam.h"
 #include "data/object_events/object_event_subsprites.h"
 #include "data/object_events/object_event_graphics_info.h"
 #include "data/object_events/johto_info.h"
 #include "data/object_events/johto_shared_info.h"
+#if ROM_WORLD == 2
+#include "data/object_events/cormoria_info.h"
+#endif
 #include "data/object_events/object_event_graphics_info_followers.h"
 
 static const struct SpritePalette sObjectEventSpritePalettes[] = {
@@ -584,6 +593,9 @@ static const struct SpritePalette sObjectEventSpritePalettes[] = {
     {gObjectEventPaletteNeonLight,          OBJ_EVENT_PAL_TAG_NEON_LIGHT},
 #include "data/object_events/johto_palettes.inc"
 #include "data/object_events/johto_shared_palettes.inc"
+#if ROM_WORLD == 2
+#include "data/object_events/cormoria_palettes.inc"
+#endif
 #ifdef BUGFIX
     {NULL,                                  OBJ_EVENT_PAL_TAG_NONE},
 #else

@@ -1275,6 +1275,23 @@ static const struct InGameTrade sIngameTrades[] =
         .otGender = FEMALE,
         .sheen = 10,
         .requestedSpecies = SPECIES_DODRIO
+    },
+    // Dreamstone names this trade WIMPOD, but the offered Pokémon is Galarian Ponyta.
+    [INGAME_TRADE_CORMORIA_WIMPOD] =
+    {
+        .nickname = _("Brynn"),
+        .species = SPECIES_PONYTA_GALAR,
+        .ivs = {4, 15, 15, 5, 25, 10},
+        .abilityNum = 0,
+        .otId = 91481,
+        .conditions = {5, 5, 5, 30, 5},
+        .personality = 0x8B,
+        .heldItem = ITEM_FAIRY_FEATHER,
+        .mailNum = 4,
+        .otName = _("Vien"),
+        .otGender = FEMALE,
+        .sheen = 10,
+        .requestedSpecies = SPECIES_PETILIL
     }
 };
 
@@ -1321,6 +1338,16 @@ static const u16 sIngameTradeMail[][MAIL_WORDS_COUNT + 1] =
         EC_WORD_KIND,
         EC_WORD_TO,
         EC_WORD_IT
+    },
+    {
+        EC_WORD_THANK_YOU,
+        EC_WORD_FOR,
+        EC_POKEMON_NATIONAL(NYMBLE),
+        EC_WORD_CRIES,
+        EC_WORD_IN,
+        EC_WORD_A,
+        EC_WORD_CUTE,
+        EC_WORD_WAY
     }
 };
 
