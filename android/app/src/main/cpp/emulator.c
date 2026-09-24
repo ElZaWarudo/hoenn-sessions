@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/bitmap.h>
 #include <mgba/core/core.h>
 #include <mgba/gba/core.h>
 #include <mgba/core/version.h>
@@ -57,14 +58,21 @@ JNIEXPORT jboolean JNICALL Java_io_hoenn_sessions_NativeCore_open(JNIEnv* env, j
     return JNI_TRUE;
 }
 JNIEXPORT void JNICALL Java_io_hoenn_sessions_NativeCore_close(JNIEnv* env, jclass cls) { (void) env; (void) cls; close_core(); }
-JNIEXPORT jint JNICALL Java_io_hoenn_sessions_NativeCore_frame(JNIEnv* env, jclass cls, jint keys, jintArray video, jshortArray audio) {
+JNIEXPORT jint JNICALL Java_io_hoenn_sessions_NativeCore_frame(JNIEnv* env, jclass cls, jint keys, jobject bitmap, jshortArray audio) {
     (void) cls;
-    if (!core || (*env)->GetArrayLength(env, video) != 240*160 || (*env)->GetArrayLength(env, audio) < 4096) return -1;
+    AndroidBitmapInfo info;
+    if (!core || !bitmap || AndroidBitmap_getInfo(env,bitmap,&info)!=ANDROID_BITMAP_RESULT_SUCCESS
+        || info.width!=240 || info.height!=160 || info.format!=ANDROID_BITMAP_FORMAT_RGBA_8888
+        || info.stride<240*4 || (*env)->GetArrayLength(env, audio) < 4096) return -1;
     core->setKeys(core, (uint32_t) keys & 1023);
     core->runFrame(core);
-    jint converted[240*160];
-    for (int i=0; i<240*160; ++i) { uint32_t p=pixels[i]; converted[i]=0xFF000000 | ((p & 255)<<16) | (p & 0xFF00) | ((p>>16)&255); }
-    (*env)->SetIntArrayRegion(env, video, 0, 240*160, converted);
+    void* bitmap_pixels=NULL;
+    if(AndroidBitmap_lockPixels(env,bitmap,&bitmap_pixels)!=ANDROID_BITMAP_RESULT_SUCCESS)return -1;
+    for(int y=0;y<160;++y){
+        uint32_t* row=(uint32_t*)((uint8_t*)bitmap_pixels+y*info.stride);
+        for(int x=0;x<240;++x)row[x]=0xff000000u|((uint32_t)pixels[y*240+x]&0x00ffffffu);
+    }
+    AndroidBitmap_unlockPixels(env,bitmap);
     short samples[4096];
     int n=blip_read_samples(core->getAudioChannel(core, 0), samples, 2048, true);
     int r=blip_read_samples(core->getAudioChannel(core, 1), samples+1, 2048, true);
@@ -72,21 +80,29 @@ JNIEXPORT jint JNICALL Java_io_hoenn_sessions_NativeCore_frame(JNIEnv* env, jcla
     (*env)->SetShortArrayRegion(env, audio, 0, n*2, samples);
     return n*2;
 }
-JNIEXPORT jbyteArray JNICALL Java_io_hoenn_sessions_NativeCore_readBridge(JNIEnv* env, jclass cls, jint address) {
-    (void) cls;
-    if (!core || address < 0x02000000 || address > 0x02040000 - 9244 || (address & 3)) return NULL;
-    jbyte bytes[9244];
-    for (int i=0;i<9244;++i) bytes[i]=(jbyte)core->busRead8(core, (uint32_t)address+i);
-    jbyteArray result=(*env)->NewByteArray(env,9244);
-    if (result) (*env)->SetByteArrayRegion(env,result,0,9244,bytes);
-    return result;
-}
-
 #define BRIDGE_ADDRESS bridge_address
 static bool valid_bridge(void) {
     return core && bridge_address && core->busRead32(core,BRIDGE_ADDRESS)==1347109711u
         && core->busRead16(core,BRIDGE_ADDRESS+4)==1 && core->busRead16(core,BRIDGE_ADDRESS+6)==1
         && core->busRead32(core,BRIDGE_ADDRESS+8)==65536;
+}
+
+static jbyteArray read_bridge_bytes(JNIEnv* env,uint32_t address,jsize length) {
+    jbyte bytes[144];
+    for(jsize i=0;i<length;++i)bytes[i]=(jbyte)core->busRead8(core,address+(uint32_t)i);
+    jbyteArray result=(*env)->NewByteArray(env,length);
+    if(result)(*env)->SetByteArrayRegion(env,result,0,length,bytes);
+    return result;
+}
+JNIEXPORT jbyteArray JNICALL Java_io_hoenn_sessions_NativeCore_bridgeHeader(JNIEnv* env,jclass cls) {
+    (void)cls;
+    if(!valid_bridge())return NULL;
+    return read_bridge_bytes(env,BRIDGE_ADDRESS,24);
+}
+JNIEXPORT jbyteArray JNICALL Java_io_hoenn_sessions_NativeCore_bridgeSlot(JNIEnv* env,jclass cls,jint index) {
+    (void)cls;
+    if(!valid_bridge() || index<0 || index>=32)return NULL;
+    return read_bridge_bytes(env,BRIDGE_ADDRESS+24+(uint32_t)index*144,144);
 }
 
 JNIEXPORT void JNICALL Java_io_hoenn_sessions_NativeCore_configureBridge(JNIEnv* env,jclass cls,jint address,jint generation) {

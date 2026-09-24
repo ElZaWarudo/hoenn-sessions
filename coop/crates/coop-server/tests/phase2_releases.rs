@@ -49,6 +49,15 @@ fn fixture() -> TestResult<Fixture> {
         b"{\"release_id\":\"apk-one\",\"version_code\":4}",
     )?;
     fs::write(android.join(releases::ANDROID_APK_FILE), b"private-apk")?;
+    let game = root.join(releases::GAME_DIRECTORY).join("game-one");
+    fs::create_dir_all(&game)?;
+    fs::write(root.join(releases::GAME_CURRENT_FILE), b"game-one\n")?;
+    fs::write(
+        game.join(releases::RELEASE_ENVELOPE_FILE),
+        b"signed-game-envelope",
+    )?;
+    fs::write(game.join("game.gba"), b"private-rom")?;
+    fs::write(game.join("bridge_manifest.json"), b"private-manifest")?;
     let installer = root.join(releases::INSTALLER_DIRECTORY).join("msi-one");
     fs::create_dir_all(&installer)?;
     fs::write(root.join(releases::INSTALLER_CURRENT_FILE), b"msi-one\n")?;
@@ -123,7 +132,10 @@ fn assert_private_no_store(headers: &HeaderMap) {
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines, reason = "covers the complete invitation and registration HTTP flow")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "covers the complete invitation and registration HTTP flow"
+)]
 async fn portal_invitation_requires_login_and_registers_once() -> TestResult<()> {
     let fixture = fixture()?;
     let page = fixture
@@ -315,9 +327,66 @@ async fn android_apk_and_metadata_are_authenticated_and_path_closed() -> TestRes
         request(fixture.app.router(), apk, Some(&fixture.access_token), None).await?;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, b"private-apk");
+    let (status, headers, body) = request(
+        fixture.app.router(),
+        apk,
+        Some(&fixture.access_token),
+        Some("bytes=8-"),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(headers[header::CONTENT_RANGE], "bytes 8-10/11");
+    assert_eq!(body, b"apk");
     let (status, _, _) = request(
         fixture.app.router(),
         "/v1/releases/android/%2e%2e/apk",
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+async fn game_channel_is_private_and_supports_exact_resume_ranges() -> TestResult<()> {
+    let fixture = fixture()?;
+    let latest = "/v1/releases/game/latest";
+    let rom = "/v1/releases/game/game-one/artifacts/rom";
+    for uri in [latest, rom] {
+        let (status, _, _) = request(fixture.app.router(), uri, None, None).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+    let (status, _, body) = request(
+        fixture.app.router(),
+        latest,
+        Some(&fixture.access_token),
+        None,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, b"signed-game-envelope");
+    let (status, headers, body) = request(
+        fixture.app.router(),
+        rom,
+        Some(&fixture.access_token),
+        Some("bytes=8-"),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(headers[header::CONTENT_RANGE], "bytes 8-10/11");
+    assert_eq!(body, b"rom");
+    let (status, _, _) = request(
+        fixture.app.router(),
+        rom,
+        Some(&fixture.access_token),
+        Some("bytes=11-"),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _, _) = request(
+        fixture.app.router(),
+        "/v1/releases/game/game-one/artifacts/sidecar",
         Some(&fixture.access_token),
         None,
     )

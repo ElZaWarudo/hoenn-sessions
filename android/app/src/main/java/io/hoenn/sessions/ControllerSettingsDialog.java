@@ -22,10 +22,11 @@ import java.util.Set;
 /** The dialog owns its window's controller events; testing never presses game keys. */
 final class ControllerSettingsDialog extends Dialog {
     private static final String PREFERENCES = "controller_settings";
-    private static final String[] LABELS = {"A", "B", "SELECT", "START", "Derecha", "Izquierda", "Arriba", "Abajo", "R", "L"};
+    private final String[] labels;
+    private static final int[] BINDING_ACTIONS = {1,2,4,8,16,32,64,128,256,512,ControllerInput.MENU,ControllerInput.FAST_FORWARD};
     private final ControllerInput controller;
     private final Runnable onDismiss;
-    private final Button[] bindingButtons = new Button[ControllerInput.ACTIONS.length];
+    private final Button[] bindingButtons = new Button[BINDING_ACTIONS.length];
     private TextView inputDisplay, deadZoneLabel;
     private SeekBar deadZoneSlider;
     private CheckBox stickToggle, testToggle;
@@ -35,6 +36,7 @@ final class ControllerSettingsDialog extends Dialog {
 
     ControllerSettingsDialog(Activity activity, ControllerInput controller, Runnable onDismiss) {
         super(activity);
+        labels=new String[]{"A","B","SELECT","START",activity.getString(R.string.controller_right),activity.getString(R.string.controller_left),activity.getString(R.string.controller_up),activity.getString(R.string.controller_down),"R","L",activity.getString(R.string.controller_menu),activity.getString(R.string.controller_fast_forward)};
         this.controller = controller;
         this.onDismiss = onDismiss;
         setOnDismissListener(dialog -> {
@@ -46,22 +48,22 @@ final class ControllerSettingsDialog extends Dialog {
     static void loadPreferences(Context context, ControllerInput controller) {
         SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
         controller.resetDefaults();
-        int[] keys = new int[ControllerInput.ACTIONS.length];
+        int[] keys = new int[BINDING_ACTIONS.length];
         Set<Integer> unique = new HashSet<>();
         boolean valid = true;
         for (int i = 0; i < keys.length; i++) {
-            int action = ControllerInput.ACTIONS[i];
+            int action = BINDING_ACTIONS[i];
             keys[i] = preferences.getInt("action_" + action, controller.keyCodeFor(action));
             valid &= keys[i] > KeyEvent.KEYCODE_UNKNOWN && keys[i] <= KeyEvent.getMaxKeyCode() && unique.add(keys[i]);
         }
-        if (valid) for (int i = 0; i < keys.length; i++) controller.remap(ControllerInput.ACTIONS[i], keys[i]);
+        if (valid) for (int i = 0; i < keys.length; i++) controller.remap(BINDING_ACTIONS[i], keys[i]);
         controller.setDeadZone(preferences.getFloat("dead_zone", ControllerInput.DEFAULT_DEAD_ZONE));
         controller.setLeftStickEnabled(preferences.getBoolean("left_stick", true));
     }
 
     private void savePreferences() {
         SharedPreferences.Editor editor = getContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE).edit();
-        for (int action : ControllerInput.ACTIONS) editor.putInt("action_" + action, controller.keyCodeFor(action));
+        for (int action : BINDING_ACTIONS) editor.putInt("action_" + action, controller.keyCodeFor(action));
         editor.putFloat("dead_zone", controller.deadZone());
         editor.putBoolean("left_stick", controller.leftStickEnabled());
         editor.apply();
@@ -77,14 +79,14 @@ final class ControllerSettingsDialog extends Dialog {
         content.setPadding(padding, padding, padding, padding);
         scroll.addView(content);
         TextView title = new TextView(getContext());
-        title.setText("Configuración del mando");
+        title.setText(R.string.controller_settings);
         title.setTextSize(22);
         content.addView(title);
         TextView help = new TextView(getContext());
-        help.setText("Elige una acción y pulsa el botón del mando que quieras asignar. Si ya está asignado, ambas acciones intercambian botones. Los cambios se guardan automáticamente.\nActiva la prueba para ver entradas sin enviarlas al juego. Durante la prueba o la asignación, usa la pantalla para cancelar o cerrar.");
+        help.setText(R.string.controller_help);
         content.addView(help);
         inputDisplay = new TextView(getContext());
-        inputDisplay.setText("Sin entrada del mando.");
+        inputDisplay.setText(R.string.controller_no_input);
         inputDisplay.setAccessibilityLiveRegion(TextView.ACCESSIBILITY_LIVE_REGION_POLITE);
         content.addView(inputDisplay);
         for (int i = 0; i < bindingButtons.length; i++) {
@@ -93,24 +95,24 @@ final class ControllerSettingsDialog extends Dialog {
             bindingButtons[i] = button;
             button.setOnClickListener(view -> {
                 controller.clear();
-                captureAction = ControllerInput.ACTIONS[index];
-                inputDisplay.setText("Pulsa un botón del mando para " + LABELS[index] + ".");
+                captureAction = BINDING_ACTIONS[index];
+                inputDisplay.setText(getContext().getString(R.string.controller_capture,labels[index]));
             });
             content.addView(button);
         }
         Button cancelCapture = new Button(getContext());
-        cancelCapture.setText("Cancelar asignación");
+        cancelCapture.setText(R.string.controller_cancel_capture);
         cancelCapture.setOnClickListener(view -> {
             captureAction = 0;
             controller.clear();
-            inputDisplay.setText("Asignación cancelada.");
+            inputDisplay.setText(R.string.controller_capture_cancelled);
         });
         content.addView(cancelCapture);
         deadZoneLabel = new TextView(getContext());
         content.addView(deadZoneLabel);
         deadZoneSlider = new SeekBar(getContext());
         deadZoneSlider.setMax(40);
-        deadZoneSlider.setContentDescription("Zona muerta del mando, de 10 a 50 por ciento");
+        deadZoneSlider.setContentDescription(getContext().getString(R.string.controller_dead_zone_description));
         deadZoneSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 if (fromUser) {
@@ -124,31 +126,31 @@ final class ControllerSettingsDialog extends Dialog {
         });
         content.addView(deadZoneSlider);
         stickToggle = new CheckBox(getContext());
-        stickToggle.setText("Usar stick izquierdo (la cruceta sigue activa)");
+        stickToggle.setText(R.string.controller_left_stick);
         stickToggle.setOnCheckedChangeListener((button, checked) -> {
             controller.setLeftStickEnabled(checked);
             savePreferences();
         });
         content.addView(stickToggle);
         testToggle = new CheckBox(getContext());
-        testToggle.setText("Probar entradas del mando");
+        testToggle.setText(R.string.controller_test);
         testToggle.setOnCheckedChangeListener((button, checked) -> {
             controller.clear();
-            inputDisplay.setText(checked ? "Pulsa botones o mueve el stick y la cruceta." : "Prueba desactivada.");
+            inputDisplay.setText(checked ? R.string.controller_test_prompt : R.string.controller_test_off);
         });
         content.addView(testToggle);
         Button reset = new Button(getContext());
-        reset.setText("Restablecer valores predeterminados");
+        reset.setText(R.string.controller_reset);
         reset.setOnClickListener(view -> {
             captureAction = 0;
             controller.resetDefaults();
             refreshControls();
             savePreferences();
-            inputDisplay.setText("Valores predeterminados restablecidos.");
+            inputDisplay.setText(R.string.controller_reset_done);
         });
         content.addView(reset);
         Button close = new Button(getContext());
-        close.setText("Cerrar");
+        close.setText(R.string.close);
         close.setOnClickListener(view -> dismiss());
         content.addView(close);
         refreshControls();
@@ -163,7 +165,7 @@ final class ControllerSettingsDialog extends Dialog {
 
     private void refreshControls() {
         for (int i = 0; i < bindingButtons.length; i++) {
-            bindingButtons[i].setText(LABELS[i] + ": " + KeyEvent.keyCodeToString(controller.keyCodeFor(ControllerInput.ACTIONS[i])));
+            bindingButtons[i].setText(getContext().getString(R.string.controller_binding,labels[i],KeyEvent.keyCodeToString(controller.keyCodeFor(BINDING_ACTIONS[i]))));
         }
         deadZoneSlider.setProgress(Math.round(controller.deadZone() * 100) - 10);
         updateDeadZoneLabel();
@@ -171,7 +173,7 @@ final class ControllerSettingsDialog extends Dialog {
     }
 
     private void updateDeadZoneLabel() {
-        deadZoneLabel.setText("Zona muerta: " + Math.round(controller.deadZone() * 100) + "%");
+        deadZoneLabel.setText(getContext().getString(R.string.controller_dead_zone,Math.round(controller.deadZone() * 100)));
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
@@ -188,16 +190,16 @@ final class ControllerSettingsDialog extends Dialog {
                 capturedKey = key;
                 savePreferences();
                 refreshControls();
-                inputDisplay.setText("Asignado: " + KeyEvent.keyCodeToString(key));
+                inputDisplay.setText(getContext().getString(R.string.controller_assigned,KeyEvent.keyCodeToString(key)));
             }
             return true;
         }
         if (testToggle != null && testToggle.isChecked()) {
             int action = controller.mappedButton(key);
-            String label = "sin asignar";
-            for (int i = 0; i < LABELS.length; i++) if (ControllerInput.ACTIONS[i] == action) label = LABELS[i];
+            String label = getContext().getString(R.string.controller_unassigned);
+            for (int i = 0; i < labels.length; i++) if (BINDING_ACTIONS[i] == action) label = labels[i];
             inputDisplay.setText(KeyEvent.keyCodeToString(key) + " → " + label
-                + (event.getAction() == KeyEvent.ACTION_UP ? " · liberado" : " · pulsado"));
+                + (event.getAction() == KeyEvent.ACTION_UP ? getContext().getString(R.string.controller_released) : getContext().getString(R.string.controller_pressed)));
             return true;
         }
         super.dispatchKeyEvent(event);
@@ -209,7 +211,7 @@ final class ControllerSettingsDialog extends Dialog {
                 && !event.isFromSource(InputDevice.SOURCE_GAMEPAD)
                 && !event.isFromSource(InputDevice.SOURCE_DPAD)) return super.dispatchGenericMotionEvent(event);
         if (captureAction == 0 && testToggle != null && testToggle.isChecked()) {
-            inputDisplay.setText(String.format(Locale.getDefault(), "Stick: X %.2f · Y %.2f\nCruceta: X %.2f · Y %.2f",
+            inputDisplay.setText(getContext().getString(R.string.controller_axes,
                 event.getAxisValue(MotionEvent.AXIS_X), event.getAxisValue(MotionEvent.AXIS_Y),
                 event.getAxisValue(MotionEvent.AXIS_HAT_X), event.getAxisValue(MotionEvent.AXIS_HAT_Y)));
         }

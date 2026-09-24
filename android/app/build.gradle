@@ -7,6 +7,7 @@ def sdkProperties = new Properties()
 def sdkFile = new File(rootProject.projectDir, 'local.properties')
 if (sdkFile.exists()) { sdkFile.withInputStream { sdkProperties.load(it) } }
 def sdkPath = sdkProperties.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: (System.getenv('LOCALAPPDATA') + '/Android/Sdk')
+def androidVersionCode = Integer.parseInt(System.getenv('HOENN_ANDROID_VERSION_CODE') ?: '3')
 android {
     namespace 'io.hoenn.sessions'
     compileSdk 37
@@ -15,11 +16,12 @@ android {
         buildConfigField 'String', 'ROM_SHA256', '"' + releaseManifest.game_build.rom_sha256 + '"'
         buildConfigField 'String', 'RELEASE_KEY_ID', '"' + (System.getenv('HOENN_RELEASE_TRUST_KEY_ID') ?: 'release-pilot-v1') + '"'
         buildConfigField 'String', 'RELEASE_PUBLIC_KEY_HEX', '"' + (System.getenv('HOENN_RELEASE_TRUST_KEY_HEX') ?: 'b160132e926809403c3f6bcfe7b75fc54be73cbf2687491956bbc8d8a91aeb88') + '"'
+        buildConfigField 'String', 'SERVER_URL', groovy.json.JsonOutput.toJson(System.getenv('HOENN_SERVER_URL') ?: 'https://169-128-190-115.sslip.io')
         applicationId 'io.hoenn.sessions'
         minSdk 28
         targetSdk 36
-        versionCode = Integer.parseInt(System.getenv('HOENN_ANDROID_VERSION_CODE') ?: '3')
-        versionName '0.3'
+        versionCode androidVersionCode
+        versionName "0.${androidVersionCode}"
         ndk { abiFilters 'x86_64', 'arm64-v8a' }
         externalNativeBuild { cmake { arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON' } }
     }
@@ -44,7 +46,12 @@ android {
                 versionNameSuffix '-debug'
             }
         }
-        release { signingConfig signingConfigs.release }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 }
 def compileCoopRust = tasks.register('compileCoopRust', Exec) {

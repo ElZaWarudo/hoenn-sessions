@@ -5,6 +5,20 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ControllerInputTest {
+    @Test public void menuAndFastForwardBindingsDoNotBecomeGameKeys() {
+        ControllerInput input = new ControllerInput();
+        input.key(7,KeyEvent.KEYCODE_BUTTON_MODE,true);
+        input.key(7,KeyEvent.KEYCODE_BUTTON_R2,true);
+        assertTrue(input.menuPressed());
+        assertTrue(input.fastForwardHeld());
+        assertEquals(0,input.keys());
+        input.remap(ControllerInput.MENU,KeyEvent.KEYCODE_BUTTON_X);
+        assertFalse(input.menuPressed());
+        assertFalse(input.fastForwardHeld());
+        assertFalse(input.key(7,KeyEvent.KEYCODE_BUTTON_MODE,true));
+        assertTrue(input.key(7,KeyEvent.KEYCODE_BUTTON_X,true));
+        assertTrue(input.menuPressed());
+    }
     @Test public void remapReleasesHeldInputAndReplacesOldBinding() {
         ControllerInput input = new ControllerInput();
         input.key(7, KeyEvent.KEYCODE_BUTTON_A, true);

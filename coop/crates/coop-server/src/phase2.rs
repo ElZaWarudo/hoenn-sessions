@@ -337,6 +337,11 @@ impl Phase2App {
             .merge(
                 Router::new()
                     .route("/v1/releases/windows-x86_64/latest", get(releases::latest))
+                    .route("/v1/releases/game/latest", get(releases::game_latest))
+                    .route(
+                        "/v1/releases/game/{release_id}/artifacts/{artifact_id}",
+                        get(releases::game_artifact),
+                    )
                     .route("/v1/releases/android/latest", get(releases::android_latest))
                     .route(
                         "/v1/releases/android/{release_id}/apk",

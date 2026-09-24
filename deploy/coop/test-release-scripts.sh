@@ -7,6 +7,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 cd -- "$SCRIPT_DIR"
 
 PROMOTE=./promote-release.sh
+PROMOTE_GAME=./promote-game.sh
 PROBE=./probe-release-status.sh
 WORKFLOW=../../.github/workflows/deploy.yml
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -51,6 +52,15 @@ fi
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/hoenn-release-test.XXXXXX")" || exit 1
 trap 'chmod -R u+w -- "$ROOT" 2>/dev/null; rm -rf -- "$ROOT"' EXIT
 export HOENN_ROOT="$ROOT"
+# promote-game.sh uses python3 directly. Supply the same working Python 3
+# selected above on Windows hosts where python3 is only a Store alias.
+mkdir -p "$ROOT/bin"
+cat > "$ROOT/bin/python3" <<'SH'
+#!/usr/bin/env bash
+exec "$PYTHON_BIN" "$@"
+SH
+chmod +x "$ROOT/bin/python3"
+export PYTHON_BIN PATH="$ROOT/bin:$PATH"
 
 FULL_A=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 FULL_B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -119,6 +129,21 @@ PY
     --artifact "compatibility-manifest=$root/staging/$id/bridge_manifest.json" \
     --artifact "trust-bundle=$root/staging/$id/trust/release-trust.json" \
     --artifact "notices=$root/staging/$id/THIRD_PARTY_NOTICES.txt" >/dev/null
+}
+
+make_game_staging() {
+  local root="$1" id="$2" sequence="$3" issued="$4" variant="${5:-original}"
+  local dir="$root/game-staging/$id"
+  mkdir -p "$dir"
+  rm -f -- "$dir/release-envelope.json"
+  printf 'private-rom-%s-%s\n' "$id" "$variant" > "$dir/game.gba"
+  printf '{"fixture":"%s"}\n' "$variant" > "$dir/bridge_manifest.json"
+  "$COOP_RELEASE_TOOL" sign-game --release-id "$id" --sequence "$sequence" \
+    --issued-at "$issued" --expires-at "$((issued + 3600))" \
+    --key-id "$COOP_RELEASE_KEY_ID" --public-key-hex "$COOP_RELEASE_PUBLIC_KEY_HEX" \
+    --output "$dir/release-envelope.json" \
+    --artifact "rom=$dir/game.gba" \
+    --artifact "compatibility-manifest=$dir/bridge_manifest.json" >/dev/null
 }
 
 mkdir -p "$ROOT/staging"
@@ -264,6 +289,41 @@ printf '%s\n' "$FULL_A" > "$ROOT/current"
 out="$($PROMOTE "$FULL_D" 2>&1)"; status=$?
 [ "$status" -eq 0 ] && [ "$(cat "$ROOT/current")" = "$FULL_D" ] && printf '%s' "$out" | grep -q "$DIGEST_D"
 report $? "retry reuses durable association after failed rollout" "$out"
+
+# Game promotion precedes the Windows rollout. A failed Windows deployment
+# must allow a later run to re-sign the same immutable game bytes with a fresh
+# validity window, while a changed ROM or manifest must fail closed.
+make_game_staging "$ROOT" "$FULL_C" 5 "$NOW"
+out="$($PROMOTE_GAME "$FULL_C" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_C" ] && \
+  [ "$(cat "$ROOT/current")" = "$FULL_D" ] && [ ! -d "$ROOT/game-staging/$FULL_C" ]
+report $? "game release promotes independently before Windows rollout" "$out"
+cp "$ROOT/game/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json"
+failed_windows_deploy() { return 17; }
+failed_windows_deploy; status=$?
+[ "$status" -eq 17 ] && [ "$(cat "$ROOT/current")" = "$FULL_D" ] && \
+  [ "$(cat "$ROOT/game/current")" = "$FULL_C" ]
+report $? "failed Windows rollout leaves promoted game available" "status=$status"
+make_game_staging "$ROOT" "$FULL_C" 5 "$((NOW + 10))"
+out="$($PROMOTE_GAME "$FULL_C" 2>&1)"; status=$?
+[ "$status" -eq 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_C" ] && \
+  [ "$(cat "$ROOT/current")" = "$FULL_D" ] && \
+  cmp -s "$ROOT/game/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json" && \
+  ! cmp -s "$ROOT/game-staging/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json"
+report $? "re-signed same game release is an idempotent retry" "$out"
+make_game_staging "$ROOT" "$FULL_C" 5 "$((NOW + 20))" changed
+out="$($PROMOTE_GAME "$FULL_C" 2>&1)"; status=$?
+[ "$status" -ne 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_C" ] && \
+  cmp -s "$ROOT/game/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json"
+report $? "same game release rejects divergent artifact content" "$out"
+rm -f -- "$ROOT/game-staging/$FULL_C/game.gba" \
+  "$ROOT/game-staging/$FULL_C/bridge_manifest.json" \
+  "$ROOT/game-staging/$FULL_C/release-envelope.json"
+rmdir -- "$ROOT/game-staging/$FULL_C"
+
+bash -n "$PROMOTE_GAME"; status=$?
+[ "$status" -eq 0 ] && grep -q 'bash -n deploy/coop/promote-game.sh' "$WORKFLOW"
+report $? "workflow syntax checks game promotion script"
 
 if grep -q 'github.run_number' "$WORKFLOW" && \
    grep -q 'mGBA-build-2026-09-19-win64-9139-3a5bc24629867576b0fb576a5d5a21d3b3d6b576.7z' "$WORKFLOW" && \
