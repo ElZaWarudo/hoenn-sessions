@@ -4,7 +4,6 @@ import android.content.res.AssetManager;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.security.MessageDigest;
 import java.util.UUID;
 import org.json.JSONObject;
 
@@ -25,6 +24,9 @@ final class RuntimeStore {
     }
     private final File runtime;
     RuntimeStore(File root) {runtime=new File(root,"runtime");}
+    private BundledRom.VerifiedHashCache romCache() {
+        return new BundledRom.VerifiedHashCache(new File(runtime,"verified-rom.properties"));
+    }
     private File directory(String id) {return new File(runtime,id);}
     private File marker() {return new File(runtime,"current");}
     private String selectedId() throws Exception {
@@ -46,9 +48,7 @@ final class RuntimeStore {
             File envelope=new File(entry,"release-envelope.json");
             if(Files.isSymbolicLink(envelope.toPath()) || !envelope.isFile()) continue;
             try {
-                ReleaseCatalog.Release release=ReleaseCatalog.verify(
-                    CloudApi.bounded(new FileInputStream(envelope),65536),
-                    BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX,false);
+                ReleaseCatalog.Release release=verifyStored(CloudApi.bounded(new FileInputStream(envelope),65536),false);
                 if(name.equals(release.id) || name.startsWith(release.id+".damaged-"))
                     floor=Math.max(floor,release.sequence);
             } catch(Exception ignored) { /* Unverified files cannot establish a release floor. */ }
@@ -82,6 +82,13 @@ final class RuntimeStore {
     private static void writeSynced(File file,byte[] bytes) throws Exception {
         try(FileOutputStream output=new FileOutputStream(file)) {output.write(bytes);output.getFD().sync();}
     }
+    private static ReleaseCatalog.Release verifyStored(byte[] bytes,boolean requireFresh) throws Exception {
+        try {
+            return ReleaseCatalog.verify(bytes,BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX,requireFresh);
+        } catch(SecurityException gameError) {
+            return ReleaseCatalog.verifyLegacy(bytes,BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX,requireFresh);
+        }
+    }
     private void select(String id) throws Exception {
         File temporary=new File(runtime,"current.tmp");
         writeSynced(temporary,(id+"\n").getBytes(StandardCharsets.UTF_8));
@@ -91,7 +98,7 @@ final class RuntimeStore {
         if(!runtime.isDirectory() && !runtime.mkdirs()) throw new IOException("No se pudo preparar el juego");
         File bundled=directory("bundled");
         if(!bundled.isDirectory() && !bundled.mkdirs()) throw new IOException("No se pudo preparar el juego");
-        BundledRom.install(bundled,BuildConfig.ROM_SHA256,()->assets.open("pokeemerald.gba"));
+        BundledRom.install(bundled,BuildConfig.ROM_SHA256,()->assets.open("pokeemerald.gba"),romCache());
         try(InputStream input=assets.open("bridge_manifest.json")) {
             writeSynced(new File(bundled,"bridge_manifest.json"),CloudApi.bounded(input,1024*1024));
         }
@@ -107,24 +114,25 @@ final class RuntimeStore {
         long sequence=0;
         if(id.equals("bundled")) {
             if(rom.length()==0 || rom.length()>64L*1024*1024) throw new SecurityException("ROM incluida inválida");
-            MessageDigest digest=MessageDigest.getInstance("SHA-256");
-            try(InputStream input=new FileInputStream(rom)) {byte[] bytes=new byte[65536];int n;while((n=input.read(bytes))!=-1)digest.update(bytes,0,n);}
-            if(!BuildConfig.ROM_SHA256.equals(ReleaseCatalog.hex(digest.digest()))) throw new SecurityException("ROM incluida modificada");
+            if(!romCache().verify(rom,rom.length(),BuildConfig.ROM_SHA256)) throw new SecurityException("ROM incluida modificada");
             JSONObject parsed=ReleaseCatalog.verifiedManifest(manifest,BuildConfig.ROM_SHA256);
             return new Game(selected,parsed,sequence);
         }
         byte[] signed=CloudApi.bounded(new FileInputStream(new File(selected,"release-envelope.json")),65536);
-        ReleaseCatalog.Release release=ReleaseCatalog.verify(signed,BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX,requireFresh);
+        ReleaseCatalog.Release release=verifyStored(signed,requireFresh);
         if(!id.equals(release.id)) throw new SecurityException("Identidad de versión local inválida");
-        ReleaseCatalog.verifyFile(rom,release.rom);
+        if(!romCache().verify(rom,release.rom.size,release.rom.sha256)) throw new SecurityException("Archivo de versión modificado");
         ReleaseCatalog.verifyFile(manifest,release.manifest);
         JSONObject parsed=ReleaseCatalog.verifiedManifest(manifest,release.rom.sha256);
         return new Game(selected,parsed,release.sequence);
     }
     Game ensureLatest(CloudApi api) throws Exception {
+        return ensureLatest(api,null);
+    }
+    Game ensureLatest(CloudApi api,CloudApi.Progress progress) throws Exception {
         cleanStaging();
         byte[] bytes;
-        try {bytes=api.request("/v1/releases/windows-x86_64/latest",null,65536);}
+        try {bytes=api.request("/v1/releases/game/latest",null,65536);}
         catch(IOException error) {return current();}
         ReleaseCatalog.Release latest=ReleaseCatalog.verify(bytes,BuildConfig.RELEASE_KEY_ID,BuildConfig.RELEASE_PUBLIC_KEY_HEX);
         if(latest.id.equals("bundled")) throw new SecurityException("Identidad de versión reservada");
@@ -140,7 +148,8 @@ final class RuntimeStore {
         File target=directory(latest.id);
         if(target.exists()) {
             try {
-                ReleaseCatalog.verifyFile(new File(target,"pokeemerald.gba"),latest.rom);
+                if(!romCache().verify(new File(target,"pokeemerald.gba"),latest.rom.size,latest.rom.sha256))
+                    throw new SecurityException("Archivo de versión modificado");
                 ReleaseCatalog.verifyFile(new File(target,"bridge_manifest.json"),latest.manifest);
                 JSONObject parsed=ReleaseCatalog.verifiedManifest(new File(target,"bridge_manifest.json"),latest.rom.sha256);
                 byte[] stored=CloudApi.bounded(new FileInputStream(new File(target,"release-envelope.json")),65536);
@@ -152,13 +161,20 @@ final class RuntimeStore {
                 if(Files.isSymbolicLink(target.toPath()) || !target.isDirectory()) throw invalidTarget;
             }
         }
-        File staging=directory(latest.id+".partial-"+UUID.randomUUID());
-        if(!staging.mkdirs()) throw new IOException("No se pudo preparar la descarga");
+        File staging=directory(latest.id+".partial");
+        if(Files.isSymbolicLink(staging.toPath()) || (!staging.isDirectory() && !staging.mkdirs()))
+            throw new IOException("No se pudo preparar la descarga");
+        boolean keepPartial=false;
         try {
             File rom=new File(staging,"pokeemerald.gba");
             File manifest=new File(staging,"bridge_manifest.json");
-            api.download("/v1/releases/"+latest.id+"/artifacts/rom",rom,latest.rom.size,latest.rom.sha256);
-            api.download("/v1/releases/"+latest.id+"/artifacts/compatibility-manifest",manifest,latest.manifest.size,latest.manifest.sha256);
+            if(Files.isSymbolicLink(rom.toPath()) || Files.isSymbolicLink(manifest.toPath()))
+                throw new SecurityException("Descarga local inválida");
+            long total=latest.rom.size+latest.manifest.size;
+            api.download("/v1/releases/game/"+latest.id+"/artifacts/rom",rom,latest.rom.size,latest.rom.sha256,
+                progress==null?null:(received,ignored)->progress.onProgress(received,total));
+            api.download("/v1/releases/game/"+latest.id+"/artifacts/compatibility-manifest",manifest,latest.manifest.size,latest.manifest.sha256,
+                progress==null?null:(received,ignored)->progress.onProgress(latest.rom.size+received,total));
             JSONObject parsed=ReleaseCatalog.verifiedManifest(manifest,latest.rom.sha256);
             writeSynced(new File(staging,"release-envelope.json"),bytes);
             if(target.exists()) {
@@ -169,8 +185,11 @@ final class RuntimeStore {
             select(latest.id);
             if(installed!=null) pruneGenerations(latest.id,installed.directory.getName());
             return new Game(target,parsed,latest.sequence);
+        } catch(IOException interruptedDownload) {
+            keepPartial=true;
+            throw interruptedDownload;
         } finally {
-            if(staging.exists()) {
+            if(!keepPartial && staging.exists()) {
                 for(File child:staging.listFiles()==null?new File[0]:staging.listFiles()) child.delete();
                 staging.delete();
             }

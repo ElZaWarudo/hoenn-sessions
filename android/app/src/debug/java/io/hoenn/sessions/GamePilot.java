@@ -26,6 +26,8 @@ public final class GamePilot extends Instrumentation {
     private View find(String text){View view=find(activity.getWindow().getDecorView(),text);if(view==null)throw new IllegalStateException("Missing control");return view;}
     private void click(String text){runOnMainSync(()->find(text).performClick());}
     private String state(){AtomicReference<String> text=new AtomicReference<>();runOnMainSync(()->{TextView status=activity.getWindow().getDecorView().findViewWithTag("session-status");text.set(status.getText().toString());});return text.get();}
+    private boolean focused(){AtomicReference<Boolean> value=new AtomicReference<>();runOnMainSync(()->value.set(activity.hasWindowFocus()));return value.get();}
+    private boolean playing(){AtomicReference<Boolean> value=new AtomicReference<>();runOnMainSync(()->{View frame=activity.getWindow().getDecorView().findViewWithTag("gba-frame");value.set(frame!=null&&frame.isShown());});return value.get();}
     private void snapshot() throws Exception {
         AtomicReference<Bitmap> frame=new AtomicReference<>();
         runOnMainSync(()->{View view=activity.getWindow().getDecorView().findViewWithTag("gba-frame");Bitmap bitmap=Bitmap.createBitmap(Math.max(240,view.getWidth()),Math.max(160,view.getHeight()),Bitmap.Config.ARGB_8888);view.draw(new Canvas(bitmap));frame.set(bitmap);});
@@ -57,17 +59,17 @@ public final class GamePilot extends Instrumentation {
                 if(!file.delete())throw new IOException("Command cleanup failed");
                 String op=command.getString("op");
                 switch(op){
-                    case "login": runOnMainSync(()->{try{((EditText)find("Usuario")).setText(credentials.getString("username"));((EditText)find("Contraseña")).setText(credentials.getString("password"));find("Iniciar sesión y jugar").performClick();}catch(Exception e){throw new IllegalStateException("Login UI failed");}});break;
+                    case "login": runOnMainSync(()->{try{((EditText)find(activity.getString(R.string.username))).setText(credentials.getString("username"));((EditText)find(activity.getString(R.string.password))).setText(credentials.getString("password"));find(activity.getString(R.string.login_play)).performClick();}catch(Exception e){throw new IllegalStateException("Login UI failed",e);}});break;
 
                     case "key":key(command.getString("key"),command.optInt("hold_ms",120));break;
-                    case "close":runOnMainSync(()->activity.stopSession());break;
+                    case "close":runOnMainSync(()->{activity.stopSession();AlertDialog dialog=activity.pendingUnsavedDialog();if(dialog!=null)dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();});break;
                     case "reconnect":runOnMainSync(()->activity.reconnectSession());break;
                     case "status":break;
                     case "finish":if(NativeSession.isActive())throw new IllegalStateException("Close the session before finishing");credentials=null;finish(Activity.RESULT_OK,new Bundle());return;
                     default:throw new IllegalArgumentException("Unsupported operation");
                 }
                 int wait=command.optInt("wait_ms",250);if(wait<0 || wait>30000)throw new IllegalArgumentException("Invalid wait");Thread.sleep(wait);
-                snapshot();report(new JSONObject().put("id",command.getLong("id")).put("active",NativeSession.isActive()).put("status",state()));
+                snapshot();report(new JSONObject().put("id",command.getLong("id")).put("active",NativeSession.isActive()).put("playing",playing()).put("focused",focused()).put("status",state()));
             }
             throw new IOException("Pilot deadline reached");
         }catch(Throwable error){

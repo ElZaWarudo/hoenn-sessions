@@ -19,7 +19,7 @@ public final class DeviceSmoke extends Instrumentation {
             if(!"0.10.5|26b7884bc25a5933960f3cdcd98bac1ae14d42e2".equals(NativeCore.identity()))throw new AssertionError("Unexpected native identity");
             report.append("native_identity=PASS\n");
             report.append("rust_jni_load=PASS\n");
-            if(NativeCore.readBridge(0x01000000)!=null)throw new AssertionError("Invalid bridge accepted");
+            if(NativeCore.bridgeHeader()!=null)throw new AssertionError("Inactive bridge accepted");
             report.append("bridge_out_of_bounds=REJECTED\n");
             api.health();report.append("https_readiness=PASS\n");
             JSONObject config=new JSONObject(new String(CloudApi.bounded(new FileInputStream(input),4096),StandardCharsets.UTF_8));

@@ -39,4 +39,19 @@ public class BundledRomTest {
         assertFalse(new File(directory.getRoot(), "pokeemerald.gba").exists());
         assertFalse(new File(directory.getRoot(), "bundled-rom.tmp").exists());
     }
+    @Test public void persistedVerificationInvalidatesWhenFileChanges() throws Exception {
+        File rom = new File(directory.getRoot(), "pokeemerald.gba");
+        File marker = new File(directory.getRoot(), "verified-rom.properties");
+        byte[] original = {1,2,3};
+        Files.write(rom.toPath(), original);
+        String expected = hash(original);
+        BundledRom.VerifiedHashCache first = new BundledRom.VerifiedHashCache(marker);
+        assertTrue(first.verify(rom, original.length, expected));
+        assertTrue(marker.isFile());
+        assertTrue(new BundledRom.VerifiedHashCache(marker).verify(rom, original.length, expected));
+        Files.write(rom.toPath(), new byte[]{3,2,1});
+        assertTrue(rom.setLastModified(rom.lastModified() + 2000));
+        assertFalse(new BundledRom.VerifiedHashCache(marker).verify(rom, original.length, expected));
+        assertFalse(new BundledRom.VerifiedHashCache(marker).verify(rom, original.length + 1, expected));
+    }
 }

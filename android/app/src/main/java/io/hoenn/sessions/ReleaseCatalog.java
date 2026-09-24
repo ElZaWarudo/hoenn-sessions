@@ -6,7 +6,7 @@ import java.security.MessageDigest;
 import java.util.Base64;
 import org.json.*;
 
-/** Verifies the server's signed Windows release envelope before using its shared ROM and manifest. */
+/** Verifies signed game releases; installed Windows envelopes remain readable for migration. */
 final class ReleaseCatalog {
     static final class Artifact {
         final long size;
@@ -32,9 +32,15 @@ final class ReleaseCatalog {
             && value.matches("[A-Za-z0-9._-]+");
     }
     static Release verify(byte[] bytes,String keyId,String publicKey) throws Exception {
-        return verify(bytes,keyId,publicKey,true);
+        return verify(bytes,keyId,publicKey,true,false);
     }
     static Release verify(byte[] bytes,String keyId,String publicKey,boolean requireFresh) throws Exception {
+        return verify(bytes,keyId,publicKey,requireFresh,false);
+    }
+    static Release verifyLegacy(byte[] bytes,String keyId,String publicKey,boolean requireFresh) throws Exception {
+        return verify(bytes,keyId,publicKey,requireFresh,true);
+    }
+    private static Release verify(byte[] bytes,String keyId,String publicKey,boolean requireFresh,boolean legacy) throws Exception {
         if(bytes.length==0 || bytes.length>65536 || keyId.isEmpty() || publicKey.length()!=64)
             throw new SecurityException("Firma de versión no configurada");
         JSONObject envelope=new JSONObject(new String(bytes,StandardCharsets.UTF_8));
@@ -48,17 +54,19 @@ final class ReleaseCatalog {
         String id=descriptor.getString("release_id");
         long now=System.currentTimeMillis()/1000;
         long issued=descriptor.getLong("issued_at"), expires=descriptor.getLong("expires_at");
-        if(descriptor.length()!=7 || descriptor.getInt("schema")!=1 || !"windows-x86_64".equals(descriptor.getString("platform"))
+        if(descriptor.length()!=7 || descriptor.getInt("schema")!=1 || !(legacy?"windows-x86_64":"game").equals(descriptor.getString("platform"))
             || !safeId(id) || descriptor.getLong("sequence")<1 || issued>now+300 || (requireFresh && expires<=now) || expires<=issued
             || expires-issued>90L*24*60*60)
             throw new SecurityException("Versión incompatible o expirada");
         Artifact rom=null,manifest=null;
         JSONArray artifacts=descriptor.getJSONArray("artifacts");
-        if(artifacts.length()!=11) throw new SecurityException("Lista de archivos incompleta");
+        if(artifacts.length()!=(legacy?11:2)) throw new SecurityException("Lista de archivos incompleta");
         for(int i=0;i<artifacts.length();i++) {
             JSONObject artifact=artifacts.getJSONObject(i);
             if(artifact.length()!=3) throw new SecurityException("Archivo de versión inválido");
             String name=artifact.getString("id");
+            if(!legacy && !name.equals("rom") && !name.equals("compatibility-manifest"))
+                throw new SecurityException("Archivo de versión inválido");
             if(name.equals("rom") || name.equals("compatibility-manifest")) {
                 long size=artifact.getLong("size");
                 String hash=artifact.getString("sha256");

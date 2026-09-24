@@ -5,6 +5,13 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      android_staging_smoke:
+        description: 'Run the Android emulator against the configured staging account'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -314,10 +321,91 @@ jobs:
           tools/mgba-rom-test-hydra/mgba-rom-test-hydra \
             tools/mgba/mgba-rom-test unused-objcopy pokeemerald-test-headless.elf
 
+  # Manual and staging-only: set ANDROID_STAGING_SMOKE_ENABLED and
+  # ANDROID_STAGING_URL as repository variables. Environment secrets stay scoped
+  # to android-staging. The ROM-bearing debug APK is never uploaded.
+  android-staging-emulator:
+    if: github.event_name == 'workflow_dispatch' && inputs.android_staging_smoke == true && vars.ANDROID_STAGING_SMOKE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: android-staging
+    env:
+      HOENN_SERVER_URL: ${{ vars.ANDROID_STAGING_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require a distinct HTTPS staging server
+        run: |
+          python3 - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          url = urlparse(os.environ.get('HOENN_SERVER_URL', ''))
+          assert url.scheme == 'https' and url.hostname and url.hostname != '169-128-190-115.sslip.io' and not url.username and not url.password, 'Configure ANDROID_STAGING_URL for a distinct HTTPS staging server'
+          PY
+
+      - name: Install ROM build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi libpng-dev python3
+
+      - name: Build Emerald ROM and Android manifest
+        env:
+          GAME_VERSION: EMERALD
+        run: |
+          make -j$(nproc) -O all
+          python3 tools/generate_bridge_manifest.py --elf pokeemerald.elf --rom pokeemerald.gba
+
+      - name: Set up Android Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          log-accepted-android-sdk-licenses: 'false'
+
+      - name: Build debug APK with staging endpoint
+        run: bash android/build-ci.sh debug
+
+      - name: Start Android emulator
+        run: |
+          sdkmanager 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
+          echo no | avdmanager create avd -n hoenn-ci -k 'system-images;android-36;google_apis;x86_64' -d pixel_6 --force
+          "$ANDROID_HOME/emulator/emulator" -avd hoenn-ci -no-window -no-audio -no-boot-anim -no-snapshot -no-metrics -gpu swiftshader_indirect > "$RUNNER_TEMP/android-emulator.log" 2>&1 &
+          timeout 300 adb wait-for-device
+          for i in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; then break; fi
+            sleep 2
+          done
+          test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1
+          adb shell input keyevent KEYCODE_MENU
+          adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Run local emulator instrumentations
+        run: |
+          for smoke in SessionStoreSmoke OverlaySmoke ControllerSmoke; do
+            result="$(adb shell am instrument -w "io.hoenn.sessions/.$smoke")"
+            if ! grep -q 'INSTRUMENTATION_CODE: -1' <<< "$result"; then
+              echo "$smoke failed" >&2
+              exit 1
+            fi
+            echo "PASS $smoke"
+          done
+
+      - name: Run staging login and lifecycle pilot
+        env:
+          ANDROID_STAGING_USERNAME: ${{ secrets.ANDROID_STAGING_USERNAME }}
+          ANDROID_STAGING_PASSWORD: ${{ secrets.ANDROID_STAGING_PASSWORD }}
+        run: python3 android/ci-staging-pilot.py
+
   rust:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust

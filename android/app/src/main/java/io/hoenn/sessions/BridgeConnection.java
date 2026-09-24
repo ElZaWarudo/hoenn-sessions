@@ -11,6 +11,7 @@ final class BridgeConnection implements AutoCloseable {
     private final long epoch;
     private final ArrayBlockingQueue<byte[]> inbound=new ArrayBlockingQueue<>(32);
     private final ArrayBlockingQueue<Send> outbound=new ArrayBlockingQueue<>(2);
+    private final ConcurrentLinkedQueue<Long> submittedSaveSerials=new ConcurrentLinkedQueue<>();
     private volatile Socket socket;
     private final Thread reader;
     private volatile Thread writer;
@@ -21,6 +22,7 @@ final class BridgeConnection implements AutoCloseable {
     private int initializationFrames,frames;
     private boolean initialized;
     private long grantSerial=-1,grantGeneration,activeEpoch;
+    Long pollSubmittedSaveSerial(){return submittedSaveSerials.poll();}
     private static final class Send {final byte[] bytes;volatile boolean sent;Send(byte[] b){bytes=b;}}
     BridgeConnection(JSONObject descriptor,long epoch) throws Exception {
         if(epoch<=0 || epoch>0xffffffffL || !descriptor.getString("host").equals("127.0.0.1") || !descriptor.getString("transport").equals("tcp"))throw new SecurityException("Descriptor inválido");
@@ -47,7 +49,7 @@ final class BridgeConnection implements AutoCloseable {
     private void write(OutputStream out){try{while(!closed){Send send=outbound.poll(200,TimeUnit.MILLISECONDS);if(send!=null){out.write(send.bytes);send.sent=true;}}}catch(Exception e){if(!closed)failure="Escritura del bridge fallida";}}
     void step() throws Exception {
         if(closed)return;if(failure!=null)throw new IOException(failure);
-        if(!initialized){try{NativeBridge.validate(NativeCore.readBridge(NativeBridge.ADDRESS));initialized=true;}catch(SecurityException e){if(++initializationFrames>600)throw e;return;}}
+        if(!initialized){try{NativeBridge.validate(NativeCore.bridgeHeader());initialized=true;}catch(IllegalStateException | SecurityException e){if(++initializationFrames>600)throw e;return;}}
         if(!authenticated)return;
         for(int i=0;i<32;i++){
             byte[] next=inbound.peek();if(next==null)break;BridgeFrame message=BridgeFrame.decode(next,true);
@@ -77,7 +79,13 @@ final class BridgeConnection implements AutoCloseable {
                     if(proof[0]<=grantSerial || proof[1]!=target || proof[2]!=target)return;
                     if(!NativeCore.syncSave())throw new IOException("No se pudo sincronizar SAV canónico");
                 }
-                pending=new Send(next);if(!outbound.offer(pending))throw new IOException("Cola outbound llena");
+                Long saveSerial=message.type==13?NativeCore.saveEvidence()[0]:null;
+                if(saveSerial!=null)submittedSaveSerials.offer(saveSerial);
+                pending=new Send(next);
+                if(!outbound.offer(pending)){
+                    if(saveSerial!=null)submittedSaveSerials.remove(saveSerial);
+                    throw new IOException("Cola outbound llena");
+                }
             }
         }
         if(++frames%60==0)NativeCore.bridgeHeartbeat();
@@ -87,7 +95,7 @@ final class BridgeConnection implements AutoCloseable {
         synchronized(networkLock){closed=true;Socket s=socket;if(s!=null)try{s.close();}catch(IOException ignored){}}
         reader.interrupt();Thread w=writer;if(w!=null)w.interrupt();
         try{reader.join(1500);if(w!=null)w.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException("Cierre del bridge interrumpido");}
-        inbound.clear();outbound.clear();
+        inbound.clear();outbound.clear();submittedSaveSerials.clear();
         if(reader.isAlive() || (w!=null && w.isAlive()))throw new IllegalStateException("El bridge no confirmó su cierre");
     }
 }

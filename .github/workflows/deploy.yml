@@ -80,6 +80,7 @@ jobs:
         run: |
           python3 -m py_compile tools/generate_bridge_manifest.py
           bash -n deploy/coop/promote-release.sh
+          bash -n deploy/coop/promote-game.sh
           bash -n deploy/coop/probe-release-status.sh
           bash -n deploy/coop/deploy-release.sh
 
@@ -874,13 +875,34 @@ jobs:
             --artifact "trust-bundle=$d/trust/release-trust.json" \
             --artifact "notices=$d/THIRD_PARTY_NOTICES.txt"
 
+      - name: Sign independent game release
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          HOENN_RELEASE_PRIVATE_SEED_HEX: ${{ secrets.HOENN_RELEASE_PRIVATE_SEED_HEX }}
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          d="game-bundle/${{ github.sha }}"
+          mkdir -p "$d"
+          cp pokeemerald.gba "$d/game.gba"
+          cp dist/bridge_manifest.json "$d/bridge_manifest.json"
+          issued_at="$(date +%s)"
+          expires_at=$((issued_at + 90 * 24 * 60 * 60 - 1))
+          target/release/coop-release-tool sign-game \
+            --release-id "${{ github.sha }}" --sequence "${{ github.run_number }}" \
+            --issued-at "$issued_at" --expires-at "$expires_at" \
+            --key-id "$RELEASE_KEY_ID" --public-key-hex "$RELEASE_PUBLIC_KEY_HEX" \
+            --output "$d/release-envelope.json" \
+            --artifact "rom=$d/game.gba" \
+            --artifact "compatibility-manifest=$d/bridge_manifest.json"
+
       # Deploy scripts travel with every run (the rollout below needs them
       # even when the rebuild is skipped for an already-released commit).
       - name: Upload deploy scripts
         run: |
-          scp deploy/coop/promote-release.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
+          scp deploy/coop/promote-release.sh deploy/coop/promote-game.sh deploy/coop/deploy-release.sh target/release/coop-release-tool hoenn-vps:/tmp/
           scp deploy/coop/compose.yaml hoenn-vps:/tmp/hoenn-compose.yaml
-          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
+          ssh hoenn-vps 'chmod 755 /tmp/promote-release.sh /tmp/promote-game.sh /tmp/deploy-release.sh /tmp/coop-release-tool'
 
       - name: Ensure VPS ACL support for private APK
         if: steps.status.outputs.state == 'ABSENT' && steps.android-change.outputs.build == 'true'
@@ -932,6 +954,20 @@ jobs:
         if: steps.status.outputs.state == 'ABSENT'
         run: |
           scp -r "release-bundle/${{ github.sha }}" "hoenn-vps:/srv/hoenn/staging/"
+
+      - name: Upload game release to VPS staging
+        if: steps.status.outputs.state == 'ABSENT'
+        run: |
+          ssh hoenn-vps 'mkdir -p /srv/hoenn/game-staging'
+          scp -r "game-bundle/${{ github.sha }}" "hoenn-vps:/srv/hoenn/game-staging/"
+
+      - name: Promote independent game release
+        if: steps.status.outputs.state == 'ABSENT'
+        env:
+          RELEASE_KEY_ID: ${{ vars.RELEASE_TRUST_KEY_ID }}
+          RELEASE_PUBLIC_KEY_HEX: ${{ vars.RELEASE_TRUST_PUBLIC_KEY_HEX }}
+        run: |
+          ssh hoenn-vps "HOENN_ROOT=/srv/hoenn COOP_RELEASE_KEY_ID='$RELEASE_KEY_ID' COOP_RELEASE_PUBLIC_KEY_HEX='$RELEASE_PUBLIC_KEY_HEX' COOP_RELEASE_TOOL=/tmp/coop-release-tool bash /tmp/promote-game.sh '${{ github.sha }}'"
 
       - name: Promote release and roll the server
         env:
