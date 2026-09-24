@@ -1415,6 +1415,12 @@ impl SessionLifecycle {
         self.realtime_lifecycle_enqueue_burst = count;
     }
 
+    /// Returns the stable ROM world bound to this source session.
+    #[must_use]
+    pub const fn rom_world_id(&self) -> RomWorldId {
+        self.config.rom_world_id
+    }
+
     /// Returns the generation last accepted from the canonical character
     /// save, if this workspace has materialized one.
     #[must_use]

@@ -1,6 +1,7 @@
 //! Local build and emulator compatibility validation.
 
 use std::{
+    collections::BTreeMap,
     fs::{self, File},
     io::{self, Read},
     path::{Path, PathBuf},
@@ -119,6 +120,111 @@ pub struct SelectedRomWorld {
     bridge_manifest: BridgeManifest,
 }
 
+/// One complete, digest-pinned set of ROM worlds available for travel.
+#[derive(Clone, Debug)]
+pub struct TrustedRomCatalog {
+    digest: Sha256Digest,
+    worlds: BTreeMap<RomWorldId, SelectedRomWorld>,
+}
+
+impl TrustedRomCatalog {
+    /// Validate every artifact in the release set before selecting any world.
+    ///
+    /// # Errors
+    /// Rejects an unpinned, malformed, incomplete, or substituted catalog.
+    pub fn load(catalog_path: &Path, trusted_sha256: &str) -> Result<Self, CompatibilityError> {
+        let expected =
+            Sha256Digest::parse(trusted_sha256).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+        let mut bytes = Vec::new();
+        open_bounded_regular_file(catalog_path, MAX_RELEASE_CATALOG_BYTES)
+            .map_err(|_| CompatibilityError::ReleaseCatalog)?
+            .take(MAX_RELEASE_CATALOG_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| CompatibilityError::ReleaseCatalog)?;
+        if bytes.len() as u64 > MAX_RELEASE_CATALOG_BYTES
+            || Sha256Digest::of_bytes(&bytes) != expected
+        {
+            return Err(CompatibilityError::ReleaseCatalog);
+        }
+        let catalog: ReleaseCatalog =
+            serde_json::from_slice(&bytes).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+        if catalog.schema_version != 1 || catalog.worlds.is_empty() {
+            return Err(CompatibilityError::ReleaseCatalog);
+        }
+        let root = fs::canonicalize(catalog_path)
+            .map_err(|_| CompatibilityError::ReleaseCatalog)?
+            .parent()
+            .ok_or(CompatibilityError::ReleaseCatalog)?
+            .to_owned();
+        let mut worlds = BTreeMap::new();
+        let mut artifacts = std::collections::HashSet::new();
+        let mut builds = std::collections::HashSet::new();
+        for world in catalog.worlds {
+            let id =
+                RomWorldId::new(world.world_id).map_err(|_| CompatibilityError::ReleaseCatalog)?;
+            if worlds.contains_key(&id) {
+                return Err(CompatibilityError::ReleaseCatalog);
+            }
+            // Validate every world before exposing a selection.
+            let rom_path = release_artifact(&root, &world.rom_path, &world.rom_sha256)?;
+            let (bridge_path, bridge_bytes) = release_artifact_bytes(
+                &root,
+                &world.bridge_path,
+                &world.bridge_sha256,
+                MAX_MANIFEST_BYTES,
+            )?;
+            let transfer_path = release_artifact(
+                &root,
+                &world.player_transfer_path,
+                &world.player_transfer_sha256,
+            )?;
+            let manifest: BridgeManifest = serde_json::from_slice(&bridge_bytes)
+                .map_err(|_| CompatibilityError::ReleaseCatalog)?;
+            if manifest.game_build.rom_sha256 != world.rom_sha256 {
+                return Err(CompatibilityError::ReleaseCatalog);
+            }
+            if !artifacts.insert(rom_path.clone())
+                || !artifacts.insert(bridge_path.clone())
+                || !artifacts.insert(transfer_path)
+                || !builds.insert(manifest.game_build.id.clone())
+            {
+                return Err(CompatibilityError::ReleaseCatalog);
+            }
+            worlds.insert(
+                id,
+                SelectedRomWorld {
+                    world_id: id,
+                    rom_path,
+                    bridge_path,
+                    bridge_manifest: manifest,
+                },
+            );
+        }
+        Ok(Self {
+            digest: expected,
+            worlds,
+        })
+    }
+
+    #[must_use]
+    pub const fn digest(&self) -> Sha256Digest {
+        self.digest
+    }
+
+    /// Stable IDs come only from the validated release set.
+    pub fn world_ids(&self) -> impl Iterator<Item = RomWorldId> + '_ {
+        self.worlds.keys().copied()
+    }
+
+    /// Resolve a destination chosen by the server to a pinned local artifact.
+    ///
+    /// # Errors
+    /// Rejects a world absent from the release set.
+    pub fn world(&self, id: RomWorldId) -> Result<&SelectedRomWorld, CompatibilityError> {
+        self.worlds.get(&id).ok_or(CompatibilityError::UnknownWorld)
+    }
+}
+
 #[derive(Deserialize)]
 struct ReleaseCatalog {
     schema_version: u16,
@@ -145,75 +251,9 @@ impl SelectedRomWorld {
         trusted_sha256: &str,
         requested_world_id: RomWorldId,
     ) -> Result<Self, CompatibilityError> {
-        let expected =
-            Sha256Digest::parse(trusted_sha256).map_err(|_| CompatibilityError::ReleaseCatalog)?;
-        let mut bytes = Vec::new();
-        open_bounded_regular_file(catalog_path, MAX_RELEASE_CATALOG_BYTES)
-            .map_err(|_| CompatibilityError::ReleaseCatalog)?
-            .take(MAX_RELEASE_CATALOG_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| CompatibilityError::ReleaseCatalog)?;
-        if bytes.len() as u64 > MAX_RELEASE_CATALOG_BYTES
-            || Sha256Digest::of_bytes(&bytes) != expected
-        {
-            return Err(CompatibilityError::ReleaseCatalog);
-        }
-        let catalog: ReleaseCatalog =
-            serde_json::from_slice(&bytes).map_err(|_| CompatibilityError::ReleaseCatalog)?;
-        if catalog.schema_version != 1 || catalog.worlds.is_empty() {
-            return Err(CompatibilityError::ReleaseCatalog);
-        }
-        let root = fs::canonicalize(catalog_path)
-            .map_err(|_| CompatibilityError::ReleaseCatalog)?
-            .parent()
-            .ok_or(CompatibilityError::ReleaseCatalog)?
-            .to_owned();
-        let mut selected = None;
-        let mut seen = std::collections::HashSet::new();
-        let mut artifacts = std::collections::HashSet::new();
-        let mut builds = std::collections::HashSet::new();
-        for world in catalog.worlds {
-            let id =
-                RomWorldId::new(world.world_id).map_err(|_| CompatibilityError::ReleaseCatalog)?;
-            if !seen.insert(id.get()) {
-                return Err(CompatibilityError::ReleaseCatalog);
-            }
-            // Validate every world, not just the selected one: a pinned
-            // catalog must represent one complete, immutable release set.
-            let rom_path = release_artifact(&root, &world.rom_path, &world.rom_sha256)?;
-            let (bridge_path, bridge_bytes) = release_artifact_bytes(
-                &root,
-                &world.bridge_path,
-                &world.bridge_sha256,
-                MAX_MANIFEST_BYTES,
-            )?;
-            let transfer_path = release_artifact(
-                &root,
-                &world.player_transfer_path,
-                &world.player_transfer_sha256,
-            )?;
-            let manifest: BridgeManifest = serde_json::from_slice(&bridge_bytes)
-                .map_err(|_| CompatibilityError::ReleaseCatalog)?;
-            if manifest.game_build.rom_sha256 != world.rom_sha256 {
-                return Err(CompatibilityError::ReleaseCatalog);
-            }
-            if !artifacts.insert(rom_path.clone())
-                || !artifacts.insert(bridge_path.clone())
-                || !artifacts.insert(transfer_path)
-                || !builds.insert(manifest.game_build.id.clone())
-            {
-                return Err(CompatibilityError::ReleaseCatalog);
-            }
-            if id == requested_world_id {
-                selected = Some(Self {
-                    world_id: id,
-                    rom_path,
-                    bridge_path,
-                    bridge_manifest: manifest,
-                });
-            }
-        }
-        selected.ok_or(CompatibilityError::UnknownWorld)
+        TrustedRomCatalog::load(catalog_path, trusted_sha256)?
+            .world(requested_world_id)
+            .cloned()
     }
 
     pub fn check_compatibility(
@@ -1086,7 +1126,7 @@ mod tests {
 
     #[test]
     fn release_catalog_selects_third_world_and_rejects_substitution() {
-        use super::SelectedRomWorld;
+        use super::{SelectedRomWorld, TrustedRomCatalog};
         use coop_cloud::Sha256Digest;
         use coop_protocol::RomWorldId;
 
@@ -1128,6 +1168,17 @@ mod tests {
             SelectedRomWorld::from_catalog(&path, &digest, RomWorldId::new(7).unwrap()).unwrap();
         assert_eq!(selected.world_id.get(), 7);
         assert_eq!(selected.rom_path.file_name().unwrap(), "world-7.gba");
+        let catalog = TrustedRomCatalog::load(&path, &digest).unwrap();
+        assert_eq!(catalog.digest(), Sha256Digest::of_bytes(&bytes));
+        assert_eq!(
+            catalog.world_ids().map(RomWorldId::get).collect::<Vec<_>>(),
+            vec![1, 2, 7]
+        );
+        assert_eq!(
+            catalog.world(RomWorldId::new(7).unwrap()).unwrap(),
+            &selected
+        );
+        assert!(catalog.world(RomWorldId::new(3).unwrap()).is_err());
         assert!(
             SelectedRomWorld::from_catalog(&path, &"0".repeat(64), RomWorldId::new(7).unwrap(),)
                 .is_err()
