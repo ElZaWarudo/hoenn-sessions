@@ -513,6 +513,10 @@ fn rom_handoff_recovery_status_recovers_expired_prepare_from_key_only() {
                 api_version: coop_cloud::ApiVersion::V1,
                 character_id: actor.character_id,
                 idempotency_key: request.idempotency_key,
+                source_snapshot_id: source_id,
+                source_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+                expected_revision: Revision::new(1),
+                portal_id: request.portal_id.clone(),
             },
         )
         .unwrap();
@@ -530,6 +534,146 @@ fn rom_handoff_recovery_status_recovers_expired_prepare_from_key_only() {
         app.prepare_rom_handoff(actor, &request),
         Err(Phase2Error::Conflict)
     );
+}
+
+#[test]
+fn rom_handoff_recovery_reserves_absent_prepare_key_after_lease_replacement() {
+    let (app, actor, original_lease, original_client, source_id) = handoff_fixture();
+    let request = RomHandoffPrepareRequest {
+        api_version: coop_cloud::ApiVersion::V1,
+        character_id: actor.character_id,
+        session_id: original_lease.session_id,
+        session_epoch: original_lease.session_epoch,
+        client_instance_id: original_client,
+        expected_revision: Revision::new(1),
+        source_snapshot_id: source_id,
+        portal_id: "to_next".to_owned(),
+        idempotency_key: id(IdempotencyKey::new),
+    };
+    // The client persisted an intent, but the prepare request never reached
+    // this server. Recover using a replacement lease at the same source head.
+    app.store
+        .write_transaction(|state| {
+            state.leases.get_mut(&actor.character_id).unwrap().released = true;
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    let (replacement, replacement_client) =
+        acquire_bound_world(&app, actor, coop_protocol::RomWorldId::new(1).unwrap());
+    let fence = coop_cloud::LeaseFence::new(
+        replacement.session_id,
+        actor.character_id,
+        replacement.current_revision,
+        replacement.session_epoch,
+        replacement_client,
+    );
+    let recovery = coop_cloud::RomHandoffRecoveryRequest {
+        api_version: coop_cloud::ApiVersion::V1,
+        character_id: actor.character_id,
+        idempotency_key: request.idempotency_key,
+        source_snapshot_id: source_id,
+        source_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+        expected_revision: Revision::new(1),
+        portal_id: request.portal_id.clone(),
+    };
+    let stale_fence = coop_cloud::LeaseFence::new(
+        original_lease.session_id,
+        actor.character_id,
+        original_lease.current_revision,
+        original_lease.session_epoch,
+        original_client,
+    );
+    assert_eq!(
+        app.reconcile_rom_handoff(actor, stale_fence, &recovery),
+        Err(Phase2Error::Conflict)
+    );
+    let status = app.reconcile_rom_handoff(actor, fence, &recovery).unwrap();
+    let stage_id = match &status {
+        coop_cloud::RomHandoffRecoveryStatus::Aborted { stage_id, .. } => *stage_id,
+        _ => panic!("absent prepare must become an abort tombstone"),
+    };
+    assert_ne!(stage_id, source_id);
+    assert_eq!(
+        app.reconcile_rom_handoff(actor, fence, &recovery).unwrap(),
+        status
+    );
+    let delayed = RomHandoffPrepareRequest {
+        session_id: replacement.session_id,
+        session_epoch: replacement.session_epoch,
+        client_instance_id: replacement_client,
+        ..request
+    };
+    assert_eq!(
+        app.prepare_rom_handoff(actor, &delayed),
+        Err(Phase2Error::Conflict)
+    );
+    app.store
+        .read_transaction(|state| {
+            assert!(state.rom_handoff_staging.get(&actor.character_id).is_none());
+            assert_eq!(
+                state
+                    .rom_handoff_aborts
+                    .get(&(actor.character_id, recovery.idempotency_key))
+                    .unwrap()
+                    .stage_id,
+                stage_id
+            );
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn rom_handoff_recovery_does_not_reserve_absent_key_after_source_head_changes() {
+    let (app, actor, _initial_lease, client, source_id) = handoff_fixture();
+    let key = id(IdempotencyKey::new);
+    let recovery = coop_cloud::RomHandoffRecoveryRequest {
+        api_version: coop_cloud::ApiVersion::V1,
+        character_id: actor.character_id,
+        idempotency_key: key,
+        source_snapshot_id: source_id,
+        source_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+        expected_revision: Revision::new(1),
+        portal_id: "to_next".to_owned(),
+    };
+    let source_lease = app
+        .store
+        .read_transaction(|state| {
+            Ok::<_, Phase2Error>(
+                state
+                    .leases
+                    .get(&actor.character_id)
+                    .unwrap()
+                    .contract
+                    .clone(),
+            )
+        })
+        .unwrap();
+    let destination = travel_once(&app, actor, &source_lease, client, source_id, "to_next");
+    let (replacement, replacement_client) =
+        acquire_bound_world(&app, actor, coop_protocol::RomWorldId::new(2).unwrap());
+    assert_ne!(destination.snapshot_id, source_id);
+    let fence = coop_cloud::LeaseFence::new(
+        replacement.session_id,
+        actor.character_id,
+        replacement.current_revision,
+        replacement.session_epoch,
+        replacement_client,
+    );
+    assert_eq!(
+        app.reconcile_rom_handoff(actor, fence, &recovery),
+        Err(Phase2Error::Conflict)
+    );
+    app.store
+        .read_transaction(|state| {
+            assert!(
+                !state
+                    .rom_handoff_aborts
+                    .contains_key(&(actor.character_id, key))
+            );
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
 }
 
 #[test]
@@ -569,6 +713,10 @@ fn rom_handoff_recovery_status_keeps_live_stage_after_lease_rollover() {
                 api_version: coop_cloud::ApiVersion::V1,
                 character_id: actor.character_id,
                 idempotency_key: request.idempotency_key,
+                source_snapshot_id: source_id,
+                source_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+                expected_revision: Revision::new(1),
+                portal_id: request.portal_id.clone(),
             },
         )
         .unwrap();
@@ -780,6 +928,77 @@ fn rom_handoff_abort_tombstones_are_bounded_and_gc_on_commit() {
     app.store
         .read_transaction(|state| {
             assert!(state.rom_handoff_aborts.is_empty());
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn rom_handoff_recovery_reserves_abort_capacity_for_live_stage() {
+    let (app, actor, lease, client, source_id) = handoff_fixture();
+    let request = RomHandoffPrepareRequest {
+        api_version: coop_cloud::ApiVersion::V1,
+        character_id: actor.character_id,
+        session_id: lease.session_id,
+        session_epoch: lease.session_epoch,
+        client_instance_id: client,
+        expected_revision: Revision::new(1),
+        source_snapshot_id: source_id,
+        portal_id: "to_next".to_owned(),
+        idempotency_key: id(IdempotencyKey::new),
+    };
+    let staged = app.prepare_rom_handoff(actor, &request).unwrap();
+    let world = coop_protocol::RomWorldId::new(1).unwrap();
+    app.store
+        .write_transaction(|state| {
+            for _ in 0..storage::MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER - 1 {
+                let mut previous = request.clone();
+                previous.idempotency_key = id(IdempotencyKey::new);
+                state.rom_handoff_aborts.insert(
+                    (actor.character_id, previous.idempotency_key),
+                    storage::RomHandoffAbortTombstone {
+                        request: previous,
+                        stage_id: id(SnapshotId::new),
+                        source_world_id: world,
+                    },
+                );
+            }
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    let fence = coop_cloud::LeaseFence::new(
+        lease.session_id,
+        actor.character_id,
+        Revision::new(1),
+        lease.session_epoch,
+        client,
+    );
+    let absent = coop_cloud::RomHandoffRecoveryRequest {
+        api_version: coop_cloud::ApiVersion::V1,
+        character_id: actor.character_id,
+        idempotency_key: id(IdempotencyKey::new),
+        source_snapshot_id: source_id,
+        source_world_id: world,
+        expected_revision: Revision::new(1),
+        portal_id: "to_next".to_owned(),
+    };
+    assert_eq!(
+        app.reconcile_rom_handoff(actor, fence, &absent),
+        Err(Phase2Error::Busy)
+    );
+    assert_eq!(app.prepare_rom_handoff(actor, &request).unwrap(), staged);
+    app.abort_rom_handoff(actor, fence, staged.stage_id)
+        .unwrap();
+    app.store
+        .read_transaction(|state| {
+            assert_eq!(
+                state
+                    .rom_handoff_aborts
+                    .keys()
+                    .filter(|(character_id, _)| character_id == &actor.character_id)
+                    .count(),
+                storage::MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER
+            );
             Ok::<(), Phase2Error>(())
         })
         .unwrap();

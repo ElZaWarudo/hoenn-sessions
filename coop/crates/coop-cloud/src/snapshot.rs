@@ -1712,6 +1712,10 @@ pub struct RomHandoffRecoveryRequest {
     pub api_version: ApiVersion,
     pub character_id: CharacterId,
     pub idempotency_key: IdempotencyKey,
+    pub source_snapshot_id: crate::SnapshotId,
+    pub expected_revision: Revision,
+    pub source_world_id: RomWorldId,
+    pub portal_id: String,
 }
 
 /// A staged result can be retried with the same prepare key; an aborted

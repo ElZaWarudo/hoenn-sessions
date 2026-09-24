@@ -15,12 +15,13 @@ pub mod realtime;
 pub mod recovery;
 pub mod rom_travel;
 pub mod session;
+pub mod travel_coordinator;
 pub mod update;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
 
 pub use auth::{AuthApi, AuthError, AuthSession};
-pub use compat::{BuildCompatibility, CompatibilityError, SelectedRomWorld};
+pub use compat::{BuildCompatibility, CompatibilityError, SelectedRomWorld, TrustedRomCatalog};
 pub use coop_cloud::TrustedManifestKey;
 pub use desktop::{
     AuthFailure, AuthFlow, AuthRequest, BlockReason, BootstrapInput, Command, CommandRejection,
@@ -366,24 +367,19 @@ impl CloudApi for ReqwestCloudApi {
     fn reconcile_rom_handoff<'a>(
         &'a self,
         auth: &'a AuthSession,
-        character_id: CharacterId,
-        idempotency_key: coop_cloud::IdempotencyKey,
+        request: RomHandoffRecoveryRequest,
     ) -> session::CloudFuture<'a, RomHandoffRecoveryStatus> {
         Box::pin(async move {
             let fence = auth.active_fence().ok_or(SessionError::Lease)?;
-            if fence.character_id != character_id {
+            if fence.character_id != request.character_id {
                 return Err(SessionError::Lease);
             }
+            let character_id = request.character_id;
             let url = self
                 .url(&format!(
                     "v1/characters/{character_id}/rom-handoff/reconcile"
                 ))
                 .map_err(|_| SessionError::Cloud)?;
-            let request = RomHandoffRecoveryRequest {
-                api_version: coop_cloud::ApiVersion::V1,
-                character_id,
-                idempotency_key,
-            };
             let response: RomHandoffRecoveryStatus = self
                 .send_json(
                     self.authenticated_with_fence(Method::POST, url, auth, fence)
@@ -405,7 +401,10 @@ impl CloudApi for ReqwestCloudApi {
                     ..
                 } => (expected_revision, idempotency_key),
             };
-            if *revision != fence.current_revision || *key != idempotency_key {
+            if *revision != request.expected_revision
+                || *revision != fence.current_revision
+                || *key != request.idempotency_key
+            {
                 return Err(SessionError::Cloud);
             }
             Ok(response)
@@ -847,8 +846,8 @@ impl CloudApi for ReqwestCloudApi {
                     .timeout(SNAPSHOT_UPLOAD_TIMEOUT)
                     .body(bytes),
             )
-                .await
-                .map_err(|_| SessionError::Cloud)
+            .await
+            .map_err(|_| SessionError::Cloud)
         })
     }
     fn finalize<'a>(
@@ -1218,6 +1217,9 @@ mod tests {
             assert!(lower.contains("x-coop-session-epoch: 1"));
             assert!(lower.contains(&format!("x-coop-client-instance-id: {client_instance_id}")));
             assert!(request.contains(&format!("\"idempotency_key\":\"{prepare_key}\"")));
+            assert!(request.contains(&format!("\"source_snapshot_id\":\"{source_id}\"")));
+            assert!(request.contains("\"source_world_id\":1"));
+            assert!(request.contains("\"portal_id\":\"to_next\""));
             write_response(&mut stream, "200 OK", &recovery_body).await;
 
             let (mut stream, _) = listener.accept().await.unwrap();
@@ -1299,9 +1301,20 @@ mod tests {
             client_instance_id,
         ));
         assert_eq!(
-            api.reconcile_rom_handoff(&auth, character_id, prepare_key)
-                .await
-                .unwrap(),
+            api.reconcile_rom_handoff(
+                &auth,
+                coop_cloud::RomHandoffRecoveryRequest {
+                    api_version: coop_cloud::ApiVersion::V1,
+                    character_id,
+                    idempotency_key: prepare_key,
+                    source_snapshot_id: source_id,
+                    expected_revision: coop_cloud::Revision::new(1),
+                    source_world_id: coop_protocol::RomWorldId::new(1).unwrap(),
+                    portal_id: "to_next".to_owned(),
+                }
+            )
+            .await
+            .unwrap(),
             recovery
         );
         let request = RomHandoffPrepareRequest {

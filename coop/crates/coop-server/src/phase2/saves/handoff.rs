@@ -3,8 +3,8 @@
 
 use coop_cloud::{
     ApiVersion, ArtifactIdentity, RomHandoffCommitRequest, RomHandoffPrepareRequest,
-    RomHandoffPrepareResponse, RomHandoffRecoveryStatus, Sha256Digest, SnapshotFence, SnapshotFile,
-    SnapshotId, SnapshotRecord,
+    RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, Sha256Digest,
+    SnapshotFence, SnapshotFile, SnapshotId, SnapshotRecord,
 };
 use coop_save::{TransferDescriptorPair, project_arrival};
 
@@ -502,12 +502,17 @@ pub(crate) fn prepare(
         {
             return Err(Phase2Error::Conflict);
         }
-        if state
-            .rom_handoff_aborts
-            .keys()
-            .filter(|(character_id, _)| character_id == &request.character_id)
-            .count()
-            >= MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER
+        let current = state
+            .rom_handoff_staging
+            .get(&request.character_id)
+            .cloned();
+        if current.is_none()
+            && state
+                .rom_handoff_aborts
+                .keys()
+                .filter(|(character_id, _)| character_id == &request.character_id)
+                .count()
+                >= MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER
         {
             return Err(Phase2Error::Busy);
         }
@@ -519,10 +524,6 @@ pub(crate) fn prepare(
         {
             return Err(Phase2Error::Conflict);
         }
-        let current = state
-            .rom_handoff_staging
-            .get(&request.character_id)
-            .cloned();
         if let Some(current) = current {
             if current.request != *request
                 || current.stage_id != stage_id
@@ -977,13 +978,14 @@ pub(crate) fn recovery_status(
     store: &Store,
     actor: AuthenticatedActor,
     fence: coop_cloud::LeaseFence,
-    idempotency_key: coop_cloud::IdempotencyKey,
+    request: &RomHandoffRecoveryRequest,
 ) -> Result<RomHandoffRecoveryStatus, Phase2Error> {
     let catalog = store
         .config
         .release_catalog
         .as_ref()
         .ok_or(Phase2Error::Internal)?;
+    let idempotency_key = request.idempotency_key;
     // Reconciliation is the recovery trigger for a stage whose five-minute
     // lease expired before the client received the prepare response.  This
     // preserves the same object cleanup and tombstone transaction as the next
@@ -1008,6 +1010,13 @@ pub(crate) fn recovery_status(
             else {
                 return Ok(None);
             };
+            if stage.request.source_snapshot_id != request.source_snapshot_id
+                || stage.request.expected_revision != request.expected_revision
+                || stage.source_world_id != request.source_world_id
+                || stage.request.portal_id != request.portal_id
+            {
+                return Err(Phase2Error::Conflict);
+            }
             let character = state
                 .characters
                 .get(&fence.character_id)
@@ -1033,7 +1042,11 @@ pub(crate) fn recovery_status(
     if let Some(stage_id) = expired_stage {
         abort(store, actor, stage_id)?;
     }
-    store.read_transaction(|state| {
+    // A prepare may have been journaled locally but never reached the server.
+    // Reserve its exact key in the same write transaction that verifies the
+    // current source head. A delayed prepare then sees the tombstone and can
+    // never create a stage, even if its HTTP call races reconciliation.
+    store.write_transaction(|state| {
         let lease = active_lease_identity_for_handoff(
             state,
             actor,
@@ -1048,6 +1061,13 @@ pub(crate) fn recovery_status(
             .get(&fence.character_id)
             .filter(|stage| stage.request.idempotency_key == idempotency_key)
         {
+            if stage.request.source_snapshot_id != request.source_snapshot_id
+                || stage.request.expected_revision != request.expected_revision
+                || stage.source_world_id != request.source_world_id
+                || stage.request.portal_id != request.portal_id
+            {
+                return Err(Phase2Error::Conflict);
+            }
             (
                 stage.request.clone(),
                 stage.stage_id,
@@ -1058,6 +1078,13 @@ pub(crate) fn recovery_status(
             .rom_handoff_aborts
             .get(&(fence.character_id, idempotency_key))
         {
+            if tombstone.request.source_snapshot_id != request.source_snapshot_id
+                || tombstone.request.expected_revision != request.expected_revision
+                || tombstone.source_world_id != request.source_world_id
+                || tombstone.request.portal_id != request.portal_id
+            {
+                return Err(Phase2Error::Conflict);
+            }
             (
                 tombstone.request.clone(),
                 tombstone.stage_id,
@@ -1065,7 +1092,99 @@ pub(crate) fn recovery_status(
                 true,
             )
         } else {
-            return Err(Phase2Error::NotFound);
+            let character = state
+                .characters
+                .get(&fence.character_id)
+                .ok_or(Phase2Error::NotFound)?;
+            if lease.contract.current_revision != fence.current_revision
+                || request.expected_revision != fence.current_revision
+                || character.revision != fence.current_revision
+                || character.active_snapshot != Some(request.source_snapshot_id)
+            {
+                return Err(Phase2Error::Conflict);
+            }
+            let source = state
+                .snapshots
+                .get(&request.source_snapshot_id)
+                .filter(|snapshot| {
+                    snapshot.character_id == fence.character_id
+                        && snapshot.rom_world_id == request.source_world_id
+                })
+                .ok_or(Phase2Error::Conflict)?;
+            validate_runtime_binding(catalog, &lease, source.rom_world_id)?;
+            let synthetic_request = RomHandoffPrepareRequest {
+                api_version: ApiVersion::V1,
+                character_id: fence.character_id,
+                session_id: fence.session_id,
+                session_epoch: fence.session_epoch,
+                client_instance_id: fence.client_instance_id,
+                expected_revision: request.expected_revision,
+                source_snapshot_id: request.source_snapshot_id,
+                portal_id: request.portal_id.clone(),
+                idempotency_key,
+            };
+            if !synthetic_request.valid_portal_id() {
+                return Err(Phase2Error::InvalidRequest);
+            }
+            let descriptor = catalog
+                .transfer_descriptor()
+                .ok_or(Phase2Error::Forbidden)?;
+            if catalog
+                .resolve_portal(
+                    source.rom_world_id,
+                    &request.portal_id,
+                    Sha256Digest::of_bytes(descriptor),
+                )
+                .is_none()
+            {
+                return Err(Phase2Error::Forbidden);
+            }
+            let tombstone_count = state
+                .rom_handoff_aborts
+                .keys()
+                .filter(|(character_id, _)| character_id == &fence.character_id)
+                .count();
+            let live_stage_slot =
+                usize::from(state.rom_handoff_staging.contains_key(&fence.character_id));
+            if tombstone_count + live_stage_slot >= MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER {
+                return Err(Phase2Error::Busy);
+            }
+            let absent_stage_id = store.snapshot_id()?;
+            if absent_stage_id == request.source_snapshot_id
+                || state.snapshots.contains_key(&absent_stage_id)
+                || state.prepared.contains_key(&absent_stage_id)
+                || state.retiring_snapshots.contains_key(&absent_stage_id)
+                || state.retired_snapshots.contains(&absent_stage_id)
+                || state
+                    .restore_staging
+                    .values()
+                    .any(|stage| stage.snapshot_id == absent_stage_id)
+                || state
+                    .rom_handoff_staging
+                    .values()
+                    .any(|stage| stage.stage_id == absent_stage_id)
+                || state
+                    .rom_handoff_aborts
+                    .values()
+                    .any(|tombstone| tombstone.stage_id == absent_stage_id)
+            {
+                return Err(Phase2Error::Conflict);
+            }
+            state.rom_handoff_aborts.insert(
+                (fence.character_id, idempotency_key),
+                RomHandoffAbortTombstone {
+                    request: synthetic_request,
+                    stage_id: absent_stage_id,
+                    source_world_id: source.rom_world_id,
+                },
+            );
+            return Ok(RomHandoffRecoveryStatus::Aborted {
+                stage_id: absent_stage_id,
+                source_snapshot_id: request.source_snapshot_id,
+                source_world_id: source.rom_world_id,
+                expected_revision: request.expected_revision,
+                idempotency_key,
+            });
         };
         if request.expected_revision != fence.current_revision
             || lease.contract.current_revision != fence.current_revision

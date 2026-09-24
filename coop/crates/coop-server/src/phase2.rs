@@ -644,7 +644,7 @@ impl Phase2App {
             .runtime_transition_gate
             .lock()
             .map_err(|_| Phase2Error::Internal)?;
-        saves::handoff::recovery_status(&self.store, actor, fence, request.idempotency_key)
+        saves::handoff::recovery_status(&self.store, actor, fence, request)
     }
     /// Promotes an acknowledged destination save and releases the source lease.
     ///

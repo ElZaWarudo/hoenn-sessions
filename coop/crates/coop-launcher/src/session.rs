@@ -15,10 +15,11 @@ use coop_cloud::{
     IdempotencyKey, LeaseContract, MintRealtimeTicketRequest, PrepareSnapshotRequest,
     ReconnectLeaseRequest, ReleaseLeaseRequest, ResumePackageManifest, ResumeSelection, Revision,
     RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
-    RomHandoffRecoveryStatus, RuntimeLeaseFence, Sha256Digest, SignedManifestEnvelope,
-    SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest,
-    SnapshotListResponse, SnapshotPrepareFence, SnapshotPrepareResponse, SnapshotRecord,
-    SnapshotRestoreRequest, SnapshotRestoreResponse, TrustedManifestKey, UploadTarget,
+    RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, RuntimeLeaseFence, Sha256Digest,
+    SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
+    SnapshotId, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence,
+    SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
+    TrustedManifestKey, UploadTarget,
 };
 pub use coop_protocol::RomWorldId;
 use coop_save::{CharacterSave, RegistryContract, parse_v2, validate_character_save};
@@ -466,8 +467,7 @@ pub trait CloudApi: AuthApi {
     fn reconcile_rom_handoff<'a>(
         &'a self,
         _auth: &'a AuthSession,
-        _character_id: CharacterId,
-        _idempotency_key: coop_cloud::IdempotencyKey,
+        _request: RomHandoffRecoveryRequest,
     ) -> CloudFuture<'a, RomHandoffRecoveryStatus> {
         Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
     }
