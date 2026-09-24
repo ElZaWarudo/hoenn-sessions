@@ -29,11 +29,7 @@ pub(super) fn snapshot(
     actor: AuthenticatedActor,
     request: &OnlineSnapshotRequest,
 ) -> Result<OnlineSnapshotResponse, Phase2Error> {
-    let _gate = app
-        .store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
+    let _gate = app.store.lock_runtime_transition_gate();
     let now = app.store.now();
     let mut response =
         app.store
@@ -123,11 +119,7 @@ pub(super) fn action(
     actor: AuthenticatedActor,
     request: &OnlineActionRequest,
 ) -> Result<OnlineActionResponse, Phase2Error> {
-    let _gate = app
-        .store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
+    let _gate = app.store.lock_runtime_transition_gate();
     let now = app.store.now();
     // Validate the precise fence even for a successful operation replay.
     app.store.read_transaction(|state| {

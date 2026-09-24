@@ -121,6 +121,27 @@ local companion_frame = assert(protocol.encode({
 assert(protocol.decode(companion_frame, "outbound"))
 assert(protocol.decode(companion_frame, "inbound") == nil)
 
+-- Nonzero padding after the payload is invalid even with a valid CRC.
+local padded_prefix = string.sub(ready, 1, 12) .. "\1" .. string.sub(ready, 14, 140)
+local padded_frame = padded_prefix .. string.pack("<I4", protocol.crc32(padded_prefix))
+assert(string.unpack("<I4", padded_frame, 141) == protocol.crc32(string.sub(padded_frame, 1, 140)))
+assert(protocol.decode(padded_frame, "outbound") == nil)
+local tail_prefix = string.sub(ready, 1, 139) .. "\2"
+local tail_frame = tail_prefix .. string.pack("<I4", protocol.crc32(tail_prefix))
+assert(string.unpack("<I4", tail_frame, 141) == protocol.crc32(string.sub(tail_frame, 1, 140)))
+assert(protocol.decode(tail_frame, "outbound") == nil)
+local short_payload_frame = assert(protocol.encode({
+  type = protocol.types.ROM_READY,
+  sequence = 9,
+  session_epoch = 0,
+  payload = "AB",
+}))
+local short_prefix = string.sub(short_payload_frame, 1, 14) .. "\7" .. string.sub(short_payload_frame, 16, 140)
+local short_padded = short_prefix .. string.pack("<I4", protocol.crc32(short_prefix))
+assert(string.unpack("<I4", short_padded, 141) == protocol.crc32(string.sub(short_padded, 1, 140)))
+assert(protocol.decode(short_padded, "outbound") == nil)
+assert(protocol.decode(short_payload_frame, "outbound") ~= nil)
+
 local remote_signal_frame = assert(protocol.encode({
   type = protocol.types.REMOTE_SOCIAL_SIGNAL, sequence = 4, session_epoch = 1,
   payload = string.rep("\0", 20),

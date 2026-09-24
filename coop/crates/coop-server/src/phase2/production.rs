@@ -4,7 +4,7 @@ use super::{
     Phase2App, Phase2Error,
     storage::{Phase2Config, ProductionConfig, StorageError, StorageMode},
 };
-use std::{io::Read, net::SocketAddr, path::Path, sync::Arc};
+use std::{io::Read, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 use zeroize::Zeroizing;
 
 /// Whole HTTP operations include process-local transition locks, so move them
@@ -14,6 +14,14 @@ pub(super) async fn offload_request(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     use axum::response::IntoResponse;
+    if request.uri().path() == "/health/ready" {
+        return next.run(request).await;
+    }
+    let deadline = if request.uri().path().starts_with("/v1/auth/") {
+        Duration::from_secs(15)
+    } else {
+        Duration::from_secs(120)
+    };
     static CAPACITY: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
     let Ok(permit) = CAPACITY
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(32)))
@@ -25,7 +33,11 @@ pub(super) async fn offload_request(
     let runtime = tokio::runtime::Handle::current();
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
-        runtime.block_on(next.run(request))
+        runtime.block_on(async {
+            tokio::time::timeout(deadline, next.run(request))
+                .await
+                .unwrap_or_else(|_| Phase2Error::Busy.into_response())
+        })
     })
     .await
     .unwrap_or_else(|_| Phase2Error::Internal.into_response())
@@ -120,32 +132,92 @@ fn from_env() -> Result<Phase2App, Phase2Error> {
     Ok(app)
 }
 
+/// Production startup attempts before giving up. The database and object
+/// store often trail the server during deploys, so transient connect
+/// failures retry with a fixed delay. Invalid secrets fail on every attempt
+/// and still exit closed after the last one.
+const MAX_STARTUP_ATTEMPTS: u32 = 5;
+const STARTUP_RETRY_DELAY: Duration = Duration::from_secs(2);
+
+/// Returns the delay before the next startup attempt, or [`None`] when the
+/// retry budget is exhausted. Extracted so the bound is unit-tested.
+fn next_startup_delay(attempt: u32) -> Option<Duration> {
+    (attempt < MAX_STARTUP_ATTEMPTS).then_some(STARTUP_RETRY_DELAY)
+}
+
+async fn load_production_app() -> Result<Phase2App, Phase2Error> {
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        let loaded = tokio::task::spawn_blocking(from_env)
+            .await
+            .map_err(|_| Phase2Error::Internal)?;
+        match loaded {
+            Ok(app) => return Ok(app),
+            Err(error) if next_startup_delay(attempt).is_some() => {
+                eprintln!(
+                    "co-op production startup attempt {attempt}/{MAX_STARTUP_ATTEMPTS} failed ({error}); retrying"
+                );
+                tokio::time::sleep(STARTUP_RETRY_DELAY).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 /// Runs the authenticated persistent server behind a TLS reverse proxy.
 ///
 /// # Errors
 /// Fails closed when required secrets, adapters, or the listener are unavailable.
 pub async fn serve_phase2_production(address: SocketAddr) -> Result<(), Phase2Error> {
-    let app = tokio::task::spawn_blocking(from_env)
-        .await
-        .map_err(|_| Phase2Error::Internal)??;
+    let app = load_production_app().await?;
+    let watchdog = app.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if watchdog.store.repository.is_fenced() || watchdog.store.objects.is_fenced() {
+                eprintln!("co-op persistent backend fenced; exiting for supervisor restart");
+                std::process::exit(1);
+            }
+        }
+    });
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .map_err(|_| Phase2Error::Internal)?;
+    let shutdown_signal = app.shutdown.clone();
     axum::serve(listener, app.router())
-        .with_graceful_shutdown(shutdown())
+        .with_graceful_shutdown(shutdown(shutdown_signal))
         .await
         .map_err(|_| Phase2Error::Internal)
 }
 
-async fn shutdown() {
+pub(super) async fn shutdown(notify: tokio::sync::watch::Sender<bool>) {
     #[cfg(unix)]
     {
         if let Ok(mut terminate) =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         {
             tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            notify.send_replace(true);
             return;
         }
     }
     let _ = tokio::signal::ctrl_c().await;
+    notify.send_replace(true);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_retry_budget_is_bounded() {
+        assert_eq!(next_startup_delay(1), Some(STARTUP_RETRY_DELAY));
+        assert_eq!(
+            next_startup_delay(MAX_STARTUP_ATTEMPTS - 1),
+            Some(STARTUP_RETRY_DELAY)
+        );
+        assert_eq!(next_startup_delay(MAX_STARTUP_ATTEMPTS), None);
+        assert_eq!(next_startup_delay(MAX_STARTUP_ATTEMPTS + 1), None);
+    }
 }

@@ -1656,10 +1656,7 @@ fn reserve_restore(
     revision: Revision,
     now: u64,
 ) -> Result<RestoreReservation, Phase2Error> {
-    let _gate = store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
+    let _gate = store.lock_runtime_transition_gate();
     super::validate_restore_target(store, actor, request.character_id)?;
     let stage_expires_at = now
         .checked_add(RESTORE_STAGE_TTL_MS)
@@ -1824,10 +1821,7 @@ fn commit_restore(
     snapshot_id: SnapshotId,
     revision: Revision,
 ) -> Result<SnapshotRestoreResponse, Phase2Error> {
-    let _gate = store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
+    let _gate = store.lock_runtime_transition_gate();
     super::validate_restore_target(store, actor, request.character_id)?;
     store.write_transaction(|state| {
         let lease = active_lease_identity(

@@ -5,7 +5,9 @@ use coop_cloud::{
     AccessToken, CharacterId, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse,
     RefreshRequest, RefreshResponse, RegisterRequest, RegisterResponse,
 };
-use coop_cloud::{ClientInstanceId, LeaseFence, Revision, SessionEpoch, SessionId};
+use coop_cloud::{
+    ClientInstanceId, LeaseFence, RefreshFamilyId, Revision, SessionEpoch, SessionId,
+};
 use zeroize::Zeroizing;
 
 use super::storage::{
@@ -460,6 +462,16 @@ pub(crate) fn actor_from_headers(
     store: &Store,
     headers: &HeaderMap,
 ) -> Result<AuthenticatedActor, Phase2Error> {
+    actor_and_family_from_headers(store, headers).map(|(actor, _)| actor)
+}
+
+/// Resolves an access token together with the refresh family that issued it.
+/// Realtime capabilities retain this family binding so logout and refresh
+/// family revocation can invalidate an already minted capability.
+pub(crate) fn actor_and_family_from_headers(
+    store: &Store,
+    headers: &HeaderMap,
+) -> Result<(AuthenticatedActor, RefreshFamilyId), Phase2Error> {
     let value = headers
         .get(axum::http::header::AUTHORIZATION)
         .ok_or(Phase2Error::Authentication)?;
@@ -484,10 +496,24 @@ pub(crate) fn actor_from_headers(
         if access.revoked || access.expires_at <= now {
             return Err(Phase2Error::Authentication);
         }
-        Ok(AuthenticatedActor {
-            user_id: access.user_id,
-            character_id: access.character_id,
-        })
+        let family = state
+            .families
+            .get(&access.family_id)
+            .ok_or(Phase2Error::Authentication)?;
+        if family.revoked
+            || family.expires_at <= now
+            || family.user_id != access.user_id
+            || family.character_id != access.character_id
+        {
+            return Err(Phase2Error::Authentication);
+        }
+        Ok((
+            AuthenticatedActor {
+                user_id: access.user_id,
+                character_id: access.character_id,
+            },
+            access.family_id,
+        ))
     })
 }
 

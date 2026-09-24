@@ -244,6 +244,12 @@ function protocol.decode(bytes, expected_direction)
     return nil, "sequence zero is reserved"
   end
 
+  for index = offset + length, 140 do
+    if string.byte(bytes, index) ~= 0 then
+      return nil, "bridge payload padding must be zero"
+    end
+  end
+
   local expected_checksum = string.unpack("<I4", bytes, 141)
   local actual_checksum = protocol.crc32(string.sub(bytes, 1, 140))
   if expected_checksum ~= actual_checksum then
