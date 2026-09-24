@@ -8,6 +8,7 @@ local original_memory_module = package.loaded.memory
 local frame_callback
 local savedata_callback
 local receive_callback
+local error_callback
 local send_calls = {}
 local incoming_chunks = {}
 local warning_messages = {}
@@ -17,6 +18,7 @@ local outbound_message
 local outbound_commits = 0
 local generation = 9
 local state_capture_count = 0
+local skipped_capture_count = 0
 local temporary_base = os.tmpname()
 os.remove(temporary_base)
 local character_save_path = temporary_base .. ".character.sav"
@@ -27,6 +29,8 @@ local manifest_schema = 2
 local save_schema = 1
 local initialization_attempts = 0
 local rom_initialized = false
+local socket_connections = 0
+local connect_failures = 0
 
 local bridge = {}
 
@@ -67,6 +71,8 @@ local client = {}
 function client:add(event, callback)
   if event == "received" then
     receive_callback = callback
+  elseif event == "error" then
+    error_callback = callback
   end
 end
 
@@ -104,7 +110,7 @@ function client:send(bytes, first, last)
   if #bytes == protocol.MESSAGE_SIZE then
     local decoded = assert(protocol.decode(bytes, "outbound"))
     if decoded.type == protocol.types.SAVE_DATA_UPDATED then
-      assert(state_capture_count == outbound_commits + 1)
+      assert(state_capture_count + skipped_capture_count == outbound_commits + 1)
     end
   end
   return last
@@ -115,6 +121,11 @@ socket = {
   connect = function(host, port)
     assert(host == "127.0.0.1")
     assert(port == 12345)
+    socket_connections = socket_connections + 1
+    if connect_failures > 0 then
+      connect_failures = connect_failures - 1
+      return nil, "temporarily unavailable"
+    end
     return client
   end,
 }
@@ -416,11 +427,170 @@ assert(tostring(malformed_error):match("must carry one little%-endian u32 genera
 assert(#send_calls == 5)
 assert(outbound_commits == 2)
 
+-- A locked previous resume capture (Windows file lock) must not terminate
+-- the bridge: the optional capture is skipped and the canonical SAV
+-- completion still forwards. Transient remove failures are retried.
+local original_os_remove = os.remove
+local remove_calls = 0
+local locked_remove = false
+local transient_failures_remaining = 0
+os.remove = function(path)
+  if path == resume_output_path or path == resume_output_path .. ".tmp" then
+    local probe = original_io_open(path, "rb")
+    if probe then
+      probe:close()
+      remove_calls = remove_calls + 1
+      if locked_remove then
+        return nil, "Permission denied (locked)"
+      end
+      if transient_failures_remaining > 0 then
+        transient_failures_remaining = transient_failures_remaining - 1
+        return nil, "Permission denied (locked)"
+      end
+    end
+  end
+  return original_os_remove(path)
+end
+
+local stale_capture = assert(original_io_open(resume_output_path, "wb"))
+stale_capture:write("stale-state")
+stale_capture:close()
+assert(original_io_open(resume_output_path .. ".tmp", "rb") == nil)
+
+-- Complete the pending sequence-4 grant with a valid generation while the
+-- previous capture is locked. The bridge must warn, skip the optional
+-- capture, and still forward the SAV completion.
+locked_remove = true
+remove_calls = 0
+local warnings_before_lock = #warning_messages
+local sends_before_lock = #send_calls
+local commits_before_lock = outbound_commits
+local captures_before_lock = state_capture_count
+generation = 12
+local locked_update = assert(protocol.encode({
+  type = protocol.types.SAVE_DATA_UPDATED,
+  sequence = 4,
+  session_epoch = 7,
+  payload = string.pack("<I4", generation),
+}))
+outbound_message = {
+  bytes = locked_update,
+  decoded = assert(protocol.decode(locked_update, "outbound")),
+  read_index = 6,
+}
+savedata_callback()
+skipped_capture_count = skipped_capture_count + 1
+local lock_frame_ok, lock_frame_error = pcall(frame_callback)
+assert(lock_frame_ok, lock_frame_error)
+assert(state_capture_count == captures_before_lock)
+assert(#send_calls == sends_before_lock + 1)
+assert(send_calls[#send_calls].bytes == locked_update)
+assert(outbound_commits == commits_before_lock + 1)
+assert(#warning_messages == warnings_before_lock + 1)
+assert(warning_messages[#warning_messages]:match("could not remove previous compatible state"))
+assert(warning_messages[#warning_messages]:match("character%.sav only"))
+assert(remove_calls >= 1 and remove_calls <= 3)
+local surviving = assert(original_io_open(resume_output_path, "rb"))
+assert(surviving:read("*a") == "stale-state")
+surviving:close()
+locked_remove = false
+
+-- A transient lock that clears on retry still permits the optional capture
+-- attempt and forwards the canonical completion.
+transient_failures_remaining = 2
+remove_calls = 0
+local transient_grant = assert(protocol.encode({
+  type = protocol.types.CHECKPOINT_GRANTED,
+  sequence = 5,
+  session_epoch = 7,
+}))
+incoming_chunks[1] = transient_grant
+receive_callback()
+frame_callback()
+generation = 13
+local transient_update = assert(protocol.encode({
+  type = protocol.types.SAVE_DATA_UPDATED,
+  sequence = 5,
+  session_epoch = 7,
+  payload = string.pack("<I4", generation),
+}))
+outbound_message = {
+  bytes = transient_update,
+  decoded = assert(protocol.decode(transient_update, "outbound")),
+  read_index = 7,
+}
+local transient_captures_before = state_capture_count
+local transient_sends_before = #send_calls
+local transient_commits_before = outbound_commits
+savedata_callback()
+frame_callback()
+assert(remove_calls >= 3)
+assert(state_capture_count == transient_captures_before + 1)
+assert(#send_calls == transient_sends_before + 1)
+assert(send_calls[#send_calls].bytes == transient_update)
+assert(outbound_commits == transient_commits_before + 1)
+os.remove = original_os_remove
+original_os_remove(resume_output_path)
+original_os_remove(resume_output_path .. ".tmp")
+
 -- Backpressure bounds Lua memory while the ROM cannot drain its inbound queue,
 -- as happens transiently during map loads and is amplified by fast-forward.
 incoming_chunks[1] = string.rep(session_ready, 33)
 receive_callback()
 assert(#incoming_chunks == 1)
 assert(#incoming_chunks[1] == protocol.MESSAGE_SIZE)
+frame_callback()
+receive_callback()
+frame_callback()
+
+-- A socket error retries with bounded frame backoff and authenticates the
+-- replacement bridge without losing an uncommitted ROM queue frame.
+incoming_chunks = {}
+local connects_before = socket_connections
+local sends_before = #send_calls
+error_callback("connection reset")
+assert(closed)
+for _ = 1, 60 do frame_callback() end
+assert(socket_connections == connects_before)
+frame_callback()
+assert(socket_connections == connects_before + 1)
+assert(#send_calls == sends_before + 1)
+assert(send_calls[#send_calls].bytes:match('^%{"secret"'))
+incoming_chunks[1] = '{"ok":true}\n'
+receive_callback()
+frame_callback()
+assert(#error_messages == 0)
+
+-- Failed replacement attempts also back off and leave the frame loop alive.
+connect_failures = 1
+error_callback("connection reset again")
+local attempted_before = socket_connections
+for _ = 1, 60 do frame_callback() end
+frame_callback()
+assert(socket_connections == attempted_before + 1)
+for _ = 1, 120 do frame_callback() end
+assert(socket_connections == attempted_before + 1)
+frame_callback()
+assert(socket_connections == attempted_before + 2)
+assert(send_calls[#send_calls].bytes:match('^%{"secret"'))
+closed = false
+local warnings_before_timeout = #warning_messages
+for _ = 1, 300 do frame_callback() end
+assert(closed)
+assert(#warning_messages == warnings_before_timeout + 1)
+assert(warning_messages[#warning_messages]:match("handshake timed out"))
+
+-- The sidecar treats partial frame loss as fatal. The bridge must not replay
+-- an ambiguous fragment after reconnecting.
+for _ = 1, 240 do frame_callback() end
+frame_callback()
+incoming_chunks[1] = '{"ok":true}\n'
+receive_callback()
+frame_callback()
+incoming_chunks[1] = string.sub(session_ready, 1, 5)
+receive_callback()
+local partial_ok, partial_error = pcall(error_callback, "connection reset mid-frame")
+assert(not partial_ok)
+assert(tostring(partial_error):match("frame in flight"))
 
 print("bridge main-loop tests passed")

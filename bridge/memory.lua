@@ -3,9 +3,9 @@ local protocol = require("protocol")
 local memory = {}
 memory.__index = memory
 
-local function queue_depth(read_index, write_index)
+local function queue_depth(read_index, write_index, capacity)
   local depth = (write_index - read_index) & 0xFFFF
-  if depth > 32 then
+  if depth > capacity then
     return nil, "bridge queue counters describe an impossible occupancy"
   end
   return depth
@@ -40,7 +40,7 @@ function memory:peek_outbound()
   local queue_address = self:_queue_address("outbound")
   local read_index = self.core:read16(queue_address + self.manifest.queue.read_index)
   local write_index = self.core:read16(queue_address + self.manifest.queue.write_index)
-  local depth, err = queue_depth(read_index, write_index)
+  local depth, err = queue_depth(read_index, write_index, self.manifest.queue.capacity)
   if not depth then
     -- Lua owns the outbound consumer index. Discard every ambiguous slot and
     -- converge on the producer's published counter instead of retrying forever.
@@ -81,7 +81,7 @@ function memory:push_inbound(bytes)
   local read_index = self.core:read16(queue_address + self.manifest.queue.read_index)
   local write_index = self.core:read16(queue_address + self.manifest.queue.write_index)
   local depth
-  depth, err = queue_depth(read_index, write_index)
+  depth, err = queue_depth(read_index, write_index, self.manifest.queue.capacity)
   if not depth then
     -- Lua owns the inbound producer index. Rewind it to the ROM consumer's
     -- counter so the rejected frame can be retried against an empty queue.

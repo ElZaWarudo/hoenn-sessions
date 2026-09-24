@@ -135,15 +135,22 @@ local function is_newer_u32(candidate, baseline)
   return distance ~= 0 and distance < 0x80000000
 end
 
+local REMOVE_ATTEMPTS = 3
+
 local function remove_readable_file(path)
   local file = io.open(path, "rb")
   if not file then return true end
   file:close()
-  local removed, remove_error = os.remove(path)
-  if not removed then
-    return nil, "could not remove stale compatible state: " .. tostring(remove_error)
+  local remove_error
+  for _ = 1, REMOVE_ATTEMPTS do
+    local removed, operation_error = os.remove(path)
+    if removed then return true end
+    remove_error = operation_error
+    local probe = io.open(path, "rb")
+    if not probe then return true end
+    probe:close()
   end
-  return true
+  return nil, "could not remove stale compatible state: " .. tostring(remove_error)
 end
 
 -- A previous crash may have left a partial atomic capture behind. The next
@@ -251,15 +258,29 @@ function checkpoint:try_capture()
   end
 
   local removed, remove_error = remove_readable_file(resume_output_path)
-  if not removed then return nil, remove_error end
+  if not removed then
+    console:warn("could not remove previous compatible state: " .. tostring(remove_error)
+      .. "; checkpoint will use character.sav only")
+    self.ready = true
+    return true
+  end
   local temporary_removed, temporary_error = remove_readable_file(resume_output_tmp_path)
-  if not temporary_removed then return nil, temporary_error end
+  if not temporary_removed then
+    console:warn("could not remove temporary compatible state: " .. tostring(temporary_error)
+      .. "; checkpoint will use character.sav only")
+    self.ready = true
+    return true
+  end
   local capture_called, capture_result = pcall(
     emu.saveStateFile, emu, resume_output_tmp_path, SAVESTATE_WITHOUT_SAVEDATA)
   if not capture_called or capture_result ~= true then
     local cleaned, cleanup_error = remove_readable_file(resume_output_tmp_path)
-    if not cleaned then return nil, cleanup_error end
-    console:warn("compatible state capture failed; checkpoint will use character.sav only")
+    if not cleaned then
+      console:warn("could not remove partial compatible state: " .. tostring(cleanup_error)
+        .. "; checkpoint will use character.sav only")
+    else
+      console:warn("compatible state capture failed; checkpoint will use character.sav only")
+    end
   else
     -- Publish atomically: the resume path is either absent or a complete
     -- state, never a partial write. The previous state was already removed
@@ -267,8 +288,12 @@ function checkpoint:try_capture()
     local renamed, rename_error = os.rename(resume_output_tmp_path, resume_output_path)
     if not renamed then
       local cleaned, cleanup_error = remove_readable_file(resume_output_tmp_path)
-      if not cleaned then return nil, cleanup_error end
-      console:warn("compatible state publish failed; checkpoint will use character.sav only")
+      if not cleaned then
+        console:warn("could not remove partial compatible state: " .. tostring(cleanup_error)
+          .. "; checkpoint will use character.sav only")
+      else
+        console:warn("compatible state publish failed; checkpoint will use character.sav only")
+      end
     end
   end
   self.ready = true
@@ -326,38 +351,72 @@ function checkpoint:commit_outbound(message)
   return true
 end
 
-local client, connect_error = socket.connect(session.host, session.port)
-if not client then error("sidecar connection failed: " .. tostring(connect_error)) end
-
 local handshake = string.format(
   '{"secret":"%s","bridge_abi":%d,"protocol_version":%d}\n',
   session.secret, protocol.ABI_VERSION, protocol.PROTOCOL_VERSION)
 if #handshake > 256 then error("internal handshake exceeds its protocol bound") end
 
+local client = nil
 local receive_buffer = ""
 local authenticated = false
 local pending_handshake = { bytes = handshake, offset = 1 }
 local pending_outbound = nil
 local frame_counter = 0
+local reconnect_frames = 0
+local reconnect_attempts = 0
+local handshake_frames = 0
 local MAX_RECEIVE_BUFFER_BYTES = protocol.MESSAGE_SIZE * manifest.queue.capacity
 
-client:add("received", function()
-  while client:hasdata() do
-    local buffer_limit = authenticated and MAX_RECEIVE_BUFFER_BYTES or 256
-    local available = buffer_limit - #receive_buffer
-    if available <= 0 then return end
-    local bytes, receive_error = client:receive(math.min(4096, available))
-    if not bytes then
-      console:error("sidecar receive failed: " .. tostring(receive_error))
-      return
-    end
-    receive_buffer = receive_buffer .. bytes
+local function schedule_reconnect(message)
+  if authenticated and ((pending_outbound and pending_outbound.offset > 1)
+    or #receive_buffer > 0) then
+    error("sidecar connection lost with a frame in flight")
   end
-end)
+  console:warn(message)
+  local previous = client
+  client = nil
+  if previous then pcall(previous.close, previous) end
+  receive_buffer = ""
+  authenticated = false
+  pending_handshake = { bytes = handshake, offset = 1 }
+  handshake_frames = 0
+  -- The sidecar retains its checkpoint grant across an idle bridge socket
+  -- replacement. An unsent ROM frame remains owned by its queue.
+  if pending_outbound then pending_outbound.offset = 1 end
+  reconnect_frames = math.min(60 * (2 ^ math.min(reconnect_attempts, 4)), 600)
+  reconnect_attempts = reconnect_attempts + 1
+end
 
-client:add("error", function(error_value)
-  console:error("sidecar socket error: " .. tostring(error_value))
-end)
+local function connect_sidecar()
+  local connection, connect_error = socket.connect(session.host, session.port)
+  if not connection then
+    schedule_reconnect("sidecar connection failed: " .. tostring(connect_error))
+    return
+  end
+  client = connection
+  handshake_frames = 0
+  connection:add("received", function()
+    if client ~= connection then return end
+    while connection:hasdata() do
+      local buffer_limit = authenticated and MAX_RECEIVE_BUFFER_BYTES or 256
+      local available = buffer_limit - #receive_buffer
+      if available <= 0 then return end
+      local bytes, receive_error = connection:receive(math.min(4096, available))
+      if not bytes then
+        schedule_reconnect("sidecar receive failed: " .. tostring(receive_error))
+        return
+      end
+      receive_buffer = receive_buffer .. bytes
+    end
+  end)
+  connection:add("error", function(error_value)
+    if client == connection then
+      schedule_reconnect("sidecar socket error: " .. tostring(error_value))
+    end
+  end)
+end
+
+connect_sidecar()
 
 local function process_handshake_response()
   local newline = string.find(receive_buffer, "\n", 1, true)
@@ -369,6 +428,7 @@ local function process_handshake_response()
   receive_buffer = string.sub(receive_buffer, newline + 1)
   if response ~= '{"ok":true}\n' then error("sidecar rejected the bridge handshake") end
   authenticated = true
+  reconnect_attempts = 0
   console:log("PokéCrossroads co-op bridge authenticated with the local sidecar")
 end
 
@@ -410,7 +470,8 @@ end
 local function send_handshake()
   local complete, send_error = advance_pending_send(pending_handshake)
   if complete == nil then
-    error("sidecar handshake send failed: " .. tostring(send_error))
+    schedule_reconnect("sidecar handshake send failed: " .. tostring(send_error))
+    return
   end
   if complete then pending_handshake = nil end
 end
@@ -437,7 +498,7 @@ local function send_outbound_frame()
   if not valid then error(validation_error) end
   local complete, send_error = advance_pending_send(pending_outbound)
   if complete == nil then
-    console:error("sidecar send failed: " .. tostring(send_error))
+    schedule_reconnect("sidecar send failed: " .. tostring(send_error))
     return
   end
   if complete then
@@ -470,12 +531,26 @@ callbacks:add("frame", function()
     end
   end
   frame_counter = (frame_counter + 1) & 0xFFFFFFFF
+  if not client then
+    if reconnect_frames > 0 then
+      reconnect_frames = reconnect_frames - 1
+      return
+    end
+    connect_sidecar()
+    if not client then return end
+  end
   client:poll()
+  if not client then return end
   if pending_handshake then
     send_handshake()
     return
   end
   if not authenticated then
+    handshake_frames = handshake_frames + 1
+    if handshake_frames >= 300 then
+      schedule_reconnect("sidecar handshake timed out")
+      return
+    end
     process_handshake_response()
     return
   end
