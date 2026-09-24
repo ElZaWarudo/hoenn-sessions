@@ -62,9 +62,9 @@ pub use security::{
     SecretError, SigningKey, SigningPrivateKey,
 };
 pub use session::{
-    AcquireLeaseRequest, AcquireRequest, CharacterCloudState, HeartbeatLeaseRequest,
-    HeartbeatRequest, LeaseContract, LeaseFence, ReconnectLeaseRequest, ReconnectRequest,
-    ReleaseLeaseRequest, ReleaseRequest, SessionError,
+    AcquireLeaseRequest, AcquireRequest, AcquireWorldLeaseResponse, CharacterCloudState,
+    HeartbeatLeaseRequest, HeartbeatRequest, LeaseContract, LeaseFence, ReconnectLeaseRequest,
+    ReconnectRequest, ReleaseLeaseRequest, ReleaseRequest, SessionError,
 };
 pub use snapshot::{
     ArtifactIdentity, FinalizeSnapshotRequest, ListSnapshotsRequest, ListSnapshotsResponse,
@@ -354,6 +354,30 @@ mod tests {
         let mut legacy_wire = serde_json::to_value(request).unwrap();
         legacy_wire["expected_revision"] = json!(0);
         assert!(serde_json::from_value::<AcquireLeaseRequest>(legacy_wire).is_err());
+    }
+
+    #[test]
+    fn world_aware_lease_response_rejects_incoherent_snapshot_revision() {
+        let fence = LeaseFence::new(
+            id(SessionId::new),
+            id(CharacterId::new),
+            Revision::initial(),
+            SessionEpoch::new(1).unwrap(),
+            id(ClientInstanceId::new),
+        );
+        let response = AcquireWorldLeaseResponse {
+            lease: LeaseContract::new(fence, UnixTimestampMillis::new(1), 1).unwrap(),
+            active_world_id: rom_world_id(),
+            active_snapshot_id: None,
+        };
+        let encoded = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AcquireWorldLeaseResponse>(encoded.clone()).unwrap(),
+            response
+        );
+        let mut malformed = encoded;
+        malformed["active_snapshot_id"] = json!(uuid::Uuid::from_u128(1));
+        assert!(serde_json::from_value::<AcquireWorldLeaseResponse>(malformed).is_err());
     }
 
     #[test]

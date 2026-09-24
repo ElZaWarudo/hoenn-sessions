@@ -19,8 +19,8 @@ use axum::{
     routing::{get, post, put},
 };
 use coop_cloud::{
-    AcquireLeaseRequest, CharacterId, HeartbeatLeaseRequest, ReconnectLeaseRequest,
-    ReleaseLeaseRequest, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, CharacterId, HeartbeatLeaseRequest,
+    ReconnectLeaseRequest, ReleaseLeaseRequest, RomHandoffCommitRequest, RomHandoffPrepareRequest,
     RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus,
     SnapshotFinalizeRequest, SnapshotListRequest, SnapshotPrepareRequest, SnapshotRestoreRequest,
 };
@@ -301,6 +301,7 @@ impl Phase2App {
                     .route("/v1/auth/logout", post(logout))
                     .route("/v1/auth/invitations", post(portal::create_invitation))
                     .route("/v1/sessions/acquire", post(acquire))
+                    .route("/v1/sessions/acquire-world", post(acquire_world))
                     .route("/v1/sessions/heartbeat", post(heartbeat))
                     .route("/v1/sessions/reconnect", post(reconnect))
                     .route("/v1/sessions/release", post(release))
@@ -517,6 +518,27 @@ impl Phase2App {
         if let Ok(contract) = &result {
             self.presence
                 .reconcile_lease_success(actor.character_id, contract);
+        }
+        result
+    }
+
+    /// Acquires and runtime-binds a lease to the server-authoritative active
+    /// ROM world and snapshot in one repository transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an ownership, catalog, head-consistency, conflict, or
+    /// infrastructure error.
+    pub fn acquire_world(
+        &self,
+        actor: AuthenticatedActor,
+        request: AcquireLeaseRequest,
+    ) -> Result<AcquireWorldLeaseResponse, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        let result = sessions::acquire_world(&self.store, actor, &request);
+        if let Ok(response) = &result {
+            self.presence
+                .reconcile_lease_success(actor.character_id, &response.lease);
         }
         result
     }
@@ -1160,6 +1182,13 @@ async fn acquire(
     Phase2Json(request): Phase2Json<AcquireLeaseRequest>,
 ) -> Result<Json<coop_cloud::LeaseContract>, Phase2Error> {
     Ok(Json(app.acquire(actor(&headers, &app)?, request)?))
+}
+async fn acquire_world(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<AcquireLeaseRequest>,
+) -> Result<Json<coop_cloud::AcquireWorldLeaseResponse>, Phase2Error> {
+    Ok(Json(app.acquire_world(actor(&headers, &app)?, request)?))
 }
 async fn heartbeat(
     State(app): State<Phase2App>,
@@ -2237,6 +2266,249 @@ mod tests {
             saves::resume_artifact(&app.store, actor, fence, "character.sav", None)
                 .expect("sav artifact"),
             valid_character_sav(false)
+        );
+    }
+
+    #[test]
+    fn world_aware_acquire_follows_active_heads_across_three_worlds() {
+        let fresh_app = Phase2App::test();
+        let (fresh_actor, legacy_lease, fresh_client) = account_and_lease(&fresh_app);
+        fresh_app
+            .release(
+                fresh_actor,
+                coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+            )
+            .expect("release legacy fixture lease");
+        let fresh_request = AcquireLeaseRequest::new(
+            fresh_actor.character_id,
+            fresh_client,
+            id(IdempotencyKey::new),
+        );
+        let fresh = fresh_app
+            .acquire_world(fresh_actor, fresh_request)
+            .expect("fresh Main lease");
+        assert_eq!(
+            fresh.active_world_id,
+            coop_protocol::RomWorldId::new(1).unwrap()
+        );
+        assert_eq!(fresh.active_snapshot_id, None);
+        assert_eq!(fresh.lease.current_revision, Revision::initial());
+
+        let (app, actor, _initial_lease, initial_client, main_head) = handoff_fixture();
+        let initial_lease = app
+            .store
+            .read_transaction(|state| {
+                Ok::<_, Phase2Error>(
+                    state
+                        .leases
+                        .get(&actor.character_id)
+                        .expect("active initial lease")
+                        .contract,
+                )
+            })
+            .expect("read active initial lease");
+        let cormoria = coop_protocol::RomWorldId::new(2).unwrap();
+        let third = coop_protocol::RomWorldId::new(3).unwrap();
+        let cormoria_head = travel_once(
+            &app,
+            actor,
+            &initial_lease,
+            initial_client,
+            main_head,
+            "to_next",
+        );
+        let cormoria_request = AcquireLeaseRequest::new(
+            actor.character_id,
+            id(ClientInstanceId::new),
+            id(IdempotencyKey::new),
+        );
+        let cormoria_lease = app
+            .acquire_world(actor, cormoria_request)
+            .expect("active Cormoria lease");
+        assert_eq!(cormoria_lease.active_world_id, cormoria);
+        assert_eq!(
+            cormoria_lease.active_snapshot_id,
+            Some(cormoria_head.snapshot_id)
+        );
+        assert_eq!(
+            app.acquire_world(actor, cormoria_request)
+                .expect("idempotent world-aware replay"),
+            cormoria_lease
+        );
+        saves::resume_package(&app.store, actor, cormoria_lease.lease.fence(), None)
+            .expect("resume package is available before realtime ticket mint");
+
+        let third_head = travel_once(
+            &app,
+            actor,
+            &cormoria_lease.lease,
+            cormoria_lease.lease.client_instance_id,
+            cormoria_head.snapshot_id,
+            "to_next",
+        );
+        let third_request = AcquireLeaseRequest::new(
+            actor.character_id,
+            id(ClientInstanceId::new),
+            id(IdempotencyKey::new),
+        );
+        let third_lease = app
+            .acquire_world(actor, third_request)
+            .expect("active synthetic third-world lease");
+        assert_eq!(third_lease.active_world_id, third);
+        assert_eq!(third_lease.active_snapshot_id, Some(third_head.snapshot_id));
+        assert_eq!(
+            app.store
+                .inspect_state(|state| {
+                    state.leases[&actor.character_id]
+                        .runtime_binding
+                        .as_ref()
+                        .map(|binding| binding.world_id)
+                })
+                .expect("runtime binding"),
+            Some(third)
+        );
+    }
+
+    #[test]
+    fn world_aware_acquire_rejects_missing_head_and_catalog() {
+        let app = Phase2App::test();
+        let (actor, lease, client) = account_and_lease(&app);
+        let malformed = app.store.write_transaction(|state| {
+            let character = state
+                .characters
+                .get_mut(&actor.character_id)
+                .expect("character");
+            character.revision = Revision::new(1);
+            character.active_snapshot = Some(id(SnapshotId::new));
+            Ok::<_, Phase2Error>(())
+        });
+        assert!(malformed.is_ok());
+        assert_eq!(
+            app.acquire_world(
+                actor,
+                AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new)),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        let _ = lease;
+
+        let config = Phase2Config::local(
+            vec![0x55; 32],
+            SigningPrivateKey::from_bytes([7; 32]),
+            "local-test-key",
+        )
+        .expect("test config")
+        .with_test_adapters(
+            Arc::new(FixedClock::new(1_700_000_000_000)),
+            Arc::new(FixedEntropy::new((0_u8..=255).collect())),
+        )
+        .with_password_engine(Arc::new(
+            ArgonPasswordEngine::new(8_192, 1, 1).expect("test Argon2 policy"),
+        ));
+        let no_catalog = Phase2App::new(config).expect("no-catalog app");
+        let (fresh_actor, _, fresh_client) = account_and_lease(&no_catalog);
+        assert_eq!(
+            no_catalog.acquire_world(
+                fresh_actor,
+                AcquireLeaseRequest::new(
+                    fresh_actor.character_id,
+                    fresh_client,
+                    id(IdempotencyKey::new),
+                ),
+            ),
+            Err(Phase2Error::Internal)
+        );
+    }
+
+    #[test]
+    fn world_aware_replay_returns_renewed_live_contract_and_rejects_inactive() {
+        let (app, clock) = deterministic_app();
+        let (actor, legacy_lease, client) = account_and_lease(&app);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy fixture lease");
+        let request = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let acquired = app
+            .acquire_world(actor, request)
+            .expect("world-aware lease");
+        clock.advance(1_000);
+        let renewed = app
+            .heartbeat(actor, HeartbeatLeaseRequest::new(acquired.lease.fence()))
+            .expect("heartbeat");
+        assert_ne!(renewed.expires_at, acquired.lease.expires_at);
+        assert_eq!(app.acquire_world(actor, request).unwrap().lease, renewed);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(renewed.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release renewed lease");
+        assert_eq!(
+            app.acquire_world(actor, request),
+            Err(Phase2Error::Conflict),
+            "a replay must not resurrect a released lease"
+        );
+    }
+
+    #[test]
+    fn world_aware_replay_rejects_expired_contract() {
+        let (app, clock) = deterministic_app();
+        let (actor, legacy_lease, client) = account_and_lease(&app);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy fixture lease");
+        let request = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let acquired = app
+            .acquire_world(actor, request)
+            .expect("world-aware lease");
+        clock.advance(storage::LEASE_TTL_MS + 1);
+        assert_eq!(app.acquire_world(actor, request), Err(Phase2Error::Expired));
+        assert_eq!(acquired.lease.current_revision, Revision::initial());
+    }
+
+    #[test]
+    fn reconnect_rotates_a_world_aware_runtime_binding() {
+        let (app, clock) = deterministic_app();
+        let (actor, legacy_lease, client) = account_and_lease(&app);
+        app.release(
+            actor,
+            coop_cloud::ReleaseLeaseRequest::new(legacy_lease.fence(), id(IdempotencyKey::new)),
+        )
+        .expect("release legacy fixture lease");
+        let request = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let acquired = app
+            .acquire_world(actor, request)
+            .expect("world-aware lease");
+        clock.advance(storage::LEASE_TTL_MS + 1);
+        let reconnected = app
+            .reconnect(
+                actor,
+                ReconnectLeaseRequest::new(acquired.lease.fence(), id(IdempotencyKey::new)),
+            )
+            .expect("reconnect during grace");
+        let binding = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].runtime_binding.clone())
+            .expect("runtime binding");
+        let binding = binding.expect("world-aware lease remains runtime-bound");
+        assert_eq!(binding.world_id, acquired.active_world_id);
+        assert_eq!(binding.session, reconnected.stable_runtime_session());
+        assert_eq!(
+            binding.build,
+            app.store
+                .config
+                .release_catalog
+                .as_ref()
+                .expect("catalog")
+                .for_snapshot(
+                    Some(acquired.active_world_id),
+                    Some(acquired.active_world_id)
+                )
+                .expect("main build")
+                .clone()
         );
     }
 

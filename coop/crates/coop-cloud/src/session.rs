@@ -42,6 +42,8 @@ pub enum SessionError {
     InvalidEpoch(#[from] IdError),
     #[error("API version is invalid")]
     InvalidApiVersion,
+    #[error("world-aware lease response is inconsistent with its lease revision")]
+    InvalidWorldLeaseState,
 }
 
 /// A character's region-safe cloud state.
@@ -716,6 +718,77 @@ impl LeaseContract {
     #[must_use]
     pub const fn stable_runtime_session(&self) -> crate::StableRuntimeSession {
         crate::StableRuntimeSession::from_lease_contract(self)
+    }
+}
+
+/// The world-aware lease returned by the explicit cold-start acquisition
+/// route.  The server derives the world and snapshot from the authoritative
+/// character head while it creates the lease; clients cannot supply either
+/// value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AcquireWorldLeaseResponse {
+    pub lease: LeaseContract,
+    pub active_world_id: coop_protocol::RomWorldId,
+    pub active_snapshot_id: Option<crate::SnapshotId>,
+}
+
+#[derive(Serialize)]
+struct SerializableAcquireWorldLeaseResponse {
+    lease: LeaseContract,
+    active_world_id: coop_protocol::RomWorldId,
+    active_snapshot_id: Option<crate::SnapshotId>,
+}
+
+impl Serialize for AcquireWorldLeaseResponse {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.validate().map_err(serde::ser::Error::custom)?;
+        SerializableAcquireWorldLeaseResponse {
+            lease: self.lease,
+            active_world_id: self.active_world_id,
+            active_snapshot_id: self.active_snapshot_id,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WireAcquireWorldLeaseResponse {
+    lease: LeaseContract,
+    active_world_id: coop_protocol::RomWorldId,
+    active_snapshot_id: Option<crate::SnapshotId>,
+}
+
+impl<'de> Deserialize<'de> for AcquireWorldLeaseResponse {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = WireAcquireWorldLeaseResponse::deserialize(deserializer)?;
+        let response = Self {
+            lease: wire.lease,
+            active_world_id: wire.active_world_id,
+            active_snapshot_id: wire.active_snapshot_id,
+        };
+        response.validate().map_err(serde::de::Error::custom)?;
+        Ok(response)
+    }
+}
+
+impl AcquireWorldLeaseResponse {
+    /// Validates the coherence between the lease revision and active head.
+    /// Revision zero represents a new character and therefore has no
+    /// snapshot; every later revision must carry one.
+    pub fn validate(&self) -> Result<(), SessionError> {
+        self.lease.validate()?;
+        let has_snapshot = self.active_snapshot_id.is_some();
+        if (self.lease.current_revision == Revision::initial()) == has_snapshot {
+            return Err(SessionError::InvalidWorldLeaseState);
+        }
+        Ok(())
     }
 }
 
