@@ -2368,6 +2368,7 @@ impl SessionLifecycle {
             return Err(error);
         }
         self.checkpoint_key = None;
+        self.last_portal_sequence = None;
         self.fresh_resume_save_digest = None;
         self.restore_or_bootstrap(api).await
     }
@@ -2707,12 +2708,16 @@ impl SessionLifecycle {
                 break Err(error);
             }
         };
-        if !shutdown_completed
-            && (shutdown_requested || result.is_err())
-            && let Err(error) = children.stop_in_place().await
-            && (result.is_ok() || matches!(&result, Err(SessionError::PortalHandoffUnavailable)))
-        {
-            return Err(SessionError::Control(error));
+        if !shutdown_completed && (shutdown_requested || result.is_err()) {
+            if let Err(error) = children.stop_in_place().await
+                && (result.is_ok()
+                    || matches!(&result, Err(SessionError::PortalHandoffUnavailable)))
+            {
+                if matches!(&result, Err(SessionError::PortalHandoffUnavailable)) {
+                    self.portal_outcome = None;
+                }
+                return Err(SessionError::Control(error));
+            }
         }
         result
     }
@@ -2746,6 +2751,7 @@ impl SessionLifecycle {
             if let Err(error) = children.stop_in_place().await
                 && matches!(&result, Err(SessionError::PortalHandoffUnavailable))
             {
+                self.portal_outcome = None;
                 return Err(SessionError::Control(error));
             }
         }
@@ -3453,8 +3459,14 @@ impl SessionLifecycle {
         if let Some(coordinator) = coordinator.take() {
             children.control().disable_lifecycle();
             if coordinator.stop_and_join().await.is_err()
-                && matches!(&result, Ok(()) | Err(SessionError::PresenceRecovery { .. }))
+                && matches!(
+                    &result,
+                    Ok(())
+                        | Err(SessionError::PresenceRecovery { .. })
+                        | Err(SessionError::PortalHandoffUnavailable)
+                )
             {
+                self.portal_outcome = None;
                 result = Err(SessionError::Realtime);
             }
         }
