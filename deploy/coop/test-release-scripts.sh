@@ -301,7 +301,7 @@ report $? "retry reuses durable association after failed rollout" "$out"
 # must allow a later run to re-sign the same immutable game bytes with a fresh
 # validity window, while a changed ROM or manifest must fail closed.
 make_game_staging "$ROOT" "$FULL_C" 5 "$NOW"
-out="$($PROMOTE_GAME "$FULL_C" 2>&1)"; status=$?
+out="$(bash "$PROMOTE_GAME" "$FULL_C" 2>&1)"; status=$?
 [ "$status" -eq 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_C" ] && \
   [ "$(cat "$ROOT/current")" = "$FULL_D" ] && [ ! -d "$ROOT/game-staging/$FULL_C" ]
 report $? "game release promotes independently before Windows rollout" "$out"
@@ -312,14 +312,14 @@ failed_windows_deploy; status=$?
   [ "$(cat "$ROOT/game/current")" = "$FULL_C" ]
 report $? "failed Windows rollout leaves promoted game available" "status=$status"
 make_game_staging "$ROOT" "$FULL_C" 5 "$((NOW + 10))"
-out="$($PROMOTE_GAME "$FULL_C" 2>&1)"; status=$?
+out="$(bash "$PROMOTE_GAME" "$FULL_C" 2>&1)"; status=$?
 [ "$status" -eq 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_C" ] && \
   [ "$(cat "$ROOT/current")" = "$FULL_D" ] && \
   cmp -s "$ROOT/game/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json" && \
   ! cmp -s "$ROOT/game-staging/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json"
 report $? "re-signed same game release is an idempotent retry" "$out"
 make_game_staging "$ROOT" "$FULL_C" 5 "$((NOW + 20))" changed
-out="$($PROMOTE_GAME "$FULL_C" 2>&1)"; status=$?
+out="$(bash "$PROMOTE_GAME" "$FULL_C" 2>&1)"; status=$?
 [ "$status" -ne 0 ] && [ "$(cat "$ROOT/game/current")" = "$FULL_C" ] && \
   cmp -s "$ROOT/game/$FULL_C/release-envelope.json" "$ROOT/promoted-game-envelope.json"
 report $? "same game release rejects divergent artifact content" "$out"
