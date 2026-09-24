@@ -160,9 +160,14 @@ emu = {
   end,
   saveStateFile = function(_, path, flags)
     state_capture_count = state_capture_count + 1
-    assert(path == resume_output_path)
+    assert(path == resume_output_path .. ".tmp")
     assert(flags == 29)
-    if state_capture_count == 1 then return true end
+    if state_capture_count == 1 then
+      local complete = assert(original_io_open(path, "wb"))
+      complete:write("complete-state")
+      complete:close()
+      return true
+    end
     local partial = assert(original_io_open(path, "wb"))
     partial:write("partial-state")
     partial:close()
@@ -343,6 +348,12 @@ frame_callback()
 assert(#send_calls == 4)
 assert(send_calls[4].bytes == save_data_updated)
 assert(outbound_commits == 1)
+-- The capture publishes atomically: the complete state lands at the resume
+-- path and no temporary sibling lingers behind.
+local published = assert(original_io_open(resume_output_path, "rb"))
+assert(published:read("*a") == "complete-state")
+published:close()
+assert(original_io_open(resume_output_path .. ".tmp", "rb") == nil)
 
 -- A wrapping u32 generation is newer, and failed optional state capture still
 -- forwards the canonical SAV completion only after the attempt returns.

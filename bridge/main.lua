@@ -90,6 +90,10 @@ if not save_manifest then error(save_manifest_error) end
 local character_save_path = session.character_save
 local resume_input_path = session.resume_input
 local resume_output_path = session.resume_output
+-- The capture publishes through a temporary sibling so a crash mid-write
+-- can never leave a partial resume state behind. The temporary path is
+-- derived, so it stays distinct from the three launcher-owned paths above.
+local resume_output_tmp_path = resume_output_path .. ".tmp"
 
 local save_bound, save_bind_result = pcall(
   emu.loadSaveFile, emu, character_save_path, false)
@@ -140,6 +144,14 @@ local function remove_readable_file(path)
     return nil, "could not remove stale compatible state: " .. tostring(remove_error)
   end
   return true
+end
+
+-- A previous crash may have left a partial atomic capture behind. The next
+-- capture removes it again before writing, so this boot cleanup warns and
+-- continues instead of failing the bridge.
+local stale_tmp_removed, stale_tmp_error = remove_readable_file(resume_output_tmp_path)
+if not stale_tmp_removed then
+  console:warn("could not remove stale temporary state: " .. tostring(stale_tmp_error))
 end
 
 local checkpoint = {
@@ -240,12 +252,24 @@ function checkpoint:try_capture()
 
   local removed, remove_error = remove_readable_file(resume_output_path)
   if not removed then return nil, remove_error end
+  local temporary_removed, temporary_error = remove_readable_file(resume_output_tmp_path)
+  if not temporary_removed then return nil, temporary_error end
   local capture_called, capture_result = pcall(
-    emu.saveStateFile, emu, resume_output_path, SAVESTATE_WITHOUT_SAVEDATA)
+    emu.saveStateFile, emu, resume_output_tmp_path, SAVESTATE_WITHOUT_SAVEDATA)
   if not capture_called or capture_result ~= true then
-    local cleaned, cleanup_error = remove_readable_file(resume_output_path)
+    local cleaned, cleanup_error = remove_readable_file(resume_output_tmp_path)
     if not cleaned then return nil, cleanup_error end
     console:warn("compatible state capture failed; checkpoint will use character.sav only")
+  else
+    -- Publish atomically: the resume path is either absent or a complete
+    -- state, never a partial write. The previous state was already removed
+    -- above because os.rename cannot replace an existing file on Windows.
+    local renamed, rename_error = os.rename(resume_output_tmp_path, resume_output_path)
+    if not renamed then
+      local cleaned, cleanup_error = remove_readable_file(resume_output_tmp_path)
+      if not cleaned then return nil, cleanup_error end
+      console:warn("compatible state publish failed; checkpoint will use character.sav only")
+    end
   end
   self.ready = true
   return true
