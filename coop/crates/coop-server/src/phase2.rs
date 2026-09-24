@@ -790,15 +790,32 @@ impl Phase2App {
     }
 }
 
-async fn readiness(State(app): State<Phase2App>) -> StatusCode {
-    match tokio::task::spawn_blocking(move || {
-        app.store.read_transaction(|_| Ok::<(), StorageError>(()))
+#[derive(Serialize)]
+struct ReadinessBody {
+    ready: bool,
+    fenced: bool,
+}
+
+async fn readiness(State(app): State<Phase2App>) -> (StatusCode, Json<ReadinessBody>) {
+    // Fence state is sampled after the probe so a probe that trips the fence
+    // reports it. It is observability only and never changes the status
+    // contract (200 ready, 503 otherwise). A fenced process needs a restart,
+    // anything else recovers on its own.
+    let probe = app.clone();
+    let status = match tokio::task::spawn_blocking(move || {
+        probe.store.read_transaction(|_| Ok::<(), StorageError>(()))
     })
     .await
     {
         Ok(Ok(())) => StatusCode::OK,
         _ => StatusCode::SERVICE_UNAVAILABLE,
-    }
+    };
+    let fenced = app.store.repository.is_fenced();
+    let body = ReadinessBody {
+        ready: status == StatusCode::OK,
+        fenced,
+    };
+    (status, Json(body))
 }
 
 fn phase2_app_from_values(
@@ -2153,6 +2170,31 @@ mod tests {
             app.refresh(RefreshRequest::new(login.refresh_token)),
             Err(Phase2Error::Authentication)
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn readiness_reports_fence_state_without_changing_status() {
+        let app = Phase2App::test();
+        let response = app
+            .router()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/health/ready")
+                    .body(axum::body::Body::empty())
+                    .expect("readiness request"),
+            )
+            .await
+            .expect("readiness response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("readiness body")
+            .to_bytes();
+        let readiness: serde_json::Value = serde_json::from_slice(&body).expect("typed readiness");
+        assert_eq!(readiness["ready"], true);
+        assert_eq!(readiness["fenced"], false);
     }
 
     #[tokio::test]

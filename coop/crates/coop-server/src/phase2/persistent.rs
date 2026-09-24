@@ -82,6 +82,12 @@ impl<T: Send + 'static> IoWorker<T> {
         })
     }
 
+    /// Reports whether the worker thread has failed. A failed worker rejects
+    /// every future operation closed instead of serving stale state.
+    pub(super) fn is_failed(&self) -> bool {
+        self.failed.load(Ordering::Acquire)
+    }
+
     pub(super) fn run<R: Send + 'static>(
         &self,
         operation: impl FnOnce(&mut T) -> Result<R, StorageError> + Send + 'static,
@@ -89,7 +95,17 @@ impl<T: Send + 'static> IoWorker<T> {
         blocking(|| {
             // Queue time belongs to admission, not the active operation's
             // socket deadline. HTTP admission bounds the number of waiters.
-            let _admission = self.admission.lock().map_err(|_| StorageError::Lock)?;
+            // The guard protects no data, so a poisoned mutex is recovered
+            // instead of failing every future operation: the next owner
+            // simply re-establishes mutual exclusion.
+            let _admission = match self.admission.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    let guard = poisoned.into_inner();
+                    self.admission.clear_poison();
+                    guard
+                }
+            };
             if self.failed.load(Ordering::Acquire) {
                 return Err(StorageError::Transaction);
             }
@@ -204,6 +220,10 @@ impl PostgresStateRepository {
 }
 
 impl Repository for PostgresStateRepository {
+    fn is_fenced(&self) -> bool {
+        self.fenced.load(Ordering::Acquire) || self.io.is_failed()
+    }
+
     fn read_transaction(
         &self,
         operation: &mut dyn FnMut(&State) -> Result<(), StorageError>,
@@ -270,5 +290,33 @@ mod tests {
             Ok(2)
         );
         assert_eq!(thread.join().expect("first caller"), Ok(1));
+    }
+
+    #[test]
+    fn poisoned_admission_recovers_instead_of_blocking_storage() {
+        let worker = IoWorker::start(|| Ok(())).expect("worker");
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = worker.admission.lock().expect("admission");
+            panic!("poison the admission mutex");
+        }));
+        assert!(poisoned.is_err());
+        assert!(!worker.is_failed());
+        assert_eq!(worker.run(|()| Ok(42)), Ok(42));
+    }
+
+    #[test]
+    fn timed_out_worker_reports_failed_instead_of_serving_stale() {
+        let worker =
+            IoWorker::start_with_timeout(|| Ok(()), Duration::from_millis(50)).expect("worker");
+        assert!(!worker.is_failed());
+        assert_eq!(
+            worker.run(|()| {
+                std::thread::sleep(Duration::from_millis(300));
+                Ok(())
+            }),
+            Err(StorageError::Transaction)
+        );
+        assert!(worker.is_failed());
+        assert_eq!(worker.run(|()| Ok(())), Err(StorageError::Transaction));
     }
 }

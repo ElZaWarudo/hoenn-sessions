@@ -225,6 +225,13 @@ pub trait Repository: Send + Sync {
         &self,
         operation: &mut dyn FnMut(&mut State) -> Result<(), StorageError>,
     ) -> Result<(), StorageError>;
+
+    /// Reports whether the adapter fenced itself after losing its backend.
+    /// A fenced process needs a restart; anything else recovers on its own.
+    /// The default is never fenced.
+    fn is_fenced(&self) -> bool {
+        false
+    }
 }
 
 /// Immutable-artifact object-store boundary used by snapshot operations.
