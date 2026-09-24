@@ -139,6 +139,61 @@ bridge:heartbeat()
 bridge:heartbeat()
 assert(core:read32(heartbeat_address) == 2)
 
+-- Queue occupancy validation uses the manifest capacity, not a hardcoded 32.
+local alt_manifest = {
+  address = 0x02002000,
+  size = 2332,
+  magic = 0x504B434F,
+  abi_version = 1,
+  protocol_version = 1,
+  game_build_id = 0x00010000,
+  offsets = {
+    last_sidecar_heartbeat = 16,
+    game_to_network = 20,
+    network_to_game = 1176,
+  },
+  queue = { capacity = 8, read_index = 0, write_index = 2, entries = 4 },
+  message = { size = 144 },
+}
+local alt_core = Core.new()
+alt_core:write32(alt_manifest.address, alt_manifest.magic)
+alt_core:write16(alt_manifest.address + 4, alt_manifest.abi_version)
+alt_core:write16(alt_manifest.address + 6, alt_manifest.protocol_version)
+alt_core:write32(alt_manifest.address + 8, alt_manifest.game_build_id)
+local alt_bridge = assert(memory_module.new(alt_core, alt_manifest))
+local alt_outbound = alt_manifest.address + alt_manifest.offsets.game_to_network
+alt_core:write16(alt_outbound + alt_manifest.queue.read_index, 0)
+alt_core:write16(alt_outbound + alt_manifest.queue.write_index, 9)
+local alt_bad, alt_bad_error, alt_bad_recovered = alt_bridge:peek_outbound()
+assert(not alt_bad)
+assert(alt_bad_error:match("impossible occupancy"))
+assert(alt_bad_recovered)
+assert(alt_core:read16(alt_outbound + alt_manifest.queue.read_index) == 9)
+local alt_slot0 = alt_outbound + alt_manifest.queue.entries
+for index = 1, #ready do
+  alt_core:write8(alt_slot0 + index - 1, string.byte(ready, index))
+end
+alt_core:write16(alt_outbound + alt_manifest.queue.read_index, 0)
+alt_core:write16(alt_outbound + alt_manifest.queue.write_index, 8)
+local alt_full, alt_full_error = alt_bridge:peek_outbound()
+assert(alt_full, alt_full_error)
+assert(alt_full.bytes == ready)
+assert(alt_bridge:commit_outbound(alt_full.read_index))
+assert(alt_core:read16(alt_outbound + alt_manifest.queue.read_index) == 1)
+local alt_inbound = alt_manifest.address + alt_manifest.offsets.network_to_game
+alt_core:write16(alt_inbound + alt_manifest.queue.read_index, 0)
+alt_core:write16(alt_inbound + alt_manifest.queue.write_index, 8)
+local alt_push_full, alt_push_full_error = alt_bridge:push_inbound(session_ready)
+assert(not alt_push_full)
+assert(alt_push_full_error:match("full"))
+alt_core:write16(alt_inbound + alt_manifest.queue.read_index, 0)
+alt_core:write16(alt_inbound + alt_manifest.queue.write_index, 9)
+local alt_push_bad, alt_push_bad_error, alt_push_recovered = alt_bridge:push_inbound(session_ready)
+assert(not alt_push_bad)
+assert(alt_push_bad_error:match("impossible occupancy"))
+assert(alt_push_recovered)
+assert(alt_core:read16(alt_inbound + alt_manifest.queue.write_index) == 0)
+
 -- Stock mGBA exposes emu as userdata, rather than our table test double.
 local native_core = assert(io.tmpfile())
 local native_metatable = debug.getmetatable(native_core)

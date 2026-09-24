@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     io::Read,
     path::Path,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use zeroize::Zeroizing;
 
@@ -22,6 +22,10 @@ const OAUTH_URL: &str = "https://oauth2.googleapis.com/token";
 const STORAGE_URL: &str = "https://storage.googleapis.com";
 const METADATA_LIMIT: usize = 64 * 1024;
 const RETIRED_CONTENT_TYPE: &str = "application/x-hoenn-retired";
+const GCS_REQUEST_TIMEOUT: Duration = Duration::from_secs(25);
+const GCS_OPERATION_TIMEOUT: Duration = Duration::from_secs(80);
+const GCS_MAX_ATTEMPTS: usize = 3;
+const GCS_RETRY_BASE: Duration = Duration::from_millis(100);
 
 #[derive(Serialize)]
 struct Claims<'a> {
@@ -65,6 +69,11 @@ struct StorageClient {
     token_until: u64,
 }
 
+enum RequestError {
+    Retryable,
+    Failed(StorageError),
+}
+
 /// A bounded worker with a private, server-only service account credential.
 pub(super) struct FirebaseStorage {
     io: IoWorker<StorageClient>,
@@ -93,6 +102,18 @@ fn body(response: Response, limit: usize) -> Result<Vec<u8>, StorageError> {
         return Err(StorageError::Transaction);
     }
     Ok(bytes)
+}
+
+fn is_transient(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::REQUEST_TIMEOUT
+            | StatusCode::TOO_MANY_REQUESTS
+            | StatusCode::INTERNAL_SERVER_ERROR
+            | StatusCode::BAD_GATEWAY
+            | StatusCode::SERVICE_UNAVAILABLE
+            | StatusCode::GATEWAY_TIMEOUT
+    )
 }
 
 impl FirebaseStorage {
@@ -127,7 +148,8 @@ impl FirebaseStorage {
             .map_err(|_| StorageError::InvalidConfiguration)?;
         let bucket = bucket.to_owned();
         // A cold delete may perform OAuth, metadata lookup and conditional
-        // deletion: three bounded 25-second requests. Leave scheduling room.
+        // deletion. Each operation shares an 80-second budget, leaving room
+        // below the worker's 85-second deadline.
         let io = IoWorker::start_with_timeout(
             move || {
                 let http = Client::builder()
@@ -155,7 +177,20 @@ impl FirebaseStorage {
 }
 
 impl StorageClient {
-    fn authorize(&mut self) -> Result<(), StorageError> {
+    fn invalidate_token(&mut self) {
+        self.token = Zeroizing::new(String::new());
+        self.token_until = 0;
+    }
+
+    fn reject_unauthorized(&mut self, response: &Response) -> Result<(), StorageError> {
+        if response.status() == StatusCode::UNAUTHORIZED {
+            self.invalidate_token();
+            return Err(StorageError::Transaction);
+        }
+        Ok(())
+    }
+
+    fn authorize(&mut self, deadline: Instant) -> Result<(), StorageError> {
         let now = now_seconds()?;
         if now < self.token_until {
             return Ok(());
@@ -179,6 +214,7 @@ impl StorageClient {
         let response = self
             .http
             .post(OAUTH_URL)
+            .timeout(Self::request_timeout(deadline)?)
             .form(&[
                 ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
                 ("assertion", assertion.as_str()),
@@ -203,6 +239,77 @@ impl StorageClient {
         Ok(())
     }
 
+    fn request_timeout(deadline: Instant) -> Result<Duration, StorageError> {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(StorageError::Transaction);
+        }
+        Ok(remaining.min(GCS_REQUEST_TIMEOUT))
+    }
+
+    fn retry_delay(deadline: Instant, attempt: usize) -> bool {
+        if attempt + 1 >= GCS_MAX_ATTEMPTS {
+            return false;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        let multiplier = 1_u32 << attempt.min(3);
+        let maximum = GCS_RETRY_BASE.saturating_mul(multiplier);
+        let half = maximum / 2;
+        let jitter_range = maximum.saturating_sub(half);
+        let clock_jitter = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |value| value.subsec_nanos());
+        let jitter = if jitter_range.is_zero() {
+            Duration::ZERO
+        } else {
+            let jitter_range_nanos = u64::try_from(jitter_range.as_nanos()).unwrap_or(u64::MAX);
+            Duration::from_nanos(u64::from(clock_jitter) % jitter_range_nanos)
+        };
+        let delay = half.saturating_add(jitter);
+        if delay >= remaining {
+            return false;
+        }
+        std::thread::sleep(delay);
+        true
+    }
+
+    fn request_with_retry<F>(
+        &mut self,
+        deadline: Instant,
+        mut request: F,
+    ) -> Result<Response, StorageError>
+    where
+        F: FnMut(&mut Self) -> Result<Response, RequestError>,
+    {
+        for attempt in 0..GCS_MAX_ATTEMPTS {
+            Self::request_timeout(deadline)?;
+            let response = match request(self) {
+                Ok(response) => response,
+                Err(RequestError::Retryable) if Self::retry_delay(deadline, attempt) => {
+                    continue;
+                }
+                Err(RequestError::Retryable) => return Err(StorageError::Transaction),
+                Err(RequestError::Failed(error)) => return Err(error),
+            };
+            let status = response.status();
+            if status == StatusCode::UNAUTHORIZED {
+                self.invalidate_token();
+                if Self::retry_delay(deadline, attempt) {
+                    continue;
+                }
+                return Ok(response);
+            }
+            if is_transient(status) && Self::retry_delay(deadline, attempt) {
+                continue;
+            }
+            return Ok(response);
+        }
+        Err(StorageError::Transaction)
+    }
+
     fn url(&self, key: &str, upload: bool) -> Result<url::Url, StorageError> {
         if key.is_empty() || key.len() > 1024 || key.bytes().any(|byte| byte < 32) {
             return Err(StorageError::InvalidConfiguration);
@@ -224,15 +331,20 @@ impl StorageClient {
         Ok(url)
     }
 
-    fn metadata(&mut self, key: &str) -> Result<Option<Metadata>, StorageError> {
-        self.authorize()?;
-        let response = self
-            .http
-            .get(self.url(key, false)?)
-            .query(&[("fields", "generation,contentType")])
-            .bearer_auth(self.token.as_str())
-            .send()
-            .map_err(|_| StorageError::Transaction)?;
+    fn metadata(&mut self, key: &str, deadline: Instant) -> Result<Option<Metadata>, StorageError> {
+        let response = self.request_with_retry(deadline, |client| {
+            client.authorize(deadline).map_err(RequestError::Failed)?;
+            let timeout = Self::request_timeout(deadline).map_err(RequestError::Failed)?;
+            client
+                .http
+                .get(client.url(key, false).map_err(RequestError::Failed)?)
+                .timeout(timeout)
+                .query(&[("fields", "generation,contentType")])
+                .bearer_auth(client.token.as_str())
+                .send()
+                .map_err(|_| RequestError::Retryable)
+        })?;
+        self.reject_unauthorized(&response)?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -252,26 +364,37 @@ impl StorageClient {
 }
 
 impl ObjectStore for FirebaseStorage {
+    fn is_fenced(&self) -> bool {
+        self.io.is_failed()
+    }
+
     fn retire_if_absent(&self, key: &str) -> Result<bool, StorageError> {
         let key = key.to_owned();
         self.io.run(move |client| {
-            client.authorize()?;
-            let response = client
-                .http
-                .post(client.url(&key, true)?)
-                .query(&[
-                    ("uploadType", "media"),
-                    ("name", &key),
-                    ("ifGenerationMatch", "0"),
-                ])
-                .header(reqwest::header::CONTENT_TYPE, RETIRED_CONTENT_TYPE)
-                .bearer_auth(client.token.as_str())
-                .body(Vec::new())
-                .send()
-                .map_err(|_| StorageError::Transaction)?;
+            let deadline = Instant::now() + GCS_OPERATION_TIMEOUT;
+            let response = client.request_with_retry(deadline, |client| {
+                client.authorize(deadline).map_err(RequestError::Failed)?;
+                let timeout =
+                    StorageClient::request_timeout(deadline).map_err(RequestError::Failed)?;
+                client
+                    .http
+                    .post(client.url(&key, true).map_err(RequestError::Failed)?)
+                    .timeout(timeout)
+                    .query(&[
+                        ("uploadType", "media"),
+                        ("name", &key),
+                        ("ifGenerationMatch", "0"),
+                    ])
+                    .header(reqwest::header::CONTENT_TYPE, RETIRED_CONTENT_TYPE)
+                    .bearer_auth(client.token.as_str())
+                    .body(Vec::new())
+                    .send()
+                    .map_err(|_| RequestError::Retryable)
+            })?;
+            client.reject_unauthorized(&response)?;
             if response.status() == StatusCode::PRECONDITION_FAILED {
                 return Ok(client
-                    .metadata(&key)?
+                    .metadata(&key, deadline)?
                     .is_some_and(|value| value.content_type == RETIRED_CONTENT_TYPE));
             }
             if !response.status().is_success() {
@@ -283,14 +406,21 @@ impl ObjectStore for FirebaseStorage {
     fn get(&self, key: &str) -> Result<Option<Vec<u8>>, StorageError> {
         let key = key.to_owned();
         self.io.run(move |client| {
-            client.authorize()?;
-            let response = client
-                .http
-                .get(client.url(&key, false)?)
-                .query(&[("alt", "media")])
-                .bearer_auth(client.token.as_str())
-                .send()
-                .map_err(|_| StorageError::Transaction)?;
+            let deadline = Instant::now() + GCS_OPERATION_TIMEOUT;
+            let response = client.request_with_retry(deadline, |client| {
+                client.authorize(deadline).map_err(RequestError::Failed)?;
+                let timeout =
+                    StorageClient::request_timeout(deadline).map_err(RequestError::Failed)?;
+                client
+                    .http
+                    .get(client.url(&key, false).map_err(RequestError::Failed)?)
+                    .timeout(timeout)
+                    .query(&[("alt", "media")])
+                    .bearer_auth(client.token.as_str())
+                    .send()
+                    .map_err(|_| RequestError::Retryable)
+            })?;
+            client.reject_unauthorized(&response)?;
             if response.status() == StatusCode::NOT_FOUND {
                 return Ok(None);
             }
@@ -325,20 +455,27 @@ impl ObjectStore for FirebaseStorage {
             return Err(StorageError::Transaction);
         }
         self.io.run(move |client| {
-            client.authorize()?;
-            let response = client
-                .http
-                .post(client.url(&key, true)?)
-                .query(&[
-                    ("uploadType", "media"),
-                    ("name", &key),
-                    ("ifGenerationMatch", "0"),
-                ])
-                .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-                .bearer_auth(client.token.as_str())
-                .body(bytes)
-                .send()
-                .map_err(|_| StorageError::Transaction)?;
+            let deadline = Instant::now() + GCS_OPERATION_TIMEOUT;
+            let response = client.request_with_retry(deadline, |client| {
+                client.authorize(deadline).map_err(RequestError::Failed)?;
+                let timeout =
+                    StorageClient::request_timeout(deadline).map_err(RequestError::Failed)?;
+                client
+                    .http
+                    .post(client.url(&key, true).map_err(RequestError::Failed)?)
+                    .timeout(timeout)
+                    .query(&[
+                        ("uploadType", "media"),
+                        ("name", &key),
+                        ("ifGenerationMatch", "0"),
+                    ])
+                    .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+                    .bearer_auth(client.token.as_str())
+                    .body(bytes.clone())
+                    .send()
+                    .map_err(|_| RequestError::Retryable)
+            })?;
+            client.reject_unauthorized(&response)?;
             if response.status() == StatusCode::PRECONDITION_FAILED {
                 return Ok(false);
             }
@@ -352,19 +489,30 @@ impl ObjectStore for FirebaseStorage {
     fn delete_if_present(&self, key: &str) -> Result<bool, StorageError> {
         let key = key.to_owned();
         self.io.run(move |client| {
-            let Some(metadata) = client.metadata(&key)? else {
+            let deadline = Instant::now() + GCS_OPERATION_TIMEOUT;
+            let Some(metadata) = client.metadata(&key, deadline)? else {
                 return Ok(false);
             };
             if metadata.content_type == RETIRED_CONTENT_TYPE {
                 return Ok(false);
             }
-            let response = client
-                .http
-                .request(Method::DELETE, client.url(&key, false)?)
-                .query(&[("ifGenerationMatch", metadata.generation)])
-                .bearer_auth(client.token.as_str())
-                .send()
-                .map_err(|_| StorageError::Transaction)?;
+            let response = client.request_with_retry(deadline, |client| {
+                client.authorize(deadline).map_err(RequestError::Failed)?;
+                let timeout =
+                    StorageClient::request_timeout(deadline).map_err(RequestError::Failed)?;
+                client
+                    .http
+                    .request(
+                        Method::DELETE,
+                        client.url(&key, false).map_err(RequestError::Failed)?,
+                    )
+                    .timeout(timeout)
+                    .query(&[("ifGenerationMatch", metadata.generation.clone())])
+                    .bearer_auth(client.token.as_str())
+                    .send()
+                    .map_err(|_| RequestError::Retryable)
+            })?;
+            client.reject_unauthorized(&response)?;
             if response.status() == StatusCode::NOT_FOUND {
                 return Ok(false);
             }
@@ -379,7 +527,7 @@ impl ObjectStore for FirebaseStorage {
         let key = key.to_owned();
         self.io.run(move |client| {
             client
-                .metadata(&key)
+                .metadata(&key, Instant::now() + GCS_OPERATION_TIMEOUT)
                 .map(|value| value.is_some_and(|value| value.content_type != RETIRED_CONTENT_TYPE))
         })
     }
@@ -557,5 +705,13 @@ mod tests {
         assert_eq!(store.contains("object"), Err(StorageError::Transaction));
         assert_eq!(store.get("object"), Ok(None));
         thread.join().expect("mock completed");
+    }
+
+    #[test]
+    fn transient_gcs_failures_are_retried_with_bounded_attempts() {
+        let (store, requests, thread) = mock(vec![(503, "private diagnostic"), (200, "save")]);
+        assert_eq!(store.get("object"), Ok(Some(b"save".to_vec())));
+        thread.join().expect("mock completed");
+        assert_eq!(requests.lock().expect("requests").len(), 2);
     }
 }

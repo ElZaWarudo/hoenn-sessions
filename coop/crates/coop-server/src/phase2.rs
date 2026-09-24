@@ -141,8 +141,12 @@ pub enum Phase2Error {
 }
 
 impl From<StorageError> for Phase2Error {
-    fn from(_: StorageError) -> Self {
-        Self::Internal
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::Busy => Self::Busy,
+            StorageError::StateTooLarge => Self::PayloadTooLarge,
+            _ => Self::Internal,
+        }
     }
 }
 
@@ -199,6 +203,7 @@ pub struct Phase2App {
     pub(crate) store: Store,
     presence: presence::PresenceService,
     realtime: Arc<realtime::RealtimeTransportState>,
+    pub(crate) shutdown: tokio::sync::watch::Sender<bool>,
     pub(crate) release_root: Option<Arc<PathBuf>>,
 }
 
@@ -218,10 +223,12 @@ impl Phase2App {
     pub fn new(config: Phase2Config) -> Result<Self, Phase2Error> {
         let store = Store::new(config)?;
         let presence = presence::PresenceService::new(store.clone())?;
+        let (shutdown, _) = tokio::sync::watch::channel(false);
         Ok(Self {
             store,
             presence,
             realtime: Arc::new(realtime::RealtimeTransportState::new()),
+            shutdown,
             release_root: None,
         })
     }
@@ -464,11 +471,7 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: AcquireLeaseRequest,
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         let result = sessions::acquire(&self.store, actor, &request);
         if let Ok(contract) = &result {
             self.presence
@@ -486,11 +489,8 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: HeartbeatLeaseRequest,
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
+        self.store.admit_heartbeat(actor.character_id)?;
         let result = sessions::heartbeat(&self.store, actor, &request);
         if let Ok(contract) = &result {
             self.presence
@@ -508,11 +508,7 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: ReconnectLeaseRequest,
     ) -> Result<coop_cloud::LeaseContract, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         let result = sessions::reconnect(&self.store, actor, &request);
         if let Ok(contract) = &result {
             self.presence
@@ -530,11 +526,7 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: ReleaseLeaseRequest,
     ) -> Result<coop_cloud::LogoutResponse, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         let result = sessions::release(&self.store, actor, &request);
         if result.is_ok() {
             self.presence.reconcile_lease_release(actor.character_id);
@@ -598,11 +590,7 @@ impl Phase2App {
         request: &SnapshotRestoreRequest,
     ) -> Result<coop_cloud::SnapshotRestoreResponse, Phase2Error> {
         {
-            let _gate = self
-                .store
-                .runtime_transition_gate
-                .lock()
-                .map_err(|_| Phase2Error::Internal)?;
+            let _gate = self.store.lock_runtime_transition_gate();
             validate_restore_target(&self.store, actor, request.character_id)?;
         }
         saves::restore(&self.store, actor, request)
@@ -621,11 +609,7 @@ impl Phase2App {
         source_revision: u64,
     ) -> Result<coop_cloud::SnapshotRestoreResponse, Phase2Error> {
         {
-            let _gate = self
-                .store
-                .runtime_transition_gate
-                .lock()
-                .map_err(|_| Phase2Error::Internal)?;
+            let _gate = self.store.lock_runtime_transition_gate();
             validate_restore_target(&self.store, actor, request.character_id)?;
         }
         saves::restore_at(&self.store, actor, request, source_revision)
@@ -649,11 +633,7 @@ impl Phase2App {
         actor: AuthenticatedActor,
         request: coop_cloud::CreateGroupInvitationRequest,
     ) -> Result<coop_cloud::CreateGroupInvitationResponse, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         group_travel::create_invitation(&self.store, actor, &request)
     }
 
@@ -668,11 +648,7 @@ impl Phase2App {
         invitation_id: coop_cloud::GroupInvitationId,
         request: coop_cloud::AcceptGroupInvitationRequest,
     ) -> Result<coop_cloud::AcceptGroupInvitationResponse, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         group_travel::accept_invitation(&self.store, actor, invitation_id, &request)
     }
 
@@ -705,11 +681,7 @@ impl Phase2App {
         group_id: coop_cloud::GroupId,
         request: coop_cloud::GroupTravelRequest,
     ) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         group_travel::travel(&self.store, actor, group_id, &request)
     }
 
@@ -728,11 +700,7 @@ impl Phase2App {
         group_id: coop_cloud::GroupId,
         request: coop_cloud::GroupTravelProposalRequest,
     ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         group_travel::create_travel_proposal(&self.store, actor, group_id, &request)
     }
 
@@ -781,24 +749,43 @@ impl Phase2App {
         proposal_id: coop_cloud::GroupTravelProposalId,
         request: coop_cloud::GroupTravelActionRequest,
     ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
-        let _gate = self
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| Phase2Error::Internal)?;
+        let _gate = self.store.lock_runtime_transition_gate();
         group_travel::act_on_travel_proposal(&self.store, actor, group_id, proposal_id, &request)
     }
 }
 
-async fn readiness(State(app): State<Phase2App>) -> StatusCode {
-    match tokio::task::spawn_blocking(move || {
-        app.store.read_transaction(|_| Ok::<(), StorageError>(()))
-    })
+#[derive(Serialize)]
+struct ReadinessBody {
+    ready: bool,
+    fenced: bool,
+}
+
+async fn readiness(State(app): State<Phase2App>) -> (StatusCode, Json<ReadinessBody>) {
+    // Fence state is sampled after the probe so a probe that trips the fence
+    // reports it. It is observability only and never changes the status
+    // contract (200 ready, 503 otherwise). A fenced process needs a restart,
+    // anything else recovers on its own.
+    let probe = app.clone();
+    let status = match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::task::spawn_blocking(move || probe.store.repository.check_ready()),
+    )
     .await
     {
-        Ok(Ok(())) => StatusCode::OK,
+        Ok(Ok(Ok(()))) => StatusCode::OK,
         _ => StatusCode::SERVICE_UNAVAILABLE,
-    }
+    };
+    let fenced = app.store.repository.is_fenced() || app.store.objects.is_fenced();
+    let status = if fenced {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        status
+    };
+    let body = ReadinessBody {
+        ready: status == StatusCode::OK,
+        fenced,
+    };
+    (status, Json(body))
 }
 
 fn phase2_app_from_values(
@@ -901,7 +888,9 @@ pub async fn serve_phase2_local(address: SocketAddr) -> Result<(), Phase2Error> 
         .map_err(|_| Phase2Error::Internal)?;
     let bound = listener.local_addr().map_err(|_| Phase2Error::Internal)?;
     let app = phase2_app_from_env(loopback_upload_base(bound))?;
+    let shutdown = app.shutdown.clone();
     axum::serve(listener, app.router())
+        .with_graceful_shutdown(production::shutdown(shutdown))
         .await
         .map_err(|_| Phase2Error::Internal)
 }
@@ -1323,6 +1312,18 @@ mod tests {
     use std::time::Duration;
     use tower::ServiceExt;
     use uuid::Uuid;
+
+    #[test]
+    fn poisoned_runtime_gate_recovers_for_future_transitions() {
+        let app = Phase2App::test();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = app.store.runtime_transition_gate.lock().unwrap();
+            panic!("poison the unit gate");
+        }));
+        assert!(app.store.runtime_transition_gate.is_poisoned());
+        drop(app.store.lock_runtime_transition_gate());
+        assert!(!app.store.runtime_transition_gate.is_poisoned());
+    }
 
     fn id<T>(constructor: fn(Uuid) -> Result<T, coop_cloud::IdError>) -> T {
         constructor(Uuid::new_v4()).expect("non-nil test UUID")
@@ -2153,6 +2154,31 @@ mod tests {
             app.refresh(RefreshRequest::new(login.refresh_token)),
             Err(Phase2Error::Authentication)
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn readiness_reports_fence_state_without_changing_status() {
+        let app = Phase2App::test();
+        let response = app
+            .router()
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/health/ready")
+                    .body(axum::body::Body::empty())
+                    .expect("readiness request"),
+            )
+            .await
+            .expect("readiness response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("readiness body")
+            .to_bytes();
+        let readiness: serde_json::Value = serde_json::from_slice(&body).expect("typed readiness");
+        assert_eq!(readiness["ready"], true);
+        assert_eq!(readiness["fenced"], false);
     }
 
     #[tokio::test]
@@ -3237,8 +3263,9 @@ mod tests {
             Err(Phase2Error::Conflict)
         );
 
-        let replacement = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new))
-            .replacing_same_client();
+        let replacement =
+            AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new))
+                .replacing_same_client();
         let second = app
             .acquire(actor, replacement)
             .expect("same client takes over");

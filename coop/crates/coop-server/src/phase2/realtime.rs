@@ -8,7 +8,11 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc::SyncSender,
+    },
     time::{Duration, Instant},
 };
 
@@ -28,8 +32,9 @@ use coop_cloud::{
     ClientRealtimeFrameV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
     MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, MintRealtimeTicketRequest, MintRealtimeTicketResponse,
     REALTIME_TICKET_ENTROPY_BYTES, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES, RealtimeTicket,
-    RuntimeLeaseFence, ServerRealtimeFrameV1, StableRuntimeSession,
+    RefreshFamilyId, RuntimeLeaseFence, ServerRealtimeFrameV1, StableRuntimeSession,
 };
+use tokio::sync::{Semaphore, watch};
 use tokio::time::{self, Instant as TokioInstant};
 use zeroize::Zeroizing;
 
@@ -45,23 +50,215 @@ use super::{AuthenticatedActor, Phase2App, Phase2Error};
 const MAX_REALTIME_GLOBAL_SOCKETS: usize = 1_024;
 const MAX_REALTIME_SOCKETS_PER_RUNTIME: usize = 2;
 const MAX_TICKET_CANDIDATES: usize = 16;
+/// Ticket minting replaces the user's current capability and persists the
+/// complete state, so keep repeated requests from monopolizing the repository.
+const TICKET_MINT_WINDOW: Duration = Duration::from_secs(60);
+const MAX_TICKET_MINTS_PER_WINDOW: usize = 8;
 const FIRST_FRAME_DEADLINE: Duration = Duration::from_millis(3_000);
 const OUTBOUND_DEADLINE: Duration = Duration::from_millis(500);
 const CLOSE_DEADLINE: Duration = Duration::from_millis(250);
 const INBOUND_WINDOW: Duration = Duration::from_millis(1_000);
 const MAX_INBOUND_FRAMES: usize = 64;
 const MAX_WRITE_BUFFER_BYTES: usize = 4_096;
+const PRESENCE_WORK_WAIT: Duration = Duration::from_millis(100);
+const PRESENCE_DISCONNECT_WAIT: Duration = Duration::from_secs(2);
+/// Backstop for a silent socket. Presence stale eviction (1.5s without fresh
+/// state) normally reaps idle clients first; this closes the transport when a
+/// stalled tick or half-open connection leaves one behind.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Reports whether a realtime socket has been silent longer than the idle
+/// budget. Extracted so the backstop bound is unit-tested.
+fn is_idle_expired(last_inbound: Instant, now: Instant) -> bool {
+    now.duration_since(last_inbound) >= IDLE_TIMEOUT
+}
 
 /// Process-local transport admission shared by all clones of one app.
 pub(crate) struct RealtimeTransportState {
     admission: Mutex<AdmissionState>,
+    ticket_mints: Mutex<HashMap<coop_cloud::UserId, VecDeque<Instant>>>,
+    /// Presence methods are synchronous because their state and repository
+    /// adapters are synchronous. Keep their work off Tokio worker threads and
+    /// reject new work when the bounded executor is occupied.
+    presence_workers: Arc<Semaphore>,
+    tick_worker: Arc<Semaphore>,
+    tick_started: AtomicBool,
+    tick_signal: watch::Sender<u64>,
+    cleanup: Mutex<Option<SyncSender<PresenceCleanup>>>,
 }
 
 impl RealtimeTransportState {
     pub(crate) fn new() -> Self {
+        let (tick_signal, _) = watch::channel(0_u64);
         Self {
             admission: Mutex::new(AdmissionState::default()),
+            ticket_mints: Mutex::new(HashMap::new()),
+            presence_workers: Arc::new(Semaphore::new(31)),
+            tick_worker: Arc::new(Semaphore::new(1)),
+            tick_started: AtomicBool::new(false),
+            tick_signal,
+            cleanup: Mutex::new(None),
         }
+    }
+
+    fn ensure_cleanup_worker(&self) {
+        let Ok(mut cleanup) = self.cleanup.lock() else {
+            return;
+        };
+        if cleanup.is_some() {
+            return;
+        }
+        let (sender, receiver) =
+            std::sync::mpsc::sync_channel::<PresenceCleanup>(MAX_REALTIME_GLOBAL_SOCKETS);
+        if std::thread::Builder::new()
+            .name("coop-presence-cleanup".to_owned())
+            .spawn(move || {
+                while let Ok(request) = receiver.recv() {
+                    let _ = request.service.disconnect(request.connection);
+                }
+            })
+            .is_ok()
+        {
+            *cleanup = Some(sender);
+        }
+    }
+
+    fn queue_cleanup(&self, request: PresenceCleanup) {
+        let queued = self.cleanup.lock().ok().and_then(|cleanup| {
+            cleanup
+                .as_ref()
+                .map(|sender| sender.try_send(request.clone()))
+        });
+        if !matches!(queued, Some(Ok(()))) {
+            // The queue is bounded, but a cancelled socket must still release
+            // its presence entry when the cleanup worker is unavailable.
+            let _ = std::thread::Builder::new()
+                .name("coop-presence-cleanup-fallback".to_owned())
+                .spawn(move || {
+                    let _ = request.service.disconnect(request.connection);
+                });
+        }
+    }
+
+    fn tick_receiver(&self) -> watch::Receiver<u64> {
+        self.tick_signal.subscribe()
+    }
+
+    async fn run_presence<R, F>(&self, operation: F) -> Result<R, PresenceWorkError>
+    where
+        R: Send + 'static,
+        F: FnOnce() -> R + Send + 'static,
+    {
+        self.run_presence_for(PRESENCE_WORK_WAIT, operation).await
+    }
+
+    async fn run_presence_for<R, F>(
+        &self,
+        wait: Duration,
+        operation: F,
+    ) -> Result<R, PresenceWorkError>
+    where
+        R: Send + 'static,
+        F: FnOnce() -> R + Send + 'static,
+    {
+        let permit = self.presence_workers.clone().acquire_owned();
+        let permit = time::timeout(wait, permit)
+            .await
+            .map_err(|_| PresenceWorkError::Busy)?
+            .map_err(|_| PresenceWorkError::Failed)?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            operation()
+        })
+        .await
+        .map_err(|_| PresenceWorkError::Panicked)
+    }
+
+    async fn run_tick(
+        &self,
+        presence: super::presence::PresenceService,
+    ) -> Result<(), PresenceWorkError> {
+        let permit = self
+            .tick_worker
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| PresenceWorkError::Busy)?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            presence.tick()
+        })
+        .await
+        .map_err(|_| PresenceWorkError::Panicked)?
+        .map(|_| ())
+        .map_err(|_| PresenceWorkError::Failed)
+    }
+
+    fn start_tick_worker(
+        self: &Arc<Self>,
+        presence: super::presence::PresenceService,
+        mut shutdown: watch::Receiver<bool>,
+    ) {
+        self.ensure_cleanup_worker();
+        if self
+            .tick_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
+        }
+        let state = Arc::clone(self);
+        tokio::spawn(async move {
+            let mut ticker = time::interval(Duration::from_millis(PRESENCE_TICK_MS));
+            ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+            let mut sequence = 0_u64;
+            loop {
+                tokio::select! {
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                    _ = ticker.tick() => {
+                        // A transient repository error is retried on the next
+                        // tick. It must not turn into a broadcast disconnect.
+                        let _ = state.run_tick(presence.clone()).await;
+                        sequence = sequence.wrapping_add(1);
+                        state.tick_signal.send_replace(sequence);
+                    }
+                }
+            }
+            state.tick_started.store(false, Ordering::Release);
+        });
+    }
+
+    /// Reserves one authenticated ticket mint for this user.  Buckets are
+    /// pruned lazily on the next mint, which keeps this process-local limiter
+    /// bounded without a background task.
+    fn admit_ticket_mint(&self, user_id: coop_cloud::UserId) -> Result<(), Phase2Error> {
+        let now = Instant::now();
+        let mut ticket_mints = match self.ticket_mints.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                let guard = poisoned.into_inner();
+                self.ticket_mints.clear_poison();
+                guard
+            }
+        };
+        ticket_mints.retain(|_, timestamps| {
+            while timestamps
+                .front()
+                .is_some_and(|at| now.duration_since(*at) >= TICKET_MINT_WINDOW)
+            {
+                timestamps.pop_front();
+            }
+            !timestamps.is_empty()
+        });
+        let timestamps = ticket_mints.entry(user_id).or_default();
+        if timestamps.len() >= MAX_TICKET_MINTS_PER_WINDOW {
+            return Err(Phase2Error::Busy);
+        }
+        timestamps.push_back(now);
+        Ok(())
     }
 
     fn reserve_global(self: &Arc<Self>) -> Result<TransportReservation, Phase2Error> {
@@ -81,6 +278,28 @@ impl RealtimeTransportState {
 struct AdmissionState {
     global: usize,
     by_runtime: HashMap<(coop_cloud::UserId, StableRuntimeSession), usize>,
+}
+
+#[derive(Clone)]
+struct PresenceCleanup {
+    service: super::presence::PresenceService,
+    connection: PresenceConnection,
+}
+
+#[derive(Debug)]
+enum PresenceWorkError {
+    Busy,
+    Failed,
+    Panicked,
+}
+
+impl PresenceWorkError {
+    const fn close_code(&self) -> u16 {
+        match self {
+            Self::Busy => 1013,
+            Self::Failed | Self::Panicked => 1011,
+        }
+    }
 }
 
 struct TransportReservation {
@@ -133,6 +352,7 @@ impl Drop for TransportReservation {
 #[derive(Clone)]
 struct Redemption {
     actor: AuthenticatedActor,
+    family_id: RefreshFamilyId,
     runtime: RuntimeLeaseFence,
 }
 
@@ -181,6 +401,8 @@ fn mint_ticket(
     if runtime.build != build {
         return Err(Phase2Error::Authentication);
     }
+    let (actor, family_id) = auth::actor_and_family_from_headers(&app.store, headers)?;
+    app.realtime.admit_ticket_mint(actor.user_id)?;
     // Entropy is deliberately consumed before entering the runtime gate.
     let mut candidates = Vec::with_capacity(MAX_TICKET_CANDIDATES);
     for _ in 0..MAX_TICKET_CANDIDATES {
@@ -200,12 +422,7 @@ fn mint_ticket(
         return Err(Phase2Error::Internal);
     }
 
-    let _gate = app
-        .store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
-    let actor = auth::actor_from_headers(&app.store, headers)?;
+    let _gate = app.store.lock_runtime_transition_gate();
     if runtime.session.character_id != actor.character_id {
         return Err(Phase2Error::Authentication);
     }
@@ -261,6 +478,7 @@ fn mint_ticket(
         // fallible validation is complete before this mutation-only suffix.
         for expired_fingerprint in expired {
             if let Some(record) = state.realtime_tickets.remove(&expired_fingerprint) {
+                state.realtime_ticket_families.remove(&expired_fingerprint);
                 let expired_key = (record.user_id, record.session);
                 if state.realtime_by_runtime.get(&expired_key).copied() == Some(expired_fingerprint)
                 {
@@ -272,6 +490,7 @@ fn mint_ticket(
             && old_fingerprint != fingerprint
         {
             state.realtime_tickets.remove(&old_fingerprint);
+            state.realtime_ticket_families.remove(&old_fingerprint);
             state.realtime_by_runtime.remove(&key);
         }
         state.realtime_tickets.insert(
@@ -284,6 +503,9 @@ fn mint_ticket(
                 expires_at: expires_at.value(),
             },
         );
+        state
+            .realtime_ticket_families
+            .insert(fingerprint, family_id);
         state.realtime_by_runtime.insert(key, fingerprint);
         Ok(())
     })?;
@@ -338,6 +560,11 @@ fn expired_realtime_tickets(state: &StorageState, now: u64) -> Vec<[u8; 32]> {
 fn validate_realtime_indexes(state: &StorageState) -> Result<(), Phase2Error> {
     if state.realtime_tickets.len() > MAX_REALTIME_TICKETS_GLOBAL
         || state.realtime_by_runtime.len() > MAX_REALTIME_TICKETS_GLOBAL
+        || state.realtime_ticket_families.len() > MAX_REALTIME_TICKETS_GLOBAL
+        || state
+            .realtime_ticket_families
+            .keys()
+            .any(|fingerprint| !state.realtime_tickets.contains_key(fingerprint))
     {
         return Err(Phase2Error::Internal);
     }
@@ -471,10 +698,7 @@ fn ticket_from_headers(headers: &HeaderMap) -> Result<RealtimeTicket, Phase2Erro
 fn preflight_ticket(store: &Store, ticket: &RealtimeTicket) -> Result<Redemption, Phase2Error> {
     let fingerprint = *ticket.fingerprint().as_bytes();
     let build = super::saves::current_runtime_build_identity()?;
-    let _gate = store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
+    let _gate = store.lock_runtime_transition_gate();
     let now = store.now();
     store.read_transaction(|state| {
         validate_realtime_indexes(state)?;
@@ -482,6 +706,22 @@ fn preflight_ticket(store: &Store, ticket: &RealtimeTicket) -> Result<Redemption
             .realtime_tickets
             .get(&fingerprint)
             .ok_or(Phase2Error::Authentication)?;
+        let family_id = state
+            .realtime_ticket_families
+            .get(&fingerprint)
+            .copied()
+            .ok_or(Phase2Error::Authentication)?;
+        let family = state
+            .families
+            .get(&family_id)
+            .ok_or(Phase2Error::Authentication)?;
+        if family.revoked
+            || family.expires_at <= now
+            || family.user_id != record.user_id
+            || family.character_id != record.character_id
+        {
+            return Err(Phase2Error::Authentication);
+        }
         if record.expires_at <= now {
             return Err(Phase2Error::Authentication);
         }
@@ -492,6 +732,7 @@ fn preflight_ticket(store: &Store, ticket: &RealtimeTicket) -> Result<Redemption
         validate_runtime_state_in_state(state, actor, &record.runtime, now, &build)?;
         Ok(Redemption {
             actor,
+            family_id,
             runtime: record.runtime.clone(),
         })
     })
@@ -504,10 +745,7 @@ fn consume_ticket(
 ) -> Result<(), Phase2Error> {
     let fingerprint = *ticket.fingerprint().as_bytes();
     let build = super::saves::current_runtime_build_identity()?;
-    let _gate = store
-        .runtime_transition_gate
-        .lock()
-        .map_err(|_| Phase2Error::Internal)?;
+    let _gate = store.lock_runtime_transition_gate();
     let now = store.now();
     store.write_transaction(|state| {
         validate_realtime_indexes(state)?;
@@ -516,10 +754,27 @@ fn consume_ticket(
             .get(&fingerprint)
             .ok_or(Phase2Error::Authentication)?
             .clone();
+        let family_id = state
+            .realtime_ticket_families
+            .get(&fingerprint)
+            .copied()
+            .ok_or(Phase2Error::Authentication)?;
         if record.expires_at <= now
             || record.user_id != redemption.actor.user_id
             || record.character_id != redemption.actor.character_id
+            || family_id != redemption.family_id
             || record.runtime != redemption.runtime
+        {
+            return Err(Phase2Error::Authentication);
+        }
+        let family = state
+            .families
+            .get(&family_id)
+            .ok_or(Phase2Error::Authentication)?;
+        if family.revoked
+            || family.expires_at <= now
+            || family.user_id != record.user_id
+            || family.character_id != record.character_id
         {
             return Err(Phase2Error::Authentication);
         }
@@ -529,19 +784,48 @@ fn consume_ticket(
             return Err(Phase2Error::Internal);
         }
         state.realtime_tickets.remove(&fingerprint);
+        state.realtime_ticket_families.remove(&fingerprint);
         state.realtime_by_runtime.remove(&key);
         Ok(())
     })
 }
 
+/// Ensures a cancellation between connection admission and the normal async
+/// cleanup path still removes the process-local capability. Drop only queues
+/// the bounded cleanup request; the blocking mutex and gate work stays on the
+/// dedicated cleanup thread.
 struct PresenceGuard {
+    state: Arc<RealtimeTransportState>,
     service: super::presence::PresenceService,
-    connection: PresenceConnection,
+    connection: Option<PresenceConnection>,
+}
+
+impl PresenceGuard {
+    fn new(
+        state: Arc<RealtimeTransportState>,
+        service: super::presence::PresenceService,
+        connection: PresenceConnection,
+    ) -> Self {
+        Self {
+            state,
+            service,
+            connection: Some(connection),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.connection = None;
+    }
 }
 
 impl Drop for PresenceGuard {
     fn drop(&mut self) {
-        let _ = self.service.disconnect(self.connection);
+        if let Some(connection) = self.connection.take() {
+            self.state.queue_cleanup(PresenceCleanup {
+                service: self.service.clone(),
+                connection,
+            });
+        }
     }
 }
 
@@ -553,10 +837,22 @@ async fn realtime_session(
     socket: WebSocket,
 ) {
     let mut socket = socket;
+    let mut shutdown = app.shutdown.subscribe();
+    if *shutdown.borrow() {
+        let _ = close_socket(&mut socket, 1001).await;
+        return;
+    }
     let mut rate = InboundRate::default();
     let first_deadline = TokioInstant::now() + FIRST_FRAME_DEADLINE;
     let initial = loop {
-        let Some(message) = next_before(&mut socket, first_deadline).await else {
+        let message = tokio::select! {
+            _ = shutdown.changed() => {
+                let _ = close_socket(&mut socket, 1001).await;
+                return;
+            }
+            message = next_before(&mut socket, first_deadline) => message,
+        };
+        let Some(message) = message else {
             let _ = close_socket(&mut socket, 1008).await;
             return;
         };
@@ -615,104 +911,190 @@ async fn realtime_session(
         }
     };
 
-    let (connection, initial_drain) =
-        match app
-            .presence
-            .connect_and_drain(redemption.actor, redemption.runtime.clone(), initial)
-        {
-            Ok(value) => value,
-            Err(error) => {
-                let _ = close_presence_error(&mut socket, error).await;
-                return;
-            }
-        };
-    let _guard = PresenceGuard {
-        service: app.presence(),
-        connection,
+    let presence = app.presence();
+    let connected = match time::timeout(
+        PRESENCE_WORK_WAIT,
+        app.realtime.presence_workers.clone().acquire_owned(),
+    )
+    .await
+    {
+        Ok(Ok(permit)) => {
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                let result = presence.connect_and_drain_with_family(
+                    redemption.actor,
+                    redemption.family_id,
+                    redemption.runtime,
+                    initial,
+                );
+                if let Err(Ok((connection, _))) = sender.send(result) {
+                    // A disconnected websocket may cancel the waiter while
+                    // the blocking connect is still in flight.
+                    let _ = presence.disconnect(connection);
+                }
+            });
+            receiver.await.map_err(|_| PresenceWorkError::Panicked)
+        }
+        Ok(Err(_)) => Err(PresenceWorkError::Failed),
+        Err(_) => Err(PresenceWorkError::Busy),
     };
+    let (connection, initial_drain) = match connected {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => {
+            let _ = close_presence_error(&mut socket, error).await;
+            return;
+        }
+        Err(error) => {
+            let _ = close_socket(&mut socket, error.close_code()).await;
+            return;
+        }
+    };
+    app.realtime
+        .start_tick_worker(app.presence(), app.shutdown.subscribe());
+    let mut presence_guard =
+        PresenceGuard::new(Arc::clone(&app.realtime), app.presence(), connection);
     let mut initial_frames = Vec::with_capacity(initial_drain.events.len() + 1);
     initial_frames.push(ServerRealtimeFrameV1::presence_ready(connection.handle()));
     initial_frames.extend(initial_drain.events.iter().map(server_frame));
-    if send_frames(&mut socket, &initial_frames).await.is_err() {
+    run_connected_session(
+        &app,
+        &mut socket,
+        connection,
+        initial_frames,
+        rate,
+        &mut shutdown,
+    )
+    .await;
+    let presence = app.presence();
+    let disconnected = app
+        .realtime
+        .run_presence_for(PRESENCE_DISCONNECT_WAIT, move || {
+            presence.disconnect(connection)
+        })
+        .await;
+    if matches!(disconnected, Ok(Ok(()))) {
+        presence_guard.disarm();
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_connected_session(
+    app: &Phase2App,
+    socket: &mut WebSocket,
+    connection: PresenceConnection,
+    initial_frames: Vec<ServerRealtimeFrameV1>,
+    mut rate: InboundRate,
+    shutdown: &mut tokio::sync::watch::Receiver<bool>,
+) {
+    if send_frames(socket, &initial_frames).await.is_err() {
         return;
     }
 
-    let mut ticker = time::interval(Duration::from_millis(PRESENCE_TICK_MS));
-    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut tick = app.realtime.tick_receiver();
+    let mut last_inbound = Instant::now();
     loop {
         tokio::select! {
             biased;
-            _ = ticker.tick() => {
-                if app.presence.tick().is_err() {
-                    let _ = close_socket(&mut socket, 1011).await;
+            changed = shutdown.changed() => {
+                if changed.is_ok() {
+                    let _ = close_socket(socket, 1001).await;
+                }
+                return;
+            }
+            changed = tick.changed() => {
+                if changed.is_err() {
                     return;
                 }
-                let drain = match app.presence.drain(connection) {
-                    Ok(drain) => drain,
+                if is_idle_expired(last_inbound, Instant::now()) {
+                    // Going away, not policy: clients never retry a 1008, and
+                    // an idle reap must stay recoverable after a stall.
+                    let _ = close_socket(socket, 1001).await;
+                    return;
+                }
+                let presence = app.presence();
+                let drain = match app.realtime.run_presence(move || presence.drain(connection)).await {
+                    Ok(Ok(drain)) => drain,
+                    Ok(Err(error)) => {
+                        let _ = close_presence_error(socket, error).await;
+                        return;
+                    }
+                    Err(PresenceWorkError::Busy) => continue,
                     Err(error) => {
-                        let _ = close_presence_error(&mut socket, error).await;
+                        let _ = close_socket(socket, error.close_code()).await;
                         return;
                     }
                 };
                 let frames = drain.events.iter().map(server_frame).collect::<Vec<_>>();
-                if send_frames(&mut socket, &frames).await.is_err() {
+                if send_frames(socket, &frames).await.is_err() {
                     return;
                 }
             }
             message = socket.recv() => {
                 let Some(message) = message else { return; };
+                last_inbound = Instant::now();
                 match message {
                     Ok(Message::Text(text)) => {
-                        if !rate.admit() { let _ = close_socket(&mut socket, 1008).await; return; }
+                        if !rate.admit() { let _ = close_socket(socket, 1008).await; return; }
                         match coop_cloud::decode_client_realtime_frame(text.as_bytes()) {
                             Ok(ClientRealtimeFrameV1::PlayerState(state)) => {
-                                match app.presence.submit_state(connection, state) {
-                                    Ok(super::presence::PresenceSubmitOutcome::DisconnectedUnsupportedTravel) => {
-                                        let _ = close_socket(&mut socket, 1008).await;
+                                let presence = app.presence();
+                                let result = app.realtime.run_presence(move || presence.submit_state(connection, state)).await;
+                                match result {
+                                    Err(error) => { let _ = close_socket(socket, error.close_code()).await; return; }
+                                    Ok(Err(error)) => {
+                                        let _ = close_presence_error(socket, error).await;
                                         return;
                                     }
-                                    Ok(_) => {},
-                                    Err(error) => { let _ = close_presence_error(&mut socket, error).await; return; }
+                                    Ok(Ok(super::presence::PresenceSubmitOutcome::DisconnectedUnsupportedTravel)) => {
+                                        let _ = close_socket(socket, 1008).await;
+                                        return;
+                                    }
+                                    Ok(Ok(_)) => {},
                                 }
                             }
                             Ok(ClientRealtimeFrameV1::InteractRemotePlayer(interaction)) => {
-                                if let Err(error) =
-                                    app.presence.validate_interaction(connection, interaction)
-                                {
-                                    let _ = close_presence_error(&mut socket, error).await;
-                                    return;
+                                let presence = app.presence();
+                                match app.realtime.run_presence(move || presence.validate_interaction(connection, interaction)).await {
+                                    Ok(Ok(_)) => {}
+                                    Ok(Err(error)) => { let _ = close_presence_error(socket, error).await; return; }
+                                    Err(error) => { let _ = close_socket(socket, error.close_code()).await; return; }
                                 }
                             }
                             Ok(ClientRealtimeFrameV1::Companion(companion)) => {
-                                match app.presence.submit_companion(connection, companion) {
-                                    Ok(_) => {},
-                                    Err(error) => { let _ = close_presence_error(&mut socket, error).await; return; }
+                                let presence = app.presence();
+                                match app.realtime.run_presence(move || presence.submit_companion(connection, companion)).await {
+                                    Ok(Ok(_)) => {},
+                                    Ok(Err(error)) => { let _ = close_presence_error(socket, error).await; return; }
+                                    Err(error) => { let _ = close_socket(socket, error.close_code()).await; return; }
                                 }
                             }
                             Ok(ClientRealtimeFrameV1::SocialSignal(signal)) => {
-                                match app.presence.submit_signal(connection, signal) {
-                                    Ok(_) => {},
-                                    Err(error) => { let _ = close_presence_error(&mut socket, error).await; return; }
+                                let presence = app.presence();
+                                match app.realtime.run_presence(move || presence.submit_signal(connection, signal)).await {
+                                    Ok(Ok(_)) => {},
+                                    Ok(Err(error)) => { let _ = close_presence_error(socket, error).await; return; }
+                                    Err(error) => { let _ = close_socket(socket, error.close_code()).await; return; }
                                 }
                             }
-                            Err(coop_cloud::RealtimeError::MessageTooLarge) => { let _ = close_socket(&mut socket, 1009).await; return; }
-                            Err(_) => { let _ = close_socket(&mut socket, 1008).await; return; }
+                            Err(coop_cloud::RealtimeError::MessageTooLarge) => { let _ = close_socket(socket, 1009).await; return; }
+                            Err(_) => { let _ = close_socket(socket, 1008).await; return; }
                         }
                     }
                     Ok(Message::Ping(payload)) => {
-                        if !rate.admit() || send_message(&mut socket, Message::Pong(payload)).await.is_err() { let _ = close_socket(&mut socket, 1008).await; return; }
+                        if !rate.admit() || send_message(socket, Message::Pong(payload)).await.is_err() { let _ = close_socket(socket, 1008).await; return; }
                     }
                     Ok(Message::Pong(_)) => {
-                        if !rate.admit() { let _ = close_socket(&mut socket, 1008).await; return; }
+                        if !rate.admit() { let _ = close_socket(socket, 1008).await; return; }
                     }
                     Ok(Message::Binary(_)) => {
-                        if !rate.admit() { let _ = close_socket(&mut socket, 1008).await; return; }
-                        let _ = close_socket(&mut socket, 1003).await;
+                        if !rate.admit() { let _ = close_socket(socket, 1008).await; return; }
+                        let _ = close_socket(socket, 1003).await;
                         return;
                     }
                     Ok(Message::Close(_)) => return,
                     Err(error) => {
-                        let _ = close_socket(&mut socket, websocket_error_close_code(&error)).await;
+                        let _ = close_socket(socket, websocket_error_close_code(&error)).await;
                         return;
                     }
                 }
@@ -1028,6 +1410,32 @@ mod tests {
     }
 
     #[test]
+    fn ticket_mint_rate_limit_is_per_user_and_cleans_expired_buckets() {
+        let state = RealtimeTransportState::new();
+        let first_user = UserId::new(uuid::Uuid::from_u128(0x501)).unwrap();
+        let second_user = UserId::new(uuid::Uuid::from_u128(0x502)).unwrap();
+        for _ in 0..MAX_TICKET_MINTS_PER_WINDOW {
+            assert!(state.admit_ticket_mint(first_user).is_ok());
+        }
+        assert_eq!(state.admit_ticket_mint(first_user), Err(Phase2Error::Busy));
+        assert!(state.admit_ticket_mint(second_user).is_ok());
+
+        let expired_user = UserId::new(uuid::Uuid::from_u128(0x503)).unwrap();
+        state.ticket_mints.lock().unwrap().insert(
+            expired_user,
+            VecDeque::from([Instant::now() - TICKET_MINT_WINDOW - Duration::from_secs(1)]),
+        );
+        assert!(state.admit_ticket_mint(second_user).is_ok());
+        assert!(
+            !state
+                .ticket_mints
+                .lock()
+                .unwrap()
+                .contains_key(&expired_user)
+        );
+    }
+
+    #[test]
     fn admission_releases_on_drop() {
         let state = Arc::new(RealtimeTransportState::new());
         {
@@ -1102,6 +1510,29 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn revoked_refresh_family_cannot_redeem_a_realtime_ticket() {
+        let (app, headers, request) = ticket_fixture();
+        let minted = mint_ticket(&app, &headers, &request).unwrap();
+        let ticket = RealtimeTicket::parse(minted.ticket().expose_secret()).unwrap();
+        let fingerprint = *ticket.fingerprint().as_bytes();
+        let family_id = app
+            .store
+            .inspect_state(|state| state.realtime_ticket_families.get(&fingerprint).copied())
+            .unwrap()
+            .expect("new tickets retain their family binding");
+        app.store
+            .write_transaction(|state| {
+                state.families.get_mut(&family_id).unwrap().revoked = true;
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        assert!(matches!(
+            preflight_ticket(&app.store, &ticket),
+            Err(Phase2Error::Authentication)
+        ));
     }
 
     #[test]
@@ -1466,7 +1897,7 @@ mod tests {
     }
 
     #[test]
-    fn presence_guard_disconnects_once_and_cleans_up_on_drop() {
+    fn explicit_disconnect_cleans_up_the_presence_capability() {
         let app = Phase2App::test();
         let (actor, runtime) =
             presence_fixture(&app, "presence-guard-invite", "PresenceGuard", 0x30_000);
@@ -1474,12 +1905,7 @@ mod tests {
         let (connection, _) = presence
             .connect_and_drain(actor, runtime, local_state(1, 1, 1))
             .unwrap();
-        {
-            let _guard = PresenceGuard {
-                service: presence.clone(),
-                connection,
-            };
-        }
+        presence.disconnect(connection).unwrap();
         assert_eq!(
             presence.drain(connection),
             Err(PresenceServiceError::NotConnected)
@@ -1556,5 +1982,20 @@ mod tests {
             other => panic!("capacity unexpectedly upgraded: {other:?}"),
         }
         server.abort();
+    }
+
+    #[test]
+    fn idle_backstop_bounds_silent_sockets() {
+        let now = Instant::now();
+        assert!(!is_idle_expired(now, now));
+        assert!(!is_idle_expired(
+            now,
+            now + IDLE_TIMEOUT - Duration::from_millis(1)
+        ));
+        assert!(is_idle_expired(now, now + IDLE_TIMEOUT));
+        assert!(is_idle_expired(
+            now,
+            now + IDLE_TIMEOUT + Duration::from_secs(1)
+        ));
     }
 }

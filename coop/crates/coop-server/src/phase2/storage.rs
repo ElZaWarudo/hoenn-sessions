@@ -21,7 +21,7 @@ use std::{
     fmt,
     sync::atomic::{AtomicU64, Ordering},
     sync::{Arc, RwLock},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -88,6 +88,10 @@ pub enum StorageError {
     Transaction,
     #[error("persistent repository is fenced")]
     Persistence,
+    #[error("storage worker is busy")]
+    Busy,
+    #[error("persistent state exceeds its size limit")]
+    StateTooLarge,
 }
 
 /// Password hashing and verification boundary. Implementations must use a
@@ -201,6 +205,11 @@ pub trait Entropy: Send + Sync {
 /// Both the in-memory and pilot `PostgreSQL` adapters preserve this whole-state
 /// boundary, including mutations made before a callback returns an error.
 pub trait Repository: Send + Sync {
+    /// Probes readiness without requiring a full state read when supported.
+    fn check_ready(&self) -> Result<(), StorageError> {
+        self.read_transaction(&mut |_| Ok(()))
+    }
+
     /// Runs a short read-only repository operation atomically. Adapters with
     /// a real transaction engine override this method; the local adapter
     /// provides the same boundary with its process-local lock.
@@ -225,10 +234,21 @@ pub trait Repository: Send + Sync {
         &self,
         operation: &mut dyn FnMut(&mut State) -> Result<(), StorageError>,
     ) -> Result<(), StorageError>;
+
+    /// Reports whether the adapter fenced itself after losing its backend.
+    /// A fenced process needs a restart; anything else recovers on its own.
+    /// The default is never fenced.
+    fn is_fenced(&self) -> bool {
+        false
+    }
 }
 
 /// Immutable-artifact object-store boundary used by snapshot operations.
 pub trait ObjectStore: Send + Sync {
+    /// Reports a permanently failed backend worker to process readiness.
+    fn is_fenced(&self) -> bool {
+        false
+    }
     /// Permanently fences an absent key against later publication. Returns
     /// true for a newly installed or existing retirement fence, false for a
     /// live object. Reads/deletes must never expose/remove retirement fences.
@@ -623,6 +643,16 @@ impl Phase2Config {
         self.entropy = entropy;
         self
     }
+    /// Supplies non-production identity material for production-mode unit
+    /// tests that exercise adapter-specific behavior.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_test_identity(mut self) -> Self {
+        self.invite_pepper = Zeroizing::new(vec![0x55; 32]);
+        self.signing_key = SigningPrivateKey::from_bytes([7; 32]);
+        self.signing_key_id = "production-test-key".to_owned();
+        self
+    }
     /// Replaces password hashing with an explicitly injected test engine.
     #[cfg(test)]
     #[must_use]
@@ -820,7 +850,7 @@ pub(crate) struct AcquireRecord {
     pub expires_at: u64,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
 pub struct State {
     pub(crate) users_by_name: HashMap<String, UserRecord>,
     pub(crate) users_by_id: HashMap<UserId, UserRecord>,
@@ -847,6 +877,11 @@ pub struct State {
     pub(crate) retired_snapshots: HashSet<SnapshotId>,
     pub(crate) tickets: HashMap<[u8; 32], TicketRecord>,
     pub(crate) realtime_tickets: HashMap<[u8; 32], RealtimeTicketRecord>,
+    /// Refresh-family binding for realtime capabilities.  This is kept in a
+    /// separate defaulted map so older persisted ticket records remain
+    /// readable but fail closed when redeemed until replaced.
+    #[serde(default)]
+    pub(crate) realtime_ticket_families: HashMap<[u8; 32], RefreshFamilyId>,
     /// Reverse lookup used to replace a prior capability for one runtime
     /// session atomically.  Values are fingerprints, never raw secrets.
     pub(crate) realtime_by_runtime: HashMap<(UserId, StableRuntimeSession), [u8; 32]>,
@@ -873,14 +908,56 @@ pub(crate) struct Store {
     pub(crate) repository: Arc<dyn Repository>,
     pub config: Arc<Phase2Config>,
     pub(crate) clock_floor: Arc<AtomicU64>,
+    /// Process-local wall-clock anchor used by ephemeral presence. Persisted
+    /// Unix timestamps continue to use `clock`/`now`; presence deadlines use
+    /// elapsed monotonic time so an NTP step cannot evict every socket.
+    pub(crate) monotonic_wall_anchor: Arc<MonotonicWallAnchor>,
     pub(crate) objects: Arc<dyn ObjectStore>,
     /// Serializes transitions that need a repository snapshot and an
     /// ephemeral runtime reconciliation. Presence owns no repository lock,
     /// so the order is always gate -> repository -> presence.
     pub(crate) runtime_transition_gate: Arc<std::sync::Mutex<()>>,
     account_inflight: Arc<std::sync::Mutex<HashSet<String>>>,
+    heartbeat_last: Arc<std::sync::Mutex<HashMap<CharacterId, Instant>>>,
 }
+
+#[derive(Debug)]
+pub(crate) struct MonotonicWallAnchor {
+    wall_ms: u64,
+    started: Instant,
+}
+
+impl MonotonicWallAnchor {
+    fn new(wall_ms: u64) -> Self {
+        Self {
+            wall_ms,
+            started: Instant::now(),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.wall_ms.saturating_add(
+            self.started
+                .elapsed()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX),
+        )
+    }
+}
+
 impl Store {
+    pub(crate) fn lock_runtime_transition_gate(&self) -> std::sync::MutexGuard<'_, ()> {
+        match self.runtime_transition_gate.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                let guard = poisoned.into_inner();
+                self.runtime_transition_gate.clear_poison();
+                guard
+            }
+        }
+    }
+
     pub fn new(config: Phase2Config) -> Result<Self, StorageError> {
         if config.mode == StorageMode::PostgresFirebase
             && (config.production.is_none()
@@ -921,14 +998,44 @@ impl Store {
             .object_store
             .clone()
             .unwrap_or_else(|| Arc::new(InMemoryObjectStore::new()));
+        let monotonic_wall_anchor = Arc::new(MonotonicWallAnchor::new(config.clock.now_ms()));
         Ok(Self {
             repository,
             config: Arc::new(config),
             clock_floor: Arc::new(AtomicU64::new(0)),
+            monotonic_wall_anchor,
             objects: object_store,
             runtime_transition_gate: Arc::new(std::sync::Mutex::new(())),
             account_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
+            heartbeat_last: Arc::new(std::sync::Mutex::new(HashMap::new())),
         })
+    }
+
+    pub(crate) fn admit_heartbeat(&self, character_id: CharacterId) -> Result<(), StorageError> {
+        if self.config.mode != StorageMode::PostgresFirebase {
+            return Ok(());
+        }
+        let now = Instant::now();
+        let mut last = match self.heartbeat_last.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                let mut guard = poisoned.into_inner();
+                guard.clear();
+                self.heartbeat_last.clear_poison();
+                guard
+            }
+        };
+        if last
+            .get(&character_id)
+            .is_some_and(|at| now.duration_since(*at) < Duration::from_secs(2))
+        {
+            return Err(StorageError::Busy);
+        }
+        last.insert(character_id, now);
+        if last.len() > MAX_ACCESS_RECORDS_GLOBAL {
+            last.retain(|_, at| now.duration_since(*at) < Duration::from_secs(2));
+        }
+        Ok(())
     }
     pub(crate) fn now(&self) -> u64 {
         let observed = self.config.clock.now_ms();
@@ -946,6 +1053,17 @@ impl Store {
                 Ok(_) => return observed,
                 Err(current) => previous = current,
             }
+        }
+    }
+
+    /// Returns the process-local time used by ephemeral presence state.
+    /// Production presence is anchored once to the wall clock and advances
+    /// with `Instant`; local mode keeps its deterministic/test clock.
+    pub(crate) fn presence_now(&self) -> u64 {
+        if self.config.mode == StorageMode::PostgresFirebase {
+            self.monotonic_wall_anchor.now_ms()
+        } else {
+            self.now()
         }
     }
 
@@ -1010,7 +1128,10 @@ impl Store {
         self.repository
             .write_transaction(&mut callback)
             .map_err(|error| {
-                if error == StorageError::Persistence {
+                if matches!(
+                    error,
+                    StorageError::Persistence | StorageError::StateTooLarge | StorageError::Busy
+                ) {
                     E::from(error)
                 } else {
                     failure.take().unwrap_or_else(|| E::from(error))

@@ -14,7 +14,9 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use coop_cloud::{CharacterId, RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
+use coop_cloud::{
+    CharacterId, RefreshFamilyId, RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession,
+};
 use coop_protocol::{
     CanonicalUsername, DespawnReason, Direction, LocalCompanionV1, LocalPresenceStateV1,
     LocalSignalV1, PresenceHandle, PresenceInteractionV1, RegionId, RemoteCompanionV1,
@@ -199,6 +201,7 @@ struct PartitionKey {
 struct PresenceEntry {
     connection: PresenceConnection,
     actor: AuthenticatedActor,
+    family_id: Option<RefreshFamilyId>,
     stable_session: StableRuntimeSession,
     character_id: CharacterId,
     username: CanonicalUsername,
@@ -494,7 +497,7 @@ impl PresenceService {
         actor: AuthenticatedActor,
         fence: coop_cloud::LeaseFence,
     ) -> Result<Vec<(coop_cloud::OnlinePeer, CharacterId)>, super::Phase2Error> {
-        let now = self.inner.store.now();
+        let now = self.inner.store.presence_now();
         self.inner.store.read_transaction(|repository| {
             let state = self.lock_state();
             let Some(source) = state
@@ -521,6 +524,7 @@ impl PresenceService {
                             handle: entry.connection.handle,
                             generation: entry.connection.generation,
                             actor: entry.actor,
+                            family_id: entry.family_id,
                             stable_session: entry.stable_session,
                             character_id: entry.character_id,
                             region: entry.partition.region,
@@ -592,11 +596,7 @@ impl PresenceService {
     }
 
     fn lock_gate(&self) -> Result<MutexGuard<'_, ()>, PresenceServiceError> {
-        self.inner
-            .store
-            .runtime_transition_gate
-            .lock()
-            .map_err(|_| PresenceServiceError::Internal)
+        Ok(self.inner.store.lock_runtime_transition_gate())
     }
 
     fn map_location(location: WorldLocation) -> Result<(), PresenceServiceError> {
@@ -644,6 +644,7 @@ impl PresenceService {
     fn validate_repository(
         &self,
         actor: AuthenticatedActor,
+        family_id: Option<RefreshFamilyId>,
         fence: &RuntimeLeaseFence,
         initial: &LocalPresenceStateV1,
         now_ms: u64,
@@ -664,6 +665,19 @@ impl PresenceService {
                     .ok_or(PresenceServiceError::Authentication)?;
                 if user.disabled || user.character_id != actor.character_id {
                     return Err(PresenceServiceError::Authentication.into());
+                }
+                if let Some(family_id) = family_id {
+                    let family = state
+                        .families
+                        .get(&family_id)
+                        .ok_or(PresenceServiceError::Authentication)?;
+                    if family.revoked
+                        || family.expires_at <= now_ms
+                        || family.user_id != actor.user_id
+                        || family.character_id != actor.character_id
+                    {
+                        return Err(PresenceServiceError::Authentication.into());
+                    }
                 }
                 if state
                     .users_by_name
@@ -756,15 +770,28 @@ impl PresenceService {
         fence: RuntimeLeaseFence,
         initial: LocalPresenceStateV1,
     ) -> Result<PresenceConnection, PresenceServiceError> {
+        self.connect_with_family(actor, None, fence, initial)
+    }
+
+    /// Connects a transport capability while retaining the access token's
+    /// refresh-family binding. Family-bound connections are evicted by the
+    /// next presence tick after logout or family revocation.
+    pub fn connect_with_family(
+        &self,
+        actor: AuthenticatedActor,
+        family_id: Option<RefreshFamilyId>,
+        fence: RuntimeLeaseFence,
+        initial: LocalPresenceStateV1,
+    ) -> Result<PresenceConnection, PresenceServiceError> {
         initial
             .validate()
             .map_err(|_| PresenceServiceError::InvalidState)?;
         let candidates = self.entropy_candidates()?;
         let build = self.inner.build.clone();
         let _gate = self.lock_gate()?;
-        let now_ms = self.inner.store.now();
+        let now_ms = self.inner.store.presence_now();
         let (username, partition, lease_expires_at_ms) =
-            self.validate_repository(actor, &fence, &initial, now_ms, &build)?;
+            self.validate_repository(actor, family_id, &fence, &initial, now_ms, &build)?;
         let mut state = self.lock_state();
         let existing = state.by_character.get(&actor.character_id).copied();
         if existing.is_none() && state.entries.len() >= PRESENCE_MAX_GLOBAL_CONNECTIONS {
@@ -792,6 +819,7 @@ impl PresenceService {
         let mut entry = PresenceEntry {
             connection,
             actor,
+            family_id,
             stable_session,
             character_id: actor.character_id,
             username,
@@ -867,8 +895,39 @@ impl PresenceService {
         fence: RuntimeLeaseFence,
         initial: LocalPresenceStateV1,
     ) -> Result<(PresenceConnection, PresenceDrain), PresenceServiceError> {
-        let connection = self.connect(actor, fence, initial)?;
-        let drain = self.drain(connection)?;
+        self.connect_and_drain_optional_family(actor, None, fence, initial)
+    }
+
+    /// Family-bound variant used by the realtime transport.
+    pub fn connect_and_drain_with_family(
+        &self,
+        actor: AuthenticatedActor,
+        family_id: RefreshFamilyId,
+        fence: RuntimeLeaseFence,
+        initial: LocalPresenceStateV1,
+    ) -> Result<(PresenceConnection, PresenceDrain), PresenceServiceError> {
+        self.connect_and_drain_optional_family(actor, Some(family_id), fence, initial)
+    }
+
+    fn connect_and_drain_optional_family(
+        &self,
+        actor: AuthenticatedActor,
+        family_id: Option<RefreshFamilyId>,
+        fence: RuntimeLeaseFence,
+        initial: LocalPresenceStateV1,
+    ) -> Result<(PresenceConnection, PresenceDrain), PresenceServiceError> {
+        let connection = self.connect_with_family(actor, family_id, fence, initial)?;
+        let drain = match self.drain(connection) {
+            Ok(drain) => drain,
+            Err(error) => {
+                // `connect` has already published the capability. Roll it
+                // back if the first drain cannot complete, otherwise callers
+                // that only receive the error have no capability with which
+                // to clean up the entry.
+                let _ = self.disconnect(connection);
+                return Err(error);
+            }
+        };
         Ok((connection, drain))
     }
 
@@ -983,6 +1042,10 @@ impl PresenceService {
                 return Err(PresenceServiceError::Internal);
             }
             if !state.enqueue_companion_catchup(connection.handle, other_handle) {
+                // The move already removed the old partition membership. Do
+                // not leave a live capability stranded in the new context if
+                // rebuilding its initial FIFO fails.
+                state.remove_entry(connection.handle, DespawnReason::Disconnected);
                 return Err(PresenceServiceError::Internal);
             }
         }
@@ -1015,7 +1078,7 @@ impl PresenceService {
             .validate()
             .map_err(|_| PresenceServiceError::InvalidState)?;
         let _gate = self.lock_gate()?;
-        let now_ms = self.inner.store.now();
+        let now_ms = self.inner.store.presence_now();
         let mut state = self.lock_state();
         let Some(entry) = state.entries.get(&connection.handle) else {
             return Err(PresenceServiceError::NotConnected);
@@ -1156,7 +1219,7 @@ impl PresenceService {
             .validate()
             .map_err(|_| PresenceServiceError::InvalidState)?;
         let _gate = self.lock_gate()?;
-        let now_ms = self.inner.store.now();
+        let now_ms = self.inner.store.presence_now();
         let mut state = self.lock_state();
         let Some(entry) = state.entries.get(&connection.handle) else {
             return Err(PresenceServiceError::NotConnected);
@@ -1278,7 +1341,7 @@ impl PresenceService {
     ///
     /// Returns an internal error if the runtime gate or repository fails.
     pub fn tick(&self) -> Result<PresenceTickReport, PresenceServiceError> {
-        let now_ms = self.inner.store.now();
+        let now_ms = self.inner.store.presence_now();
         self.tick_at(now_ms)
     }
 
@@ -1289,7 +1352,7 @@ impl PresenceService {
     /// Returns an internal error if the runtime gate or repository fails.
     pub fn tick_at(&self, now_ms: u64) -> Result<PresenceTickReport, PresenceServiceError> {
         let _gate = self.lock_gate()?;
-        let handles = {
+        let (handles, late_tick_deadline) = {
             let state = self.lock_state();
             if state
                 .next_tick_at_ms
@@ -1300,19 +1363,24 @@ impl PresenceService {
                     ..PresenceTickReport::default()
                 });
             }
-            state
+            let late_tick_deadline = state
+                .next_tick_at_ms
+                .filter(|deadline| now_ms.saturating_sub(*deadline) >= PRESENCE_STALE_MS);
+            let handles = state
                 .entries
                 .values()
                 .map(|entry| PresenceSnapshot {
                     handle: entry.connection.handle,
                     generation: entry.connection.generation,
                     actor: entry.actor,
+                    family_id: entry.family_id,
                     stable_session: entry.stable_session,
                     character_id: entry.character_id,
                     region: entry.partition.region,
                     channel: entry.partition.channel,
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            (handles, late_tick_deadline)
         };
         let validation = self
             .inner
@@ -1354,6 +1422,13 @@ impl PresenceService {
                 RepositoryDisposition::Valid { expires_at_ms } => {
                     if let Some(entry) = state.entries.get_mut(&snapshot.handle) {
                         entry.lease_expires_at_ms = expires_at_ms;
+                        if late_tick_deadline.is_some_and(|deadline| {
+                            deadline.saturating_sub(entry.last_accepted_at_ms) < PRESENCE_STALE_MS
+                        }) {
+                            // A backend stall kept a previously live client
+                            // from publishing. Give it one fresh stale window.
+                            entry.last_accepted_at_ms = now_ms;
+                        }
                         if now_ms.saturating_sub(entry.last_accepted_at_ms) >= PRESENCE_STALE_MS {
                             if state.remove_entry(snapshot.handle, DespawnReason::Stale) {
                                 report.removed_connections += 1;
@@ -1400,7 +1475,7 @@ impl PresenceService {
         let observed_y = interaction.y();
         std::hint::black_box(interaction);
         let _gate = self.lock_gate()?;
-        let now_ms = self.inner.store.now();
+        let now_ms = self.inner.store.presence_now();
         let state = self.lock_state();
         let source = Self::validate_connection(&state, initiator)?;
         if !source.advertised
@@ -1541,6 +1616,7 @@ struct PresenceSnapshot {
     handle: PresenceHandle,
     generation: NonZeroU64,
     actor: AuthenticatedActor,
+    family_id: Option<RefreshFamilyId>,
     stable_session: StableRuntimeSession,
     character_id: CharacterId,
     region: RegionId,
@@ -1567,6 +1643,18 @@ fn repository_disposition(
     let Some(lease) = state.leases.get(&snapshot.character_id) else {
         return RepositoryDisposition::LeaseInvalid;
     };
+    if let Some(family_id) = snapshot.family_id {
+        let Some(family) = state.families.get(&family_id) else {
+            return RepositoryDisposition::LeaseInvalid;
+        };
+        if family.revoked
+            || family.expires_at <= now_ms
+            || family.user_id != snapshot.actor.user_id
+            || family.character_id != snapshot.character_id
+        {
+            return RepositoryDisposition::LeaseInvalid;
+        }
+    }
     if user.disabled
         || user.character_id != snapshot.character_id
         || character.owner != snapshot.actor.user_id
@@ -1613,7 +1701,9 @@ mod tests {
     use crate::phase2::storage::{
         InMemoryObjectStore, InMemoryRepository, Repository, StorageError,
     };
-    use crate::phase2::{ArgonPasswordEngine, FixedClock, FixedEntropy, Phase2Config};
+    use crate::phase2::{
+        ArgonPasswordEngine, FixedClock, FixedEntropy, Phase2Config, ProductionConfig,
+    };
     use crate::{Phase2App, Phase2Error};
     use coop_cloud::{
         AcquireLeaseRequest, ClientInstanceId, HeartbeatLeaseRequest, IdempotencyKey, Password,
@@ -3120,6 +3210,103 @@ mod tests {
         assert_eq!(stale.removed_connections, 2);
         assert_eq!(service.connection_count().unwrap(), 0);
         assert_eq!(service.next_tick_at_ms().unwrap(), None);
+    }
+
+    #[test]
+    fn delayed_tick_gives_previously_live_client_a_fresh_stale_window() {
+        let app = Phase2App::test();
+        let actor = account(&app, "alice", "invite-h");
+        let lease = acquire(&app, actor, 8);
+        let service = app.presence();
+        service
+            .connect(
+                actor,
+                runtime_fence(&lease),
+                pose(1, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let due = service.next_tick_at_ms().unwrap().unwrap();
+        let resumed = due + PRESENCE_STALE_MS;
+        assert_eq!(service.tick_at(resumed).unwrap().removed_connections, 0);
+        assert_eq!(service.connection_count().unwrap(), 1);
+        assert_eq!(
+            service
+                .tick_at(resumed + PRESENCE_STALE_MS)
+                .unwrap()
+                .removed_connections,
+            1
+        );
+    }
+
+    #[test]
+    fn production_presence_time_ignores_a_forward_wall_clock_jump() {
+        let clock = Arc::new(FixedClock::new(1_700_000_000_000));
+        let config = Phase2Config::postgres_firebase_with_config(
+            ProductionConfig::new("postgres://localhost/coop", "bucket").unwrap(),
+        )
+        .unwrap()
+        .with_test_identity()
+        .with_upload_base_url("https://uploads.example")
+        .with_test_adapters(
+            clock.clone(),
+            Arc::new(FixedEntropy::new((0_u8..=255).collect())),
+        )
+        .with_adapters(
+            Arc::new(InMemoryRepository::new()),
+            Arc::new(InMemoryObjectStore::new()),
+        );
+        let service = PresenceService::new(Store::new(config).unwrap()).unwrap();
+        let before_jump = service.inner.store.presence_now();
+        clock.set(before_jump + 6 * 60 * 60 * 1_000);
+
+        assert_eq!(service.inner.store.now(), before_jump + 6 * 60 * 60 * 1_000);
+        let after_jump = service.inner.store.presence_now();
+        assert!(
+            after_jump < before_jump + 60_000,
+            "presence clock followed a wall jump: before={before_jump}, after={after_jump}"
+        );
+        clock.set(before_jump.saturating_sub(6 * 60 * 60 * 1_000));
+        assert!(service.inner.store.presence_now() >= after_jump);
+    }
+
+    #[test]
+    fn family_revocation_evicts_bound_presence_on_next_tick() {
+        let app = Phase2App::test();
+        let actor = account(&app, "family-revoked", "invite-family-revoked");
+        let lease = acquire(&app, actor, 88);
+        let family_id = app
+            .store
+            .inspect_state(|state| {
+                state
+                    .families
+                    .iter()
+                    .find_map(|(id, family)| (family.user_id == actor.user_id).then_some(*id))
+            })
+            .unwrap()
+            .expect("account has a refresh family");
+        let service = app.presence();
+        let connection = service
+            .connect_with_family(
+                actor,
+                Some(family_id),
+                runtime_fence(&lease),
+                pose(1, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let due = service.next_tick_at_ms().unwrap().unwrap();
+        app.store
+            .write_transaction(|state| {
+                state.families.get_mut(&family_id).unwrap().revoked = true;
+                Ok::<_, StorageError>(())
+            })
+            .unwrap();
+        let report = service.tick_at(due).unwrap();
+        assert_eq!(report.removed_connections, 1);
+        assert_eq!(service.connection_count().unwrap(), 0);
+        assert_eq!(
+            service.drain(connection),
+            Err(PresenceServiceError::NotConnected)
+        );
     }
 
     #[test]
