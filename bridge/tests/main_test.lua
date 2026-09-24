@@ -110,7 +110,7 @@ function client:send(bytes, first, last)
   if #bytes == protocol.MESSAGE_SIZE then
     local decoded = assert(protocol.decode(bytes, "outbound"))
     if decoded.type == protocol.types.SAVE_DATA_UPDATED then
-      assert(state_capture_count == outbound_commits - 1)
+      assert(state_capture_count + skipped_capture_count == outbound_commits - 1)
     end
   end
   return last
@@ -497,7 +497,7 @@ local warnings_before_lock = #warning_messages
 local sends_before_lock = #send_calls
 local commits_before_lock = outbound_commits
 local captures_before_lock = state_capture_count
-generation = 12
+generation = 14
 local locked_update = assert(protocol.encode({
   type = protocol.types.SAVE_DATA_UPDATED,
   sequence = 4,
@@ -538,7 +538,7 @@ local transient_grant = assert(protocol.encode({
 incoming_chunks[1] = transient_grant
 receive_callback()
 frame_callback()
-generation = 13
+generation = 15
 local transient_update = assert(protocol.encode({
   type = protocol.types.SAVE_DATA_UPDATED,
   sequence = 5,
