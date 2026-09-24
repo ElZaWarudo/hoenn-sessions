@@ -4,7 +4,7 @@ use super::{
     Phase2App, Phase2Error,
     storage::{Phase2Config, ProductionConfig, StorageError, StorageMode},
 };
-use std::{io::Read, net::SocketAddr, path::Path, sync::Arc};
+use std::{io::Read, net::SocketAddr, path::Path, sync::Arc, time::Duration};
 use zeroize::Zeroizing;
 
 /// Whole HTTP operations include process-local transition locks, so move them
@@ -120,14 +120,45 @@ fn from_env() -> Result<Phase2App, Phase2Error> {
     Ok(app)
 }
 
+/// Production startup attempts before giving up. The database and object
+/// store often trail the server during deploys, so transient connect
+/// failures retry with a fixed delay. Invalid secrets fail on every attempt
+/// and still exit closed after the last one.
+const MAX_STARTUP_ATTEMPTS: u32 = 5;
+const STARTUP_RETRY_DELAY: Duration = Duration::from_secs(2);
+
+/// Returns the delay before the next startup attempt, or [`None`] when the
+/// retry budget is exhausted. Extracted so the bound is unit-tested.
+fn next_startup_delay(attempt: u32) -> Option<Duration> {
+    (attempt < MAX_STARTUP_ATTEMPTS).then_some(STARTUP_RETRY_DELAY)
+}
+
+async fn load_production_app() -> Result<Phase2App, Phase2Error> {
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        let loaded = tokio::task::spawn_blocking(from_env)
+            .await
+            .map_err(|_| Phase2Error::Internal)?;
+        match loaded {
+            Ok(app) => return Ok(app),
+            Err(error) if next_startup_delay(attempt).is_some() => {
+                eprintln!(
+                    "co-op production startup attempt {attempt}/{MAX_STARTUP_ATTEMPTS} failed ({error}); retrying"
+                );
+                tokio::time::sleep(STARTUP_RETRY_DELAY).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 /// Runs the authenticated persistent server behind a TLS reverse proxy.
 ///
 /// # Errors
 /// Fails closed when required secrets, adapters, or the listener are unavailable.
 pub async fn serve_phase2_production(address: SocketAddr) -> Result<(), Phase2Error> {
-    let app = tokio::task::spawn_blocking(from_env)
-        .await
-        .map_err(|_| Phase2Error::Internal)??;
+    let app = load_production_app().await?;
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .map_err(|_| Phase2Error::Internal)?;
@@ -148,4 +179,20 @@ async fn shutdown() {
         }
     }
     let _ = tokio::signal::ctrl_c().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_retry_budget_is_bounded() {
+        assert_eq!(next_startup_delay(1), Some(STARTUP_RETRY_DELAY));
+        assert_eq!(
+            next_startup_delay(MAX_STARTUP_ATTEMPTS - 1),
+            Some(STARTUP_RETRY_DELAY)
+        );
+        assert_eq!(next_startup_delay(MAX_STARTUP_ATTEMPTS), None);
+        assert_eq!(next_startup_delay(MAX_STARTUP_ATTEMPTS + 1), None);
+    }
 }

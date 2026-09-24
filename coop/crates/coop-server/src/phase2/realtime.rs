@@ -51,6 +51,16 @@ const CLOSE_DEADLINE: Duration = Duration::from_millis(250);
 const INBOUND_WINDOW: Duration = Duration::from_millis(1_000);
 const MAX_INBOUND_FRAMES: usize = 64;
 const MAX_WRITE_BUFFER_BYTES: usize = 4_096;
+/// Backstop for a silent socket. Presence stale eviction (1.5s without fresh
+/// state) normally reaps idle clients first; this closes the transport when a
+/// stalled tick or half-open connection leaves one behind.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Reports whether a realtime socket has been silent longer than the idle
+/// budget. Extracted so the backstop bound is unit-tested.
+fn is_idle_expired(last_inbound: Instant, now: Instant) -> bool {
+    now.duration_since(last_inbound) >= IDLE_TIMEOUT
+}
 
 /// Process-local transport admission shared by all clones of one app.
 pub(crate) struct RealtimeTransportState {
@@ -639,10 +649,17 @@ async fn realtime_session(
 
     let mut ticker = time::interval(Duration::from_millis(PRESENCE_TICK_MS));
     ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    let mut last_inbound = Instant::now();
     loop {
         tokio::select! {
             biased;
             _ = ticker.tick() => {
+                if is_idle_expired(last_inbound, Instant::now()) {
+                    // Going away, not policy: clients never retry a 1008, and
+                    // an idle reap must stay recoverable after a stall.
+                    let _ = close_socket(&mut socket, 1001).await;
+                    return;
+                }
                 if app.presence.tick().is_err() {
                     let _ = close_socket(&mut socket, 1011).await;
                     return;
@@ -661,6 +678,7 @@ async fn realtime_session(
             }
             message = socket.recv() => {
                 let Some(message) = message else { return; };
+                last_inbound = Instant::now();
                 match message {
                     Ok(Message::Text(text)) => {
                         if !rate.admit() { let _ = close_socket(&mut socket, 1008).await; return; }
@@ -1556,5 +1574,20 @@ mod tests {
             other => panic!("capacity unexpectedly upgraded: {other:?}"),
         }
         server.abort();
+    }
+
+    #[test]
+    fn idle_backstop_bounds_silent_sockets() {
+        let now = Instant::now();
+        assert!(!is_idle_expired(now, now));
+        assert!(!is_idle_expired(
+            now,
+            now + IDLE_TIMEOUT - Duration::from_millis(1)
+        ));
+        assert!(is_idle_expired(now, now + IDLE_TIMEOUT));
+        assert!(is_idle_expired(
+            now,
+            now + IDLE_TIMEOUT + Duration::from_secs(1)
+        ));
     }
 }
