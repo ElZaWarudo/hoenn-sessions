@@ -20,6 +20,9 @@ const RESPONSE_MAX_BYTES: usize = 16 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const TRANSIENT_POLL_BACKOFF_BASE_MILLIS: u64 = 500;
+const TRANSIENT_POLL_BACKOFF_MAX_MILLIS: u64 = 30_000;
+const TRANSIENT_POLL_JITTER_MAX_MILLIS: u64 = 1_000;
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum GroupTravelError {
@@ -325,6 +328,7 @@ pub(crate) struct GroupTravelOwner<'a> {
     terminal: std::collections::VecDeque<TerminalReplay>,
     generation: Option<u32>,
     next_poll: tokio::time::Instant,
+    transient_poll_failures: u8,
 }
 impl Default for GroupTravelOwner<'_> {
     fn default() -> Self {
@@ -338,6 +342,7 @@ impl Default for GroupTravelOwner<'_> {
             terminal: std::collections::VecDeque::new(),
             generation: None,
             next_poll: tokio::time::Instant::now() + IDLE_POLL_INTERVAL,
+            transient_poll_failures: 0,
         }
     }
 }
@@ -347,6 +352,7 @@ impl<'a> GroupTravelOwner<'a> {
             return;
         }
         self.generation = Some(generation);
+        self.transient_poll_failures = 0;
         self.terminal.retain(|replay| replay.proposal_id != [0; 16]);
         let preserve_delivery = self.outbound.is_some_and(|outbound| {
             outbound.disposition == DeliveryDisposition::ClearTracked
@@ -362,8 +368,20 @@ impl<'a> GroupTravelOwner<'a> {
         }
     }
     pub(crate) fn reset_poll(&mut self) {
+        self.transient_poll_failures = 0;
         self.next_poll = tokio::time::Instant::now();
         self.queue_for_tracked_state();
+    }
+
+    fn schedule_poll_success(&mut self, delay: Duration) {
+        self.transient_poll_failures = 0;
+        self.next_poll = tokio::time::Instant::now() + delay;
+    }
+
+    fn schedule_transient_poll_failure(&mut self) {
+        self.transient_poll_failures = self.transient_poll_failures.saturating_add(1);
+        self.next_poll =
+            tokio::time::Instant::now() + transient_poll_backoff(self.transient_poll_failures);
     }
     pub(crate) fn prepare<A: CloudApi>(
         &mut self,
@@ -761,20 +779,19 @@ impl<'a> GroupTravelOwner<'a> {
                             DeliveryDisposition::ReplyOnly,
                         );
                     }
-                    self.next_poll = tokio::time::Instant::now()
-                        + if id.is_some() {
-                            Duration::ZERO
-                        } else {
-                            IDLE_POLL_INTERVAL
-                        }
+                    self.schedule_poll_success(if id.is_some() {
+                        Duration::ZERO
+                    } else {
+                        IDLE_POLL_INTERVAL
+                    });
                 }
                 Err(SessionError::Cloud) => {
-                    self.next_poll = tokio::time::Instant::now() + IDLE_POLL_INTERVAL;
+                    self.schedule_transient_poll_failure();
                 }
                 Err(error @ (SessionError::Unauthorized | SessionError::Realtime)) => {
                     return Err(error);
                 }
-                Err(_) => self.next_poll = tokio::time::Instant::now() + POLL_INTERVAL,
+                Err(_) => self.schedule_transient_poll_failure(),
             },
             Completion::Current {
                 fence,
@@ -806,13 +823,14 @@ impl<'a> GroupTravelOwner<'a> {
                     self.pending_create = None;
                     self.install_created(&view, &pending, fence)?;
                     if cancel_requested {
+                        self.schedule_poll_success(Duration::ZERO);
                         self.schedule_action(fence, GroupTravelAction::Cancel)?;
                     } else {
                         self.observe_view(&view, fence, generation)?;
                     }
                 }
                 Err(GroupTravelError::Unavailable) => {
-                    self.next_poll = tokio::time::Instant::now() + POLL_INTERVAL;
+                    self.schedule_transient_poll_failure();
                 }
                 Err(GroupTravelError::Unauthorized) => return Err(SessionError::Unauthorized),
                 Err(GroupTravelError::InvalidResponse) => return Err(SessionError::Realtime),
@@ -855,6 +873,7 @@ impl<'a> GroupTravelOwner<'a> {
                 {
                     match result {
                         Ok(view) => {
+                            self.transient_poll_failures = 0;
                             t.pending_action = None;
                             if pending.action == GroupTravelAction::Applied
                                 && validate_view(&view, group_id, fence).is_ok()
@@ -879,7 +898,7 @@ impl<'a> GroupTravelOwner<'a> {
                             }
                         }
                         Err(GroupTravelError::Unavailable) => {
-                            self.next_poll = tokio::time::Instant::now() + POLL_INTERVAL;
+                            self.schedule_transient_poll_failure();
                         }
                         Err(GroupTravelError::Stale | GroupTravelError::NotFound) => {
                             t.pending_action = None;
@@ -912,7 +931,7 @@ impl<'a> GroupTravelOwner<'a> {
                 return Err(SessionError::Realtime);
             }
             Err(GroupTravelError::Unavailable) => {
-                self.next_poll = tokio::time::Instant::now() + POLL_INTERVAL;
+                self.schedule_transient_poll_failure();
             }
             Err(GroupTravelError::Unauthorized) => return Err(SessionError::Unauthorized),
             Err(GroupTravelError::Stale) if expected.is_some() => {
@@ -920,14 +939,14 @@ impl<'a> GroupTravelOwner<'a> {
             }
             Err(GroupTravelError::Stale) => {
                 self.group_id = None;
-                self.next_poll = tokio::time::Instant::now() + IDLE_POLL_INTERVAL;
+                self.schedule_poll_success(IDLE_POLL_INTERVAL);
             }
             Ok(None) | Err(GroupTravelError::NotFound) => {
                 if expected.is_some() {
                     self.queue_terminal_reason(GroupTravelReason::Conflict);
                 } else {
                     self.group_id = None;
-                    self.next_poll = tokio::time::Instant::now() + IDLE_POLL_INTERVAL;
+                    self.schedule_poll_success(IDLE_POLL_INTERVAL);
                 }
             }
         }
@@ -1013,7 +1032,7 @@ impl<'a> GroupTravelOwner<'a> {
                 self.queue_terminal_reason(GroupTravelReason::Conflict);
             }
         }
-        self.next_poll = tokio::time::Instant::now() + POLL_INTERVAL;
+        self.schedule_poll_success(POLL_INTERVAL);
         Ok(())
     }
     fn queue_for_tracked_state(&mut self) {
@@ -1231,6 +1250,24 @@ async fn retry_action<A: CloudApi>(
         }
         v => v,
     }
+}
+fn transient_poll_backoff(failures: u8) -> Duration {
+    let exponent = failures.saturating_sub(1).min(6);
+    let base_millis =
+        (TRANSIENT_POLL_BACKOFF_BASE_MILLIS << exponent).min(TRANSIENT_POLL_BACKOFF_MAX_MILLIS);
+    let jitter_limit = (base_millis / 4).min(TRANSIENT_POLL_JITTER_MAX_MILLIS);
+    let jitter = if jitter_limit == 0 {
+        0
+    } else {
+        let bytes = uuid::Uuid::new_v4().as_bytes().to_owned();
+        let random = u64::from_le_bytes(
+            bytes[..8]
+                .try_into()
+                .expect("a UUID always contains at least eight bytes"),
+        );
+        random % (jitter_limit + 1)
+    };
+    Duration::from_millis((base_millis + jitter).min(TRANSIENT_POLL_BACKOFF_MAX_MILLIS))
 }
 fn validate_view(
     v: &GroupTravelProposalView,
@@ -1458,6 +1495,32 @@ mod tests {
             assert_eq!(route_from_id(route_id(r)), Some(r));
         }
     }
+
+    #[test]
+    fn transient_poll_backoff_is_bounded_and_exponential() {
+        let first = transient_poll_backoff(1);
+        let second = transient_poll_backoff(2);
+        let third = transient_poll_backoff(3);
+        assert!(first >= Duration::from_millis(500));
+        assert!(first <= Duration::from_millis(625));
+        assert!(second >= Duration::from_millis(1_000));
+        assert!(second <= Duration::from_millis(1_250));
+        assert!(third >= Duration::from_millis(2_000));
+        assert!(third <= Duration::from_millis(2_500));
+        assert!(transient_poll_backoff(u8::MAX) <= Duration::from_secs(30));
+    }
+
+    #[test]
+    fn transient_poll_failure_backoff_resets_after_success() {
+        let mut owner = GroupTravelOwner::default();
+        owner.schedule_transient_poll_failure();
+        owner.schedule_transient_poll_failure();
+        assert_eq!(owner.transient_poll_failures, 2);
+        owner.schedule_poll_success(POLL_INTERVAL);
+        assert_eq!(owner.transient_poll_failures, 0);
+        assert!(owner.next_poll > tokio::time::Instant::now());
+    }
+
     #[test]
     fn zero_id_cancel_before_and_after_create() {
         let a = cid(1);

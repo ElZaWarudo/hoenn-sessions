@@ -64,6 +64,7 @@ use thiserror::Error;
 
 const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_JSON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const SNAPSHOT_UPLOAD_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Error)]
 pub enum HttpClientError {
@@ -661,7 +662,12 @@ impl CloudApi for ReqwestCloudApi {
             {
                 return Err(SessionError::Cloud);
             }
-            self.send_empty(self.client.put(u).body(bytes))
+            self.send_empty(
+                self.client
+                    .put(u)
+                    .timeout(SNAPSHOT_UPLOAD_TIMEOUT)
+                    .body(bytes),
+            )
                 .await
                 .map_err(|_| SessionError::Cloud)
         })
