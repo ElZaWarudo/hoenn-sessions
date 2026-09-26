@@ -38,6 +38,21 @@ pub struct ArrivalVerificationInput<'a> {
     pub bridge_source: &'a Path,
 }
 
+/// Common proof expectations for process and embedded Android verifiers.
+/// The caller must obtain `proof` from the isolated epoch-zero sidecar after
+/// the destination ROM has booted and the native core has stopped.
+#[derive(Clone, Copy)]
+pub struct ArrivalProofInput<'a> {
+    pub expected_full_sav_sha256: Sha256Digest,
+    pub staged_sav: &'a [u8],
+    pub registry: RegistryContract,
+    pub destination_world: RomWorldId,
+    pub expected_save_generation: u32,
+    pub expected_map_group: u8,
+    pub expected_map_num: u8,
+    pub persisted_nonce: [u8; 16],
+}
+
 /// Authenticated ROM observation, returned only after both children are reaped.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticatedArrivalEvidence {
@@ -133,6 +148,21 @@ impl ExpectedProof {
 fn preflight(
     input: &ArrivalVerificationInput<'_>,
 ) -> Result<ExpectedProof, ArrivalVerificationError> {
+    preflight_proof(ArrivalProofInput {
+        expected_full_sav_sha256: input.expected_full_sav_sha256,
+        staged_sav: input.staged_sav,
+        registry: input.registry,
+        destination_world: input.destination_world,
+        expected_save_generation: input.expected_save_generation,
+        expected_map_group: input.expected_map_group,
+        expected_map_num: input.expected_map_num,
+        persisted_nonce: input.persisted_nonce,
+    })
+}
+
+fn preflight_proof(
+    input: ArrivalProofInput<'_>,
+) -> Result<ExpectedProof, ArrivalVerificationError> {
     if input.persisted_nonce == [0; 16] || input.expected_save_generation == 0 {
         return Err(ArrivalVerificationError::InvalidExpectation);
     }
@@ -153,6 +183,16 @@ fn preflight(
         map_num: input.expected_map_num,
         nonce: input.persisted_nonce,
     })
+}
+
+/// Check the exact staged V2 image and ROM-emitted nonce proof. This validates
+/// evidence, but only the caller can attest that it came through the offline
+/// sidecar and that its embedded core was fully closed before commit.
+pub fn verify_arrival_proof(
+    input: ArrivalProofInput<'_>,
+    proof: ArrivalProof,
+) -> Result<AuthenticatedArrivalEvidence, ArrivalVerificationError> {
+    preflight_proof(input)?.check(proof)
 }
 
 async fn next_event_before(
@@ -353,6 +393,34 @@ mod tests {
                 "unexpected mismatch for {field}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn embedded_proof_uses_the_same_staged_save_and_nonce_checks() {
+        let staged = fixture_v2(7);
+        let expectation = expected(&staged);
+        let input = ArrivalProofInput {
+            expected_full_sav_sha256: expectation.full_sav_sha256,
+            staged_sav: &staged,
+            registry: registry(),
+            destination_world: expectation.destination_world,
+            expected_save_generation: expectation.save_generation,
+            expected_map_group: expectation.map_group,
+            expected_map_num: expectation.map_num,
+            persisted_nonce: expectation.nonce,
+        };
+        assert_eq!(
+            verify_arrival_proof(input, proof(expectation))
+                .unwrap()
+                .nonce,
+            expectation.nonce
+        );
+        let mut wrong = proof(expectation);
+        wrong.flash_sha256[0] ^= 1;
+        assert!(matches!(
+            verify_arrival_proof(input, wrong),
+            Err(ArrivalVerificationError::FlashDigestMismatch)
+        ));
     }
 
     #[tokio::test]

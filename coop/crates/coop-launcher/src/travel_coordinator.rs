@@ -160,6 +160,45 @@ pub async fn verify_staged_arrival(
     lease_fence: LeaseFenceIdentity,
     config: ArrivalVerificationConfig<'_>,
 ) -> Result<AuthenticatedArrivalEvidence, TravelCoordinatorError> {
+    validate_destination_rom(&config.mgba, config.catalog, staged.destination_world)?;
+    let registry = config.registry;
+    verify_staged_arrival_with(journal, staged, lease_fence, registry, |nonce| async move {
+        // The desktop verifier owns and reaps both child processes before it
+        // returns evidence. Android supplies its own embedded-core verifier.
+        Ok(verify_arrival(ArrivalVerificationInput {
+            expected_full_sav_sha256: staged.destination_save_sha256,
+            staged_sav: &staged.destination_save,
+            registry,
+            destination_world: staged.destination_world,
+            expected_save_generation: staged.destination_save_generation,
+            expected_map_group: staged.arrival_location[0],
+            expected_map_num: staged.arrival_location[1],
+            persisted_nonce: nonce,
+            workspace: config.workspace,
+            sidecar: config.sidecar,
+            mgba: config.mgba,
+            bridge_source: config.bridge_source,
+        })
+        .await?)
+    })
+    .await
+}
+
+/// Persist the exact destination nonce, then accept evidence only from a
+/// caller-owned offline ROM verifier that has confirmed native-core shutdown.
+/// The callback must authenticate the ROM observation against the staged save;
+/// the journal and all stage/nonce correlation remain owned here.
+pub async fn verify_staged_arrival_with<F, Fut>(
+    journal: &RomTravelJournal,
+    staged: &StagedDestination,
+    lease_fence: LeaseFenceIdentity,
+    registry: RegistryContract,
+    verifier: F,
+) -> Result<AuthenticatedArrivalEvidence, TravelCoordinatorError>
+where
+    F: FnOnce([u8; 16]) -> Fut,
+    Fut: Future<Output = Result<AuthenticatedArrivalEvidence, TravelCoordinatorError>>,
+{
     if Sha256Digest::of_bytes(&staged.destination_save) != staged.destination_save_sha256
         || staged.stage_id == staged.source_snapshot_id
         || staged.destination_save_generation == 0
@@ -167,8 +206,6 @@ pub async fn verify_staged_arrival(
     {
         return Err(TravelCoordinatorError::ResponseMismatch);
     }
-    validate_destination_rom(&config.mgba, config.catalog, staged.destination_world)?;
-
     let current = journal
         .read()?
         .ok_or(TravelCoordinatorError::ResponseMismatch)?;
@@ -189,32 +226,14 @@ pub async fn verify_staged_arrival(
             .arrival_nonce
             .ok_or(TravelCoordinatorError::ResponseMismatch)?,
         TravelPhase::ArrivalAcknowledged => {
-            return acknowledged_evidence(&current, staged, config.registry);
+            return acknowledged_evidence(&current, staged, registry);
         }
         _ => return Err(TravelCoordinatorError::ResponseMismatch),
     };
 
-    // `verify_arrival` writes the staged SAV into the caller-owned private
-    // workspace before starting either child. If it fails, the journal remains
-    // at DestinationReady/Launched and the exact nonce remains available for a
-    // later retry or reconciliation.
-    let evidence = verify_arrival(ArrivalVerificationInput {
-        expected_full_sav_sha256: staged.destination_save_sha256,
-        staged_sav: &staged.destination_save,
-        registry: config.registry,
-        destination_world: staged.destination_world,
-        expected_save_generation: staged.destination_save_generation,
-        expected_map_group: staged.arrival_location[0],
-        expected_map_num: staged.arrival_location[1],
-        persisted_nonce: nonce,
-        workspace: config.workspace,
-        sidecar: config.sidecar,
-        mgba: config.mgba,
-        bridge_source: config.bridge_source,
-    })
-    .await?;
-
-    record_verified_arrival(journal, staged, lease_fence, &evidence)?;
+    // Failure retains DestinationReady/Launched and its nonce for exact retry.
+    let evidence = verifier(nonce).await?;
+    record_verified_arrival(journal, staged, lease_fence, registry, &evidence)?;
     Ok(evidence)
 }
 
@@ -244,19 +263,20 @@ fn record_verified_arrival(
     journal: &RomTravelJournal,
     staged: &StagedDestination,
     lease_fence: LeaseFenceIdentity,
+    registry: RegistryContract,
     evidence: &AuthenticatedArrivalEvidence,
 ) -> Result<(), TravelCoordinatorError> {
     let current = journal
         .read()?
         .ok_or(TravelCoordinatorError::ResponseMismatch)?;
-    validate_verified_evidence(&current, staged, lease_fence, evidence)?;
+    validate_verified_evidence(&current, staged, lease_fence, registry, evidence)?;
     if current.phase == TravelPhase::DestinationReady {
         journal.launched(staged.checkpoint)?;
     }
     let current = journal
         .read()?
         .ok_or(TravelCoordinatorError::ResponseMismatch)?;
-    validate_verified_evidence(&current, staged, lease_fence, evidence)?;
+    validate_verified_evidence(&current, staged, lease_fence, registry, evidence)?;
     if current.phase == TravelPhase::Launched {
         journal.arrival_acknowledged(&ArrivalEvidence {
             checkpoint: staged.checkpoint,
@@ -320,9 +340,13 @@ fn validate_verified_evidence(
     record: &TravelRecord,
     staged: &StagedDestination,
     lease_fence: LeaseFenceIdentity,
+    registry: RegistryContract,
     evidence: &AuthenticatedArrivalEvidence,
 ) -> Result<(), TravelCoordinatorError> {
+    let parsed = parse_v2(&staged.destination_save, registry)
+        .map_err(|_| TravelCoordinatorError::ResponseMismatch)?;
     if evidence.full_sav_sha256 != staged.destination_save_sha256
+        || evidence.flash_sha256 != Sha256Digest::of_bytes(parsed.flash_bytes())
         || evidence.destination_world != staged.destination_world
         || evidence.save_generation != staged.destination_save_generation
         || (evidence.map_group, evidence.map_num)
@@ -1558,7 +1582,11 @@ mod tests {
     ) -> AuthenticatedArrivalEvidence {
         AuthenticatedArrivalEvidence {
             full_sav_sha256: staged.destination_save_sha256,
-            flash_sha256: Sha256Digest::from_bytes([9; 32]),
+            flash_sha256: Sha256Digest::of_bytes(
+                parse_v2(&staged.destination_save, registry())
+                    .unwrap()
+                    .flash_bytes(),
+            ),
             destination_world: staged.destination_world,
             save_generation: staged.destination_save_generation,
             map_group: staged.arrival_location[0],
@@ -1578,6 +1606,7 @@ mod tests {
             &fixture.1,
             &fixture.2,
             fixture.3,
+            registry(),
             &arrival_evidence(&fixture.2, [7; 16]),
         )
         .unwrap();
@@ -1774,6 +1803,7 @@ mod tests {
             &journal,
             &staged,
             fence,
+            registry(),
             &arrival_evidence(&staged, [7; 16]),
         )
         .unwrap();
@@ -1789,7 +1819,7 @@ mod tests {
         let (_root, journal, staged, fence) = arrival_fixture();
         let wrong = arrival_evidence(&staged, [8; 16]);
         assert!(matches!(
-            record_verified_arrival(&journal, &staged, fence, &wrong),
+            record_verified_arrival(&journal, &staged, fence, registry(), &wrong),
             Err(TravelCoordinatorError::ResponseMismatch)
         ));
         assert_eq!(
@@ -1800,9 +1830,50 @@ mod tests {
             &journal,
             &staged,
             fence,
+            registry(),
             &arrival_evidence(&staged, [7; 16]),
         )
         .unwrap();
+        assert_eq!(
+            journal.read().unwrap().unwrap().phase,
+            TravelPhase::ArrivalAcknowledged
+        );
+    }
+
+    #[tokio::test]
+    async fn embedded_verifier_failure_keeps_nonce_and_exact_retry_acknowledges() {
+        let (_root, journal, staged, fence) = arrival_fixture();
+        let failed = verify_staged_arrival_with(&journal, &staged, fence, registry(), |nonce| {
+            assert_eq!(nonce, [7; 16]);
+            async { Err(TravelCoordinatorError::Uncertain) }
+        })
+        .await;
+        assert!(matches!(failed, Err(TravelCoordinatorError::Uncertain)));
+        let record = journal.read().unwrap().unwrap();
+        assert_eq!(record.phase, TravelPhase::DestinationReady);
+        assert_eq!(record.arrival_nonce, Some([7; 16]));
+
+        let mut wrong_flash = arrival_evidence(&staged, [7; 16]);
+        wrong_flash.flash_sha256 = Sha256Digest::from_bytes([9; 32]);
+        assert!(matches!(
+            verify_staged_arrival_with(&journal, &staged, fence, registry(), |_| async {
+                Ok(wrong_flash)
+            })
+            .await,
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+        assert_eq!(
+            journal.read().unwrap().unwrap().phase,
+            TravelPhase::DestinationReady
+        );
+
+        let verified = verify_staged_arrival_with(&journal, &staged, fence, registry(), |nonce| {
+            let evidence = arrival_evidence(&staged, nonce);
+            async move { Ok(evidence) }
+        })
+        .await
+        .unwrap();
+        assert_eq!(verified.nonce, [7; 16]);
         assert_eq!(
             journal.read().unwrap().unwrap().phase,
             TravelPhase::ArrivalAcknowledged

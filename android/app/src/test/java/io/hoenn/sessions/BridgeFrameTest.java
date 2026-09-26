@@ -27,4 +27,17 @@ public class BridgeFrameTest {
         NativeBridge.validate(memory);memory[8]^=1;
         assertThrows(SecurityException.class,()->NativeBridge.validate(memory));
     }
+    @Test public void arrivalFramesAreLimitedToOfflineVerifier() {
+        BridgeFrame ready=BridgeFrame.decode(BridgeFrame.encode(1,1,0,new byte[0]),false);
+        BridgeFrame proof=BridgeFrame.decode(BridgeFrame.encode(0x13,2,0,new byte[32]),false);
+        BridgeFrame challenge=BridgeFrame.decode(BridgeFrame.encode(0x111,1,0,new byte[32]),true);
+        BridgeConnection.checkFrame(ready,0,false,true);
+        BridgeConnection.checkFrame(proof,0,false,true);
+        BridgeConnection.checkFrame(challenge,0,true,true);
+        assertThrows(SecurityException.class,()->BridgeConnection.checkFrame(ready,0,false,false));
+        assertThrows(SecurityException.class,()->BridgeConnection.checkFrame(proof,7,false,false));
+        assertThrows(SecurityException.class,()->BridgeConnection.checkFrame(challenge,7,true,false));
+        assertThrows(SecurityException.class,()->BridgeConnection.checkFrame(BridgeFrame.decode(BridgeFrame.encode(0x100,1,0,new byte[0]),true),0,true,true));
+        assertThrows(SecurityException.class,()->BridgeConnection.checkFrame(BridgeFrame.decode(BridgeFrame.encode(13,1,0,new byte[4]),false),0,false,true));
+    }
 }

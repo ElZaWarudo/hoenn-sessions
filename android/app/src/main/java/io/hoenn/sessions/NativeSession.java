@@ -8,4 +8,5 @@ final class NativeSession {
     static native boolean isActive();
     static native boolean reconnect();
     static native void signOut();
+    static native void arrivalVerifierClosed(long verificationId, boolean success, String reason);
 }

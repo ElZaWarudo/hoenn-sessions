@@ -45,6 +45,7 @@ final class GameRenderer extends View implements Runnable {
     void setSmoothPixels(boolean value) { paint.setFilterBitmap(value); invalidate(); }
     void start() { if (thread != null && thread.isAlive()) return; stop = false; thread = new Thread(this, "gba-frame"); thread.start(); }
     void stop() { stop = true; if (thread != null) { try { thread.join(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } } }
+    boolean isRunning() { return thread != null && thread.isAlive(); }
 
     @Override public void run() {
         AudioSink audio = null;

@@ -37,7 +37,10 @@ final class NativeBridge {
         }
     }
     static boolean pushInbound(byte[] frame,long serverEpoch) {
-        if(serverEpoch<=0 || serverEpoch>0xffffffffL || BridgeFrame.decode(frame,true).epoch!=serverEpoch)throw new SecurityException("Epoch del bridge inválido");
+        return pushInbound(frame,serverEpoch,false);
+    }
+    static boolean pushInbound(byte[] frame,long serverEpoch,boolean arrivalVerifier) {
+        if(serverEpoch<0 || (!arrivalVerifier && serverEpoch==0) || (arrivalVerifier && serverEpoch!=0) || serverEpoch>0xffffffffL || BridgeFrame.decode(frame,true).epoch!=serverEpoch)throw new SecurityException("Epoch del bridge inválido");
         synchronized(NativeCore.class) {validate(NativeCore.bridgeHeader());return NativeCore.bridgePush(frame);}
     }
 }
