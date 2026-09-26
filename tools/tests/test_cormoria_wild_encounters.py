@@ -66,7 +66,10 @@ class CormoriaPinnedWildEncounterTests(unittest.TestCase):
         targets = {row["map"] for row in self.records}
         retained = [row for row in current["wild_encounter_groups"][0]["encounters"]
                     if row.get("map") not in targets]
-        self.assertEqual(retained, baseline["wild_encounter_groups"][0]["encounters"])
+        baseline_host = [row for row in baseline["wild_encounter_groups"][0]["encounters"]
+                         if row.get("map") not in targets]
+        self.assertEqual(retained, baseline_host)
+        self.assertEqual(current["wild_encounter_groups"][0]["encounters"][-len(self.records):], self.records)
         self.assertEqual(current["wild_encounter_groups"][0]["fields"], baseline["wild_encounter_groups"][0]["fields"])
 
     def test_generated_table_is_current(self):
