@@ -9,6 +9,20 @@ LilycoveCity_Harbor_OnTransition:
 LilycoveCity_Harbor_EventScript_FerryAttendant::
 	lock
 	faceplayer
+	callnative CoopNetBridge_ScriptPortalAvailable
+	goto_if_eq VAR_RESULT, FALSE, LilycoveCity_Harbor_EventScript_FerryExisting
+	msgbox LilycoveCity_Harbor_Text_CormoriaVoyage, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryExisting
+	callnative CoopNetBridge_ScriptTravelToCormoria
+	goto_if_eq VAR_RESULT, FALSE, LilycoveCity_Harbor_EventScript_CormoriaUnavailable
+	msgbox LilycoveCity_Harbor_Text_CormoriaPreparing, MSGBOX_DEFAULT
+	special CoopPortalSaveGame
+	waitstate
+	goto_if_eq VAR_RESULT, FALSE, LilycoveCity_Harbor_EventScript_CormoriaUnavailable
+	release
+	end
+
+LilycoveCity_Harbor_EventScript_FerryExisting::
 	goto_if_unset FLAG_SYS_GAME_CLEAR, LilycoveCity_Harbor_EventScript_FerryUnavailable
 	call LilycoveCity_Harbor_EventScript_GetEonTicketState
 	call LilycoveCity_Harbor_EventScript_GetAuroraTicketState
@@ -343,6 +357,11 @@ LilycoveCity_Harbor_EventScript_FerryUnavailable::
 	release
 	end
 
+LilycoveCity_Harbor_EventScript_CormoriaUnavailable::
+	msgbox LilycoveCity_Harbor_Text_CormoriaUnavailable, MSGBOX_DEFAULT
+	release
+	end
+
 LilycoveCity_Harbor_EventScript_NoEventTickets::
 	msgbox LilycoveCity_Harbor_Text_MayISeeYourTicket, MSGBOX_DEFAULT
 	message LilycoveCity_Harbor_Text_FlashTicketWhereTo
@@ -541,6 +560,17 @@ LilycoveCity_Harbor_Text_FerryUnavailable:
 	.string "You're looking for a ship?\p"
 	.string "I'm sorry, the ferry service isn't\n"
 	.string "available at present…$"
+
+LilycoveCity_Harbor_Text_CormoriaVoyage:
+	.string "Would you like to sail to CORMORIA?$"
+
+LilycoveCity_Harbor_Text_CormoriaPreparing:
+	.string "We'll prepare your voyage. Please wait\n"
+	.string "while your progress is saved.$"
+
+LilycoveCity_Harbor_Text_CormoriaUnavailable:
+	.string "We can't depart just now. Please try\n"
+	.string "again once your session is ready.$"
 
 LilycoveCity_Harbor_Text_MayISeeYourTicket:
 	.string "Hello, are you here for the ferry?\n"

@@ -205,6 +205,11 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestCheckpoint(void);
  * before CHECKPOINT_READY; no travel occurs before the saved checkpoint is
  * authenticated and committed by the host. */
 enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *portal_id);
+/* Event-script entry points set VAR_RESULT to TRUE only after the portal
+ * request has been queued; the host completes travel after a saved checkpoint. */
+void CoopNetBridge_ScriptPortalAvailable(void);
+void CoopNetBridge_ScriptTravelToCormoria(void);
+void CoopNetBridge_ScriptTravelToMain(void);
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void);
 bool8 CoopNetBridge_IsCheckpointAuthorizedForSave(void);
 /* Called by the normal save path after TrySavingData has completed. A failed

@@ -1,4 +1,5 @@
 #include "global.h"
+#include "event_data.h"
 #include "coop/arrival_proof.h"
 #include "coop/net_bridge.h"
 #include "coop/group_travel.h"
@@ -684,6 +685,21 @@ enum CoopCheckpointRequestResult CoopNetBridge_RequestPortalTravel(const char *p
     if (portal_id == NULL)
         return COOP_CHECKPOINT_REQUEST_REJECTED;
     return RequestCheckpoint(portal_id);
+}
+
+void CoopNetBridge_ScriptPortalAvailable(void)
+{
+    gSpecialVar_Result = CoopNetBridge_IsCloudMode();
+}
+
+void CoopNetBridge_ScriptTravelToCormoria(void)
+{
+    gSpecialVar_Result = CoopNetBridge_RequestPortalTravel("to_cormoria") == COOP_CHECKPOINT_REQUEST_STARTED;
+}
+
+void CoopNetBridge_ScriptTravelToMain(void)
+{
+    gSpecialVar_Result = CoopNetBridge_RequestPortalTravel("to_main") == COOP_CHECKPOINT_REQUEST_STARTED;
 }
 
 bool8 CoopNetBridge_ConsumeCheckpointGrant(void)

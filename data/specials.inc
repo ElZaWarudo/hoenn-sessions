@@ -693,3 +693,4 @@ gSpecials::
 	def_special StartMining
 	def_special StartBlockStacker
 #endif
+	def_special CoopPortalSaveGame

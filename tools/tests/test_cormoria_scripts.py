@@ -105,6 +105,13 @@ class ScriptPreviewTests(unittest.TestCase):
         self.assertIn("setflag Cormoria_FLAG_VISITED_RIVETSHORE_RANGER", script)
         self.assertNotIn("setflag FLAG_VISITED_RIVETSHORE_RANGER", script)
 
+    def test_rivetshore_return_portal_survives_regeneration(self) -> None:
+        relative = "data/cormoria/maps/RivetshoreCity_Harbor/scripts.inc"
+        script = self.preview[relative]
+        self.assertEqual(script, (register_scripts.ROOT / relative).read_bytes())
+        self.assertIn(b"callnative CoopNetBridge_ScriptTravelToMain", script)
+        self.assertIn(b"Cormoria_RivetshoreCity_Harbor_Attendant_Original::", script)
+
     def test_deterministic_bytes(self) -> None:
         self.assertEqual(self.preview, register_scripts.build_preview(STAGE))
 

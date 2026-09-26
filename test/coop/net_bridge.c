@@ -6,6 +6,7 @@
 #include "coop/presence_runtime.h"
 #include "coop/region.h"
 #include "coop/save.h"
+#include "event_data.h"
 #include "gba/flash_internal.h"
 #include "fieldmap.h"
 #include "load_save.h"
@@ -945,6 +946,40 @@ TEST("Cloud Coop portal request validates stable ID and precedes checkpoint read
     EXPECT_EQ(message.session_epoch, 17);
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     EXPECT_EQ(CoopNetBridge_RequestPortalTravel("to_cormoria"), COOP_CHECKPOINT_REQUEST_REJECTED);
+}
+
+TEST("Harbor script portals queue their fixed world routes only in cloud mode")
+{
+    struct CoopBridgeMessage message;
+
+    InitTestBridge();
+    CoopNetBridge_ScriptPortalAvailable();
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    CoopNetBridge_ScriptTravelToCormoria();
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EstablishTestCloudSession();
+    CoopNetBridge_ScriptPortalAvailable();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    CoopNetBridge_ScriptTravelToCormoria();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 11);
+    EXPECT(memcmp(message.payload, "to_cormoria", 11) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
+
+    EstablishTestCloudSession();
+    CoopNetBridge_ScriptTravelToMain();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_PORTAL_TRAVEL_REQUEST);
+    EXPECT_EQ(message.length, 7);
+    EXPECT(memcmp(message.payload, "to_main", 7) == 0);
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_CHECKPOINT_READY);
 }
 
 TEST("Cloud Coop portal request rejects overlong ID without publishing intent")

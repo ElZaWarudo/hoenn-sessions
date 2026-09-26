@@ -38,7 +38,10 @@ fn run() -> Result<(), &'static str> {
         coop_protocol::IDENTITY_REGISTRY_VERSION,
         coop_protocol::IDENTITY_REGISTRY_DIGEST,
     );
-    let save = coop_save::parse_v2(&bytes, registry).map_err(|_| "invalid V2 arrival save")?;
+    let save = coop_save::parse_v2(&bytes, registry).map_err(|error| {
+        eprintln!("arrival save parse detail: {error}");
+        "invalid V2 arrival save"
+    })?;
     if !save.coop().online_eligible() {
         return Err("arrival save is not online eligible");
     }

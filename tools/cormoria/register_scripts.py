@@ -27,6 +27,7 @@ TOKEN = re.compile(r'\b[A-Za-z_][A-Za-z_0-9]*\b')
 QUOTED = re.compile(r'("(?:\\.|[^"\\])*")')
 GIVEMON_SHINY = re.compile(r'(?m)(^\s*givemon\b[^\n]*?)\bisShiny\s*=\s*(TRUE|FALSE)\b')
 GACHA_TOKEN_SETTLEMENT = "data/maps/GalecrestCity_GameCorner/scripts.inc"
+RIVETSHORE_HARBOR = "data/maps/RivetshoreCity_Harbor/scripts.inc"
 
 
 class ScriptRegistrationError(ValueError):
@@ -218,12 +219,27 @@ def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
                                "FLAG_VISITED_RIVETSHORE_RANGER":
                                    "Cormoria_FLAG_VISITED_RIVETSHORE_RANGER"})
         rewritten, gift_count = _adapt_givemon_shininess(rewritten)
+        overlay_labels: set[str] = set()
+        if relative == RIVETSHORE_HARBOR:
+            old_attendant = (
+                "Cormoria_RivetshoreCity_Harbor_Attendant::\n"
+                '# 19 "data//maps/RivetshoreCity_Harbor/scripts.pory"\n'
+                "\tmsgbox Cormoria_RivetshoreCity_Harbor_Attendant_Text_0, MSGBOX_NPC\n"
+                "\tend"
+            )
+            if rewritten.count(old_attendant) != 1:
+                raise ScriptRegistrationError("Rivetshore harbor attendant script drift")
+            overlay_path = root / "tools/cormoria/rivetshore_portal_overlay.inc"
+            overlay = overlay_path.read_text(encoding="utf-8").rstrip()
+            overlay_labels = set(_definitions(overlay, str(overlay_path)))
+            rewritten = rewritten.replace(old_attendant, overlay)
         donor_gacha_token_references += texts[relative].count("removeitem ITEM_GACHA_TOKEN")
         if relative == GACHA_TOKEN_SETTLEMENT:
             rewritten, transformed = _adapt_gacha_token_settlement(rewritten)
             gacha_token_transformations += transformed
         shiny_gifts += gift_count
         expected_labels = {labels[name] for name in _definitions(texts[relative], relative)}
+        expected_labels.update(overlay_labels)
         if set(_definitions(rewritten, target)) != expected_labels:
             raise ScriptRegistrationError(f"script label rewrite failed: {relative}")
         rendered[target] = rewritten.encode("utf-8")
