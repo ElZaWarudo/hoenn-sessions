@@ -82,7 +82,9 @@ fn usage() -> &'static str {
      coop-release-tool check-key --public-key-hex HEX [--seed-env ENV]\n\
      coop-release-tool sign-game --release-id ID --sequence N --issued-at UNIX --expires-at UNIX \
      --key-id ID --public-key-hex HEX --output PATH --artifact rom=PATH \
-     --artifact compatibility-manifest=PATH\n\
+     --artifact compatibility-manifest=PATH [--artifact region-catalog=PATH \
+     --artifact world-1-rom=PATH --artifact world-1-compatibility=PATH \
+     --artifact world-1-player-transfer=PATH ...]\n\
      coop-release-tool verify-game --envelope PATH --key-id ID --public-key-hex HEX"
 }
 
@@ -364,23 +366,14 @@ fn validate_game(
         || (require_fresh && descriptor.expires_at <= now)
         || descriptor.expires_at <= descriptor.issued_at
         || descriptor.expires_at.saturating_sub(descriptor.issued_at) > 90 * 24 * 60 * 60
-        || descriptor.artifacts.len() != 2
     {
         return Err(ToolError::Input("invalid game descriptor".to_owned()));
     }
-    for (artifact, expected) in descriptor
-        .artifacts
-        .iter()
-        .zip(["rom", "compatibility-manifest"])
-    {
-        let maximum = if expected == "rom" {
-            64 * 1024 * 1024
-        } else {
-            1024 * 1024
-        };
-        if artifact.id != expected
+    let order = game_artifact_order(descriptor.artifacts.iter().map(|a| a.id.as_str()))?;
+    for (artifact, expected) in descriptor.artifacts.iter().zip(&order) {
+        if artifact.id != *expected
             || artifact.size == 0
-            || artifact.size > maximum
+            || artifact.size > game_artifact_maximum(&artifact.id)
             || artifact.sha256.len() != 64
             || !artifact
                 .sha256
@@ -390,17 +383,77 @@ fn validate_game(
             return Err(ToolError::Input("invalid game artifact".to_owned()));
         }
     }
+    if order.len() > 2 {
+        let rom = &descriptor.artifacts[0];
+        let manifest = &descriptor.artifacts[1];
+        let world_rom = &descriptor.artifacts[3];
+        let world_manifest = &descriptor.artifacts[4];
+        if (rom.size, &rom.sha256) != (world_rom.size, &world_rom.sha256)
+            || (manifest.size, &manifest.sha256) != (world_manifest.size, &world_manifest.sha256)
+        {
+            return Err(ToolError::Input(
+                "world 1 differs from base game".to_owned(),
+            ));
+        }
+    }
     Ok(())
 }
 
-fn game_artifact_paths(values: &[String]) -> Result<[PathBuf; 2], ToolError> {
-    if values.len() != 2 {
-        return Err(ToolError::Input(
-            "exactly two game artifacts are required".to_owned(),
-        ));
+fn game_artifact_order<'a>(
+    ids: impl IntoIterator<Item = &'a str>,
+) -> Result<Vec<String>, ToolError> {
+    let ids = ids.into_iter().collect::<Vec<_>>();
+    let mut worlds = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    for id in &ids {
+        if !seen.insert(*id) {
+            return Err(ToolError::Input("duplicate game artifact".to_owned()));
+        }
+        if *id == "rom" || *id == "compatibility-manifest" || *id == "region-catalog" {
+            continue;
+        }
+        let rest = id
+            .strip_prefix("world-")
+            .ok_or_else(|| ToolError::Input(format!("unknown game artifact: {id}")))?;
+        let (number, kind) = rest
+            .split_once('-')
+            .ok_or_else(|| ToolError::Input(format!("invalid world artifact: {id}")))?;
+        let world: u16 = number
+            .parse()
+            .map_err(|_| ToolError::Input(format!("invalid world id: {id}")))?;
+        if world == 0
+            || number != world.to_string()
+            || !matches!(kind, "rom" | "compatibility" | "player-transfer")
+        {
+            return Err(ToolError::Input(format!(
+                "noncanonical world artifact: {id}"
+            )));
+        }
+        worlds.insert(world);
     }
-    let mut rom = None;
-    let mut manifest = None;
+    if worlds.len() > 16 {
+        return Err(ToolError::Input("too many game worlds".to_owned()));
+    }
+    let mut expected = vec!["rom".to_owned(), "compatibility-manifest".to_owned()];
+    if !worlds.is_empty() {
+        if !worlds.contains(&1) {
+            return Err(ToolError::Input("world 1 is required".to_owned()));
+        }
+        expected.push("region-catalog".to_owned());
+        for world in worlds {
+            for kind in ["rom", "compatibility", "player-transfer"] {
+                expected.push(format!("world-{world}-{kind}"));
+            }
+        }
+    }
+    if seen != expected.iter().map(String::as_str).collect() {
+        return Err(ToolError::Input("incomplete game artifact set".to_owned()));
+    }
+    Ok(expected)
+}
+
+fn game_artifact_paths(values: &[String]) -> Result<BTreeMap<String, PathBuf>, ToolError> {
+    let mut paths = BTreeMap::new();
     for value in values {
         let (id, path) = value
             .split_once('=')
@@ -408,25 +461,26 @@ fn game_artifact_paths(values: &[String]) -> Result<[PathBuf; 2], ToolError> {
         if path.is_empty() {
             return Err(ToolError::Input("empty artifact path".to_owned()));
         }
-        match id {
-            "rom" if rom.is_none() => rom = Some(PathBuf::from(path)),
-            "compatibility-manifest" if manifest.is_none() => manifest = Some(PathBuf::from(path)),
-            _ => {
-                return Err(ToolError::Input(
-                    "duplicate or unknown game artifact".to_owned(),
-                ));
-            }
+        if paths.insert(id.to_owned(), PathBuf::from(path)).is_some() {
+            return Err(ToolError::Input("duplicate game artifact".to_owned()));
         }
     }
-    Ok([rom.unwrap(), manifest.unwrap()])
+    game_artifact_order(paths.keys().map(String::as_str))?;
+    Ok(paths)
+}
+
+fn game_artifact_maximum(id: &str) -> u64 {
+    if id == "rom" || id.ends_with("-rom") {
+        64 * 1024 * 1024
+    } else if id == "region-catalog" {
+        256 * 1024
+    } else {
+        1024 * 1024
+    }
 }
 
 fn hash_game_artifact(id: &str, path: &Path) -> Result<GameArtifact, ToolError> {
-    let maximum = if id == "rom" {
-        64 * 1024 * 1024
-    } else {
-        1024 * 1024
-    };
+    let maximum = game_artifact_maximum(id);
     let metadata = fs::symlink_metadata(path).map_err(|_| ToolError::Artifact(path.to_owned()))?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(ToolError::Artifact(path.to_owned()));
@@ -481,7 +535,17 @@ fn game_key(options: &Options) -> Result<SigningKey, ToolError> {
 }
 
 fn sign_game(options: Options) -> Result<(), ToolError> {
+    let key = game_key(&options)?;
+    sign_game_with_key(options, &key)
+}
+
+fn sign_game_with_key(options: Options, key: &SigningKey) -> Result<(), ToolError> {
     let paths = game_artifact_paths(&options.artifacts)?;
+    let order = game_artifact_order(paths.keys().map(String::as_str))?;
+    let artifacts = order
+        .iter()
+        .map(|id| hash_game_artifact(id, &paths[id]))
+        .collect::<Result<Vec<_>, _>>()?;
     let descriptor = GameDescriptor {
         schema: 1,
         release_id: required(options.release_id.clone(), "--release-id")?,
@@ -489,16 +553,13 @@ fn sign_game(options: Options) -> Result<(), ToolError> {
         issued_at: required(options.issued_at, "--issued-at")?,
         expires_at: required(options.expires_at, "--expires-at")?,
         platform: "game".to_owned(),
-        artifacts: vec![
-            hash_game_artifact("rom", &paths[0])?,
-            hash_game_artifact("compatibility-manifest", &paths[1])?,
-        ],
+        artifacts,
     };
     validate_game(&descriptor, descriptor.issued_at, true)?;
     let key_id = env_or_option(options.key_id.clone(), "--key-id", DEFAULT_KEY_ID_ENV)?;
     let payload =
         serde_jcs::to_vec(&descriptor).map_err(|e| ToolError::CanonicalJcs(e.to_string()))?;
-    let envelope = SignedReleaseEnvelope::sign_payload(&payload, key_id, &game_key(&options)?)
+    let envelope = SignedReleaseEnvelope::sign_payload(&payload, key_id, key)
         .map_err(|e| ToolError::Input(e.to_string()))?;
     write_new(&required(options.output, "--output")?, &envelope)?;
     println!("signed game envelope for {}", descriptor.release_id);
@@ -747,6 +808,201 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn artifact(id: &str, byte: u8) -> GameArtifact {
+        GameArtifact {
+            id: id.to_owned(),
+            size: 1,
+            sha256: hex_digest([byte; 32]),
+        }
+    }
+
+    fn game_descriptor() -> GameDescriptor {
+        GameDescriptor {
+            schema: 1,
+            release_id: "test-region".to_owned(),
+            sequence: 1,
+            issued_at: 1_700_000_000,
+            expires_at: 1_700_086_400,
+            platform: "game".to_owned(),
+            artifacts: vec![
+                artifact("rom", 1),
+                artifact("compatibility-manifest", 2),
+                artifact("region-catalog", 3),
+                artifact("world-1-rom", 1),
+                artifact("world-1-compatibility", 2),
+                artifact("world-1-player-transfer", 4),
+                artifact("world-2-rom", 5),
+                artifact("world-2-compatibility", 6),
+                artifact("world-2-player-transfer", 7),
+            ],
+        }
+    }
+
+    #[test]
+    fn game_envelope_accepts_legacy_and_canonical_multiworld() {
+        let descriptor = game_descriptor();
+        validate_game(&descriptor, descriptor.issued_at, true).unwrap();
+        let mut legacy = game_descriptor();
+        legacy.artifacts.truncate(2);
+        validate_game(&legacy, legacy.issued_at, true).unwrap();
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let dir = tempfile::tempdir().unwrap();
+        for (index, descriptor) in [legacy, descriptor].into_iter().enumerate() {
+            let payload = serde_jcs::to_vec(&descriptor).unwrap();
+            let signed =
+                SignedReleaseEnvelope::sign_payload(&payload, "test-key".to_owned(), &key).unwrap();
+            let path = dir.path().join(format!("{index}.json"));
+            write_new(&path, &signed).unwrap();
+            verify_game(Options {
+                envelope: Some(path),
+                key_id: Some("test-key".to_owned()),
+                public_key_hex: Some(hex_digest(key.verifying_key().to_bytes())),
+                allow_expired: true,
+                ..Options::default()
+            })
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn sign_game_hashes_and_verifies_real_multiworld_files() {
+        let key = SigningKey::from_bytes(&[9; 32]);
+        let dir = tempfile::tempdir().unwrap();
+        let mut values = Vec::new();
+        for (index, id) in [
+            "rom",
+            "compatibility-manifest",
+            "region-catalog",
+            "world-1-player-transfer",
+            "world-2-rom",
+            "world-2-compatibility",
+            "world-2-player-transfer",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let path = dir.path().join(format!("artifact-{index}"));
+            fs::write(&path, [index as u8 + 1]).unwrap();
+            values.push(format!("{}={}", id, path.display()));
+            if id == "rom" {
+                values.push(format!("world-1-rom={}", path.display()));
+            } else if id == "compatibility-manifest" {
+                values.push(format!("world-1-compatibility={}", path.display()));
+            }
+        }
+        values.reverse(); // Signing must emit canonical order regardless of CLI order.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let envelope_path = dir.path().join("signed.json");
+        sign_game_with_key(
+            Options {
+                release_id: Some("local-test".to_owned()),
+                sequence: Some(1),
+                issued_at: Some(now),
+                expires_at: Some(now + 3600),
+                key_id: Some("local-key".to_owned()),
+                public_key_hex: Some(hex_digest(key.verifying_key().to_bytes())),
+                output: Some(envelope_path.clone()),
+                artifacts: values,
+                ..Options::default()
+            },
+            &key,
+        )
+        .unwrap();
+        verify_game(Options {
+            envelope: Some(envelope_path.clone()),
+            key_id: Some("local-key".to_owned()),
+            public_key_hex: Some(hex_digest(key.verifying_key().to_bytes())),
+            ..Options::default()
+        })
+        .unwrap();
+        let signed: SignedReleaseEnvelope =
+            serde_json::from_slice(&fs::read(envelope_path).unwrap()).unwrap();
+        let payload = BASE64.decode(signed.payload).unwrap();
+        let descriptor: GameDescriptor = serde_json::from_slice(&payload).unwrap();
+        let ids = descriptor
+            .artifacts
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ids,
+            game_artifact_order(ids.iter().copied())
+                .unwrap()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn game_artifact_paths_reject_malformed_sets() {
+        let valid = game_descriptor()
+            .artifacts
+            .into_iter()
+            .map(|artifact| format!("{}=unused", artifact.id))
+            .collect::<Vec<_>>();
+        let paths = game_artifact_paths(&valid).unwrap();
+        let order = game_artifact_order(paths.keys().map(String::as_str)).unwrap();
+        assert_eq!(order[3], "world-1-rom");
+        assert_eq!(order.last().unwrap(), "world-2-player-transfer");
+        for bad in [
+            "world-0-rom",
+            "world-01-rom",
+            "world-65536-rom",
+            "world-1-rom-extra",
+            "world-+1-rom",
+            "world-2-unknown",
+            "other",
+        ] {
+            let mut values = valid.clone();
+            values.push(format!("{bad}=unused"));
+            assert!(game_artifact_paths(&values).is_err(), "{bad}");
+        }
+        for removed in [
+            "rom",
+            "region-catalog",
+            "world-1-player-transfer",
+            "world-2-rom",
+        ] {
+            let values = valid
+                .iter()
+                .filter(|v| !v.starts_with(&format!("{removed}=")))
+                .cloned()
+                .collect::<Vec<_>>();
+            assert!(game_artifact_paths(&values).is_err(), "{removed}");
+        }
+        let mut duplicate = valid.clone();
+        duplicate.push(valid[0].clone());
+        assert!(game_artifact_paths(&duplicate).is_err());
+        let mut too_many = valid[..6].to_vec();
+        for world in 2..=17 {
+            for kind in ["rom", "compatibility", "player-transfer"] {
+                too_many.push(format!("world-{world}-{kind}=unused"));
+            }
+        }
+        assert!(game_artifact_paths(&too_many).is_err());
+    }
+
+    #[test]
+    fn game_descriptor_rejects_reordered_mismatch_and_oversize() {
+        let base = game_descriptor();
+        let now = base.issued_at;
+        let mut reordered = game_descriptor();
+        reordered.artifacts.swap(3, 4);
+        assert!(validate_game(&reordered, now, true).is_err());
+        let mut mismatch = game_descriptor();
+        mismatch.artifacts[3].sha256 = hex_digest([8; 32]);
+        assert!(validate_game(&mismatch, now, true).is_err());
+        for (index, limit) in [(0, 64 * 1024 * 1024), (2, 256 * 1024), (8, 1024 * 1024)] {
+            let mut oversized = game_descriptor();
+            oversized.artifacts[index].size = limit + 1;
+            assert!(validate_game(&oversized, now, true).is_err());
+        }
+    }
 
     #[test]
     fn accepts_complete_multiworld_artifacts_in_canonical_order() {
