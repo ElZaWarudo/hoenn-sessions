@@ -75,6 +75,9 @@ jobs:
           python3 tools/coop/map_binding_manifest.py \
             --elf pokeemerald.elf --rom pokeemerald.gba \
             --manifest dist/multiworld/main/map_binding_manifest.json
+          python3 tools/coop/object_contract_manifest.py \
+            --elf pokeemerald.elf --rom pokeemerald.gba \
+            --manifest dist/multiworld/main/object_scalar_manifest.json
 
       - name: Build Cormoria and its manifests
         run: |
@@ -95,6 +98,9 @@ jobs:
           python3 tools/coop/map_binding_manifest.py \
             --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
             --manifest dist/multiworld/cormoria/map_binding_manifest.json
+          python3 tools/coop/object_contract_manifest.py \
+            --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
+            --manifest dist/multiworld/cormoria/object_scalar_manifest.json
 
       - name: Verify both world builds
         run: |
@@ -106,9 +112,11 @@ jobs:
           from tools.coop.player_transfer_manifest import require_same_transfer_schema
           from tools.coop.experience_table_manifest import require_same_experience_tables
           from tools.coop.map_binding_manifest import verify_arrival
+          from tools.coop.object_contract_manifest import require_same_scalar_tables
 
           worlds = {}
           experience_tables = {}
+          scalar_tables = {}
           arrivals = {"main": (13, 10, 88), "cormoria": (82, 21, 1314)}
           for name, game_code in (("main", b"BPEE"), ("cormoria", b"BPCO")):
               root = Path("dist/multiworld") / name
@@ -120,19 +128,24 @@ jobs:
               transfer = json.loads((root / "player_transfer_manifest.json").read_text())
               experience = json.loads((root / "experience_table_manifest.json").read_text())
               map_binding = json.loads((root / "map_binding_manifest.json").read_text())
+              object_scalar = json.loads((root / "object_scalar_manifest.json").read_text())
               assert bridge["game_build"]["rom_sha256"] == digest, f"{name} bridge/ROM mismatch"
               assert transfer["rom_sha256"] == digest, f"{name} transfer/ROM mismatch"
               assert experience["rom_sha256"] == digest, f"{name} experience/ROM mismatch"
               assert map_binding["rom_sha256"] == digest, f"{name} map binding/ROM mismatch"
+              assert object_scalar["rom_sha256"] == digest, f"{name} object scalar/ROM mismatch"
               verify_arrival(rom, map_binding, *arrivals[name])
               worlds[name] = transfer
               experience_tables[name] = experience
+              scalar_tables[name] = object_scalar
               print(f"{name}: {len(rom)} bytes, sha256={digest}")
           assert worlds["main"]["rom_sha256"] != worlds["cormoria"]["rom_sha256"], "world ROMs are identical"
           require_same_transfer_schema(worlds)
           require_same_experience_tables(experience_tables)
+          require_same_scalar_tables(scalar_tables)
           print("Both ROMs share the pinned player-transfer schema")
           print("Both ROMs share the linked experience progression table")
+          print("Both ROMs share the linked shared-object scalar bytes")
           PY
 
       - name: Retain ROMs and manifests for emulator verification
@@ -145,12 +158,14 @@ jobs:
             dist/multiworld/main/player_transfer_manifest.json
             dist/multiworld/main/experience_table_manifest.json
             dist/multiworld/main/map_binding_manifest.json
+            dist/multiworld/main/object_scalar_manifest.json
             dist/multiworld/main/generated_addresses.lua
             dist/multiworld/cormoria/game.gba
             dist/multiworld/cormoria/bridge_manifest.json
             dist/multiworld/cormoria/player_transfer_manifest.json
             dist/multiworld/cormoria/experience_table_manifest.json
             dist/multiworld/cormoria/map_binding_manifest.json
+            dist/multiworld/cormoria/object_scalar_manifest.json
             dist/multiworld/cormoria/generated_addresses.lua
           if-no-files-found: error
           retention-days: 2
