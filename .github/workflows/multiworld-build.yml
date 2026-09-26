@@ -105,9 +105,11 @@ jobs:
 
           from tools.coop.player_transfer_manifest import require_same_transfer_schema
           from tools.coop.experience_table_manifest import require_same_experience_tables
+          from tools.coop.map_binding_manifest import verify_arrival
 
           worlds = {}
           experience_tables = {}
+          arrivals = {"main": (13, 10, 88), "cormoria": (82, 21, 1314)}
           for name, game_code in (("main", b"BPEE"), ("cormoria", b"BPCO")):
               root = Path("dist/multiworld") / name
               rom = (root / "game.gba").read_bytes()
@@ -122,6 +124,7 @@ jobs:
               assert transfer["rom_sha256"] == digest, f"{name} transfer/ROM mismatch"
               assert experience["rom_sha256"] == digest, f"{name} experience/ROM mismatch"
               assert map_binding["rom_sha256"] == digest, f"{name} map binding/ROM mismatch"
+              verify_arrival(rom, map_binding, *arrivals[name])
               worlds[name] = transfer
               experience_tables[name] = experience
               print(f"{name}: {len(rom)} bytes, sha256={digest}")
