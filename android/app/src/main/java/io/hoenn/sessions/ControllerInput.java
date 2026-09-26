@@ -5,6 +5,7 @@ import android.view.InputDevice;
 
 final class ControllerInput {
     static final float DEFAULT_DEAD_ZONE = 0.25f;
+    static final int MENU = 1024, FAST_FORWARD = 2048;
     static final int[] ACTIONS = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512};
     private static final int[] DEFAULT_KEYS = {
         KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
@@ -14,6 +15,7 @@ final class ControllerInput {
         KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_L1
     };
     private final int[] bindings = DEFAULT_KEYS.clone();
+    private int menuKey = KeyEvent.KEYCODE_BUTTON_MODE, fastForwardKey = KeyEvent.KEYCODE_BUTTON_R2;
     private float deadZone = DEFAULT_DEAD_ZONE;
     private boolean leftStickEnabled = true;
     private static final int RIGHT = 16, LEFT = 32, UP = 64, DOWN = 128;
@@ -62,10 +64,15 @@ final class ControllerInput {
     }
 
     synchronized int keys() {
-        return axes | pressedButtons;
+        return axes | (pressedButtons & 1023);
     }
 
+    synchronized boolean menuPressed(){return (pressedButtons&MENU)!=0;}
+    synchronized boolean fastForwardHeld(){return (pressedButtons&FAST_FORWARD)!=0;}
+
     synchronized int mappedButton(int keyCode) {
+        if(menuKey==keyCode)return MENU;
+        if(fastForwardKey==keyCode)return FAST_FORWARD;
         for (int i = 0; i < bindings.length; i++) {
             if (bindings[i] == keyCode) return ACTIONS[i];
         }
@@ -73,17 +80,22 @@ final class ControllerInput {
     }
 
     synchronized int keyCodeFor(int action) {
+        if(action==MENU)return menuKey;
+        if(action==FAST_FORWARD)return fastForwardKey;
         return bindings[actionIndex(action)];
     }
 
     synchronized void remap(int action, int keyCode) {
         if (keyCode <= KeyEvent.KEYCODE_UNKNOWN) throw new IllegalArgumentException("Invalid key code");
-        int index = actionIndex(action);
-        int previous = bindings[index];
+        int previous = keyCodeFor(action);
         for (int i = 0; i < bindings.length; i++) {
             if (bindings[i] == keyCode) bindings[i] = previous;
         }
-        bindings[index] = keyCode;
+        if(menuKey==keyCode)menuKey=previous;
+        if(fastForwardKey==keyCode)fastForwardKey=previous;
+        if(action==MENU)menuKey=keyCode;
+        else if(action==FAST_FORWARD)fastForwardKey=keyCode;
+        else bindings[actionIndex(action)] = keyCode;
         clear();
     }
 
@@ -109,6 +121,7 @@ final class ControllerInput {
 
     synchronized void resetDefaults() {
         System.arraycopy(DEFAULT_KEYS, 0, bindings, 0, bindings.length);
+        menuKey=KeyEvent.KEYCODE_BUTTON_MODE;fastForwardKey=KeyEvent.KEYCODE_BUTTON_R2;
         deadZone = DEFAULT_DEAD_ZONE;
         leftStickEnabled = true;
         clear();

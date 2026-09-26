@@ -39,7 +39,7 @@ public final class ControllerSmoke extends Instrumentation {
                     ControllerInput reloaded=new ControllerInput();
                     ControllerSettingsDialog.loadPreferences(host,reloaded);
                     check(reloaded.keyCodeFor(1)==KeyEvent.KEYCODE_BUTTON_X);
-                    find(dialog.getWindow().getDecorView(),"Restablecer").performClick();
+                    find(dialog.getWindow().getDecorView(),host.getString(R.string.controller_reset)).performClick();
                     ControllerSettingsDialog.loadPreferences(host,reloaded);
                     check(reloaded.keyCodeFor(1)==KeyEvent.KEYCODE_BUTTON_A);
                     preferences.edit().putInt("action_1",KeyEvent.KEYCODE_BUTTON_B).commit();

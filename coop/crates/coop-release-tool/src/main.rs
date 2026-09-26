@@ -6,6 +6,7 @@
 //! environment variable and is never accepted as a command-line argument,
 //! printed, or written to disk.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::{
     collections::BTreeMap,
     env,
@@ -16,13 +17,15 @@ use std::{
 };
 
 use coop_launcher::{
-    ArtifactIdentity, ReleaseDescriptor, SignedReleaseEnvelope, TrustedReleaseKey,
-    MAX_ENVELOPE_BYTES,
-    update::{ArtifactDescriptor, FIXED_ARTIFACT_IDENTITIES, MAX_PAYLOAD_BYTES, RELEASE_SCHEMA,
-        WINDOWS_PLATFORM},
+    ArtifactIdentity, MAX_ENVELOPE_BYTES, ReleaseDescriptor, SignedReleaseEnvelope,
+    TrustedReleaseKey,
+    update::{
+        ArtifactDescriptor, FIXED_ARTIFACT_IDENTITIES, MAX_PAYLOAD_BYTES, RELEASE_SCHEMA,
+        WINDOWS_PLATFORM,
+    },
 };
-use ed25519_dalek::SigningKey;
-use serde::Serialize;
+use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -68,6 +71,7 @@ struct Options {
     envelope: Option<PathBuf>,
     trust_bundle: Option<PathBuf>,
     artifacts: Vec<String>,
+    allow_expired: bool,
 }
 
 fn usage() -> &'static str {
@@ -75,17 +79,29 @@ fn usage() -> &'static str {
      --key-id ID --public-key-hex HEX --output PATH --artifact ID=PATH... [--trust-bundle PATH]\n\
      coop-release-tool verify --envelope PATH --key-id ID --public-key-hex HEX\n\
      coop-release-tool public-key [--seed-env ENV]\n\
-     coop-release-tool check-key --public-key-hex HEX [--seed-env ENV]"
+     coop-release-tool check-key --public-key-hex HEX [--seed-env ENV]\n\
+     coop-release-tool sign-game --release-id ID --sequence N --issued-at UNIX --expires-at UNIX \
+     --key-id ID --public-key-hex HEX --output PATH --artifact rom=PATH \
+     --artifact compatibility-manifest=PATH\n\
+     coop-release-tool verify-game --envelope PATH --key-id ID --public-key-hex HEX"
 }
 
 fn parse_options() -> Result<Options, ToolError> {
     let mut args = env::args().skip(1);
-    let command = args.next().ok_or_else(|| ToolError::Usage(usage().to_owned()))?;
+    let command = args
+        .next()
+        .ok_or_else(|| ToolError::Usage(usage().to_owned()))?;
     if command == "--help" || command == "-h" {
         println!("{}", usage());
         std::process::exit(0);
     }
-    if command != "sign" && command != "verify" && command != "public-key" && command != "check-key" {
+    if command != "sign"
+        && command != "verify"
+        && command != "public-key"
+        && command != "check-key"
+        && command != "sign-game"
+        && command != "verify-game"
+    {
         return Err(ToolError::Usage(usage().to_owned()));
     }
     let mut options = Options {
@@ -121,6 +137,7 @@ fn parse_options() -> Result<Options, ToolError> {
             "--envelope" => options.envelope = Some(PathBuf::from(value(&mut args)?)),
             "--trust-bundle" => options.trust_bundle = Some(PathBuf::from(value(&mut args)?)),
             "--artifact" => options.artifacts.push(value(&mut args)?),
+            "--allow-expired" if command == "verify-game" => options.allow_expired = true,
             "--help" | "-h" => {
                 println!("{}", usage());
                 std::process::exit(0);
@@ -135,7 +152,11 @@ fn required<T>(value: Option<T>, name: &str) -> Result<T, ToolError> {
     value.ok_or_else(|| ToolError::Usage(format!("missing required option {name}")))
 }
 
-fn env_or_option(option: Option<String>, name: &str, default_env: &str) -> Result<String, ToolError> {
+fn env_or_option(
+    option: Option<String>,
+    name: &str,
+    default_env: &str,
+) -> Result<String, ToolError> {
     option
         .or_else(|| env::var(default_env).ok())
         .filter(|value| !value.is_empty())
@@ -144,7 +165,9 @@ fn env_or_option(option: Option<String>, name: &str, default_env: &str) -> Resul
 
 fn decode_hex<const N: usize>(value: &str, label: &str) -> Result<[u8; N], ToolError> {
     if value.len() != N * 2 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(ToolError::Input(format!("{label} must be exactly {N} bytes of hex")));
+        return Err(ToolError::Input(format!(
+            "{label} must be exactly {N} bytes of hex"
+        )));
     }
     let mut output = [0_u8; N];
     for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
@@ -178,7 +201,9 @@ fn parse_artifacts(values: &[String]) -> Result<BTreeMap<ArtifactIdentity, PathB
             .ok_or_else(|| ToolError::Input("--artifact must be ID=PATH".to_owned()))?;
         let id = identity(id)?;
         if path.is_empty() || artifacts.insert(id, PathBuf::from(path)).is_some() {
-            return Err(ToolError::Input(format!("duplicate or empty artifact path for {id}")));
+            return Err(ToolError::Input(format!(
+                "duplicate or empty artifact path for {id}"
+            )));
         }
     }
     if artifacts.len() != FIXED_ARTIFACT_IDENTITIES.len() {
@@ -232,9 +257,15 @@ fn validate_descriptor(descriptor: &ReleaseDescriptor, issued_at: i64) -> Result
     descriptor
         .validate_at(issued_at)
         .map_err(|error| ToolError::Input(error.to_string()))?;
-    let ids: Vec<_> = descriptor.artifacts.iter().map(|artifact| artifact.id).collect();
+    let ids: Vec<_> = descriptor
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.id)
+        .collect();
     if ids != FIXED_ARTIFACT_IDENTITIES {
-        return Err(ToolError::Input("artifacts are not in canonical fixed order".to_owned()));
+        return Err(ToolError::Input(
+            "artifacts are not in canonical fixed order".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -264,6 +295,246 @@ fn public_key_hex(bytes: &[u8; 32]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GameArtifact {
+    id: String,
+    size: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GameDescriptor {
+    schema: u16,
+    release_id: String,
+    sequence: u64,
+    issued_at: i64,
+    expires_at: i64,
+    platform: String,
+    artifacts: Vec<GameArtifact>,
+}
+
+fn validate_game(
+    descriptor: &GameDescriptor,
+    now: i64,
+    require_fresh: bool,
+) -> Result<(), ToolError> {
+    let valid_id = !descriptor.release_id.is_empty()
+        && descriptor.release_id.len() <= 128
+        && descriptor.release_id != "."
+        && descriptor.release_id != ".."
+        && descriptor
+            .release_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'));
+    if descriptor.schema != 1
+        || descriptor.platform != "game"
+        || !valid_id
+        || descriptor.sequence == 0
+        || descriptor.issued_at > now.saturating_add(300)
+        || (require_fresh && descriptor.expires_at <= now)
+        || descriptor.expires_at <= descriptor.issued_at
+        || descriptor.expires_at.saturating_sub(descriptor.issued_at) > 90 * 24 * 60 * 60
+        || descriptor.artifacts.len() != 2
+    {
+        return Err(ToolError::Input("invalid game descriptor".to_owned()));
+    }
+    for (artifact, expected) in descriptor
+        .artifacts
+        .iter()
+        .zip(["rom", "compatibility-manifest"])
+    {
+        let maximum = if expected == "rom" {
+            64 * 1024 * 1024
+        } else {
+            1024 * 1024
+        };
+        if artifact.id != expected
+            || artifact.size == 0
+            || artifact.size > maximum
+            || artifact.sha256.len() != 64
+            || !artifact
+                .sha256
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(ToolError::Input("invalid game artifact".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+fn game_artifact_paths(values: &[String]) -> Result<[PathBuf; 2], ToolError> {
+    if values.len() != 2 {
+        return Err(ToolError::Input(
+            "exactly two game artifacts are required".to_owned(),
+        ));
+    }
+    let mut rom = None;
+    let mut manifest = None;
+    for value in values {
+        let (id, path) = value
+            .split_once('=')
+            .ok_or_else(|| ToolError::Input("--artifact must be ID=PATH".to_owned()))?;
+        if path.is_empty() {
+            return Err(ToolError::Input("empty artifact path".to_owned()));
+        }
+        match id {
+            "rom" if rom.is_none() => rom = Some(PathBuf::from(path)),
+            "compatibility-manifest" if manifest.is_none() => manifest = Some(PathBuf::from(path)),
+            _ => {
+                return Err(ToolError::Input(
+                    "duplicate or unknown game artifact".to_owned(),
+                ));
+            }
+        }
+    }
+    Ok([rom.unwrap(), manifest.unwrap()])
+}
+
+fn hash_game_artifact(id: &str, path: &Path) -> Result<GameArtifact, ToolError> {
+    let maximum = if id == "rom" {
+        64 * 1024 * 1024
+    } else {
+        1024 * 1024
+    };
+    let metadata = fs::symlink_metadata(path).map_err(|_| ToolError::Artifact(path.to_owned()))?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(ToolError::Artifact(path.to_owned()));
+    }
+    if metadata.len() == 0 || metadata.len() > maximum {
+        return Err(ToolError::ArtifactTooLarge(path.to_owned()));
+    }
+    let mut file = fs::File::open(path).map_err(ToolError::Read)?;
+    let mut digest = Sha256::new();
+    let mut size = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(ToolError::Read)?;
+        if count == 0 {
+            break;
+        }
+        size += count as u64;
+        if size > maximum {
+            return Err(ToolError::ArtifactTooLarge(path.to_owned()));
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(GameArtifact {
+        id: id.to_owned(),
+        size,
+        sha256: hex_digest(digest.finalize().into()),
+    })
+}
+
+fn game_key(options: &Options) -> Result<SigningKey, ToolError> {
+    let public_hex = env_or_option(
+        options.public_key_hex.clone(),
+        "--public-key-hex",
+        DEFAULT_PUBLIC_KEY_ENV,
+    )?;
+    let expected = decode_hex::<32>(&public_hex, "public key")?;
+    let seed_env = options
+        .seed_env
+        .clone()
+        .unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
+    let seed_text = Zeroizing::new(
+        env::var(&seed_env)
+            .map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
+    );
+    let mut seed = decode_hex::<32>(&seed_text, "private seed")?;
+    let signing_key = SigningKey::from_bytes(&seed);
+    seed.zeroize();
+    if signing_key.verifying_key().to_bytes() != expected {
+        return Err(ToolError::KeyMismatch);
+    }
+    Ok(signing_key)
+}
+
+fn sign_game(options: Options) -> Result<(), ToolError> {
+    let paths = game_artifact_paths(&options.artifacts)?;
+    let descriptor = GameDescriptor {
+        schema: 1,
+        release_id: required(options.release_id.clone(), "--release-id")?,
+        sequence: required(options.sequence, "--sequence")?,
+        issued_at: required(options.issued_at, "--issued-at")?,
+        expires_at: required(options.expires_at, "--expires-at")?,
+        platform: "game".to_owned(),
+        artifacts: vec![
+            hash_game_artifact("rom", &paths[0])?,
+            hash_game_artifact("compatibility-manifest", &paths[1])?,
+        ],
+    };
+    validate_game(&descriptor, descriptor.issued_at, true)?;
+    let key_id = env_or_option(options.key_id.clone(), "--key-id", DEFAULT_KEY_ID_ENV)?;
+    let payload =
+        serde_jcs::to_vec(&descriptor).map_err(|e| ToolError::CanonicalJcs(e.to_string()))?;
+    let envelope = SignedReleaseEnvelope::sign_payload(&payload, key_id, &game_key(&options)?)
+        .map_err(|e| ToolError::Input(e.to_string()))?;
+    write_new(&required(options.output, "--output")?, &envelope)?;
+    println!("signed game envelope for {}", descriptor.release_id);
+    Ok(())
+}
+
+fn verify_game(options: Options) -> Result<(), ToolError> {
+    let path = required(options.envelope, "--envelope")?;
+    let metadata = fs::symlink_metadata(&path).map_err(|_| ToolError::Artifact(path.clone()))?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > MAX_ENVELOPE_BYTES as u64
+    {
+        return Err(ToolError::Envelope);
+    }
+    let bytes = fs::read(path).map_err(ToolError::Read)?;
+    let envelope: SignedReleaseEnvelope =
+        serde_json::from_slice(&bytes).map_err(|_| ToolError::Envelope)?;
+    if serde_json::to_vec(&envelope).map_err(|_| ToolError::Envelope)? != bytes
+        || envelope.schema != 1
+        || envelope.key_id != env_or_option(options.key_id, "--key-id", DEFAULT_KEY_ID_ENV)?
+    {
+        return Err(ToolError::Envelope);
+    }
+    let public_hex = env_or_option(
+        options.public_key_hex,
+        "--public-key-hex",
+        DEFAULT_PUBLIC_KEY_ENV,
+    )?;
+    let key = VerifyingKey::from_bytes(&decode_hex::<32>(&public_hex, "public key")?)
+        .map_err(|_| ToolError::Envelope)?;
+    let payload = BASE64
+        .decode(&envelope.payload)
+        .map_err(|_| ToolError::Envelope)?;
+    let signature = BASE64
+        .decode(&envelope.signature)
+        .map_err(|_| ToolError::Envelope)?;
+    if payload.is_empty()
+        || payload.len() > MAX_PAYLOAD_BYTES
+        || signature.len() != 64
+        || BASE64.encode(&payload) != envelope.payload
+        || BASE64.encode(&signature) != envelope.signature
+    {
+        return Err(ToolError::Envelope);
+    }
+    key.verify(
+        &payload,
+        &Signature::from_slice(&signature).map_err(|_| ToolError::Envelope)?,
+    )
+    .map_err(|_| ToolError::Envelope)?;
+    let descriptor: GameDescriptor =
+        serde_json::from_slice(&payload).map_err(|_| ToolError::Envelope)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ToolError::Envelope)?
+        .as_secs() as i64;
+    validate_game(&descriptor, now, !options.allow_expired)?;
+    if serde_jcs::to_vec(&descriptor).map_err(|_| ToolError::Envelope)? != payload {
+        return Err(ToolError::Envelope);
+    }
+    println!("verified game envelope for {}", descriptor.release_id);
+    Ok(())
+}
+
 fn sign(options: Options) -> Result<(), ToolError> {
     let release_id = required(options.release_id, "--release-id")?;
     let sequence = required(options.sequence, "--sequence")?;
@@ -282,9 +553,12 @@ fn sign(options: Options) -> Result<(), ToolError> {
         DEFAULT_PUBLIC_KEY_ENV,
     )?;
     let expected_public = decode_hex::<32>(&public_hex, "public key")?;
-    let seed_env = options.seed_env.unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
+    let seed_env = options
+        .seed_env
+        .unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
     let seed_text = Zeroizing::new(
-        env::var(&seed_env).map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
+        env::var(&seed_env)
+            .map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
     );
     let mut seed = decode_hex::<32>(&seed_text, "private seed")?;
     let signing_key = SigningKey::from_bytes(&seed);
@@ -321,7 +595,9 @@ fn sign(options: Options) -> Result<(), ToolError> {
     validate_descriptor(&descriptor, issued_at)?;
     let payload = canonical_descriptor(&descriptor)?;
     if payload.len() > MAX_PAYLOAD_BYTES {
-        return Err(ToolError::Input("canonical payload exceeds launcher bound".to_owned()));
+        return Err(ToolError::Input(
+            "canonical payload exceeds launcher bound".to_owned(),
+        ));
     }
     let envelope = SignedReleaseEnvelope::sign_payload(&payload, key_id.clone(), &signing_key)
         .map_err(|error| ToolError::Input(error.to_string()))?;
@@ -333,8 +609,12 @@ fn sign(options: Options) -> Result<(), ToolError> {
 
 fn verify(options: Options) -> Result<(), ToolError> {
     let envelope_path = required(options.envelope, "--envelope")?;
-    let metadata = fs::symlink_metadata(&envelope_path).map_err(|_| ToolError::Artifact(envelope_path.clone()))?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > MAX_ENVELOPE_BYTES as u64 {
+    let metadata = fs::symlink_metadata(&envelope_path)
+        .map_err(|_| ToolError::Artifact(envelope_path.clone()))?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > MAX_ENVELOPE_BYTES as u64
+    {
         return Err(ToolError::Envelope);
     }
     let envelope_bytes = fs::read(&envelope_path).map_err(ToolError::Read)?;
@@ -345,7 +625,8 @@ fn verify(options: Options) -> Result<(), ToolError> {
         DEFAULT_PUBLIC_KEY_ENV,
     )?;
     let public_key = decode_hex::<32>(&public_hex, "public key")?;
-    let trusted = TrustedReleaseKey::new(key_id, public_key).map_err(|error| ToolError::Input(error.to_string()))?;
+    let trusted = TrustedReleaseKey::new(key_id, public_key)
+        .map_err(|error| ToolError::Input(error.to_string()))?;
     let parsed: SignedReleaseEnvelope =
         serde_json::from_slice(&envelope_bytes).map_err(|_| ToolError::Envelope)?;
     let canonical_envelope = serde_json::to_vec(&parsed).map_err(|_| ToolError::Envelope)?;
@@ -370,14 +651,20 @@ fn verify(options: Options) -> Result<(), ToolError> {
 }
 
 fn public_key(options: Options) -> Result<(), ToolError> {
-    let seed_env = options.seed_env.unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
+    let seed_env = options
+        .seed_env
+        .unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
     let seed_text = Zeroizing::new(
-        env::var(&seed_env).map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
+        env::var(&seed_env)
+            .map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
     );
     let mut seed = decode_hex::<32>(&seed_text, "private seed")?;
     let signing_key = SigningKey::from_bytes(&seed);
     seed.zeroize();
-    println!("{}", public_key_hex(&signing_key.verifying_key().to_bytes()));
+    println!(
+        "{}",
+        public_key_hex(&signing_key.verifying_key().to_bytes())
+    );
     Ok(())
 }
 
@@ -392,9 +679,12 @@ fn check_key(options: Options) -> Result<(), ToolError> {
         DEFAULT_PUBLIC_KEY_ENV,
     )?;
     let expected_public = decode_hex::<32>(&public_hex, "public key")?;
-    let seed_env = options.seed_env.unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
+    let seed_env = options
+        .seed_env
+        .unwrap_or_else(|| DEFAULT_SEED_ENV.to_owned());
     let seed_text = Zeroizing::new(
-        env::var(&seed_env).map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
+        env::var(&seed_env)
+            .map_err(|_| ToolError::Usage(format!("missing signing seed env {seed_env}")))?,
     );
     let mut seed = decode_hex::<32>(&seed_text, "private seed")?;
     let signing_key = SigningKey::from_bytes(&seed);
@@ -412,6 +702,8 @@ fn run() -> Result<(), ToolError> {
         Some("verify") => verify(options),
         Some("public-key") => public_key(options),
         Some("check-key") => check_key(options),
+        Some("sign-game") => sign_game(options),
+        Some("verify-game") => verify_game(options),
         _ => Err(ToolError::Usage(usage().to_owned())),
     }
 }

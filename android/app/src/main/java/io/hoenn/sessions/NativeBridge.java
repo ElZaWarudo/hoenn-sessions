@@ -9,18 +9,19 @@ import java.util.Arrays;
 final class NativeBridge {
     static int ADDRESS;
     static void validate(byte[] memory) {
-        if(memory==null || memory.length!=9244)throw new IllegalStateException("Bridge no disponible");
+        if(memory==null || memory.length!=24)throw new IllegalStateException("Bridge no disponible");
         ByteBuffer b=ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN);
         if(b.getInt()!=1347109711 || b.getShort()!=1 || b.getShort()!=1 || b.getInt()!=65536)throw new SecurityException("ABI de ROM incompatible");
     }
     static byte[] peekOutbound() {
         synchronized(NativeCore.class) {
-            byte[] memory=NativeCore.readBridge(ADDRESS);validate(memory);
+            byte[] memory=NativeCore.bridgeHeader();validate(memory);
             ByteBuffer b=ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN);
             int read=b.getShort(20)&65535,write=b.getShort(22)&65535,depth=(write-read)&65535;
             if(depth>32) {NativeCore.bridgeCounter(false,read,write);throw new IllegalStateException("Cola corrupta descartada");}
             if(depth==0)return null;
-            byte[] frame=Arrays.copyOfRange(memory,24+(read&31)*144,24+(read&31)*144+144);
+            byte[] frame=NativeCore.bridgeSlot(read&31);
+            if(frame==null || frame.length!=144)throw new IllegalStateException("Slot del bridge no disponible");
             try{BridgeFrame.decode(frame,false);}catch(IllegalArgumentException e){NativeCore.bridgeCounter(false,read,(read+1)&65535);throw e;}
             return frame;
         }
@@ -29,13 +30,14 @@ final class NativeBridge {
         if(expected==null)return false;
         synchronized(NativeCore.class) {
             if(!Arrays.equals(expected,peekOutbound()))return false;
-            ByteBuffer b=ByteBuffer.wrap(NativeCore.readBridge(ADDRESS)).order(ByteOrder.LITTLE_ENDIAN);
+            byte[] header=NativeCore.bridgeHeader();validate(header);
+            ByteBuffer b=ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
             int read=b.getShort(20)&65535;
             return NativeCore.bridgeCounter(false,read,(read+1)&65535);
         }
     }
     static boolean pushInbound(byte[] frame,long serverEpoch) {
         if(serverEpoch<=0 || serverEpoch>0xffffffffL || BridgeFrame.decode(frame,true).epoch!=serverEpoch)throw new SecurityException("Epoch del bridge inválido");
-        synchronized(NativeCore.class) {validate(NativeCore.readBridge(ADDRESS));return NativeCore.bridgePush(frame);}
+        synchronized(NativeCore.class) {validate(NativeCore.bridgeHeader());return NativeCore.bridgePush(frame);}
     }
 }

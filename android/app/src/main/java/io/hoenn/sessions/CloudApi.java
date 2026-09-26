@@ -9,7 +9,7 @@ import java.util.UUID;
 import javax.net.ssl.HttpsURLConnection;
 
 final class CloudApi {
-    static final String BASE="https://169-128-190-115.sslip.io";
+    static final String BASE=BuildConfig.SERVER_URL;
     private String access, refresh, character, userId;
     private JSONObject lease;
     private final String instance=UUID.randomUUID().toString();
@@ -75,31 +75,84 @@ final class CloudApi {
     synchronized String characterId() throws IOException {if(character==null)throw new IOException("Personaje no disponible");return character;}
     synchronized void clearAccess() { access=null; refresh=null; userId=null; character=null; }
     synchronized void download(String path, File destination, long expectedSize, String expectedHash) throws Exception {
+        download(path,destination,expectedSize,expectedHash,null);
+    }
+    interface Progress { void onProgress(long received,long total); }
+    static long resumedLength(int status, String contentRange, long contentLength,
+                              long offset, long expectedSize) throws IOException {
+        if(offset==0) {
+            if(status!=200 || contentLength!=expectedSize) throw new IOException("Tamaño de descarga inválido");
+            return 0;
+        }
+        if(status==200) {
+            if(contentLength!=expectedSize) throw new IOException("Tamaño de descarga inválido");
+            return 0; // Server ignored Range; restart using this complete response.
+        }
+        if(status!=206 || contentRange==null) throw new IOException("Respuesta Range inválida");
+        String expected="bytes "+offset+"-"+(expectedSize-1)+"/"+expectedSize;
+        if(!expected.equals(contentRange.trim()) || contentLength!=expectedSize-offset)
+            throw new IOException("Content-Range inválido");
+        return offset;
+    }
+    synchronized void download(String path, File destination, long expectedSize, String expectedHash,
+                               Progress progress) throws Exception {
         long maximum=path.endsWith("/apk")?256L*1024*1024:64L*1024*1024;
-        if(access==null || !path.startsWith("/v1/releases/") || path.contains("..") || expectedSize<=0 || expectedSize>maximum)
+        if(access==null || !path.startsWith("/v1/releases/") || path.contains("..") || expectedSize<=0 || expectedSize>maximum
+            || expectedHash==null || !expectedHash.matches("[0-9a-f]{64}"))
             throw new SecurityException("Descarga inválida");
+        long offset=destination.isFile()?destination.length():0;
+        if(offset>expectedSize) {if(!destination.delete()) throw new IOException("Archivo parcial inválido");offset=0;}
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        if(offset>0) {
+            try(InputStream existing=new FileInputStream(destination)) {
+                byte[] buffer=new byte[65536];int count;
+                while((count=existing.read(buffer))!=-1)digest.update(buffer,0,count);
+            }
+            if(offset==expectedSize) {
+                if(ReleaseCatalog.hex(digest.digest()).equals(expectedHash)) {
+                    if(progress!=null)progress.onProgress(expectedSize,expectedSize);
+                    return;
+                }
+                if(!destination.delete())throw new IOException("Archivo parcial inválido");
+                offset=0;digest=MessageDigest.getInstance("SHA-256");
+            }
+        }
         HttpsURLConnection connection=(HttpsURLConnection)new URL(BASE+path).openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(30000);
         connection.setRequestProperty("Authorization","Bearer "+access);
-        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        if(offset>0)connection.setRequestProperty("Range","bytes="+offset+"-");
         try {
             int code=connection.getResponseCode();
-            if(code<200 || code>=300) throw new HttpError(code);
-            if(connection.getContentLengthLong()!=expectedSize) throw new IOException("Tamaño de descarga inválido");
-            long total=0;
-            try(InputStream input=connection.getInputStream(); FileOutputStream output=new FileOutputStream(destination)) {
+            if(offset>0 && (code==400 || code==416)) {
+                // Older release servers reject Range. Retry once from byte zero.
+                if(!destination.delete())throw new IOException("Archivo parcial inválido");
+                download(path,destination,expectedSize,expectedHash,progress);
+                return;
+            }
+            if(code!=200 && code!=206) throw new HttpError(code);
+            long accepted=resumedLength(code,connection.getHeaderField("Content-Range"),
+                connection.getContentLengthLong(),offset,expectedSize);
+            if(accepted==0)digest=MessageDigest.getInstance("SHA-256");
+            long total=accepted;
+            if(progress!=null)progress.onProgress(total,expectedSize);
+            try(InputStream input=connection.getInputStream(); FileOutputStream output=new FileOutputStream(destination,accepted>0)) {
                 byte[] buffer=new byte[65536]; int count;
                 while((count=input.read(buffer))!=-1) {
                     total+=count;
                     if(total>expectedSize) throw new IOException("Descarga demasiado grande");
                     digest.update(buffer,0,count);
                     output.write(buffer,0,count);
+                    if(progress!=null)progress.onProgress(total,expectedSize);
                 }
                 output.getFD().sync();
             }
-            if(total!=expectedSize || !ReleaseCatalog.hex(digest.digest()).equals(expectedHash)) throw new SecurityException("Descarga no verificada");
+            if(total!=expectedSize)throw new IOException("Descarga interrumpida");
+            if(!ReleaseCatalog.hex(digest.digest()).equals(expectedHash)) {
+                destination.delete();
+                throw new SecurityException("Descarga no verificada");
+            }
         } finally { connection.disconnect(); }
     }
     synchronized long acquire() throws Exception {

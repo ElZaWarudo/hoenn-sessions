@@ -23,7 +23,7 @@ public class BridgeFrameTest {
         assertThrows(SecurityException.class,()->NativeBridge.pushInbound(f,43));
     }
     @Test public void rejectsManifestHeaderDrift() {
-        byte[] memory=new byte[9244];ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN).putInt(1347109711).putShort((short)1).putShort((short)1).putInt(65536);
+        byte[] memory=new byte[24];ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN).putInt(1347109711).putShort((short)1).putShort((short)1).putInt(65536);
         NativeBridge.validate(memory);memory[8]^=1;
         assertThrows(SecurityException.class,()->NativeBridge.validate(memory));
     }

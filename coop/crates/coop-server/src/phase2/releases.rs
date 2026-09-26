@@ -7,7 +7,7 @@
 
 use std::{
     fs::{self, File, Metadata, OpenOptions},
-    io::{self, Read},
+    io::{self, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -28,6 +28,12 @@ pub const RELEASES_DIRECTORY: &str = "releases";
 pub const CURRENT_RELEASE_FILE: &str = "current";
 /// The exact signed envelope filename served by `latest`.
 pub const RELEASE_ENVELOPE_FILE: &str = "release-envelope.json";
+pub const GAME_DIRECTORY: &str = "game";
+pub const GAME_CURRENT_FILE: &str = "game/current";
+pub const GAME_ARTIFACTS: &[(&str, &str)] = &[
+    ("rom", "game.gba"),
+    ("compatibility-manifest", "bridge_manifest.json"),
+];
 pub const ANDROID_DIRECTORY: &str = "android";
 pub const ANDROID_CURRENT_FILE: &str = "android/current";
 pub const ANDROID_METADATA_FILE: &str = "metadata.json";
@@ -68,6 +74,27 @@ pub(crate) async fn latest(State(app): State<Phase2App>, headers: HeaderMap) -> 
         Ok(response) => response,
         Err(error) => error.into_response(),
     })
+}
+
+/// Serves the signed game descriptor independently of the Windows executable release.
+pub(crate) async fn game_latest(State(app): State<Phase2App>, headers: HeaderMap) -> Response {
+    private_response(match game_latest_inner(&app, &headers) {
+        Ok(response) => response,
+        Err(error) => error.into_response(),
+    })
+}
+
+pub(crate) async fn game_artifact(
+    State(app): State<Phase2App>,
+    headers: HeaderMap,
+    AxumPath((release_id, artifact_id)): AxumPath<(String, String)>,
+) -> Response {
+    private_response(
+        match game_artifact_inner(&app, &headers, &release_id, &artifact_id) {
+            Ok(response) => response,
+            Err(error) => error.into_response(),
+        },
+    )
 }
 
 /// Serves the currently published Android APK metadata, independent of game releases.
@@ -145,6 +172,43 @@ fn latest_inner(app: &Phase2App, headers: &HeaderMap) -> Result<Response, Phase2
         .map_err(|_| Phase2Error::Internal)
 }
 
+fn game_latest_inner(app: &Phase2App, headers: &HeaderMap) -> Result<Response, Phase2Error> {
+    super::actor(headers, app)?;
+    reject_range(headers)?;
+    let root = configured_root(app)?;
+    let release_id = marker_release_id(root, Path::new(GAME_CURRENT_FILE))?;
+    let relative = PathBuf::from(GAME_DIRECTORY)
+        .join(release_id)
+        .join(RELEASE_ENVELOPE_FILE);
+    let bytes = read_bounded(&resolve_under(root, &relative)?, MAX_ENVELOPE_BYTES)?;
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_LENGTH, bytes.len().to_string())
+        .body(Body::from(bytes))
+        .map_err(|_| Phase2Error::Internal)
+}
+
+fn game_artifact_inner(
+    app: &Phase2App,
+    headers: &HeaderMap,
+    release_id: &str,
+    artifact_id: &str,
+) -> Result<Response, Phase2Error> {
+    super::actor(headers, app)?;
+    validate_release_id(release_id)?;
+    let destination = GAME_ARTIFACTS
+        .iter()
+        .find_map(|(id, path)| (*id == artifact_id).then_some(*path))
+        .ok_or(Phase2Error::NotFound)?;
+    let root = configured_root(app)?;
+    let relative = PathBuf::from(GAME_DIRECTORY)
+        .join(release_id)
+        .join(destination);
+    let (file, length) = open_bounded(&resolve_under(root, &relative)?, MAX_ARTIFACT_BYTES)?;
+    ranged_artifact(file, length, headers, "application/octet-stream")
+}
+
 fn android_latest_inner(app: &Phase2App, headers: &HeaderMap) -> Result<Response, Phase2Error> {
     super::actor(headers, app)?;
     reject_range(headers)?;
@@ -213,23 +277,61 @@ fn android_apk_inner(
     release_id: &str,
 ) -> Result<Response, Phase2Error> {
     super::actor(headers, app)?;
-    reject_range(headers)?;
     validate_release_id(release_id)?;
     let root = configured_root(app)?;
     let relative = PathBuf::from(ANDROID_DIRECTORY)
         .join(release_id)
         .join(ANDROID_APK_FILE);
     let (file, length) = open_bounded(&resolve_under(root, &relative)?, MAX_ARTIFACT_BYTES)?;
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(
-            header::CONTENT_TYPE,
-            "application/vnd.android.package-archive",
-        )
-        .header(header::CONTENT_LENGTH, length.to_string())
+    ranged_artifact(
+        file,
+        length,
+        headers,
+        "application/vnd.android.package-archive",
+    )
+}
+
+fn ranged_artifact(
+    mut file: File,
+    length: u64,
+    headers: &HeaderMap,
+    content_type: &'static str,
+) -> Result<Response, Phase2Error> {
+    let start = if let Some(value) = headers.get(header::RANGE) {
+        let range = value.to_str().map_err(|_| Phase2Error::InvalidRequest)?;
+        let number = range
+            .strip_prefix("bytes=")
+            .and_then(|s| s.strip_suffix('-'))
+            .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+            .ok_or(Phase2Error::InvalidRequest)?;
+        number
+            .parse::<u64>()
+            .ok()
+            .filter(|offset| *offset < length)
+            .ok_or(Phase2Error::InvalidRequest)?
+    } else {
+        0
+    };
+    file.seek(SeekFrom::Start(start)).map_err(map_io_error)?;
+    let mut response = Response::builder()
+        .status(if headers.contains_key(header::RANGE) {
+            StatusCode::PARTIAL_CONTENT
+        } else {
+            StatusCode::OK
+        })
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, (length - start).to_string());
+    if headers.contains_key(header::RANGE) {
+        response = response.header(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{}/{}", length - 1, length),
+        );
+    }
+    response
         .body(Body::from_stream(artifact_stream(
             tokio::fs::File::from_std(file),
-            length,
+            length - start,
         )))
         .map_err(|_| Phase2Error::Internal)
 }

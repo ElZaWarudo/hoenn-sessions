@@ -71,6 +71,95 @@ fn fixture(dir: &TempDir) -> Vec<String> {
         .collect()
 }
 
+#[test]
+fn game_channel_signs_only_rom_and_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let rom = dir.path().join("game.gba");
+    let manifest = dir.path().join("bridge_manifest.json");
+    let envelope = dir.path().join("game-envelope.json");
+    fs::write(&rom, b"test-rom").unwrap();
+    fs::write(&manifest, b"test-manifest").unwrap();
+    let signed = command()
+        .args([
+            "sign-game",
+            "--release-id",
+            "game-one",
+            "--sequence",
+            "43",
+            "--issued-at",
+            &(unix_now() - 60).to_string(),
+            "--expires-at",
+            &(unix_now() + 3600).to_string(),
+            "--key-id",
+            KEY_ID,
+            "--public-key-hex",
+            &public_key_hex(SEED),
+            "--output",
+            envelope.to_str().unwrap(),
+            "--artifact",
+            &format!("rom={}", rom.display()),
+            "--artifact",
+            &format!("compatibility-manifest={}", manifest.display()),
+        ])
+        .env("HOENN_RELEASE_PRIVATE_SEED_HEX", SEED)
+        .output()
+        .unwrap();
+    assert!(
+        signed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&signed.stderr)
+    );
+    let bytes = fs::read(&envelope).unwrap();
+    let wire: Value = serde_json::from_slice(&bytes).unwrap();
+    let payload = BASE64.decode(wire["payload"].as_str().unwrap()).unwrap();
+    let descriptor: Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(descriptor["platform"], "game");
+    assert_eq!(descriptor["artifacts"].as_array().unwrap().len(), 2);
+    let verified = command()
+        .args([
+            "verify-game",
+            "--envelope",
+            envelope.to_str().unwrap(),
+            "--key-id",
+            KEY_ID,
+            "--public-key-hex",
+            &public_key_hex(SEED),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        verified.status.success(),
+        "{}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
+    let windows = command()
+        .args([
+            "verify",
+            "--envelope",
+            envelope.to_str().unwrap(),
+            "--key-id",
+            KEY_ID,
+            "--public-key-hex",
+            &public_key_hex(SEED),
+        ])
+        .output()
+        .unwrap();
+    assert!(!windows.status.success());
+    let wrong_key = command()
+        .args([
+            "verify-game",
+            "--envelope",
+            envelope.to_str().unwrap(),
+            "--key-id",
+            KEY_ID,
+            "--public-key-hex",
+            &public_key_hex(OTHER_SEED),
+        ])
+        .output()
+        .unwrap();
+    assert!(!wrong_key.status.success());
+}
+
 fn sign(dir: &TempDir, extra: &[&str]) -> std::process::Output {
     let mut args = vec![
         "sign".to_owned(),

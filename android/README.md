@@ -7,22 +7,26 @@ generation; an interrupted download leaves the previous generation selected. No 
 is required. The rotating refresh token is encrypted
 with Android Keystore, so reopening the app restores the account without asking for
 the password again. **Cerrar sesión** revokes and removes that saved credential.
-Save inside the game before closing.
+Save inside the game before closing. The gameplay HUD shows connection state, the
+last accepted cloud revision and short status messages. If a save is still pending,
+the app warns before closing or reconnecting. Emulation pauses in the background
+while the session's network link remains active.
 
 When Android client code changes, the app offers a private APK update and opens Android's
 installer after checking the download hash. Android may ask the player to allow installs
 from Hoenn Sessions. **Menú → Instalar actualización descargada** resumes the handoff.
 ROM-only releases do not require a new APK.
 
-Touch controls are drawn over the emulator with a transparent outlined layout.
+Touch controls are drawn over the emulator with a sliding D-pad and diagonals.
 Use Android's **Back** gesture to open **Menú**, then choose
 **Configurar controles en pantalla** to change their size, drag each control to a
-new position, hide the overlay, enable the optional fast-forward control or restore
+new position, adjust opacity, hide the overlay, enable the optional fast-forward control or restore
 the default layout. Fast-forward runs only while its button is held. These choices
-persist on the device. After authentication the game switches to an immersive,
-edge-to-edge view without floating corner buttons.
+persist on the device. The touch overlay hides while a controller is connected.
+Screen options include integer scaling, pixel smoothing, and an FPS/ping display.
 
-**Menú → Configurar mando** provides ten button mappings, collision swaps, stick
+**Menú → Configurar mando** provides button mappings, including Menu and held
+fast-forward, collision swaps, stick
  deadzone (10–50%), a left-stick toggle, input testing and reset. Settings persist
 on this device. Disconnected controllers and
 loss of focus release held inputs. A Bluetooth/USB controller must first be paired
@@ -54,6 +58,8 @@ Output: `app/build/outputs/apk/debug/app-debug.apk` (development signature).
 For a signed release, set `HOENN_ROM_PATH`, `HOENN_MANIFEST_PATH`,
 `ANDROID_KEYSTORE_PATH`, and `ANDROID_KEYSTORE_PASSWORD`; use key alias
 `hoenn-android` and run `android/gradlew.bat -p android assembleRelease`.
+Set `HOENN_SERVER_URL` at build time for a staging server; the Java client and
+Rust session client use the same value.
 Keep the keystore backed up privately: future updates require the same signer.
 
 ## GitHub CI and delivery
@@ -63,14 +69,22 @@ APK, runs Java tests and Android lint, and verifies the actual packaged ROM,
 manifest, native libraries, signature and alignment. A PR build proves compatibility
 with its own ROM; only a matching deployed ROM can join the live server.
 
+The manual `android-staging-emulator` CI job runs local controller, overlay and
+credential-store instrumentations, then drives login, game load, pause, resume
+and close with a staging account. Enable it with repository variables
+`ANDROID_STAGING_SMOKE_ENABLED=true` and `ANDROID_STAGING_URL`, and store
+`ANDROID_STAGING_USERNAME` and `ANDROID_STAGING_PASSWORD` as secrets in the
+protected `android-staging` environment. It never uploads the ROM-bearing APK.
+
 For a fresh production release, the job builds a signed APK when Android client code
 changes, or when manually dispatched. Its initial bundled ROM/manifest comes from that release. Configure
 repository secrets `ANDROID_KEYSTORE_B64` and `ANDROID_KEYSTORE_PASSWORD` (alias
 `hoenn-android`). Missing keys fail an APK build. The APK, SHA-256 and version metadata
 are stored privately on the VPS at `/srv/hoenn/android/<commit>/`; an atomic
 `/srv/hoenn/android/current` marker selects the latest APK. The authenticated server API
-serves it to the app. The game ROM and manifest use the existing signed release envelope
-and authenticated artifact routes. Previously promoted releases are reused, not rebuilt.
+serves it to the app. The game ROM and manifest use a separate signed game release
+channel and authenticated artifact routes. Previously promoted releases are reused,
+not rebuilt.
 The VPS needs `setfacl`: the upload grants container UID 10001 read access while keeping
 the APK inaccessible to other local users. A release trust-key rotation also builds a
 new APK so installed clients can verify the newly signed ROM release.

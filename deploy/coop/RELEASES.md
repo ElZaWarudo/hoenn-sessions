@@ -1,5 +1,22 @@
 # Private-pilot releases
 
+## Independent game channel
+
+Android obtains the ROM and compatibility manifest from `/v1/releases/game/latest`.
+This is a separate signed descriptor with platform `game`, exactly two fixed
+artifacts (`rom` and `compatibility-manifest`), and its own monotonic sequence.
+The server serves the immutable files from `game/<release-id>/` and selects a
+generation through `game/current`. The Windows runtime and Android APK retain
+their own release pointers. All three channels require bearer authentication.
+
+The deploy workflow signs `game-bundle/<sha>/release-envelope.json` with the
+same protected Ed25519 key and promotes it through `promote-game.sh` after
+verifying the signature, exact inventory, artifact hashes, and sequence floor.
+The game and APK artifact routes accept `Range: bytes=N-` for interrupted
+downloads; metadata endpoints reject ranges. Android can still open a locally
+installed Windows signed ROM generation during migration, but new downloads
+use only the game channel.
+
 The production workflow produces one immutable Windows runtime generation per
 commit. `github.run_number` is the signed monotonic sequence; a release id is
 the full lowercase commit SHA. Re-running a commit reuses its promoted
