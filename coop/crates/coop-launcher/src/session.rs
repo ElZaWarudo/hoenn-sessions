@@ -1895,7 +1895,42 @@ impl SessionLifecycle {
         request: AcquireLeaseRequest,
         keychain: &Arc<dyn RefreshTokenStore>,
     ) -> Result<AcquireWorldLeaseResponse, SessionError> {
-        if request.character_id != auth.character_id || request.replace_same_client {
+        Self::acquire_world_with_keychain_inner(api, auth, request, keychain, false).await
+    }
+
+    /// Acquire a world lease while explicitly replacing an existing lease from
+    /// this same client instance. This method sets the replacement flag; callers
+    /// cannot accidentally opt into replacement by using the ordinary
+    /// world-acquisition API.
+    ///
+    /// The caller persists `request` before the first send and reuses it after
+    /// restart. A lost or malformed response replays that exact operation.
+    pub async fn acquire_world_replacing_same_client_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        request: AcquireLeaseRequest,
+        keychain: &Arc<dyn RefreshTokenStore>,
+    ) -> Result<AcquireWorldLeaseResponse, SessionError> {
+        Self::acquire_world_with_keychain_inner(
+            api,
+            auth,
+            request.replacing_same_client(),
+            keychain,
+            true,
+        )
+        .await
+    }
+
+    async fn acquire_world_with_keychain_inner<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        request: AcquireLeaseRequest,
+        keychain: &Arc<dyn RefreshTokenStore>,
+        replacing_same_client: bool,
+    ) -> Result<AcquireWorldLeaseResponse, SessionError> {
+        if request.character_id != auth.character_id
+            || request.replace_same_client != replacing_same_client
+        {
             return Err(SessionError::Lease);
         }
         refresh_if_needed(auth, api, Some(keychain)).await?;
@@ -5471,18 +5506,17 @@ mod lifecycle_tests {
     };
 
     use coop_cloud::{
-        AccessToken, ApiVersion, ArtifactIdentity, BridgeAbiVersion, CharacterId, ClientInstanceId,
-        ClientRealtimeFrameV1, CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest,
-        IdempotencyKey,
-        LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse,
-        MgbaVersion, MintRealtimeTicketRequest, Password, PrepareSnapshotRequest, ProtocolVersion,
-        RealtimeTicket, ReconnectLeaseRequest, RefreshFamilyId, RefreshRequest, RefreshResponse,
-        RefreshToken, ReleaseLeaseRequest, ResumePackageManifest, Revision, RuntimeLeaseFence,
-        ServerRealtimeFrameV1, SessionEpoch, SessionId, Sha256Digest, SnapshotFence,
-        SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest, SnapshotListResponse,
-        SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
-        TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
-        decode_client_realtime_frame, encode_server_realtime_frame,
+        AccessToken, AcquireLeaseRequest, ApiVersion, ArtifactIdentity, BridgeAbiVersion,
+        CharacterId, ClientInstanceId, ClientRealtimeFrameV1, CompatibilityTarget, GameBuildId,
+        HeartbeatLeaseRequest, IdempotencyKey, LeaseContract, LeaseFence, LoginRequest,
+        LoginResponse, LogoutRequest, LogoutResponse, MgbaVersion, MintRealtimeTicketRequest,
+        Password, PrepareSnapshotRequest, ProtocolVersion, RealtimeTicket, ReconnectLeaseRequest,
+        RefreshFamilyId, RefreshRequest, RefreshResponse, RefreshToken, ReleaseLeaseRequest,
+        ResumePackageManifest, Revision, RuntimeLeaseFence, ServerRealtimeFrameV1, SessionEpoch,
+        SessionId, Sha256Digest, SnapshotFence, SnapshotFinalizeRequest, SnapshotId,
+        SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord,
+        SnapshotRestoreRequest, SnapshotRestoreResponse, TrustedManifestKey, UnixTimestampMillis,
+        UploadTarget, UserId, decode_client_realtime_frame, encode_server_realtime_frame,
     };
     use coop_protocol::{
         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
@@ -5559,6 +5593,9 @@ mod lifecycle_tests {
         reconnect_transport_once: Mutex<bool>,
         reconnect_requests: Mutex<Vec<ReconnectLeaseRequest>>,
         acquire_requests: Mutex<Vec<coop_cloud::AcquireLeaseRequest>>,
+        world_acquire_transport_once: Mutex<bool>,
+        world_acquire_unauthorized_once: Mutex<bool>,
+        world_acquire_requests: Mutex<Vec<coop_cloud::AcquireLeaseRequest>>,
         heartbeats: Mutex<usize>,
         heartbeat_requests: Mutex<Vec<HeartbeatLeaseRequest>>,
         heartbeat_unauthorized_remaining: Mutex<usize>,
@@ -5600,6 +5637,9 @@ mod lifecycle_tests {
                 reconnect_transport_once: Mutex::new(false),
                 reconnect_requests: Mutex::new(Vec::new()),
                 acquire_requests: Mutex::new(Vec::new()),
+                world_acquire_transport_once: Mutex::new(false),
+                world_acquire_unauthorized_once: Mutex::new(false),
+                world_acquire_requests: Mutex::new(Vec::new()),
                 heartbeats: Mutex::new(0),
                 heartbeat_requests: Mutex::new(Vec::new()),
                 heartbeat_unauthorized_remaining: Mutex::new(0),
@@ -5637,6 +5677,14 @@ mod lifecycle_tests {
 
         fn set_reconnect_transport_once(&self) {
             *self.reconnect_transport_once.lock().unwrap() = true;
+        }
+
+        fn set_world_acquire_transport_once(&self) {
+            *self.world_acquire_transport_once.lock().unwrap() = true;
+        }
+
+        fn set_world_acquire_unauthorized_once(&self) {
+            *self.world_acquire_unauthorized_once.lock().unwrap() = true;
         }
 
         fn set_heartbeat_unauthorized_once(&self) {
@@ -5747,6 +5795,30 @@ mod lifecycle_tests {
             self.acquire_requests.lock().unwrap().push(request);
             let lease = self.lease;
             Box::pin(async move { Ok(lease) })
+        }
+
+        fn acquire_world<'a>(
+            &'a self,
+            _auth: &'a crate::AuthSession,
+            request: coop_cloud::AcquireLeaseRequest,
+        ) -> CloudFuture<'a, coop_cloud::AcquireWorldLeaseResponse> {
+            self.world_acquire_requests.lock().unwrap().push(request);
+            if *self.world_acquire_unauthorized_once.lock().unwrap() {
+                *self.world_acquire_unauthorized_once.lock().unwrap() = false;
+                return Box::pin(async { Err(SessionError::Unauthorized) });
+            }
+            if *self.world_acquire_transport_once.lock().unwrap() {
+                *self.world_acquire_transport_once.lock().unwrap() = false;
+                return Box::pin(async { Err(SessionError::Cloud) });
+            }
+            let lease = self.lease;
+            Box::pin(async move {
+                Ok(coop_cloud::AcquireWorldLeaseResponse {
+                    lease,
+                    active_world_id: coop_protocol::RomWorldId::new(2).unwrap(),
+                    active_snapshot_id: None,
+                })
+            })
         }
 
         fn heartbeat<'a>(
@@ -6128,6 +6200,129 @@ mod lifecycle_tests {
         let requests = cloud.acquire_requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert!(requests[0].replace_same_client);
+    }
+
+    #[tokio::test]
+    async fn world_acquire_exposes_replacement_as_an_explicit_api() {
+        let (_, existing, cloud) = bootstrap(false).await;
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let mut auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let request = AcquireLeaseRequest::new(
+            existing.lease.character_id,
+            existing.lease.client_instance_id,
+            IdempotencyKey::new(Uuid::from_u128(104)).unwrap(),
+        );
+
+        let response = SessionLifecycle::acquire_world_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await;
+        assert!(response.is_ok());
+        assert!(!cloud.world_acquire_requests.lock().unwrap()[0].replace_same_client);
+
+        assert!(matches!(
+            SessionLifecycle::acquire_world_with_keychain(
+                cloud.as_ref(),
+                &mut auth,
+                request.replacing_same_client(),
+                &keychain,
+            )
+            .await,
+            Err(SessionError::Lease)
+        ));
+        assert_eq!(cloud.world_acquire_requests.lock().unwrap().len(), 1);
+
+        let response = SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.lease.character_id, existing.lease.character_id);
+        let requests = cloud.world_acquire_requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(!requests[0].replace_same_client);
+        assert!(requests[1].replace_same_client);
+        assert_eq!(requests[1].idempotency_key, request.idempotency_key);
+    }
+
+    #[tokio::test]
+    async fn world_acquire_replays_the_exact_replacement_request_after_cloud_loss() {
+        let (_, existing, cloud) = bootstrap(false).await;
+        cloud.set_world_acquire_transport_once();
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let mut auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let request = AcquireLeaseRequest::new(
+            existing.lease.character_id,
+            existing.lease.client_instance_id,
+            IdempotencyKey::new(Uuid::from_u128(105)).unwrap(),
+        )
+        .replacing_same_client();
+
+        SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await
+        .unwrap();
+
+        let requests = cloud.world_acquire_requests.lock().unwrap();
+        assert_eq!(requests.as_slice(), &[request, request]);
+    }
+
+    #[tokio::test]
+    async fn world_acquire_replays_the_exact_replacement_request_after_unauthorized() {
+        let (_, existing, cloud) = bootstrap(false).await;
+        cloud.enable_refresh();
+        cloud.set_world_acquire_unauthorized_once();
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let mut auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let request = AcquireLeaseRequest::new(
+            existing.lease.character_id,
+            existing.lease.client_instance_id,
+            IdempotencyKey::new(Uuid::from_u128(106)).unwrap(),
+        )
+        .replacing_same_client();
+
+        SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+            cloud.as_ref(),
+            &mut auth,
+            request,
+            &keychain,
+        )
+        .await
+        .unwrap();
+
+        let requests = cloud.world_acquire_requests.lock().unwrap();
+        assert_eq!(requests.as_slice(), &[request, request]);
     }
 
     #[tokio::test]
