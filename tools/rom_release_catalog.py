@@ -25,7 +25,7 @@ else:
 
 TOKEN = re.compile(r"[a-z][a-z0-9_]*\Z")
 DIGEST = re.compile(r"[0-9a-f]{64}\Z")
-_VERIFIED_ARRIVALS: set[tuple[str, int, int, int]] = set()
+_VERIFIED_ARRIVALS: set[tuple[str, int, int, int, int]] = set()
 
 
 @lru_cache(maxsize=1)
@@ -42,12 +42,14 @@ def _arrival_verifier() -> Path:
     return executable
 
 
-def _verify_arrival_save(path: Path, digest: str, group: int, number: int, warp: int) -> None:
-    key = (digest, group, number, warp)
+def _verify_arrival_save(path: Path, digest: str, group: int, number: int, warp: int,
+                         layout: int) -> None:
+    key = (digest, group, number, warp, layout)
     if key in _VERIFIED_ARRIVALS:
         return
     result = subprocess.run(
-        [str(_arrival_verifier()), str(path), digest, str(group), str(number), str(warp)],
+        [str(_arrival_verifier()), str(path), digest, str(group), str(number), str(warp),
+         str(layout)],
         capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise ValueError(f"arrival save rejected: {result.stderr.strip()}")
@@ -189,11 +191,15 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
                 raise ValueError(f"{name} has invalid arrival")
             coordinates = tuple(_integer(arrival.get(field), f"{name} {field}", 255)
                                 for field in ("map_group", "map_number", "warp_id"))
+            layout_id = _integer(arrival.get("map_layout_id"), f"{name} map_layout_id")
+            if layout_id == 0:
+                raise ValueError(f"{name} map_layout_id must be positive")
             template = _artifact(root, arrival.get("template_sav_path"),
                                  arrival.get("template_sav_sha256"))
             if template.stat().st_size not in (131072, 131088):
                 raise ValueError(f"{name} {portal_id} has invalid arrival save size")
-            _verify_arrival_save(template, arrival["template_sav_sha256"], *coordinates)
+            _verify_arrival_save(template, arrival["template_sav_sha256"], *coordinates,
+                                 layout_id)
         portals_by_id: dict[str, dict] = {}
         for portal in portals:
             if not isinstance(portal, dict):

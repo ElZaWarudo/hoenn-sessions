@@ -51,6 +51,7 @@ pub(crate) struct WireArrival {
     map_group: u8,
     map_number: u8,
     warp_id: u8,
+    map_layout_id: u16,
     template_sav_path: String,
     template_sav_sha256: Sha256Digest,
 }
@@ -133,6 +134,7 @@ impl TrustedBuildCatalog {
                     (3, WireArrivals::Pinned(templates)) => {
                         for arrival in templates {
                             if !valid_portal_id(&arrival.id)
+                                || arrival.map_layout_id == 0
                                 || !valid_release_path(&arrival.template_sav_path)
                                 || !unique_arrivals.insert(arrival.id.clone())
                             {
@@ -299,6 +301,9 @@ impl TrustedBuildCatalog {
                 .ok_or("arrival save has no map state")?;
             if local.get(4..7) != Some(&[arrival.map_group, arrival.map_number, arrival.warp_id]) {
                 return Err("arrival save map does not match catalog");
+            }
+            if local.get(0x32..0x34) != Some(arrival.map_layout_id.to_le_bytes().as_slice()) {
+                return Err("arrival save layout does not match catalog");
             }
             loaded.insert(key.clone(), bytes);
         }
@@ -468,6 +473,37 @@ mod tests {
         assert_eq!(path, "cormoria-from_previous.sav");
         assert_ne!(digest, Sha256Digest::of_bytes(b"wrong"));
         assert_eq!(map, (79, 1, 255));
+    }
+
+    #[test]
+    fn arrival_loader_rejects_pinned_save_with_wrong_layout() {
+        let mut catalog: Value =
+            serde_json::from_slice(include_bytes!("fixtures/travel-catalog-v3.json")).unwrap();
+        catalog["worlds"][1]["arrivals"][0]["map_layout_id"] = json!(1314);
+        let bytes = serde_json::to_vec(&catalog).unwrap();
+        let mut trusted =
+            TrustedBuildCatalog::from_release_bytes(&bytes, Sha256Digest::of_bytes(&bytes))
+                .expect("digest-pinned catalog");
+        let root =
+            std::env::temp_dir().join(format!("coop-arrival-layout-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let template = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../tools/tests/fixtures/arrival-v3-cormoria-carabrue.sav"),
+        )
+        .unwrap();
+        for world in catalog["worlds"].as_array().unwrap() {
+            for arrival in world["arrivals"].as_array().unwrap() {
+                let name = arrival["template_sav_path"].as_str().unwrap();
+                std::fs::write(root.join(name), &template).unwrap();
+            }
+        }
+        let result = trusted.load_arrival_saves(&root);
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(
+            result.unwrap_err(),
+            "arrival save layout does not match catalog"
+        );
     }
 
     #[test]

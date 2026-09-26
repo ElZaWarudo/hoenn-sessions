@@ -27,6 +27,13 @@ fn run() -> Result<(), &'static str> {
         parse_byte(args.next())?,
         parse_byte(args.next())?,
     ];
+    let expected_layout = args
+        .next()
+        .ok_or("expected map layout ID")?
+        .to_str()
+        .and_then(|text| text.parse::<u16>().ok())
+        .filter(|layout| *layout != 0)
+        .ok_or("invalid map layout ID")?;
     if args.next().is_some() {
         return Err("unexpected argument");
     }
@@ -50,6 +57,9 @@ fn run() -> Result<(), &'static str> {
         .ok_or("arrival save has no map state")?;
     if local.get(4..7) != Some(expected.as_slice()) {
         return Err("arrival save map does not match catalog");
+    }
+    if local.get(0x32..0x34) != Some(expected_layout.to_le_bytes().as_slice()) {
+        return Err("arrival save layout does not match catalog");
     }
     Ok(())
 }

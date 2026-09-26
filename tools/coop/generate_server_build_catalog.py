@@ -97,6 +97,7 @@ def generate(build_registry: Path, release_catalog: Path, trusted_sha256: str) -
                 "map_group": arrival["map_group"],
                 "map_number": arrival["map_number"],
                 "warp_id": arrival["warp_id"],
+                "map_layout_id": arrival["map_layout_id"],
                 "template_sav_path": arrival["template_sav_path"],
                 "template_sav_sha256": arrival["template_sav_sha256"],
             } for arrival_id, arrival in sorted(world["arrivals"].items())],

@@ -78,6 +78,7 @@ class RomReleaseCatalogTests(unittest.TestCase):
                 (self.root / template_name).write_bytes(template_bytes)
                 arrivals[arrival_id] = {
                     "map_group": 79, "map_number": 1, "warp_id": 255,
+                    "map_layout_id": 1194,
                     "template_sav_path": template_name,
                     "template_sav_sha256": hashlib.sha256(template_bytes).hexdigest(),
                 }
@@ -143,6 +144,11 @@ class RomReleaseCatalogTests(unittest.TestCase):
     def test_rejects_arrival_template_with_wrong_saved_map(self) -> None:
         self.catalog["worlds"][1]["arrivals"]["from_previous"]["map_number"] = 2
         with self.assertRaisesRegex(ValueError, "map does not match catalog"):
+            self.validate()
+
+    def test_rejects_arrival_template_with_wrong_saved_layout(self) -> None:
+        self.catalog["worlds"][1]["arrivals"]["from_previous"]["map_layout_id"] = 1314
+        with self.assertRaisesRegex(ValueError, "layout does not match catalog"):
             self.validate()
 
     def test_rejects_template_replaced_between_hash_and_v2_parse(self) -> None:
