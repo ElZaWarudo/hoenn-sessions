@@ -13,8 +13,8 @@
 _Static_assert(sizeof(void *) == 4, "object scalar descriptor requires GBA pointers");
 // AdditionalEffect currently contains no pointers. Keep these checks in sync
 // with the audited scalar-only layout before hashing its bytes verbatim.
-_Static_assert(offsetof(struct AdditionalEffect, chance) == 9, "audit AdditionalEffect fields before changing the object contract");
-_Static_assert(sizeof(struct AdditionalEffect) == 12, "audit AdditionalEffect fields before changing the object contract");
+_Static_assert(offsetof(struct AdditionalEffect, chance) == 3, "audit AdditionalEffect fields before changing the object contract");
+_Static_assert(sizeof(struct AdditionalEffect) == 4, "audit AdditionalEffect fields before changing the object contract");
 
 struct ObjectScalarLayout
 {
