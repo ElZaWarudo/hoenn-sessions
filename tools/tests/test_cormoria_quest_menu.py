@@ -114,6 +114,17 @@ class CormoriaQuestMenuTests(unittest.TestCase):
     def test_donor_subquest_table_uses_exact_group_count(self):
         self.assertIn("#define CORMORIA_SUBQUEST_COUNT 20", (ROOT / "include/cormoria/quest_state.h").read_text(encoding="utf-8"))
 
+    def test_quest_text_uses_rom_charmap(self):
+        charmap = (ROOT / "charmap.txt").read_text(encoding="utf-8")
+        allowed = set("".join(re.findall(r"^'([^']+)'\s*=", charmap, re.MULTILINE)))
+        self.assertIn("'\\''", charmap)
+        allowed.add("'")
+        unsupported = set()
+        for literal in re.findall(r'_\("((?:\\.|[^"\\])*)"\)', self.source):
+            plain = re.sub(r"\\.", "", literal)
+            unsupported.update(character for character in plain if character not in allowed)
+        self.assertEqual(unsupported, set())
+
 
 if __name__ == "__main__":
     unittest.main()
