@@ -3,6 +3,9 @@
 name: Multiworld build validation
 
 on:
+  push:
+    branches:
+      - codex/dreamstone-region
   pull_request:
     branches:
       - main
