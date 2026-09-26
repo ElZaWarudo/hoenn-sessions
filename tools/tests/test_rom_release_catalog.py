@@ -151,15 +151,17 @@ class RomReleaseCatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "layout does not match catalog"):
             self.validate()
 
-    def test_accepts_fresh_cormoria_harbor_save(self) -> None:
-        arrival = self.catalog["worlds"][1]["arrivals"]["from_previous"]
-        template = self.root / arrival["template_sav_path"]
-        image = (Path(__file__).parent / "fixtures" /
-                 "arrival-v3-cormoria-rivetshore.sav").read_bytes()
-        template.write_bytes(image)
-        arrival.update(map_group=82, map_number=21, warp_id=255,
-                       map_layout_id=1314,
-                       template_sav_sha256=hashlib.sha256(image).hexdigest())
+    def test_accepts_fresh_main_and_cormoria_harbor_saves(self) -> None:
+        for world_index, portal, fixture, group, number, layout in (
+            (0, "from_next", "arrival-v3-main-lilycove.sav", 13, 10, 88),
+            (1, "from_previous", "arrival-v3-cormoria-rivetshore.sav", 82, 21, 1314),
+        ):
+            arrival = self.catalog["worlds"][world_index]["arrivals"][portal]
+            image = (Path(__file__).parent / "fixtures" / fixture).read_bytes()
+            (self.root / arrival["template_sav_path"]).write_bytes(image)
+            arrival.update(map_group=group, map_number=number, warp_id=255,
+                           map_layout_id=layout,
+                           template_sav_sha256=hashlib.sha256(image).hexdigest())
         self.validate()
 
     def test_rejects_template_replaced_between_hash_and_v2_parse(self) -> None:
