@@ -3,7 +3,8 @@ import struct
 import unittest
 
 from tools.coop.object_contract_manifest import (
-    DESCRIPTOR, DESCRIPTOR_SIZE, ENTRY, HEADER, MAGIC, MAX_TEXT_BYTES, TABLES,
+    COUNT_PROBE, DESCRIPTOR, DESCRIPTOR_SIZE, EFFECT_LAYOUT, ENTRY, HEADER,
+    MAGIC, MAX_TEXT_BYTES, TABLES,
     ManifestError, manifest_from_rom, require_same_scalar_tables,
     symbols_from_nm,
 )
@@ -14,17 +15,24 @@ TEXT_FIELDS = ((4, 8, 12), (4,), (4, 8), (4,), ())
 
 
 def fixture(pointer_shift=0, table_shift=0, scalar_change=False,
-            null_change=False, text_change=False):
+            null_change=False, text_change=False, effect_change=False,
+            effect_count_change=False):
     rom = bytearray(8192)
     descriptor = bytearray(DESCRIPTOR_SIZE)
-    HEADER.pack_into(descriptor, 0, MAGIC, 2, len(TABLES))
+    HEADER.pack_into(descriptor, 0, MAGIC, 3, len(TABLES))
     for index, fields in enumerate(TEXT_FIELDS):
+        pointers = (*fields, 16) if index == 2 else fields
         ENTRY.pack_into(descriptor, HEADER.size + index * ENTRY.size,
-                        32 if fields else 4, len(fields),
-                        *list(fields), *([0] * (48 - len(fields))),
+                        32 if fields else 4, len(pointers),
+                        *list(pointers), *([0] * (48 - len(pointers))),
                         len(fields), *list(fields), *([0] * (3 - len(fields))))
+    EFFECT_LAYOUT.pack_into(descriptor, HEADER.size + len(TABLES) * ENTRY.size, 12, 16)
     rom[16:16 + len(descriptor)] = descriptor
     symbols = {DESCRIPTOR: (BASE + 16, len(descriptor))}
+    probe = bytearray(32)
+    probe[20] = 0x70
+    rom[640:672] = probe
+    symbols[COUNT_PROBE] = (BASE + 640, len(probe))
     for index, name in enumerate(TABLES):
         offset = 768 + table_shift + index * 128
         stride = 32 if TEXT_FIELDS[index] else 4
@@ -43,6 +51,14 @@ def fixture(pointer_shift=0, table_shift=0, scalar_change=False,
         if text_change and index == 2:
             text_offset = 2048 + pointer_shift + index * 256
             rom[text_offset] ^= 1
+        if index == 2:
+            effect_offset = 6000 + pointer_shift
+            effect = bytearray(range(24))
+            if effect_change:
+                effect[14] ^= 1
+            rom[effect_offset:effect_offset + len(effect)] = effect
+            struct.pack_into("<I", payload, 16, BASE + effect_offset)
+            payload[20] = (1 if effect_count_change else 2) << 4
         rom[offset:offset + len(payload)] = payload
         symbols[name] = (BASE + offset, len(payload))
     return bytes(rom), symbols
@@ -61,6 +77,8 @@ class ObjectContractManifestTests(unittest.TestCase):
                             right["tables"]["gItemsInfo"]["address"])
         self.assertEqual(left["tables"]["gItemsInfo"]["display_text_sha256"],
                          right["tables"]["gItemsInfo"]["display_text_sha256"])
+        self.assertEqual(left["tables"]["gMovesInfo"]["additional_effect_sha256"],
+                         right["tables"]["gMovesInfo"]["additional_effect_sha256"])
         self.assertEqual(left["rom_sha256"], hashlib.sha256(left_rom).hexdigest())
 
     def test_scalar_and_text_drift_rejected(self):
@@ -86,6 +104,64 @@ class ObjectContractManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "disagree"):
             require_same_scalar_tables({"main": left, "cormoria": right})
         require_same_scalar_tables({"main": right, "cormoria": right})
+
+    def test_move_effect_record_and_count_drift_rejected(self):
+        left_rom, left_symbols = fixture()
+        left = manifest_from_rom(left_rom, left_symbols)
+        for change in ({"effect_change": True}, {"effect_count_change": True}):
+            with self.subTest(change=change):
+                right_rom, right_symbols = fixture(**change)
+                right = manifest_from_rom(right_rom, right_symbols)
+                self.assertNotEqual(left["tables"]["gMovesInfo"]["additional_effect_sha256"],
+                                    right["tables"]["gMovesInfo"]["additional_effect_sha256"])
+                if "effect_change" in change:
+                    self.assertEqual(left["tables"]["gMovesInfo"]["scalar_sha256"],
+                                     right["tables"]["gMovesInfo"]["scalar_sha256"])
+                with self.assertRaisesRegex(ManifestError, "disagree"):
+                    require_same_scalar_tables({"main": left, "cormoria": right})
+
+    def test_move_effect_pointer_and_count_bounds(self):
+        rom, symbols = fixture()
+        move_offset = symbols["gMovesInfo"][0] - BASE
+        for pointer in (BASE - 4, BASE + len(rom), 0x0A000000, BASE + len(rom) - 16):
+            malformed = bytearray(rom)
+            struct.pack_into("<I", malformed, move_offset + 16, pointer)
+            with self.subTest(pointer=pointer), self.assertRaisesRegex(ManifestError, "outside"):
+                manifest_from_rom(bytes(malformed), symbols)
+        malformed = bytearray(rom)
+        struct.pack_into("<I", malformed, move_offset + 16, 0)
+        with self.assertRaisesRegex(ManifestError, "missing"):
+            manifest_from_rom(bytes(malformed), symbols)
+        malformed = bytearray(rom)
+        malformed[move_offset + 20] = 0
+        with self.assertRaisesRegex(ManifestError, "zero count"):
+            manifest_from_rom(bytes(malformed), symbols)
+        malformed = bytearray(rom)
+        malformed[move_offset + 20] = 7 << 4
+        struct.pack_into("<I", malformed, move_offset + 16, BASE + len(rom) - 80)
+        with self.assertRaisesRegex(ManifestError, "outside"):
+            manifest_from_rom(bytes(malformed), symbols)
+
+    def test_move_count_probe_must_describe_exact_three_bit_field(self):
+        rom, symbols = fixture()
+        for probe_byte in (0, 0x50, 0xF0):
+            malformed = bytearray(rom)
+            malformed[640 + 20] = probe_byte
+            with self.subTest(probe_byte=probe_byte), self.assertRaisesRegex(ManifestError, "probe"):
+                manifest_from_rom(bytes(malformed), symbols)
+        malformed_symbols = dict(symbols)
+        malformed_symbols[COUNT_PROBE] = (BASE + 640, 28)
+        with self.assertRaisesRegex(ManifestError, "probe"):
+            manifest_from_rom(rom, malformed_symbols)
+
+    def test_move_effect_layout_requires_a_compiler_pointer_slot(self):
+        rom, symbols = fixture()
+        malformed = bytearray(rom)
+        move_layout = 16 + HEADER.size + 2 * ENTRY.size
+        struct.pack_into("<H", malformed, move_layout + 2, 2)
+        struct.pack_into("<H", malformed, move_layout + 4 + 2 * 2, 0)
+        with self.assertRaisesRegex(ManifestError, "additional-effect layout"):
+            manifest_from_rom(bytes(malformed), symbols)
 
     def test_text_pointer_bounds_and_termination(self):
         rom, symbols = fixture()

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Compare linked shared-ID scalar bytes and bounded display text across ROMs.
+"""Compare linked shared-ID scalars, display text, and move effects across ROMs.
 
 Pointer locations come from a compiler-emitted descriptor in each ROM. Pointer
 presence is compared separately from scalar bytes. The checked text fields are
 item name/plural/description, species description, move name/description, and
-ability description. Graphics, callbacks, menus, and full object semantics are
-outside this gate; it is not an object_catalog_sha256 release claim.
+ability description. Move AdditionalEffect records are checked in ID order.
+Graphics, callbacks, menus, and full object semantics are outside this gate;
+it is not an object_catalog_sha256 release claim.
 """
 
 from __future__ import annotations
@@ -29,10 +30,12 @@ TABLES = (
     "gTMHMItemMoveIds",
 )
 DESCRIPTOR = "gCoopObjectScalarDescriptor"
-SYMBOLS = (DESCRIPTOR, *TABLES)
+COUNT_PROBE = "gCoopMoveCountProbe"
+SYMBOLS = (DESCRIPTOR, COUNT_PROBE, *TABLES)
 HEADER = struct.Struct("<IHH")
 ENTRY = struct.Struct("<HH48HH3H")
-DESCRIPTOR_SIZE = HEADER.size + len(TABLES) * ENTRY.size
+EFFECT_LAYOUT = struct.Struct("<HH")
+DESCRIPTOR_SIZE = HEADER.size + len(TABLES) * ENTRY.size + EFFECT_LAYOUT.size
 MAGIC = 0x3143534F
 ROM_BASE = 0x08000000
 ROM_END = 0x0A000000
@@ -63,11 +66,11 @@ def symbols_from_nm(output: str) -> dict[str, tuple[int, int]]:
     return result
 
 
-def decode_descriptor(payload: bytes) -> list[tuple[int, tuple[int, ...], tuple[int, ...]]]:
+def decode_descriptor(payload: bytes) -> tuple[list[tuple[int, tuple[int, ...], tuple[int, ...]]], int, int]:
     if len(payload) != DESCRIPTOR_SIZE:
         raise ManifestError("unexpected object scalar descriptor length")
     magic, version, count = HEADER.unpack_from(payload)
-    if (magic, version, count) != (MAGIC, 2, len(TABLES)):
+    if (magic, version, count) != (MAGIC, 3, len(TABLES)):
         raise ManifestError("unsupported object scalar descriptor")
     layouts = []
     for index in range(count):
@@ -90,7 +93,53 @@ def decode_descriptor(payload: bytes) -> list[tuple[int, tuple[int, ...], tuple[
         if len(set(texts)) != len(texts) or any(offset not in pointers for offset in texts):
             raise ManifestError(f"invalid text offsets for {TABLES[index]}")
         layouts.append((stride, pointers, texts))
-    return layouts
+    effect_stride, effect_pointer = EFFECT_LAYOUT.unpack_from(payload, HEADER.size + count * ENTRY.size)
+    if (not 1 <= effect_stride <= 256 or len(layouts[2][1]) < 3
+            or effect_pointer != layouts[2][1][2]):
+        raise ManifestError("invalid move additional-effect layout")
+    return layouts, effect_stride, effect_pointer
+
+
+def count_field_from_probe(probe: bytes, move_stride: int) -> tuple[int, int, int]:
+    """Locate the compiler's three count bits from an all-zero MoveInfo with count 7."""
+    if len(probe) != move_stride:
+        raise ManifestError("move count probe does not match MoveInfo stride")
+    nonzero = [(index, value) for index, value in enumerate(probe) if value]
+    if len(nonzero) != 1:
+        raise ManifestError("move count probe is not a single three-bit field")
+    offset, mask = nonzero[0]
+    for shift in range(6):
+        if mask == 7 << shift:
+            return offset, mask, shift
+    raise ManifestError("move count probe is not a three-bit field")
+
+
+def additional_effects_sha256(rom: bytes, moves: bytes, move_stride: int,
+                              pointer_offset: int, effect_stride: int,
+                              count_field: tuple[int, int, int]) -> str:
+    """Hash ID/count/record bytes, bounding each pointer by the shipped ROM."""
+    count_offset, count_mask, count_shift = count_field
+    if count_offset >= move_stride or pointer_offset + 4 > move_stride:
+        raise ManifestError("invalid move additional-effect field offsets")
+    digest = hashlib.sha256()
+    for base in range(0, len(moves), move_stride):
+        move_id = base // move_stride
+        count = (moves[base + count_offset] & count_mask) >> count_shift
+        pointer, = struct.unpack_from("<I", moves, base + pointer_offset)
+        digest.update(struct.pack("<IB", move_id, count))
+        if not count:
+            if pointer:
+                raise ManifestError(f"move additional-effect pointer with zero count at ID {move_id}")
+            continue
+        if not pointer:
+            raise ManifestError(f"move additional effects missing at ID {move_id}")
+        length = count * effect_stride
+        start = pointer - ROM_BASE
+        if (pointer < ROM_BASE or pointer >= ROM_END or start < 0
+                or start + length > len(rom) or pointer + length > ROM_END):
+            raise ManifestError(f"move additional effects outside shipped ROM at ID {move_id}")
+        digest.update(rom[start:start + length])
+    return digest.hexdigest()
 
 
 def scalar_bytes(payload: bytes, stride: int, pointers: tuple[int, ...]) -> tuple[bytes, bytes]:
@@ -143,7 +192,10 @@ def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
             raise ManifestError(f"{name} is outside the shipped ROM")
         return rom[offset:offset + size]
 
-    layouts = decode_descriptor(read(DESCRIPTOR))
+    layouts, effect_stride, effect_pointer = decode_descriptor(read(DESCRIPTOR))
+    count_field = count_field_from_probe(read(COUNT_PROBE), layouts[2][0])
+    if any(offset <= count_field[0] < offset + 4 for offset in layouts[2][1]):
+        raise ManifestError("move count probe overlaps a pointer field")
     entries = {}
     for name, (stride, pointers, texts) in zip(TABLES, layouts):
         address, size = symbols[name]
@@ -161,9 +213,15 @@ def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
             "pointer_presence_sha256": hashlib.sha256(presence).hexdigest(),
             "display_text_sha256": text_sha256(rom, raw, stride, texts, name),
         }
+        if name == "gMovesInfo":
+            entries[name]["additional_effect_stride"] = effect_stride
+            entries[name]["additional_effect_count_offset"] = count_field[0]
+            entries[name]["additional_effect_count_mask"] = count_field[1]
+            entries[name]["additional_effect_sha256"] = additional_effects_sha256(
+                rom, raw, stride, effect_pointer, effect_stride, count_field)
     return {
-        "schema_version": 2,
-        "scope": "linked-table-scalars-pointer-presence-and-bounded-display-text",
+        "schema_version": 3,
+        "scope": "linked-table-scalars-pointer-presence-bounded-display-text-and-move-additional-effects",
         "rom_sha256": hashlib.sha256(rom).hexdigest(),
         "descriptor": {"address": desc_address, "size": desc_size,
                        "sha256": hashlib.sha256(read(DESCRIPTOR)).hexdigest()},
@@ -177,7 +235,7 @@ def require_same_scalar_tables(worlds: dict[str, dict]) -> None:
     reference = None
     for world, manifest in worlds.items():
         tables = manifest.get("tables")
-        if (manifest.get("schema_version") != 2 or not isinstance(tables, dict)
+        if (manifest.get("schema_version") != 3 or not isinstance(tables, dict)
                 or set(tables) != set(TABLES)):
             raise ManifestError(f"invalid scalar table manifest for {world}")
         try:
@@ -186,7 +244,12 @@ def require_same_scalar_tables(worlds: dict[str, dict]) -> None:
                                  tuple(tables[name]["text_offsets"]),
                                  tables[name]["scalar_sha256"],
                                  tables[name]["pointer_presence_sha256"],
-                                 tables[name]["display_text_sha256"]) for name in TABLES)
+                                 tables[name]["display_text_sha256"],
+                                 (tables[name]["additional_effect_stride"],
+                                  tables[name]["additional_effect_count_offset"],
+                                  tables[name]["additional_effect_count_mask"],
+                                  tables[name]["additional_effect_sha256"])
+                                 if name == "gMovesInfo" else None) for name in TABLES)
         except (KeyError, TypeError) as exc:
             raise ManifestError(f"invalid scalar table manifest for {world}") from exc
         if reference is None:

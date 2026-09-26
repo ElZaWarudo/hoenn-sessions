@@ -11,6 +11,10 @@
 #define GFX_F(field) (offsetof(struct SpeciesInfo, overworldDataFemale) + offsetof(struct ObjectEventGraphicsInfo, field))
 
 _Static_assert(sizeof(void *) == 4, "object scalar descriptor requires GBA pointers");
+// AdditionalEffect currently contains no pointers. Keep these checks in sync
+// with the audited scalar-only layout before hashing its bytes verbatim.
+_Static_assert(offsetof(struct AdditionalEffect, chance) == 9, "audit AdditionalEffect fields before changing the object contract");
+_Static_assert(sizeof(struct AdditionalEffect) == 12, "audit AdditionalEffect fields before changing the object contract");
 
 struct ObjectScalarLayout
 {
@@ -27,13 +31,23 @@ struct ObjectScalarDescriptor
     u16 version;
     u16 tableCount;
     struct ObjectScalarLayout tables[5];
+    u16 additionalEffectStride;
+    u16 moveAdditionalEffectsOffset;
+};
+
+// The byte containing numAdditionalEffects and its mask are obtained from this
+// compiler-initialized MoveInfo, so the ROM reader need not model C bitfields.
+const struct MoveInfo gCoopMoveCountProbe
+    __attribute__((used, section(".rodata.coop_player_transfer"))) =
+{
+    .numAdditionalEffects = 7,
 };
 
 const struct ObjectScalarDescriptor gCoopObjectScalarDescriptor
     __attribute__((used, section(".rodata.coop_player_transfer"))) =
 {
     .magic = 0x3143534F, // OSC1
-    .version = 2,
+    .version = 3,
     .tableCount = 5,
     .tables = {
         {
@@ -122,4 +136,6 @@ const struct ObjectScalarDescriptor gCoopObjectScalarDescriptor
         },
         { .stride = sizeof(struct TmHmIndexKey), .pointerCount = 0 },
     },
+    .additionalEffectStride = sizeof(struct AdditionalEffect),
+    .moveAdditionalEffectsOffset = PTR(struct MoveInfo, additionalEffects),
 };
