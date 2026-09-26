@@ -1,0 +1,109 @@
+# Build proof for the two-ROM travel path. This workflow keeps all
+# generated ROMs, manifests, and symbols on the runner; promotion is separate.
+name: Multiworld build validation
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GAME_REVISION: 0
+  GAME_LANGUAGE: ENGLISH
+  GAME_VERSION: EMERALD
+  COMPARE: 0
+  UNUSED_ERROR: 1
+  DEPRECATED_ERROR: 1
+
+jobs:
+  build-worlds:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install ARM/GBA toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libpng-dev python3
+
+      - name: Cache ROM build tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            tools/bin2c/bin2c
+            tools/gbafix/gbafix
+            tools/gbagfx/gbagfx
+            tools/jsonproc/jsonproc
+            tools/mapjson/mapjson
+            tools/mid2agb/mid2agb
+            tools/preproc/preproc
+            tools/ramscrgen/ramscrgen
+            tools/rsfont/rsfont
+            tools/scaninc/scaninc
+            tools/trainerproc/trainerproc
+            tools/compresSmol/compresSmol
+            tools/compresSmol/compresSmolTilemap
+            tools/wav2agb/wav2agb
+          key: tools-v2-ubuntu24-${{ runner.arch }}-${{ hashFiles('make_tools.mk', 'tools/*/Makefile', 'tools/**/*.c', 'tools/**/*.cpp', 'tools/**/*.h', 'tools/**/*.hpp', 'include/**/*.h') }}
+
+      - name: Build Main and its manifests
+        run: |
+          make -j"$(nproc)" -O ROM_WORLD=main all
+          mkdir -p dist/multiworld/main
+          cp pokeemerald.gba dist/multiworld/main/game.gba
+          cp pokeemerald.elf dist/multiworld/main/game.elf
+          python3 tools/generate_bridge_manifest.py \
+            --elf pokeemerald.elf --rom pokeemerald.gba \
+            --manifest dist/multiworld/main/bridge_manifest.json \
+            --lua dist/multiworld/main/generated_addresses.lua
+          python3 tools/coop/player_transfer_manifest.py \
+            --elf pokeemerald.elf --rom pokeemerald.gba \
+            --manifest dist/multiworld/main/player_transfer_manifest.json
+
+      - name: Build Cormoria and its manifests
+        run: |
+          make -j"$(nproc)" -O ROM_WORLD=cormoria all
+          mkdir -p dist/multiworld/cormoria
+          cp pokeemerald-cormoria.gba dist/multiworld/cormoria/game.gba
+          cp pokeemerald-cormoria.elf dist/multiworld/cormoria/game.elf
+          python3 tools/generate_bridge_manifest.py \
+            --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
+            --manifest dist/multiworld/cormoria/bridge_manifest.json \
+            --lua dist/multiworld/cormoria/generated_addresses.lua
+          python3 tools/coop/player_transfer_manifest.py \
+            --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
+            --manifest dist/multiworld/cormoria/player_transfer_manifest.json
+
+      - name: Verify both world builds
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          from tools.coop.player_transfer_manifest import require_same_transfer_schema
+
+          worlds = {}
+          for name, game_code in (("main", b"BPEE"), ("cormoria", b"BPCO")):
+              root = Path("dist/multiworld") / name
+              rom = (root / "game.gba").read_bytes()
+              assert 0 < len(rom) <= 32 * 1024 * 1024, f"{name} exceeds the GBA ROM window"
+              assert rom[0xAC:0xB0] == game_code, f"{name} has the wrong GBA game code"
+              digest = hashlib.sha256(rom).hexdigest()
+              bridge = json.loads((root / "bridge_manifest.json").read_text())
+              transfer = json.loads((root / "player_transfer_manifest.json").read_text())
+              assert bridge["game_build"]["rom_sha256"] == digest, f"{name} bridge/ROM mismatch"
+              assert transfer["rom_sha256"] == digest, f"{name} transfer/ROM mismatch"
+              worlds[name] = transfer
+              print(f"{name}: {len(rom)} bytes, sha256={digest}")
+          assert worlds["main"]["rom_sha256"] != worlds["cormoria"]["rom_sha256"], "world ROMs are identical"
+          require_same_transfer_schema(worlds)
+          print("Both ROMs share the pinned player-transfer schema")
+          PY
