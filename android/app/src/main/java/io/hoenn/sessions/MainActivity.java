@@ -258,7 +258,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         String authenticatedCharacterId=resumeSession?characterId:api.characterId();
         api.clearAccess();
         // Java's preflight login created the refresh family; Rust rotates that same family.
-        if(!NativeSession.start(getFilesDir().getCanonicalPath(),username,"",authenticatedUserId,authenticatedCharacterId,true,false))throw new IOException(getString(R.string.game_session_active));
+        if(!NativeSession.start(getFilesDir().getCanonicalPath(),username,"",authenticatedUserId,authenticatedCharacterId,currentGame.catalogSha256,true,false))throw new IOException(getString(R.string.game_session_active));
         if(session.isDestroyed() || !session.isResumed())NativeSession.stop();
         return resumeSession?getString(R.string.restoring_session):getString(R.string.checking_credentials);
     }
@@ -302,7 +302,11 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
                     closeCore();NativeSession.stop();continue;
                 }
                 verifyCore();
-                synchronized(NativeCore.class){NativeCore.close();NativeBridge.ADDRESS=currentGame.bridgeAddress();NativeCore.configureBridge(NativeBridge.ADDRESS,currentGame.generationAddress());if(!NativeCore.open(event.getString("rom"),event.getString("save")))throw new IOException(getString(R.string.game_open_failed));connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
+                RuntimeStore.Game selected=new RuntimeStore(getFilesDir()).current(event.getInt("world_id"));
+                String verifiedPath=RuntimeStore.verifiedSessionRom(selected,event.getString("rom"),
+                    event.getString("rom_sha256"),event.getString("build_id"));
+                currentGame=selected;
+                synchronized(NativeCore.class){NativeCore.close();NativeBridge.ADDRESS=currentGame.bridgeAddress();NativeCore.configureBridge(NativeBridge.ADDRESS,currentGame.generationAddress());if(!NativeCore.open(verifiedPath,event.getString("save")))throw new IOException(getString(R.string.game_open_failed));connection=new BridgeConnection(event.getJSONObject("bridge"),event.getLong("epoch"));cooperative=true;}
                 savedAccount=SecureCredentialStore.loadAccount();session.markPlaying();setPlaying(true);enterFullscreen();
                 lastCloudRevision=event.getLong("revision");
                 long[] evidence=NativeCore.saveEvidence();lastSeenSaveSerial=evidence!=null&&evidence.length>0?evidence[0]:0;lastAcceptedSaveSerial=lastSeenSaveSerial;savePending=false;
@@ -455,7 +459,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         if(!session.beginStart()){showStatus(getString(R.string.wait_for_login));return;}
         SecureCredentialStore.Account account=savedAccount;
         work(()->{try{
-            if(!NativeSession.start(getFilesDir().getCanonicalPath(),account.username,"",account.userId,account.characterId,true,true))throw new IOException(getString(R.string.other_operation));
+            if(!NativeSession.start(getFilesDir().getCanonicalPath(),account.username,"",account.userId,account.characterId,"",true,true))throw new IOException(getString(R.string.other_operation));
             return getString(R.string.signing_out);
         }finally{session.finishStart();}});
     }

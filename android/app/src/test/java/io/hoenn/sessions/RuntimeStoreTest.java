@@ -19,6 +19,33 @@ public class RuntimeStoreTest {
             ReleaseCatalog.hex(MessageDigest.getInstance("SHA-256").digest(contents)));
     }
 
+    @Test public void loadEventMustMatchVerifiedWorldPathHashAndBuild() throws Exception {
+        File root=Files.createTempDirectory("runtime-session-world-").toFile();
+        try {
+            File world=new File(root,"worlds/2");
+            assertTrue(world.mkdirs());
+            File rom=new File(world,"game.gba");
+            Files.writeString(rom.toPath(),"cormoria");
+            byte[] bridge=manifest(artifact(bytes("cormoria")).sha256);
+            RuntimeStore.Game selected=new RuntimeStore.Game(world,new JSONObject(new String(bridge,StandardCharsets.UTF_8)),
+                1,2,"c".repeat(64));
+            String path=rom.getCanonicalPath();
+            assertEquals(path,RuntimeStore.verifiedSessionRom(selected,path,selected.romHash,selected.buildId));
+            for(String[] rejected:new String[][]{
+                {new File(root,"pokeemerald.gba").getPath(),selected.romHash,selected.buildId},
+                {path,"a".repeat(64),selected.buildId},
+                {path,selected.romHash,"different"}
+            }) {
+                try {RuntimeStore.verifiedSessionRom(selected,rejected[0],rejected[1],rejected[2]);fail();}
+                catch(SecurityException expected) { }
+            }
+        } finally {
+            try(java.util.stream.Stream<java.nio.file.Path> paths=Files.walk(root.toPath())) {
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(path->path.toFile().delete());
+            }
+        }
+    }
+
     @Test public void rejectedNestedWorldDownloadKeepsSelectedReleaseAndCleansStaging() throws Exception {
         assertRollback("foo.partial");
         assertRollback("foo.damaged-12345678-1234-1234-1234-123456789abc");
@@ -146,6 +173,7 @@ public class RuntimeStoreTest {
                 byte[] envelope=bytes("envelope sequence "+sequence);
                 RuntimeStore.Game selected=store.installRelease(downloader,envelope,release,null,null,target);
                 assertEquals(sequence,selected.sequence);
+                assertEquals(release.regionCatalog.sha256,selected.catalogSha256);
                 assertArrayEquals(envelope,Files.readAllBytes(new File(target,"release-envelope.json").toPath()));
                 assertArrayEquals(rom,Files.readAllBytes(new File(target,"pokeemerald.gba").toPath()));
                 assertArrayEquals(otherRom,Files.readAllBytes(new File(target,"worlds/2/game.gba").toPath()));

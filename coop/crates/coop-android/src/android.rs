@@ -1,11 +1,12 @@
 use coop_cloud::{
-    CharacterId, ClientInstanceId, Password, RefreshToken, TrustedManifestKey, UserId,
+    AcquireLeaseRequest, CharacterId, ClientInstanceId, IdempotencyKey, Password, RefreshToken,
+    TrustedManifestKey, UserId,
 };
 use coop_launcher::keychain::{KeychainError, RefreshTokenStore};
 use coop_launcher::process::{SessionSupervisor, embedded::EmbeddedSupervisor};
 use coop_launcher::{
     AuthError, AuthSession, BuildCompatibility, EpochStore, ReqwestCloudApi, SessionConfig,
-    SessionError, SessionLifecycle,
+    SessionError, SessionLifecycle, TrustedRomCatalog, WorldAcquireIntentStore,
 };
 use jni::{
     JNIEnv, JavaVM,
@@ -14,6 +15,7 @@ use jni::{
 };
 use serde_json::{Value, json};
 use std::{
+    fs::OpenOptions,
     panic::AssertUnwindSafe,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
@@ -36,6 +38,7 @@ const ERROR_INTERNAL: &str = "internal_error";
 
 // Classified session failure: a stable machine-readable `code` plus the
 // human-readable detail kept for display.
+#[derive(Debug)]
 struct RunError {
     code: &'static str,
     message: String,
@@ -314,12 +317,106 @@ fn runtime_directory(root: &std::path::Path) -> Result<PathBuf, RunError> {
     Ok(canonical)
 }
 
+fn pending_world_request(
+    store: &WorldAcquireIntentStore,
+    character_id: CharacterId,
+    client_instance_id: ClientInstanceId,
+) -> Result<AcquireLeaseRequest, RunError> {
+    let requested = match store.read().map_err(|error| {
+        RunError::internal(format!("Intención de adquisición ilegible: {error}"))
+    })? {
+        Some(existing) => existing.request,
+        None => AcquireLeaseRequest::new(
+            character_id,
+            client_instance_id,
+            IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| RunError::internal("Clave de adquisición inválida"))?,
+        )
+        .replacing_same_client(),
+    };
+    if requested.character_id != character_id
+        || requested.client_instance_id != client_instance_id
+        || !requested.replace_same_client
+    {
+        return Err(RunError::internal(
+            "Intención de adquisición pertenece a otra sesión",
+        ));
+    }
+    store
+        .load_or_create(requested)
+        .map_err(|error| RunError::internal(format!("No se pudo guardar adquisición: {error}")))
+}
+
+fn persist_client_instance(path: &std::path::Path, value: &str) -> Result<(), RunError> {
+    use std::io::Write;
+    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|_| RunError::internal("No se pudo crear identidad local"))?;
+    file.write_all(value.as_bytes())
+        .and_then(|_| file.sync_all())
+        .map_err(|_| RunError::internal("No se pudo guardar identidad local"))?;
+    std::fs::rename(&temporary, path)
+        .map_err(|_| RunError::internal("No se pudo instalar identidad local"))?;
+    if let Some(parent) = path.parent() {
+        // Android filesystems support directory fsync. Keep file sync above
+        // authoritative on platforms where opening a directory is rejected.
+        if let Ok(directory) = std::fs::File::open(parent) {
+            let _ = directory.sync_all();
+        }
+    }
+    Ok(())
+}
+
+fn client_instance_for_run(
+    root: &std::path::Path,
+    character_id: CharacterId,
+    legacy: bool,
+) -> Result<ClientInstanceId, RunError> {
+    let instance_file = root.join("client-instance.txt");
+    let recovered = if legacy {
+        None
+    } else {
+        WorldAcquireIntentStore::new(root.join("world-acquire"), character_id)
+            .map_err(|_| RunError::internal("Intención de adquisición no disponible"))?
+            .read()
+            .map_err(|_| RunError::internal("Intención de adquisición ilegible"))?
+            .map(|record| record.request.client_instance_id)
+    };
+    if instance_file.exists() {
+        let stored = std::fs::read_to_string(&instance_file)
+            .ok()
+            .and_then(|value| ClientInstanceId::parse(&value).ok());
+        if let Some(stored) = stored {
+            if recovered.is_some_and(|pending| pending != stored) {
+                return Err(RunError::internal(
+                    "Identidad local difiere de la adquisición",
+                ));
+            }
+            return Ok(stored);
+        }
+        if recovered.is_none() {
+            return Err(RunError::internal("Identidad local inválida"));
+        }
+    }
+    let instance = match recovered {
+        Some(instance) => instance,
+        None => ClientInstanceId::new(uuid::Uuid::new_v4())
+            .map_err(|_| RunError::internal("Identidad local inválida"))?,
+    };
+    persist_client_instance(&instance_file, &instance.to_string())?;
+    Ok(instance)
+}
+
 async fn run(
     root: PathBuf,
     user: String,
     password: Zeroizing<String>,
     user_id: String,
     character_id: String,
+    catalog_sha256: String,
     resume: bool,
     logout_only: bool,
     vm: Arc<JavaVM>,
@@ -331,32 +428,30 @@ async fn run(
     let root = root
         .canonicalize()
         .map_err(|_| RunError::internal("Directorio privado inválido"))?;
-    let runtime = runtime_directory(&root)?;
-    let manifest = BuildCompatibility::load_android(
-        &runtime.join("bridge_manifest.json"),
-        &runtime.join("pokeemerald.gba"),
-    )
-    .map_err(|_| RunError::internal("ROM/manifiesto incompatible"))?;
+    // Keep the guard until the lease is released. An exact acquire replay may
+    // refer to an epoch accepted by the process that crashed previously; the
+    // guard proves another updated Android process cannot still own it.
+    let _world_process_lock = if catalog_sha256.is_empty() || logout_only {
+        None
+    } else {
+        let lock = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(root.join("world-acquire-process.lock"))
+            .map_err(|_| RunError::internal("No se pudo abrir bloqueo de región"))?;
+        lock.try_lock()
+            .map_err(|_| RunError::internal("Otra sesión local usa la región"))?;
+        Some(lock)
+    };
     let api = ReqwestCloudApi::new(SERVER).map_err(|_| RunError::internal("Endpoint inválido"))?;
     let vault = Arc::new(AndroidTokens {
         vm,
         class: credential_class,
     });
+    let keychain: Arc<dyn RefreshTokenStore> = vault.clone();
     let bridge = root.join("bridge");
     std::fs::create_dir_all(&bridge)
         .map_err(|_| RunError::internal("No se pudo crear el directorio bridge"))?;
-    let instance_file = root.join("client-instance.txt");
-    let instance = if instance_file.exists() {
-        std::fs::read_to_string(&instance_file)
-            .map_err(|_| RunError::internal("Identidad local ilegible"))?
-    } else {
-        let value = uuid::Uuid::new_v4().to_string();
-        std::fs::write(&instance_file, &value)
-            .map_err(|_| RunError::internal("No se pudo guardar identidad local"))?;
-        value
-    };
-    let client_instance_id = serde_json::from_value::<ClientInstanceId>(json!(instance))
-        .map_err(|_| RunError::internal("Identidad local inválida"))?;
     let mut auth = if resume {
         let user_id = UserId::parse(&user_id)
             .map_err(|_| RunError::internal("Identidad guardada inválida"))?;
@@ -389,6 +484,14 @@ async fn run(
             .await;
         return Ok(());
     }
+    let runtime = runtime_directory(&root)?;
+    let legacy = catalog_sha256.is_empty();
+    if legacy && runtime.join("release_catalog.json").exists() {
+        return Err(RunError::internal(
+            "Falta la identidad firmada del catálogo",
+        ));
+    }
+    let client_instance_id = client_instance_for_run(&root, auth.character_id, legacy)?;
     let epoch_store = match EpochStore::for_character(&root, auth.character_id) {
         Ok(store) => store,
         Err(error) => {
@@ -397,20 +500,138 @@ async fn run(
             )));
         }
     };
-    let config = SessionConfig {
-        client_instance_id,
-        // This Android launcher path currently installs Main only. Future
-        // multi-ROM installs must obtain the ID from the trusted catalog.
-        rom_world_id: coop_launcher::session::RomWorldId::new(1)
-            .map_err(|_| "ID de región ROM no válido")?,
-        manifest,
-        trusted_manifest_key: key(),
-        epoch_store,
-        workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
-        bridge_lua_dir: bridge,
+    let mut world_intent = None;
+    let (selected_world_id, selected_rom_sha, selected_build_id);
+    let (acquired, rom_path) = if legacy {
+        let rom_path = runtime.join("pokeemerald.gba");
+        let manifest =
+            BuildCompatibility::load_android(&runtime.join("bridge_manifest.json"), &rom_path)
+                .map_err(|_| RunError::internal("ROM/manifiesto incompatible"))?;
+        selected_world_id = 1;
+        selected_rom_sha = manifest.target.rom_sha256.as_hex();
+        selected_build_id = manifest.target.game_build_id.value().to_owned();
+        let config = SessionConfig {
+            client_instance_id,
+            rom_world_id: coop_launcher::session::RomWorldId::new(1)
+                .map_err(|_| RunError::internal("ID de región ROM no válido"))?,
+            manifest,
+            trusted_manifest_key: key(),
+            epoch_store,
+            workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
+            bridge_lua_dir: bridge,
+        };
+        (
+            SessionLifecycle::acquire_replacing_same_client(&api, auth, config, vault.clone())
+                .await,
+            rom_path,
+        )
+    } else {
+        let catalog =
+            TrustedRomCatalog::load(&runtime.join("release_catalog.json"), &catalog_sha256)
+                .map_err(|_| RunError::internal("Catálogo de regiones incompatible"))?;
+        let intent = WorldAcquireIntentStore::new(root.join("world-acquire"), auth.character_id)
+            .map_err(|error| {
+                RunError::internal(format!("Historial de adquisición no disponible: {error}"))
+            })?;
+        let mut request = pending_world_request(&intent, auth.character_id, client_instance_id)?;
+        let mut response =
+            match SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+                &api, &mut auth, request, &keychain,
+            )
+            .await
+            {
+                Err(SessionError::AcquireClosed) => {
+                    intent.clear_exact(request).map_err(|_| {
+                        RunError::internal("No se pudo renovar la adquisición cerrada")
+                    })?;
+                    request =
+                        pending_world_request(&intent, auth.character_id, client_instance_id)?;
+                    SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+                        &api, &mut auth, request, &keychain,
+                    )
+                    .await
+                    .map_err(|error| RunError::session("No se pudo adquirir la región", error))?
+                }
+                Err(error) => {
+                    return Err(RunError::session("No se pudo adquirir la región", error));
+                }
+                Ok(response) => response,
+            };
+        if epoch_store
+            .read(auth.character_id, response.lease.session_id)
+            .is_ok_and(|record| {
+                record.is_some_and(|record| {
+                    record.greatest_epoch == response.lease.session_epoch.value()
+                })
+            })
+        {
+            // The same durable key replayed a lease whose epoch had already
+            // been accepted before a process crash. It cannot be accepted a
+            // second time. Under the process guard, close that exact lease and
+            // persist a fresh request before touching local session state.
+            SessionLifecycle::release_preacquired_world_lease(&api, &mut auth, response, &keychain)
+                .await
+                .map_err(|error| {
+                    RunError::session("No se pudo cerrar adquisición anterior", error)
+                })?;
+            intent
+                .clear_exact(request)
+                .map_err(|_| RunError::internal("No se pudo cerrar intención anterior"))?;
+            request = pending_world_request(&intent, auth.character_id, client_instance_id)?;
+            response = SessionLifecycle::acquire_world_replacing_same_client_with_keychain(
+                &api, &mut auth, request, &keychain,
+            )
+            .await
+            .map_err(|error| RunError::session("No se pudo reacquirir la región", error))?;
+        }
+        let selected = catalog.world(response.active_world_id);
+        let compatibility = selected.and_then(|world| {
+            let compatible = BuildCompatibility::load_android(&world.bridge_path, &world.rom_path)?;
+            world.check_compatibility(&compatible)?;
+            Ok(compatible)
+        });
+        let compatibility = match compatibility {
+            Ok(compatible) => compatible,
+            Err(_) => {
+                if SessionLifecycle::release_preacquired_world_lease(
+                    &api, &mut auth, response, &keychain,
+                )
+                .await
+                .is_ok()
+                {
+                    let _ = intent.clear_exact(request);
+                }
+                return Err(RunError::internal(
+                    "ROM de región no disponible o incompatible",
+                ));
+            }
+        };
+        let rom_path = compatibility.rom_path.clone();
+        selected_world_id = response.active_world_id.get();
+        selected_rom_sha = compatibility.target.rom_sha256.as_hex();
+        selected_build_id = compatibility.target.game_build_id.value().to_owned();
+        let config = SessionConfig {
+            client_instance_id: response.lease.client_instance_id,
+            rom_world_id: response.active_world_id,
+            manifest: compatibility,
+            trusted_manifest_key: key(),
+            epoch_store,
+            workspace_parent: root.join(format!("sessions-{}", auth.character_id)),
+            bridge_lua_dir: bridge,
+        };
+        world_intent = Some((intent, request));
+        (
+            SessionLifecycle::from_world_lease_with_keychain(
+                &api,
+                auth,
+                config,
+                vault.clone(),
+                response,
+            )
+            .await,
+            rom_path,
+        )
     };
-    let acquired =
-        SessionLifecycle::acquire_replacing_same_client(&api, auth, config, vault.clone()).await;
     let mut session = match acquired {
         Ok(session) => session,
         Err(error) => {
@@ -483,7 +704,10 @@ async fn run(
                 Err(_) => break Err(RunError::internal("No se pudo iniciar sidecar")),
             };
         recover_lock(&handle.host).closed = false;
-        let load = json!({"type":"load","rom":runtime.join("pokeemerald.gba"),
+        let load = json!({"type":"load","rom":rom_path,
+            "world_id":selected_world_id,
+            "rom_sha256":selected_rom_sha,
+            "build_id":selected_build_id,
             "save":session.workspace.path().join("character.sav"),"bridge":descriptor.bridge(),
             "epoch":session.lease.session_epoch.value(),"revision":session.revision.value(),
             // Only the verified canonical SAV is portable across desktop/Android.
@@ -581,6 +805,11 @@ async fn run(
         // ));
     }
     release.map_err(|error| RunError::session("Cierre pendiente", error))?;
+    if let Some((intent, request)) = world_intent {
+        intent.clear_exact(request).map_err(|error| {
+            RunError::internal(format!("No se pudo cerrar adquisición: {error}"))
+        })?;
+    }
     let _ = events
         .send(json!({"type":"closed","revision":revision,"signed_out":signed_out}))
         .await;
@@ -596,6 +825,7 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_start(
     password: JString,
     user_id: JString,
     character_id: JString,
+    catalog_sha256: JString,
     resume: jboolean,
     logout_only: jboolean,
 ) -> jboolean {
@@ -610,14 +840,24 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_start(
         else {
             return 0;
         };
-        let (Ok(root), Ok(user), Ok(password), Ok(user_id), Ok(character_id), Ok(vm)) = (
+        let (
+            Ok(root),
+            Ok(user),
+            Ok(password),
+            Ok(user_id),
+            Ok(character_id),
+            Ok(catalog_sha256),
+            Ok(vm),
+        ) = (
             read(&mut env, &root),
             read(&mut env, &user),
             read(&mut env, &password),
             read(&mut env, &user_id),
             read(&mut env, &character_id),
+            read(&mut env, &catalog_sha256),
             env.get_java_vm(),
-        ) else {
+        )
+        else {
             return 0;
         };
         let mut slot = recover_lock(active());
@@ -655,6 +895,7 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_start(
                             Zeroizing::new(password),
                             user_id,
                             character_id,
+                            catalog_sha256,
                             resume != 0,
                             logout_only != 0,
                             Arc::new(vm),
@@ -811,6 +1052,48 @@ pub extern "system" fn Java_io_hoenn_sessions_NativeSession_signOut(_: JNIEnv, _
 mod tests {
     use super::*;
     use coop_launcher::{AuthError, EpochError};
+
+    #[test]
+    fn android_world_request_replays_exact_key_and_rejects_other_client() {
+        let root =
+            std::env::temp_dir().join(format!("android-world-acquire-{}", uuid::Uuid::new_v4()));
+        let character = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let client = ClientInstanceId::new(uuid::Uuid::new_v4()).unwrap();
+        let other_client = ClientInstanceId::new(uuid::Uuid::new_v4()).unwrap();
+        let store = WorldAcquireIntentStore::new(&root, character).unwrap();
+        let first = pending_world_request(&store, character, client).unwrap();
+        assert!(first.replace_same_client);
+        assert_eq!(
+            pending_world_request(&store, character, client).unwrap(),
+            first
+        );
+        assert!(pending_world_request(&store, character, other_client).is_err());
+        assert_eq!(store.read().unwrap().unwrap().request, first);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_client_file_recovers_id_from_durable_world_intent() {
+        let root =
+            std::env::temp_dir().join(format!("android-client-recovery-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let character = CharacterId::new(uuid::Uuid::new_v4()).unwrap();
+        let first = client_instance_for_run(&root, character, false).unwrap();
+        let store = WorldAcquireIntentStore::new(root.join("world-acquire"), character).unwrap();
+        let request = pending_world_request(&store, character, first).unwrap();
+        std::fs::remove_file(root.join("client-instance.txt")).unwrap();
+        assert_eq!(
+            client_instance_for_run(&root, character, false).unwrap(),
+            first
+        );
+        std::fs::write(root.join("client-instance.txt"), "truncated").unwrap();
+        assert_eq!(
+            client_instance_for_run(&root, character, false).unwrap(),
+            first
+        );
+        assert_eq!(store.read().unwrap().unwrap().request, request);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn lease_family_maps_to_lease_conflict() {

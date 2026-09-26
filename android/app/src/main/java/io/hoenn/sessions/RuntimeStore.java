@@ -15,15 +15,18 @@ final class RuntimeStore {
     static final class Game {
         final File directory;
         final JSONObject manifest;
-        final String romHash, buildId;
+        final String romHash, buildId, catalogSha256;
         final long sequence;
         final int worldId;
         Game(File directory,JSONObject manifest,long sequence) throws Exception {
             this(directory,manifest,sequence,1);
         }
         Game(File directory,JSONObject manifest,long sequence,int worldId) throws Exception {
+            this(directory,manifest,sequence,worldId,"");
+        }
+        Game(File directory,JSONObject manifest,long sequence,int worldId,String catalogSha256) throws Exception {
             this.directory=directory;this.manifest=manifest;this.sequence=sequence;
-            this.worldId=worldId;
+            this.worldId=worldId;this.catalogSha256=catalogSha256;
             JSONObject build=manifest.getJSONObject("game_build");
             romHash=build.getString("rom_sha256");buildId=build.getString("id");
         }
@@ -157,6 +160,14 @@ final class RuntimeStore {
     }
     Game current() throws Exception {return current(true);}
     Game current(int worldId) throws Exception {return currentWorld(worldId,true);}
+    static String verifiedSessionRom(Game selected,String eventRom,String eventHash,String eventBuild) throws Exception {
+        File rom=new File(selected.directory,selected.catalogSha256.isEmpty()?"pokeemerald.gba":"game.gba");
+        String verifiedPath=rom.getCanonicalPath();
+        if(!verifiedPath.equals(new File(eventRom).getCanonicalPath())
+            || !selected.romHash.equals(eventHash) || !selected.buildId.equals(eventBuild))
+            throw new SecurityException("La ROM de la sesión no coincide con la versión verificada");
+        return verifiedPath;
+    }
     private Game currentWorld(int worldId,boolean requireFresh) throws Exception {
         if(worldId<1 || worldId>65535) throw new SecurityException("Mundo inválido");
         String id=selectedId();
@@ -174,7 +185,7 @@ final class RuntimeStore {
             throw new SecurityException("Mundo no instalado");
         }
         ReleaseCatalog.verifiedWorldCatalog(new File(selected,"release_catalog.json"),release);
-        return verifyWorld(selected,world,release.sequence);
+        return verifyWorld(selected,world,release.sequence,release.regionCatalog.sha256);
     }
     private void pruneQuarantine(long selectedSequence) {
         File quarantine=damagedRoot();
@@ -196,7 +207,7 @@ final class RuntimeStore {
         for(File entry:entries) if(!entry.equals(highestEntry)) removeGeneration(entry);
         quarantine.delete(); // Succeeds only when every safe, obsolete entry was removed.
     }
-    private Game verifyWorld(File selected,ReleaseCatalog.World world,long sequence) throws Exception {
+    private Game verifyWorld(File selected,ReleaseCatalog.World world,long sequence,String catalogSha256) throws Exception {
         File folder=new File(new File(selected,"worlds"),Integer.toString(world.id));
         File rom=new File(folder,"game.gba");
         File manifest=new File(folder,"bridge_manifest.json");
@@ -207,7 +218,7 @@ final class RuntimeStore {
         if(!romCache().verify(rom,world.rom.size,world.rom.sha256)) throw new SecurityException("ROM de mundo modificada");
         ReleaseCatalog.verifyFile(manifest,world.manifest);
         ReleaseCatalog.verifyFile(transfer,world.playerTransfer);
-        return new Game(folder,ReleaseCatalog.verifiedManifest(manifest,world.rom.sha256),sequence,world.id);
+        return new Game(folder,ReleaseCatalog.verifiedManifest(manifest,world.rom.sha256),sequence,world.id,catalogSha256);
     }
     private Game current(boolean requireFresh) throws Exception {
         String id=selectedId();
@@ -228,14 +239,15 @@ final class RuntimeStore {
         ReleaseCatalog.verifyFile(manifest,release.manifest);
         JSONObject parsed=ReleaseCatalog.verifiedManifest(manifest,release.rom.sha256);
         verifyAllWorlds(selected,release);
-        return new Game(selected,parsed,release.sequence);
+        return new Game(selected,parsed,release.sequence,1,
+            release.regionCatalog==null?"":release.regionCatalog.sha256);
     }
     private void verifyAllWorlds(File selected,ReleaseCatalog.Release release) throws Exception {
         if(release.regionCatalog==null) return;
         File catalog=new File(selected,"release_catalog.json");
         if(Files.isSymbolicLink(catalog.toPath())) throw new SecurityException("Catálogo local inválido");
         ReleaseCatalog.verifiedWorldCatalog(catalog,release);
-        for(ReleaseCatalog.World world:release.worlds.values()) verifyWorld(selected,world,release.sequence);
+        for(ReleaseCatalog.World world:release.worlds.values()) verifyWorld(selected,world,release.sequence,release.regionCatalog.sha256);
     }
     Game ensureLatest(CloudApi api) throws Exception {
         return ensureLatest(api,null);
@@ -268,7 +280,8 @@ final class RuntimeStore {
                 select(latest.id);
                 pruneQuarantine(latest.sequence);
                 if(installed!=null) pruneGenerations(latest.id,installed.directory.getName());
-                return new Game(target,parsed,latest.sequence);
+                return new Game(target,parsed,latest.sequence,1,
+                    latest.regionCatalog==null?"":latest.regionCatalog.sha256);
             } catch(Exception invalidTarget) {
                 if(Files.isSymbolicLink(target.toPath()) || !target.isDirectory()) throw invalidTarget;
             }
@@ -326,7 +339,8 @@ final class RuntimeStore {
             select(latest.id);
             pruneQuarantine(latest.sequence);
             if(installed!=null) pruneGenerations(latest.id,installed.directory.getName());
-            return new Game(target,parsed,latest.sequence);
+            return new Game(target,parsed,latest.sequence,1,
+                latest.regionCatalog==null?"":latest.regionCatalog.sha256);
         } catch(IOException interruptedDownload) {
             keepPartial=true;
             throw interruptedDownload;
