@@ -58,6 +58,7 @@ fn fixture() -> TestResult<Fixture> {
     )?;
     fs::write(game.join("game.gba"), b"private-rom")?;
     fs::write(game.join("bridge_manifest.json"), b"private-manifest")?;
+    fs::write(game.join("release_catalog.json"), b"private-region-catalog")?;
     let installer = root.join(releases::INSTALLER_DIRECTORY).join("msi-one");
     fs::create_dir_all(&installer)?;
     fs::write(root.join(releases::INSTALLER_CURRENT_FILE), b"msi-one\n")?;
@@ -392,6 +393,66 @@ async fn game_channel_is_private_and_supports_exact_resume_ranges() -> TestResul
     )
     .await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
+    Ok(())
+}
+
+#[tokio::test]
+async fn game_channel_serves_canonical_multiworld_artifacts_from_game_tree() -> TestResult<()> {
+    let fixture = fixture()?;
+    let release = fixture.root.join(releases::GAME_DIRECTORY).join("game-one");
+    let artifacts = [
+        ("region-catalog", "release_catalog.json"),
+        ("world-1-rom", "worlds/1/game.gba"),
+        ("world-1-compatibility", "worlds/1/bridge_manifest.json"),
+        ("world-1-player-transfer", "worlds/1/player_transfer.json"),
+        ("world-7-rom", "worlds/7/game.gba"),
+    ];
+    for (identity, relative) in artifacts {
+        let path = release.join(relative);
+        fs::create_dir_all(path.parent().expect("artifact parent"))?;
+        let bytes = format!("game-artifact:{identity}");
+        fs::write(path, bytes.as_bytes())?;
+        let uri = format!("/v1/releases/game/game-one/artifacts/{identity}");
+        let (status, headers, body) = request(
+            fixture.app.router(),
+            &uri,
+            Some(&fixture.access_token),
+            None,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{identity}");
+        assert_eq!(body, bytes.as_bytes(), "{identity}");
+        assert_eq!(headers[header::CONTENT_LENGTH], body.len().to_string());
+        assert_private_no_store(&headers);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn game_channel_rejects_noncanonical_or_unknown_multiworld_ids() -> TestResult<()> {
+    let fixture = fixture()?;
+    for identity in [
+        "world-0-rom",
+        "world-01-rom",
+        "world-65536-rom",
+        "world-2-unknown",
+        "world-2-rom-extra",
+        "world-2-..",
+        "world-2-rom%2f..",
+        "desktop-app",
+        "manifest",
+    ] {
+        let uri = format!("/v1/releases/game/game-one/artifacts/{identity}");
+        let (status, headers, _) = request(
+            fixture.app.router(),
+            &uri,
+            Some(&fixture.access_token),
+            None,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{identity}");
+        assert_private_no_store(&headers);
+    }
     Ok(())
 }
 
