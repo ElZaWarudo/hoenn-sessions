@@ -620,10 +620,12 @@ impl RomTravelJournal {
         Ok(next)
     }
 
-    /// Settle a prepare whose response was lost and whose exact server key
-    /// has since been durably aborted. The authenticated caller must obtain
-    /// this status through the current source lease's reconcile operation.
-    /// A live `Staged` status must be aborted on the server first.
+    /// Settle an exact server key that has been durably aborted while the
+    /// source remains authoritative. This also covers an acknowledged
+    /// offline arrival whose uncommitted stage expired before commit. The
+    /// caller must obtain this status through the current source lease's
+    /// authenticated reconcile operation; a live `Staged` status must be
+    /// aborted on the server first.
     pub fn reconcile_aborted_prepare(
         &self,
         checkpoint: u64,
@@ -660,11 +662,20 @@ impl RomTravelJournal {
         if current.phase == TravelPhase::Aborted {
             return Ok(current);
         }
-        if !matches!(
-            current.phase,
-            TravelPhase::PrepareIntent | TravelPhase::Prepared | TravelPhase::SourceSaved
-        ) || current.server_stage_snapshot_id.is_some()
-        {
+        let phase_matches_stage = match current.server_stage_snapshot_id {
+            None => matches!(
+                current.phase,
+                TravelPhase::PrepareIntent | TravelPhase::Prepared | TravelPhase::SourceSaved
+            ),
+            Some(_) => matches!(
+                current.phase,
+                TravelPhase::DestinationReady
+                    | TravelPhase::Launched
+                    | TravelPhase::ArrivalAcknowledged
+                    | TravelPhase::AbortPending
+            ),
+        };
+        if !phase_matches_stage {
             return Err(RomTravelError::Conflict);
         }
         let mut next = current;
@@ -1075,6 +1086,18 @@ impl RomTravelJournal {
             }
             (TravelPhase::DestinationReady | TravelPhase::Launched, TravelPhase::AbortPending)
             | (TravelPhase::AbortPending, TravelPhase::Aborted) => {
+                record.active_world == source
+                    && record.server_stage_snapshot_id == previous.server_stage_snapshot_id
+                    && record.source_save_sha256 == previous.source_save_sha256
+                    && record.destination_save_sha256 == previous.destination_save_sha256
+                    && record.arrival_nonce == previous.arrival_nonce
+            }
+            (
+                TravelPhase::DestinationReady
+                | TravelPhase::Launched
+                | TravelPhase::ArrivalAcknowledged,
+                TravelPhase::Aborted,
+            ) => {
                 record.active_world == source
                     && record.server_stage_snapshot_id == previous.server_stage_snapshot_id
                     && record.source_save_sha256 == previous.source_save_sha256
@@ -1903,6 +1926,35 @@ mod tests {
                 .unwrap();
             assert_eq!(next.phase, TravelPhase::PrepareIntent);
         }
+    }
+
+    #[test]
+    fn authenticated_abort_settles_expired_acknowledged_arrival() {
+        let (_root, journal) = fixture();
+        journal.initialize(world(1)).unwrap();
+        begin(&journal, world(1), world(2), "to_cormoria", 10);
+        journal.source_saved(10, digest(1)).unwrap();
+        journal
+            .destination_ready(10, stage_id(10), digest(2), [10; 16])
+            .unwrap();
+        journal.launched(10).unwrap();
+        acknowledge(&journal, 10, world(2), "to_cormoria");
+        let status = RomHandoffRecoveryStatus::Aborted {
+            stage_id: stage_id(10),
+            source_snapshot_id: snapshot(10),
+            source_world_id: world(1),
+            expected_revision: Revision::new(10),
+            idempotency_key: idempotency_key(10),
+        };
+        let aborted = journal.reconcile_aborted_prepare(10, &status).unwrap();
+        assert_eq!(aborted.phase, TravelPhase::Aborted);
+        assert_eq!(aborted.active_world, world(1));
+        assert_eq!(aborted.source_save_sha256, Some(digest(1)));
+        assert_eq!(journal.reconcile_aborted_prepare(10, &status).unwrap(), aborted);
+        assert!(matches!(
+            journal.commit(10, stage_id(10), digest(2), fence(10)),
+            Err(RomTravelError::Conflict)
+        ));
     }
 
     #[test]

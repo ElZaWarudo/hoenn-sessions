@@ -1,11 +1,18 @@
 //! The durable boundary between a finalized source portal checkpoint and a
 //! server-staged destination. Launch, arrival proof, and commit happen later.
 
-use std::{future::Future, path::Path, pin::Pin};
+use std::{
+    fs::{self, File},
+    future::Future,
+    io::Read,
+    path::Path,
+    pin::Pin,
+};
 
 use coop_cloud::{
-    ApiVersion, IdempotencyKey, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
-    RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, Sha256Digest, SnapshotId,
+    ApiVersion, ArtifactIdentity, IdempotencyKey, RomHandoffCommitRequest,
+    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
+    RomHandoffRecoveryStatus, Sha256Digest, SnapshotId, SnapshotRecord,
 };
 use coop_protocol::{IDENTITY_REGISTRY_DIGEST, IDENTITY_REGISTRY_VERSION, RomWorldId};
 use coop_save::{RegistryContract, parse_v2};
@@ -122,6 +129,8 @@ pub enum TravelCoordinatorError {
     NonceGeneration,
     #[error("arrival verification failed")]
     ArrivalVerification(#[from] ArrivalVerificationError),
+    #[error("handoff commit failed")]
+    Commit(#[source] SessionError),
     #[error("travel journal failed")]
     Journal(#[from] RomTravelError),
 }
@@ -358,6 +367,220 @@ fn acknowledged_evidence(
     })
 }
 
+/// Commit a verified handoff using only the durable `ArrivalAcknowledged`
+/// journal record. The request is reconstructed from that record on every
+/// retry, so a lost response cannot cause a new stage or idempotency key to be
+/// invented after restart. The server performs the lease release as part of
+/// the commit transaction; this function deliberately does not release or
+/// log out locally. `workspace` is optional because a process restart may
+/// discard the temporary destination workspace after the server has already
+/// committed the exact idempotency key.
+pub async fn commit_acknowledged_handoff<A: CloudApi>(
+    api: &A,
+    auth: &AuthSession,
+    journal: &RomTravelJournal,
+    workspace: Option<&SessionWorkspace>,
+) -> Result<TravelRecord, TravelCoordinatorError> {
+    let current = journal
+        .read()?
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    if current.phase == TravelPhase::Committed {
+        return Ok(current);
+    }
+    let request = commit_request(&current)?;
+    let local_artifacts = workspace.map(read_commit_artifacts).transpose()?;
+    if let Some((sav, pending)) = local_artifacts.as_ref() {
+        validate_local_commit_artifacts(&current, sav, pending)?;
+    }
+
+    let response = api
+        .commit_rom_handoff(auth, request.clone())
+        .await
+        .map_err(TravelCoordinatorError::Commit)?;
+
+    if let Some(workspace) = workspace {
+        // Read again after the network boundary. A workspace mutation must
+        // never be silently published merely because the preflight copy was
+        // valid.
+        let (sav, pending) = read_commit_artifacts(workspace)?;
+        validate_local_commit_artifacts(&current, &sav, &pending)?;
+        validate_commit_response(&current, &request, &response, Some((&sav, &pending)))?;
+    } else {
+        // A restart can discard the temporary workspace after the server has
+        // committed. The immutable response still has to prove the durable
+        // stage, world, lineage, save digest, and empty pending-commit state.
+        validate_commit_response(&current, &request, &response, None)?;
+    }
+
+    // This is the first local active-world pointer change. Every failure above
+    // leaves ArrivalAcknowledged durable and therefore replayable.
+    Ok(journal.commit(
+        current.checkpoint,
+        request.stage_id,
+        request.destination_save_sha256,
+        current
+            .lease_fence
+            .ok_or(TravelCoordinatorError::ResponseMismatch)?,
+    )?)
+}
+
+const MAX_HANDOFF_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+
+fn commit_request(
+    record: &TravelRecord,
+) -> Result<RomHandoffCommitRequest, TravelCoordinatorError> {
+    if record.phase != TravelPhase::ArrivalAcknowledged
+        || record.active_world
+            != record
+                .source_world
+                .ok_or(TravelCoordinatorError::ResponseMismatch)?
+        || record.destination_world.is_none()
+        || record.destination_world == record.source_world
+        || record.source_snapshot_id.is_none()
+        || record.source_snapshot_id == record.server_stage_snapshot_id
+        || record.source_revision.is_none()
+        || record
+            .source_revision
+            .is_some_and(|revision| revision.is_initial())
+        || record.source_head_save_sha256.is_none()
+        || record.source_save_sha256 != record.source_head_save_sha256
+        || record.source_save_sha256.is_none()
+        || record.server_stage_snapshot_id.is_none()
+        || record.prepare_idempotency_key.is_none()
+        || record.trusted_catalog_digest.is_none()
+        || record.lease_fence.is_none()
+        || record.destination_save_sha256.is_none()
+        || record.arrival_nonce.is_none_or(|nonce| nonce == [0; 16])
+    {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    }
+    let fence = record
+        .lease_fence
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    let expected_revision = record
+        .source_revision
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    Ok(RomHandoffCommitRequest {
+        api_version: ApiVersion::V1,
+        character_id: record.character_id,
+        session_id: fence.session_id,
+        session_epoch: fence.session_epoch,
+        client_instance_id: fence.client_instance_id,
+        expected_revision,
+        stage_id: record
+            .server_stage_snapshot_id
+            .ok_or(TravelCoordinatorError::ResponseMismatch)?,
+        destination_save_sha256: record
+            .destination_save_sha256
+            .ok_or(TravelCoordinatorError::ResponseMismatch)?,
+        idempotency_key: record
+            .prepare_idempotency_key
+            .ok_or(TravelCoordinatorError::ResponseMismatch)?,
+    })
+}
+
+fn read_commit_artifacts(
+    workspace: &SessionWorkspace,
+) -> Result<(Vec<u8>, Vec<u8>), TravelCoordinatorError> {
+    Ok((
+        read_workspace_artifact(workspace, "character.sav")?,
+        read_workspace_artifact(workspace, "pending_commits.json")?,
+    ))
+}
+
+fn read_workspace_artifact(
+    workspace: &SessionWorkspace,
+    name: &str,
+) -> Result<Vec<u8>, TravelCoordinatorError> {
+    let path = workspace.path().join(name);
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| TravelCoordinatorError::Commit(SessionError::Filesystem(error)))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(TravelCoordinatorError::Commit(SessionError::Package));
+    }
+    if metadata.len() > MAX_HANDOFF_ARTIFACT_BYTES {
+        return Err(TravelCoordinatorError::Commit(SessionError::Package));
+    }
+    let file = File::open(&path)
+        .map_err(|error| TravelCoordinatorError::Commit(SessionError::Filesystem(error)))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_HANDOFF_ARTIFACT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| TravelCoordinatorError::Commit(SessionError::Filesystem(error)))?;
+    if bytes.len() as u64 > MAX_HANDOFF_ARTIFACT_BYTES {
+        return Err(TravelCoordinatorError::Commit(SessionError::Package));
+    }
+    Ok(bytes)
+}
+
+fn validate_local_commit_artifacts(
+    record: &TravelRecord,
+    sav: &[u8],
+    pending: &[u8],
+) -> Result<(), TravelCoordinatorError> {
+    if record.destination_save_sha256 != Some(Sha256Digest::of_bytes(sav)) || pending != b"[]" {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    }
+    Ok(())
+}
+
+fn validate_commit_response(
+    record: &TravelRecord,
+    request: &RomHandoffCommitRequest,
+    response: &SnapshotRecord,
+    local_artifacts: Option<(&[u8], &[u8])>,
+) -> Result<(), TravelCoordinatorError> {
+    let expected_revision = request
+        .expected_revision
+        .next()
+        .map_err(|_| TravelCoordinatorError::ResponseMismatch)?;
+    let destination = record
+        .destination_world
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    let fence = record
+        .lease_fence
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    // SnapshotRecord carries the destination stage and its source parent
+    // revision, while the durable journal carries the source snapshot ID.
+    // Requiring both sides here prevents a response for another lineage from
+    // being accepted after a restart.
+    if response.validate().is_err()
+        || response.api_version != ApiVersion::V1
+        || response.snapshot_id != request.stage_id
+        || response.rom_world_id != destination
+        || response.character_id != request.character_id
+        || response.session_id != fence.session_id
+        || response.session_epoch != fence.session_epoch
+        || response.parent_revision != request.expected_revision
+        || response.revision != expected_revision
+        || response.files.len() != 2
+        || response.pending_commits_sha256 != Sha256Digest::of_bytes(b"[]")
+    {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    }
+    let sav_file = response
+        .files
+        .iter()
+        .find(|file| file.artifact == ArtifactIdentity::CharacterSav)
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    let pending_file = response
+        .files
+        .iter()
+        .find(|file| file.artifact == ArtifactIdentity::PendingCommits)
+        .ok_or(TravelCoordinatorError::ResponseMismatch)?;
+    if sav_file.sha256 != request.destination_save_sha256 {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    }
+    if let Some((sav, pending)) = local_artifacts
+        && (response.pending_commits_sha256 != Sha256Digest::of_bytes(pending)
+            || sav_file.verify_bytes(sav).is_err()
+            || pending_file.verify_bytes(pending).is_err())
+    {
+        return Err(TravelCoordinatorError::ResponseMismatch);
+    }
+    Ok(())
+}
+
 /// Stage a portal destination using one durable retry key. Retrying after a
 /// transport failure must reuse that same key and finalized source checkpoint.
 /// No destination save is published or ROM process launched here.
@@ -477,10 +700,15 @@ fn current_fence(session: &SessionLifecycle) -> LeaseFenceIdentity {
     )
 }
 
-fn is_unfinished_prepare(phase: TravelPhase) -> bool {
+fn is_recoverable_source_stage(phase: TravelPhase) -> bool {
     matches!(
         phase,
-        TravelPhase::PrepareIntent | TravelPhase::Prepared | TravelPhase::SourceSaved
+        TravelPhase::PrepareIntent
+            | TravelPhase::Prepared
+            | TravelPhase::SourceSaved
+            | TravelPhase::DestinationReady
+            | TravelPhase::Launched
+            | TravelPhase::ArrivalAcknowledged
     )
 }
 
@@ -489,7 +717,7 @@ fn requires_settlement(
     lease_fence: LeaseFenceIdentity,
     catalog_digest: Sha256Digest,
 ) -> bool {
-    is_unfinished_prepare(record.phase)
+    is_recoverable_source_stage(record.phase)
         && (record.lease_fence != Some(lease_fence)
             || record.trusted_catalog_digest != Some(catalog_digest))
 }
@@ -506,7 +734,7 @@ pub async fn recover_pending_handoff<A: CloudApi>(
     let record = journal
         .read()?
         .ok_or(TravelCoordinatorError::ResponseMismatch)?;
-    if !matches!(record.phase, TravelPhase::Aborted) && !is_unfinished_prepare(record.phase)
+    if !matches!(record.phase, TravelPhase::Aborted) && !is_recoverable_source_stage(record.phase)
         || record.character_id != session.lease.character_id
         || record.active_world != session.rom_world_id()
         || record.source_world != Some(session.rom_world_id())
@@ -866,7 +1094,10 @@ fn checked_response(
 mod tests {
     use super::*;
     use crate::rom_travel::TravelPhase;
-    use coop_cloud::{CharacterId, ClientInstanceId, Revision, SessionEpoch, SessionId};
+    use coop_cloud::{
+        ArtifactIdentity, CharacterId, ClientInstanceId, Revision, SessionEpoch, SessionId,
+        SnapshotFence, SnapshotFile, UnixTimestampMillis,
+    };
     use coop_protocol::{IDENTITY_REGISTRY_DIGEST, IDENTITY_REGISTRY_VERSION, RegionId};
     use coop_save::{
         COOP_SAVE_OFFSET, COOP_SAVE_V1_MAGIC, COOP_SAVE_V1_SIZE, LOGICAL_SECTOR_DATA_SIZES,
@@ -1255,6 +1486,34 @@ mod tests {
         assert_eq!(settled.server_stage_snapshot_id, Some(snapshot(101)));
     }
 
+    #[tokio::test]
+    async fn restart_before_arrival_acknowledgment_aborts_exact_live_stage() {
+        for launched in [false, true] {
+            let (_root, journal, staged, _fence) = arrival_fixture();
+            if launched {
+                journal.launched(staged.checkpoint()).unwrap();
+            }
+            let record = journal.read().unwrap().unwrap();
+            assert!(is_recoverable_source_stage(record.phase));
+            let transport = FakeRecovery {
+                events: Mutex::new(Vec::new()),
+                statuses: Mutex::new(VecDeque::from([status(true), status(false)])),
+            };
+            assert_eq!(
+                recover_record(&transport, &journal, &record).await.unwrap(),
+                StageOutcome::Aborted
+            );
+            assert_eq!(
+                *transport.events.lock().unwrap(),
+                ["reconcile", "abort", "reconcile"]
+            );
+            let settled = journal.read().unwrap().unwrap();
+            assert_eq!(settled.phase, TravelPhase::Aborted);
+            assert_eq!(settled.active_world, world(1));
+            assert_eq!(settled.server_stage_snapshot_id, Some(staged.stage_id()));
+        }
+    }
+
     fn arrival_fixture() -> (
         tempfile::TempDir,
         RomTravelJournal,
@@ -1306,6 +1565,206 @@ mod tests {
             map_num: staged.arrival_location[1],
             nonce,
         }
+    }
+
+    fn acknowledged_fixture() -> (
+        tempfile::TempDir,
+        RomTravelJournal,
+        StagedDestination,
+        LeaseFenceIdentity,
+    ) {
+        let fixture = arrival_fixture();
+        record_verified_arrival(
+            &fixture.1,
+            &fixture.2,
+            fixture.3,
+            &arrival_evidence(&fixture.2, [7; 16]),
+        )
+        .unwrap();
+        fixture
+    }
+
+    #[tokio::test]
+    async fn lost_commit_without_server_switch_settles_acknowledged_stage() {
+        let (_root, journal, staged, _fence) = acknowledged_fixture();
+        let record = journal.read().unwrap().unwrap();
+        assert!(is_recoverable_source_stage(record.phase));
+        let transport = FakeRecovery {
+            events: Mutex::new(Vec::new()),
+            statuses: Mutex::new(VecDeque::from([status(true), status(false)])),
+        };
+        assert_eq!(
+            recover_record(&transport, &journal, &record).await.unwrap(),
+            StageOutcome::Aborted
+        );
+        assert_eq!(
+            *transport.events.lock().unwrap(),
+            ["reconcile", "abort", "reconcile"]
+        );
+        let settled = journal.read().unwrap().unwrap();
+        assert_eq!(settled.phase, TravelPhase::Aborted);
+        assert_eq!(settled.active_world, world(1));
+        assert_eq!(settled.server_stage_snapshot_id, Some(staged.stage_id()));
+    }
+
+    fn commit_response(
+        record: &TravelRecord,
+        request: &RomHandoffCommitRequest,
+        save: &[u8],
+        pending: &[u8],
+    ) -> SnapshotRecord {
+        SnapshotRecord::new(
+            request.stage_id,
+            record.destination_world.unwrap(),
+            SnapshotFence::new(
+                request.session_id,
+                request.character_id,
+                request.session_epoch,
+            ),
+            request.expected_revision,
+            request.expected_revision.next().unwrap(),
+            vec![
+                SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, save).unwrap(),
+                SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, pending).unwrap(),
+            ],
+            Sha256Digest::of_bytes(pending),
+            None,
+            UnixTimestampMillis::new(1),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn acknowledged_commit_request_replays_durable_fence_and_stage_exactly() {
+        let (_root, journal, _staged, _fence) = acknowledged_fixture();
+        let record = journal.read().unwrap().unwrap();
+        let request = commit_request(&record).unwrap();
+        assert_eq!(request.api_version, ApiVersion::V1);
+        assert_eq!(request.character_id, record.character_id);
+        assert_eq!(request.session_id, record.lease_fence.unwrap().session_id);
+        assert_eq!(
+            request.session_epoch,
+            record.lease_fence.unwrap().session_epoch
+        );
+        assert_eq!(
+            request.client_instance_id,
+            record.lease_fence.unwrap().client_instance_id
+        );
+        assert_eq!(request.expected_revision, record.source_revision.unwrap());
+        assert_eq!(request.stage_id, record.server_stage_snapshot_id.unwrap());
+        assert_eq!(
+            request.destination_save_sha256,
+            record.destination_save_sha256.unwrap()
+        );
+        assert_eq!(
+            request.idempotency_key,
+            record.prepare_idempotency_key.unwrap()
+        );
+    }
+
+    #[test]
+    fn commit_response_validation_requires_world_lineage_and_artifact_digests() {
+        let (_root, journal, staged, _fence) = acknowledged_fixture();
+        let record = journal.read().unwrap().unwrap();
+        let request = commit_request(&record).unwrap();
+        let save = staged.destination_save();
+        let pending = b"[]";
+        let response = commit_response(&record, &request, save, pending);
+        assert!(
+            validate_commit_response(&record, &request, &response, Some((save, pending))).is_ok()
+        );
+
+        let mut wrong_world = response.clone();
+        wrong_world.rom_world_id = world(1);
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_world, Some((save, pending))),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+
+        let mut wrong_lineage = response.clone();
+        wrong_lineage.parent_revision = Revision::new(6);
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_lineage, Some((save, pending))),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+
+        let mut wrong_session = response.clone();
+        wrong_session.session_id = SessionId::new(Uuid::from_u128(204)).unwrap();
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_session, Some((save, pending))),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+
+        let mut wrong_epoch = response.clone();
+        wrong_epoch.session_epoch = SessionEpoch::new(2).unwrap();
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_epoch, Some((save, pending))),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+
+        let mut wrong_save = response.clone();
+        wrong_save.files[0].sha256 = Sha256Digest::from_bytes([8; 32]);
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_save, Some((save, pending))),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+
+        let mut wrong_pending = response;
+        wrong_pending.pending_commits_sha256 = Sha256Digest::from_bytes([8; 32]);
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_pending, Some((save, pending))),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+    }
+
+    #[test]
+    fn commit_preflight_rejects_changed_save_and_pending_without_journal_publish() {
+        let (_root, journal, staged, _fence) = acknowledged_fixture();
+        let record = journal.read().unwrap().unwrap();
+        let save = staged.destination_save();
+        assert!(validate_local_commit_artifacts(&record, save, b"[]").is_ok());
+        assert!(matches!(
+            validate_local_commit_artifacts(&record, b"changed", b"[]"),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+        assert!(matches!(
+            validate_local_commit_artifacts(&record, save, b"[{\"pending\":true}]"),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
+        assert_eq!(
+            journal.read().unwrap().unwrap().phase,
+            TravelPhase::ArrivalAcknowledged
+        );
+    }
+
+    #[test]
+    fn lost_response_restart_replays_from_durable_response_without_workspace() {
+        let (_root, journal, staged, fence) = acknowledged_fixture();
+        let record = journal.read().unwrap().unwrap();
+        let request = commit_request(&record).unwrap();
+        let response = commit_response(&record, &request, staged.destination_save(), b"[]");
+
+        // The temporary destination workspace is intentionally unavailable on
+        // restart. The server's idempotent response still proves the exact
+        // durable stage, world, lineage, save digest, and empty pending set.
+        validate_commit_response(&record, &request, &response, None).unwrap();
+        let committed = journal
+            .commit(
+                record.checkpoint,
+                request.stage_id,
+                request.destination_save_sha256,
+                fence,
+            )
+            .unwrap();
+        assert_eq!(committed.phase, TravelPhase::Committed);
+        assert_eq!(committed.active_world, world(2));
+
+        let mut wrong_digest = response;
+        wrong_digest.files[0].sha256 = Sha256Digest::from_bytes([8; 32]);
+        assert!(matches!(
+            validate_commit_response(&record, &request, &wrong_digest, None),
+            Err(TravelCoordinatorError::ResponseMismatch)
+        ));
     }
 
     #[test]

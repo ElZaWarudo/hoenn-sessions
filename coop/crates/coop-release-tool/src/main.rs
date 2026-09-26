@@ -8,7 +8,7 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     fs::{self, OpenOptions},
     io::{self, Read},
@@ -186,11 +186,15 @@ const fn hex_nibble(byte: u8) -> u8 {
 }
 
 fn identity(value: &str) -> Result<ArtifactIdentity, ToolError> {
-    FIXED_ARTIFACT_IDENTITIES
-        .iter()
-        .copied()
-        .find(|candidate| candidate.as_str() == value)
-        .ok_or_else(|| ToolError::Input(format!("unknown artifact identity: {value}")))
+    let parsed: ArtifactIdentity =
+        serde_json::from_value(serde_json::Value::String(value.to_owned()))
+            .map_err(|_| ToolError::Input(format!("unknown artifact identity: {value}")))?;
+    if parsed.wire_name() != value {
+        return Err(ToolError::Input(format!(
+            "noncanonical artifact identity: {value}"
+        )));
+    }
+    Ok(parsed)
 }
 
 fn parse_artifacts(values: &[String]) -> Result<BTreeMap<ArtifactIdentity, PathBuf>, ToolError> {
@@ -206,13 +210,37 @@ fn parse_artifacts(values: &[String]) -> Result<BTreeMap<ArtifactIdentity, PathB
             )));
         }
     }
-    if artifacts.len() != FIXED_ARTIFACT_IDENTITIES.len() {
-        return Err(ToolError::Input(format!(
-            "exactly {} fixed artifacts are required",
-            FIXED_ARTIFACT_IDENTITIES.len()
-        )));
-    }
+    canonical_artifact_order(artifacts.keys().copied())?;
     Ok(artifacts)
+}
+
+fn canonical_artifact_order(
+    identities: impl IntoIterator<Item = ArtifactIdentity>,
+) -> Result<Vec<ArtifactIdentity>, ToolError> {
+    let seen = identities.into_iter().collect::<BTreeSet<_>>();
+    let worlds = seen
+        .iter()
+        .filter_map(|identity| match identity {
+            ArtifactIdentity::WorldRom(id)
+            | ArtifactIdentity::WorldCompatibility(id)
+            | ArtifactIdentity::WorldPlayerTransfer(id) => Some(*id),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut canonical = FIXED_ARTIFACT_IDENTITIES.to_vec();
+    if !worlds.is_empty() {
+        canonical.push(ArtifactIdentity::RegionCatalog);
+        for world in worlds {
+            canonical.extend(ArtifactIdentity::world_artifacts(world));
+        }
+    }
+    if canonical.iter().copied().collect::<BTreeSet<_>>() != seen {
+        return Err(ToolError::Input(
+            "release must contain every fixed artifact and complete catalog-bound world groups"
+                .to_owned(),
+        ));
+    }
+    Ok(canonical)
 }
 
 fn hash_artifact(identity: ArtifactIdentity, path: &Path) -> Result<ArtifactDescriptor, ToolError> {
@@ -262,9 +290,9 @@ fn validate_descriptor(descriptor: &ReleaseDescriptor, issued_at: i64) -> Result
         .iter()
         .map(|artifact| artifact.id)
         .collect();
-    if ids != FIXED_ARTIFACT_IDENTITIES {
+    if ids != canonical_artifact_order(ids.iter().copied())? {
         return Err(ToolError::Input(
-            "artifacts are not in canonical fixed order".to_owned(),
+            "artifacts are not in canonical order".to_owned(),
         ));
     }
     Ok(())
@@ -579,8 +607,9 @@ fn sign(options: Options) -> Result<(), ToolError> {
         write_new(path, &bytes)?;
     }
     let artifact_paths = parse_artifacts(&options.artifacts)?;
-    let mut descriptors = Vec::with_capacity(FIXED_ARTIFACT_IDENTITIES.len());
-    for artifact in FIXED_ARTIFACT_IDENTITIES {
+    let artifact_order = canonical_artifact_order(artifact_paths.keys().copied())?;
+    let mut descriptors = Vec::with_capacity(artifact_order.len());
+    for artifact in artifact_order {
         descriptors.push(hash_artifact(artifact, &artifact_paths[&artifact])?);
     }
     let descriptor = ReleaseDescriptor {
@@ -712,5 +741,57 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_complete_multiworld_artifacts_in_canonical_order() {
+        let mut values = FIXED_ARTIFACT_IDENTITIES
+            .iter()
+            .map(|id| format!("{}=unused", id.wire_name()))
+            .collect::<Vec<_>>();
+        values.push("region-catalog=unused".to_owned());
+        for id in [2, 7] {
+            let world = coop_launcher::session::RomWorldId::new(id).unwrap();
+            values.extend(
+                ArtifactIdentity::world_artifacts(world)
+                    .into_iter()
+                    .map(|artifact| format!("{}=unused", artifact.wire_name())),
+            );
+        }
+        let parsed = parse_artifacts(&values).unwrap();
+        let ordered = canonical_artifact_order(parsed.keys().copied()).unwrap();
+        assert_eq!(ordered.len(), FIXED_ARTIFACT_IDENTITIES.len() + 7);
+        assert_eq!(
+            ordered[FIXED_ARTIFACT_IDENTITIES.len()],
+            ArtifactIdentity::RegionCatalog
+        );
+        assert_eq!(
+            ordered.last().copied().unwrap().wire_name(),
+            "world-7-player-transfer"
+        );
+    }
+
+    #[test]
+    fn rejects_incomplete_or_noncanonical_world_artifacts() {
+        let mut values = FIXED_ARTIFACT_IDENTITIES
+            .iter()
+            .map(|id| format!("{}=unused", id.wire_name()))
+            .collect::<Vec<_>>();
+        values.push("region-catalog=unused".to_owned());
+        values.push("world-2-rom=unused".to_owned());
+        assert!(parse_artifacts(&values).is_err());
+        for bad in [
+            "world-02-rom",
+            "world-0-rom",
+            "world-2-rom-extra",
+            "manifest",
+        ] {
+            assert!(identity(bad).is_err(), "{bad}");
+        }
     }
 }

@@ -467,6 +467,63 @@ async fn every_fixed_mapping_streams_exact_bytes_and_unknown_ids_fail() -> TestR
 }
 
 #[tokio::test]
+async fn signed_world_artifact_ids_use_closed_numeric_paths() -> TestResult<()> {
+    let fixture = fixture()?;
+    let release = fixture
+        .root
+        .join(releases::RELEASES_DIRECTORY)
+        .join("release-one");
+    let artifacts = [
+        ("region-catalog", "release_catalog.json"),
+        ("world-1-rom", "worlds/1/game.gba"),
+        ("world-1-compatibility", "worlds/1/bridge_manifest.json"),
+        ("world-1-player-transfer", "worlds/1/player_transfer.json"),
+        ("world-2-rom", "worlds/2/game.gba"),
+        ("world-2-compatibility", "worlds/2/bridge_manifest.json"),
+        ("world-2-player-transfer", "worlds/2/player_transfer.json"),
+        ("world-7-rom", "worlds/7/game.gba"),
+    ];
+    for (identity, relative) in artifacts {
+        let path = release.join(relative);
+        fs::create_dir_all(path.parent().expect("artifact parent"))?;
+        let bytes = format!("artifact:{identity}");
+        fs::write(path, bytes.as_bytes())?;
+        let uri = format!("/v1/releases/release-one/artifacts/{identity}");
+        let (status, _, body) = request(
+            fixture.app.router(),
+            &uri,
+            Some(&fixture.access_token),
+            None,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::OK, "{identity}");
+        assert_eq!(body, bytes.as_bytes(), "{identity}");
+        let (status, _, _) = request(fixture.app.router(), &uri, None, None).await?;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{identity}");
+    }
+    for identity in [
+        "world-0-rom",
+        "world-01-rom",
+        "world-65536-rom",
+        "world-2-unknown",
+        "world-2-rom-extra",
+        "world-2-..",
+        "world-2-rom%2f..",
+    ] {
+        let uri = format!("/v1/releases/release-one/artifacts/{identity}");
+        let (status, _, _) = request(
+            fixture.app.router(),
+            &uri,
+            Some(&fixture.access_token),
+            None,
+        )
+        .await?;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{identity}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn current_switch_and_path_bounds_fail_closed() -> TestResult<()> {
     let fixture = fixture()?;
     write_release(&fixture.root, "release-two", b"signed-envelope-two")?;

@@ -16,7 +16,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use coop_protocol::RomWorldId;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -37,6 +38,8 @@ pub const MAX_RELEASE_ID_BYTES: usize = 128;
 pub const MAX_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 /// Maximum signed release lifetime accepted by the launcher.
 pub const MAX_RELEASE_LIFETIME_SECONDS: i64 = 90 * 24 * 60 * 60;
+/// Maximum number of worlds carried by one signed release family.
+pub const MAX_RELEASE_WORLDS: usize = 16;
 /// Clock skew tolerated for a future-issued descriptor.
 pub const MAX_CLOCK_SKEW_SECONDS: i64 = 5 * 60;
 /// Name of the private generation directory below a caller-owned root.
@@ -78,6 +81,10 @@ pub enum ArtifactIdentity {
     CompatibilityManifest,
     TrustBundle,
     Notices,
+    RegionCatalog,
+    WorldRom(RomWorldId),
+    WorldCompatibility(RomWorldId),
+    WorldPlayerTransfer(RomWorldId),
 }
 
 /// The complete fixed runtime artifact set, in canonical order.
@@ -121,6 +128,23 @@ impl ArtifactIdentity {
             Self::CompatibilityManifest => "compatibility-manifest",
             Self::TrustBundle => "trust-bundle",
             Self::Notices => "notices",
+            // Dynamic identities must use `wire_name` so that their world
+            // identity cannot be lost through a fixed string alias.
+            Self::RegionCatalog => "region-catalog",
+            Self::WorldRom(_) => "world-rom",
+            Self::WorldCompatibility(_) => "world-compatibility",
+            Self::WorldPlayerTransfer(_) => "world-player-transfer",
+        }
+    }
+
+    /// Returns the canonical signed wire identity, including a world ID for
+    /// per-world artifacts.
+    pub fn wire_name(self) -> String {
+        match self {
+            Self::WorldRom(id) => format!("world-{}-rom", id.get()),
+            Self::WorldCompatibility(id) => format!("world-{}-compatibility", id.get()),
+            Self::WorldPlayerTransfer(id) => format!("world-{}-player-transfer", id.get()),
+            _ => self.as_str().to_owned(),
         }
     }
 
@@ -139,7 +163,37 @@ impl ArtifactIdentity {
             Self::CompatibilityManifest => "bridge_manifest.json",
             Self::TrustBundle => "trust/release-trust.json",
             Self::Notices => "THIRD_PARTY_NOTICES.txt",
+            Self::RegionCatalog => "release_catalog.json",
+            Self::WorldRom(_) | Self::WorldCompatibility(_) | Self::WorldPlayerTransfer(_) => {
+                // Dynamic identities use `destination_path` below.
+                "worlds/invalid"
+            }
         }
+    }
+
+    /// Returns the only relative destination accepted for this identity.
+    /// Dynamic world destinations are derived from the signed numeric world
+    /// ID; no caller-supplied path can influence installation.
+    pub fn destination_path(self) -> String {
+        match self {
+            Self::WorldRom(id) => format!("worlds/{}/game.gba", id.get()),
+            Self::WorldCompatibility(id) => {
+                format!("worlds/{}/bridge_manifest.json", id.get())
+            }
+            Self::WorldPlayerTransfer(id) => {
+                format!("worlds/{}/player_transfer.json", id.get())
+            }
+            _ => self.destination().to_owned(),
+        }
+    }
+
+    /// Returns the three signed artifacts required for one ROM world.
+    pub const fn world_artifacts(id: RomWorldId) -> [Self; 3] {
+        [
+            Self::WorldRom(id),
+            Self::WorldCompatibility(id),
+            Self::WorldPlayerTransfer(id),
+        ]
     }
 
     fn from_wire(value: &str) -> Result<Self, UpdateError> {
@@ -156,14 +210,39 @@ impl ArtifactIdentity {
             "compatibility-manifest" | "manifest" => Ok(Self::CompatibilityManifest),
             "trust-bundle" | "trust" => Ok(Self::TrustBundle),
             "notices" => Ok(Self::Notices),
-            _ => Err(UpdateError::UnknownArtifact(value.to_owned())),
+            "region-catalog" => Ok(Self::RegionCatalog),
+            _ => parse_world_identity(value),
         }
     }
 }
 
+fn parse_world_identity(value: &str) -> Result<ArtifactIdentity, UpdateError> {
+    let Some(rest) = value.strip_prefix("world-") else {
+        return Err(UpdateError::UnknownArtifact(value.to_owned()));
+    };
+    let Some((id_text, kind)) = rest.split_once('-') else {
+        return Err(UpdateError::UnknownArtifact(value.to_owned()));
+    };
+    let id_number = id_text
+        .parse::<u16>()
+        .map_err(|_| UpdateError::UnknownArtifact(value.to_owned()))?;
+    let id =
+        RomWorldId::new(id_number).map_err(|_| UpdateError::UnknownArtifact(value.to_owned()))?;
+    let identity = match kind {
+        "rom" => ArtifactIdentity::WorldRom(id),
+        "compatibility" => ArtifactIdentity::WorldCompatibility(id),
+        "player-transfer" => ArtifactIdentity::WorldPlayerTransfer(id),
+        _ => return Err(UpdateError::UnknownArtifact(value.to_owned())),
+    };
+    if identity.wire_name() != value {
+        return Err(UpdateError::UnknownArtifact(value.to_owned()));
+    }
+    Ok(identity)
+}
+
 impl fmt::Display for ArtifactIdentity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
+        formatter.write_str(&self.wire_name())
     }
 }
 
@@ -172,7 +251,7 @@ impl Serialize for ArtifactIdentity {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(self.as_str())
+        serializer.serialize_str(&self.wire_name())
     }
 }
 
@@ -230,7 +309,8 @@ pub struct ReleaseDescriptor {
     pub expires_at: i64,
     /// Target platform and architecture.
     pub platform: String,
-    /// Exactly one descriptor for every [`FIXED_ARTIFACT_IDENTITIES`] entry.
+    /// Exactly one descriptor for every fixed entry, plus an optional signed
+    /// region catalog and complete per-world artifact groups.
     pub artifacts: Vec<ArtifactDescriptor>,
 }
 
@@ -244,26 +324,81 @@ impl ReleaseDescriptor {
             return Err(UpdateError::UnsupportedPlatform(self.platform.clone()));
         }
         validate_release_id(&self.release_id)?;
-        if self.artifacts.len() > FIXED_ARTIFACT_IDENTITIES.len() {
+        let maximum_artifacts = FIXED_ARTIFACT_IDENTITIES.len() + 1 + MAX_RELEASE_WORLDS * 3;
+        if self.artifacts.len() > maximum_artifacts {
             return Err(UpdateError::TooManyArtifacts(self.artifacts.len()));
         }
 
         let mut seen = BTreeSet::new();
+        let mut world_kinds = BTreeMap::<RomWorldId, BTreeSet<WorldArtifactKind>>::new();
+        let mut has_region_catalog = false;
         for artifact in &self.artifacts {
             if !seen.insert(artifact.id) {
                 return Err(UpdateError::DuplicateArtifact(artifact.id));
             }
-            if artifact.size == 0 || artifact.size > MAX_ARTIFACT_BYTES {
+            let maximum_size = match artifact.id {
+                // Keep release packaging aligned with the bounded local
+                // catalog loader: ROMs are admitted at the normal GBA bound,
+                // while manifests/catalog metadata have much tighter limits.
+                ArtifactIdentity::WorldRom(_) => crate::compat::MAX_ROM_BYTES,
+                ArtifactIdentity::WorldCompatibility(_) => crate::compat::MAX_MANIFEST_BYTES,
+                ArtifactIdentity::RegionCatalog => crate::compat::MAX_RELEASE_CATALOG_BYTES,
+                ArtifactIdentity::WorldPlayerTransfer(_) => crate::compat::MAX_ROM_BYTES,
+                _ => MAX_ARTIFACT_BYTES,
+            };
+            if artifact.size == 0 || artifact.size > maximum_size {
                 return Err(UpdateError::InvalidArtifactSize {
                     artifact: artifact.id,
                     size: artifact.size,
                 });
             }
             artifact.digest_bytes()?;
+            match artifact.id {
+                ArtifactIdentity::RegionCatalog => has_region_catalog = true,
+                ArtifactIdentity::WorldRom(id) => {
+                    world_kinds
+                        .entry(id)
+                        .or_default()
+                        .insert(WorldArtifactKind::Rom);
+                }
+                ArtifactIdentity::WorldCompatibility(id) => {
+                    world_kinds
+                        .entry(id)
+                        .or_default()
+                        .insert(WorldArtifactKind::Compatibility);
+                }
+                ArtifactIdentity::WorldPlayerTransfer(id) => {
+                    world_kinds
+                        .entry(id)
+                        .or_default()
+                        .insert(WorldArtifactKind::PlayerTransfer);
+                }
+                _ => {}
+            }
         }
         for expected in FIXED_ARTIFACT_IDENTITIES {
             if !seen.contains(&expected) {
                 return Err(UpdateError::MissingArtifact(expected));
+            }
+        }
+        if world_kinds.len() > MAX_RELEASE_WORLDS {
+            return Err(UpdateError::TooManyWorlds(world_kinds.len()));
+        }
+        if !world_kinds.is_empty() && !has_region_catalog {
+            return Err(UpdateError::MissingArtifact(
+                ArtifactIdentity::RegionCatalog,
+            ));
+        }
+        if has_region_catalog && world_kinds.is_empty() {
+            return Err(UpdateError::RegionCatalogWithoutWorlds);
+        }
+        for (world_id, kinds) in world_kinds {
+            for expected in ArtifactIdentity::world_artifacts(world_id) {
+                let expected_kind = WorldArtifactKind::from_identity(expected)
+                    .expect("world_artifacts always returns dynamic identities");
+                if !kinds.contains(&expected_kind) {
+                    return Err(UpdateError::MissingArtifact(expected));
+                }
             }
         }
         Ok(())
@@ -291,6 +426,24 @@ impl ReleaseDescriptor {
         self.artifacts
             .iter()
             .find(|artifact| artifact.id == identity)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum WorldArtifactKind {
+    Rom,
+    Compatibility,
+    PlayerTransfer,
+}
+
+impl WorldArtifactKind {
+    fn from_identity(identity: ArtifactIdentity) -> Option<Self> {
+        match identity {
+            ArtifactIdentity::WorldRom(_) => Some(Self::Rom),
+            ArtifactIdentity::WorldCompatibility(_) => Some(Self::Compatibility),
+            ArtifactIdentity::WorldPlayerTransfer(_) => Some(Self::PlayerTransfer),
+            _ => None,
+        }
     }
 }
 
@@ -582,6 +735,11 @@ impl ArtifactSet {
     /// Returns the entries in caller order.
     pub fn entries(&self) -> &[ArtifactPayload] {
         &self.entries
+    }
+
+    /// Returns the signed payload for one artifact identity, if present.
+    pub fn get(&self, identity: ArtifactIdentity) -> Option<&ArtifactPayload> {
+        self.entries.iter().find(|entry| entry.identity == identity)
     }
 }
 
@@ -911,10 +1069,10 @@ impl GenerationStore {
         let staging = self.create_staging_directory()?;
         // Once created, this directory is intentionally left in place on every
         // error so recovery tooling can distinguish an interrupted update.
-        for identity in FIXED_ARTIFACT_IDENTITIES {
+        for identity in signed_artifact_identities(release) {
             let bytes = artifacts
                 .get(&identity)
-                .expect("validate_payloads checked every fixed identity");
+                .expect("validate_payloads checked every signed identity");
             write_fixed_artifact(&staging, identity, bytes)?;
         }
         sync_directory_tree(&staging)?;
@@ -961,11 +1119,11 @@ impl GenerationStore {
         let target = self.generations.join(release.release_id());
         reject_unsafe_components(&target)?;
         ensure_real_directory(&target)?;
-        for identity in FIXED_ARTIFACT_IDENTITIES {
+        for identity in signed_artifact_identities(release) {
             let bytes = artifacts
                 .get(&identity)
-                .expect("validate_payloads checked every fixed identity");
-            repair_existing_file(&target.join(identity.destination()), bytes)?;
+                .expect("validate_payloads checked every signed identity");
+            repair_existing_file(&target.join(identity.destination_path()), bytes)?;
         }
         repair_existing_file(
             &target.join(SIGNED_RELEASE_ENVELOPE),
@@ -1444,21 +1602,30 @@ impl GenerationStore {
     }
 }
 
+fn signed_artifact_identities(release: &VerifiedRelease) -> Vec<ArtifactIdentity> {
+    release
+        .descriptor
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.id)
+        .collect()
+}
+
 fn generation_artifact_records(
     generation: &Path,
     release: &VerifiedRelease,
 ) -> Result<BTreeMap<ArtifactIdentity, ArtifactRecord>, UpdateError> {
     let mut artifacts = BTreeMap::new();
-    for identity in FIXED_ARTIFACT_IDENTITIES {
+    for identity in signed_artifact_identities(release) {
         let descriptor = release
             .descriptor
             .artifact(identity)
-            .expect("verified descriptor contains every fixed identity");
+            .expect("verified descriptor contains every signed identity");
         let digest = descriptor.digest_bytes()?;
         artifacts.insert(
             identity,
             ArtifactRecord {
-                path: generation.join(identity.destination()),
+                path: generation.join(identity.destination_path()),
                 size: descriptor.size,
                 digest,
             },
@@ -1471,30 +1638,34 @@ fn validate_payloads(
     release: &VerifiedRelease,
     entries: Vec<ArtifactPayload>,
 ) -> Result<BTreeMap<ArtifactIdentity, Vec<u8>>, UpdateError> {
-    if entries.len() > FIXED_ARTIFACT_IDENTITIES.len() {
+    let expected = signed_artifact_identities(release);
+    if entries.len() > expected.len() {
         return Err(UpdateError::TooManyArtifacts(entries.len()));
     }
     let mut by_identity = BTreeMap::new();
     for entry in entries {
+        if !expected.contains(&entry.identity) {
+            return Err(UpdateError::UnexpectedArtifact(entry.identity));
+        }
         if by_identity.insert(entry.identity, entry.bytes).is_some() {
             return Err(UpdateError::DuplicateArtifact(entry.identity));
         }
     }
-    if by_identity.len() != FIXED_ARTIFACT_IDENTITIES.len() {
-        for identity in FIXED_ARTIFACT_IDENTITIES {
+    if by_identity.len() != expected.len() {
+        for identity in &expected {
             if !by_identity.contains_key(&identity) {
-                return Err(UpdateError::MissingArtifact(identity));
+                return Err(UpdateError::MissingArtifact(*identity));
             }
         }
     }
-    for identity in FIXED_ARTIFACT_IDENTITIES {
+    for identity in expected {
         let descriptor = release
             .descriptor
             .artifact(identity)
-            .expect("verified descriptor contains every fixed identity");
+            .expect("verified descriptor contains every signed identity");
         let bytes = by_identity
             .get(&identity)
-            .expect("source contains every fixed identity");
+            .expect("source contains every signed identity");
         if bytes.len() as u64 != descriptor.size {
             return Err(UpdateError::ArtifactSizeMismatch {
                 artifact: identity,
@@ -1515,7 +1686,8 @@ fn write_fixed_artifact(
     identity: ArtifactIdentity,
     bytes: &[u8],
 ) -> Result<(), UpdateError> {
-    let relative = Path::new(identity.destination());
+    let relative_path = identity.destination_path();
+    let relative = Path::new(&relative_path);
     ensure_safe_relative_path(relative)?;
     let destination = staging.join(relative);
     let parent = destination
@@ -1681,11 +1853,11 @@ fn validate_complete_generation(
         ));
     }
 
-    let mut expected_files: BTreeSet<&str> = FIXED_ARTIFACT_IDENTITIES
-        .iter()
-        .map(|identity| identity.destination())
+    let mut expected_files: BTreeSet<String> = signed_artifact_identities(release)
+        .into_iter()
+        .map(ArtifactIdentity::destination_path)
         .collect();
-    expected_files.insert(SIGNED_RELEASE_ENVELOPE);
+    expected_files.insert(SIGNED_RELEASE_ENVELOPE.to_owned());
     let mut actual_files = BTreeSet::new();
     collect_generation_files(generation, generation, &mut actual_files)?;
     if actual_files
@@ -1698,12 +1870,12 @@ fn validate_complete_generation(
         ));
     }
 
-    for identity in FIXED_ARTIFACT_IDENTITIES {
+    for identity in signed_artifact_identities(release) {
         let descriptor = release
             .descriptor
             .artifact(identity)
-            .expect("verified descriptor contains every fixed identity");
-        let path = generation.join(identity.destination());
+            .expect("verified descriptor contains every signed identity");
+        let path = generation.join(identity.destination_path());
         reject_unsafe_components(&path)?;
         let metadata = fs::symlink_metadata(&path)
             .map_err(|_| UpdateError::InvalidCompleteGeneration(generation.to_path_buf()))?;
@@ -1723,6 +1895,112 @@ fn validate_complete_generation(
                 generation.to_path_buf(),
             ));
         }
+    }
+    if release
+        .descriptor
+        .artifact(ArtifactIdentity::RegionCatalog)
+        .is_some()
+    {
+        let catalog_path = generation.join(ArtifactIdentity::RegionCatalog.destination_path());
+        let catalog = fs::read(&catalog_path)
+            .map_err(|_| UpdateError::InvalidCompleteGeneration(generation.to_path_buf()))?;
+        validate_region_catalog_bytes(&catalog, release)
+            .map_err(|_| UpdateError::InvalidCompleteGeneration(generation.to_path_buf()))?;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignedReleaseCatalog {
+    schema_version: u16,
+    worlds: Vec<SignedReleaseWorld>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignedReleaseWorld {
+    world_id: u16,
+    rom_path: String,
+    rom_sha256: String,
+    bridge_path: String,
+    bridge_sha256: String,
+    player_transfer_path: String,
+    player_transfer_sha256: String,
+}
+
+/// Cross-checks the catalog body against the signed descriptor's dynamic
+/// identities. The catalog is signed indirectly by the RegionCatalog artifact
+/// digest, but its world entries must also bind to the exact ROM and metadata
+/// artifacts that will be activated.
+fn validate_region_catalog_bytes(
+    bytes: &[u8],
+    release: &VerifiedRelease,
+) -> Result<(), UpdateError> {
+    if bytes.len() as u64 > crate::compat::MAX_RELEASE_CATALOG_BYTES {
+        return Err(UpdateError::InvalidRegionCatalog);
+    }
+    let catalog: SignedReleaseCatalog =
+        serde_json::from_slice(bytes).map_err(|_| UpdateError::InvalidRegionCatalog)?;
+    if catalog.schema_version != 1 || catalog.worlds.is_empty() {
+        return Err(UpdateError::InvalidRegionCatalog);
+    }
+
+    let signed_worlds: BTreeSet<RomWorldId> = release
+        .descriptor
+        .artifacts
+        .iter()
+        .filter_map(|artifact| match artifact.id {
+            ArtifactIdentity::WorldRom(id)
+            | ArtifactIdentity::WorldCompatibility(id)
+            | ArtifactIdentity::WorldPlayerTransfer(id) => Some(id),
+            _ => None,
+        })
+        .collect();
+    if signed_worlds.len() != catalog.worlds.len() {
+        return Err(UpdateError::InvalidRegionCatalog);
+    }
+
+    let mut catalog_worlds = BTreeSet::new();
+    for world in catalog.worlds {
+        let world_id =
+            RomWorldId::new(world.world_id).map_err(|_| UpdateError::InvalidRegionCatalog)?;
+        if !catalog_worlds.insert(world_id) {
+            return Err(UpdateError::InvalidRegionCatalog);
+        }
+        let entries = [
+            (
+                world.rom_path,
+                world.rom_sha256,
+                ArtifactIdentity::WorldRom(world_id),
+            ),
+            (
+                world.bridge_path,
+                world.bridge_sha256,
+                ArtifactIdentity::WorldCompatibility(world_id),
+            ),
+            (
+                world.player_transfer_path,
+                world.player_transfer_sha256,
+                ArtifactIdentity::WorldPlayerTransfer(world_id),
+            ),
+        ];
+        for (path, digest, identity) in entries {
+            if path != identity.destination_path() {
+                return Err(UpdateError::InvalidRegionCatalog);
+            }
+            let catalog_digest = parse_digest(&digest)?;
+            let descriptor = release
+                .descriptor
+                .artifact(identity)
+                .ok_or(UpdateError::InvalidRegionCatalog)?;
+            if descriptor.digest_bytes()? != catalog_digest {
+                return Err(UpdateError::InvalidRegionCatalog);
+            }
+        }
+    }
+    if catalog_worlds != signed_worlds {
+        return Err(UpdateError::InvalidRegionCatalog);
     }
     Ok(())
 }
@@ -1850,7 +2128,7 @@ impl WindowsAcceptedGuard {
         }
 
         let open_artifact = |identity: ArtifactIdentity, size: u64| {
-            let path = generation.join(identity.destination());
+            let path = generation.join(identity.destination_path());
             let mut options = OpenOptions::new();
             options
                 .read(true)
@@ -1922,9 +2200,9 @@ impl WindowsPublicationGuards {
         use std::os::windows::fs::OpenOptionsExt;
 
         let mut ancestor_paths = BTreeSet::new();
-        for identity in FIXED_ARTIFACT_IDENTITIES {
+        for identity in signed_artifact_identities(release) {
             let parent = staging
-                .join(identity.destination())
+                .join(identity.destination_path())
                 .parent()
                 .ok_or(UpdateError::UnsafeDestination(identity))?
                 .to_path_buf();
@@ -1960,8 +2238,8 @@ impl WindowsPublicationGuards {
 
         let mut artifacts = BTreeMap::new();
         let mut artifact_identities = BTreeMap::new();
-        for identity in FIXED_ARTIFACT_IDENTITIES {
-            let path = staging.join(identity.destination());
+        for identity in signed_artifact_identities(release) {
+            let path = staging.join(identity.destination_path());
             let mut options = OpenOptions::new();
             options
                 .read(true)
@@ -2027,18 +2305,18 @@ impl WindowsPublicationGuards {
     }
 
     fn verify(&self, release: &VerifiedRelease) -> Result<(), UpdateError> {
-        for identity in FIXED_ARTIFACT_IDENTITIES {
+        for identity in signed_artifact_identities(release) {
             let file = self
                 .artifacts
                 .get(&identity)
                 .ok_or(UpdateError::PublicationIntegrity(PathBuf::from(
-                    identity.destination(),
+                    identity.destination_path(),
                 )))?;
             let metadata = file.metadata().map_err(UpdateError::WindowsGuardIo)?;
             let current = windows_bound_identity(&metadata)?;
             if self.artifact_identities.get(&identity) != Some(&current) {
                 return Err(UpdateError::PublicationIntegrity(PathBuf::from(
-                    identity.destination(),
+                    identity.destination_path(),
                 )));
             }
             let descriptor = release
@@ -2529,8 +2807,16 @@ pub enum UpdateError {
     DuplicateArtifact(ArtifactIdentity),
     #[error("artifact identity {0} is missing")]
     MissingArtifact(ArtifactIdentity),
+    #[error("artifact identity {0} is not part of the signed release")]
+    UnexpectedArtifact(ArtifactIdentity),
     #[error("release has too many artifacts: {0}")]
     TooManyArtifacts(usize),
+    #[error("release has too many ROM worlds: {0}")]
+    TooManyWorlds(usize),
+    #[error("region catalog is present without any signed ROM world")]
+    RegionCatalogWithoutWorlds,
+    #[error("region catalog does not match the signed world artifacts")]
+    InvalidRegionCatalog,
     #[error("artifact {artifact} has invalid size {size}")]
     InvalidArtifactSize {
         artifact: ArtifactIdentity,
@@ -2587,5 +2873,188 @@ impl UpdateError {
             self,
             Self::Io(_) | Self::StagingIo(_) | Self::ActivationIo(_)
         )
+    }
+}
+
+#[cfg(test)]
+mod multiworld_tests {
+    use super::*;
+
+    fn world(id: u16) -> RomWorldId {
+        RomWorldId::new(id).expect("test world IDs are nonzero")
+    }
+
+    fn descriptor(identities: impl IntoIterator<Item = ArtifactIdentity>) -> ReleaseDescriptor {
+        ReleaseDescriptor {
+            schema: RELEASE_SCHEMA,
+            release_id: "multiworld-fixture".to_owned(),
+            sequence: 1,
+            issued_at: 1_000,
+            expires_at: 2_000,
+            platform: WINDOWS_PLATFORM.to_owned(),
+            artifacts: identities
+                .into_iter()
+                .map(|identity| {
+                    ArtifactDescriptor::from_bytes(identity, identity.wire_name().as_bytes())
+                })
+                .collect(),
+        }
+    }
+
+    fn multiworld_identities() -> Vec<ArtifactIdentity> {
+        let mut identities = FIXED_ARTIFACT_IDENTITIES.to_vec();
+        identities.push(ArtifactIdentity::RegionCatalog);
+        identities.extend(ArtifactIdentity::world_artifacts(world(1)));
+        identities.extend(ArtifactIdentity::world_artifacts(world(7)));
+        identities
+    }
+
+    #[test]
+    fn signed_set_accepts_catalog_and_two_complete_worlds() {
+        let descriptor = descriptor(multiworld_identities());
+        descriptor.validate_at(1_500).unwrap();
+        assert_eq!(
+            serde_json::to_string(&ArtifactIdentity::WorldRom(world(7))).unwrap(),
+            "\"world-7-rom\""
+        );
+        assert_eq!(
+            ArtifactIdentity::WorldRom(world(7)).destination_path(),
+            "worlds/7/game.gba"
+        );
+    }
+
+    #[test]
+    fn missing_world_companion_is_rejected() {
+        let mut identities = multiworld_identities();
+        identities.retain(|identity| *identity != ArtifactIdentity::WorldCompatibility(world(7)));
+        assert!(matches!(
+            descriptor(identities).validate(),
+            Err(UpdateError::MissingArtifact(ArtifactIdentity::WorldCompatibility(id)))
+                if id == world(7)
+        ));
+    }
+
+    #[test]
+    fn duplicate_world_identity_is_rejected() {
+        let mut identities = multiworld_identities();
+        identities.push(ArtifactIdentity::WorldRom(world(7)));
+        assert!(matches!(
+            descriptor(identities).validate(),
+            Err(UpdateError::DuplicateArtifact(ArtifactIdentity::WorldRom(id)))
+                if id == world(7)
+        ));
+    }
+
+    #[test]
+    fn payload_source_must_match_the_exact_signed_set() {
+        let descriptor = descriptor(multiworld_identities());
+        let payloads = descriptor
+            .artifacts
+            .iter()
+            .map(|artifact| ArtifactPayload::new(artifact.id, artifact.id.wire_name().into_bytes()))
+            .collect::<Vec<_>>();
+        let release = VerifiedRelease {
+            descriptor,
+            payload: Vec::new(),
+            payload_sha256: [0; 32],
+            signed_envelope: Vec::new(),
+        };
+        assert_eq!(validate_payloads(&release, payloads).unwrap().len(), 18);
+        let mut extra = release
+            .descriptor
+            .artifacts
+            .iter()
+            .map(|artifact| ArtifactPayload::new(artifact.id, artifact.id.wire_name().into_bytes()))
+            .collect::<Vec<_>>();
+        extra.pop();
+        extra.push(ArtifactPayload::new(
+            ArtifactIdentity::WorldRom(world(99)),
+            b"extra".to_vec(),
+        ));
+        assert!(matches!(
+            validate_payloads(&release, extra),
+            Err(UpdateError::UnexpectedArtifact(ArtifactIdentity::WorldRom(id)))
+                if id == world(99)
+        ));
+    }
+
+    fn catalog_fixture(release: &VerifiedRelease) -> serde_json::Value {
+        let world_entry = |id: RomWorldId| {
+            let digest = |identity| {
+                release
+                    .descriptor
+                    .artifact(identity)
+                    .unwrap()
+                    .sha256
+                    .clone()
+            };
+            serde_json::json!({
+                "world_id": id.get(),
+                "rom_path": ArtifactIdentity::WorldRom(id).destination_path(),
+                "rom_sha256": digest(ArtifactIdentity::WorldRom(id)),
+                "bridge_path": ArtifactIdentity::WorldCompatibility(id).destination_path(),
+                "bridge_sha256": digest(ArtifactIdentity::WorldCompatibility(id)),
+                "player_transfer_path": ArtifactIdentity::WorldPlayerTransfer(id).destination_path(),
+                "player_transfer_sha256": digest(ArtifactIdentity::WorldPlayerTransfer(id)),
+            })
+        };
+        serde_json::json!({
+            "schema_version": 1,
+            "worlds": [world_entry(world(1)), world_entry(world(7))],
+        })
+    }
+
+    fn multiworld_release() -> VerifiedRelease {
+        VerifiedRelease {
+            descriptor: descriptor(multiworld_identities()),
+            payload: Vec::new(),
+            payload_sha256: [0; 32],
+            signed_envelope: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn catalog_worlds_must_match_signed_world_ids() {
+        let release = multiworld_release();
+        let mut catalog = catalog_fixture(&release);
+        catalog["worlds"][1]["world_id"] = serde_json::json!(99);
+        assert!(
+            validate_region_catalog_bytes(&serde_json::to_vec(&catalog).unwrap(), &release)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn catalog_paths_are_fixed_by_world_identity() {
+        let release = multiworld_release();
+        let mut catalog = catalog_fixture(&release);
+        catalog["worlds"][1]["rom_path"] = serde_json::json!("worlds/1/game.gba");
+        assert!(
+            validate_region_catalog_bytes(&serde_json::to_vec(&catalog).unwrap(), &release)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn catalog_digests_must_match_signed_artifacts() {
+        let release = multiworld_release();
+        let mut catalog = catalog_fixture(&release);
+        catalog["worlds"][1]["rom_sha256"] = serde_json::json!("0".repeat(64));
+        assert!(
+            validate_region_catalog_bytes(&serde_json::to_vec(&catalog).unwrap(), &release)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn catalog_cannot_omit_a_signed_world() {
+        let release = multiworld_release();
+        let mut catalog = catalog_fixture(&release);
+        let first_world = catalog["worlds"][0].clone();
+        catalog["worlds"] = serde_json::json!([first_world]);
+        assert!(
+            validate_region_catalog_bytes(&serde_json::to_vec(&catalog).unwrap(), &release)
+                .is_err()
+        );
     }
 }

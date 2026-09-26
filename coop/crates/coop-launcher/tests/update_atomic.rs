@@ -11,6 +11,7 @@ use std::{
 };
 
 use ed25519_dalek::SigningKey;
+use coop_launcher::compat;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;

@@ -134,6 +134,8 @@ pub enum Phase2Error {
     Forbidden,
     #[error("request expired")]
     Expired,
+    #[error("world acquisition key refers to a closed lease")]
+    AcquireClosed,
     #[error("request body is too large")]
     PayloadTooLarge,
     #[error("service is busy")]
@@ -159,6 +161,7 @@ impl IntoResponse for Phase2Error {
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
             Self::Authentication | Self::Expired => StatusCode::UNAUTHORIZED,
+            Self::AcquireClosed => StatusCode::GONE,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Conflict => StatusCode::CONFLICT,
             Self::Forbidden => StatusCode::FORBIDDEN,
@@ -183,6 +186,7 @@ impl Phase2Error {
             Self::Conflict => "conflict",
             Self::Forbidden => "forbidden",
             Self::Expired => "expired",
+            Self::AcquireClosed => "acquire_closed",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Busy => "service_busy",
             Self::Internal => "internal_error",
@@ -2451,9 +2455,21 @@ mod tests {
         .expect("release renewed lease");
         assert_eq!(
             app.acquire_world(actor, request),
-            Err(Phase2Error::Conflict),
+            Err(Phase2Error::AcquireClosed),
             "a replay must not resurrect a released lease"
         );
+        let foreign_client_key = AcquireLeaseRequest::new(
+            actor.character_id,
+            id(ClientInstanceId::new),
+            request.idempotency_key,
+        );
+        assert_eq!(
+            app.acquire_world(actor, foreign_client_key),
+            Err(Phase2Error::Conflict),
+            "a foreign client must not learn that this key was closed"
+        );
+        let replacement = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        assert!(app.acquire_world(actor, replacement).is_ok());
     }
 
     #[test]
@@ -2470,7 +2486,7 @@ mod tests {
             .acquire_world(actor, request)
             .expect("world-aware lease");
         clock.advance(storage::LEASE_TTL_MS + 1);
-        assert_eq!(app.acquire_world(actor, request), Err(Phase2Error::Expired));
+        assert_eq!(app.acquire_world(actor, request), Err(Phase2Error::AcquireClosed));
         assert_eq!(acquired.lease.current_revision, Revision::initial());
     }
 

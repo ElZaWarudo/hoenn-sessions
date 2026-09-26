@@ -11,15 +11,15 @@ use std::{
 };
 
 use coop_cloud::{
-    AcquireLeaseRequest, ArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
-    IdempotencyKey, LeaseContract, MintRealtimeTicketRequest, PrepareSnapshotRequest,
-    ReconnectLeaseRequest, ReleaseLeaseRequest, ResumePackageManifest, ResumeSelection, Revision,
-    RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
-    RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, RuntimeLeaseFence, Sha256Digest,
-    SignedManifestEnvelope, SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest,
-    SnapshotId, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareFence,
-    SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
-    TrustedManifestKey, UploadTarget,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, ArtifactIdentity, CharacterId,
+    ClientInstanceId, HeartbeatLeaseRequest, IdempotencyKey, LeaseContract,
+    MintRealtimeTicketRequest, PrepareSnapshotRequest, ReconnectLeaseRequest, ReleaseLeaseRequest,
+    ResumePackageManifest, ResumeSelection, Revision, RomHandoffCommitRequest,
+    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
+    RomHandoffRecoveryStatus, RuntimeLeaseFence, Sha256Digest, SignedManifestEnvelope,
+    SnapshotFile, SnapshotFinalizeFence, SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest,
+    SnapshotListResponse, SnapshotPrepareFence, SnapshotPrepareResponse, SnapshotRecord,
+    SnapshotRestoreRequest, SnapshotRestoreResponse, TrustedManifestKey, UploadTarget,
 };
 pub use coop_protocol::RomWorldId;
 use coop_save::{CharacterSave, RegistryContract, parse_v2, validate_character_save};
@@ -54,6 +54,7 @@ use crate::{
     },
     realtime::{RealtimeApi, RealtimeCoordinator, RealtimeCoordinatorEvent, RealtimeHttpError},
     recovery::RecoveryMarkerV2,
+    rom_travel::{LeaseFenceIdentity, TravelPhase, TravelRecord},
 };
 
 pub type CloudFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, SessionError>> + Send + 'a>>;
@@ -464,6 +465,13 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    fn acquire_world<'a>(
+        &'a self,
+        _auth: &'a AuthSession,
+        _request: AcquireLeaseRequest,
+    ) -> CloudFuture<'a, AcquireWorldLeaseResponse> {
+        Box::pin(async { Err(SessionError::PortalHandoffUnavailable) })
+    }
     fn reconcile_rom_handoff<'a>(
         &'a self,
         _auth: &'a AuthSession,
@@ -604,6 +612,8 @@ pub enum SessionError {
     Cloud,
     #[error("previous session is still active")]
     AcquireConflict,
+    #[error("the persisted world-acquire key is closed and may be cleared")]
+    AcquireClosed,
     #[error("cloud authorization expired")]
     Unauthorized,
     #[error("requested artifact was not found")]
@@ -1421,6 +1431,17 @@ impl SessionLifecycle {
         self.config.rom_world_id
     }
 
+    /// Returns the canonical save registry already validated by the signed
+    /// compatibility manifest used to construct this session.
+    pub fn registry_contract(&self) -> Result<RegistryContract, SessionError> {
+        self.config
+            .manifest
+            .manifest
+            .save
+            .registry_contract()
+            .map_err(|_| SessionError::Package)
+    }
+
     /// Returns the generation last accepted from the canonical character
     /// save, if this workspace has materialized one.
     #[must_use]
@@ -1458,15 +1479,6 @@ impl SessionLifecycle {
             }
             Err(error) => Err(error),
         }
-    }
-
-    fn registry_contract(&self) -> Result<RegistryContract, SessionError> {
-        self.config
-            .manifest
-            .manifest
-            .save
-            .registry_contract()
-            .map_err(|_| SessionError::Package)
     }
 
     fn validate_character_save(
@@ -1854,7 +1866,7 @@ impl SessionLifecycle {
         auth: AuthSession,
         config: SessionConfig,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, None, false).await
+        Self::acquire_inner(api, auth, config, None, false, None).await
     }
 
     /// Acquires a session with rotating-token support enabled.  Every
@@ -1871,7 +1883,69 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), false).await
+        Self::acquire_inner(api, auth, config, Some(keychain), false, None).await
+    }
+
+    /// Acquire the server-selected active world before choosing a local ROM.
+    /// The caller persists `request` before the first send and reuses it after
+    /// restart. A lost or malformed response replays that exact operation.
+    pub async fn acquire_world_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        request: AcquireLeaseRequest,
+        keychain: &Arc<dyn RefreshTokenStore>,
+    ) -> Result<AcquireWorldLeaseResponse, SessionError> {
+        if request.character_id != auth.character_id || request.replace_same_client {
+            return Err(SessionError::Lease);
+        }
+        refresh_if_needed(auth, api, Some(keychain)).await?;
+        let response = match api.acquire_world(auth, request).await {
+            Err(SessionError::Unauthorized) => {
+                refresh_required(auth, api, Some(keychain)).await?;
+                api.acquire_world(auth, request).await?
+            }
+            Err(SessionError::Cloud) => {
+                tokio::time::sleep(cloud_retry_delay(0)).await;
+                api.acquire_world(auth, request).await?
+            }
+            result => result?,
+        };
+        if response.validate().is_err()
+            || response.lease.character_id != auth.character_id
+            || response.lease.client_instance_id != request.client_instance_id
+        {
+            if response.lease.validate().is_ok() {
+                release_best_effort(api, auth, &response.lease, Some(keychain)).await;
+            }
+            return Err(SessionError::Lease);
+        }
+        Ok(response)
+    }
+
+    /// Release a world-aware lease when its pinned ROM cannot be selected.
+    /// Authentication stays live, and the caller may clear its durable
+    /// acquisition intent only after this returns successfully.
+    pub async fn release_preacquired_world_lease<A: CloudApi>(
+        api: &A,
+        auth: &mut AuthSession,
+        response: AcquireWorldLeaseResponse,
+        keychain: &Arc<dyn RefreshTokenStore>,
+    ) -> Result<(), SessionError> {
+        response.validate().map_err(|_| SessionError::Lease)?;
+        if response.lease.character_id != auth.character_id {
+            return Err(SessionError::Lease);
+        }
+        let request = ReleaseLeaseRequest::new(response.lease.fence(), random_idempotency_key()?);
+        refresh_if_needed(auth, api, Some(keychain)).await?;
+        match api.release(auth, request).await {
+            Err(SessionError::Unauthorized) => {
+                refresh_required(auth, api, Some(keychain)).await?;
+                api.release(auth, request).await.map(|_| ())
+            }
+            Err(SessionError::Cloud) => api.release(auth, request).await.map(|_| ()),
+            Err(error) => Err(error),
+            Ok(_) => Ok(()),
+        }
     }
 
     /// Replaces a prior lease from this same client instance. Android uses
@@ -1887,7 +1961,20 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Arc<dyn RefreshTokenStore>,
     ) -> Result<Self, SessionError> {
-        Self::acquire_inner(api, auth, config, Some(keychain), true).await
+        Self::acquire_inner(api, auth, config, Some(keychain), true, None).await
+    }
+
+    /// Materializes a lease acquired through the server's world-aware route.
+    /// The caller selects a local ROM only after receiving that response and
+    /// must provide a compatibility-checked configuration for its world.
+    pub async fn from_world_lease_with_keychain<A: CloudApi>(
+        api: &A,
+        auth: AuthSession,
+        config: SessionConfig,
+        keychain: Arc<dyn RefreshTokenStore>,
+        response: AcquireWorldLeaseResponse,
+    ) -> Result<Self, SessionError> {
+        Self::acquire_inner(api, auth, config, Some(keychain), false, Some(response)).await
     }
 
     async fn acquire_inner<A: CloudApi>(
@@ -1896,30 +1983,49 @@ impl SessionLifecycle {
         config: SessionConfig,
         keychain: Option<Arc<dyn RefreshTokenStore>>,
         replace_same_client: bool,
+        preacquired: Option<AcquireWorldLeaseResponse>,
     ) -> Result<Self, SessionError> {
-        let idempotency_key = random_idempotency_key()?;
-        let mut request = AcquireLeaseRequest::new(
-            auth.character_id,
-            config.client_instance_id,
-            idempotency_key,
-        );
-        if replace_same_client {
-            request = request.replacing_same_client();
-        }
-        refresh_if_needed(&mut auth, api, keychain.as_ref()).await?;
-        let lease = match api.acquire(&auth, request).await {
-            Err(SessionError::Unauthorized) => {
-                refresh_required(&mut auth, api, keychain.as_ref()).await?;
-                api.acquire(&auth, request).await?
+        let keep_credentials_on_setup_failure = preacquired.is_some();
+        let expected_head = preacquired
+            .as_ref()
+            .and_then(|response| response.active_snapshot_id);
+        let lease = if let Some(response) = preacquired {
+            if response.validate().is_err() {
+                if response.lease.validate().is_ok() {
+                    release_best_effort(api, &mut auth, &response.lease, keychain.as_ref()).await;
+                }
+                return Err(SessionError::Lease);
             }
-            Err(SessionError::Cloud) => {
-                // The first response may have been lost after the server
-                // committed the idempotent acquire. Replay the exact request
-                // once; never mint a new operation key here.
-                tokio::time::sleep(cloud_retry_delay(0)).await;
-                api.acquire(&auth, request).await?
+            if response.active_world_id != config.rom_world_id {
+                release_best_effort(api, &mut auth, &response.lease, keychain.as_ref()).await;
+                return Err(SessionError::Lease);
             }
-            result => result?,
+            response.lease
+        } else {
+            let idempotency_key = random_idempotency_key()?;
+            let mut request = AcquireLeaseRequest::new(
+                auth.character_id,
+                config.client_instance_id,
+                idempotency_key,
+            );
+            if replace_same_client {
+                request = request.replacing_same_client();
+            }
+            refresh_if_needed(&mut auth, api, keychain.as_ref()).await?;
+            match api.acquire(&auth, request).await {
+                Err(SessionError::Unauthorized) => {
+                    refresh_required(&mut auth, api, keychain.as_ref()).await?;
+                    api.acquire(&auth, request).await?
+                }
+                Err(SessionError::Cloud) => {
+                    // The first response may have been lost after the server
+                    // committed the idempotent acquire. Replay the exact request
+                    // once; never mint a new operation key here.
+                    tokio::time::sleep(cloud_retry_delay(0)).await;
+                    api.acquire(&auth, request).await?
+                }
+                result => result?,
+            }
         };
         if lease.validate().is_err() {
             release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
@@ -1936,7 +2042,14 @@ impl SessionLifecycle {
                 .epoch_store
                 .accept(lease.character_id, lease.session_id, lease.session_epoch)
         {
-            release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
+            // A preacquired response may replay a still-live lease after this
+            // process crashed, or another local process may own that same
+            // accepted epoch. Never release it on a stale-epoch result: doing
+            // so would disconnect the rightful owner. The durable acquire
+            // key remains available until the server reports it closed.
+            if !keep_credentials_on_setup_failure {
+                release_best_effort(api, &mut auth, &lease, keychain.as_ref()).await;
+            }
             return Err(error.into());
         }
         let workspace = match SessionWorkspace::create(&config.workspace_parent) {
@@ -1972,16 +2085,24 @@ impl SessionLifecycle {
             revision_updates: None,
         };
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
-        if let Err(error) = lifecycle.restore_or_bootstrap(api).await {
-            // Drop workspace before release, and never release while a child
-            // process could still emit traffic (children are not started here).
-            let _ = lifecycle.release(api).await;
+        if let Err(error) = lifecycle.restore_or_bootstrap(api, expected_head).await {
+            // No child has started. A destination setup failure must retain
+            // the player's refresh credential for another region-acquire try.
+            if keep_credentials_on_setup_failure {
+                let _ = lifecycle.release_lease_keep_credentials(api).await;
+            } else {
+                let _ = lifecycle.release(api).await;
+            }
             return Err(error);
         }
         Ok(lifecycle)
     }
 
-    async fn restore_or_bootstrap<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
+    async fn restore_or_bootstrap<A: CloudApi>(
+        &mut self,
+        api: &A,
+        expected_head: Option<SnapshotId>,
+    ) -> Result<(), SessionError> {
         let character = self.lease.character_id;
         let revision = self.revision;
         let package = self.resume_package_retry(api, character, revision).await?;
@@ -2000,6 +2121,9 @@ impl SessionLifecycle {
         let Some(envelope) = package else {
             return Err(SessionError::MissingPackage);
         };
+        if expected_head.is_some_and(|head| envelope.manifest.snapshot_id != head) {
+            return Err(SessionError::Package);
+        }
         let verified = self.fetch_verified_at(api, envelope, self.revision).await;
         match verified {
             Ok(package) => {
@@ -2515,7 +2639,7 @@ impl SessionLifecycle {
         self.last_portal_sequence = None;
         self.fresh_resume_save_digest = None;
         self.checkpoint_resume_baseline = None;
-        self.restore_or_bootstrap(api).await
+        self.restore_or_bootstrap(api, None).await
     }
 
     /// Runs the online session until a child exits or a lease/checkpoint
@@ -5090,6 +5214,46 @@ impl SessionLifecycle {
         self.release_lease_inner(api).await
     }
 
+    /// Transfer the authenticated player to the next ROM after the server
+    /// committed the exact source lease's handoff. The commit transaction has
+    /// already released that lease, so issuing a local release would target a
+    /// stale fence. The returned credentials can acquire the destination
+    /// world without another password prompt or refresh-family revocation.
+    pub fn into_auth_after_committed_handoff(
+        self,
+        committed: &TravelRecord,
+    ) -> Result<AuthSession, SessionError> {
+        let source_fence = LeaseFenceIdentity::new(
+            self.lease.session_id,
+            self.lease.session_epoch,
+            self.lease.client_instance_id,
+        );
+        if committed.phase != TravelPhase::Committed
+            || committed.character_id != self.lease.character_id
+            || committed.lease_fence != Some(source_fence)
+            || committed.source_world != Some(self.config.rom_world_id)
+            || committed.destination_world != Some(committed.active_world)
+            || committed.active_world == self.config.rom_world_id
+            || self.revision.is_initial()
+            || self.lease.current_revision != self.revision
+            || committed.source_snapshot_id.is_none()
+            || committed.source_snapshot_id != self.last_finalized_snapshot_id
+            || committed.source_revision != Some(self.revision)
+            || committed.server_stage_snapshot_id.is_none()
+            || committed.prepare_idempotency_key.is_none()
+            || committed.trusted_catalog_digest.is_none()
+            || committed.source_save_sha256.is_none()
+            || committed.source_save_sha256 != committed.source_head_save_sha256
+            || committed.destination_save_sha256.is_none()
+            || committed.arrival_nonce.is_none_or(|nonce| nonce == [0; 16])
+        {
+            return Err(SessionError::Lease);
+        }
+        let mut auth = self.auth;
+        auth.clear_active_fence();
+        Ok(auth)
+    }
+
     /// Releases the exact active lease fence and revokes the rotating auth
     /// family.  Recovery is scrubbed before either remote mutation, and the
     /// keychain logout is attempted even when lease release fails.
@@ -5309,12 +5473,13 @@ mod lifecycle_tests {
     use coop_cloud::{
         AccessToken, ApiVersion, ArtifactIdentity, BridgeAbiVersion, CharacterId, ClientInstanceId,
         ClientRealtimeFrameV1, CompatibilityTarget, GameBuildId, HeartbeatLeaseRequest,
+        IdempotencyKey,
         LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse,
         MgbaVersion, MintRealtimeTicketRequest, Password, PrepareSnapshotRequest, ProtocolVersion,
         RealtimeTicket, ReconnectLeaseRequest, RefreshFamilyId, RefreshRequest, RefreshResponse,
         RefreshToken, ReleaseLeaseRequest, ResumePackageManifest, Revision, RuntimeLeaseFence,
         ServerRealtimeFrameV1, SessionEpoch, SessionId, Sha256Digest, SnapshotFence,
-        SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse,
+        SnapshotFinalizeRequest, SnapshotId, SnapshotListRequest, SnapshotListResponse,
         SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse,
         TrustedManifestKey, UnixTimestampMillis, UploadTarget, UserId,
         decode_client_realtime_frame, encode_server_realtime_frame,
@@ -5963,6 +6128,130 @@ mod lifecycle_tests {
         let requests = cloud.acquire_requests.lock().unwrap();
         assert_eq!(requests.len(), 1);
         assert!(requests[0].replace_same_client);
+    }
+
+    #[tokio::test]
+    async fn world_lease_materializes_selected_region_without_acquiring_again() {
+        let (root, existing, cloud) = bootstrap(false).await;
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let destination = coop_protocol::RomWorldId::new(2).unwrap();
+        let mut config = existing.config.clone();
+        config.rom_world_id = destination;
+        config.epoch_store = EpochStore::new(root.path().join("world-epoch.json"));
+        config.workspace_parent = root.path().join("world-sessions");
+        let response = coop_cloud::AcquireWorldLeaseResponse {
+            lease: existing.lease,
+            active_world_id: destination,
+            active_snapshot_id: None,
+        };
+        let selected = SessionLifecycle::from_world_lease_with_keychain(
+            cloud.as_ref(),
+            auth,
+            config,
+            keychain,
+            response,
+        )
+        .await
+        .unwrap();
+        assert_eq!(selected.config.rom_world_id, destination);
+        assert_eq!(selected.lease, response.lease);
+        assert_eq!(cloud.acquire_requests.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn replayed_world_lease_with_accepted_epoch_does_not_release_live_owner() {
+        let (root, existing, cloud) = bootstrap(false).await;
+        let release_count = cloud.release_requests.lock().unwrap().len();
+        let keychain: Arc<dyn RefreshTokenStore> = Arc::new(TestKeychain::default());
+        let auth = AuthSession::login(
+            cloud.as_ref(),
+            keychain.as_ref(),
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut config = existing.config.clone();
+        config.workspace_parent = root.path().join("replayed-world-sessions");
+        let response = coop_cloud::AcquireWorldLeaseResponse {
+            lease: existing.lease,
+            active_world_id: config.rom_world_id,
+            active_snapshot_id: None,
+        };
+        assert!(matches!(
+            SessionLifecycle::from_world_lease_with_keychain(
+                cloud.as_ref(),
+                auth,
+                config,
+                keychain,
+                response,
+            )
+            .await,
+            Err(SessionError::Epoch(_))
+        ));
+        assert_eq!(cloud.release_requests.lock().unwrap().len(), release_count);
+    }
+
+    #[tokio::test]
+    async fn committed_handoff_transfers_credentials_without_source_release() {
+        let (_, mut session, cloud) = bootstrap(false).await;
+        let next_revision = Revision::new(1);
+        session.lease = LeaseContract::new(
+            LeaseFence::new(
+                session.lease.session_id,
+                session.lease.character_id,
+                next_revision,
+                session.lease.session_epoch,
+                session.lease.client_instance_id,
+            ),
+            session.lease.expires_at,
+            session.lease.heartbeat_interval_ms,
+        )
+        .unwrap();
+        session.revision = next_revision;
+        let source_snapshot_id = SnapshotId::new(Uuid::new_v4()).unwrap();
+        session.last_finalized_snapshot_id = Some(source_snapshot_id);
+        let destination = coop_protocol::RomWorldId::new(2).unwrap();
+        let committed = super::TravelRecord {
+            format_version: 1,
+            sequence: 1,
+            character_id: session.lease.character_id,
+            checkpoint: 1,
+            active_world: destination,
+            phase: super::TravelPhase::Committed,
+            source_world: Some(session.config.rom_world_id),
+            destination_world: Some(destination),
+            portal_id: Some("main_to_cormoria".to_string()),
+            source_snapshot_id: Some(source_snapshot_id),
+            source_revision: Some(next_revision),
+            server_stage_snapshot_id: Some(SnapshotId::new(Uuid::new_v4()).unwrap()),
+            prepare_idempotency_key: Some(IdempotencyKey::new(Uuid::new_v4()).unwrap()),
+            trusted_catalog_digest: Some(Sha256Digest::of_bytes(b"trusted catalog")),
+            lease_fence: Some(super::LeaseFenceIdentity::new(
+                session.lease.session_id,
+                session.lease.session_epoch,
+                session.lease.client_instance_id,
+            )),
+            source_head_save_sha256: Some(Sha256Digest::of_bytes(b"source save")),
+            source_save_sha256: Some(Sha256Digest::of_bytes(b"source save")),
+            destination_save_sha256: Some(Sha256Digest::of_bytes(b"destination save")),
+            arrival_nonce: Some([1; 16]),
+        };
+        let auth = session
+            .into_auth_after_committed_handoff(&committed)
+            .unwrap();
+        assert!(auth.access_token().is_some());
+        assert!(auth.active_fence().is_none());
+        assert_eq!(*cloud.releases.lock().unwrap(), 0);
+        assert_eq!(*cloud.logouts.lock().unwrap(), 0);
     }
 
     fn write_u16(bytes: &mut [u8], offset: usize, value: u16) {

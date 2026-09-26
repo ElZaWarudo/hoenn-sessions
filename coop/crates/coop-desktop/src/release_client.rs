@@ -3,8 +3,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use coop_launcher::{
-    ArtifactIdentity, ArtifactPayload, ArtifactSet, AuthSession, MAX_ARTIFACT_BYTES,
-    MAX_ENVELOPE_BYTES, SignedReleaseEnvelope, TrustedReleaseKey, VerifiedRelease,
+    ArtifactIdentity, ArtifactPayload, ArtifactSet, AuthSession, SignedReleaseEnvelope,
+    TrustedReleaseKey, VerifiedRelease, MAX_ARTIFACT_BYTES, MAX_ENVELOPE_BYTES,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -36,6 +36,20 @@ pub enum ReleaseError {
 pub struct DownloadedRelease {
     pub verified: VerifiedRelease,
     pub artifacts: ArtifactSet,
+}
+
+impl DownloadedRelease {
+    /// Returns one downloaded signed artifact, if the caller requested bodies.
+    pub fn artifact(&self, identity: ArtifactIdentity) -> Option<&[u8]> {
+        self.artifacts
+            .get(identity)
+            .map(|payload| payload.bytes.as_slice())
+    }
+
+    /// Returns the trusted catalog body used to resolve the release's worlds.
+    pub fn region_catalog(&self) -> Option<&[u8]> {
+        self.artifact(ArtifactIdentity::RegionCatalog)
+    }
 }
 
 #[derive(Clone)]
@@ -133,12 +147,21 @@ impl ReleaseClient {
             .validate_at(now)
             .map_err(|_| ReleaseError::Envelope)?;
         let artifacts = if with_artifacts {
-            let mut entries = Vec::with_capacity(ArtifactIdentity::all().len());
-            for identity in ArtifactIdentity::all().iter().copied() {
+            let mut entries = Vec::with_capacity(verified.descriptor().artifacts.len());
+            // The signed descriptor is the source of truth for the artifact
+            // set. This keeps legacy single-ROM releases working while also
+            // fetching every bounded catalog/world artifact in an N-world
+            // release, without accepting caller-supplied paths.
+            for identity in verified
+                .descriptor()
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.id)
+            {
                 let path = format!(
                     "v1/releases/{}/artifacts/{}",
                     verified.release_id(),
-                    identity.as_str()
+                    identity.wire_name()
                 );
                 let url = self
                     .base
@@ -270,8 +293,14 @@ mod download_tests {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(23),
             read_bounded(response, 3),
-        ).await;
+        )
+        .await;
         task.abort();
-        assert_eq!(result.expect("read stall must fail before server closes").unwrap_err(), ReleaseError::Transport);
+        assert_eq!(
+            result
+                .expect("read stall must fail before server closes")
+                .unwrap_err(),
+            ReleaseError::Transport
+        );
     }
 }

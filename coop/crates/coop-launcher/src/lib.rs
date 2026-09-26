@@ -17,6 +17,7 @@ pub mod rom_travel;
 pub mod session;
 pub mod travel_coordinator;
 pub mod update;
+pub mod world_acquire;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
 
@@ -51,18 +52,19 @@ pub use update::{
     MAX_ENVELOPE_BYTES, ReleaseDescriptor, ReleaseStore, SignedReleaseEnvelope, TrustedReleaseKey,
     UpdateError, VerifiedRelease,
 };
+pub use world_acquire::{WorldAcquireIntent, WorldAcquireIntentError, WorldAcquireIntentStore};
 
 use std::time::Duration;
 
 use coop_cloud::{
-    AcquireLeaseRequest, ArtifactIdentity as CloudArtifactIdentity, CharacterId,
-    HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest,
-    LogoutResponse, PrepareSnapshotRequest, ReconnectLeaseRequest, RefreshRequest, RefreshResponse,
-    RegisterRequest, RegisterResponse, ReleaseLeaseRequest, Revision, RomHandoffCommitRequest,
-    RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
-    RomHandoffRecoveryStatus, SignedManifestEnvelope, SnapshotFinalizeRequest, SnapshotListRequest,
-    SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord, SnapshotRestoreRequest,
-    SnapshotRestoreResponse, UploadTarget,
+    AcquireLeaseRequest, AcquireWorldLeaseResponse, ArtifactIdentity as CloudArtifactIdentity,
+    CharacterId, HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginRequest, LoginResponse,
+    LogoutRequest, LogoutResponse, PrepareSnapshotRequest, ReconnectLeaseRequest, RefreshRequest,
+    RefreshResponse, RegisterRequest, RegisterResponse, ReleaseLeaseRequest, Revision,
+    RomHandoffCommitRequest, RomHandoffPrepareRequest, RomHandoffPrepareResponse,
+    RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, SignedManifestEnvelope,
+    SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse,
+    SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse, UploadTarget,
 };
 use reqwest::{Client, Method, StatusCode, Url};
 use thiserror::Error;
@@ -97,6 +99,7 @@ fn map_cloud_error(error: HttpClientError) -> SessionError {
 fn map_acquire_error(error: HttpClientError) -> SessionError {
     match error {
         HttpClientError::Status(StatusCode::CONFLICT) => SessionError::AcquireConflict,
+        HttpClientError::Status(StatusCode::GONE) => SessionError::AcquireClosed,
         other => map_cloud_error(other),
     }
 }
@@ -364,6 +367,33 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn acquire_world<'a>(
+        &'a self,
+        auth: &'a AuthSession,
+        request: AcquireLeaseRequest,
+    ) -> session::CloudFuture<'a, AcquireWorldLeaseResponse> {
+        Box::pin(async move {
+            let url = self
+                .url("v1/sessions/acquire-world")
+                .map_err(|_| SessionError::Cloud)?;
+            let response: AcquireWorldLeaseResponse = self
+                .send_json(
+                    self.authenticated(Method::POST, url, auth)
+                        .map_err(map_cloud_error)?
+                        .json(&request),
+                    MAX_JSON_RESPONSE_BYTES,
+                )
+                .await
+                .map_err(map_acquire_error)?;
+            if response.lease.character_id != request.character_id
+                || response.lease.client_instance_id != request.client_instance_id
+                || response.validate().is_err()
+            {
+                return Err(SessionError::Lease);
+            }
+            Ok(response)
+        })
+    }
     fn reconcile_rom_handoff<'a>(
         &'a self,
         auth: &'a AuthSession,
@@ -958,6 +988,10 @@ mod tests {
             SessionError::AcquireConflict
         ));
         assert!(matches!(
+            map_acquire_error(HttpClientError::Status(StatusCode::GONE)),
+            SessionError::AcquireClosed
+        ));
+        assert!(matches!(
             map_acquire_error(HttpClientError::Status(StatusCode::SERVICE_UNAVAILABLE)),
             SessionError::Cloud
         ));
@@ -1122,6 +1156,75 @@ mod tests {
         )
         .unwrap();
         api.upload(&target, b"save-bytes".to_vec()).await.unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn world_aware_acquire_uses_authenticated_route_and_validates_head() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (user_id, character_id, session_id, client_instance_id, family_id) = test_ids();
+        let snapshot_id = SnapshotId::new(Uuid::from_u128(206)).unwrap();
+        let request = coop_cloud::AcquireLeaseRequest::new(
+            character_id,
+            client_instance_id,
+            coop_cloud::IdempotencyKey::new(Uuid::from_u128(207)).unwrap(),
+        );
+        let lease = LeaseContract::new(
+            LeaseFence::new(
+                session_id,
+                character_id,
+                coop_cloud::Revision::new(2),
+                SessionEpoch::new(1).unwrap(),
+                client_instance_id,
+            ),
+            UnixTimestampMillis::new(4_000_000_000_000),
+            1_000,
+        )
+        .unwrap();
+        let response = coop_cloud::AcquireWorldLeaseResponse {
+            lease,
+            active_world_id: coop_protocol::RomWorldId::new(2).unwrap(),
+            active_snapshot_id: Some(snapshot_id),
+        };
+        let login = LoginResponse::new(
+            user_id,
+            character_id,
+            AccessToken::new("http-access").unwrap(),
+            RefreshToken::new("http-refresh").unwrap(),
+            family_id,
+            UnixTimestampMillis::new(4_000_000_000_000),
+            UnixTimestampMillis::new(4_000_000_100_000),
+        )
+        .unwrap();
+        let login_body = serde_json::to_vec(&login).unwrap();
+        let response_body = serde_json::to_vec(&response).unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = read_http_request(&mut stream).await;
+            write_response(&mut stream, "200 OK", &login_body).await;
+
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let posted = read_http_request(&mut stream).await;
+            assert!(posted.starts_with("POST /v1/sessions/acquire-world HTTP/1.1\r\n"));
+            assert!(
+                posted
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer http-access")
+            );
+            assert!(posted.contains(&character_id.to_string()));
+            write_response(&mut stream, "200 OK", &response_body).await;
+        });
+        let api = ReqwestCloudApi::new(&format!("http://127.0.0.1:{}", address.port())).unwrap();
+        let auth = AuthSession::login(
+            &api,
+            &TestKeychain,
+            "ash",
+            Password::new("password").unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(api.acquire_world(&auth, request).await.unwrap(), response);
         server.await.unwrap();
     }
 

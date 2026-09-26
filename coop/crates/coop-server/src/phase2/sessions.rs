@@ -236,6 +236,11 @@ pub(crate) fn acquire_world(
             .acquire_history
             .retain(|_, record| record.expires_at > now);
         if let Some(record) = state.acquire_history.get(&request.idempotency_key) {
+            if record.character_id != request.character_id
+                || record.client_instance_id != request.client_instance_id
+            {
+                return Err(Phase2Error::Conflict);
+            }
             let lease = state.leases.get(&request.character_id);
             let binding_matches = lease.is_some_and(|lease| {
                 lease.runtime_binding.as_ref().is_some_and(|binding| {
@@ -245,18 +250,20 @@ pub(crate) fn acquire_world(
                 })
             });
             let Some(lease) = lease else {
-                return Err(Phase2Error::Conflict);
+                return Err(Phase2Error::AcquireClosed);
             };
-            if lease.released {
-                return Err(Phase2Error::Conflict);
+            if lease.contract.stable_runtime_session()
+                != record.contract.stable_runtime_session()
+                || lease.released
+            {
+                return Err(Phase2Error::AcquireClosed);
             }
             if lease.contract.expires_at.value() <= now || lease.grace_until <= now {
-                return Err(Phase2Error::Expired);
+                return Err(Phase2Error::AcquireClosed);
             }
-            if record.character_id == request.character_id
-                && record.client_instance_id == request.client_instance_id
-                && record.contract.current_revision == revision
-                && lease.contract.fence() == record.contract.fence()
+            if lease.contract.current_revision == revision
+                && lease.contract.current_revision.value()
+                    >= record.contract.current_revision.value()
                 && binding_matches
             {
                 return Ok(AcquireWorldLeaseResponse {
