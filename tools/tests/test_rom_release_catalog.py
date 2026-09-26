@@ -5,59 +5,14 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import re
-import struct
 import tempfile
 import unittest
-import zlib
 from unittest import mock
 from pathlib import Path
 
 from tools import rom_release_catalog
 from tools.rom_release_catalog import validate_catalog
 from tools.coop import player_transfer_manifest as transfer_schema
-
-
-def synthetic_current_registry_template() -> bytes:
-    """Adapt the ROM-written old-registry save for catalog contract tests only.
-
-    This is synthetic test data, not a current ROM-written arrival proof. The
-    real release validator still checks unmodified template files with Rust.
-    """
-    source = Path(__file__).parent / "fixtures" / "arrival-v2.sav"
-    image = bytearray(source.read_bytes())
-    generated = (Path(__file__).parents[2] / "coop" / "crates" / "coop-protocol"
-                 / "src" / "generated_identity_registry.rs").read_text(encoding="utf-8")
-    version = int(re.search(r"IDENTITY_REGISTRY_VERSION: u32 = (\d+)", generated).group(1))
-    digest_text = re.search(r"IDENTITY_REGISTRY_DIGEST: \[u8; 16\] = \[([^]]+)\]", generated).group(1)
-    digest = bytes(int(value.strip(), 16) for value in digest_text.split(","))
-    adapted = False
-    for slot in range(2):
-        sectors = {}
-        for physical in range(slot * 15, (slot + 1) * 15):
-            offset = physical * 4096
-            if struct.unpack_from("<I", image, offset + 4088)[0] == 0x08012025:
-                logical = struct.unpack_from("<H", image, offset + 4084)[0]
-                if logical < 15:
-                    sectors[logical] = offset
-        if len(sectors) != 15:
-            continue
-        block = bytearray().join(image[sectors[logical] + 3968:
-                                       sectors[logical] + 3968 + 116]
-                                  for logical in range(15))
-        record = block[4:4 + 672]
-        if record[:4] != b"CSP1":
-            continue
-        adapted = True
-        struct.pack_into("<I", record, 8, version)
-        record[12:28] = digest
-        struct.pack_into("<I", record, 668, zlib.crc32(record[:668]))
-        for index, byte in enumerate(record):
-            logical, chunk_offset = divmod(4 + index, 116)
-            image[sectors[logical] + 3968 + chunk_offset] = byte
-    if not adapted:
-        raise AssertionError("arrival test fixture has no valid co-op save record")
-    return bytes(image)
 
 
 def synthetic_schema_payload() -> bytes:
@@ -99,7 +54,7 @@ class RomReleaseCatalogTests(unittest.TestCase):
         entries = []
         payload = synthetic_schema_payload()
         decoded = transfer_schema.parse_schema_payload(payload)
-        template_bytes = synthetic_current_registry_template()
+        template_bytes = (Path(__file__).parent / "fixtures" / "arrival-v3-cormoria-carabrue.sav").read_bytes()
         for index, name in enumerate(names, 1):
             rom = f"{name}.gba"
             bridge = f"{name}.bridge.json"
