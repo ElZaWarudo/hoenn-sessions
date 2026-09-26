@@ -12,7 +12,7 @@ from tools.coop.object_contract_manifest import (
 BASE = 0x08000000
 
 
-def fixture(pointer_shift=0, table_shift=0, scalar_change=False):
+def fixture(pointer_shift=0, table_shift=0, scalar_change=False, null_change=False):
     rom = bytearray(2048)
     descriptor = bytearray(DESCRIPTOR_SIZE)
     HEADER.pack_into(descriptor, 0, MAGIC, 1, len(TABLES))
@@ -35,6 +35,8 @@ def fixture(pointer_shift=0, table_shift=0, scalar_change=False):
                 struct.pack_into("<I", payload, row * stride + 8, 900 + row)
         if scalar_change and index == 2:
             payload[12] ^= 1
+        if null_change and index == 2:
+            struct.pack_into("<I", payload, 4, 0)
         rom[offset:offset + len(payload)] = payload
         symbols[name] = (BASE + offset, len(payload))
     return bytes(rom), symbols
@@ -53,6 +55,8 @@ class ObjectContractManifestTests(unittest.TestCase):
                             right["tables"]["gItemsInfo"]["address"])
         self.assertEqual(left["tables"]["gItemsInfo"]["scalar_sha256"],
                          right["tables"]["gItemsInfo"]["scalar_sha256"])
+        self.assertEqual(left["tables"]["gItemsInfo"]["pointer_presence_sha256"],
+                         right["tables"]["gItemsInfo"]["pointer_presence_sha256"])
         self.assertEqual(left["rom_sha256"], hashlib.sha256(left_rom).hexdigest())
 
     def test_scalar_drift_rejected(self):
@@ -61,6 +65,16 @@ class ObjectContractManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ManifestError, "disagree"):
             require_same_scalar_tables({"main": manifest_from_rom(left_rom, left_symbols),
                                         "cormoria": manifest_from_rom(right_rom, right_symbols)})
+
+    def test_null_pointer_drift_rejected_even_when_scalar_bytes_match(self):
+        left_rom, left_symbols = fixture()
+        right_rom, right_symbols = fixture(null_change=True)
+        left = manifest_from_rom(left_rom, left_symbols)
+        right = manifest_from_rom(right_rom, right_symbols)
+        self.assertEqual(left["tables"]["gMovesInfo"]["scalar_sha256"],
+                         right["tables"]["gMovesInfo"]["scalar_sha256"])
+        with self.assertRaisesRegex(ManifestError, "disagree"):
+            require_same_scalar_tables({"main": left, "cormoria": right})
 
     def test_pointer_layout_and_bounds_are_validated(self):
         rom, symbols = fixture()

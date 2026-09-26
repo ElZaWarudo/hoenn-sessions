@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compare linked shared-ID table scalar bytes across ROMs.
 
-Pointer locations come from a compiler-emitted descriptor in each ROM. This
-does not attest to pointed-to data, callbacks, menu behavior, or full object
-semantics and must not be used as an object_catalog_sha256 release claim.
+Pointer locations come from a compiler-emitted descriptor in each ROM. Pointer
+presence is compared separately from scalar bytes. This does not attest to
+pointed-to data, callbacks, menu behavior, or full object semantics and must
+not be used as an object_catalog_sha256 release claim.
 """
 
 from __future__ import annotations
@@ -79,14 +80,16 @@ def decode_descriptor(payload: bytes) -> list[tuple[int, tuple[int, ...]]]:
     return layouts
 
 
-def scalar_bytes(payload: bytes, stride: int, pointers: tuple[int, ...]) -> bytes:
+def scalar_bytes(payload: bytes, stride: int, pointers: tuple[int, ...]) -> tuple[bytes, bytes]:
     if not payload or len(payload) % stride:
         raise ManifestError("shared-object table length is not a record multiple")
     canonical = bytearray(payload)
+    presence = bytearray()
     for base in range(0, len(canonical), stride):
         for offset in pointers:
+            presence.append(int(any(canonical[base + offset:base + offset + 4])))
             canonical[base + offset:base + offset + 4] = b"\0" * 4
-    return bytes(canonical)
+    return bytes(canonical), bytes(presence)
 
 
 def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
@@ -105,7 +108,7 @@ def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
     for name, (stride, pointers) in zip(TABLES, layouts):
         address, size = symbols[name]
         raw = read(name)
-        canonical = scalar_bytes(raw, stride, pointers)
+        canonical, presence = scalar_bytes(raw, stride, pointers)
         entries[name] = {
             "address": address,
             "size": size,
@@ -114,6 +117,7 @@ def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
             "pointer_offsets": list(pointers),
             "raw_sha256": hashlib.sha256(raw).hexdigest(),
             "scalar_sha256": hashlib.sha256(canonical).hexdigest(),
+            "pointer_presence_sha256": hashlib.sha256(presence).hexdigest(),
         }
     return {
         "schema_version": 1,
@@ -135,7 +139,8 @@ def require_same_scalar_tables(worlds: dict[str, dict]) -> None:
             raise ManifestError(f"invalid scalar table manifest for {world}")
         fingerprint = tuple((tables[name]["record_count"], tables[name]["record_stride"],
                              tuple(tables[name]["pointer_offsets"]),
-                             tables[name]["scalar_sha256"]) for name in TABLES)
+                             tables[name]["scalar_sha256"],
+                             tables[name]["pointer_presence_sha256"]) for name in TABLES)
         if reference is None:
             reference = fingerprint
         elif fingerprint != reference:
