@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Compare linked shared-ID table scalar bytes across ROMs.
+"""Compare linked shared-ID scalar bytes and bounded display text across ROMs.
 
 Pointer locations come from a compiler-emitted descriptor in each ROM. Pointer
-presence is compared separately from scalar bytes. This does not attest to
-pointed-to data, callbacks, menu behavior, or full object semantics and must
-not be used as an object_catalog_sha256 release claim.
+presence is compared separately from scalar bytes. The checked text fields are
+item name/plural/description, species description, move name/description, and
+ability description. Graphics, callbacks, menus, and full object semantics are
+outside this gate; it is not an object_catalog_sha256 release claim.
 """
 
 from __future__ import annotations
@@ -30,9 +31,13 @@ TABLES = (
 DESCRIPTOR = "gCoopObjectScalarDescriptor"
 SYMBOLS = (DESCRIPTOR, *TABLES)
 HEADER = struct.Struct("<IHH")
-ENTRY = struct.Struct("<HH48H")
+ENTRY = struct.Struct("<HH48HH3H")
 DESCRIPTOR_SIZE = HEADER.size + len(TABLES) * ENTRY.size
 MAGIC = 0x3143534F
+ROM_BASE = 0x08000000
+ROM_END = 0x0A000000
+MAX_TEXT_BYTES = 4096
+TEXT_COUNTS = (3, 1, 2, 1, 0)
 
 
 def symbols_from_nm(output: str) -> dict[str, tuple[int, int]]:
@@ -58,25 +63,33 @@ def symbols_from_nm(output: str) -> dict[str, tuple[int, int]]:
     return result
 
 
-def decode_descriptor(payload: bytes) -> list[tuple[int, tuple[int, ...]]]:
+def decode_descriptor(payload: bytes) -> list[tuple[int, tuple[int, ...], tuple[int, ...]]]:
     if len(payload) != DESCRIPTOR_SIZE:
         raise ManifestError("unexpected object scalar descriptor length")
     magic, version, count = HEADER.unpack_from(payload)
-    if (magic, version, count) != (MAGIC, 1, len(TABLES)):
+    if (magic, version, count) != (MAGIC, 2, len(TABLES)):
         raise ManifestError("unsupported object scalar descriptor")
     layouts = []
     for index in range(count):
-        stride, pointer_count, *offsets = ENTRY.unpack_from(payload, HEADER.size + index * ENTRY.size)
+        stride, pointer_count, *fields = ENTRY.unpack_from(payload, HEADER.size + index * ENTRY.size)
+        offsets = fields[:48]
+        text_count = fields[48]
+        text_offsets = fields[49:]
         if (stride < 1 or stride > 4096 or pointer_count > 48
                 or (index == 4 and pointer_count != 0)
                 or (index != 4 and pointer_count == 0)
-                or any(offsets[pointer_count:])):
+                or any(offsets[pointer_count:])
+                or text_count != TEXT_COUNTS[index]
+                or any(text_offsets[text_count:])):
             raise ManifestError(f"invalid object scalar layout {TABLES[index]}")
         pointers = tuple(offsets[:pointer_count])
+        texts = tuple(text_offsets[:text_count])
         if (len(set(pointers)) != len(pointers)
                 or any(offset % 4 or offset + 4 > stride for offset in pointers)):
             raise ManifestError(f"invalid pointer offsets for {TABLES[index]}")
-        layouts.append((stride, pointers))
+        if len(set(texts)) != len(texts) or any(offset not in pointers for offset in texts):
+            raise ManifestError(f"invalid text offsets for {TABLES[index]}")
+        layouts.append((stride, pointers, texts))
     return layouts
 
 
@@ -92,20 +105,47 @@ def scalar_bytes(payload: bytes, stride: int, pointers: tuple[int, ...]) -> tupl
     return bytes(canonical), bytes(presence)
 
 
+def text_sha256(rom: bytes, payload: bytes, stride: int, offsets: tuple[int, ...],
+                table_name: str) -> str:
+    """Hash ID/field-ordered terminated GBA bytes, independent of ROM addresses.
+
+    A 0xffffffff length denotes null; other lengths include the 0xff terminator.
+    Length framing prevents adjacent fields from changing the digest ambiguously.
+    """
+    digest = hashlib.sha256()
+    for base in range(0, len(payload), stride):
+        for field in offsets:
+            pointer, = struct.unpack_from("<I", payload, base + field)
+            if pointer == 0:
+                digest.update(struct.pack("<I", 0xFFFFFFFF))
+                continue
+            start = pointer - ROM_BASE
+            if pointer < ROM_BASE or pointer >= ROM_END or start >= len(rom):
+                raise ManifestError(f"{table_name} text pointer outside shipped ROM at ID {base // stride}")
+            end_bound = min(len(rom), start + MAX_TEXT_BYTES)
+            terminator = rom.find(b"\xff", start, end_bound)
+            if terminator < 0:
+                raise ManifestError(f"{table_name} text unterminated or out of ROM at ID {base // stride}")
+            value = rom[start:terminator + 1]
+            digest.update(struct.pack("<I", len(value)))
+            digest.update(value)
+    return digest.hexdigest()
+
+
 def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
     desc_address, desc_size = symbols[DESCRIPTOR]
     # read_rom_symbol's path-based interface is intentionally avoided here so
     # synthetic ROM tests exercise the exact same bounded address math.
     def read(name: str) -> bytes:
         address, size = symbols[name]
-        offset = address - 0x08000000
-        if offset < 0 or size <= 0 or offset + size > len(rom) or address + size > 0x0A000000:
+        offset = address - ROM_BASE
+        if offset < 0 or size <= 0 or offset + size > len(rom) or address + size > ROM_END:
             raise ManifestError(f"{name} is outside the shipped ROM")
         return rom[offset:offset + size]
 
     layouts = decode_descriptor(read(DESCRIPTOR))
     entries = {}
-    for name, (stride, pointers) in zip(TABLES, layouts):
+    for name, (stride, pointers, texts) in zip(TABLES, layouts):
         address, size = symbols[name]
         raw = read(name)
         canonical, presence = scalar_bytes(raw, stride, pointers)
@@ -115,13 +155,15 @@ def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
             "record_count": size // stride,
             "record_stride": stride,
             "pointer_offsets": list(pointers),
+            "text_offsets": list(texts),
             "raw_sha256": hashlib.sha256(raw).hexdigest(),
             "scalar_sha256": hashlib.sha256(canonical).hexdigest(),
             "pointer_presence_sha256": hashlib.sha256(presence).hexdigest(),
+            "display_text_sha256": text_sha256(rom, raw, stride, texts, name),
         }
     return {
-        "schema_version": 1,
-        "scope": "linked-table-scalar-bytes-only",
+        "schema_version": 2,
+        "scope": "linked-table-scalars-pointer-presence-and-bounded-display-text",
         "rom_sha256": hashlib.sha256(rom).hexdigest(),
         "descriptor": {"address": desc_address, "size": desc_size,
                        "sha256": hashlib.sha256(read(DESCRIPTOR)).hexdigest()},
@@ -135,16 +177,22 @@ def require_same_scalar_tables(worlds: dict[str, dict]) -> None:
     reference = None
     for world, manifest in worlds.items():
         tables = manifest.get("tables")
-        if not isinstance(tables, dict) or set(tables) != set(TABLES):
+        if (manifest.get("schema_version") != 2 or not isinstance(tables, dict)
+                or set(tables) != set(TABLES)):
             raise ManifestError(f"invalid scalar table manifest for {world}")
-        fingerprint = tuple((tables[name]["record_count"], tables[name]["record_stride"],
-                             tuple(tables[name]["pointer_offsets"]),
-                             tables[name]["scalar_sha256"],
-                             tables[name]["pointer_presence_sha256"]) for name in TABLES)
+        try:
+            fingerprint = tuple((tables[name]["record_count"], tables[name]["record_stride"],
+                                 tuple(tables[name]["pointer_offsets"]),
+                                 tuple(tables[name]["text_offsets"]),
+                                 tables[name]["scalar_sha256"],
+                                 tables[name]["pointer_presence_sha256"],
+                                 tables[name]["display_text_sha256"]) for name in TABLES)
+        except (KeyError, TypeError) as exc:
+            raise ManifestError(f"invalid scalar table manifest for {world}") from exc
         if reference is None:
             reference = fingerprint
         elif fingerprint != reference:
-            raise ManifestError(f"world ROMs disagree on shared-object scalar data: {world}")
+            raise ManifestError(f"world ROMs disagree on shared-object scalar or display text data: {world}")
 
 
 def build_manifest(elf: Path, rom: Path, nm: str) -> dict:
@@ -170,7 +218,7 @@ def main() -> int:
     try:
         manifest = build_manifest(args.elf, args.rom, args.nm)
     except (ManifestError, OSError) as exc:
-        parser.exit(1, f"object scalar manifest: {exc}\n")
+        parser.exit(1, f"object contract manifest: {exc}\n")
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return 0

@@ -4,8 +4,8 @@
 #include "pokemon.h"
 
 // Compiler-derived locations of address-bearing fields in the five shared ID
-// tables. Keep this separate from a semantic object contract: pointed-to text,
-// graphics, scripts, and callback implementations are deliberately not hashed.
+// tables. Text offsets identify the bounded display strings checked by the
+// ROM manifest; graphics, scripts, callbacks, and menus remain outside scope.
 #define PTR(type, field) offsetof(type, field)
 #define GFX(field) (offsetof(struct SpeciesInfo, overworldData) + offsetof(struct ObjectEventGraphicsInfo, field))
 #define GFX_F(field) (offsetof(struct SpeciesInfo, overworldDataFemale) + offsetof(struct ObjectEventGraphicsInfo, field))
@@ -17,6 +17,8 @@ struct ObjectScalarLayout
     u16 stride;
     u16 pointerCount;
     u16 pointerOffsets[48];
+    u16 textCount;
+    u16 textOffsets[3];
 };
 
 struct ObjectScalarDescriptor
@@ -31,7 +33,7 @@ const struct ObjectScalarDescriptor gCoopObjectScalarDescriptor
     __attribute__((used, section(".rodata.coop_player_transfer"))) =
 {
     .magic = 0x3143534F, // OSC1
-    .version = 1,
+    .version = 2,
     .tableCount = 5,
     .tables = {
         {
@@ -43,6 +45,8 @@ const struct ObjectScalarDescriptor gCoopObjectScalarDescriptor
                 PTR(struct ItemInfo, pluralName), PTR(struct ItemInfo, iconPic),
                 PTR(struct ItemInfo, iconPalette), PTR(struct ItemInfo, shopCriteriaFunc),
             },
+            .textCount = 3,
+            .textOffsets = { PTR(struct ItemInfo, name), PTR(struct ItemInfo, pluralName), PTR(struct ItemInfo, description) },
         },
         {
             .stride = sizeof(struct SpeciesInfo),
@@ -96,6 +100,8 @@ const struct ObjectScalarDescriptor gCoopObjectScalarDescriptor
 #endif
 #endif
             },
+            .textCount = 1,
+            .textOffsets = { PTR(struct SpeciesInfo, description) },
         },
         {
             .stride = sizeof(struct MoveInfo),
@@ -104,11 +110,15 @@ const struct ObjectScalarDescriptor gCoopObjectScalarDescriptor
                 PTR(struct MoveInfo, name), PTR(struct MoveInfo, description),
                 PTR(struct MoveInfo, additionalEffects), PTR(struct MoveInfo, battleAnimScript),
             },
+            .textCount = 2,
+            .textOffsets = { PTR(struct MoveInfo, name), PTR(struct MoveInfo, description) },
         },
         {
             .stride = sizeof(struct AbilityInfo),
             .pointerCount = 1,
             .pointerOffsets = { PTR(struct AbilityInfo, description) },
+            .textCount = 1,
+            .textOffsets = { PTR(struct AbilityInfo, description) },
         },
         { .stride = sizeof(struct TmHmIndexKey), .pointerCount = 0 },
     },
