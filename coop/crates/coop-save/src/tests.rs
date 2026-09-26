@@ -1,5 +1,55 @@
 use super::*;
 
+#[test]
+fn rom_written_harbor_saves_project_out_and_back_without_losing_world_locations() {
+    let registry = RegistryContract::new(
+        coop_protocol::IDENTITY_REGISTRY_VERSION,
+        coop_protocol::IDENTITY_REGISTRY_DIGEST,
+    );
+    let main = parse_v2(
+        include_bytes!("../../../../tools/tests/fixtures/arrival-v3-main-lilycove.sav"),
+        registry,
+    )
+    .unwrap();
+    let cormoria = parse_v2(
+        include_bytes!("../../../../tools/tests/fixtures/arrival-v3-cormoria-rivetshore.sav"),
+        registry,
+    )
+    .unwrap();
+    let descriptor = include_bytes!("fixtures/player_transfer_v3.bin");
+    let pair = TransferDescriptorPair {
+        source: descriptor,
+        destination: descriptor,
+    };
+
+    let arrival = project_arrival(&main, &cormoria, pair, true).unwrap();
+    assert!(main.character_lineage().same_trainer(arrival.character_lineage()));
+    assert_eq!(arrival.coop().save_generation, main.coop().save_generation + 1);
+    assert_eq!(
+        &arrival.logical_sector_payload(1).unwrap()[..8],
+        &cormoria.logical_sector_payload(1).unwrap()[..8],
+        "the Cormoria harbor location remains local",
+    );
+    assert_eq!(
+        &arrival.logical_sector_payload(1).unwrap()[0x32..0x34],
+        &1314_u16.to_le_bytes(),
+    );
+
+    let returned = project_arrival(&arrival, &main, pair, false).unwrap();
+    assert!(main.character_lineage().same_trainer(returned.character_lineage()));
+    assert_eq!(returned.coop().save_generation, arrival.coop().save_generation + 1);
+    assert_eq!(
+        &returned.logical_sector_payload(1).unwrap()[..8],
+        &main.logical_sector_payload(1).unwrap()[..8],
+        "the existing Main harbor location survives the return",
+    );
+    assert_eq!(
+        &returned.logical_sector_payload(1).unwrap()[0x32..0x34],
+        &88_u16.to_le_bytes(),
+    );
+    assert!(parse_v2(returned.raw_bytes(), registry).is_ok());
+}
+
 const TEST_REGISTRY: RegistryContract = RegistryContract::new(7, [0xa5; 16]);
 
 #[test]
@@ -644,7 +694,7 @@ fn accepts_assigned_identity_boundary_ordinals() {
 #[test]
 fn rejects_unassigned_identity_ordinals_for_every_persisted_kind() {
     for (kind, offset, ordinal) in [
-        (IdentityKind::Trainer, COOP_TRAINER_BITS_OFFSET, 856_u16),
+        (IdentityKind::Trainer, COOP_TRAINER_BITS_OFFSET, 2047_u16),
         (IdentityKind::Event, COOP_EVENT_BITS_OFFSET, 4_u16),
         (IdentityKind::FlyPoint, COOP_FLY_BITS_OFFSET, 4_u16),
         (IdentityKind::Gym, COOP_GYM_BITS_OFFSET, 24_u16),
