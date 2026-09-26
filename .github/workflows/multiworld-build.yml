@@ -69,6 +69,9 @@ jobs:
           python3 tools/coop/player_transfer_manifest.py \
             --elf pokeemerald.elf --rom pokeemerald.gba \
             --manifest dist/multiworld/main/player_transfer_manifest.json
+          python3 tools/coop/experience_table_manifest.py \
+            --elf pokeemerald.elf --rom pokeemerald.gba \
+            --manifest dist/multiworld/main/experience_table_manifest.json
 
       - name: Build Cormoria and its manifests
         run: |
@@ -83,6 +86,9 @@ jobs:
           python3 tools/coop/player_transfer_manifest.py \
             --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
             --manifest dist/multiworld/cormoria/player_transfer_manifest.json
+          python3 tools/coop/experience_table_manifest.py \
+            --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
+            --manifest dist/multiworld/cormoria/experience_table_manifest.json
 
       - name: Verify both world builds
         run: |
@@ -92,8 +98,10 @@ jobs:
           from pathlib import Path
 
           from tools.coop.player_transfer_manifest import require_same_transfer_schema
+          from tools.coop.experience_table_manifest import require_same_experience_tables
 
           worlds = {}
+          experience_tables = {}
           for name, game_code in (("main", b"BPEE"), ("cormoria", b"BPCO")):
               root = Path("dist/multiworld") / name
               rom = (root / "game.gba").read_bytes()
@@ -102,13 +110,18 @@ jobs:
               digest = hashlib.sha256(rom).hexdigest()
               bridge = json.loads((root / "bridge_manifest.json").read_text())
               transfer = json.loads((root / "player_transfer_manifest.json").read_text())
+              experience = json.loads((root / "experience_table_manifest.json").read_text())
               assert bridge["game_build"]["rom_sha256"] == digest, f"{name} bridge/ROM mismatch"
               assert transfer["rom_sha256"] == digest, f"{name} transfer/ROM mismatch"
+              assert experience["rom_sha256"] == digest, f"{name} experience/ROM mismatch"
               worlds[name] = transfer
+              experience_tables[name] = experience
               print(f"{name}: {len(rom)} bytes, sha256={digest}")
           assert worlds["main"]["rom_sha256"] != worlds["cormoria"]["rom_sha256"], "world ROMs are identical"
           require_same_transfer_schema(worlds)
+          require_same_experience_tables(experience_tables)
           print("Both ROMs share the pinned player-transfer schema")
+          print("Both ROMs share the linked experience progression table")
           PY
 
       - name: Retain ROMs and manifests for emulator verification
@@ -119,10 +132,12 @@ jobs:
             dist/multiworld/main/game.gba
             dist/multiworld/main/bridge_manifest.json
             dist/multiworld/main/player_transfer_manifest.json
+            dist/multiworld/main/experience_table_manifest.json
             dist/multiworld/main/generated_addresses.lua
             dist/multiworld/cormoria/game.gba
             dist/multiworld/cormoria/bridge_manifest.json
             dist/multiworld/cormoria/player_transfer_manifest.json
+            dist/multiworld/cormoria/experience_table_manifest.json
             dist/multiworld/cormoria/generated_addresses.lua
           if-no-files-found: error
           retention-days: 2
