@@ -19,9 +19,11 @@ from pathlib import Path
 if __package__:
     from tools.rom_world_registry import load_registry
     from tools.coop import player_transfer_manifest as transfer_schema
+    from tools.coop import map_binding_manifest
 else:
     from rom_world_registry import load_registry
     from coop import player_transfer_manifest as transfer_schema
+    from coop import map_binding_manifest
 
 TOKEN = re.compile(r"[a-z][a-z0-9_]*\Z")
 DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -140,7 +142,7 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
         if not isinstance(object_digest, str) or not DIGEST.fullmatch(object_digest):
             raise ValueError(f"{name} has invalid object catalog digest")
         checked_artifacts = {}
-        for prefix in ("rom", "bridge", "player_transfer"):
+        for prefix in ("rom", "bridge", "player_transfer", "map_binding"):
             artifact = _artifact(root, entry.get(f"{prefix}_path"), entry.get(f"{prefix}_sha256"))
             if artifact in artifacts:
                 raise ValueError(f"artifact reused by multiple worlds: {artifact}")
@@ -181,19 +183,38 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
                 or transfer.get("fields") != decoded["fields"]):
             raise ValueError(f"{name} player-transfer manifest does not match ROM descriptor")
         player_contracts.add((schema, object_digest, transfer_digest, codec))
+        try:
+            map_binding = json.loads(checked_artifacts["map_binding"].read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
+            raise ValueError(f"{name} has invalid map binding manifest") from exc
+        if not isinstance(map_binding, dict) or map_binding.get("rom_sha256") != entry["rom_sha256"]:
+            raise ValueError(f"{name} map binding manifest does not match ROM")
         arrivals = entry.get("arrivals")
         portals = entry.get("portals")
         if not isinstance(arrivals, dict) or not isinstance(portals, list):
             raise ValueError(f"{name} needs arrivals and portals")
+        rom_bytes = checked_artifacts["rom"].read_bytes()
         for portal_id, arrival in arrivals.items():
             _token(portal_id, "arrival portal ID")
             if not isinstance(arrival, dict):
                 raise ValueError(f"{name} has invalid arrival")
-            coordinates = tuple(_integer(arrival.get(field), f"{name} {field}", 255)
-                                for field in ("map_group", "map_number", "warp_id"))
+            # WarpData stores map group/number as signed bytes. Values >= 128
+            # sign-extend before the game's map-table lookup.
+            coordinates = (
+                _integer(arrival.get("map_group"), f"{name} map_group", 127),
+                _integer(arrival.get("map_number"), f"{name} map_number", 127),
+                _integer(arrival.get("warp_id"), f"{name} warp_id", 255),
+            )
+            if 128 <= coordinates[2] <= 254:
+                raise ValueError(f"{name} warp_id must be 0 through 127 or 255")
             layout_id = _integer(arrival.get("map_layout_id"), f"{name} map_layout_id")
             if layout_id == 0:
                 raise ValueError(f"{name} map_layout_id must be positive")
+            try:
+                map_binding_manifest.verify_arrival(rom_bytes,
+                                                    map_binding, coordinates[0], coordinates[1], layout_id)
+            except map_binding_manifest.MapBindingError as exc:
+                raise ValueError(f"{name} {portal_id} map binding rejected: {exc}") from exc
             template = _artifact(root, arrival.get("template_sav_path"),
                                  arrival.get("template_sav_sha256"))
             if template.stat().st_size not in (131072, 131088):

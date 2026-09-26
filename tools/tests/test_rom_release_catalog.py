@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import struct
 import tempfile
 import unittest
 from unittest import mock
@@ -13,6 +14,7 @@ from pathlib import Path
 from tools import rom_release_catalog
 from tools.rom_release_catalog import validate_catalog
 from tools.coop import player_transfer_manifest as transfer_schema
+from tools.coop import map_binding_manifest
 
 
 def synthetic_schema_payload() -> bytes:
@@ -59,7 +61,30 @@ class RomReleaseCatalogTests(unittest.TestCase):
             rom = f"{name}.gba"
             bridge = f"{name}.bridge.json"
             transfer = f"{name}.player-transfer.json"
-            (self.root / rom).write_bytes(name.encode().ljust(0x100, b"\0") + payload)
+            image = bytearray(0x4000)
+            image[:len(name)] = name.encode()
+            image[0x3500:0x3500 + len(payload)] = payload
+            struct.pack_into("<I", image, 0x300 + 79 * 4, map_binding_manifest.ROM_START + 0x500)
+            struct.pack_into("<I", image, 0x300 + 13 * 4, map_binding_manifest.ROM_START + 0x700)
+            struct.pack_into("<I", image, 0x300 + 82 * 4, map_binding_manifest.ROM_START + 0x800)
+            struct.pack_into("<I", image, 0x500 + 4, map_binding_manifest.ROM_START + 0x600)
+            struct.pack_into("<I", image, 0x700 + 10 * 4, map_binding_manifest.ROM_START + 0x900)
+            struct.pack_into("<I", image, 0x800 + 21 * 4, map_binding_manifest.ROM_START + 0xA00)
+            struct.pack_into("<I", image, 0x600, map_binding_manifest.ROM_START + 0x1000)
+            struct.pack_into("<H", image, 0x600 + 0x12, 1194)
+            struct.pack_into("<I", image, 0x900, map_binding_manifest.ROM_START + 0x1100)
+            struct.pack_into("<H", image, 0x900 + 0x12, 88)
+            struct.pack_into("<I", image, 0xA00, map_binding_manifest.ROM_START + 0x1200)
+            struct.pack_into("<H", image, 0xA00 + 0x12, 1314)
+            struct.pack_into("<I", image, 0x2000 + (1194 - 1) * 4,
+                             map_binding_manifest.ROM_START + 0x1000)
+            struct.pack_into("<I", image, 0x2000 + (1193 - 1) * 4,
+                             map_binding_manifest.ROM_START + 0x1300)
+            struct.pack_into("<I", image, 0x2000 + (88 - 1) * 4,
+                             map_binding_manifest.ROM_START + 0x1100)
+            struct.pack_into("<I", image, 0x2000 + (1314 - 1) * 4,
+                             map_binding_manifest.ROM_START + 0x1200)
+            (self.root / rom).write_bytes(image)
             (self.root / bridge).write_text(json.dumps({
                 "game_build": {"rom_sha256": hashlib.sha256((self.root / rom).read_bytes()).hexdigest()},
                 "save": {"schema_version": 2},
@@ -68,9 +93,19 @@ class RomReleaseCatalogTests(unittest.TestCase):
                 "rom_sha256": hashlib.sha256((self.root / rom).read_bytes()).hexdigest(),
                 "schema_version": transfer_schema.SCHEMA_VERSION,
                 "sha256": hashlib.sha256(payload).hexdigest(),
-                "address": transfer_schema.ROM_START + 0x100,
+                "address": transfer_schema.ROM_START + 0x3500,
                 "size": len(payload),
                 **decoded,
+            }), encoding="utf-8")
+            map_binding = f"{name}.map-binding.json"
+            (self.root / map_binding).write_text(json.dumps({
+                "schema_version": 1,
+                "rom_sha256": hashlib.sha256(image).hexdigest(),
+                "gMapGroups": {"address": map_binding_manifest.ROM_START + 0x300,
+                               "size": 83 * 4},
+                "gMapLayouts": {"address": map_binding_manifest.ROM_START + 0x2000,
+                                "size": 1314 * 4},
+                "group_lengths": [11 if n == 13 else 22 if n == 82 else 2 for n in range(83)],
             }), encoding="utf-8")
             arrivals = {}
             for arrival_id in ("from_previous", "from_next"):
@@ -94,6 +129,8 @@ class RomReleaseCatalogTests(unittest.TestCase):
                 "bridge_sha256": hashlib.sha256((self.root / bridge).read_bytes()).hexdigest(),
                 "player_transfer_path": transfer,
                 "player_transfer_sha256": hashlib.sha256((self.root / transfer).read_bytes()).hexdigest(),
+                "map_binding_path": map_binding,
+                "map_binding_sha256": hashlib.sha256((self.root / map_binding).read_bytes()).hexdigest(),
                 "arrivals": arrivals,
                 "portals": []})
         for index, entry in enumerate(entries):
@@ -143,13 +180,76 @@ class RomReleaseCatalogTests(unittest.TestCase):
 
     def test_rejects_arrival_template_with_wrong_saved_map(self) -> None:
         self.catalog["worlds"][1]["arrivals"]["from_previous"]["map_number"] = 2
-        with self.assertRaisesRegex(ValueError, "map does not match catalog"):
+        with self.assertRaisesRegex(ValueError, "outside linked tables"):
             self.validate()
 
     def test_rejects_arrival_template_with_wrong_saved_layout(self) -> None:
         self.catalog["worlds"][1]["arrivals"]["from_previous"]["map_layout_id"] = 1314
-        with self.assertRaisesRegex(ValueError, "layout does not match catalog"):
+        with self.assertRaisesRegex(ValueError, "map/layout does not match shipped ROM"):
             self.validate()
+
+    def test_rejects_save_and_catalog_agree_on_wrong_rom_layout(self) -> None:
+        self.catalog["worlds"][1]["arrivals"]["from_previous"]["map_layout_id"] = 1193
+        with mock.patch.object(rom_release_catalog, "_verify_arrival_save"):
+            with self.assertRaisesRegex(ValueError, "map/layout does not match shipped ROM"):
+                self.validate()
+
+    def test_rejects_null_map_group_pointer(self) -> None:
+        rom = self.root / "cormoria.gba"
+        image = bytearray(rom.read_bytes())
+        struct.pack_into("<I", image, 0x300 + 79 * 4, 0)
+        rom.write_bytes(image)
+        self._refresh_rom_hash(1)
+        with self.assertRaisesRegex(ValueError, "map pointer is null"):
+            self.validate()
+
+    def test_rejects_out_of_window_map_header_pointer(self) -> None:
+        rom = self.root / "cormoria.gba"
+        image = bytearray(rom.read_bytes())
+        struct.pack_into("<I", image, 0x500 + 4, 0x0A000000)
+        rom.write_bytes(image)
+        self._refresh_rom_hash(1)
+        with self.assertRaisesRegex(ValueError, "outside shipped ROM"):
+            self.validate()
+
+    def test_rejects_map_number_outside_group(self) -> None:
+        self.catalog["worlds"][1]["arrivals"]["from_previous"]["map_number"] = 2
+        with self.assertRaisesRegex(ValueError, "outside linked tables"):
+            self.validate()
+
+    def test_rejects_signed_warpdata_map_coordinates(self) -> None:
+        for field in ("map_group", "map_number"):
+            for value in (128, 255):
+                with self.subTest(field=field, value=value):
+                    catalog = copy.deepcopy(self.catalog)
+                    catalog["worlds"][1]["arrivals"]["from_previous"][field] = value
+                    with self.assertRaisesRegex(ValueError, f"{field} must be an integer from 0 through 127"):
+                        self.validate(catalog)
+
+    def test_rejects_signed_warpdata_warp_ids(self) -> None:
+        for warp_id in (128, 254):
+            with self.subTest(warp_id=warp_id):
+                catalog = copy.deepcopy(self.catalog)
+                catalog["worlds"][1]["arrivals"]["from_previous"]["warp_id"] = warp_id
+                with self.assertRaisesRegex(ValueError, "warp_id must be 0 through 127 or 255"):
+                    self.validate(catalog)
+
+    def test_accepts_warp_id_255_sentinel(self) -> None:
+        self.catalog["worlds"][1]["arrivals"]["from_previous"]["warp_id"] = 255
+        self.validate()
+
+    def _refresh_rom_hash(self, world_index: int) -> None:
+        entry = self.catalog["worlds"][world_index]
+        entry["rom_sha256"] = hashlib.sha256((self.root / entry["rom_path"]).read_bytes()).hexdigest()
+        for prefix in ("bridge", "player_transfer", "map_binding"):
+            path = self.root / entry[f"{prefix}_path"]
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if prefix == "bridge":
+                data["game_build"]["rom_sha256"] = entry["rom_sha256"]
+            else:
+                data["rom_sha256"] = entry["rom_sha256"]
+            path.write_text(json.dumps(data), encoding="utf-8")
+            entry[f"{prefix}_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
 
     def test_accepts_fresh_main_and_cormoria_harbor_saves(self) -> None:
         for world_index, portal, fixture, group, number, layout in (
@@ -282,7 +382,7 @@ class RomReleaseCatalogTests(unittest.TestCase):
     def test_rejects_stale_manifest_for_changed_third_rom(self) -> None:
         rom = self.root / "third.gba"
         changed = bytearray(rom.read_bytes())
-        changed[0x100 + transfer_schema.HEADER_SIZE + 3] = transfer_schema.OWNER_SHARED_PLAYER
+        changed[0x3500 + transfer_schema.HEADER_SIZE + 3] = transfer_schema.OWNER_SHARED_PLAYER
         rom.write_bytes(changed)
         self.catalog["worlds"][2]["rom_sha256"] = hashlib.sha256(rom.read_bytes()).hexdigest()
         bridge = self.root / "third.bridge.json"

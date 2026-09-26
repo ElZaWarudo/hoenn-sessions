@@ -72,6 +72,9 @@ jobs:
           python3 tools/coop/experience_table_manifest.py \
             --elf pokeemerald.elf --rom pokeemerald.gba \
             --manifest dist/multiworld/main/experience_table_manifest.json
+          python3 tools/coop/map_binding_manifest.py \
+            --elf pokeemerald.elf --rom pokeemerald.gba \
+            --manifest dist/multiworld/main/map_binding_manifest.json
 
       - name: Build Cormoria and its manifests
         run: |
@@ -89,6 +92,9 @@ jobs:
           python3 tools/coop/experience_table_manifest.py \
             --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
             --manifest dist/multiworld/cormoria/experience_table_manifest.json
+          python3 tools/coop/map_binding_manifest.py \
+            --elf pokeemerald-cormoria.elf --rom pokeemerald-cormoria.gba \
+            --manifest dist/multiworld/cormoria/map_binding_manifest.json
 
       - name: Verify both world builds
         run: |
@@ -111,9 +117,11 @@ jobs:
               bridge = json.loads((root / "bridge_manifest.json").read_text())
               transfer = json.loads((root / "player_transfer_manifest.json").read_text())
               experience = json.loads((root / "experience_table_manifest.json").read_text())
+              map_binding = json.loads((root / "map_binding_manifest.json").read_text())
               assert bridge["game_build"]["rom_sha256"] == digest, f"{name} bridge/ROM mismatch"
               assert transfer["rom_sha256"] == digest, f"{name} transfer/ROM mismatch"
               assert experience["rom_sha256"] == digest, f"{name} experience/ROM mismatch"
+              assert map_binding["rom_sha256"] == digest, f"{name} map binding/ROM mismatch"
               worlds[name] = transfer
               experience_tables[name] = experience
               print(f"{name}: {len(rom)} bytes, sha256={digest}")
@@ -133,11 +141,13 @@ jobs:
             dist/multiworld/main/bridge_manifest.json
             dist/multiworld/main/player_transfer_manifest.json
             dist/multiworld/main/experience_table_manifest.json
+            dist/multiworld/main/map_binding_manifest.json
             dist/multiworld/main/generated_addresses.lua
             dist/multiworld/cormoria/game.gba
             dist/multiworld/cormoria/bridge_manifest.json
             dist/multiworld/cormoria/player_transfer_manifest.json
             dist/multiworld/cormoria/experience_table_manifest.json
+            dist/multiworld/cormoria/map_binding_manifest.json
             dist/multiworld/cormoria/generated_addresses.lua
           if-no-files-found: error
           retention-days: 2
