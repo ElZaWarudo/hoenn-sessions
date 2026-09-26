@@ -1,5 +1,5 @@
-# Build proof for the two-ROM travel path. This workflow keeps all
-# generated ROMs, manifests, and symbols on the runner; promotion is separate.
+# Build proof for the two-ROM travel path. Short-lived artifacts support
+# emulator verification; promotion is separate.
 name: Multiworld build validation
 
 on:
@@ -110,3 +110,19 @@ jobs:
           require_same_transfer_schema(worlds)
           print("Both ROMs share the pinned player-transfer schema")
           PY
+
+      - name: Retain ROMs and manifests for emulator verification
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: multiworld-emulator-candidate
+          path: |
+            dist/multiworld/main/game.gba
+            dist/multiworld/main/bridge_manifest.json
+            dist/multiworld/main/player_transfer_manifest.json
+            dist/multiworld/main/generated_addresses.lua
+            dist/multiworld/cormoria/game.gba
+            dist/multiworld/cormoria/bridge_manifest.json
+            dist/multiworld/cormoria/player_transfer_manifest.json
+            dist/multiworld/cormoria/generated_addresses.lua
+          if-no-files-found: error
+          retention-days: 2
