@@ -52,6 +52,10 @@
 #include "dexnav.h"
 #include "wild_encounter.h"
 #include "constants/battle_frontier.h"
+#if ROM_WORLD == 2
+#include "constants/cormoria_event_ids.h"
+#include "cormoria/quest_menu.h"
+#endif
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/characters.h"
@@ -78,6 +82,9 @@ enum
     MENU_ACTION_DEXNAV,
     MENU_ACTION_ONLINE,
     MENU_ACTION_CHARACTER,
+#if ROM_WORLD == 2
+    MENU_ACTION_QUESTS,
+#endif
 };
 
 // Save status
@@ -97,7 +104,7 @@ EWRAM_DATA static u8 sSafariBallsWindowId = 0;
 EWRAM_DATA static u8 sBattlePyramidFloorWindowId = 0;
 EWRAM_DATA static u8 sStartMenuCursorPos = 0;
 EWRAM_DATA static u8 sNumStartMenuActions = 0;
-EWRAM_DATA static u8 sCurrentStartMenuActions[11] = {0};
+EWRAM_DATA static u8 sCurrentStartMenuActions[12] = {0};
 EWRAM_DATA static u8 sStartMenuScroll = 0;
 EWRAM_DATA static s8 sInitStartMenuData[2] = {0};
 
@@ -127,6 +134,9 @@ static bool8 StartMenuDebugCallback(void);
 static bool8 StartMenuDexNavCallback(void);
 static bool8 StartMenuOnlineCallback(void);
 static bool8 StartMenuCharacterCallback(void);
+#if ROM_WORLD == 2
+static bool8 StartMenuQuestCallback(void);
+#endif
 
 // Menu callbacks
 static bool8 SaveStartCallback(void);
@@ -209,6 +219,9 @@ static const struct WindowTemplate sWindowTemplate_PyramidPeak = {
 static const u8 sText_MenuDebug[] = _("DEBUG");
 static const u8 sText_MenuOnline[] = _("ONLINE");
 static const u8 sText_MenuCharacter[] = _("CHARACTER");
+#if ROM_WORLD == 2
+static const u8 sText_MenuQuests[] = _("QUESTS");
+#endif
 
 static const struct MenuAction sStartMenuItems[] =
 {
@@ -229,6 +242,9 @@ static const struct MenuAction sStartMenuItems[] =
     [MENU_ACTION_DEXNAV]          = {gText_MenuDexNav,  {.u8_void = StartMenuDexNavCallback}},
     [MENU_ACTION_ONLINE]          = {sText_MenuOnline,  {.u8_void = StartMenuOnlineCallback}},
     [MENU_ACTION_CHARACTER]       = {sText_MenuCharacter, {.u8_void = StartMenuCharacterCallback}},
+#if ROM_WORLD == 2
+    [MENU_ACTION_QUESTS]          = {sText_MenuQuests, {.u8_void = StartMenuQuestCallback}},
+#endif
 };
 
 static const struct BgTemplate sBgTemplates_LinkBattleSave[] =
@@ -371,6 +387,10 @@ static void BuildNormalStartMenu(void)
     AddStartMenuAction(MENU_ACTION_PLAYER);
     AddStartMenuAction(MENU_ACTION_ONLINE);
     AddStartMenuAction(MENU_ACTION_CHARACTER);
+#if ROM_WORLD == 2
+    if (FlagGet(Cormoria_FLAG_SYS_QUEST_MENU_GET) == TRUE)
+        AddStartMenuAction(MENU_ACTION_QUESTS);
+#endif
     AddStartMenuAction(MENU_ACTION_SAVE);
     AddStartMenuAction(MENU_ACTION_OPTION);
     AddStartMenuAction(MENU_ACTION_EXIT);
@@ -931,6 +951,22 @@ static bool8 StartMenuCharacterCallback(void)
     CoopCharacter_Open();
     return TRUE;
 }
+
+#if ROM_WORLD == 2
+static bool8 StartMenuQuestCallback(void)
+{
+    if (!gPaletteFade.active)
+    {
+        PlayRainStoppingSoundEffect();
+        RemoveExtraStartMenuWindows();
+        CleanupOverworldWindowsAndTilemaps();
+        CormoriaQuestMenu_Init(CB2_ReturnToFieldWithOpenMenu);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+#endif
 
 static bool8 StartMenuLinkModePlayerNameCallback(void)
 {

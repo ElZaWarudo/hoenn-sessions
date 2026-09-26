@@ -1,7 +1,9 @@
 #include "global.h"
 #include "cormoria/quest_commands.h"
+#include "cormoria/quest_menu.h"
 #include "cormoria/quest_state.h"
 #include "event_data.h"
+#include "overworld.h"
 #include "script.h"
 #include "string_util.h"
 
@@ -10,31 +12,6 @@ const u8 Cormoria_gText_QuestAnnounce[] = _("The quest {STR_VAR_1}\n{STR_VAR_2}"
 const u8 Cormoria_gText_QuestComplete[] = _("is now complete! Well done!");
 const u8 Cormoria_gText_QuestActive[] = _("is now active! Gotta get going!");
 const u8 Cormoria_gText_QuestUpdated[] = _("has been updated! Keep it up!");
-
-/* Quest announcement names from Dreamstone's pinned f7997186 quest table. */
-static const u8 sQuestNames[CORMORIA_QUEST_COUNT][64] =
-{
-    _("Lab Assistant"),
-    _("Find the Dreamstone!"),
-    _("Dreamstone Mysteries"),
-    _("Food Poisoning"),
-    _("A Hiker's Treasure"),
-    _("A Lost Skitty"),
-    _("Historical Preservation"),
-    _("Modern Matcha"),
-    _("Cyndaquil's New Move"),
-    _("Precious Pearls"),
-    _("Love Is Sacrifice"),
-    _("Malevolent Masterpiece"),
-    _("I Can't Find My Wife!"),
-    _("Career Crisis"),
-    _("Pokémon Ranger Badge"),
-    _("Pelluca's Leadership Tussle"),
-    _("A Chef's Icy Troubles"),
-    _("The Healers Need Help!"),
-    _("Percy's Gone Missing!"),
-    _("Mean Old Grandma"),
-};
 
 static const u8 sSubquestNames[][64] =
 {
@@ -170,17 +147,6 @@ static bool8 IsQuestInactive(u16 questId, bool8 *inactive)
     return TRUE;
 }
 
-static bool8 UnresolvedQuestMenuUi(struct ScriptContext *ctx)
-{
-    /* The donor's separate quest-menu scene and assets are not installed. */
-    assertf(FALSE, "Cormoria quest menu UI is unresolved")
-    {
-        StopScript(ctx);
-        return FALSE;
-    }
-    return FALSE;
-}
-
 bool8 ScrCmd_CormoriaQuestMenu(struct ScriptContext *ctx)
 {
     u8 caseId;
@@ -193,7 +159,9 @@ bool8 ScrCmd_CormoriaQuestMenu(struct ScriptContext *ctx)
     if (caseId == CORMORIA_QUEST_MENU_OPEN)
     {
         Script_RequestEffects(SCREFF_V1 | SCREFF_HARDWARE);
-        return UnresolvedQuestMenuUi(ctx);
+        CormoriaQuestMenu_Init(CB2_ReturnToFieldContinueScript);
+        ScriptContext_Stop();
+        return TRUE;
     }
 
     if (!ValidateQuest(questId))
@@ -202,7 +170,7 @@ bool8 ScrCmd_CormoriaQuestMenu(struct ScriptContext *ctx)
     if (caseId == CORMORIA_QUEST_MENU_BUFFER_QUEST_NAME)
     {
         Script_RequestEffects(SCREFF_V1);
-        StringCopy(gStringVar1, sQuestNames[questId]);
+        CormoriaQuestMenu_CopyQuestName(gStringVar1, questId);
         return FALSE;
     }
 

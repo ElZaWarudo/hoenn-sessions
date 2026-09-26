@@ -4,11 +4,11 @@
 #include "gba/types.h"
 
 // These are donor quest bit meanings, stored in the current world's event record.
-// The 121-bit interval occupies flag ordinals 0xF00..0xF78 (IDs 0x8F00..0x8F78).
+// The 120-bit interval occupies flag ordinals 0xF00..0xF77 (IDs 0x8F00..0x8F77).
 #define CORMORIA_QUEST_FLAG_BASE 0xF00
 #define CORMORIA_QUEST_COUNT 20
 #define CORMORIA_QUEST_BITS_PER_QUEST 5
-#define CORMORIA_SUBQUEST_COUNT 21
+#define CORMORIA_SUBQUEST_COUNT 20
 #define CORMORIA_SUBQUEST_FLAG_BASE (CORMORIA_QUEST_FLAG_BASE + CORMORIA_QUEST_COUNT * CORMORIA_QUEST_BITS_PER_QUEST)
 #define CORMORIA_QUEST_FLAG_END (CORMORIA_SUBQUEST_FLAG_BASE + CORMORIA_SUBQUEST_COUNT)
 
