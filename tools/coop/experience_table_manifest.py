@@ -17,7 +17,9 @@ except ImportError:
 
 
 SYMBOL = "gExperienceTables"
-GROWTH_RATES = 6
+# The linked table includes two reserved Medium Fast copies after the six
+# selectable growth rates; those rows are part of the ROM contract too.
+GROWTH_RATES = 8
 MAX_LEVEL = 100
 EXPECTED_SIZE = GROWTH_RATES * (MAX_LEVEL + 1) * 4
 
