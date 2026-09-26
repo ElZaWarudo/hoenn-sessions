@@ -809,10 +809,20 @@ static void Task_CormoriaQuestMenu(u8 taskId)
     else if (!sSubquestMode && JOY_NEW(SELECT_BUTTON) && sQuestCount > 0)
     {
         u8 questId = sQuestIds[sCursor];
+        u8 i;
         bool8 favorite = ReadQuestBit(questId, CORMORIA_QUEST_FAVORITE);
         if (!CormoriaQuestState_Set(questId, CORMORIA_QUEST_FAVORITE, !favorite))
             sStateUnavailable = TRUE;
         BuildQuestList();
+        for (i = 0; i < sQuestCount; i++)
+        {
+            if (sQuestIds[i] == questId)
+            {
+                sCursor = i;
+                break;
+            }
+        }
+        UpdateScroll(sQuestCount, &sScroll, sCursor);
         DrawJournal();
     }
 }

@@ -118,6 +118,8 @@ class CormoriaQuestMenuTests(unittest.TestCase):
         self.assertIn("PrintJournalDetails(buffer);", self.source)
         self.assertNotIn("PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer", self.source)
         self.assertIn("JOY_NEW(L_BUTTON) && sDetailPageCount > 1", self.source)
+        self.assertIn("if (sQuestIds[i] == questId)", self.source)
+        self.assertIn("UpdateScroll(sQuestCount, &sScroll, sCursor);", self.source)
 
     def test_donor_subquest_table_uses_exact_group_count(self):
         self.assertIn("#define CORMORIA_SUBQUEST_COUNT 20", (ROOT / "include/cormoria/quest_state.h").read_text(encoding="utf-8"))
