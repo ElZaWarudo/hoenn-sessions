@@ -88,152 +88,155 @@ static const u8 sTextStartForDetails[] = _("Start this quest for more details.")
 static const u8 sTextHiddenSubquest[] = _("Complete this step to reveal its details.");
 static const u8 sTextStateUnavailable[] = _("Quest data unavailable.");
 
+// Journal table fields are pointers; _() is only valid for array initializers.
+// The text preprocessor emits a charmap-encoded compound literal here.
+
 static const struct CormoriaSubquestEntry sSubquests[CORMORIA_SUBQUEST_COUNT] =
 {
-    {_("My First Day"),
-     _("It's my first day! I need to go to the Tenebris Lab with my Welcome Package. I shouldn't be late at any cost!"),
-     _("Tenebris Laboratory")},
-    {_("Lab Supplies"),
-     _("I need to pick up the lab's supplies from the Poké Mart in Fennilahl Town. It has my starter Pokémon! And some important stuff."),
-     _("Fennilahl Town")},
-    {_("Missing Supplies"),
-     _("Professor Tenebris has already taken the supplies! I need to tell Asst. Prof. Rue as soon as possible."),
-     _("Tenebris Laboratory")},
-    {_("The First Dreamstone"),
-     _("The first dreamstone is atop Mt. Ceram. I need to cross Route 3 to Gastree City, then head north towards the Ceram Base Camp."),
-     _("Mt. Ceram")},
-    {_("Mysterious Area"),
-     _("The dreamstone transported me and Gabrielle to a mysterious area! I don't recognise the Pokémon here. I need to find a way back."),
-     _("Mysterious Area")},
-    {_("Silversun Sighting"),
-     _("Someone matching Prof. Tenebris' description was spotted in Silversun City! Team Somber is there too, so I need to go there fast."),
-     _("Silversun City")},
-    {_("Of Drama & Desire"),
-     _("Team Somber's hideout is somewhere here. If they've taken Prof Tenebris hostage, it could spell trouble. Gotta find them!"),
-     _("Silversun City")},
-    {_("Knowledge of a Past Era"),
-     _("I need to talk to Martha the historian, who lives at the Mirroh Base Camp. Can she give us a clue as to Team Somber's motives?"),
-     _("Mirroh Base Camp")},
-    {_("Showdown at Mt. Mirroh!"),
-     _("What could Team Somber possibly want with the Ancient Terror? I'll find my answers at Mt. Mirroh...if I hurry!"),
-     _("Mt. Mirroh")},
-    {_("Stop Melea!"),
-     _("I got warped into the past again! And Somber Admin Melea is here too. I've got to stop her from catching the Ancient Terror!"),
-     _("Ancient Mirroh")},
-    {_("No Way Out"),
-     _("Somber Admin Melea escaped with the Ancient Terror! But Kohla found his way here too, so there should be another exit out."),
-     _("Ancient Mirroh")},
-    {_("Reach Rivetshore City"),
-     _("A massive heatwave swept across Cormoria! It's Team Somber's doing. I've got to reach Rivetshore City to chase them!"),
-     _("Rivetshore City")},
-    {_("Board the S.S. Elegant"),
-     _("The Gym Leaders are going to board the S.S. Elegant and track down Team Somber. I've got to get on board too!"),
-     _("Rivetshore City")},
-    {_("Get Off the Ship!"),
-     _("We've stopped at an uncharted island, but civilians can't get off. Gabrielle and Breech are waiting at the storage hold for me!"),
-     _("S.S. Elegant")},
-    {_("Explore the Island"),
-     _("Gabrielle and Breech got me off the ship. Now I need to find Team Somber and stop them! But I can't let the leaders catch me."),
-     _("Uncharted Island")},
-    {_("A Ranger's First Assignment"),
-     _("Ranger Chief Ravine has asked me to deliver an important package to the Ranger Institute at Ivy River. I can't let him down!"),
-     _("Ranger Institute")},
-    {_("Fieldwork: Mega Evolution"),
-     _("Scientists at the Ivy River Ranger Institute need specimens of different Pokémon to study their potential for Mega Evolution."),
-     _("Ranger Institute")},
-    {_("The Final Test"),
-     _("This is the final test I need to complete to become a fully-fledged Pokémon Ranger. Can I track the mythical Pokémon?"),
-     _("Ranger Institute")},
-    {_("Help the Mayor!"),
-     _("The mayor of Pelluca City has asked me to deal with the Qwilsquad! I need to find a way into their hideout by the riverbank."),
-     _("Pelluca City")},
-    {_("Save the Citizens!"),
-     _("The city is flooded and some citizens are drowning! Leader Jania gave me the HM Surf. I need to save the drowning citizens!"),
-     _("Pelluca City")},
+    {COMPOUND_STRING("My First Day"),
+     COMPOUND_STRING("It's my first day! I need to go to the Tenebris Lab with my Welcome Package. I shouldn't be late at any cost!"),
+     COMPOUND_STRING("Tenebris Laboratory")},
+    {COMPOUND_STRING("Lab Supplies"),
+     COMPOUND_STRING("I need to pick up the lab's supplies from the Poké Mart in Fennilahl Town. It has my starter Pokémon! And some important stuff."),
+     COMPOUND_STRING("Fennilahl Town")},
+    {COMPOUND_STRING("Missing Supplies"),
+     COMPOUND_STRING("Professor Tenebris has already taken the supplies! I need to tell Asst. Prof. Rue as soon as possible."),
+     COMPOUND_STRING("Tenebris Laboratory")},
+    {COMPOUND_STRING("The First Dreamstone"),
+     COMPOUND_STRING("The first dreamstone is atop Mt. Ceram. I need to cross Route 3 to Gastree City, then head north towards the Ceram Base Camp."),
+     COMPOUND_STRING("Mt. Ceram")},
+    {COMPOUND_STRING("Mysterious Area"),
+     COMPOUND_STRING("The dreamstone transported me and Gabrielle to a mysterious area! I don't recognise the Pokémon here. I need to find a way back."),
+     COMPOUND_STRING("Mysterious Area")},
+    {COMPOUND_STRING("Silversun Sighting"),
+     COMPOUND_STRING("Someone matching Prof. Tenebris' description was spotted in Silversun City! Team Somber is there too, so I need to go there fast."),
+     COMPOUND_STRING("Silversun City")},
+    {COMPOUND_STRING("Of Drama & Desire"),
+     COMPOUND_STRING("Team Somber's hideout is somewhere here. If they've taken Prof Tenebris hostage, it could spell trouble. Gotta find them!"),
+     COMPOUND_STRING("Silversun City")},
+    {COMPOUND_STRING("Knowledge of a Past Era"),
+     COMPOUND_STRING("I need to talk to Martha the historian, who lives at the Mirroh Base Camp. Can she give us a clue as to Team Somber's motives?"),
+     COMPOUND_STRING("Mirroh Base Camp")},
+    {COMPOUND_STRING("Showdown at Mt. Mirroh!"),
+     COMPOUND_STRING("What could Team Somber possibly want with the Ancient Terror? I'll find my answers at Mt. Mirroh...if I hurry!"),
+     COMPOUND_STRING("Mt. Mirroh")},
+    {COMPOUND_STRING("Stop Melea!"),
+     COMPOUND_STRING("I got warped into the past again! And Somber Admin Melea is here too. I've got to stop her from catching the Ancient Terror!"),
+     COMPOUND_STRING("Ancient Mirroh")},
+    {COMPOUND_STRING("No Way Out"),
+     COMPOUND_STRING("Somber Admin Melea escaped with the Ancient Terror! But Kohla found his way here too, so there should be another exit out."),
+     COMPOUND_STRING("Ancient Mirroh")},
+    {COMPOUND_STRING("Reach Rivetshore City"),
+     COMPOUND_STRING("A massive heatwave swept across Cormoria! It's Team Somber's doing. I've got to reach Rivetshore City to chase them!"),
+     COMPOUND_STRING("Rivetshore City")},
+    {COMPOUND_STRING("Board the S.S. Elegant"),
+     COMPOUND_STRING("The Gym Leaders are going to board the S.S. Elegant and track down Team Somber. I've got to get on board too!"),
+     COMPOUND_STRING("Rivetshore City")},
+    {COMPOUND_STRING("Get Off the Ship!"),
+     COMPOUND_STRING("We've stopped at an uncharted island, but civilians can't get off. Gabrielle and Breech are waiting at the storage hold for me!"),
+     COMPOUND_STRING("S.S. Elegant")},
+    {COMPOUND_STRING("Explore the Island"),
+     COMPOUND_STRING("Gabrielle and Breech got me off the ship. Now I need to find Team Somber and stop them! But I can't let the leaders catch me."),
+     COMPOUND_STRING("Uncharted Island")},
+    {COMPOUND_STRING("A Ranger's First Assignment"),
+     COMPOUND_STRING("Ranger Chief Ravine has asked me to deliver an important package to the Ranger Institute at Ivy River. I can't let him down!"),
+     COMPOUND_STRING("Ranger Institute")},
+    {COMPOUND_STRING("Fieldwork: Mega Evolution"),
+     COMPOUND_STRING("Scientists at the Ivy River Ranger Institute need specimens of different Pokémon to study their potential for Mega Evolution."),
+     COMPOUND_STRING("Ranger Institute")},
+    {COMPOUND_STRING("The Final Test"),
+     COMPOUND_STRING("This is the final test I need to complete to become a fully-fledged Pokémon Ranger. Can I track the mythical Pokémon?"),
+     COMPOUND_STRING("Ranger Institute")},
+    {COMPOUND_STRING("Help the Mayor!"),
+     COMPOUND_STRING("The mayor of Pelluca City has asked me to deal with the Qwilsquad! I need to find a way into their hideout by the riverbank."),
+     COMPOUND_STRING("Pelluca City")},
+    {COMPOUND_STRING("Save the Citizens!"),
+     COMPOUND_STRING("The city is flooded and some citizens are drowning! Leader Jania gave me the HM Surf. I need to save the drowning citizens!"),
+     COMPOUND_STRING("Pelluca City")},
 };
 
 static const struct CormoriaQuestEntry sQuests[CORMORIA_QUEST_COUNT] =
 {
-    {_("Lab Assistant"),
-     _("From today, I'm going to be a Lab Assistant at the Tenebris Laboratory!"),
-     _("I've done what I can back at the lab. Now it's time to head out and chase the dreamstones around Cormoria."),
-     _("Tenebris Laboratory"), 0, 3},
-    {_("Find the Dreamstone!"),
-     _("I need to solve the mystery of the dreamstones around Cormoria."),
-     _("A total failure! I couldn't stop Team Somber or find Professor Tenebris, and now I'm off the case. I guess that's it...?"),
-     _("Mt. Ceram"), 3, 8},
-    {_("Dreamstone Mysteries"),
-     _("It doesn't matter if I'm off the case. I'll stop Team Somber, find Prof. Tenebris and solve the mystery of the dreamstones!"),
-     _("I've solved the mystery of the dreamstones! Tenebris is back and Team Somber is done. All's well that ends well!"),
-     _("Cormoria"), 11, 4},
-    {_("Food Poisoning"),
-     _("The Azurill in the house on Route 1 has food poisoning. She needs a Pecha Berry!"),
-     _("Azurill has recovered and is happy again! A Pecha Berry a day keeps the doctor away."),
-     _("Route 1"), 0, 0},
-    {_("A Hiker's Treasure"),
-     _("A conflict-averse hiker in Fennilahl Town has lost a Strange Rock in Route 2. Apparently a small pink Pokémon stole it!"),
-     _("I got Breech his stone back...and found him a new companion! I hope to see him and Clefairy again soon."),
-     _("Fennilahl Town"), 0, 0},
-    {_("A Lost Skitty"),
-     _("Someone's Skitty in Gastree City has gone missing! It probably climbed up a tree or something..."),
-     _("Skitty is reunited with her trainer!"),
-     _("Gastree City"), 0, 0},
-    {_("Historical Preservation"),
-     _("An archaeologist in Gastree City has asked me to find all ten ancient statues across Cormoria and scan them with the Archaeolens!"),
-     _("I found all ten statues!"),
-     _("Gastree City"), 0, 0},
-    {_("Modern Matcha"),
-     _("The lady at the Gastree Teahouse wants to craft a new tea blend. She needs 1 Revival Herb, 1 Energy Powder and 1 Shoal Salt."),
-     _("The modern blend is done! But will it do well on the menu? Or will it be a flop? Silly question! It's a hit of course!"),
-     _("Gastree City"), 0, 0},
-    {_("Cyndaquil's New Move"),
-     _("A trainer in Ceram Base Camp wants his Cyndaquil to learn...Acid Spray? Where can I get the TM for Acid Spray?"),
-     _("I taught the Cyndaquil the move Acid Spray! I hope the trainer learns more about battling and they become strong together!"),
-     _("Ceram Base Camp"), 0, 0},
-    {_("Precious Pearls"),
-     _("A rich lady in Galecrest City has had her pearls stolen! I'd better find the robber. Maybe I'll get a huge reward..."),
-     _("I found the robber and returned the pearls! But the horrid lady charged me money for being late! Is that why she's rich?"),
-     _("Galecrest City"), 0, 0},
-    {_("Love Is Sacrifice"),
-     _("A down-on-his-luck man in Galecrest City wants to do something special for his wife. He wants to gift her a Blue Flute!"),
-     _("With the Blue Flute (and Jigglypuff), the house is singing! Hard times come and go, but love and music remain!"),
-     _("Galecrest City"), 0, 0},
-    {_("Malevolent Masterpiece"),
-     _("A (self-proclaimed) famous artist in Silversun City wants Black Sludge to create the perfect shade of black paint."),
-     _("The Black Sludge created the perfect shade of black paint! Maybe this artist is really a maestro after all."),
-     _("Silversun City"), 0, 0},
-    {_("I Can't Find My Wife!"),
-     _("A man in the Silversun Sewers has gotten separated from his wife. If I don't hurry, she might get attacked by the Sewer Scourge!"),
-     _("Husband and wife have been successfully reunited. They also got a Furfrou to help. All's well that ends well!"),
-     _("Silversun Sewers"), 0, 0},
-    {_("Career Crisis"),
-     _("A fisherman on Route 6 wants to become a chef! He wants to sample some of Pelluca's famous Apple Pie and try to recreate it!"),
-     _("The fisherman enjoyed the Apple Pie! Thank you for the Trolling Rod and all the best!"),
-     _("Route 6"), 0, 0},
-    {_("Pokémon Ranger Badge"),
-     _("My path towards becoming a fully-fledged Pokémon Ranger!"),
-     _("I cleared the interview, delivered the package, helped the scientists and now I'm a fully-fledged Pokémon Ranger!"),
-     _("Ranger Institute"), 15, 3},
-    {_("Pelluca's Leadership Tussle"),
-     _("Pelluca City is in trouble! The mayor and the Qwilsquad Gang leader are tussling for power and the city is suffering!"),
-     _("The mayor and the Qwilsquad boss have agreed to cooperate and develop the city they both love. All the best!"),
-     _("Pelluca City"), 18, 2},
-    {_("A Chef's Icy Troubles"),
-     _("The refrigerators at the Pelluca Restaurant are broken and their ingredients are going bad. I need to bring them a Nevermelt Ice."),
-     _("The Nevermelt Ice can keep the ingredients cool...until they get a Rotom Fridge."),
-     _("Pelluca Restaurant"), 0, 0},
-    {_("The Healers Need Help!"),
-     _("A Chansey is lost inside Mt Mirroh! They've always healed me when I needed it, and now it's my turn to repay them!"),
-     _("Chansey is reunited with the nurse and they're off to Winterlily Hollow! I hope their situation improves soon..."),
-     _("Mt. Mirroh"), 0, 0},
-    {_("Percy's Gone Missing!"),
-     _("The Rivetshore Construction CEO's beloved Percy has gone missing! I need to find it. Did it fall for a prank, perhaps?"),
-     _("Percy and the CEO are reunited! I thought I'd get money, but this rare flute is even cooler!"),
-     _("Rivetshore City"), 0, 0},
-    {_("Mean Old Grandma"),
-     _("Two brothers in Rivetshore City want to game but their grandma won't buy them a console! Just like my younger days."),
-     _("The brothers love their new PocketBoy! I hope they don't get addicted to it... Maybe I should play just one round."),
-     _("Rivetshore City"), 0, 0},
+    {COMPOUND_STRING("Lab Assistant"),
+     COMPOUND_STRING("From today, I'm going to be a Lab Assistant at the Tenebris Laboratory!"),
+     COMPOUND_STRING("I've done what I can back at the lab. Now it's time to head out and chase the dreamstones around Cormoria."),
+     COMPOUND_STRING("Tenebris Laboratory"), 0, 3},
+    {COMPOUND_STRING("Find the Dreamstone!"),
+     COMPOUND_STRING("I need to solve the mystery of the dreamstones around Cormoria."),
+     COMPOUND_STRING("A total failure! I couldn't stop Team Somber or find Professor Tenebris, and now I'm off the case. I guess that's it...?"),
+     COMPOUND_STRING("Mt. Ceram"), 3, 8},
+    {COMPOUND_STRING("Dreamstone Mysteries"),
+     COMPOUND_STRING("It doesn't matter if I'm off the case. I'll stop Team Somber, find Prof. Tenebris and solve the mystery of the dreamstones!"),
+     COMPOUND_STRING("I've solved the mystery of the dreamstones! Tenebris is back and Team Somber is done. All's well that ends well!"),
+     COMPOUND_STRING("Cormoria"), 11, 4},
+    {COMPOUND_STRING("Food Poisoning"),
+     COMPOUND_STRING("The Azurill in the house on Route 1 has food poisoning. She needs a Pecha Berry!"),
+     COMPOUND_STRING("Azurill has recovered and is happy again! A Pecha Berry a day keeps the doctor away."),
+     COMPOUND_STRING("Route 1"), 0, 0},
+    {COMPOUND_STRING("A Hiker's Treasure"),
+     COMPOUND_STRING("A conflict-averse hiker in Fennilahl Town has lost a Strange Rock in Route 2. Apparently a small pink Pokémon stole it!"),
+     COMPOUND_STRING("I got Breech his stone back...and found him a new companion! I hope to see him and Clefairy again soon."),
+     COMPOUND_STRING("Fennilahl Town"), 0, 0},
+    {COMPOUND_STRING("A Lost Skitty"),
+     COMPOUND_STRING("Someone's Skitty in Gastree City has gone missing! It probably climbed up a tree or something..."),
+     COMPOUND_STRING("Skitty is reunited with her trainer!"),
+     COMPOUND_STRING("Gastree City"), 0, 0},
+    {COMPOUND_STRING("Historical Preservation"),
+     COMPOUND_STRING("An archaeologist in Gastree City has asked me to find all ten ancient statues across Cormoria and scan them with the Archaeolens!"),
+     COMPOUND_STRING("I found all ten statues!"),
+     COMPOUND_STRING("Gastree City"), 0, 0},
+    {COMPOUND_STRING("Modern Matcha"),
+     COMPOUND_STRING("The lady at the Gastree Teahouse wants to craft a new tea blend. She needs 1 Revival Herb, 1 Energy Powder and 1 Shoal Salt."),
+     COMPOUND_STRING("The modern blend is done! But will it do well on the menu? Or will it be a flop? Silly question! It's a hit of course!"),
+     COMPOUND_STRING("Gastree City"), 0, 0},
+    {COMPOUND_STRING("Cyndaquil's New Move"),
+     COMPOUND_STRING("A trainer in Ceram Base Camp wants his Cyndaquil to learn...Acid Spray? Where can I get the TM for Acid Spray?"),
+     COMPOUND_STRING("I taught the Cyndaquil the move Acid Spray! I hope the trainer learns more about battling and they become strong together!"),
+     COMPOUND_STRING("Ceram Base Camp"), 0, 0},
+    {COMPOUND_STRING("Precious Pearls"),
+     COMPOUND_STRING("A rich lady in Galecrest City has had her pearls stolen! I'd better find the robber. Maybe I'll get a huge reward..."),
+     COMPOUND_STRING("I found the robber and returned the pearls! But the horrid lady charged me money for being late! Is that why she's rich?"),
+     COMPOUND_STRING("Galecrest City"), 0, 0},
+    {COMPOUND_STRING("Love Is Sacrifice"),
+     COMPOUND_STRING("A down-on-his-luck man in Galecrest City wants to do something special for his wife. He wants to gift her a Blue Flute!"),
+     COMPOUND_STRING("With the Blue Flute (and Jigglypuff), the house is singing! Hard times come and go, but love and music remain!"),
+     COMPOUND_STRING("Galecrest City"), 0, 0},
+    {COMPOUND_STRING("Malevolent Masterpiece"),
+     COMPOUND_STRING("A (self-proclaimed) famous artist in Silversun City wants Black Sludge to create the perfect shade of black paint."),
+     COMPOUND_STRING("The Black Sludge created the perfect shade of black paint! Maybe this artist is really a maestro after all."),
+     COMPOUND_STRING("Silversun City"), 0, 0},
+    {COMPOUND_STRING("I Can't Find My Wife!"),
+     COMPOUND_STRING("A man in the Silversun Sewers has gotten separated from his wife. If I don't hurry, she might get attacked by the Sewer Scourge!"),
+     COMPOUND_STRING("Husband and wife have been successfully reunited. They also got a Furfrou to help. All's well that ends well!"),
+     COMPOUND_STRING("Silversun Sewers"), 0, 0},
+    {COMPOUND_STRING("Career Crisis"),
+     COMPOUND_STRING("A fisherman on Route 6 wants to become a chef! He wants to sample some of Pelluca's famous Apple Pie and try to recreate it!"),
+     COMPOUND_STRING("The fisherman enjoyed the Apple Pie! Thank you for the Trolling Rod and all the best!"),
+     COMPOUND_STRING("Route 6"), 0, 0},
+    {COMPOUND_STRING("Pokémon Ranger Badge"),
+     COMPOUND_STRING("My path towards becoming a fully-fledged Pokémon Ranger!"),
+     COMPOUND_STRING("I cleared the interview, delivered the package, helped the scientists and now I'm a fully-fledged Pokémon Ranger!"),
+     COMPOUND_STRING("Ranger Institute"), 15, 3},
+    {COMPOUND_STRING("Pelluca's Leadership Tussle"),
+     COMPOUND_STRING("Pelluca City is in trouble! The mayor and the Qwilsquad Gang leader are tussling for power and the city is suffering!"),
+     COMPOUND_STRING("The mayor and the Qwilsquad boss have agreed to cooperate and develop the city they both love. All the best!"),
+     COMPOUND_STRING("Pelluca City"), 18, 2},
+    {COMPOUND_STRING("A Chef's Icy Troubles"),
+     COMPOUND_STRING("The refrigerators at the Pelluca Restaurant are broken and their ingredients are going bad. I need to bring them a Nevermelt Ice."),
+     COMPOUND_STRING("The Nevermelt Ice can keep the ingredients cool...until they get a Rotom Fridge."),
+     COMPOUND_STRING("Pelluca Restaurant"), 0, 0},
+    {COMPOUND_STRING("The Healers Need Help!"),
+     COMPOUND_STRING("A Chansey is lost inside Mt Mirroh! They've always healed me when I needed it, and now it's my turn to repay them!"),
+     COMPOUND_STRING("Chansey is reunited with the nurse and they're off to Winterlily Hollow! I hope their situation improves soon..."),
+     COMPOUND_STRING("Mt. Mirroh"), 0, 0},
+    {COMPOUND_STRING("Percy's Gone Missing!"),
+     COMPOUND_STRING("The Rivetshore Construction CEO's beloved Percy has gone missing! I need to find it. Did it fall for a prank, perhaps?"),
+     COMPOUND_STRING("Percy and the CEO are reunited! I thought I'd get money, but this rare flute is even cooler!"),
+     COMPOUND_STRING("Rivetshore City"), 0, 0},
+    {COMPOUND_STRING("Mean Old Grandma"),
+     COMPOUND_STRING("Two brothers in Rivetshore City want to game but their grandma won't buy them a console! Just like my younger days."),
+     COMPOUND_STRING("The brothers love their new PocketBoy! I hope they don't get addicted to it... Maybe I should play just one round."),
+     COMPOUND_STRING("Rivetshore City"), 0, 0},
 };
 
 static const struct BgTemplate sBgTemplates[] =
@@ -459,16 +462,16 @@ static void DrawHeader(void)
 
     FillWindowPixelBuffer(sWindowIds[0], PIXEL_FILL(1));
     DrawStdWindowFrame(sWindowIds[0], FALSE);
-    StringCopy(buffer, _("Cormoria Quests "));
+    StringCopy(buffer, COMPOUND_STRING("Cormoria Quests "));
     ConvertIntToDecimalStringN(gStringVar1, sQuestCount, STR_CONV_MODE_LEFT_ALIGN, 2);
     StringAppend(buffer, gStringVar1);
-    StringAppend(buffer, _("/"));
+    StringAppend(buffer, COMPOUND_STRING("/"));
     ConvertIntToDecimalStringN(gStringVar1, CORMORIA_QUEST_COUNT, STR_CONV_MODE_LEFT_ALIGN, 2);
     StringAppend(buffer, gStringVar1);
     PrintText(sWindowIds[0], FONT_NORMAL, buffer, 4, 0);
     StringCopy(buffer, sFilterNames[sFilter]);
     if (sAlphabetical)
-        StringAppend(buffer, _(" A-Z"));
+        StringAppend(buffer, COMPOUND_STRING(" A-Z"));
     PrintText(sWindowIds[0], FONT_NORMAL, buffer, 160, 0);
     CopyWindowToVram(sWindowIds[0], COPYWIN_FULL);
 }
@@ -495,7 +498,7 @@ static void DrawList(void)
             if (index >= sSubquestCount)
                 break;
             globalId = sQuests[sParentQuest].firstSubquest + index;
-            StringCopy(rowText, index == sCursor ? _("> ") : _("  "));
+            StringCopy(rowText, index == sCursor ? COMPOUND_STRING("> ") : COMPOUND_STRING("  "));
             if (!CormoriaQuestState_GetSubquest(globalId, &completed))
             {
                 sStateUnavailable = TRUE;
@@ -519,7 +522,7 @@ static void DrawList(void)
             u8 index = sScroll + i;
             if (index >= sQuestCount)
                 break;
-            StringCopy(rowText, index == sCursor ? _("> ") : _("  "));
+            StringCopy(rowText, index == sCursor ? COMPOUND_STRING("> ") : COMPOUND_STRING("  "));
             if (ReadQuestBit(sQuestIds[index], CORMORIA_QUEST_FAVORITE))
                 StringAppend(rowText, sTextFavorite);
             StringAppend(rowText, sQuests[sQuestIds[index]].name);
@@ -557,7 +560,7 @@ static void DrawDetails(void)
             location = sSubquests[globalId].location;
             StringCopy(buffer, sTextLocation);
             StringAppend(buffer, location);
-            StringAppend(buffer, _("\n"));
+            StringAppend(buffer, COMPOUND_STRING("\n"));
             StringAppend(buffer, description);
             WrapJournalText(buffer, 39);
             PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer, 4, 2);
@@ -583,12 +586,12 @@ static void DrawDetails(void)
         location = sQuests[questId].location;
         StringCopy(buffer, sTextLocation);
         StringAppend(buffer, location);
-        StringAppend(buffer, _("\n"));
+        StringAppend(buffer, COMPOUND_STRING("\n"));
         StringAppend(buffer, description);
         WrapJournalText(buffer, 39);
         PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer, 4, 2);
         if (ReadQuestBit(questId, CORMORIA_QUEST_FAVORITE))
-            PrintText(sWindowIds[2], FONT_SMALL_NARROW, _("Favorite"), 164, 44);
+            PrintText(sWindowIds[2], FONT_SMALL_NARROW, COMPOUND_STRING("Favorite"), 164, 44);
     }
     if (!sStateUnavailable)
         PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextBack, 4, 44);

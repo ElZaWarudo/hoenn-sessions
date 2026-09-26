@@ -53,7 +53,7 @@ class CormoriaQuestMenuTests(unittest.TestCase):
             "Save the Citizens!",
         )
         for name in (*expected_names, *expected_subquests):
-            self.assertIn(f'_("{name}")', self.source)
+            self.assertIn(f'COMPOUND_STRING("{name}")', self.source)
         self.assertIn("CORMORIA_QUEST_FAVORITE", self.source)
         self.assertIn("CormoriaQuestState_GetSubquest", self.source)
         self.assertIn("completedDescription", self.source)
@@ -120,7 +120,7 @@ class CormoriaQuestMenuTests(unittest.TestCase):
         self.assertIn("'\\''", charmap)
         allowed.add("'")
         unsupported = set()
-        for literal in re.findall(r'_\("((?:\\.|[^"\\])*)"\)', self.source):
+        for literal in re.findall(r'(?:_|COMPOUND_STRING)\("((?:\\.|[^"\\])*)"\)', self.source):
             plain = re.sub(r"\\.", "", literal)
             unsupported.update(character for character in plain if character not in allowed)
         self.assertEqual(unsupported, set())
