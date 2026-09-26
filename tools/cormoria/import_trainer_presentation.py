@@ -7,6 +7,7 @@ immutable Git object.  Existing-world class and portrait entries stay intact.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import subprocess
 from pathlib import Path
@@ -30,6 +31,9 @@ PICS = (
 )
 BEGIN = "/* BEGIN PINNED CORMORIA TRAINER PRESENTATION"
 END = "/* END PINNED CORMORIA TRAINER PRESENTATION"
+GABRIELLE_BACK_SOURCE = "graphics/trainers/my_trainers/gabrielle_back.png"
+GABRIELLE_BACK_OUTPUT = "graphics/cormoria/trainers/back_pics/gabrielle.png"
+GABRIELLE_BACK_SHA256 = "ce03dfbfd33bf2c4e8c7a5aaab52d7fc3565657c47c331d559923a4738cb3e8a"
 
 
 def donor_object(donor: Path, path: str) -> bytes:
@@ -186,6 +190,20 @@ def run(donor: Path, root: Path = ROOT, check: bool = False) -> None:
         ))
     replace_block(graphics, "PIC_DATA", block("PIC_DATA", definitions), "const struct TrainerPicInfo gTrainerPicInfo[TRAINER_PIC_COUNT] =", check)
     replace_block(graphics, "PIC_MAPPINGS", block("PIC_MAPPINGS", mappings), "\n};", check, last=True)
+
+    # This four-frame player back sprite is referenced by the Cormoria
+    # trainer table but is not part of the donor's front-portrait registry.
+    back_pic = donor_object(donor, GABRIELLE_BACK_SOURCE)
+    if hashlib.sha256(back_pic).hexdigest() != GABRIELLE_BACK_SHA256:
+        raise ValueError("pinned Gabrielle back sprite changed")
+    destination = root / GABRIELLE_BACK_OUTPUT
+    if check:
+        if not destination.is_file() or destination.read_bytes() != back_pic:
+            raise ValueError(f"Cormoria back sprite drift: {destination}")
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.exists() or destination.read_bytes() != back_pic:
+            destination.write_bytes(back_pic)
 
 
 def main() -> int:

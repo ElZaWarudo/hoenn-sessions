@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import re
 import struct
 import unittest
 from pathlib import Path
 
-from tools.cormoria.import_trainer_presentation import CLASSES, PICS, ROOT, run
+from tools.cormoria.import_trainer_presentation import (
+    CLASSES, PICS, ROOT, GABRIELLE_BACK_OUTPUT, GABRIELLE_BACK_SHA256, run,
+)
 
 
 class CormoriaTrainerPresentationTests(unittest.TestCase):
@@ -44,6 +47,13 @@ class CormoriaTrainerPresentationTests(unittest.TestCase):
                 self.assertEqual(contents[:8], b"\x89PNG\r\n\x1a\n")
                 if built.endswith(".4bpp.smol"):
                     self.assertEqual(struct.unpack(">II", contents[16:24]), (64, 64))
+
+    def test_gabrielle_back_sprite_has_pinned_source(self) -> None:
+        source = ROOT / GABRIELLE_BACK_OUTPUT
+        self.assertTrue(source.is_file())
+        self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), GABRIELLE_BACK_SHA256)
+        graphics = (ROOT / "src/data/graphics/trainers.h").read_text(encoding="utf-8")
+        self.assertIn('graphics/cormoria/trainers/back_pics/gabrielle.4bpp', graphics)
 
     @unittest.skipUnless(os.environ.get("CORMORIA_DONOR_GIT"), "pinned donor Git object store unavailable")
     def test_exact_pinned_donor_sources(self) -> None:
