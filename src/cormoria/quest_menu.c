@@ -37,6 +37,8 @@
  */
 
 #define CORMORIA_QUEST_VISIBLE_ROWS 4
+#define CORMORIA_DETAIL_VISIBLE_LINES 3
+#define CORMORIA_DETAIL_LINE_HEIGHT 12
 #define CORMORIA_QUEST_FILTER_COUNT 5
 #define CORMORIA_QUEST_FILTER_ALL 0
 #define CORMORIA_QUEST_FILTER_INACTIVE 1
@@ -83,6 +85,7 @@ static const u8 sTextStatusCompleted[] = _("Done");
 static const u8 sTextFavorite[] = _("F: ");
 static const u8 sTextLocation[] = _("Location: ");
 static const u8 sTextBack[] = _("B: back");
+static const u8 sTextMore[] = _("L: more");
 static const u8 sTextReturnForReward[] = _("Return to this location to receive your reward!");
 static const u8 sTextStartForDetails[] = _("Start this quest for more details.");
 static const u8 sTextHiddenSubquest[] = _("Complete this step to reveal its details.");
@@ -296,6 +299,8 @@ static bool8 sSubquestMode;
 static u8 sParentQuest;
 static u8 sSubquestCount;
 static u8 sSubquestScroll;
+static u8 sDetailPage;
+static u8 sDetailPageCount;
 static bool8 sClosing;
 static bool8 sStateUnavailable;
 
@@ -456,6 +461,45 @@ static void WrapJournalText(u8 *text, u8 maxCharacters)
     }
 }
 
+static void PrintJournalDetails(u8 *text)
+{
+    u16 i;
+    u16 lineStart;
+    u8 lineCount = 1;
+    u8 lineIndex = 0;
+    u8 firstLine;
+
+    for (i = 0; text[i] != EOS; i++)
+        if (text[i] == CHAR_NEWLINE)
+            lineCount++;
+
+    sDetailPageCount = (lineCount + CORMORIA_DETAIL_VISIBLE_LINES - 1) / CORMORIA_DETAIL_VISIBLE_LINES;
+    if (sDetailPage >= sDetailPageCount)
+        sDetailPage = 0;
+    firstLine = sDetailPage * CORMORIA_DETAIL_VISIBLE_LINES;
+
+    lineStart = 0;
+    for (i = 0; ; i++)
+    {
+        u8 separator = text[i];
+
+        if (separator == CHAR_NEWLINE || separator == EOS)
+        {
+            if (lineIndex >= firstLine && lineIndex < firstLine + CORMORIA_DETAIL_VISIBLE_LINES)
+            {
+                text[i] = EOS;
+                PrintText(sWindowIds[2], FONT_SMALL_NARROW, &text[lineStart], 4,
+                          2 + (lineIndex - firstLine) * CORMORIA_DETAIL_LINE_HEIGHT);
+                text[i] = separator;
+            }
+            lineIndex++;
+            lineStart = i + 1;
+            if (separator == EOS)
+                break;
+        }
+    }
+}
+
 static void DrawHeader(void)
 {
     u8 buffer[64];
@@ -541,6 +585,7 @@ static void DrawDetails(void)
 
     FillWindowPixelBuffer(sWindowIds[2], PIXEL_FILL(1));
     DrawStdWindowFrame(sWindowIds[2], FALSE);
+    sDetailPageCount = 1;
     if (sStateUnavailable)
     {
         PrintText(sWindowIds[2], FONT_NORMAL, sTextStateUnavailable, 4, 2);
@@ -563,13 +608,13 @@ static void DrawDetails(void)
             StringAppend(buffer, COMPOUND_STRING("\n"));
             StringAppend(buffer, description);
             WrapJournalText(buffer, 39);
-            PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer, 4, 2);
+            PrintJournalDetails(buffer);
         }
         else
         {
             StringCopy(buffer, sTextHiddenSubquest);
             WrapJournalText(buffer, 39);
-            PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer, 4, 2);
+            PrintJournalDetails(buffer);
         }
     }
     else if (sQuestCount > 0)
@@ -589,12 +634,14 @@ static void DrawDetails(void)
         StringAppend(buffer, COMPOUND_STRING("\n"));
         StringAppend(buffer, description);
         WrapJournalText(buffer, 39);
-        PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer, 4, 2);
-        if (ReadQuestBit(questId, CORMORIA_QUEST_FAVORITE))
-            PrintText(sWindowIds[2], FONT_SMALL_NARROW, COMPOUND_STRING("Favorite"), 164, 44);
+        PrintJournalDetails(buffer);
     }
     if (!sStateUnavailable)
+    {
         PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextBack, 4, 44);
+        if (sDetailPageCount > 1)
+            PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextMore, 160, 44);
+    }
     CopyWindowToVram(sWindowIds[2], COPYWIN_FULL);
 }
 
@@ -669,6 +716,7 @@ static void Task_CormoriaQuestMenu(u8 taskId)
 
     if (JOY_NEW(DPAD_UP))
     {
+        sDetailPage = 0;
         if (sSubquestMode)
         {
             if (sSubquestCount > 0)
@@ -685,6 +733,7 @@ static void Task_CormoriaQuestMenu(u8 taskId)
     }
     else if (JOY_NEW(DPAD_DOWN))
     {
+        sDetailPage = 0;
         if (sSubquestMode)
         {
             if (sSubquestCount > 0)
@@ -711,6 +760,7 @@ static void Task_CormoriaQuestMenu(u8 taskId)
                 sCursor = 0;
                 sSubquestScroll = 0;
                 sSubquestMode = TRUE;
+                sDetailPage = 0;
                 DrawJournal();
             }
         }
@@ -720,6 +770,7 @@ static void Task_CormoriaQuestMenu(u8 taskId)
         if (sSubquestMode)
         {
             sSubquestMode = FALSE;
+            sDetailPage = 0;
             sCursor = 0;
             sScroll = 0;
             sSubquestScroll = 0;
@@ -733,6 +784,7 @@ static void Task_CormoriaQuestMenu(u8 taskId)
     }
     else if (!sSubquestMode && JOY_NEW(R_BUTTON))
     {
+        sDetailPage = 0;
         sFilter = (sFilter + 1) % CORMORIA_QUEST_FILTER_COUNT;
         sCursor = 0;
         sScroll = 0;
@@ -741,11 +793,18 @@ static void Task_CormoriaQuestMenu(u8 taskId)
     }
     else if (!sSubquestMode && JOY_NEW(START_BUTTON))
     {
+        sDetailPage = 0;
         sAlphabetical = !sAlphabetical;
         sCursor = 0;
         sScroll = 0;
         BuildQuestList();
         DrawJournal();
+    }
+    else if (JOY_NEW(L_BUTTON) && sDetailPageCount > 1)
+    {
+        sDetailPage = (sDetailPage + 1) % sDetailPageCount;
+        PlaySE(SE_RG_BAG_CURSOR);
+        DrawDetails();
     }
     else if (!sSubquestMode && JOY_NEW(SELECT_BUTTON) && sQuestCount > 0)
     {
@@ -780,6 +839,8 @@ void CB2_InitCormoriaQuestMenu(void)
     sParentQuest = 0;
     sSubquestCount = 0;
     sSubquestScroll = 0;
+    sDetailPage = 0;
+    sDetailPageCount = 1;
     sClosing = FALSE;
     sStateUnavailable = FALSE;
     {

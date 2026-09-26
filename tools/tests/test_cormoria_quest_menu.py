@@ -111,6 +111,14 @@ class CormoriaQuestMenuTests(unittest.TestCase):
         self.assertIn("UpdateScroll(sSubquestCount, &sSubquestScroll, sCursor)", self.source)
         self.assertNotIn("PrintText(sWindowIds[1], sTextBack", self.source)
 
+    def test_detail_lines_use_glyph_height_and_preserve_later_pages(self):
+        self.assertIn("#define CORMORIA_DETAIL_LINE_HEIGHT 12", self.source)
+        self.assertIn("#define CORMORIA_DETAIL_VISIBLE_LINES 3", self.source)
+        self.assertIn("if (separator == CHAR_NEWLINE || separator == EOS)", self.source)
+        self.assertIn("PrintJournalDetails(buffer);", self.source)
+        self.assertNotIn("PrintText(sWindowIds[2], FONT_SMALL_NARROW, buffer", self.source)
+        self.assertIn("JOY_NEW(L_BUTTON) && sDetailPageCount > 1", self.source)
+
     def test_donor_subquest_table_uses_exact_group_count(self):
         self.assertIn("#define CORMORIA_SUBQUEST_COUNT 20", (ROOT / "include/cormoria/quest_state.h").read_text(encoding="utf-8"))
 
