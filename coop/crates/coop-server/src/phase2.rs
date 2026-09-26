@@ -996,7 +996,10 @@ fn validate_restore_target(
     })
 }
 
-fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error> {
+fn phase2_app_from_env(
+    upload_base_url: String,
+    release_fixture_root: Option<&std::path::Path>,
+) -> Result<Phase2App, Phase2Error> {
     if let Ok(mode) = std::env::var("COOP_PHASE2_STORAGE_MODE")
         && !mode.eq_ignore_ascii_case("phase2-local")
     {
@@ -1030,7 +1033,7 @@ fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error
     if catalog_bytes.len() as u64 > MAX_RELEASE_CATALOG_BYTES {
         return Err(Phase2Error::Internal);
     }
-    phase2_app_from_values(
+    let app = phase2_app_from_values(
         pepper.as_str(),
         signing.as_str(),
         key_id.as_str(),
@@ -1038,7 +1041,12 @@ fn phase2_app_from_env(upload_base_url: String) -> Result<Phase2App, Phase2Error
         upload_base_url,
         Some((&catalog_bytes, catalog_digest)),
         std::path::Path::new(&catalog_path).parent(),
-    )
+    )?;
+    if let Some(root) = release_fixture_root {
+        app.with_release_root(root)
+    } else {
+        Ok(app)
+    }
 }
 
 fn loopback_upload_base(address: SocketAddr) -> String {
@@ -1054,6 +1062,21 @@ fn loopback_upload_base(address: SocketAddr) -> String {
 /// Returns a stable error when the address is not loopback, binding fails, or
 /// required local secret configuration is missing or invalid.
 pub async fn serve_phase2_local(address: SocketAddr) -> Result<(), Phase2Error> {
+    serve_phase2_local_with_release_fixture_root(address, None).await
+}
+
+/// Runs the local Phase 2 service with an explicitly selected read-only
+/// release tree for signed multiworld testing. The fixture is available only
+/// through the local listener and the existing authenticated release routes.
+///
+/// # Errors
+///
+/// Returns an error for non-loopback addresses, bind failures, or invalid
+/// local configuration.
+pub async fn serve_phase2_local_with_release_fixture_root(
+    address: SocketAddr,
+    release_fixture_root: Option<PathBuf>,
+) -> Result<(), Phase2Error> {
     if !address.ip().is_loopback() {
         return Err(Phase2Error::InvalidRequest);
     }
@@ -1061,7 +1084,7 @@ pub async fn serve_phase2_local(address: SocketAddr) -> Result<(), Phase2Error> 
         .await
         .map_err(|_| Phase2Error::Internal)?;
     let bound = listener.local_addr().map_err(|_| Phase2Error::Internal)?;
-    let app = phase2_app_from_env(loopback_upload_base(bound))?;
+    let app = phase2_app_from_env(loopback_upload_base(bound), release_fixture_root.as_deref())?;
     let shutdown = app.shutdown.clone();
     axum::serve(listener, app.router())
         .with_graceful_shutdown(production::shutdown(shutdown))
@@ -2468,7 +2491,8 @@ mod tests {
             Err(Phase2Error::Conflict),
             "a foreign client must not learn that this key was closed"
         );
-        let replacement = AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
+        let replacement =
+            AcquireLeaseRequest::new(actor.character_id, client, id(IdempotencyKey::new));
         assert!(app.acquire_world(actor, replacement).is_ok());
     }
 
@@ -2486,7 +2510,10 @@ mod tests {
             .acquire_world(actor, request)
             .expect("world-aware lease");
         clock.advance(storage::LEASE_TTL_MS + 1);
-        assert_eq!(app.acquire_world(actor, request), Err(Phase2Error::AcquireClosed));
+        assert_eq!(
+            app.acquire_world(actor, request),
+            Err(Phase2Error::AcquireClosed)
+        );
         assert_eq!(acquired.lease.current_revision, Revision::initial());
     }
 
