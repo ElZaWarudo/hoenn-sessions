@@ -577,7 +577,7 @@ Cormoria_CeramBaseCamp_Main_NPC5_8:
 # 403 "data//maps/CeramBaseCamp_Main/scripts.pory"
 	setvar VAR_0x8008, INGAME_TRADE_CORMORIA_WIMPOD
 # 404 "data//maps/CeramBaseCamp_Main/scripts.pory"
-	copyvar VAR_0x8004, VAR_0x8008
+	copyvar VAR_0x8005, VAR_0x8008
 # 406 "data//maps/CeramBaseCamp_Main/scripts.pory"
 	specialvar VAR_RESULT, GetInGameTradeSpeciesInfo
 # 407 "data//maps/CeramBaseCamp_Main/scripts.pory"
@@ -592,7 +592,7 @@ Cormoria_CeramBaseCamp_Main_NPC5_8:
 	compare VAR_0x8004, PARTY_NOTHING_CHOSEN
 	goto_if_eq Cormoria_CeramBaseCamp_Main_NPC5_12
 # 421 "data//maps/CeramBaseCamp_Main/scripts.pory"
-	copyvar VAR_0x8005, VAR_0x800A
+	copyvar VAR_0x8005, VAR_0x8008
 # 422 "data//maps/CeramBaseCamp_Main/scripts.pory"
 	specialvar VAR_RESULT, GetTradeSpecies
 # 423 "data//maps/CeramBaseCamp_Main/scripts.pory"
@@ -611,9 +611,9 @@ Cormoria_CeramBaseCamp_Main_NPC5_12:
 
 Cormoria_CeramBaseCamp_Main_NPC5_14:
 # 426 "data//maps/CeramBaseCamp_Main/scripts.pory"
-	copyvar VAR_0x8004, VAR_0x8008
+	copyvar VAR_0x8004, VAR_0x800A
 # 427 "data//maps/CeramBaseCamp_Main/scripts.pory"
-	copyvar VAR_0x8005, VAR_0x800A
+	copyvar VAR_0x8005, VAR_0x8008
 # 428 "data//maps/CeramBaseCamp_Main/scripts.pory"
 	special CreateInGameTradePokemon
 # 429 "data//maps/CeramBaseCamp_Main/scripts.pory"

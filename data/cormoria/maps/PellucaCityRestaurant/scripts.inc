@@ -378,9 +378,9 @@ Cormoria_PellucaCityRestaurant_NPC_Trade_2:
 
 Cormoria_PellucaCityRestaurant_NPC_Trade_5:
 # 285 "data//maps/PellucaCityRestaurant/scripts.pory"
-	setvar VAR_0x8008, INGAME_TRADE_MEOWTH
+	setvar VAR_0x8008, INGAME_TRADE_CORMORIA_HOUNDOUR
 # 286 "data//maps/PellucaCityRestaurant/scripts.pory"
-	copyvar VAR_0x8004, VAR_0x8008
+	copyvar VAR_0x8005, VAR_0x8008
 # 288 "data//maps/PellucaCityRestaurant/scripts.pory"
 	specialvar VAR_RESULT, GetInGameTradeSpeciesInfo
 # 289 "data//maps/PellucaCityRestaurant/scripts.pory"
@@ -395,7 +395,7 @@ Cormoria_PellucaCityRestaurant_NPC_Trade_5:
 	compare VAR_0x8004, PARTY_NOTHING_CHOSEN
 	goto_if_eq Cormoria_PellucaCityRestaurant_NPC_Trade_9
 # 303 "data//maps/PellucaCityRestaurant/scripts.pory"
-	copyvar VAR_0x8005, VAR_0x800A
+	copyvar VAR_0x8005, VAR_0x8008
 # 304 "data//maps/PellucaCityRestaurant/scripts.pory"
 	specialvar VAR_RESULT, GetTradeSpecies
 # 305 "data//maps/PellucaCityRestaurant/scripts.pory"
@@ -414,9 +414,9 @@ Cormoria_PellucaCityRestaurant_NPC_Trade_9:
 
 Cormoria_PellucaCityRestaurant_NPC_Trade_11:
 # 308 "data//maps/PellucaCityRestaurant/scripts.pory"
-	copyvar VAR_0x8004, VAR_0x8008
+	copyvar VAR_0x8004, VAR_0x800A
 # 309 "data//maps/PellucaCityRestaurant/scripts.pory"
-	copyvar VAR_0x8005, VAR_0x800A
+	copyvar VAR_0x8005, VAR_0x8008
 # 310 "data//maps/PellucaCityRestaurant/scripts.pory"
 	special CreateInGameTradePokemon
 # 311 "data//maps/PellucaCityRestaurant/scripts.pory"

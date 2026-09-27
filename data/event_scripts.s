@@ -2149,4 +2149,5 @@ Text_CoopGroupTravelOffer_GateLater:
 
 #if ROM_WORLD == 2
     .include "data/cormoria/scripts.inc"
+    .include "data/cormoria/scripts/pelluca_safari.inc"
 #endif

@@ -1197,6 +1197,7 @@ Cormoria_PellucaCityFlooded_EventScript_TimesUp::
 	lockall
 # 764 "data//maps/PellucaCity/scripts.pory"
 	msgbox Cormoria_PellucaCityFlooded_EventScript_TimesUp_Text_0
+Cormoria_PellucaCityFlooded_EventScript_FailCleanup::
 # 765 "data//maps/PellucaCity/scripts.pory"
 	release
 # 768 "data//maps/PellucaCity/scripts.pory"

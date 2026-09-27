@@ -28,6 +28,12 @@ QUOTED = re.compile(r'("(?:\\.|[^"\\])*")')
 GIVEMON_SHINY = re.compile(r'(?m)(^\s*givemon\b[^\n]*?)\bisShiny\s*=\s*(TRUE|FALSE)\b')
 GACHA_TOKEN_SETTLEMENT = "data/maps/GalecrestCity_GameCorner/scripts.inc"
 RIVETSHORE_HARBOR = "data/maps/RivetshoreCity_Harbor/scripts.inc"
+PELLUCA_SAFARI = "data/maps/PellucaCity/scripts.inc"
+INGAME_TRADE_SCRIPTS = {
+    "data/maps/CeramBaseCamp_Main/scripts.inc",
+    "data/maps/PellucaCityRestaurant/scripts.inc",
+    "data/maps/Rivetshore_RangerInstitute_Interior/scripts.inc",
+}
 
 
 class ScriptRegistrationError(ValueError):
@@ -87,6 +93,17 @@ def _adapt_givemon_shininess(text: str) -> tuple[str, int]:
             "SHINY_MODE_ALWAYS" if match[2] == "TRUE" else "SHINY_MODE_NEVER"),
         text,
     )
+
+
+def _adapt_ingame_trade_vars(text: str, path: str) -> str:
+    """Pass the trade ID in 0x8005 and the chosen party slot in 0x8004."""
+    trade_as_slot = "\tcopyvar VAR_0x8004, VAR_0x8008"
+    slot_as_trade = "\tcopyvar VAR_0x8005, VAR_0x800A"
+    if text.count(trade_as_slot) != 2 or text.count(slot_as_trade) != 2:
+        raise ScriptRegistrationError(f"donor in-game trade variable flow drifted: {path}")
+    text = text.replace(trade_as_slot, "\tcopyvar VAR_0x8005, VAR_0x8008", 1)
+    text = text.replace(trade_as_slot, "\tcopyvar VAR_0x8004, VAR_0x800A", 1)
+    return text.replace(slot_as_trade, "\tcopyvar VAR_0x8005, VAR_0x8008")
 
 
 def _adapt_gacha_token_settlement(text: str) -> tuple[str, int]:
@@ -193,7 +210,9 @@ def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
         raise ScriptRegistrationError("campaign script duplicates a host global")
     rendered: dict[str, bytes] = {}
     shiny_gifts = 0
-    donor_trade_references = 0
+    donor_trade_references = {"INGAME_TRADE_WIMPOD": 0,
+                              "INGAME_TRADE_HORSEA": 0,
+                              "INGAME_TRADE_MEOWTH": 0}
     donor_partner_references = 0
     donor_number_input_references = 0
     donor_gacha_token_references = 0
@@ -209,17 +228,29 @@ def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
             if texts[relative].count("LOCALID_CLEF") != 2:
                 raise ScriptRegistrationError("S.S. Elegant storage Clefable script drift")
             scoped_ids["LOCALID_CLEF"] = str(clef_ids[0])
-        donor_trade_references += texts[relative].count("INGAME_TRADE_WIMPOD")
+        for trade in donor_trade_references:
+            donor_trade_references[trade] += texts[relative].count(trade)
         donor_partner_references += texts[relative].count("PARTNER_ROUTE6_GAB")
         donor_number_input_references += texts[relative].count("MULTI_NUMBER_INPUT")
         rewritten = _rename(texts[relative], labels | berry_bindings | scoped_ids
                             | {"INGAME_TRADE_WIMPOD": "INGAME_TRADE_CORMORIA_WIMPOD",
+                               "INGAME_TRADE_HORSEA": "INGAME_TRADE_CORMORIA_PINSIR",
+                               "INGAME_TRADE_MEOWTH": "INGAME_TRADE_CORMORIA_HOUNDOUR",
                                "PARTNER_ROUTE6_GAB": "PARTNER_CORMORIA_GABRIELLE",
                                "MULTI_NUMBER_INPUT": "MULTI_CORMORIA_NUMBER_INPUT",
                                "FLAG_VISITED_RIVETSHORE_RANGER":
                                    "Cormoria_FLAG_VISITED_RIVETSHORE_RANGER"})
         rewritten, gift_count = _adapt_givemon_shininess(rewritten)
+        if relative in INGAME_TRADE_SCRIPTS:
+            rewritten = _adapt_ingame_trade_vars(rewritten, relative)
         overlay_labels: set[str] = set()
+        if relative == PELLUCA_SAFARI:
+            marker = "\tmsgbox Cormoria_PellucaCityFlooded_EventScript_TimesUp_Text_0\n"
+            if rewritten.count(marker) != 1:
+                raise ScriptRegistrationError("Pelluca rescue timeout script drift")
+            cleanup = "Cormoria_PellucaCityFlooded_EventScript_FailCleanup"
+            rewritten = rewritten.replace(marker, marker + cleanup + "::\n")
+            overlay_labels.add(cleanup)
         if relative == RIVETSHORE_HARBOR:
             old_attendant = (
                 "Cormoria_RivetshoreCity_Harbor_Attendant::\n"
@@ -245,7 +276,7 @@ def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
         rendered[target] = rewritten.encode("utf-8")
     if shiny_gifts != 6:
         raise ScriptRegistrationError(f"donor forced-shininess gift count drifted: {shiny_gifts}")
-    if donor_trade_references != 1:
+    if any(count != 1 for count in donor_trade_references.values()):
         raise ScriptRegistrationError(f"donor in-game trade reference count drifted: {donor_trade_references}")
     if donor_partner_references != 1:
         raise ScriptRegistrationError(f"donor Route 6 partner reference count drifted: {donor_partner_references}")

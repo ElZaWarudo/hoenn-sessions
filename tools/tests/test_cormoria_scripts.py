@@ -81,10 +81,37 @@ class ScriptPreviewTests(unittest.TestCase):
         self.assertIn("applymovement 8, Cormoria_SSElegant_Storage_GabConfronts_Movement_10", script)
         self.assertIn("applymovement 8, Cormoria_SSElegant_Storage_GabConfronts_Movement_11", script)
 
-    def test_donor_trade_uses_appended_shared_identity(self) -> None:
-        script = self.preview["data/cormoria/maps/CeramBaseCamp_Main/scripts.inc"].decode()
-        self.assertIn("INGAME_TRADE_CORMORIA_WIMPOD", script)
-        self.assertNotIn("INGAME_TRADE_WIMPOD", script)
+    def test_donor_trades_pass_identity_and_party_slot_to_engine(self) -> None:
+        for map_name, trade_id in (
+            ("CeramBaseCamp_Main", "INGAME_TRADE_CORMORIA_WIMPOD"),
+            ("PellucaCityRestaurant", "INGAME_TRADE_CORMORIA_HOUNDOUR"),
+            ("Rivetshore_RangerInstitute_Interior", "INGAME_TRADE_CORMORIA_PINSIR"),
+        ):
+            with self.subTest(map_name=map_name):
+                relative = f"data/cormoria/maps/{map_name}/scripts.inc"
+                script = self.preview[relative].decode()
+                self.assertEqual(script.replace("\r\n", "\n"),
+                                 (register_scripts.ROOT / relative).read_text(encoding="utf-8").replace("\r\n", "\n"))
+                before_species = script.split(f"setvar VAR_0x8008, {trade_id}", 1)[1].split(
+                    "specialvar VAR_RESULT, GetInGameTradeSpeciesInfo", 1)[0]
+                self.assertIn("copyvar VAR_0x8005, VAR_0x8008", before_species)
+                before_create = script.split("special CreateInGameTradePokemon", 1)[0].rsplit(
+                    "specialvar VAR_RESULT, GetTradeSpecies", 1)[1]
+                self.assertIn("copyvar VAR_0x8004, VAR_0x800A", before_create)
+                self.assertIn("copyvar VAR_0x8005, VAR_0x8008", before_create)
+
+    def test_pelluca_rescue_failures_share_regenerated_cleanup(self) -> None:
+        relative = "data/cormoria/maps/PellucaCity/scripts.inc"
+        script = self.preview[relative].decode().replace("\r\n", "\n")
+        installed = (register_scripts.ROOT / relative).read_text(encoding="utf-8").replace("\r\n", "\n")
+        self.assertEqual(script, installed)
+        cleanup = "Cormoria_PellucaCityFlooded_EventScript_FailCleanup::"
+        self.assertEqual(script.count(cleanup), 1)
+        self.assertIn("\tmsgbox Cormoria_PellucaCityFlooded_EventScript_TimesUp_Text_0\n" + cleanup,
+                      script)
+        custom = (register_scripts.ROOT / "data/cormoria/scripts/pelluca_safari.inc").read_text(encoding="utf-8")
+        self.assertEqual(custom.count("goto Cormoria_PellucaCityFlooded_EventScript_FailCleanup"), 1)
+        self.assertEqual(custom.count("goto_if_eq VAR_RESULT, YES, Cormoria_PellucaCityFlooded_EventScript_FailCleanup"), 1)
 
     def test_route6_uses_appended_gabrielle_partner(self) -> None:
         script = self.preview["data/cormoria/maps/Route6/scripts.inc"].decode()
@@ -123,7 +150,8 @@ class ScriptPreviewTests(unittest.TestCase):
     def test_rivetshore_return_portal_survives_regeneration(self) -> None:
         relative = "data/cormoria/maps/RivetshoreCity_Harbor/scripts.inc"
         script = self.preview[relative]
-        self.assertEqual(script, (register_scripts.ROOT / relative).read_bytes())
+        installed = (register_scripts.ROOT / relative).read_bytes()
+        self.assertEqual(script.replace(b"\r\n", b"\n"), installed.replace(b"\r\n", b"\n"))
         self.assertIn(b"callnative CoopNetBridge_ScriptTravelToMain", script)
         self.assertIn(b"Cormoria_RivetshoreCity_Harbor_Attendant_Original::", script)
 

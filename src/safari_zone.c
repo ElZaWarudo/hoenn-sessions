@@ -31,6 +31,12 @@ extern const u8 SafariZone_EventScript_OutOfBallsMidBattle[];
 extern const u8 SafariZone_EventScript_OutOfBallsMidBattle_Frlg[];
 extern const u8 SafariZone_EventScript_OutOfBalls[];
 extern const u8 SafariZone_EventScript_OutOfBalls_Frlg[];
+#if ROM_WORLD == 2
+extern const u8 Cormoria_PellucaCityFlooded_EventScript_TimesUp[];
+extern const u8 Cormoria_PellucaCityFlooded_EventScript_TimesRunningOut[];
+extern const u8 Cormoria_PellucaSafari_EventScript_RetirePrompt[];
+extern const u8 Cormoria_PellucaSafari_EventScript_OutOfBalls[];
+#endif
 
 EWRAM_DATA u8 gNumSafariBalls = 0;
 EWRAM_DATA u16 gSafariZoneStepCounter = 0;
@@ -62,10 +68,14 @@ void EnterSafariMode(void)
     SetSafariZoneFlag();
     ClearAllPokeblockFeeders();
     gNumSafariBalls = 30;
+#if ROM_WORLD == 2
+    gSafariZoneStepCounter = 300;
+#else
     if (isFrlg)
         gSafariZoneStepCounter = 600;
     else
         gSafariZoneStepCounter = 500;
+#endif
     sSafariZoneCaughtMons = 0;
     sSafariZonePkblkUses = 0;
 }
@@ -88,12 +98,23 @@ bool8 SafariZoneTakeStep(void)
 
     DecrementFeederStepCounters();
     gSafariZoneStepCounter--;
+#if ROM_WORLD == 2
+    if (gSafariZoneStepCounter == 75)
+    {
+        ScriptContext_SetupScript(Cormoria_PellucaCityFlooded_EventScript_TimesRunningOut);
+        return TRUE;
+    }
+#endif
     if (gSafariZoneStepCounter == 0)
     {
+#if ROM_WORLD == 2
+        ScriptContext_SetupScript(Cormoria_PellucaCityFlooded_EventScript_TimesUp);
+#else
         if (isFrlg)
             ScriptContext_SetupScript(SafariZone_EventScript_TimesUp_Frlg);
         else
             ScriptContext_SetupScript(SafariZone_EventScript_TimesUp);
+#endif
         return TRUE;
     }
     return FALSE;
@@ -101,10 +122,14 @@ bool8 SafariZoneTakeStep(void)
 
 void SafariZoneRetirePrompt(void)
 {
+#if ROM_WORLD == 2
+    ScriptContext_SetupScript(Cormoria_PellucaSafari_EventScript_RetirePrompt);
+#else
     if (isFrlg)
         ScriptContext_SetupScript(SafariZone_EventScript_RetirePrompt_Frlg);
     else
         ScriptContext_SetupScript(SafariZone_EventScript_RetirePrompt);
+#endif
 }
 
 void CB2_EndSafariBattle(void)
@@ -116,6 +141,14 @@ void CB2_EndSafariBattle(void)
     {
         SetMainCallback2(CB2_ReturnToField);
     }
+#if ROM_WORLD == 2
+    else
+    {
+        ScriptContext_SetupScript(Cormoria_PellucaSafari_EventScript_OutOfBalls);
+        ScriptContext_Stop();
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+    }
+#else
     else if (gBattleOutcome == B_OUTCOME_NO_SAFARI_BALLS)
     {
         if (isFrlg)
@@ -135,6 +168,7 @@ void CB2_EndSafariBattle(void)
         ScriptContext_Stop();
         SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
     }
+#endif
 }
 
 static void ClearPokeblockFeeder(u8 index)

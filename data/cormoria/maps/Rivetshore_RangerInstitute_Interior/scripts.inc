@@ -40,9 +40,9 @@ Cormoria_Rivetshore_RangerInstitute_NPC_Trade_2:
 
 Cormoria_Rivetshore_RangerInstitute_NPC_Trade_5:
 # 26 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
-	setvar VAR_0x8008, INGAME_TRADE_HORSEA
+	setvar VAR_0x8008, INGAME_TRADE_CORMORIA_PINSIR
 # 27 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
-	copyvar VAR_0x8004, VAR_0x8008
+	copyvar VAR_0x8005, VAR_0x8008
 # 29 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
 	specialvar VAR_RESULT, GetInGameTradeSpeciesInfo
 # 30 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
@@ -57,7 +57,7 @@ Cormoria_Rivetshore_RangerInstitute_NPC_Trade_5:
 	compare VAR_0x8004, PARTY_NOTHING_CHOSEN
 	goto_if_eq Cormoria_Rivetshore_RangerInstitute_NPC_Trade_9
 # 45 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
-	copyvar VAR_0x8005, VAR_0x800A
+	copyvar VAR_0x8005, VAR_0x8008
 # 46 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
 	specialvar VAR_RESULT, GetTradeSpecies
 # 47 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
@@ -78,9 +78,9 @@ Cormoria_Rivetshore_RangerInstitute_NPC_Trade_9:
 
 Cormoria_Rivetshore_RangerInstitute_NPC_Trade_11:
 # 50 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
-	copyvar VAR_0x8004, VAR_0x8008
+	copyvar VAR_0x8004, VAR_0x800A
 # 51 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
-	copyvar VAR_0x8005, VAR_0x800A
+	copyvar VAR_0x8005, VAR_0x8008
 # 52 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
 	special CreateInGameTradePokemon
 # 53 "data//maps/Rivetshore_RangerInstitute_Interior/scripts.pory"
