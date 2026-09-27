@@ -41,6 +41,36 @@ def synthetic_schema_payload() -> bytes:
 
 
 class RomReleaseCatalogTests(unittest.TestCase):
+    def test_harbor_fixtures_retain_rom_written_object_state(self) -> None:
+        # Map/layout IDs and even the cached map view accepted earlier saves
+        # whose object templates still pointed to starting-home NPCs.
+        for name, expected_view, expected_events, expected_templates in (
+            ("arrival-v3-main-lilycove.sav",
+             "6504fa83ec58bf81abb96c3ad2af70c593150f121181d09b1e0c4cffaea5e8c6",
+             "e36508d98074c7ba06356c7b77d0ef5e78dabb7de7f8db6777e6238a7c782f89",
+             "042251ba906a9ea93294b7e4c82595e7fc6a0493028654e6a4128966ad905888"),
+            ("arrival-v3-cormoria-rivetshore.sav",
+             "61403f41b9f7691f32790cdf8557ffcc95370f0c8266313e9d47ac63cf8cd9df",
+             "a711be54b4f77ba383a6284470bd575db14632205d138db258480d941be143e5",
+             "162c5fa590bc27600f1636bc466dd6151494d25a5b7e4ab908832a2c1a1b3d5e"),
+        ):
+            image = (Path(__file__).parent / "fixtures" / name).read_bytes()
+            sectors = {}
+            for physical in range(32):
+                offset = physical * 4096
+                if struct.unpack_from("<I", image, offset + 4088)[0] == 0x08012025:
+                    generation = struct.unpack_from("<I", image, offset + 4092)[0]
+                    logical = struct.unpack_from("<H", image, offset + 4084)[0]
+                    sectors.setdefault(generation, {})[logical] = offset
+            selected = sectors[max(sectors)][1]
+            for start, end, expected in (
+                (0x34, 0x234, expected_view),
+                (0xA30, 0xC70, expected_events),
+                (0xC70, 0xF80, expected_templates),
+            ):
+                self.assertEqual(hashlib.sha256(image[selected + start:selected + end]).hexdigest(),
+                                 expected, name)
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
