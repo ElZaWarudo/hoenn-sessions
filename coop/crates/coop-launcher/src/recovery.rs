@@ -26,6 +26,7 @@ use crate::{
 const MAX_RECOVERY_MARKER_BYTES: usize = 16 * 1024;
 const MAX_RECOVERY_ENTRIES: usize = 4;
 const MAX_RECOVERY_CANDIDATES: usize = 8;
+const MAX_SCANNED_SESSION_DIRS: usize = 1024;
 const MAX_SESSION_FILE_BYTES: usize = 64 * 1024 * 1024;
 const LEGACY_MARKER: &[u8] = b"coop-recovery-v1\n";
 const RECOVERY_MARKER_NAME: &str = "recovery.marker";
@@ -269,6 +270,7 @@ impl RecoveryDiscovery {
         }
         let mut candidates = Vec::new();
         let mut launcher_candidates = 0usize;
+        let mut scanned_session_dirs = 0usize;
         let entries = std::fs::read_dir(root).map_err(|_| RecoveryError::Malformed)?;
         for entry in entries {
             let entry = entry.map_err(|_| RecoveryError::Malformed)?;
@@ -277,8 +279,8 @@ impl RecoveryDiscovery {
             if !(name.starts_with("coop-session-") || name.starts_with("coop-recovery-")) {
                 continue;
             }
-            launcher_candidates += 1;
-            if launcher_candidates > MAX_RECOVERY_CANDIDATES {
+            scanned_session_dirs += 1;
+            if scanned_session_dirs > MAX_SCANNED_SESSION_DIRS {
                 return Err(RecoveryError::Ambiguous);
             }
             let path = entry.path();
@@ -286,6 +288,20 @@ impl RecoveryDiscovery {
                 std::fs::symlink_metadata(&path).map_err(|_| RecoveryError::Malformed)?;
             if metadata.file_type().is_symlink() || !metadata.is_dir() {
                 return Err(RecoveryError::Malformed);
+            }
+            // A completed session may leave a non-recovery workspace behind
+            // when Windows still holds one of its generated files during
+            // TempDir cleanup. It cannot authorize recovery without either
+            // the SAV or marker. A partial pair remains malformed.
+            if name.starts_with("coop-session-")
+                && !recovery_material_present(&path, CHARACTER_SAVE_NAME)?
+                && !recovery_material_present(&path, RECOVERY_MARKER_NAME)?
+            {
+                continue;
+            }
+            launcher_candidates += 1;
+            if launcher_candidates > MAX_RECOVERY_CANDIDATES {
+                return Err(RecoveryError::Ambiguous);
             }
             candidates.push(discover_candidate(path)?);
             if candidates.len() > 1 {
@@ -300,6 +316,17 @@ impl RecoveryDiscovery {
     #[must_use]
     pub fn candidate(self) -> Option<RecoveryCandidate> {
         self.candidate
+    }
+}
+
+fn recovery_material_present(path: &Path, name: &str) -> Result<bool, RecoveryError> {
+    match std::fs::symlink_metadata(path.join(name)) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(RecoveryError::Malformed)
+        }
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(RecoveryError::Malformed),
     }
 }
 
@@ -623,6 +650,46 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "recovery evidence is malformed"
+        );
+    }
+
+    #[test]
+    fn discovery_ignores_only_sessions_without_recovery_material() {
+        let root = tempdir().unwrap();
+        for index in 0..9 {
+            let leftover = root.path().join(format!("coop-session-leftover-{index}"));
+            std::fs::create_dir(&leftover).unwrap();
+            std::fs::write(leftover.join("resume.ss1"), b"stale").unwrap();
+        }
+        assert!(
+            RecoveryDiscovery::discover(root.path())
+                .unwrap()
+                .candidate()
+                .is_none()
+        );
+
+        let leftover = root.path().join("coop-session-leftover-0");
+        std::fs::write(leftover.join(CHARACTER_SAVE_NAME), b"sav").unwrap();
+        assert!(matches!(
+            RecoveryDiscovery::discover(root.path()),
+            Err(RecoveryError::Malformed)
+        ));
+        std::fs::remove_file(leftover.join(CHARACTER_SAVE_NAME)).unwrap();
+        std::fs::write(leftover.join(RECOVERY_MARKER_NAME), LEGACY_MARKER).unwrap();
+        assert!(matches!(
+            RecoveryDiscovery::discover(root.path()),
+            Err(RecoveryError::Malformed)
+        ));
+        std::fs::remove_file(leftover.join(RECOVERY_MARKER_NAME)).unwrap();
+        let valid = root.path().join("coop-recovery-valid");
+        std::fs::create_dir(&valid).unwrap();
+        std::fs::write(valid.join(CHARACTER_SAVE_NAME), b"sav").unwrap();
+        std::fs::write(valid.join(RECOVERY_MARKER_NAME), LEGACY_MARKER).unwrap();
+        assert!(
+            RecoveryDiscovery::discover(root.path())
+                .unwrap()
+                .candidate()
+                .is_some()
         );
     }
 }
