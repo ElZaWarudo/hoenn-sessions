@@ -10,6 +10,9 @@
 #include "script_pokemon_util.h"
 #include "tv.h"
 #include "constants/heal_locations.h"
+#if ROM_WORLD == 2
+#include "cormoria/heal_locations.h"
+#endif
 
 int GameClear(void)
 {
@@ -39,10 +42,14 @@ int GameClear(void)
 
     SetContinueGameWarpStatus();
 
+#if ROM_WORLD == 2
+    SetContinueGameWarpToHealLocation(HEAL_LOCATION_CORMORIA_CARABRUE_TOWN);
+#else
     if (gSaveBlock2Ptr->playerGender == MALE)
         SetContinueGameWarpToHealLocation(HEAL_LOCATION_LITTLEROOT_TOWN_BRENDANS_HOUSE_2F);
     else
         SetContinueGameWarpToHealLocation(HEAL_LOCATION_LITTLEROOT_TOWN_MAYS_HOUSE_2F);
+#endif
 
     ribbonGet = FALSE;
 
