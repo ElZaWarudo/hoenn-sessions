@@ -16,7 +16,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use coop_protocol::RomWorldId;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -1917,8 +1917,9 @@ struct SignedReleaseCatalog {
     worlds: Vec<SignedReleaseWorld>,
 }
 
+// This is a projection of the full regional catalog. The update gate checks
+// signed artifact identity here; the catalog parser validates travel metadata.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct SignedReleaseWorld {
     world_id: u16,
     rom_path: String,
@@ -2989,13 +2990,30 @@ mod multiworld_tests {
                     .clone()
             };
             serde_json::json!({
+                "name": format!("world-{}", id.get()),
                 "world_id": id.get(),
+                "save_namespace": format!("save_world_{}", id.get()),
+                "shared_player_schema": 2,
+                "regional_save_schema": 1,
+                "location_codec": 3,
+                "owned_location_sections": [0, 249],
+                "object_catalog_sha256": "0".repeat(64),
                 "rom_path": ArtifactIdentity::WorldRom(id).destination_path(),
                 "rom_sha256": digest(ArtifactIdentity::WorldRom(id)),
                 "bridge_path": ArtifactIdentity::WorldCompatibility(id).destination_path(),
                 "bridge_sha256": digest(ArtifactIdentity::WorldCompatibility(id)),
                 "player_transfer_path": ArtifactIdentity::WorldPlayerTransfer(id).destination_path(),
                 "player_transfer_sha256": digest(ArtifactIdentity::WorldPlayerTransfer(id)),
+                "map_binding_path": format!("worlds/{}/map_binding_manifest.json", id.get()),
+                "map_binding_sha256": "0".repeat(64),
+                "arrivals": {"from_previous": {
+                    "map_group": 13, "map_number": 10, "warp_id": 255,
+                    "map_layout_id": 88,
+                    "template_sav_path": format!("worlds/{}/arrival.sav", id.get()),
+                    "template_sav_sha256": "0".repeat(64)
+                }},
+                "portals": [{"id": "to_next", "destination_world_id": 7,
+                    "arrival_portal_id": "from_previous", "return_portal_id": "to_previous"}],
             })
         };
         serde_json::json!({

@@ -10,19 +10,22 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use coop_cloud::{AcquireLeaseRequest, ClientInstanceId, IdempotencyKey, InvitationCode};
+use coop_cloud::{
+    AcquireLeaseRequest, ClientInstanceId, HeartbeatLeaseRequest, IdempotencyKey, InvitationCode,
+};
 use coop_launcher::{
-    AcceptedGeneration, ArtifactIdentity, AuthError, AuthSession, BuildCompatibility, CommandSpec,
-    Effect, EpochStore, OsKeychain, RecoveryDiscovery, RecoveryMarker, RecoveryOutcome,
-    RecoveryReconciler, RecoveryResult, RefreshTokenStore, ReleaseReadiness, SessionConfig,
-    SessionLifecycle, SessionWorkspace, StartFailure, TrustedManifestKey, TrustedRomCatalog,
-    UpdateFailure, WorldAcquireIntentStore,
+    AcceptedGeneration, ArtifactIdentity, AuthError, AuthSession, BuildCompatibility, CloudApi,
+    CommandSpec, Effect, EpochStore, OsKeychain, RecoveryDiscovery, RecoveryMarker,
+    RecoveryOutcome, RecoveryReconciler, RecoveryResult, RefreshTokenStore, ReleaseReadiness,
+    SessionConfig, SessionLifecycle, SessionWorkspace, StartFailure, TrustedManifestKey,
+    TrustedRomCatalog, UpdateFailure, WorldAcquireIntentStore,
     process::{SupervisedChildren, staged_rom_marker_contents, staged_rom_marker_path},
     rom_travel::{LeaseFenceIdentity, RomTravelJournal, TravelPhase},
     session::{PortalTravelSource, SessionRunOutcome},
     travel_coordinator::{
         ArrivalVerificationConfig, StageOutcome, commit_acknowledged_handoff,
-        recover_pending_handoff, stage_portal_travel, verify_staged_arrival,
+        recover_pending_handoff, recover_pending_handoff_before_restore, stage_portal_travel,
+        verify_staged_arrival,
     },
     update::{GenerationStore, UpdateError},
 };
@@ -806,6 +809,17 @@ impl BackendActor {
                 && record.active_world != response.active_world_id
                 && record.destination_world == Some(response.active_world_id)
         });
+        let pending_handoff = journal_record.as_ref().is_some_and(|record| {
+            matches!(
+                record.phase,
+                TravelPhase::PrepareIntent
+                    | TravelPhase::Prepared
+                    | TravelPhase::SourceSaved
+                    | TravelPhase::DestinationReady
+                    | TravelPhase::Launched
+                    | TravelPhase::ArrivalAcknowledged
+            ) && !remote_committed
+        });
         match journal_record {
             Some(record)
                 if record.active_world != response.active_world_id && !remote_committed =>
@@ -844,6 +858,29 @@ impl BackendActor {
                     return;
                 }
             }
+        }
+        let settled = if pending_handoff {
+            let result =
+                recover_pending_handoff_before_restore(&self.api, &auth, &response, &journal).await;
+            matches!(result, Ok(StageOutcome::Aborted))
+        } else {
+            true
+        };
+        if !settled {
+            let released = SessionLifecycle::release_preacquired_world_lease(
+                &self.api,
+                &mut auth,
+                response,
+                &self.keychain,
+            )
+            .await
+            .is_ok();
+            if released {
+                let _ = intent.clear_exact(request);
+            }
+            self.auth = Some(auth);
+            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+            return;
         }
         let selected = match catalog.world(response.active_world_id) {
             Ok(selected) => selected,
@@ -918,7 +955,7 @@ impl BackendActor {
             workspace_parent: self.config.paths.workspace_parent().to_owned(),
             bridge_lua_dir: bridge_path.clone(),
         };
-        let session = match SessionLifecycle::from_world_lease_with_keychain(
+        let mut session = match SessionLifecycle::from_world_lease_with_keychain(
             &self.api,
             auth,
             config,
@@ -933,6 +970,23 @@ impl BackendActor {
                 return;
             }
         };
+        let cold_source_resume = journal.read().ok().flatten().is_some_and(|record| {
+            record.phase == TravelPhase::Aborted
+                && record.active_world == session.rom_world_id()
+                && record.source_revision == Some(session.revision)
+        });
+        if cold_source_resume && session.discard_resume_after_aborted_handoff().is_err() {
+            let released = session
+                .release_lease_keep_credentials(&self.api)
+                .await
+                .is_ok();
+            if released {
+                let _ = intent.clear_exact(request);
+            }
+            self.auth = Some(session.auth);
+            let _ = events.send(BackendEvent::StartFailed(StartFailure::Unavailable));
+            return;
+        }
         match journal.read() {
             Ok(Some(record)) => match record.phase {
                 TravelPhase::PrepareIntent
@@ -1470,7 +1524,7 @@ async fn run_runtime_with_session(
 
 async fn run_portal_transition(
     api: coop_launcher::ReqwestCloudApi,
-    session: SessionLifecycle,
+    mut session: SessionLifecycle,
     keychain: Arc<dyn RefreshTokenStore>,
     handoff: coop_launcher::GenerationHandoff,
     trusted_manifest_key: TrustedManifestKey,
@@ -1494,6 +1548,9 @@ async fn run_portal_transition(
         Ok(Some(record)) => record,
         _ => return portal_failure(session, &api, world_intent).await,
     };
+    if session.heartbeat(&api).await.is_err() {
+        return portal_failure(session, &api, world_intent).await;
+    }
     let (committed, destination_world) = if record.phase == TravelPhase::ArrivalAcknowledged {
         let result = commit_acknowledged_handoff(&api, &session.auth, &journal, None).await;
         let Ok(record) = result else {
@@ -1514,15 +1571,36 @@ async fn run_portal_transition(
         let Some(prepare_key) = prepare_key else {
             return portal_failure(session, &api, world_intent).await;
         };
-        let staged =
-            match stage_portal_travel(&api, &session, &source, &catalog, &journal, prepare_key)
-                .await
-            {
-                Ok(StageOutcome::Staged(staged)) => staged,
-                Ok(StageOutcome::Aborted) | Err(_) => {
-                    return portal_failure(session, &api, world_intent).await;
+        let staged_result = {
+            let staging =
+                stage_portal_travel(&api, &session, &source, &catalog, &journal, prepare_key);
+            tokio::pin!(staging);
+            let mut staging_heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
+            loop {
+                tokio::select! {
+                    result = &mut staging => break result,
+                    _ = staging_heartbeat.tick() => {
+                        let renewal = api.heartbeat(&session.auth, HeartbeatLeaseRequest::new(session.lease.fence()));
+                        tokio::pin!(renewal);
+                        tokio::select! {
+                            result = &mut staging => break result,
+                            result = &mut renewal => {
+                                let _ = result;
+                            }
+                        }
+                    }
                 }
-            };
+            }
+        };
+        let staged = match staged_result {
+            Ok(StageOutcome::Staged(staged)) => staged,
+            Ok(StageOutcome::Aborted) | Err(_) => {
+                return portal_failure(session, &api, world_intent).await;
+            }
+        };
+        if session.heartbeat(&api).await.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
         let selected = match catalog.world(staged.destination_world()) {
             Ok(selected) => selected,
             Err(_) => return portal_failure(session, &api, world_intent).await,
@@ -1545,6 +1623,12 @@ async fn run_portal_transition(
             Ok(workspace) => workspace,
             Err(_) => return portal_failure(session, &api, world_intent).await,
         };
+        if destination_workspace
+            .write_generated_addresses(&destination_compatibility.manifest)
+            .is_err()
+        {
+            return portal_failure(session, &api, world_intent).await;
+        }
         if destination_workspace
             .write_atomic("pending_commits.json", b"[]")
             .is_err()
@@ -1592,7 +1676,10 @@ async fn run_portal_transition(
             session.lease.session_epoch,
             session.lease.client_instance_id,
         );
-        if verify_staged_arrival(
+        if session.heartbeat(&api).await.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        let verification = verify_staged_arrival(
             &journal,
             &staged,
             lease_fence,
@@ -1604,10 +1691,28 @@ async fn run_portal_transition(
                 mgba: verifier_mgba,
                 bridge_source: &bridge_path,
             },
-        )
-        .await
-        .is_err()
-        {
+        );
+        tokio::pin!(verification);
+        let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(10));
+        let arrival_result = loop {
+            tokio::select! {
+                result = &mut verification => break result,
+                _ = heartbeat.tick() => {
+                    let renewal = session.heartbeat(&api);
+                    tokio::pin!(renewal);
+                    tokio::select! {
+                        result = &mut verification => break result,
+                        result = &mut renewal => {
+                            let _ = result;
+                        }
+                    }
+                }
+            }
+        };
+        if arrival_result.is_err() {
+            return portal_failure(session, &api, world_intent).await;
+        }
+        if session.heartbeat(&api).await.is_err() {
             return portal_failure(session, &api, world_intent).await;
         }
         let record = match commit_acknowledged_handoff(

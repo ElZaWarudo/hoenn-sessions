@@ -91,6 +91,7 @@ def generate(build_registry: Path, release_catalog: Path, trusted_sha256: str) -
             transfer["address"], transfer["size"]))
         identities.append({
             "world_id": world_id,
+            "presence_regions": world["presence_regions"],
             "build": build,
             "arrivals": [{
                 "id": arrival_id,

@@ -30,7 +30,9 @@ local function validate_save_manifest(value)
     or value.crc_offset ~= 668
     or value.schema_version ~= 2
     or value.struct_size ~= 672
-    or value.registry_version ~= 2
+    or not is_integer(value.registry_version)
+    or value.registry_version < 1
+    or value.registry_version > 0xFFFFFFFF
     or type(value.registry_digest) ~= "string"
     or #value.registry_digest ~= 32
     or value.registry_digest:match("^[0-9a-f]+$") == nil then

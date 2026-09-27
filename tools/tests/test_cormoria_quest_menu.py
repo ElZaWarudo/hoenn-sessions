@@ -1,5 +1,6 @@
 import unittest
 import re
+import hashlib
 from pathlib import Path
 
 from tools.cormoria import quest_menu_provenance
@@ -31,6 +32,13 @@ class CormoriaQuestMenuTests(unittest.TestCase):
         self.assertIn(quest_menu_provenance.DONOR_REVISION, self.source)
         for digest in quest_menu_provenance.DONOR_SOURCE_SHA256.values():
             self.assertIn(digest, self.source)
+
+    def test_pinned_donor_menu_assets_are_present(self):
+        for donor_path, digest in quest_menu_provenance.DONOR_ASSET_SHA256.items():
+            asset = ROOT / "graphics/cormoria/quest_menu" / Path(donor_path).name
+            with self.subTest(asset=asset.name):
+                self.assertTrue(asset.is_file())
+                self.assertEqual(hashlib.sha256(asset.read_bytes()).hexdigest(), digest)
 
     def test_full_donor_content_is_present(self):
         expected_names = (
@@ -90,14 +98,16 @@ class CormoriaQuestMenuTests(unittest.TestCase):
             ))
             if values:
                 windows.append(values)
-        self.assertEqual(len(windows), 3)
+        self.assertEqual(len(windows), 4)
         for window in windows:
-            self.assertGreater(window["tilemapTop"], 0)
-            self.assertLess(window["tilemapTop"] + window["height"], 20)
-            self.assertLessEqual(window["baseBlock"] + window["width"] * window["height"], 0x214)
-        for first, second in zip(windows, windows[1:]):
-            self.assertLess(first["tilemapTop"] + first["height"], second["tilemapTop"])
-            self.assertLessEqual(first["baseBlock"] + first["width"] * first["height"], second["baseBlock"])
+            self.assertGreaterEqual(window["tilemapTop"], 0)
+            self.assertLessEqual(window["tilemapTop"] + window["height"], 20)
+            self.assertLessEqual(window["baseBlock"] + window["width"] * window["height"], 0x200)
+        tile_ranges = sorted((window["baseBlock"], window["baseBlock"] + window["width"] * window["height"]) for window in windows)
+        for first, second in zip(tile_ranges, tile_ranges[1:]):
+            self.assertLessEqual(first[1], second[0])
+        self.assertIn("SetBgTilemapBuffer(1, sBg1TilemapBuffer)", self.source)
+        self.assertIn("AddTextPrinterParameterized3", self.source)
         self.assertIn("ResetTasks();", self.source)
         self.assertIn("ResetSpriteData();", self.source)
         self.assertIn("PrintText(sWindowIds[0], FONT_NORMAL, buffer, 4, 0)", self.source)

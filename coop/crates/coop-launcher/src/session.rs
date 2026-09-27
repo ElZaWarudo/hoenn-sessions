@@ -1090,6 +1090,17 @@ impl SessionWorkspace {
         }
         Ok(())
     }
+
+    /// Writes the bridge addresses from a compatibility-validated ROM manifest.
+    /// Arrival verification uses the same generated input as normal gameplay.
+    pub fn write_generated_addresses(
+        &self,
+        manifest: &crate::compat::BridgeManifest,
+    ) -> Result<(), SessionError> {
+        let bytes = render_generated_addresses(manifest);
+        self.write_atomic("generated_addresses.lua", bytes.as_bytes())?;
+        Ok(())
+    }
 }
 
 fn write_new_private_file(root: &Path, name: &str, bytes: &[u8]) -> Result<(), SessionError> {
@@ -1954,6 +1965,7 @@ impl SessionLifecycle {
             }
             return Err(SessionError::Lease);
         }
+        auth.set_active_fence(response.lease.fence());
         Ok(response)
     }
 
@@ -1972,7 +1984,7 @@ impl SessionLifecycle {
         }
         let request = ReleaseLeaseRequest::new(response.lease.fence(), random_idempotency_key()?);
         refresh_if_needed(auth, api, Some(keychain)).await?;
-        match api.release(auth, request).await {
+        let result = match api.release(auth, request).await {
             Err(SessionError::Unauthorized) => {
                 refresh_required(auth, api, Some(keychain)).await?;
                 api.release(auth, request).await.map(|_| ())
@@ -1980,7 +1992,11 @@ impl SessionLifecycle {
             Err(SessionError::Cloud) => api.release(auth, request).await.map(|_| ()),
             Err(error) => Err(error),
             Ok(_) => Ok(()),
+        };
+        if result.is_ok() {
+            auth.clear_active_fence();
         }
+        result
     }
 
     /// Replaces a prior lease from this same client instance. Android uses
@@ -2351,6 +2367,12 @@ impl SessionLifecycle {
         Ok(())
     }
 
+    /// Cold-load the authoritative SAV after an aborted ROM handoff. The
+    /// source savestate was captured while its portal script was in flight.
+    pub fn discard_resume_after_aborted_handoff(&self) -> Result<(), SessionError> {
+        self.retire_optional_resume()
+    }
+
     fn copy_generated_addresses(&self) -> Result<(), SessionError> {
         reject_symlink_ancestors(&self.config.bridge_lua_dir).map_err(SessionError::Filesystem)?;
         #[cfg(windows)]
@@ -2362,10 +2384,8 @@ impl SessionLifecycle {
         // The checked-in generated Lua file is only a development artifact.
         // Render from the manifest that already passed compatibility checks so
         // a stale, missing, or replaced source file cannot change the session.
-        let bytes = render_generated_addresses(&self.config.manifest.manifest);
         self.workspace
-            .write_atomic("generated_addresses.lua", bytes.as_bytes())?;
-        Ok(())
+            .write_generated_addresses(&self.config.manifest.manifest)
     }
 
     async fn recover_corrupt_active<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {

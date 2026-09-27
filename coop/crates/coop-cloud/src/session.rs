@@ -26,7 +26,7 @@ pub enum SessionError {
     DuplicateRegionalProgress,
     #[error("regional progress records are not in canonical region order")]
     NonCanonicalRegionalOrder,
-    #[error("at most four regional progress records are allowed")]
+    #[error("at most five regional progress records are allowed")]
     TooManyRegions,
     #[error("a regional progress collection exceeds its bound")]
     TooManyRegionalEntries,
@@ -53,6 +53,8 @@ pub struct CharacterCloudState {
     pub world_zone: WorldZone,
     pub regional_progress: Vec<RegionalProgress>,
 }
+
+const MAX_REGIONAL_PROGRESS_RECORDS: usize = 5;
 
 #[derive(Serialize)]
 struct SerializableCharacterCloudState<'a> {
@@ -96,7 +98,7 @@ impl CharacterCloudState {
                 "world-zone map exceeds 128 bytes".to_owned(),
             ));
         }
-        if regional_progress.len() > 4 {
+        if regional_progress.len() > MAX_REGIONAL_PROGRESS_RECORDS {
             return Err(SessionError::TooManyRegions);
         }
         regional_progress.sort_unstable_by_key(|progress| progress.region.wire());
@@ -141,7 +143,7 @@ impl CharacterCloudState {
                 "world-zone map exceeds 128 bytes".to_owned(),
             ));
         }
-        if self.regional_progress.len() > 4 {
+        if self.regional_progress.len() > MAX_REGIONAL_PROGRESS_RECORDS {
             return Err(SessionError::TooManyRegions);
         }
         if self
@@ -295,7 +297,7 @@ fn deserialize_regional_progress<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_bounded_vec(deserializer, 4, "regional progress")
+    deserialize_bounded_vec(deserializer, MAX_REGIONAL_PROGRESS_RECORDS, "regional progress")
 }
 
 fn deserialize_trainers<'de, D>(deserializer: D) -> Result<Vec<TrainerInstanceId>, D::Error>

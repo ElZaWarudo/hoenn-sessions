@@ -259,6 +259,30 @@ mod tests {
     }
 
     #[test]
+    fn state_round_trips_progress_for_all_five_regions() {
+        let regions = [
+            RegionId::Hoenn,
+            RegionId::Kanto,
+            RegionId::Johto,
+            RegionId::Sevii,
+            RegionId::Cormoria,
+        ];
+        let progress = regions
+            .into_iter()
+            .map(|region| RegionalProgress::new(region, 0, 0, vec![], vec![]).unwrap())
+            .collect();
+        let original = CharacterCloudState::new(
+            id(CharacterId::new),
+            WorldZone::new(RegionId::Cormoria, "CORMORIA_CARABRUE_TOWN_HOME1F", 1).unwrap(),
+            progress,
+        )
+        .unwrap();
+        let wire = serde_json::to_string(&original).unwrap();
+        let decoded: CharacterCloudState = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
     fn cloud_state_round_trips_registered_gyms_and_events() {
         let progress = RegionalProgress::new_complete(
             RegionId::Hoenn,

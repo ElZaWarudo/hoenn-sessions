@@ -15,7 +15,6 @@ LilycoveCity_Harbor_EventScript_FerryAttendant::
 	goto_if_eq VAR_RESULT, NO, LilycoveCity_Harbor_EventScript_FerryExisting
 	callnative CoopNetBridge_ScriptTravelToCormoria
 	goto_if_eq VAR_RESULT, FALSE, LilycoveCity_Harbor_EventScript_CormoriaUnavailable
-	msgbox LilycoveCity_Harbor_Text_CormoriaPreparing, MSGBOX_DEFAULT
 	special CoopPortalSaveGame
 	waitstate
 	goto_if_eq VAR_RESULT, FALSE, LilycoveCity_Harbor_EventScript_CormoriaUnavailable
@@ -563,10 +562,6 @@ LilycoveCity_Harbor_Text_FerryUnavailable:
 
 LilycoveCity_Harbor_Text_CormoriaVoyage:
 	.string "Would you like to sail to CORMORIA?$"
-
-LilycoveCity_Harbor_Text_CormoriaPreparing:
-	.string "We'll prepare your voyage. Please wait\n"
-	.string "while your progress is saved.$"
 
 LilycoveCity_Harbor_Text_CormoriaUnavailable:
 	.string "We can't depart just now. Please try\n"

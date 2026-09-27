@@ -1849,6 +1849,21 @@ TEST("Cloud Coop presence keeps regional map identity authoritative")
     ExpectStructBytes(&output, snapshot, sizeof(output));
 }
 
+TEST("Cloud Coop presence accepts Cormoria harbor with its own region")
+{
+    struct CoopPresenceLocalState state = State(8, 14,
+                                                 COOP_PRESENCE_DIRECTION_SOUTH,
+                                                 COOP_PRESENCE_PLAYER_OVERWORLD);
+    u8 bytes[COOP_PRESENCE_LOCAL_STATE_SIZE];
+
+    state.pose.location.region = COOP_REGION_CORMORIA;
+    state.pose.location.map_group = MAP_GROUP(MAP_CORMORIA_RIVETSHORE_CITY_HARBOR);
+    state.pose.location.map_number = MAP_NUM(MAP_CORMORIA_RIVETSHORE_CITY_HARBOR);
+    EXPECT(CoopPresence_EncodeLocalState(&state, bytes, sizeof(bytes)));
+    state.pose.location.region = COOP_REGION_HOENN;
+    EXPECT(!CoopPresence_EncodeLocalState(&state, bytes, sizeof(bytes)));
+}
+
 TEST("Cloud Coop presence reducer preserves snapshots across rejection classes")
 {
     struct CoopPresenceReducer reducer;

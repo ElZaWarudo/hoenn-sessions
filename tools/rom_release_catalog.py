@@ -19,15 +19,28 @@ from pathlib import Path
 if __package__:
     from tools.rom_world_registry import load_registry
     from tools.coop import player_transfer_manifest as transfer_schema
-    from tools.coop import map_binding_manifest
+    from tools.coop import map_binding_manifest, generate_regional_catalog
+    from tools.coop.object_contract_manifest import (ManifestError, require_same_scalar_tables,
+                                                     verify_scalar_manifest_against_rom)
 else:
     from rom_world_registry import load_registry
     from coop import player_transfer_manifest as transfer_schema
-    from coop import map_binding_manifest
+    from coop import map_binding_manifest, generate_regional_catalog
+    from coop.object_contract_manifest import (ManifestError, require_same_scalar_tables,
+                                               verify_scalar_manifest_against_rom)
 
 TOKEN = re.compile(r"[a-z][a-z0-9_]*\Z")
 DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _VERIFIED_ARRIVALS: set[tuple[str, int, int, int, int]] = set()
+
+
+@lru_cache(maxsize=1)
+def _map_regions_by_coordinate() -> dict[tuple[int, int], str]:
+    entries = generate_regional_catalog.build_entries()
+    regions = {(group, number): region.upper() for region, _, group, number in entries}
+    if len(regions) != len(entries):
+        raise ValueError("map coordinates are ambiguous across regions")
+    return regions
 
 
 @lru_cache(maxsize=1)
@@ -110,6 +123,7 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
     namespaces: set[str] = set()
     artifacts: set[Path] = set()
     player_contracts: set[tuple[int, str, str, int]] = set()
+    scalar_manifests: dict[str, dict] = {}
     location_sections: list[tuple[int, int, str]] = []
     for entry in entries:
         if not isinstance(entry, dict):
@@ -117,6 +131,16 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
         name = _token(entry.get("name"), "world name")
         world_id = _integer(entry.get("world_id"), "world_id")
         namespace = _token(entry.get("save_namespace"), "save namespace")
+        presence_regions = entry.get("presence_regions")
+        canonical_regions = ("HOENN", "KANTO", "JOHTO", "SEVII", "CORMORIA")
+        if (not isinstance(presence_regions, list) or not presence_regions
+                or len(presence_regions) > 5
+                or any(not isinstance(region, str) for region in presence_regions)
+                or presence_regions != [region for region in canonical_regions
+                                        if region in presence_regions]
+                or any(region not in canonical_regions
+                       for region in presence_regions)):
+            raise ValueError(f"{name} has invalid presence regions")
         if (name not in builds or builds[name]["world_id"] != world_id
                 or name in names or world_id in worlds or namespace in namespaces):
             raise ValueError(f"duplicate or mismatched release identity: {name}")
@@ -142,7 +166,7 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
         if not isinstance(object_digest, str) or not DIGEST.fullmatch(object_digest):
             raise ValueError(f"{name} has invalid object catalog digest")
         checked_artifacts = {}
-        for prefix in ("rom", "bridge", "player_transfer", "map_binding"):
+        for prefix in ("rom", "bridge", "player_transfer", "map_binding", "object_scalar"):
             artifact = _artifact(root, entry.get(f"{prefix}_path"), entry.get(f"{prefix}_sha256"))
             if artifact in artifacts:
                 raise ValueError(f"artifact reused by multiple worlds: {artifact}")
@@ -189,11 +213,22 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
             raise ValueError(f"{name} has invalid map binding manifest") from exc
         if not isinstance(map_binding, dict) or map_binding.get("rom_sha256") != entry["rom_sha256"]:
             raise ValueError(f"{name} map binding manifest does not match ROM")
+        try:
+            scalar = json.loads(checked_artifacts["object_scalar"].read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
+            raise ValueError(f"{name} has invalid object scalar manifest") from exc
+        if not isinstance(scalar, dict) or scalar.get("rom_sha256") != entry["rom_sha256"]:
+            raise ValueError(f"{name} object scalar manifest does not match ROM")
+        rom_bytes = checked_artifacts["rom"].read_bytes()
+        try:
+            verify_scalar_manifest_against_rom(rom_bytes, scalar)
+        except ManifestError as exc:
+            raise ValueError(f"{name} object scalar manifest rejected: {exc}") from exc
+        scalar_manifests[name] = scalar
         arrivals = entry.get("arrivals")
         portals = entry.get("portals")
         if not isinstance(arrivals, dict) or not isinstance(portals, list):
             raise ValueError(f"{name} needs arrivals and portals")
-        rom_bytes = checked_artifacts["rom"].read_bytes()
         for portal_id, arrival in arrivals.items():
             _token(portal_id, "arrival portal ID")
             if not isinstance(arrival, dict):
@@ -205,6 +240,8 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
                 _integer(arrival.get("map_number"), f"{name} map_number", 127),
                 _integer(arrival.get("warp_id"), f"{name} warp_id", 255),
             )
+            if _map_regions_by_coordinate().get(coordinates[:2]) not in presence_regions:
+                raise ValueError(f"{name} {portal_id} arrival map is outside presence regions")
             if 128 <= coordinates[2] <= 254:
                 raise ValueError(f"{name} warp_id must be 0 through 127 or 255")
             layout_id = _integer(arrival.get("map_layout_id"), f"{name} map_layout_id")
@@ -235,6 +272,10 @@ def validate_catalog(build_registry: Path, catalog_path: Path, trusted_sha256: s
         worlds[world_id] = {**entry, "portals_by_id": portals_by_id}
     if names != set(builds) or len(player_contracts) != 1:
         raise ValueError("release worlds disagree on build or shared-player contract")
+    try:
+        require_same_scalar_tables(scalar_manifests)
+    except ManifestError as exc:
+        raise ValueError(f"release object scalar contract rejected: {exc}") from exc
     if sum(len(world["portals_by_id"]) for world in worlds.values()) > 256:
         raise ValueError("release has too many world portals")
     for source_id, source in worlds.items():

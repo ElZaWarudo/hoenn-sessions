@@ -3496,7 +3496,10 @@ impl SupervisedChildren {
             return Err(startup_cleanup(error, &mut mgba));
         }
         let (mut startup_child, mut control) =
-            Self::start_sidecar(&sidecar, mode, &mut mgba, bridge).await?;
+            match Self::start_sidecar(&sidecar, mode, &mut mgba, bridge).await {
+                Ok(pair) => pair,
+                Err(error) => return Err(error),
+            };
         // Revalidate immediately before contained CreateProcessW. The
         // existing executable guard held by `mgba` closes the substitution
         // interval between compatibility probing and gameplay startup.

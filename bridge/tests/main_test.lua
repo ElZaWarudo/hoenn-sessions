@@ -27,6 +27,7 @@ local resume_output_path = temporary_base .. ".resume.ss1"
 local use_valid_session = false
 local manifest_schema = 2
 local save_schema = 1
+local registry_version = 3
 local initialization_attempts = 0
 local rom_initialized = false
 local socket_connections = 0
@@ -210,7 +211,7 @@ dofile = function(path)
         crc_offset = 668,
         schema_version = save_schema,
         struct_size = 672,
-        registry_version = 2,
+        registry_version = registry_version,
         registry_digest = "0123456789abcdef0123456789abcdef",
       },
     }
@@ -247,6 +248,11 @@ assert(not stale_save_ok)
 assert(tostring(stale_save_error):match("compatible co%-op save schema"))
 
 save_schema = 2
+registry_version = 0
+local invalid_registry_ok, invalid_registry_error = pcall(original_dofile, "bridge/main.lua")
+assert(not invalid_registry_ok)
+assert(tostring(invalid_registry_error):match("compatible co%-op save schema"))
+registry_version = 3
 -- A permanently missing/mismatched ABI fails once, closes the socket, and
 -- leaves the ROM queues untouched, rather than retrying forever.
 assert(pcall(original_dofile, "bridge/main.lua"))

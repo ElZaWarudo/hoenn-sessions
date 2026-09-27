@@ -54,6 +54,8 @@ class ServerBuildCatalogTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(bytes.fromhex(catalog["shared_player_descriptor_hex"])).hexdigest(),
                          catalog["shared_player_descriptor_sha256"])
         self.assertEqual([world["world_id"] for world in catalog["worlds"]], [1, 2, 3])
+        self.assertEqual([world["presence_regions"] for world in catalog["worlds"]],
+                         [["CORMORIA"]] * 3)
         self.assertEqual([world["build"]["game_build_id"] for world in catalog["worlds"]],
                          ["game-main", "game-cormoria", "game-third"])
         self.assertEqual([world["build"]["mgba_version"] for world in catalog["worlds"]],

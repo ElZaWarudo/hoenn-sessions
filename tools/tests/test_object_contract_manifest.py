@@ -1,4 +1,5 @@
 import hashlib
+import copy
 import struct
 import unittest
 
@@ -6,6 +7,7 @@ from tools.coop.object_contract_manifest import (
     COUNT_PROBE, DESCRIPTOR, DESCRIPTOR_SIZE, EFFECT_LAYOUT, ENTRY, HEADER,
     MAGIC, MAX_TEXT_BYTES, TABLES,
     ManifestError, manifest_from_rom, require_same_scalar_tables,
+    verify_scalar_manifest_against_rom,
     symbols_from_nm,
 )
 
@@ -65,6 +67,69 @@ def fixture(pointer_shift=0, table_shift=0, scalar_change=False,
 
 
 class ObjectContractManifestTests(unittest.TestCase):
+    def test_generated_receipt_verifies_against_shipped_rom(self):
+        rom, symbols = fixture()
+        manifest = manifest_from_rom(rom, symbols)
+        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(manifest["count_probe"],
+                         {"address": symbols[COUNT_PROBE][0], "size": symbols[COUNT_PROBE][1]})
+        verify_scalar_manifest_against_rom(rom, manifest)
+
+    def test_forged_digest_claims_are_rejected(self):
+        rom, symbols = fixture()
+        manifest = manifest_from_rom(rom, symbols)
+        for field in ("scalar_sha256", "display_text_sha256", "additional_effect_sha256"):
+            forged = copy.deepcopy(manifest)
+            forged["tables"]["gMovesInfo"][field] = "0" * 64
+            with self.subTest(field=field), self.assertRaisesRegex(ManifestError, "disagrees"):
+                verify_scalar_manifest_against_rom(rom, forged)
+
+    def test_corrupt_probe_and_descriptor_receipts_are_rejected(self):
+        rom, symbols = fixture()
+        manifest = manifest_from_rom(rom, symbols)
+        for name, offset in ((COUNT_PROBE, 640 + 20), (DESCRIPTOR, 16)):
+            corrupted = bytearray(rom)
+            corrupted[offset] ^= 1
+            with self.subTest(name=name), self.assertRaises(ManifestError):
+                verify_scalar_manifest_against_rom(bytes(corrupted), manifest)
+        for key in ("descriptor", "count_probe"):
+            forged = copy.deepcopy(manifest)
+            forged[key]["address"] = symbols["gItemsInfo"][0]
+            with self.subTest(key=key), self.assertRaises(ManifestError):
+                verify_scalar_manifest_against_rom(rom, forged)
+
+    def test_receipt_rejects_out_of_rom_ranges_and_wrong_rom(self):
+        rom, symbols = fixture()
+        manifest = manifest_from_rom(rom, symbols)
+        for key in ("descriptor", "count_probe", "gItemsInfo"):
+            forged = copy.deepcopy(manifest)
+            metadata = forged["tables"][key] if key in TABLES else forged[key]
+            metadata["address"] = BASE + len(rom) - 4
+            metadata["size"] = 16
+            with self.subTest(key=key), self.assertRaisesRegex(ManifestError, "outside"):
+                verify_scalar_manifest_against_rom(rom, forged)
+        different_rom = bytearray(rom)
+        different_rom[-1] ^= 1
+        with self.assertRaisesRegex(ManifestError, "disagrees"):
+            verify_scalar_manifest_against_rom(bytes(different_rom), manifest)
+
+    def test_receipt_location_types_and_shape_are_strict(self):
+        rom, symbols = fixture()
+        manifest = manifest_from_rom(rom, symbols)
+        for value in (True, "640", 640.0, -1):
+            forged = copy.deepcopy(manifest)
+            forged["count_probe"]["size"] = value
+            with self.subTest(value=value), self.assertRaises(ManifestError):
+                verify_scalar_manifest_against_rom(rom, forged)
+        forged = copy.deepcopy(manifest)
+        del forged["count_probe"]
+        with self.assertRaises(ManifestError):
+            verify_scalar_manifest_against_rom(rom, forged)
+        forged = copy.deepcopy(manifest)
+        forged["tables"]["gMovesInfo"]["record_count"] = True
+        with self.assertRaisesRegex(ManifestError, "disagrees"):
+            verify_scalar_manifest_against_rom(rom, forged)
+
     def test_pointer_and_table_relocation_preserve_content_hashes(self):
         left_rom, left_symbols = fixture()
         right_rom, right_symbols = fixture(pointer_shift=1024, table_shift=64)

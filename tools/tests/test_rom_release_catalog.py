@@ -15,6 +15,9 @@ from tools import rom_release_catalog
 from tools.rom_release_catalog import validate_catalog
 from tools.coop import player_transfer_manifest as transfer_schema
 from tools.coop import map_binding_manifest
+from tools.coop.object_contract_manifest import (COUNT_PROBE, DESCRIPTOR, ROM_BASE, TABLES,
+                                                  decode_descriptor, manifest_from_rom)
+from tools.tests.test_object_contract_manifest import fixture as scalar_fixture
 
 
 def synthetic_schema_payload() -> bytes:
@@ -61,7 +64,7 @@ class RomReleaseCatalogTests(unittest.TestCase):
             rom = f"{name}.gba"
             bridge = f"{name}.bridge.json"
             transfer = f"{name}.player-transfer.json"
-            image = bytearray(0x4000)
+            image = bytearray(0x8000)
             image[:len(name)] = name.encode()
             image[0x3500:0x3500 + len(payload)] = payload
             struct.pack_into("<I", image, 0x300 + 79 * 4, map_binding_manifest.ROM_START + 0x500)
@@ -84,6 +87,23 @@ class RomReleaseCatalogTests(unittest.TestCase):
                              map_binding_manifest.ROM_START + 0x1100)
             struct.pack_into("<I", image, 0x2000 + (1314 - 1) * 4,
                              map_binding_manifest.ROM_START + 0x1200)
+            scalar_rom, scalar_symbols = scalar_fixture()
+            scalar_offset = 0x5000
+            image[scalar_offset:scalar_offset + len(scalar_rom)] = scalar_rom
+            descriptor_address, descriptor_size = scalar_symbols[DESCRIPTOR]
+            descriptor_start = descriptor_address - ROM_BASE
+            layouts, _, _ = decode_descriptor(
+                scalar_rom[descriptor_start:descriptor_start + descriptor_size])
+            for table, (stride, pointers, _) in zip(TABLES, layouts):
+                address, size = scalar_symbols[table]
+                for row in range(size // stride):
+                    for pointer_offset in pointers:
+                        position = scalar_offset + address - ROM_BASE + row * stride + pointer_offset
+                        pointer, = struct.unpack_from("<I", image, position)
+                        if pointer:
+                            struct.pack_into("<I", image, position, pointer + scalar_offset)
+            scalar_symbols = {symbol: (address + scalar_offset, size)
+                              for symbol, (address, size) in scalar_symbols.items()}
             (self.root / rom).write_bytes(image)
             (self.root / bridge).write_text(json.dumps({
                 "game_build": {"rom_sha256": hashlib.sha256((self.root / rom).read_bytes()).hexdigest()},
@@ -107,6 +127,9 @@ class RomReleaseCatalogTests(unittest.TestCase):
                                 "size": 1314 * 4},
                 "group_lengths": [11 if n == 13 else 22 if n == 82 else 2 for n in range(83)],
             }), encoding="utf-8")
+            object_scalar = f"{name}.object-scalar.json"
+            (self.root / object_scalar).write_text(
+                json.dumps(manifest_from_rom(bytes(image), scalar_symbols)), encoding="utf-8")
             arrivals = {}
             for arrival_id in ("from_previous", "from_next"):
                 template_name = f"{name}-{arrival_id}.sav"
@@ -119,6 +142,7 @@ class RomReleaseCatalogTests(unittest.TestCase):
                 }
             entries.append({
                 "name": name, "world_id": index, "save_namespace": f"save_{name}",
+                "presence_regions": ["CORMORIA"],
                 "shared_player_schema": 2, "regional_save_schema": 1,
                 # A later third-world release needs a revised location codec.
                 "location_codec": 3, "object_catalog_sha256": "a" * 64,
@@ -131,6 +155,8 @@ class RomReleaseCatalogTests(unittest.TestCase):
                 "player_transfer_sha256": hashlib.sha256((self.root / transfer).read_bytes()).hexdigest(),
                 "map_binding_path": map_binding,
                 "map_binding_sha256": hashlib.sha256((self.root / map_binding).read_bytes()).hexdigest(),
+                "object_scalar_path": object_scalar,
+                "object_scalar_sha256": hashlib.sha256((self.root / object_scalar).read_bytes()).hexdigest(),
                 "arrivals": arrivals,
                 "portals": []})
         for index, entry in enumerate(entries):
@@ -241,7 +267,7 @@ class RomReleaseCatalogTests(unittest.TestCase):
     def _refresh_rom_hash(self, world_index: int) -> None:
         entry = self.catalog["worlds"][world_index]
         entry["rom_sha256"] = hashlib.sha256((self.root / entry["rom_path"]).read_bytes()).hexdigest()
-        for prefix in ("bridge", "player_transfer", "map_binding"):
+        for prefix in ("bridge", "player_transfer", "map_binding", "object_scalar"):
             path = self.root / entry[f"{prefix}_path"]
             data = json.loads(path.read_text(encoding="utf-8"))
             if prefix == "bridge":
@@ -251,7 +277,43 @@ class RomReleaseCatalogTests(unittest.TestCase):
             path.write_text(json.dumps(data), encoding="utf-8")
             entry[f"{prefix}_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def test_rejects_object_scalar_manifest_for_another_rom(self) -> None:
+        entry = self.catalog["worlds"][2]
+        path = self.root / entry["object_scalar_path"]
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest["rom_sha256"] = self.catalog["worlds"][0]["rom_sha256"]
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        entry["object_scalar_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, "object scalar manifest does not match ROM"):
+            self.validate()
+
+    def test_rejects_changed_object_scalar_artifact(self) -> None:
+        entry = self.catalog["worlds"][2]
+        path = self.root / entry["object_scalar_path"]
+        path.write_bytes(path.read_bytes() + b" ")
+        with self.assertRaisesRegex(ValueError, "artifact digest mismatch"):
+            self.validate()
+
+    def test_rejects_different_world_object_scalars(self) -> None:
+        entry = self.catalog["worlds"][2]
+        path = self.root / entry["object_scalar_path"]
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        rom_path = self.root / entry["rom_path"]
+        rom = bytearray(rom_path.read_bytes())
+        rom[manifest["tables"]["gItemsInfo"]["address"] - ROM_BASE] ^= 1
+        rom_path.write_bytes(rom)
+        self._refresh_rom_hash(2)
+        symbols = {DESCRIPTOR: (manifest["descriptor"]["address"], manifest["descriptor"]["size"]),
+                   COUNT_PROBE: (manifest["count_probe"]["address"], manifest["count_probe"]["size"])}
+        symbols.update({name: (manifest["tables"][name]["address"], manifest["tables"][name]["size"])
+                        for name in TABLES})
+        path.write_text(json.dumps(manifest_from_rom(bytes(rom), symbols)), encoding="utf-8")
+        entry["object_scalar_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, "world ROMs disagree on shared-object scalar"):
+            self.validate()
+
     def test_accepts_fresh_main_and_cormoria_harbor_saves(self) -> None:
+        self.catalog["worlds"][0]["presence_regions"] = ["HOENN", "CORMORIA"]
         for world_index, portal, fixture, group, number, layout in (
             (0, "from_next", "arrival-v3-main-lilycove.sav", 13, 10, 88),
             (1, "from_previous", "arrival-v3-cormoria-rivetshore.sav", 82, 21, 1314),
@@ -450,6 +512,18 @@ class RomReleaseCatalogTests(unittest.TestCase):
         catalog = copy.deepcopy(self.catalog)
         del catalog["worlds"][2]["owned_location_sections"]
         with self.assertRaisesRegex(ValueError, "owned location-section range"):
+            self.validate(catalog)
+
+    def test_rejects_missing_world_presence_regions(self) -> None:
+        catalog = copy.deepcopy(self.catalog)
+        del catalog["worlds"][1]["presence_regions"]
+        with self.assertRaisesRegex(ValueError, "invalid presence regions"):
+            self.validate(catalog)
+
+    def test_rejects_arrival_outside_world_presence_regions(self) -> None:
+        catalog = copy.deepcopy(self.catalog)
+        catalog["worlds"][0]["presence_regions"] = ["HOENN"]
+        with self.assertRaisesRegex(ValueError, "arrival map is outside presence regions"):
             self.validate(catalog)
 
 

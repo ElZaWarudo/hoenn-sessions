@@ -4544,7 +4544,21 @@ mod tests {
 
     #[test]
     fn pinned_arrival_images_are_parsed_and_cached_at_startup() {
-        let bytes = valid_character_sav(false);
+        let mut bytes = valid_character_sav(false);
+        for slot in 0..2 {
+            for physical in 0..coop_save::SECTORS_PER_SLOT {
+                let start = (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+                if read_u16(&bytes, start + TEST_SECTOR_ID_OFFSET) != 1 {
+                    continue;
+                }
+                bytes[start + 4..start + 7].copy_from_slice(&[79, 1, 255]);
+                write_u16(&mut bytes, start + 0x32, 1194);
+                let checksum = coop_save::sector_checksum(
+                    &bytes[start..start + coop_save::LOGICAL_SECTOR_DATA_SIZES[1]],
+                );
+                write_u16(&mut bytes, start + TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+            }
+        }
         let root = std::env::temp_dir().join(format!(
             "coop-arrival-template-{}-{}",
             std::process::id(),
@@ -4565,8 +4579,8 @@ mod tests {
                 arrival["template_sav_path"] = serde_json::json!("template.sav");
                 arrival["template_sav_sha256"] =
                     serde_json::json!(coop_cloud::Sha256Digest::of_bytes(&bytes).as_hex());
-                arrival["map_group"] = serde_json::json!(255);
-                arrival["map_number"] = serde_json::json!(255);
+                arrival["map_group"] = serde_json::json!(79);
+                arrival["map_number"] = serde_json::json!(1);
                 arrival["warp_id"] = serde_json::json!(255);
             }
         }

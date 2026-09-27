@@ -28,6 +28,26 @@ class RegionalCatalogTests(unittest.TestCase):
         later_kanto = [entry for entry in entries if entry[1].startswith("KANTO_LATER_")]
         self.assertEqual(len(later_kanto), 168)
         self.assertTrue(all(region == "Kanto" for region, _, _, _ in later_kanto))
+        self.assertIn(
+            ("Cormoria", "CORMORIA_RIVETSHORE_CITY_HARBOR", 82, 21), entries
+        )
+
+    def test_cormoria_requires_its_own_engine_and_section(self):
+        sections, sevii, special_area = catalog.source_sections()
+        cormoria = "MAPSEC_CORMORIA_RIVETSHORE_CITY"
+        self.assertEqual(
+            catalog.protocol_region(
+                "REGION_CORMORIA", cormoria, sections, sevii, special_area
+            ),
+            "Cormoria",
+        )
+        for engine in ("REGION_HOENN", "REGION_KANTO", "REGION_JOHTO"):
+            with self.subTest(engine=engine), self.assertRaises(catalog.CatalogError):
+                catalog.protocol_region(engine, cormoria, sections, sevii, special_area)
+        with self.assertRaises(catalog.CatalogError):
+            catalog.protocol_region(
+                "REGION_CORMORIA", "MAPSEC_LITTLEROOT_TOWN", sections, sevii, special_area
+            )
 
     def test_geographic_kanto_routes_use_engine_region_authority(self):
         sections, sevii, special_area = catalog.source_sections()

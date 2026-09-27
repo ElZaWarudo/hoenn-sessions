@@ -19,7 +19,6 @@ Cormoria_RivetshoreCity_Harbor_Attendant::
 	goto_if_eq VAR_RESULT, NO, Cormoria_RivetshoreCity_Harbor_Attendant_Original
 	callnative CoopNetBridge_ScriptTravelToMain
 	goto_if_eq VAR_RESULT, FALSE, Cormoria_RivetshoreCity_Harbor_Attendant_Unavailable
-	msgbox Cormoria_RivetshoreCity_Harbor_Text_MainPreparing, MSGBOX_DEFAULT
 	special CoopPortalSaveGame
 	waitstate
 	goto_if_eq VAR_RESULT, FALSE, Cormoria_RivetshoreCity_Harbor_Attendant_Unavailable
@@ -38,10 +37,6 @@ Cormoria_RivetshoreCity_Harbor_Attendant_Original::
 
 Cormoria_RivetshoreCity_Harbor_Text_MainVoyage:
 	.string "Would you like to sail to HOENN?$"
-
-Cormoria_RivetshoreCity_Harbor_Text_MainPreparing:
-	.string "We'll prepare your voyage. Please wait\n"
-	.string "while your progress is saved.$"
 
 Cormoria_RivetshoreCity_Harbor_Text_MainUnavailable:
 	.string "We can't depart just now. Please try\n"

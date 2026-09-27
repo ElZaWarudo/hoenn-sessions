@@ -24,14 +24,14 @@ MAP_SECTIONS_PATH = ROOT / "src" / "data" / "region_map" / "region_map_sections.
 REGIONS_C_PATH = ROOT / "src" / "regions.c"
 OUTPUT_PATH = ROOT / "coop" / "crates" / "coop-protocol" / "src" / "generated_map_catalog.rs"
 
-ENGINE_REGIONS = {"REGION_HOENN", "REGION_KANTO", "REGION_JOHTO"}
+ENGINE_REGIONS = {"REGION_HOENN", "REGION_KANTO", "REGION_JOHTO", "REGION_CORMORIA"}
 SEVII_SUBREGIONS = ("SEVII123", "SEVII45", "SEVII67")
 KANTO_ENGINE_JOHTO_SECTIONS = {
     "MAPSEC_JOHTO_ROUTE_26",
     "MAPSEC_JOHTO_ROUTE_27",
     "MAPSEC_JOHTO_ROUTE_28",
 }
-EXPECTED_MAP_COUNT = 1344
+EXPECTED_MAP_COUNT = 1509
 
 
 class CatalogError(ValueError):
@@ -103,6 +103,16 @@ def protocol_region(
         raise CatalogError(f"unsupported map engine region {engine_region}")
     if section_id not in section_numbers or section_id == "MAPSEC_NONE":
         raise CatalogError(f"unknown map section {section_id}")
+
+    is_cormoria_section = section_id.startswith("MAPSEC_CORMORIA_")
+    if engine_region == "REGION_CORMORIA":
+        if not is_cormoria_section:
+            raise CatalogError(f"Cormoria map section {section_id} is not registered")
+        return "Cormoria"
+    if is_cormoria_section:
+        raise CatalogError(
+            f"Cormoria map section {section_id} contradicts its engine region"
+        )
 
     if engine_region == "REGION_JOHTO":
         if section_id in KANTO_ENGINE_JOHTO_SECTIONS:

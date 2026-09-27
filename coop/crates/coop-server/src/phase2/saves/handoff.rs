@@ -2,11 +2,12 @@
 //! world; a separate acknowledged commit performs that transition.
 
 use coop_cloud::{
-    ApiVersion, ArtifactIdentity, RomHandoffCommitRequest, RomHandoffPrepareRequest,
+    ApiVersion, ArtifactIdentity, CharacterCloudState, RomHandoffCommitRequest, RomHandoffPrepareRequest,
     RomHandoffPrepareResponse, RomHandoffRecoveryRequest, RomHandoffRecoveryStatus, Sha256Digest,
     SnapshotFence, SnapshotFile, SnapshotId, SnapshotRecord,
 };
 use coop_save::{TransferDescriptorPair, project_arrival};
+use coop_protocol::{RegionalProgress, WorldLocation, WorldZone};
 
 use super::super::storage::{
     MAX_RETIRED_SNAPSHOTS, MAX_ROM_HANDOFF_ABORT_TOMBSTONES_PER_CHARACTER,
@@ -685,6 +686,24 @@ pub(crate) fn commit(
         .map_err(|_| Phase2Error::Conflict)?;
     let projected =
         validate_character_sav(&save_bytes, revision).map_err(|_| Phase2Error::Conflict)?;
+    let local = projected
+        .logical_sector_payload(1)
+        .ok_or(Phase2Error::Conflict)?;
+    let map_group = u16::from(*local.get(4).ok_or(Phase2Error::Conflict)?);
+    let map_number = u16::from(*local.get(5).ok_or(Phase2Error::Conflict)?);
+    let map = coop_protocol::catalog::resolve_unique_map_coordinates(map_group, map_number)
+        .ok_or(Phase2Error::Conflict)?;
+    if !catalog.allows_presence_region(stage.destination_world_id, map.region) {
+        return Err(Phase2Error::Forbidden);
+    }
+    let destination_location = WorldLocation::new(
+        map.region,
+        map_group,
+        map_number,
+        0,
+        0,
+    )
+    .map_err(|_| Phase2Error::Conflict)?;
     let source_save = snapshot_save(store, request.character_id, &source)?;
     if projected.character_lineage() != source_save.character_lineage()
         || projected.coop().save_generation
@@ -773,6 +792,24 @@ pub(crate) fn commit(
         {
             return Err(Phase2Error::Conflict);
         }
+        let destination_zone = WorldZone::from_location(
+            &destination_location,
+            character.state.world_zone.channel,
+        )
+        .map_err(|_| Phase2Error::Conflict)?;
+        let mut progress = character.state.regional_progress.clone();
+        if !progress.iter().any(|entry| entry.region == destination_zone.region) {
+            progress.push(
+                RegionalProgress::new(destination_zone.region, 0, 0, vec![], vec![])
+                    .map_err(|_| Phase2Error::Conflict)?,
+            );
+        }
+        let destination_state = CharacterCloudState::new(
+            request.character_id,
+            destination_zone,
+            progress,
+        )
+        .map_err(|_| Phase2Error::Conflict)?;
         make_snapshot_room(state, request.character_id, &files, None, None, None)?;
         state.snapshots.insert(stage.stage_id, record.clone());
         state
@@ -781,6 +818,7 @@ pub(crate) fn commit(
         if let Some(character) = state.characters.get_mut(&request.character_id) {
             character.revision = revision;
             character.active_snapshot = Some(stage.stage_id);
+            character.state = destination_state;
             character
                 .world_heads
                 .insert(stage.destination_world_id, stage.stage_id);

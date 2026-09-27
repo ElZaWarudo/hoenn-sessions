@@ -41,6 +41,8 @@ ROM_BASE = 0x08000000
 ROM_END = 0x0A000000
 MAX_TEXT_BYTES = 4096
 TEXT_COUNTS = (3, 1, 2, 1, 0)
+SCHEMA_VERSION = 4
+SCOPE = "linked-table-scalars-pointer-presence-bounded-display-text-and-move-additional-effects"
 
 
 def symbols_from_nm(output: str) -> dict[str, tuple[int, int]]:
@@ -220,13 +222,56 @@ def manifest_from_rom(rom: bytes, symbols: dict[str, tuple[int, int]]) -> dict:
             entries[name]["additional_effect_sha256"] = additional_effects_sha256(
                 rom, raw, stride, effect_pointer, effect_stride, count_field)
     return {
-        "schema_version": 3,
-        "scope": "linked-table-scalars-pointer-presence-bounded-display-text-and-move-additional-effects",
+        "schema_version": SCHEMA_VERSION,
+        "scope": SCOPE,
         "rom_sha256": hashlib.sha256(rom).hexdigest(),
         "descriptor": {"address": desc_address, "size": desc_size,
                        "sha256": hashlib.sha256(read(DESCRIPTOR)).hexdigest()},
+        "count_probe": {"address": symbols[COUNT_PROBE][0],
+                        "size": symbols[COUNT_PROBE][1]},
         "tables": entries,
     }
+
+
+def verify_scalar_manifest_against_rom(rom: bytes, manifest: dict) -> None:
+    """Verify an ELF-free scalar receipt against the exact shipped ROM."""
+    if not isinstance(manifest, dict) or type(manifest.get("schema_version")) is not int or manifest["schema_version"] != SCHEMA_VERSION:
+        raise ManifestError("unsupported object scalar manifest schema")
+    tables = manifest.get("tables")
+    if not isinstance(tables, dict) or set(tables) != set(TABLES):
+        raise ManifestError("invalid object scalar manifest tables")
+
+    def location(name: str, metadata: object, expected_size: int | None = None) -> tuple[int, int]:
+        if not isinstance(metadata, dict) or not {"address", "size"} <= metadata.keys():
+            raise ManifestError(f"invalid object scalar location for {name}")
+        address, size = metadata["address"], metadata["size"]
+        if (type(address) is not int or type(size) is not int or address % 4
+                or size <= 0 or (expected_size is not None and size != expected_size)
+                or address < ROM_BASE or address >= ROM_END
+                or address + size > ROM_END or address - ROM_BASE + size > len(rom)):
+            raise ManifestError(f"{name} is outside the shipped ROM or has invalid size")
+        return address, size
+
+    symbols = {
+        DESCRIPTOR: location(DESCRIPTOR, manifest.get("descriptor"), DESCRIPTOR_SIZE),
+        COUNT_PROBE: location(COUNT_PROBE, manifest.get("count_probe")),
+    }
+    symbols.update({name: location(name, tables[name]) for name in TABLES})
+    regenerated = manifest_from_rom(rom, symbols)
+
+    def exactly_equal(left: object, right: object) -> bool:
+        if type(left) is not type(right):
+            return False
+        if isinstance(left, dict):
+            return left.keys() == right.keys() and all(
+                exactly_equal(left[key], right[key]) for key in left)
+        if isinstance(left, list):
+            return len(left) == len(right) and all(
+                exactly_equal(a, b) for a, b in zip(left, right))
+        return left == right
+
+    if not exactly_equal(manifest, regenerated):
+        raise ManifestError("object scalar manifest disagrees with shipped ROM")
 
 
 def require_same_scalar_tables(worlds: dict[str, dict]) -> None:
@@ -235,7 +280,7 @@ def require_same_scalar_tables(worlds: dict[str, dict]) -> None:
     reference = None
     for world, manifest in worlds.items():
         tables = manifest.get("tables")
-        if (manifest.get("schema_version") != 3 or not isinstance(tables, dict)
+        if (manifest.get("schema_version") != SCHEMA_VERSION or not isinstance(tables, dict)
                 or set(tables) != set(TABLES)):
             raise ManifestError(f"invalid scalar table manifest for {world}")
         try:

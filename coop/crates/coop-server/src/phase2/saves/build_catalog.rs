@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use coop_cloud::{RuntimeBuildIdentity, Sha256Digest};
-use coop_protocol::RomWorldId;
+use coop_protocol::{RegionId, RomWorldId};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -23,6 +23,7 @@ struct WireCatalog {
 #[serde(deny_unknown_fields)]
 struct WireWorld {
     world_id: RomWorldId,
+    presence_regions: Option<Vec<RegionId>>,
     build: RuntimeBuildIdentity,
     arrivals: Option<WireArrivals>,
     portals: Option<Vec<WirePortal>>,
@@ -59,6 +60,7 @@ pub(crate) struct WireArrival {
 /// Exact build identities authenticated by a separately pinned release digest.
 pub(crate) struct TrustedBuildCatalog {
     worlds: HashMap<RomWorldId, RuntimeBuildIdentity>,
+    presence_regions: HashMap<RomWorldId, Vec<RegionId>>,
     descriptor_sha256: Option<Sha256Digest>,
     descriptor: Option<Vec<u8>>,
     portals: HashMap<(RomWorldId, String), WirePortal>,
@@ -109,12 +111,25 @@ impl TrustedBuildCatalog {
             _ => return Err("player descriptor does not match catalog schema"),
         };
         let mut worlds = HashMap::with_capacity(wire.worlds.len());
+        let mut presence_regions = HashMap::with_capacity(wire.worlds.len());
         let mut build_ids = HashSet::with_capacity(wire.worlds.len());
         let mut rom_digests = HashSet::with_capacity(wire.worlds.len());
         let mut arrivals = HashMap::with_capacity(wire.worlds.len());
         let mut arrival_templates = HashMap::new();
         let mut portals = HashMap::new();
         for entry in wire.worlds {
+            if let Some(regions) = &entry.presence_regions {
+                if regions.is_empty()
+                    || regions.len() > 5
+                    || regions.iter().any(|region| region.ensure_concrete().is_err())
+                    || regions.windows(2).any(|pair| pair[0] >= pair[1])
+                {
+                    return Err("invalid world presence regions");
+                }
+                presence_regions.insert(entry.world_id, regions.clone());
+            } else if wire.schema_version == 3 {
+                return Err("missing world presence regions");
+            }
             if wire.schema_version == 1 {
                 if entry.arrivals.is_some() || entry.portals.is_some() {
                     return Err("legacy build catalog cannot include travel routes");
@@ -133,6 +148,14 @@ impl TrustedBuildCatalog {
                     }
                     (3, WireArrivals::Pinned(templates)) => {
                         for arrival in templates {
+                            if !coop_protocol::catalog::resolve_unique_map_coordinates(
+                                u16::from(arrival.map_group),
+                                u16::from(arrival.map_number),
+                            )
+                            .is_some_and(|map| entry.presence_regions.as_ref()
+                                .is_some_and(|regions| regions.contains(&map.region))) {
+                                return Err("arrival map does not match world presence regions");
+                            }
                             if !valid_portal_id(&arrival.id)
                                 || arrival.map_layout_id == 0
                                 || !valid_release_path(&arrival.template_sav_path)
@@ -187,6 +210,7 @@ impl TrustedBuildCatalog {
         }
         Ok(Self {
             worlds,
+            presence_regions,
             descriptor_sha256: wire.shared_player_descriptor_sha256,
             descriptor,
             portals,
@@ -215,6 +239,10 @@ impl TrustedBuildCatalog {
         self.worlds
             .iter()
             .find_map(|(world, installed)| (installed == build).then_some(*world))
+    }
+
+    pub(crate) fn allows_presence_region(&self, world: RomWorldId, region: RegionId) -> bool {
+        self.presence_regions.get(&world).is_some_and(|regions| regions.contains(&region))
     }
 
     /// Resolve the destination arrival from a separately digest-pinned travel
@@ -434,6 +462,35 @@ mod tests {
             TrustedBuildCatalog::from_release_bytes(&legacy, Sha256Digest::of_bytes(&legacy))
                 .unwrap();
         assert_eq!(legacy.resolve_portal(main, "to_cormoria", schema), None);
+    }
+
+    #[test]
+    fn pinned_arrival_rejects_wrong_presence_region() {
+        let mut catalog: Value = serde_json::from_slice(include_bytes!("fixtures/travel-catalog-v3.json"))
+            .unwrap();
+        catalog["worlds"][1]["presence_regions"] = json!(["HOENN"]);
+        let bytes = serde_json::to_vec(&catalog).unwrap();
+        assert!(matches!(
+            TrustedBuildCatalog::from_release_bytes(&bytes, Sha256Digest::of_bytes(&bytes)),
+            Err("arrival map does not match world presence regions")
+        ));
+    }
+
+    #[test]
+    fn one_rom_can_authorize_multiple_presence_regions() {
+        let mut catalog: Value = serde_json::from_slice(include_bytes!("fixtures/travel-catalog-v3.json"))
+            .unwrap();
+        catalog["worlds"][0]["presence_regions"] = json!(["HOENN", "CORMORIA"]);
+        let bytes = serde_json::to_vec(&catalog).unwrap();
+        let trusted = TrustedBuildCatalog::from_release_bytes(
+            &bytes,
+            Sha256Digest::of_bytes(&bytes),
+        )
+        .unwrap();
+        let main = RomWorldId::new(1).unwrap();
+        assert!(trusted.allows_presence_region(main, coop_protocol::RegionId::Hoenn));
+        assert!(trusted.allows_presence_region(main, coop_protocol::RegionId::Cormoria));
+        assert!(!trusted.allows_presence_region(main, coop_protocol::RegionId::Kanto));
     }
 
     #[test]

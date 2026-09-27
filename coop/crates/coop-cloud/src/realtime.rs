@@ -1637,7 +1637,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [368, 190, 118, 137]
+            [370, 190, 118, 137]
         );
         for frame in maximum_client_frames {
             let encoded = encode_client_realtime_frame(&frame).unwrap();
@@ -1651,7 +1651,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [163, 488, 443, 148, 153, 172]
+            [163, 490, 445, 148, 153, 172]
         );
         for frame in maximum_server_frames {
             let encoded = encode_server_realtime_frame(&frame).unwrap();

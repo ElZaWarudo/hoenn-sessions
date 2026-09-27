@@ -53,7 +53,21 @@ fn handoff_fixture() -> (
     ClientInstanceId,
     SnapshotId,
 ) {
-    let bytes = valid_character_sav(false);
+    let mut bytes = valid_character_sav(false);
+    for slot in 0..2 {
+        for physical in 0..coop_save::SECTORS_PER_SLOT {
+            let start = (slot * coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+            if read_u16(&bytes, start + TEST_SECTOR_ID_OFFSET) != 1 {
+                continue;
+            }
+            bytes[start + 4..start + 7].copy_from_slice(&[79, 1, 255]);
+            write_u16(&mut bytes, start + 0x32, 1194);
+            let checksum = coop_save::sector_checksum(
+                &bytes[start..start + coop_save::LOGICAL_SECTOR_DATA_SIZES[1]],
+            );
+            write_u16(&mut bytes, start + TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+        }
+    }
     let root = std::env::temp_dir().join(format!("coop-handoff-{}", Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let mut catalog: serde_json::Value =
@@ -72,9 +86,6 @@ fn handoff_fixture() -> (
             std::fs::write(root.join(file), &bytes).unwrap();
             arrival["template_sav_sha256"] =
                 serde_json::json!(coop_cloud::Sha256Digest::of_bytes(&bytes).as_hex());
-            arrival["map_group"] = serde_json::json!(255);
-            arrival["map_number"] = serde_json::json!(255);
-            arrival["warp_id"] = serde_json::json!(255);
         }
     }
     let catalog_bytes = serde_json::to_vec(&catalog).unwrap();
@@ -303,6 +314,10 @@ fn rom_handoff_stages_then_commits_only_acknowledged_destination() {
         .read_transaction(|state| {
             let character = state.characters.get(&actor.character_id).unwrap();
             assert_eq!(character.active_snapshot, Some(staged.stage_id));
+            assert_eq!(character.state.world_zone.region, coop_protocol::RegionId::Cormoria);
+            assert_eq!(character.state.world_zone.map, "CORMORIA_CARABRUE_TOWN_HOME1F");
+            character.state.validate().expect("active region has progress");
+            assert!(character.state.progress_for(coop_protocol::RegionId::Cormoria).is_some());
             assert_eq!(
                 character
                     .world_heads
@@ -316,6 +331,45 @@ fn rom_handoff_stages_then_commits_only_acknowledged_destination() {
                 Some(&staged.stage_id)
             );
             assert!(state.leases.get(&actor.character_id).unwrap().released);
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn rom_handoff_adds_fifth_region_progress_before_destination_becomes_active() {
+    let (app, actor, _lease, client, source_id) = handoff_fixture();
+    let lease = app.store.read_transaction(|state| {
+        Ok::<_, Phase2Error>(state.leases.get(&actor.character_id).unwrap().contract)
+    }).unwrap();
+    app.store
+        .write_transaction(|state| {
+            let character = state.characters.get_mut(&actor.character_id).unwrap();
+            let mut progress = character.state.regional_progress.clone();
+            for region in [
+                coop_protocol::RegionId::Kanto,
+                coop_protocol::RegionId::Johto,
+                coop_protocol::RegionId::Sevii,
+            ] {
+                progress.push(coop_protocol::RegionalProgress::new(
+                    region, 0, 0, vec![], vec![],
+                ).unwrap());
+            }
+            character.state = coop_cloud::CharacterCloudState::new(
+                actor.character_id,
+                character.state.world_zone.clone(),
+                progress,
+            ).unwrap();
+            Ok::<(), Phase2Error>(())
+        })
+        .unwrap();
+    travel_once(&app, actor, &lease, client, source_id, "to_next");
+    app.store
+        .read_transaction(|state| {
+            let character = state.characters.get(&actor.character_id).unwrap();
+            character.state.validate().unwrap();
+            assert_eq!(character.state.regional_progress.len(), 5);
+            assert_eq!(character.state.world_zone.region, coop_protocol::RegionId::Cormoria);
             Ok::<(), Phase2Error>(())
         })
         .unwrap();

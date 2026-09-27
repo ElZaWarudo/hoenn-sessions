@@ -129,9 +129,8 @@ fn server_command(address: SocketAddr) -> StdCommand {
 }
 
 fn release_catalog() -> TestResult<(PathBuf, Sha256Digest)> {
-    let manifest: RealtimeBridgeManifest = serde_json::from_str(include_str!(
-        "../../../../dist/bridge_manifest.json"
-    ))?;
+    let manifest: RealtimeBridgeManifest =
+        serde_json::from_str(include_str!("../../../../dist/bridge_manifest.json"))?;
     let catalog = serde_json::json!({
         "schema_version": 1,
         "worlds": [{
@@ -164,7 +163,10 @@ fn configure_phase2(command: &mut StdCommand) -> TestResult<()> {
         .env("COOP_PHASE2_SIGNING_KEY_ID", SIGNING_KEY_ID)
         .env("COOP_PHASE2_BOOTSTRAP_INVITATION", INVITATION)
         .env("COOP_PHASE2_RELEASE_CATALOG_PATH", catalog_path)
-        .env("COOP_PHASE2_RELEASE_CATALOG_SHA256", catalog_digest.as_hex())
+        .env(
+            "COOP_PHASE2_RELEASE_CATALOG_SHA256",
+            catalog_digest.as_hex(),
+        )
         .env_remove("COOP_SERVER_MODE")
         .env_remove("COOP_SERVER_BIND_ADDR");
     Ok(())
@@ -241,6 +243,10 @@ async fn start_server() -> TestResult<(SocketAddr, ServerGuard)> {
     let requested = SocketAddr::from(([127, 0, 0, 1], 0));
     let mut command = server_command(requested);
     configure_phase2(&mut command)?;
+    start_server_command(command).await
+}
+
+async fn start_server_command(mut command: StdCommand) -> TestResult<(SocketAddr, ServerGuard)> {
     let child = command.spawn()?;
     let mut server = ServerGuard { child: Some(child) };
     let deadline = Instant::now() + STARTUP_TIMEOUT;
@@ -278,6 +284,37 @@ async fn start_server() -> TestResult<(SocketAddr, ServerGuard)> {
             return Err("Phase 2 server did not become ready".into());
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+struct ReleaseFixture {
+    root: PathBuf,
+}
+
+impl ReleaseFixture {
+    fn new() -> TestResult<Self> {
+        let root = std::env::temp_dir().join(format!(
+            "pokecrossroads-http-release-{}-{}",
+            std::process::id(),
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(root.join("releases/test-release/runtime"))?;
+        fs::write(root.join("current"), b"test-release\n")?;
+        fs::write(
+            root.join("releases/test-release/release-envelope.json"),
+            b"{\"fixture\":true}\n",
+        )?;
+        fs::write(
+            root.join("releases/test-release/runtime/game.gba"),
+            b"bounded-fixture-rom",
+        )?;
+        Ok(Self { root })
+    }
+}
+
+impl Drop for ReleaseFixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
     }
 }
 
@@ -631,6 +668,18 @@ fn expect_no_store(response: &HttpResponse) {
     );
 }
 
+fn expect_private_no_store(response: &HttpResponse) {
+    assert_eq!(
+        response
+            .headers
+            .iter()
+            .filter(|(name, _)| name == "cache-control")
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>(),
+        vec!["private, no-store"]
+    );
+}
+
 fn id<T>(constructor: fn(Uuid) -> Result<T, coop_cloud::IdError>) -> T {
     constructor(Uuid::new_v4()).expect("fresh UUID is non-nil")
 }
@@ -705,9 +754,8 @@ fn valid_character_sav() -> Vec<u8> {
     write_u32(&mut payload, 668, crc);
 
     let mut save_block3 = [0xff; coop_save::SAVE_BLOCK3_CAPACITY];
-    save_block3
-        [coop_save::COOP_SAVE_OFFSET
-            ..coop_save::COOP_SAVE_OFFSET + coop_save::v2::COOP_SAVE_V2_SIZE]
+    save_block3[coop_save::COOP_SAVE_OFFSET
+        ..coop_save::COOP_SAVE_OFFSET + coop_save::v2::COOP_SAVE_V2_SIZE]
         .copy_from_slice(&payload);
     let mut bytes = vec![0xff; coop_save::FLASH_IMAGE_SIZE];
     for (slot, counter, rotation) in [(0_usize, 20_u32, 4_usize), (1, 21, 11)] {
@@ -1572,6 +1620,60 @@ async fn realtime_http_rejections_are_generic_and_no_store() -> TestResult<()> {
     );
 
     server.shutdown()?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn release_fixture_binary_requires_loopback_and_authentication() -> TestResult<()> {
+    if !cfg!(any(target_os = "linux", target_os = "windows")) {
+        return Err(
+            "release fixture smoke requires Linux or Windows listener ownership queries".into(),
+        );
+    }
+    let _test_guard = BLACK_BOX_TEST_GATE.lock().await;
+    let fixture = ReleaseFixture::new()?;
+    let mut command = server_command(SocketAddr::from(([127, 0, 0, 1], 0)));
+    configure_phase2(&mut command)?;
+    command.arg("--release-fixture-root").arg(&fixture.root);
+    let (address, server) = start_server_command(command).await?;
+
+    let latest = "/v1/releases/windows-x86_64/latest";
+    let response = request(address, "GET", latest, &[], &[]).await?;
+    expect_status(&response, 401);
+    expect_private_no_store(&response);
+
+    let password = Password::new(PASSWORD)?;
+    let register =
+        RegisterRequest::new(USERNAME, password.clone(), InvitationCode::new(INVITATION)?)?;
+    let response = json_request(address, "POST", "/v1/auth/register", &[], &register).await?;
+    expect_status(&response, 201);
+    let login = LoginRequest::new(USERNAME, password)?;
+    let response = json_request(address, "POST", "/v1/auth/login", &[], &login).await?;
+    expect_status(&response, 200);
+    let login: coop_cloud::LoginResponse = serde_json::from_slice(&response.body)?;
+
+    let headers = auth_headers(&login.access_token);
+    let response = request(address, "GET", latest, &headers, &[]).await?;
+    expect_status(&response, 200);
+    expect_private_no_store(&response);
+    assert_eq!(response.body, b"{\"fixture\":true}\n");
+
+    let artifact = "/v1/releases/test-release/artifacts/rom";
+    let response = request(address, "GET", artifact, &[], &[]).await?;
+    expect_status(&response, 401);
+    expect_private_no_store(&response);
+    let response = request(address, "GET", artifact, &headers, &[]).await?;
+    expect_status(&response, 200);
+    expect_private_no_store(&response);
+    assert_eq!(response.body, b"bounded-fixture-rom");
+    server.shutdown()?;
+
+    let mut non_loopback = server_command(SocketAddr::from(([0, 0, 0, 0], 0)));
+    configure_phase2(&mut non_loopback)?;
+    non_loopback
+        .arg("--release-fixture-root")
+        .arg(&fixture.root);
+    wait_for_failure(non_loopback.spawn()?, "non-loopback release fixture bind").await?;
     Ok(())
 }
 

@@ -486,6 +486,7 @@ dependencies = [
  "axum",
  "coop-cloud",
  "coop-launcher",
+ "coop-protocol",
  "ed25519-dalek",
  "eframe",
  "http-body-util",

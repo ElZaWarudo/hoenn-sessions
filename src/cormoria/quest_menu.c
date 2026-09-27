@@ -78,9 +78,10 @@ static const u8 *const sFilterNames[CORMORIA_QUEST_FILTER_COUNT] =
     sTextFilterReward,
     sTextFilterCompleted,
 };
-static const u8 sTextStatusInactive[] = _("Inactive");
-static const u8 sTextStatusActive[] = _("Active");
-static const u8 sTextStatusReward[] = _("Reward");
+// The status strip in the donor art is four tiles wide.
+static const u8 sTextStatusInactive[] = _("Idle");
+static const u8 sTextStatusActive[] = _("Act");
+static const u8 sTextStatusReward[] = _("Claim");
 static const u8 sTextStatusCompleted[] = _("Done");
 static const u8 sTextFavorite[] = _("F: ");
 static const u8 sTextLocation[] = _("Location: ");
@@ -242,6 +243,13 @@ static const struct CormoriaQuestEntry sQuests[CORMORIA_QUEST_COUNT] =
      COMPOUND_STRING("Rivetshore City"), 0, 0},
 };
 
+static const u32 sQuestMenuTiles[] = INCBIN_U32("graphics/cormoria/quest_menu/menu.4bpp");
+static const u16 sQuestMenuTilemap[] = INCBIN_U16("graphics/cormoria/quest_menu/menu.bin");
+static const u16 sQuestMenuPalette[] = INCBIN_U16("graphics/cormoria/quest_menu/menu.gbapal");
+
+static const u8 sTextColorsOnPaper[] = {TEXT_COLOR_TRANSPARENT, TEXT_COLOR_DARK_GRAY, TEXT_COLOR_TRANSPARENT};
+static const u8 sTextColorsOnBlue[] = {TEXT_COLOR_TRANSPARENT, TEXT_COLOR_WHITE, TEXT_COLOR_TRANSPARENT};
+
 static const struct BgTemplate sBgTemplates[] =
 {
     {
@@ -250,7 +258,16 @@ static const struct BgTemplate sBgTemplates[] =
         .mapBaseIndex = 31,
         .screenSize = 0,
         .paletteMode = 0,
-        .priority = 0,
+        .priority = 1,
+        .baseTile = 0,
+    },
+    {
+        .bg = 1,
+        .charBaseIndex = 3,
+        .mapBaseIndex = 30,
+        .screenSize = 0,
+        .paletteMode = 0,
+        .priority = 2,
         .baseTile = 0,
     },
 };
@@ -260,7 +277,7 @@ static const struct WindowTemplate sWindowTemplates[] =
     {
         .bg = 0,
         .tilemapLeft = 1,
-        .tilemapTop = 1,
+        .tilemapTop = 0,
         .width = 28,
         .height = 2,
         .paletteNum = 15,
@@ -268,27 +285,37 @@ static const struct WindowTemplate sWindowTemplates[] =
     },
     {
         .bg = 0,
-        .tilemapLeft = 1,
-        .tilemapTop = 4,
-        .width = 28,
+        .tilemapLeft = 2,
+        .tilemapTop = 3,
+        .width = 22,
         .height = 7,
         .paletteNum = 15,
         .baseBlock = 64,
     },
     {
         .bg = 0,
-        .tilemapLeft = 1,
-        .tilemapTop = 12,
-        .width = 28,
+        .tilemapLeft = 5,
+        .tilemapTop = 13,
+        .width = 25,
+        .height = 6,
+        .paletteNum = 15,
+        .baseBlock = 218,
+    },
+    {
+        .bg = 0,
+        .tilemapLeft = 25,
+        .tilemapTop = 3,
+        .width = 4,
         .height = 7,
         .paletteNum = 15,
-        .baseBlock = 260,
+        .baseBlock = 368,
     },
     DUMMY_WIN_TEMPLATE,
 };
 
+EWRAM_DATA static u16 sBg1TilemapBuffer[32 * 32];
 static MainCallback sReturnCallback;
-static u8 sWindowIds[3];
+static u8 sWindowIds[4];
 static u8 sQuestIds[CORMORIA_QUEST_COUNT];
 static u8 sQuestCount;
 static u8 sCursor;
@@ -424,7 +451,9 @@ static const u8 *QuestStatus(u8 questId)
 
 static void PrintText(u8 windowId, u8 fontId, const u8 *text, u8 x, u8 y)
 {
-    AddTextPrinterParameterized(windowId, fontId, text, x, y, TEXT_SKIP_DRAW, NULL);
+    const u8 *colors = windowId == sWindowIds[2] ? sTextColorsOnBlue : sTextColorsOnPaper;
+
+    AddTextPrinterParameterized3(windowId, fontId, x, y, colors, TEXT_SKIP_DRAW, text);
 }
 
 static void WrapJournalText(u8 *text, u8 maxCharacters)
@@ -504,8 +533,7 @@ static void DrawHeader(void)
 {
     u8 buffer[64];
 
-    FillWindowPixelBuffer(sWindowIds[0], PIXEL_FILL(1));
-    DrawStdWindowFrame(sWindowIds[0], FALSE);
+    FillWindowPixelBuffer(sWindowIds[0], PIXEL_FILL(0));
     StringCopy(buffer, COMPOUND_STRING("Cormoria Quests "));
     ConvertIntToDecimalStringN(gStringVar1, sQuestCount, STR_CONV_MODE_LEFT_ALIGN, 2);
     StringAppend(buffer, gStringVar1);
@@ -525,8 +553,8 @@ static void DrawList(void)
     u8 i;
     u8 rowText[64];
 
-    FillWindowPixelBuffer(sWindowIds[1], PIXEL_FILL(1));
-    DrawStdWindowFrame(sWindowIds[1], FALSE);
+    FillWindowPixelBuffer(sWindowIds[1], PIXEL_FILL(0));
+    FillWindowPixelBuffer(sWindowIds[3], PIXEL_FILL(0));
     if (sStateUnavailable)
     {
         PrintText(sWindowIds[1], FONT_NORMAL, sTextStateUnavailable, 4, 24);
@@ -571,10 +599,11 @@ static void DrawList(void)
                 StringAppend(rowText, sTextFavorite);
             StringAppend(rowText, sQuests[sQuestIds[index]].name);
             PrintText(sWindowIds[1], FONT_SMALL_NARROW, rowText, 4, 2 + i * 12);
-            PrintText(sWindowIds[1], FONT_SMALL_NARROW, QuestStatus(sQuestIds[index]), 176, 2 + i * 12);
+            PrintText(sWindowIds[3], FONT_SMALL_NARROW, QuestStatus(sQuestIds[index]), 0, 2 + i * 12);
         }
     }
     CopyWindowToVram(sWindowIds[1], COPYWIN_FULL);
+    CopyWindowToVram(sWindowIds[3], COPYWIN_FULL);
 }
 
 static void DrawDetails(void)
@@ -583,8 +612,7 @@ static void DrawDetails(void)
     const u8 *description;
     const u8 *location;
 
-    FillWindowPixelBuffer(sWindowIds[2], PIXEL_FILL(1));
-    DrawStdWindowFrame(sWindowIds[2], FALSE);
+    FillWindowPixelBuffer(sWindowIds[2], PIXEL_FILL(0));
     sDetailPageCount = 1;
     if (sStateUnavailable)
     {
@@ -638,9 +666,9 @@ static void DrawDetails(void)
     }
     if (!sStateUnavailable)
     {
-        PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextBack, 4, 44);
+        PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextBack, 4, 38);
         if (sDetailPageCount > 1)
-            PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextMore, 160, 44);
+            PrintText(sWindowIds[2], FONT_SMALL_NARROW, sTextMore, 160, 38);
     }
     CopyWindowToVram(sWindowIds[2], COPYWIN_FULL);
 }
@@ -868,6 +896,12 @@ void CB2_InitCormoriaQuestMenu(void)
     ResetAllBgsCoordinates();
     SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_OBJ_1D_MAP | DISPCNT_OBJ_ON);
     SetGpuReg(REG_OFFSET_BLDCNT, 0);
+    SetBgTilemapBuffer(1, sBg1TilemapBuffer);
+    LoadBgTiles(1, sQuestMenuTiles, sizeof(sQuestMenuTiles), 0);
+    CopyToBgTilemapBuffer(1, sQuestMenuTilemap, sizeof(sQuestMenuTilemap), 0);
+    LoadPalette(sQuestMenuPalette, BG_PLTT_ID(0), PLTT_SIZE_4BPP);
+    ScheduleBgCopyTilemapToVram(1);
+    ShowBg(1);
     ShowBg(0);
     DeactivateAllTextPrinters();
     LoadMessageBoxAndBorderGfx();

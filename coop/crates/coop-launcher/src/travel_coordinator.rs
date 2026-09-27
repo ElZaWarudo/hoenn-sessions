@@ -10,7 +10,7 @@ use std::{
 };
 
 use coop_cloud::{
-    ApiVersion, ArtifactIdentity, IdempotencyKey, RomHandoffCommitRequest,
+    AcquireWorldLeaseResponse, ApiVersion, ArtifactIdentity, IdempotencyKey, RomHandoffCommitRequest,
     RomHandoffPrepareRequest, RomHandoffPrepareResponse, RomHandoffRecoveryRequest,
     RomHandoffRecoveryStatus, Sha256Digest, SnapshotId, SnapshotRecord,
 };
@@ -744,6 +744,58 @@ fn requires_settlement(
     is_recoverable_source_stage(record.phase)
         && (record.lease_fence != Some(lease_fence)
             || record.trusted_catalog_digest != Some(catalog_digest))
+}
+
+/// Settle an uncommitted handoff before loading the source resume package.
+/// The server blocks resume reads while a destination stage exists, so this
+/// path uses only the fresh world lease and the durable source identity.
+pub async fn recover_pending_handoff_before_restore<A: CloudApi>(
+    api: &A,
+    auth: &AuthSession,
+    acquired: &AcquireWorldLeaseResponse,
+    journal: &RomTravelJournal,
+) -> Result<StageOutcome, TravelCoordinatorError> {
+    let record = journal
+        .read()?
+        .ok_or(TravelCoordinatorError::SourceMismatch)?;
+    if record.phase == TravelPhase::Aborted {
+        return Ok(StageOutcome::Aborted);
+    }
+    if !is_recoverable_source_stage(record.phase)
+        || record.character_id != auth.character_id
+        || record.character_id != acquired.lease.character_id
+        || record.active_world != acquired.active_world_id
+        || record.source_world != Some(acquired.active_world_id)
+        || record.source_revision != Some(acquired.lease.current_revision)
+        || record.source_snapshot_id != acquired.active_snapshot_id
+        || record.source_head_save_sha256.is_none()
+        || record.prepare_idempotency_key.is_none()
+    {
+        return Err(TravelCoordinatorError::SourceMismatch);
+    }
+    recover_record(
+        &CloudRecovery {
+            api,
+            auth,
+            character_id: record.character_id,
+            source_snapshot_id: record
+                .source_snapshot_id
+                .ok_or(TravelCoordinatorError::SourceMismatch)?,
+            expected_revision: record
+                .source_revision
+                .ok_or(TravelCoordinatorError::SourceMismatch)?,
+            source_world_id: record
+                .source_world
+                .ok_or(TravelCoordinatorError::SourceMismatch)?,
+            portal_id: record
+                .portal_id
+                .clone()
+                .ok_or(TravelCoordinatorError::SourceMismatch)?,
+        },
+        journal,
+        &record,
+    )
+    .await
 }
 
 /// Settle an unfinished prepare after a lease replacement, catalog update, or

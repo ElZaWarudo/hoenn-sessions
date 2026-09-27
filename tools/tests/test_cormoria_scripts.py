@@ -16,6 +16,21 @@ STAGE = Path(os.environ.get(
     "CORMORIA_STAGE", Path.home() / ".codex/cormoria-swarm-artifacts/content-stage-20260923-v5"))
 
 
+class PortalScriptHandoffTests(unittest.TestCase):
+    def test_both_ferries_start_saving_without_another_dialogue_gate(self) -> None:
+        for relative, request in (
+            ("data/maps/LilycoveCity_Harbor/scripts.inc", "CoopNetBridge_ScriptTravelToCormoria"),
+            ("data/cormoria/maps/RivetshoreCity_Harbor/scripts.inc", "CoopNetBridge_ScriptTravelToMain"),
+            ("tools/cormoria/rivetshore_portal_overlay.inc", "CoopNetBridge_ScriptTravelToMain"),
+        ):
+            with self.subTest(relative=relative):
+                script = (register_scripts.ROOT / relative).read_text(encoding="utf-8")
+                after_request = script.split(f"callnative {request}", 1)[1]
+                before_save = after_request.split("special CoopPortalSaveGame", 1)[0]
+                self.assertIn("goto_if_eq VAR_RESULT, FALSE", before_save)
+                self.assertNotIn("msgbox", before_save)
+
+
 @unittest.skipUnless(STAGE.is_dir(), "authenticated local Cormoria stage is unavailable")
 class ScriptPreviewTests(unittest.TestCase):
     @classmethod
