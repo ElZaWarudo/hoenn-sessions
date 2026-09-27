@@ -121,8 +121,6 @@ Cormoria_Championship_R5::
 	fadescreen FADE_TO_BLACK
 # 92 "data//maps/Championship_R5/scripts.pory"
 	fadenewbgm MUS_DUMMY
-# 95 "data//maps/Championship_R5/scripts.pory"
-	setflag Cormoria_FLAG_SYS_GAME_CLEAR
 # 96 "data//maps/Championship_R5/scripts.pory"
 	setflag Cormoria_FLAG_IS_CHAMPION
 # 98 "data//maps/Championship_R5/scripts.pory"

@@ -28,6 +28,7 @@ QUOTED = re.compile(r'("(?:\\.|[^"\\])*")')
 GIVEMON_SHINY = re.compile(r'(?m)(^\s*givemon\b[^\n]*?)\bisShiny\s*=\s*(TRUE|FALSE)\b')
 GACHA_TOKEN_SETTLEMENT = "data/maps/GalecrestCity_GameCorner/scripts.inc"
 RIVETSHORE_HARBOR = "data/maps/RivetshoreCity_Harbor/scripts.inc"
+CHAMPIONSHIP_R5 = "data/maps/Championship_R5/scripts.inc"
 PELLUCA_SAFARI = "data/maps/PellucaCity/scripts.inc"
 INGAME_TRADE_SCRIPTS = {
     "data/maps/CeramBaseCamp_Main/scripts.inc",
@@ -264,6 +265,16 @@ def build_preview(stage: Path, root: Path = ROOT) -> dict[str, bytes]:
             overlay = overlay_path.read_text(encoding="utf-8").rstrip()
             overlay_labels = set(_definitions(overlay, str(overlay_path)))
             rewritten = rewritten.replace(old_attendant, overlay)
+        if relative == CHAMPIONSHIP_R5:
+            # GameClear owns the first-clear decision and sets this world-local flag.
+            # Setting it here would make the first victory look like a repeat.
+            premature_clear = (
+                '# 95 "data//maps/Championship_R5/scripts.pory"\n'
+                '\tsetflag Cormoria_FLAG_SYS_GAME_CLEAR\n'
+            )
+            if rewritten.count(premature_clear) != 1:
+                raise ScriptRegistrationError("Championship game-clear script drift")
+            rewritten = rewritten.replace(premature_clear, "")
         donor_gacha_token_references += texts[relative].count("removeitem ITEM_GACHA_TOKEN")
         if relative == GACHA_TOKEN_SETTLEMENT:
             rewritten, transformed = _adapt_gacha_token_settlement(rewritten)

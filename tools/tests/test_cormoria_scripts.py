@@ -113,6 +113,13 @@ class ScriptPreviewTests(unittest.TestCase):
         self.assertEqual(custom.count("goto Cormoria_PellucaCityFlooded_EventScript_FailCleanup"), 1)
         self.assertEqual(custom.count("goto_if_eq VAR_RESULT, YES, Cormoria_PellucaCityFlooded_EventScript_FailCleanup"), 1)
 
+    def test_championship_first_clear_fix_survives_regeneration(self) -> None:
+        relative = "data/cormoria/maps/Championship_R5/scripts.inc"
+        script = self.preview[relative].decode().replace("\r\n", "\n")
+        installed = (register_scripts.ROOT / relative).read_text(encoding="utf-8").replace("\r\n", "\n")
+        self.assertEqual(script, installed)
+        self.assertNotIn("setflag Cormoria_FLAG_SYS_GAME_CLEAR", script.split("special GameClear", 1)[0])
+
     def test_route6_uses_appended_gabrielle_partner(self) -> None:
         script = self.preview["data/cormoria/maps/Route6/scripts.inc"].decode()
         self.assertIn(

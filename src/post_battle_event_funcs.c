@@ -12,6 +12,10 @@
 #include "constants/heal_locations.h"
 #if ROM_WORLD == 2
 #include "cormoria/heal_locations.h"
+#include "constants/cormoria_event_ids.h"
+#define REGION_GAME_CLEAR_FLAG Cormoria_FLAG_SYS_GAME_CLEAR
+#else
+#define REGION_GAME_CLEAR_FLAG FLAG_SYS_GAME_CLEAR
 #endif
 
 int GameClear(void)
@@ -25,7 +29,7 @@ int GameClear(void)
 
     HealPlayerParty();
 
-    if (FlagGet(FLAG_SYS_GAME_CLEAR) == TRUE)
+    if (FlagGet(REGION_GAME_CLEAR_FLAG) == TRUE)
     {
         gHasHallOfFameRecords = TRUE;
         gHasHallOfFameRecordsFrlg = TRUE;
@@ -34,7 +38,7 @@ int GameClear(void)
     {
         gHasHallOfFameRecords = FALSE;
         gHasHallOfFameRecordsFrlg = FALSE;
-        FlagSet(FLAG_SYS_GAME_CLEAR);
+        FlagSet(REGION_GAME_CLEAR_FLAG);
     }
 
     if (GetGameStat(GAME_STAT_FIRST_HOF_PLAY_TIME) == 0)
