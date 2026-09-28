@@ -45,6 +45,9 @@ static EWRAM_DATA u8 sProcessInputDelay = 0;
 static EWRAM_DATA u8 sDynamicMenuEventId = 0;
 static EWRAM_DATA struct DynamicMultichoiceStack *sDynamicMultiChoiceStack = NULL;
 static EWRAM_DATA u16 *sDynamicMenuEventScratchPad = NULL;
+static EWRAM_DATA bool8 sNextYesNoIsCoopConsent = FALSE;
+static EWRAM_DATA bool8 sCoopConsentYesNoActive = FALSE;
+static EWRAM_DATA u8 sCoopConsentYesNoTaskId = 0;
 
 static u8 sLilycoveSSTidalSelections[SSTIDAL_SELECTION_COUNT];
 
@@ -591,9 +594,37 @@ bool8 ScriptMenu_YesNo(u8 left, u8 top)
     {
         gSpecialVar_Result = 0xFF;
         DisplayYesNoMenuDefaultYes();
-        CreateTask(Task_HandleYesNoInput, 0x50);
+        sCoopConsentYesNoTaskId = CreateTask(Task_HandleYesNoInput, 0x50);
+        sCoopConsentYesNoActive = sNextYesNoIsCoopConsent;
+        sNextYesNoIsCoopConsent = FALSE;
         return TRUE;
     }
+}
+
+void ScriptMenu_MarkNextYesNoAsCoopConsent(void)
+{
+    sNextYesNoIsCoopConsent = TRUE;
+}
+
+bool8 ScriptMenu_CancelCoopConsentYesNo(void)
+{
+    bool8 active = sCoopConsentYesNoActive
+        && FuncIsActiveTask(Task_HandleYesNoInput)
+        && FindTaskIdByFunc(Task_HandleYesNoInput) == sCoopConsentYesNoTaskId;
+
+    sNextYesNoIsCoopConsent = FALSE;
+    sCoopConsentYesNoActive = FALSE;
+    if (!active)
+        return FALSE;
+    DestroyTask(sCoopConsentYesNoTaskId);
+    EraseYesNoWindow();
+    return TRUE;
+}
+
+void ScriptMenu_ClearCoopConsentYesNoMarker(void)
+{
+    sNextYesNoIsCoopConsent = FALSE;
+    sCoopConsentYesNoActive = FALSE;
 }
 
 // Unused
@@ -628,6 +659,7 @@ static void Task_HandleYesNoInput(u8 taskId)
     }
 
     DestroyTask(taskId);
+    sCoopConsentYesNoActive = FALSE;
     ScriptContext_Enable();
 }
 
@@ -787,8 +819,9 @@ bool8 ScriptMenu_CreateLilycoveSSTidalMultichoice(void)
     }
 }
 
-// gSpecialVar_0x8004 is 1 if the Sailor was shown multiple event tickets at the same time
-// otherwise gSpecialVar_0x8004 is 0
+// Mode 1 shows multiple first-time tickets and marks them shown. Mode 2
+// offers the same choices for a group without changing flags before consent.
+// Mode 0 lists the ordinary destinations.
 static void CreateLilycoveSSTidalMultichoice(void)
 {
     u8 selectionCount = 0;
@@ -826,11 +859,13 @@ static void CreateLilycoveSSTidalMultichoice(void)
             selectionCount++;
         }
 
-        if (gSpecialVar_0x8004 == 1 && FlagGet(FLAG_SHOWN_EON_TICKET) == FALSE)
+        if ((gSpecialVar_0x8004 == 1 || gSpecialVar_0x8004 == 2)
+         && FlagGet(FLAG_SHOWN_EON_TICKET) == FALSE)
         {
             sLilycoveSSTidalSelections[selectionCount] = SSTIDAL_SELECTION_SOUTHERN_ISLAND;
             selectionCount++;
-            FlagSet(FLAG_SHOWN_EON_TICKET);
+            if (gSpecialVar_0x8004 == 1)
+                FlagSet(FLAG_SHOWN_EON_TICKET);
         }
     }
 
@@ -842,11 +877,13 @@ static void CreateLilycoveSSTidalMultichoice(void)
             selectionCount++;
         }
 
-        if (gSpecialVar_0x8004 == 1 && FlagGet(FLAG_SHOWN_MYSTIC_TICKET) == FALSE)
+        if ((gSpecialVar_0x8004 == 1 || gSpecialVar_0x8004 == 2)
+         && FlagGet(FLAG_SHOWN_MYSTIC_TICKET) == FALSE)
         {
             sLilycoveSSTidalSelections[selectionCount] = SSTIDAL_SELECTION_NAVEL_ROCK;
             selectionCount++;
-            FlagSet(FLAG_SHOWN_MYSTIC_TICKET);
+            if (gSpecialVar_0x8004 == 1)
+                FlagSet(FLAG_SHOWN_MYSTIC_TICKET);
         }
     }
 
@@ -858,11 +895,13 @@ static void CreateLilycoveSSTidalMultichoice(void)
             selectionCount++;
         }
 
-        if (gSpecialVar_0x8004 == 1 && FlagGet(FLAG_SHOWN_AURORA_TICKET) == FALSE)
+        if ((gSpecialVar_0x8004 == 1 || gSpecialVar_0x8004 == 2)
+         && FlagGet(FLAG_SHOWN_AURORA_TICKET) == FALSE)
         {
             sLilycoveSSTidalSelections[selectionCount] = SSTIDAL_SELECTION_BIRTH_ISLAND;
             selectionCount++;
-            FlagSet(FLAG_SHOWN_AURORA_TICKET);
+            if (gSpecialVar_0x8004 == 1)
+                FlagSet(FLAG_SHOWN_AURORA_TICKET);
         }
     }
 
@@ -874,11 +913,13 @@ static void CreateLilycoveSSTidalMultichoice(void)
             selectionCount++;
         }
 
-        if (gSpecialVar_0x8004 == 1 && FlagGet(FLAG_SHOWN_OLD_SEA_MAP) == FALSE)
+        if ((gSpecialVar_0x8004 == 1 || gSpecialVar_0x8004 == 2)
+         && FlagGet(FLAG_SHOWN_OLD_SEA_MAP) == FALSE)
         {
             sLilycoveSSTidalSelections[selectionCount] = SSTIDAL_SELECTION_FARAWAY_ISLAND;
             selectionCount++;
-            FlagSet(FLAG_SHOWN_OLD_SEA_MAP);
+            if (gSpecialVar_0x8004 == 1)
+                FlagSet(FLAG_SHOWN_OLD_SEA_MAP);
         }
     }
 

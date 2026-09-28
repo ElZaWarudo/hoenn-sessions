@@ -8,11 +8,12 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use coop_cloud::{
     CharacterCloudState, CharacterId, ClientInstanceId, CommitId, Group, GroupId,
     GroupInvitationId, GroupTravelProposalId, GroupTravelProposalView, IdempotencyKey,
-    LeaseContract, RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId, SigningPrivateKey,
-    SnapshotFile, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest, SnapshotRecord,
-    SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis, UploadTarget, UserId,
+    LeaseContract, LeaseFence, RefreshFamilyId, Revision, RuntimeLeaseFence, SessionId,
+    SigningPrivateKey, SnapshotFile, SnapshotFinalizeRequest, SnapshotId, SnapshotPrepareRequest,
+    SnapshotRecord, SnapshotRestoreRequest, StableRuntimeSession, UnixTimestampMillis,
+    UploadTarget, UserId,
 };
-use coop_protocol::{RegionId, RegionalProgress, WorldZone};
+use coop_protocol::{ProgressKindV1, RegionId, RegionalProgress, WorldZone};
 use getrandom::fill as random_fill;
 use hmac::Mac;
 use sha2::{Digest, Sha256};
@@ -63,6 +64,35 @@ pub const GROUP_INVITATION_TTL_MS: u64 = coop_cloud::GROUP_INVITATION_TTL_MS;
 pub const MAX_GROUP_INVITATIONS: usize = 1_024;
 pub const MAX_GROUP_IDEMPOTENCY: usize = 4_096;
 pub const GROUP_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
+/// Consent offers expire quickly. Accepted battles have a longer idle window
+/// that is renewed only by new authoritative battle progress.
+pub(crate) const BATTLE_RESERVATION_TTL_MS: u64 = 30_000;
+pub(crate) const BATTLE_ACCEPTED_IDLE_TTL_MS: u64 = 10 * 60 * 1_000;
+pub(crate) const BATTLE_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
+pub(crate) const MAX_BATTLE_RESERVATIONS: usize = 1_024;
+pub(crate) const MAX_BATTLE_IDEMPOTENCY: usize = 4_096;
+pub(crate) const MAX_BATTLE_IDEMPOTENCY_PER_MEMBER: usize = 64;
+pub(crate) const MAX_BATTLE_TURNS: usize = 32;
+pub(crate) const MAX_BATTLE_ACTION_BYTES: usize = 512;
+/// Recent observational progress entries retained for each active or
+/// recently closed group. This is deliberately small because the feed is a
+/// convenience history, never an authority ledger.
+pub(crate) const MAX_PROGRESS_FEED_EVENTS_PER_GROUP: usize = 64;
+/// Two members can each report every bounded first-catch subject plus all
+/// regional badges. Keeping a little headroom makes the identity set
+/// lifetime-stable while remaining a fixed-size repository field.
+pub(crate) const MAX_PROGRESS_FEED_KEYS_PER_GROUP: usize = 2_112;
+/// A runtime may publish at most one observational event per second on
+/// average. The bound is enforced inside the repository transition so it is
+/// shared by all realtime sockets for the same character.
+pub(crate) const MAX_PROGRESS_FEED_EVENTS_PER_MINUTE: usize = 60;
+/// A staged trade must either publish or be sealed within a bounded window.
+/// This is deliberately independent from the offer TTL so recovery cannot
+/// retain immutable objects indefinitely after a launcher disappears.
+#[allow(dead_code)]
+pub(crate) const TRADE_STAGE_TTL_MS: u64 = 5 * 60 * 1_000;
+#[allow(dead_code)]
+pub(crate) const MAX_TRADE_STAGES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StorageMode {
@@ -727,6 +757,39 @@ pub(crate) struct GroupRecord {
 pub(crate) struct GroupTravelProposalRecord {
     pub view: GroupTravelProposalView,
     pub retain_until: Option<u64>,
+    #[serde(default)]
+    pub scene_markers: [Option<StorySceneMarker>; 2],
+    #[serde(default)]
+    pub scene_receipts: [Option<StorySceneReceipt>; 2],
+    #[serde(default)]
+    pub recovery_resolutions: [Option<StoryRecoveryResolution>; 2],
+}
+
+/// One unacknowledged expiry notice per character, fenced to the surviving
+/// runtime session. Retained only while that lease is active.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
+pub(crate) struct GroupEndNoticeRecord {
+    pub group_id: GroupId,
+    pub session: StableRuntimeSession,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StoryRecoveryResolution {
+    Reconciled(StorySceneReceipt),
+    Abandoned,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Eq, PartialEq)]
+pub(crate) struct StorySceneMarker {
+    pub fence: coop_cloud::LeaseFence,
+    pub nonce: u32,
+    pub marked_at: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StorySceneReceipt {
+    pub snapshot_id: SnapshotId,
+    pub revision: Revision,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -742,6 +805,162 @@ pub(crate) struct GroupInvitationRecord {
     pub invitation_id: GroupInvitationId,
     pub inviter: CharacterId,
     pub invitee: CharacterId,
+    pub expires_at: u64,
+    pub consumed: bool,
+    /// Remote-map regrouping is opt-in and only set by InviteLastPartner.
+    /// Missing data in persisted legacy invitations remains same-zone only.
+    #[serde(default)]
+    pub allow_remote_maps: bool,
+}
+
+/// Durable consent metadata only. A trade must not publish new snapshots
+/// until both launchers implement a coordinated quiesce and revision handoff.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct TradeOfferRecord {
+    pub view: coop_cloud::TradeOfferView,
+    pub fences: [coop_cloud::LeaseFence; 2],
+    /// Each bit is set only by that character under its own active lease.
+    #[serde(default)]
+    pub consents: [bool; 2],
+    pub expires_at: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct TradeOfferIdempotencyRecord {
+    pub fingerprint: [u8; 32],
+    pub view: coop_cloud::TradeOfferView,
+    pub expires_at: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TradeSourceCommitment {
+    pub character_id: CharacterId,
+    pub snapshot_id: SnapshotId,
+    pub revision: Revision,
+    pub fence: LeaseFence,
+    pub slot: coop_cloud::PartyPosition,
+    pub save_sha256: coop_cloud::Sha256Digest,
+    pub pending_commits_sha256: coop_cloud::Sha256Digest,
+    pub slot_sha256: coop_cloud::Sha256Digest,
+    #[serde(default)]
+    pub last_applied_commit: Option<CommitId>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TradeStagedMember {
+    pub character_id: CharacterId,
+    pub snapshot_id: SnapshotId,
+    pub revision: Revision,
+    pub fence: LeaseFence,
+    pub source: TradeSourceCommitment,
+    /// Trade output deliberately contains only the durable SAV and the
+    /// originating owner's verified pending commit file. Savestates remain a
+    /// launcher-owned handoff concern.
+    pub files: [SnapshotFile; 2],
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TradeStageStatus {
+    Staging,
+    Ready,
+    Published,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TradeCommitReceipt {
+    pub offer_id: coop_cloud::TradeOfferId,
+    pub idempotency_key: IdempotencyKey,
+    pub snapshots: [SnapshotId; 2],
+    pub revisions: [Revision; 2],
+    pub committed_at: u64,
+}
+
+/// Durable ownership for both transformed outputs. The object keys are
+/// derived from `outputs[*].snapshot_id`; retaining this record until publish
+/// or recovery closes the check/delete race used by ordinary snapshots.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TradeStageRecord {
+    pub offer_id: coop_cloud::TradeOfferId,
+    pub idempotency_key: IdempotencyKey,
+    pub sources: [TradeSourceCommitment; 2],
+    pub outputs: [TradeStagedMember; 2],
+    /// Per-character quota reserved while the immutable output objects are
+    /// staged. Published stages are no longer counted as reservations.
+    #[serde(default)]
+    pub reserved_bytes: [u64; 2],
+    pub status: TradeStageStatus,
+    pub expires_at: u64,
+    pub receipt: Option<TradeCommitReceipt>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
+pub(crate) struct ProgressFeedWatermark {
+    pub character_id: CharacterId,
+    pub session_epoch: u32,
+    pub source_sequence: u32,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct ProgressFeedEventRecord {
+    pub event_id: u64,
+    pub source_character_id: CharacterId,
+    pub source_username: coop_cloud::Username,
+    pub kind: ProgressKindV1,
+    pub region_id: RegionId,
+    pub subject_id: u16,
+    pub source_sequence: u32,
+    pub occurred_at: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProgressFeedObservationKey {
+    pub source_character_id: CharacterId,
+    pub kind: ProgressKindV1,
+    pub region_id: RegionId,
+    pub subject_id: u16,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct ProgressFeedRateWindow {
+    pub character_id: CharacterId,
+    pub timestamps: Vec<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct ProgressFeedState {
+    pub next_event_id: u64,
+    pub events: Vec<ProgressFeedEventRecord>,
+    /// A bounded identity set prevents a retried bridge notification from
+    /// resurfacing when the corresponding event has aged out of `events`.
+    #[serde(default)]
+    pub observed_keys: Vec<ProgressFeedObservationKey>,
+    /// One replay watermark per canonical group member. Keeping the
+    /// watermark separate from the bounded event history prevents an old
+    /// source sequence from being replayed after its event ages out.
+    pub watermarks: [Option<ProgressFeedWatermark>; 2],
+    /// Accepted event timestamps are retained separately from `events`, so
+    /// evicting old feed entries cannot weaken the per-source rate limit.
+    #[serde(default)]
+    pub rate_windows: [Option<ProgressFeedRateWindow>; 2],
+}
+
+impl Default for ProgressFeedState {
+    fn default() -> Self {
+        Self {
+            next_event_id: 1,
+            events: Vec::new(),
+            observed_keys: Vec::new(),
+            watermarks: [None, None],
+            rate_windows: [None, None],
+        }
+    }
+}
+
+/// Only the HMAC fingerprint is retained; the bearer code is returned once to
+/// the creator and is never written to repository state.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub(crate) struct GroupPairingCodeRecord {
+    pub inviter: CharacterId,
     pub expires_at: u64,
     pub consumed: bool,
 }
@@ -890,7 +1109,20 @@ pub struct State {
     pub(crate) upload_objects: HashMap<String, UploadObjectRecord>,
     pub(crate) groups: HashMap<GroupId, GroupRecord>,
     pub(crate) active_group_by_member: HashMap<CharacterId, GroupId>,
+    #[serde(default)]
+    pub(crate) group_end_notices: HashMap<CharacterId, GroupEndNoticeRecord>,
+    #[serde(default)]
+    pub(crate) last_group_by_member: HashMap<CharacterId, GroupId>,
+    /// Updated only after successful session contact, never inferred from expiry.
+    #[serde(default)]
+    pub(crate) last_seen_at: HashMap<CharacterId, u64>,
     pub(crate) group_invitations: HashMap<GroupInvitationId, GroupInvitationRecord>,
+    #[serde(default)]
+    pub(crate) group_pairing_codes: HashMap<[u8; 32], GroupPairingCodeRecord>,
+    #[serde(default)]
+    pub(crate) group_pairing_code_issuances: HashMap<CharacterId, Vec<u64>>,
+    #[serde(default)]
+    pub(crate) group_pairing_code_attempts: HashMap<CharacterId, Vec<u64>>,
     pub(crate) group_idempotency:
         HashMap<(CharacterId, String, IdempotencyKey), GroupIdempotencyRecord>,
     #[serde(default)]
@@ -902,7 +1134,60 @@ pub struct State {
     #[serde(default)]
     pub(crate) group_travel_proposal_idempotency:
         HashMap<(CharacterId, String, IdempotencyKey), GroupTravelProposalIdempotencyRecord>,
+    /// Inert while the server trade endpoints are disabled.
+    #[serde(default)]
+    pub(crate) trade_offers: HashMap<coop_cloud::TradeOfferId, TradeOfferRecord>,
+    #[serde(default)]
+    pub(crate) trade_offer_idempotency:
+        HashMap<(CharacterId, IdempotencyKey), TradeOfferIdempotencyRecord>,
+    /// Pair-owned transformed objects remain recoverable until one atomic
+    /// publish records both heads, indexes, and lease contracts.
+    #[serde(default)]
+    pub(crate) trade_staging: HashMap<coop_cloud::TradeOfferId, TradeStageRecord>,
+    /// Retained replay receipts prevent a successful offer from being traded
+    /// again under a fresh idempotency key after its stage is reclaimed.
+    #[serde(default)]
+    pub(crate) trade_receipts: HashMap<coop_cloud::TradeOfferId, TradeCommitReceipt>,
+    /// Remote pairing keeps each member's last committed location separately.
+    /// Old groups fall back to their legacy shared `GroupRecord::zone`.
+    #[serde(default)]
+    pub(crate) group_member_world_zones: HashMap<GroupId, [WorldZone; 2]>,
+    /// Bounded observational progress history keyed by the symmetric group.
+    /// Missing data is valid for groups created before the feed existed.
+    #[serde(default)]
+    pub(crate) group_progress_feeds: HashMap<GroupId, ProgressFeedState>,
+    /// Persistent battle reservation records. The reservation service owns
+    /// expiry and removes the member locks before retaining a short tombstone.
+    #[serde(default)]
+    pub(crate) battle_reservations: HashMap<Uuid, super::battles::BattleReservationRecord>,
+    /// Symmetric member locks prevent either group member from joining a
+    /// second reservation while one is pending or accepted.
+    #[serde(default)]
+    pub(crate) active_battle_by_member: HashMap<CharacterId, Uuid>,
+    /// Operation scoped idempotency records. Raw request bodies are not kept.
+    #[serde(default)]
+    pub(crate) battle_idempotency:
+        HashMap<(CharacterId, IdempotencyKey), super::battles::BattleIdempotencyRecord>,
 }
+
+/// Feed history is useful only for active groups. Remove it as soon as a
+/// lifecycle transition runs its normal bounded state pruning, so a closed
+/// group cannot retain observational data indefinitely.
+pub(crate) fn prune_closed_progress_feeds(state: &mut State) {
+    state.group_progress_feeds.retain(|group_id, _| {
+        state
+            .groups
+            .get(group_id)
+            .is_some_and(|group| group.status == GroupStatus::Active)
+    });
+    state.group_member_world_zones.retain(|group_id, _| {
+        state
+            .groups
+            .get(group_id)
+            .is_some_and(|group| group.status == GroupStatus::Active)
+    });
+}
+
 #[derive(Clone)]
 pub(crate) struct Store {
     pub(crate) repository: Arc<dyn Repository>,
@@ -999,7 +1284,7 @@ impl Store {
             .clone()
             .unwrap_or_else(|| Arc::new(InMemoryObjectStore::new()));
         let monotonic_wall_anchor = Arc::new(MonotonicWallAnchor::new(config.clock.now_ms()));
-        Ok(Self {
+        let store = Self {
             repository,
             config: Arc::new(config),
             clock_floor: Arc::new(AtomicU64::new(0)),
@@ -1008,7 +1293,13 @@ impl Store {
             runtime_transition_gate: Arc::new(std::sync::Mutex::new(())),
             account_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
             heartbeat_last: Arc::new(std::sync::Mutex::new(HashMap::new())),
-        })
+        };
+        // Trade staging owns immutable objects outside the repository. Run
+        // durable reconciliation before exposing the store so an interrupted
+        // pair cannot be published or reclaimed blindly.
+        super::trades::recover_trade_stages(&store, store.now())
+            .map_err(|_| StorageError::Transaction)?;
+        Ok(store)
     }
 
     pub(crate) fn admit_heartbeat(&self, character_id: CharacterId) -> Result<(), StorageError> {
@@ -1251,7 +1542,4 @@ pub(crate) fn is_artifact_size_allowed(artifact: coop_cloud::ArtifactIdentity, s
         coop_cloud::ArtifactIdentity::PendingCommits => size <= MAX_PENDING_COMMITS,
         coop_cloud::ArtifactIdentity::ResumeSs1 => size > 0 && size <= MAX_RESUME_SS1,
     }
-}
-pub(crate) fn commit_id_allowed(commit: Option<CommitId>) -> bool {
-    commit.is_none()
 }

@@ -39,12 +39,35 @@ VictoryRoad_1F_EventScript_WallyEntranceBattle::
 	applymovement LOCALID_PLAYER, Common_Movement_WalkInPlaceFasterDown
 	waitmovement 0
 	msgbox VictoryRoad_1F_Text_WallyNotGoingToLoseAnymore, MSGBOX_DEFAULT
+	special Special_CoopBattleConsentBeginWally
+	goto_if_eq VAR_RESULT, TRUE, VictoryRoad_1F_EventScript_WallyWaitForPartner
+
+VictoryRoad_1F_EventScript_WallySoloBattle::
 	trainerbattle_no_intro TRAINER_WALLY_VR_1, VictoryRoad_1F_Text_WallyEntranceDefeat
+
+VictoryRoad_1F_EventScript_WallyBattleWon::
 	msgbox VictoryRoad_1F_Text_WallyPostEntranceBattle, MSGBOX_DEFAULT
 	clearflag FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY
 	copyobjectxytoperm LOCALID_VICTORY_ROAD_ENTRANCE_WALLY
 	setflag FLAG_DEFEATED_WALLY_VICTORY_ROAD
 	copyvar VAR_VICTORY_ROAD_1F_STATE, VAR_0x8008
+	releaseall
+	end
+
+@ Keep the trigger locked while consent is pending. The C-side coordinator
+@ resumes either the solo battle or the coop result script.
+VictoryRoad_1F_EventScript_WallyWaitForPartner::
+	waitstate
+	special Special_CoopBattleConsentGetWallyResult
+	goto_if_eq VAR_RESULT, 1, VictoryRoad_1F_EventScript_WallyCoopWon
+	goto_if_eq VAR_RESULT, 2, VictoryRoad_1F_EventScript_WallyCoopLost
+	goto VictoryRoad_1F_EventScript_WallySoloBattle
+
+VictoryRoad_1F_EventScript_WallyCoopWon::
+	settrainerflag TRAINER_WALLY_VR_1
+	goto VictoryRoad_1F_EventScript_WallyBattleWon
+
+VictoryRoad_1F_EventScript_WallyCoopLost::
 	releaseall
 	end
 

@@ -171,6 +171,7 @@ async fn load_production_app() -> Result<Phase2App, Phase2Error> {
 /// Fails closed when required secrets, adapters, or the listener are unavailable.
 pub async fn serve_phase2_production(address: SocketAddr) -> Result<(), Phase2Error> {
     let app = load_production_app().await?;
+    super::spawn_group_expiry_watchdog(app.clone());
     let watchdog = app.clone();
     tokio::spawn(async move {
         loop {

@@ -12,7 +12,11 @@ use std::{
     time::Duration,
 };
 
-use coop_protocol::{LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceInteractionV1};
+use coop_protocol::{
+    ActionIntent, BattleFinishedRecord, BattleJoinResponseRecord, BattleReadyRecord,
+    CommitAppliedRecord, LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PartySnapshotChunk,
+    PresenceInteractionV1, TrainerBattleReserveRecord, TurnResultHash,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -2591,10 +2595,17 @@ impl LocalSidecar {
     ) -> Result<bool, SidecarError> {
         match result {
             Some(Ok(command)) => {
-                if matches!(command, ControlCommand::OnlineStatus { .. }) {
+                if matches!(
+                    command,
+                    ControlCommand::OnlineStatus { .. }
+                        | ControlCommand::PairingStatus { .. }
+                        | ControlCommand::GroupInviteReceived { .. }
+                ) {
                     return Ok(false);
                 }
-                if matches!(command, ControlCommand::GroupTravel { .. }) {
+                if matches!(command, ControlCommand::GroupTravel { .. })
+                    || is_battle_command(&command)
+                {
                     enqueue_deferred_command(&mut reconnect.deferred_commands, command)?;
                     return Ok(false);
                 }
@@ -3495,7 +3506,7 @@ impl LocalSidecar {
         if is_presence_command(&command) {
             return self.handle_presence_command(command, bridge, session);
         }
-        if matches!(command, ControlCommand::GroupTravel { .. }) {
+        if matches!(command, ControlCommand::GroupTravel { .. }) || is_battle_command(&command) {
             if group_travel_command_waits_for_ready(
                 &command,
                 session,
@@ -3505,9 +3516,60 @@ impl LocalSidecar {
                 enqueue_deferred_command(deferred_commands, command)?;
                 return Ok(());
             }
-            return self
-                .handle_group_travel_command(command, bridge, session)
-                .await;
+            return if is_battle_command(&command) {
+                self.handle_battle_command(command, bridge, session).await
+            } else {
+                self.handle_group_travel_command(command, bridge, session)
+                    .await
+            };
+        }
+        if let ControlCommand::GroupInviteReceived {
+            session_epoch,
+            username,
+        } = command
+        {
+            if session_epoch != self.session_epoch
+                || session.checkpoint_state.is_quiescing()
+                || !session.acknowledged_rom_ready
+                || self.pending_presence_rearm.is_some()
+            {
+                return Ok(());
+            }
+            if username.len() > 32 || !username.bytes().all(|b| (32..=126).contains(&b)) {
+                return Err(SidecarError::ProtocolViolation("invalid invitation name"));
+            }
+            let mut payload = [0_u8; 32];
+            payload[..username.len()].copy_from_slice(username.as_bytes());
+            let frame = BridgeFrame::new(
+                MessageType::GroupInviteReceived,
+                self.sequence_state.take_sidecar_sequence(),
+                self.session_epoch,
+                &payload,
+            )?;
+            return bridge.send(&frame, Direction::SidecarToRom).await;
+        }
+        if let ControlCommand::PairingStatus {
+            session_epoch,
+            status,
+        } = command
+        {
+            if session_epoch != self.session_epoch
+                || session.checkpoint_state.is_quiescing()
+                || !session.acknowledged_rom_ready
+                || self.pending_presence_rearm.is_some()
+            {
+                return Ok(());
+            }
+            let payload = status
+                .encode()
+                .map_err(|_| SidecarError::ProtocolViolation("invalid pairing status"))?;
+            let frame = BridgeFrame::new(
+                MessageType::PairingStatus,
+                self.sequence_state.take_sidecar_sequence(),
+                self.session_epoch,
+                &payload,
+            )?;
+            return bridge.send(&frame, Direction::SidecarToRom).await;
         }
         if let ControlCommand::OnlineStatus {
             session_epoch,
@@ -3708,6 +3770,85 @@ impl LocalSidecar {
         bridge.send(&frame, Direction::SidecarToRom).await
     }
 
+    async fn handle_battle_command(
+        &mut self,
+        command: ControlCommand,
+        bridge: &mut BridgeWriter,
+        session: &ActiveSessionState,
+    ) -> Result<(), SidecarError> {
+        let (epoch, message_type, payload) = match command {
+            ControlCommand::BattleJoinOffer {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::BattleJoinOffer, record.encode()),
+            ControlCommand::BattleConsentOutcome {
+                session_epoch,
+                record,
+            } => (
+                session_epoch,
+                MessageType::BattleConsentOutcome,
+                record.encode(),
+            ),
+            ControlCommand::BattleReserveRejected {
+                session_epoch,
+                record,
+            } => (
+                session_epoch,
+                MessageType::BattleReserveRejected,
+                record.encode(),
+            ),
+            ControlCommand::BattleManifest {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::BattleManifest, record.encode()),
+            ControlCommand::BattleCommit {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::BattleCommit, record.encode()),
+            ControlCommand::BattleStart {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::BattleStart, record.encode()),
+            ControlCommand::PeerPartyChunk {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::PeerPartyChunk, record.encode()),
+            ControlCommand::TurnBundle {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::TurnBundle, record.encode()),
+            ControlCommand::PauseForReconnect {
+                session_epoch,
+                record,
+            } => (
+                session_epoch,
+                MessageType::PauseForReconnect,
+                record.encode(),
+            ),
+            ControlCommand::AbortBattle {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::AbortBattle, record.encode()),
+            _ => return Err(SidecarError::ProtocolViolation("invalid battle command")),
+        };
+        if epoch != self.session_epoch
+            || session.checkpoint_state.is_quiescing()
+            || !session.acknowledged_rom_ready
+            || self.pending_presence_rearm.is_some()
+        {
+            return Ok(());
+        }
+        let payload =
+            payload.map_err(|_| SidecarError::ProtocolViolation("invalid battle command"))?;
+        let frame = BridgeFrame::new(
+            message_type,
+            self.sequence_state.take_sidecar_sequence(),
+            self.session_epoch,
+            &payload,
+        )?;
+        bridge.send(&frame, Direction::SidecarToRom).await
+    }
+
     fn handle_stamped_presence_command(
         &mut self,
         stamped: StampedPresenceCommand,
@@ -3739,12 +3880,35 @@ impl LocalSidecar {
             ControlCommand::RemotePlayerDespawn(value) => {
                 (MessageType::RemotePlayerDespawn, value.encode().to_vec())
             }
+            ControlCommand::RemoteInteraction(value) => {
+                (MessageType::RemoteInteraction, value.encode().to_vec())
+            }
             ControlCommand::RemoteCompanion(value) => {
                 (MessageType::RemoteCompanion, value.encode().to_vec())
             }
             ControlCommand::RemoteSocialSignal(value) => {
                 (MessageType::RemoteSocialSignal, value.encode().to_vec())
             }
+            ControlCommand::ProgressEvent(value) => {
+                let observation = coop_protocol::ProgressObservationV1 {
+                    kind: value.kind,
+                    region_id: value.region_id,
+                    subject_id: value.subject_id,
+                    session_epoch: self.session_epoch,
+                    source_sequence: value.source_sequence,
+                };
+                if !observation.is_valid() {
+                    return Err(SidecarError::ProtocolViolation("invalid progress event"));
+                }
+                (
+                    MessageType::ProgressEvent,
+                    observation.encode_bridge().to_vec(),
+                )
+            }
+            ControlCommand::GroupEnded(value) => (
+                MessageType::GroupEnded,
+                value.group_id.as_uuid().as_bytes().to_vec(),
+            ),
             _ => return Err(SidecarError::ProtocolViolation("invalid presence command")),
         };
         let sequence = self.sequence_state.take_sidecar_sequence();
@@ -3886,7 +4050,9 @@ impl LocalSidecar {
             | MessageType::InteractRemotePlayer
             | MessageType::CompanionState
             | MessageType::SocialSignal
-            | MessageType::OnlineRequest => {
+            | MessageType::ProgressObservation
+            | MessageType::OnlineRequest
+            | MessageType::PairingRequest => {
                 if self.pending_presence_rearm.is_some() {
                     return Ok(());
                 }
@@ -3911,6 +4077,82 @@ impl LocalSidecar {
                 control
                     .send_event(&ControlEvent::GroupTravel(record))
                     .await?;
+            }
+            MessageType::TrainerBattleReserve
+            | MessageType::BattleJoinResponse
+            | MessageType::PartySnapshot
+            | MessageType::ActionIntent
+            | MessageType::TurnResultHash
+            | MessageType::BattleAbortRequest
+            | MessageType::BattleFinished
+            | MessageType::BattleReady
+            | MessageType::CommitApplied => {
+                if frame.session_epoch() != self.session_epoch || !session.acknowledged_rom_ready {
+                    return Err(SidecarError::ProtocolViolation("invalid battle event"));
+                }
+                if !self
+                    .sequence_state
+                    .inspect_rom_frame(&frame, self.session_epoch)
+                {
+                    return Ok(());
+                }
+                let event = match frame.message_type() {
+                    MessageType::TrainerBattleReserve => ControlEvent::TrainerBattleReserve(
+                        TrainerBattleReserveRecord::decode(frame.payload()).map_err(|_| {
+                            SidecarError::ProtocolViolation("invalid battle reserve")
+                        })?,
+                    ),
+                    MessageType::BattleJoinResponse => ControlEvent::BattleJoinResponse(
+                        BattleJoinResponseRecord::decode(frame.payload()).map_err(|_| {
+                            SidecarError::ProtocolViolation("invalid battle join response")
+                        })?,
+                    ),
+                    MessageType::PartySnapshot => ControlEvent::PartySnapshot(
+                        PartySnapshotChunk::decode(frame.payload()).map_err(|_| {
+                            SidecarError::ProtocolViolation("invalid party snapshot")
+                        })?,
+                    ),
+                    MessageType::BattleReady => ControlEvent::BattleReady(
+                        BattleReadyRecord::decode(frame.payload())
+                            .map_err(|_| SidecarError::ProtocolViolation("invalid battle ready"))?,
+                    ),
+                    MessageType::ActionIntent => {
+                        ControlEvent::ActionIntent(ActionIntent::decode(frame.payload()).map_err(
+                            |_| SidecarError::ProtocolViolation("invalid action intent"),
+                        )?)
+                    }
+                    MessageType::TurnResultHash => ControlEvent::TurnResultHash(
+                        TurnResultHash::decode(frame.payload()).map_err(|_| {
+                            SidecarError::ProtocolViolation("invalid turn result hash")
+                        })?,
+                    ),
+                    MessageType::BattleAbortRequest => {
+                        let record = coop_protocol::AbortBattleRecord::decode(frame.payload())
+                            .map_err(|_| {
+                                SidecarError::ProtocolViolation("invalid battle abort request")
+                            })?;
+                        if record.battle_id.0.iter().all(|byte| *byte == 0) {
+                            return Err(SidecarError::ProtocolViolation(
+                                "invalid battle abort request",
+                            ));
+                        }
+                        ControlEvent::BattleAbortRequest(record)
+                    }
+                    MessageType::BattleFinished => ControlEvent::BattleFinished(
+                        BattleFinishedRecord::decode(frame.payload()).map_err(|_| {
+                            SidecarError::ProtocolViolation("invalid battle finished event")
+                        })?,
+                    ),
+                    MessageType::CommitApplied => ControlEvent::CommitApplied(
+                        CommitAppliedRecord::decode(frame.payload()).map_err(|_| {
+                            SidecarError::ProtocolViolation("invalid commit applied event")
+                        })?,
+                    ),
+                    _ => unreachable!(),
+                };
+                self.sequence_state.commit_rom_frame(&frame);
+                rotate_expired_tombstone(&frame, &mut session.expired_checkpoint);
+                control.send_event(&event).await?;
             }
             MessageType::CheckpointReady => {
                 if self.pending_presence_rearm.is_some() {
@@ -4046,6 +4288,10 @@ impl LocalSidecar {
                 coop_protocol::OnlineRequest::decode(frame.payload())
                     .map_err(|_| SidecarError::ProtocolViolation("invalid online request"))?,
             ),
+            MessageType::PairingRequest => ControlEvent::PairingRequest(
+                coop_protocol::PairingRequest::decode(frame.payload())
+                    .map_err(|_| SidecarError::ProtocolViolation("invalid pairing request"))?,
+            ),
             MessageType::CompanionState => ControlEvent::CompanionState(
                 LocalCompanionV1::decode(frame.payload())
                     .map_err(|_| SidecarError::ProtocolViolation("invalid companion state"))?,
@@ -4053,6 +4299,16 @@ impl LocalSidecar {
             MessageType::SocialSignal => ControlEvent::SocialSignal(
                 LocalSignalV1::decode(frame.payload())
                     .map_err(|_| SidecarError::ProtocolViolation("invalid social signal"))?,
+            ),
+            MessageType::ProgressObservation => ControlEvent::ProgressObservation(
+                coop_protocol::ProgressObservationV1::decode_bridge(
+                    frame.payload(),
+                    frame.session_epoch(),
+                    frame.sequence(),
+                )
+                .ok_or(SidecarError::ProtocolViolation(
+                    "invalid progress observation",
+                ))?,
             ),
             _ => return Err(SidecarError::ProtocolViolation("invalid presence frame")),
         };
@@ -4156,10 +4412,13 @@ impl LocalSidecar {
         now: Instant,
         session: &mut ActiveSessionState,
     ) -> Result<(), SidecarError> {
-        if matches!(command, ControlCommand::GroupTravel { .. }) {
-            return self
-                .handle_group_travel_command(command, bridge, session)
-                .await;
+        if matches!(command, ControlCommand::GroupTravel { .. }) || is_battle_command(&command) {
+            return if is_battle_command(&command) {
+                self.handle_battle_command(command, bridge, session).await
+            } else {
+                self.handle_group_travel_command(command, bridge, session)
+                    .await
+            };
         }
         let (command_id, fingerprint, key, command_kind) = command_parts(&command);
 
@@ -4920,7 +5179,11 @@ fn command_parts(
             None,
             CommandKind::PresenceRearm,
         ),
-        ControlCommand::OnlineStatus { .. } => unreachable!("Online status bypasses ledger"),
+        ControlCommand::OnlineStatus { .. }
+        | ControlCommand::PairingStatus { .. }
+        | ControlCommand::GroupInviteReceived { .. } => {
+            unreachable!("Online messages bypass ledger")
+        }
         ControlCommand::CheckpointGrant(CheckpointGrant {
             command_id,
             session_epoch,
@@ -4961,9 +5224,22 @@ fn command_parts(
         ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::RemoteInteraction(_)
         | ControlCommand::RemoteCompanion(_)
         | ControlCommand::RemoteSocialSignal(_)
-        | ControlCommand::GroupTravel { .. } => {
+        | ControlCommand::ProgressEvent(_)
+        | ControlCommand::GroupEnded(_)
+        | ControlCommand::GroupTravel { .. }
+        | ControlCommand::BattleManifest { .. }
+        | ControlCommand::BattleCommit { .. }
+        | ControlCommand::BattleStart { .. }
+        | ControlCommand::PeerPartyChunk { .. }
+        | ControlCommand::BattleJoinOffer { .. }
+        | ControlCommand::BattleConsentOutcome { .. }
+        | ControlCommand::BattleReserveRejected { .. }
+        | ControlCommand::TurnBundle { .. }
+        | ControlCommand::PauseForReconnect { .. }
+        | ControlCommand::AbortBattle { .. } => {
             unreachable!("presence commands bypass command ledgers")
         }
     }
@@ -4972,16 +5248,31 @@ fn command_parts(
 fn command_epoch(command: &ControlCommand) -> u32 {
     match command {
         ControlCommand::PresenceRearm(value) => value.session_epoch,
-        ControlCommand::OnlineStatus { session_epoch, .. } => *session_epoch,
+        ControlCommand::OnlineStatus { session_epoch, .. }
+        | ControlCommand::PairingStatus { session_epoch, .. }
+        | ControlCommand::GroupInviteReceived { session_epoch, .. } => *session_epoch,
         ControlCommand::CheckpointGrant(command) => command.session_epoch,
         ControlCommand::CheckpointAbort(command) => command.session_epoch,
         ControlCommand::ShutdownRequest(command) => command.session_epoch,
         ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::RemoteInteraction(_)
         | ControlCommand::RemoteCompanion(_)
         | ControlCommand::RemoteSocialSignal(_)
-        | ControlCommand::GroupTravel { .. } => {
+        | ControlCommand::ProgressEvent(_)
+        | ControlCommand::GroupEnded(_)
+        | ControlCommand::GroupTravel { .. }
+        | ControlCommand::BattleManifest { .. }
+        | ControlCommand::BattleCommit { .. }
+        | ControlCommand::BattleStart { .. }
+        | ControlCommand::PeerPartyChunk { .. }
+        | ControlCommand::BattleJoinOffer { .. }
+        | ControlCommand::BattleConsentOutcome { .. }
+        | ControlCommand::BattleReserveRejected { .. }
+        | ControlCommand::TurnBundle { .. }
+        | ControlCommand::PauseForReconnect { .. }
+        | ControlCommand::AbortBattle { .. } => {
             unreachable!("presence commands have no session epoch")
         }
     }
@@ -4993,8 +5284,27 @@ fn is_presence_command(command: &ControlCommand) -> bool {
         ControlCommand::RemotePlayerSpawn(_)
             | ControlCommand::RemotePlayerUpdate(_)
             | ControlCommand::RemotePlayerDespawn(_)
+            | ControlCommand::RemoteInteraction(_)
             | ControlCommand::RemoteCompanion(_)
             | ControlCommand::RemoteSocialSignal(_)
+            | ControlCommand::ProgressEvent(_)
+            | ControlCommand::GroupEnded(_)
+    )
+}
+
+fn is_battle_command(command: &ControlCommand) -> bool {
+    matches!(
+        command,
+        ControlCommand::BattleManifest { .. }
+            | ControlCommand::BattleCommit { .. }
+            | ControlCommand::BattleStart { .. }
+            | ControlCommand::PeerPartyChunk { .. }
+            | ControlCommand::BattleJoinOffer { .. }
+            | ControlCommand::BattleConsentOutcome { .. }
+            | ControlCommand::BattleReserveRejected { .. }
+            | ControlCommand::TurnBundle { .. }
+            | ControlCommand::PauseForReconnect { .. }
+            | ControlCommand::AbortBattle { .. }
     )
 }
 
@@ -5006,10 +5316,18 @@ fn group_travel_command_waits_for_ready(
 ) -> bool {
     matches!(
         command,
-        ControlCommand::GroupTravel {
-            session_epoch: command_epoch,
-            ..
-        } if *command_epoch == session_epoch
+        ControlCommand::GroupTravel { session_epoch: command_epoch, .. }
+        | ControlCommand::BattleManifest { session_epoch: command_epoch, .. }
+        | ControlCommand::BattleCommit { session_epoch: command_epoch, .. }
+        | ControlCommand::BattleStart { session_epoch: command_epoch, .. }
+        | ControlCommand::PeerPartyChunk { session_epoch: command_epoch, .. }
+        | ControlCommand::BattleJoinOffer { session_epoch: command_epoch, .. }
+        | ControlCommand::BattleConsentOutcome { session_epoch: command_epoch, .. }
+        | ControlCommand::BattleReserveRejected { session_epoch: command_epoch, .. }
+        | ControlCommand::TurnBundle { session_epoch: command_epoch, .. }
+        | ControlCommand::PauseForReconnect { session_epoch: command_epoch, .. }
+        | ControlCommand::AbortBattle { session_epoch: command_epoch, .. }
+        if *command_epoch == session_epoch
             && (!session.acknowledged_rom_ready || presence_rearm_pending)
     )
 }
@@ -5032,12 +5350,27 @@ fn deferred_command_waits_for_bridge_state(
         ControlCommand::ShutdownRequest(_) => (None, false),
         ControlCommand::PresenceRearm(_)
         | ControlCommand::OnlineStatus { .. }
+        | ControlCommand::PairingStatus { .. }
+        | ControlCommand::GroupInviteReceived { .. }
         | ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
         | ControlCommand::RemotePlayerDespawn(_)
+        | ControlCommand::RemoteInteraction(_)
         | ControlCommand::RemoteCompanion(_)
         | ControlCommand::RemoteSocialSignal(_)
-        | ControlCommand::GroupTravel { .. } => return false,
+        | ControlCommand::ProgressEvent(_)
+        | ControlCommand::GroupEnded(_)
+        | ControlCommand::GroupTravel { .. }
+        | ControlCommand::BattleManifest { .. }
+        | ControlCommand::BattleCommit { .. }
+        | ControlCommand::BattleStart { .. }
+        | ControlCommand::PeerPartyChunk { .. }
+        | ControlCommand::BattleJoinOffer { .. }
+        | ControlCommand::BattleConsentOutcome { .. }
+        | ControlCommand::BattleReserveRejected { .. }
+        | ControlCommand::TurnBundle { .. }
+        | ControlCommand::PauseForReconnect { .. }
+        | ControlCommand::AbortBattle { .. } => return false,
     };
     let Some(key) = key else {
         return false;
@@ -6666,6 +6999,7 @@ mod tests {
                 proposal_id: [9; 16],
                 result: coop_protocol::GroupTravelResult::None,
                 reason: coop_protocol::GroupTravelReason::None,
+                remaining_seconds: 0,
             },
         }]);
         let mut session = ActiveSessionState {
@@ -9954,6 +10288,7 @@ mod tests {
                 proposal_id: [7; 16],
                 result: coop_protocol::GroupTravelResult::None,
                 reason: coop_protocol::GroupTravelReason::None,
+                remaining_seconds: 0,
             },
         };
         let mut session = ActiveSessionState {
@@ -10074,6 +10409,650 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn battle_consent_frames_enforce_readiness_epoch_sequence_and_payload() {
+        let reserve = coop_protocol::TrainerBattleReserveRecord {
+            kind: coop_protocol::BattleKind::CooperativeTrainer,
+            request_nonce: 42,
+            trainer_region: Some(coop_protocol::RegionId::Hoenn),
+            trainer_ordinal: Some(518),
+        };
+        let payload = reserve.encode().unwrap();
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let frame = BridgeFrame::new(
+            MessageType::TrainerBattleReserve,
+            2,
+            TEST_SESSION_EPOCH,
+            &payload,
+        )
+        .unwrap();
+        sidecar
+            .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::TrainerBattleReserve(reserve)
+        );
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                .await
+                .is_err()
+        );
+        assert_eq!(sidecar.sequence_state.last_session_rom, 2);
+
+        for (epoch, ready, malformed) in [
+            (TEST_SESSION_EPOCH + 1, true, false),
+            (TEST_SESSION_EPOCH, false, false),
+            (TEST_SESSION_EPOCH, true, true),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let mut candidate = payload.clone();
+            if malformed {
+                candidate[0] = 3;
+            }
+            let frame =
+                BridgeFrame::new(MessageType::TrainerBattleReserve, 2, epoch, &candidate).unwrap();
+            assert!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn battle_abort_request_requires_epoch_readiness_and_valid_payload() {
+        let record = coop_protocol::AbortBattleRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            reason: 1,
+        };
+        let payload = record.encode().unwrap();
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let frame = BridgeFrame::new(
+            MessageType::BattleAbortRequest,
+            2,
+            TEST_SESSION_EPOCH,
+            &payload,
+        )
+        .unwrap();
+        sidecar
+            .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::BattleAbortRequest(record)
+        );
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                .await
+                .is_err()
+        );
+
+        for (epoch, ready, candidate) in [
+            (TEST_SESSION_EPOCH + 1, true, payload.clone()),
+            (TEST_SESSION_EPOCH, false, payload.clone()),
+            (TEST_SESSION_EPOCH, true, vec![0; 17]),
+            (TEST_SESSION_EPOCH, true, vec![7; 16]),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame =
+                BridgeFrame::new(MessageType::BattleAbortRequest, 2, epoch, &candidate).unwrap();
+            assert!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn battle_finished_requires_authenticated_ready_epoch_and_valid_payload() {
+        let record = coop_protocol::BattleFinishedRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            turn: 4,
+            result: coop_protocol::BattleFinishedResult::Member0Won,
+            terminal_hash: coop_protocol::BattleDigest([8; 32]),
+        };
+        let payload = record.encode().unwrap();
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let frame =
+            BridgeFrame::new(MessageType::BattleFinished, 2, TEST_SESSION_EPOCH, &payload).unwrap();
+        sidecar
+            .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::BattleFinished(record)
+        );
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                .await
+                .is_err()
+        );
+        assert_eq!(sidecar.sequence_state.last_session_rom, 2);
+
+        for (epoch, ready, candidate) in [
+            (TEST_SESSION_EPOCH + 1, true, payload.clone()),
+            (TEST_SESSION_EPOCH, false, payload.clone()),
+            (
+                TEST_SESSION_EPOCH,
+                true,
+                vec![0; BattleFinishedRecord::WIRE_SIZE],
+            ),
+            (
+                TEST_SESSION_EPOCH,
+                true,
+                vec![0; BattleFinishedRecord::WIRE_SIZE + 1],
+            ),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame =
+                BridgeFrame::new(MessageType::BattleFinished, 2, epoch, &candidate).unwrap();
+            assert!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn battle_join_offer_uses_critical_bridge_after_rom_ready() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+        let record = coop_protocol::BattleJoinOfferRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            kind: coop_protocol::BattleKind::Friendly,
+            role: coop_protocol::BattleRole::Responder,
+            request_nonce: 0,
+        };
+        let command = ControlCommand::BattleJoinOffer {
+            session_epoch: TEST_SESSION_EPOCH,
+            record,
+        };
+        assert!(group_travel_command_waits_for_ready(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH,
+            false
+        ));
+        session.acknowledged_rom_ready = true;
+        sidecar
+            .handle_battle_command(command, &mut bridge, &session)
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::BattleJoinOffer);
+        assert_eq!(
+            coop_protocol::BattleJoinOfferRecord::decode(frame.payload()),
+            Ok(record)
+        );
+    }
+
+    #[tokio::test]
+    async fn battle_commit_uses_epoch_bound_critical_bridge_and_defers_until_ready() {
+        let record = coop_protocol::BattleCommitRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            commit_id: coop_protocol::BattleId([8; 16]),
+            trainer_region: coop_protocol::RegionId::Hoenn,
+            trainer_ordinal: 518,
+            source_revision: 4,
+        };
+        let command = ControlCommand::BattleCommit {
+            session_epoch: TEST_SESSION_EPOCH,
+            record,
+        };
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+        assert!(group_travel_command_waits_for_ready(
+            &command,
+            &session,
+            TEST_SESSION_EPOCH,
+            false
+        ));
+        session.acknowledged_rom_ready = true;
+        sidecar
+            .handle_battle_command(command, &mut bridge, &session)
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::BattleCommit);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(
+            coop_protocol::BattleCommitRecord::decode(frame.payload()),
+            Ok(record)
+        );
+    }
+
+    #[tokio::test]
+    async fn commit_applied_requires_authenticated_ready_epoch_sequence_and_valid_payload() {
+        let record = coop_protocol::CommitAppliedRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            commit_id: coop_protocol::BattleId([8; 16]),
+            trainer_region: coop_protocol::RegionId::Hoenn,
+            trainer_ordinal: 518,
+            source_revision: 4,
+        };
+        let payload = record.encode().unwrap();
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let frame =
+            BridgeFrame::new(MessageType::CommitApplied, 2, TEST_SESSION_EPOCH, &payload).unwrap();
+        sidecar
+            .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::CommitApplied(record)
+        );
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                .await
+                .is_err()
+        );
+        assert_eq!(sidecar.sequence_state.last_session_rom, 2);
+
+        for (epoch, ready, candidate) in [
+            (TEST_SESSION_EPOCH + 1, true, payload.clone()),
+            (TEST_SESSION_EPOCH, false, payload.clone()),
+            (
+                TEST_SESSION_EPOCH,
+                true,
+                vec![0; coop_protocol::BattleCommitRecord::WIRE_SIZE - 1],
+            ),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame = BridgeFrame::new(MessageType::CommitApplied, 2, epoch, &candidate).unwrap();
+            assert!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn battle_consent_outcome_uses_epoch_bound_critical_bridge() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let record = coop_protocol::BattleConsentOutcomeRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            request_nonce: 42,
+            outcome: coop_protocol::BattleConsentOutcome::Declined,
+        };
+        sidecar
+            .handle_battle_command(
+                ControlCommand::BattleConsentOutcome {
+                    session_epoch: TEST_SESSION_EPOCH - 1,
+                    record,
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        sidecar
+            .handle_battle_command(
+                ControlCommand::BattleConsentOutcome {
+                    session_epoch: TEST_SESSION_EPOCH,
+                    record,
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::BattleConsentOutcome);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(
+            coop_protocol::BattleConsentOutcomeRecord::decode(frame.payload()),
+            Ok(record)
+        );
+    }
+
+    #[tokio::test]
+    async fn battle_reserve_rejection_uses_epoch_bound_critical_bridge() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let record = coop_protocol::BattleReserveRejectedRecord { request_nonce: 42 };
+        sidecar
+            .handle_battle_command(
+                ControlCommand::BattleReserveRejected {
+                    session_epoch: TEST_SESSION_EPOCH - 1,
+                    record,
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        sidecar
+            .handle_battle_command(
+                ControlCommand::BattleReserveRejected {
+                    session_epoch: TEST_SESSION_EPOCH,
+                    record,
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::BattleReserveRejected);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(
+            coop_protocol::BattleReserveRejectedRecord::decode(frame.payload()),
+            Ok(record)
+        );
+    }
+
+    #[tokio::test]
+    async fn peer_party_chunk_uses_epoch_bound_critical_bridge() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let record = PartySnapshotChunk {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            party_slot: 0,
+            chunk_index: 0,
+            chunk_count: 1,
+            mon: vec![0xAB; 100],
+        };
+        sidecar
+            .handle_battle_command(
+                ControlCommand::PeerPartyChunk {
+                    session_epoch: TEST_SESSION_EPOCH - 1,
+                    record: PartySnapshotChunk {
+                        battle_id: coop_protocol::BattleId([8; 16]),
+                        ..record.clone()
+                    },
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        sidecar
+            .handle_battle_command(
+                ControlCommand::PeerPartyChunk {
+                    session_epoch: TEST_SESSION_EPOCH,
+                    record: record.clone(),
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::PeerPartyChunk);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(PartySnapshotChunk::decode(frame.payload()), Ok(record));
+    }
+
+    #[tokio::test]
+    async fn battle_ready_requires_current_rom_epoch_and_reaches_control() {
+        let record = coop_protocol::BattleReadyRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+            party_digest: coop_protocol::BattleDigest([8; 32]),
+        };
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let payload = record.encode().unwrap();
+        let frame =
+            BridgeFrame::new(MessageType::BattleReady, 2, TEST_SESSION_EPOCH, &payload).unwrap();
+        sidecar
+            .handle_bridge_frame(frame.clone(), &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::BattleReady(record)
+        );
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert!(
+            timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn battle_start_uses_epoch_bound_critical_bridge() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let record = coop_protocol::BattleStartRecord {
+            battle_id: coop_protocol::BattleId([7; 16]),
+        };
+        sidecar
+            .handle_battle_command(
+                ControlCommand::BattleStart {
+                    session_epoch: TEST_SESSION_EPOCH - 1,
+                    record,
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        sidecar
+            .handle_battle_command(
+                ControlCommand::BattleStart {
+                    session_epoch: TEST_SESSION_EPOCH,
+                    record,
+                },
+                &mut bridge,
+                &session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::BattleStart);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(
+            coop_protocol::BattleStartRecord::decode(frame.payload()),
+            Ok(record)
+        );
     }
 
     #[test]

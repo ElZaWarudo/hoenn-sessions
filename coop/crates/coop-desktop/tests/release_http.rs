@@ -1,11 +1,11 @@
 #[cfg(windows)]
+#[path = "../src/backend.rs"]
+mod backend;
+#[cfg(windows)]
 #[path = "../src/config.rs"]
 mod config;
 #[path = "../src/release_client.rs"]
 mod release_client;
-#[cfg(windows)]
-#[path = "../src/backend.rs"]
-mod backend;
 
 use coop_launcher::TrustedReleaseKey;
 use release_client::{ReleaseClient, ReleaseError};

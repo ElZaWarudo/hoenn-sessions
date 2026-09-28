@@ -655,6 +655,16 @@ def _group_travel_request(
     )
 
 
+def _return_group_travel_request(label: str, route: int) -> str:
+    return (
+        f"\tsetvar VAR_0x8004, {route}\n"
+        "\tspecial Special_CoopGroupTravelBegin\n"
+        f"\tgoto_if_eq VAR_RESULT, 1, {label}_GroupTravelWaiting\n"
+        f"\tgoto_if_eq VAR_RESULT, 2, {label}_TravelFailed\n"
+        f"{label}_SoloTravel::\n"
+    )
+
+
 def _apply_trade_abi_overrides(text: str) -> str:
     """Translate the donor trade scratch variables to the host trade ABI."""
     trade_ids = (
@@ -848,7 +858,8 @@ def _apply_transport_overrides(text: str) -> str:
     vermilion_body = _replace_required_once(
         bodies[vermilion_return],
         "\tcall KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_EnterShip\n",
-        "\tspecial Johto_ChooseJohto\n"
+        _return_group_travel_request(vermilion_return, 67)
+        + "\tspecial Johto_ChooseJohto\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_return}_TravelFailed\n"
         "\tspecial Johto_RecordCurrentHeal\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_return}_TravelFailed\n"
@@ -859,6 +870,8 @@ def _apply_transport_overrides(text: str) -> str:
     )
 
     vermilion_maiden_body = (
+        "\tspecial Special_CoopGroupTravelIsGrouped\n"
+        f"\tgoto_if_eq VAR_RESULT, TRUE, {vermilion_maiden}_GroupUnavailable\n"
         "\tmsgbox KantoLater_VermilionCity_PortInside_VermilionPort_Text_FlashTicket, MSGBOX_DEFAULT\n"
         "\tspecial Johto_ChooseJohto\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {vermilion_maiden}_TravelFailed\n"
@@ -874,7 +887,12 @@ def _apply_transport_overrides(text: str) -> str:
         f"{vermilion_maiden}_TravelFailed::\n"
         "\tspecial Johto_CancelKantoTravel\n"
         "\trelease\n"
-        "\tend\n"
+        "\tend\n\n"
+        f"{vermilion_maiden}_GroupUnavailable::\n"
+        f"\tmsgbox {vermilion_maiden}_GroupUnavailableText, MSGBOX_DEFAULT\n"
+        "\trelease\n\tend\n\n"
+        f"{vermilion_maiden}_GroupUnavailableText:\n"
+        "\t.string \"This voyage is available\\nwhile traveling solo.$\"\n"
     )
     vermilion_body = _replace_required_once(
         vermilion_body,
@@ -882,12 +900,14 @@ def _apply_transport_overrides(text: str) -> str:
         "\twarpsilent MAP_OLIVINE_CITY_PORT_INSIDE, 8, 16\n"
         "\trelease\n\tend\n\n"
         f"{vermilion_return}_TravelFailed::\n"
-        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n",
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n\n"
+        f"{vermilion_return}_GroupTravelWaiting::\n\tend\n",
         vermilion_return,
     )
 
     saffron_body = (
-        "\tspecial Johto_ChooseJohto\n"
+        _return_group_travel_request(saffron_return, 69)
+        + "\tspecial Johto_ChooseJohto\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {saffron_return}_TravelFailed\n"
         "\tspecial Johto_RecordCurrentHeal\n"
         f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {saffron_return}_TravelFailed\n"
@@ -901,7 +921,8 @@ def _apply_transport_overrides(text: str) -> str:
         "\twarp MAP_GOLDENROD_CITY_TRAIN_STATION, 19, 16\n"
         "\tdelay 60\n\tend\n\n"
         f"{saffron_return}_TravelFailed::\n"
-        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n",
+        "\tspecial Johto_CancelKantoTravel\n\trelease\n\tend\n\n"
+        f"{saffron_return}_GroupTravelWaiting::\n\tend\n",
         saffron_return,
     )
 
@@ -952,6 +973,125 @@ def _apply_transport_overrides(text: str) -> str:
         saffron_return: saffron_body,
     }
     for label, (start, end, _) in sorted(spans.items(), key=lambda item: item[1][0], reverse=True):
+        text = text[:start] + replacements[label] + text[end:]
+    return text
+
+
+def _apply_outbound_island_transport_overrides(text: str) -> str:
+    """Gate the four ordinary ferry destinations behind partner consent.
+
+    These voyages do not cross Kanto and therefore deliberately skip the
+    Kanto travel preparation state machine.  The existing ticket checks and
+    solo ship animation stay in each route body; a grouped player waits for
+    the server commit, which stages the exact island warp on both ROMs.
+    """
+    routes = (
+        (
+            "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseSouthernIsland",
+            72,
+            "ITEM_EON_TICKET",
+            "MAP_SOUTHERN_ISLAND_EXTERIOR",
+            13,
+            22,
+        ),
+        (
+            "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseBirthIsland",
+            73,
+            "ITEM_AURORA_TICKET",
+            "MAP_BIRTH_ISLAND_EXTERIOR",
+            13,
+            23,
+        ),
+        (
+            "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseFarawayIsland",
+            74,
+            "ITEM_OLD_SEA_MAP",
+            "MAP_FARAWAY_ISLAND_ENTRANCE",
+            13,
+            38,
+        ),
+        (
+            "Johto_OlivineCity_PortInside_OlivinePort_EventScript_ChoseBattleFrontier",
+            75,
+            None,
+            "MAP_BATTLE_FRONTIER_OUTSIDE_WEST",
+            20,
+            67,
+        ),
+        (
+            "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseSouthernIsland",
+            76,
+            "ITEM_EON_TICKET",
+            "MAP_SOUTHERN_ISLAND_EXTERIOR",
+            13,
+            22,
+        ),
+        (
+            "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseBirthIsland",
+            77,
+            "ITEM_AURORA_TICKET",
+            "MAP_BIRTH_ISLAND_EXTERIOR",
+            13,
+            23,
+        ),
+        (
+            "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseFarawayIsland",
+            78,
+            "ITEM_OLD_SEA_MAP",
+            "MAP_FARAWAY_ISLAND_ENTRANCE",
+            13,
+            38,
+        ),
+        (
+            "KantoLater_VermilionCity_PortInside_VermilionPort_EventScript_ChoseBattleFrontier",
+            79,
+            None,
+            "MAP_BATTLE_FRONTIER_OUTSIDE_WEST",
+            20,
+            67,
+        ),
+    )
+    replacements: dict[str, str] = {}
+    for label, route, ticket, destination, x, y in routes:
+        span = _campaign_script_body(text, label)
+        body = span[2]
+        prefix = "\tclosemessage\n\tdelay 20\n"
+        if ticket is not None:
+            prefix += (
+                f"\tcheckitem {ticket}\n"
+                "\tbufferitemname STR_VAR_1, " + ticket + "\n"
+                f"\tgoto_if_eq JOHTO_VAR_RESULT, FALSE, {label.rsplit('_EventScript_', 1)[0]}_EventScript_Sailor_NoCredentials\n"
+            )
+        waiting = f"{label}_GroupTravelWaiting"
+        solo = f"{label}_SoloTravel"
+        failed = f"{label}_TravelFailed"
+        prefix += (
+            f"\tsetvar VAR_0x8004, {route}\n"
+            "\tsetvar VAR_0x8005, 2\n"
+            "\tspecial Special_CoopGroupTravelBegin\n"
+            f"\tgoto_if_eq VAR_RESULT, 0, {solo}\n"
+            f"\tgoto_if_eq VAR_RESULT, 1, {waiting}\n"
+            f"\tgoto {failed}\n\n"
+            f"{waiting}::\n"
+            "\tend\n\n"
+            f"{solo}::\n"
+            f"\tcall {label.rsplit('_EventScript_', 1)[0]}_EventScript_EnterShip\n"
+            f"\twarpsilent {destination}, {x}, {y}\n"
+            "\trelease\n"
+            "\tend\n\n"
+            f"{failed}::\n"
+            "\tspecial Johto_CancelKantoTravel\n"
+            "\trelease\n"
+            "\tend\n"
+        )
+        replacements[label] = prefix
+        if body == prefix:
+            raise ScriptError(f"outbound island transport override did not change {label}")
+    for label, (start, end, _) in sorted(
+        ((label, _campaign_script_body(text, label)) for label, *_ in routes),
+        key=lambda item: item[1][0],
+        reverse=True,
+    ):
         text = text[:start] + replacements[label] + text[end:]
     return text
 
@@ -3105,6 +3245,7 @@ class ScriptCompiler:
             raise ScriptError(f"incomplete campaign transport source set: {missing}")
         if transport_sources:
             rendered = _apply_transport_overrides(rendered)
+            rendered = _apply_outbound_island_transport_overrides(rendered)
         rendered = _apply_trade_abi_overrides(rendered)
         return "\n".join(line.rstrip(" \t") for line in rendered.split("\n"))
 

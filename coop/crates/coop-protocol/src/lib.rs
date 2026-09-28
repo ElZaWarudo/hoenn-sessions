@@ -17,8 +17,12 @@ pub mod online;
 pub use online::*;
 pub mod social;
 pub use social::*;
+pub mod progress_observation;
+pub use progress_observation::*;
 pub mod group_travel;
 pub use group_travel::*;
+pub mod battle_bridge;
+pub use battle_bridge::*;
 
 pub use catalog::{MAP_CATALOG, MapCatalog, MapCatalogEntry, all_maps};
 pub use identity_catalog::{

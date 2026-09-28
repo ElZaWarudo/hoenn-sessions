@@ -12,9 +12,14 @@ use std::{
 };
 
 use coop_protocol::{
+    AbortBattleRecord, ActionIntent, BattleCommitRecord, BattleConsentOutcomeRecord,
+    BattleFinishedRecord, BattleJoinOfferRecord, BattleJoinResponseRecord, BattleManifestRecord,
+    BattleReadyRecord, BattleReserveRejectedRecord, BattleStartRecord, CommitAppliedRecord,
     GroupTravelClientRecord, GroupTravelServerRecord, LocalCompanionV1, LocalPresenceStateV1,
-    LocalSignalV1, PresenceInteractionV1, RemoteCompanionV1, RemotePlayerDespawnV1,
-    RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1,
+    LocalSignalV1, PartySnapshotChunk, PauseForReconnectRecord, PresenceInteractionV1,
+    RemoteCompanionV1, RemoteInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
+    RemotePlayerUpdateV1, RemoteSignalV1, TrainerBattleReserveRecord, TurnBundleRecord,
+    TurnResultHash,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -30,7 +35,7 @@ use uuid::Uuid;
 
 pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
 /// The terminating LF is included in this limit.
-pub const MAX_CONTROL_LINE_BYTES: usize = 512;
+pub const MAX_CONTROL_LINE_BYTES: usize = 768;
 pub const CONTROL_HANDSHAKE_ACCEPTED_LINE: &[u8] = b"{\"ok\":true}\n";
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -157,9 +162,17 @@ impl<'de> Deserialize<'de> for CommandId {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlCommand {
+    GroupInviteReceived {
+        session_epoch: u32,
+        username: String,
+    },
     OnlineStatus {
         session_epoch: u32,
         status: coop_protocol::OnlineStatus,
+    },
+    PairingStatus {
+        session_epoch: u32,
+        status: coop_protocol::PairingStatus,
     },
     PresenceRearm(PresenceRearm),
     #[serde(rename = "checkpoint_grant")]
@@ -174,14 +187,60 @@ pub enum ControlCommand {
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     #[serde(rename = "remote_player_despawn")]
     RemotePlayerDespawn(RemotePlayerDespawnV1),
+    #[serde(rename = "remote_interaction")]
+    RemoteInteraction(RemoteInteractionV1),
     #[serde(rename = "remote_companion")]
     RemoteCompanion(RemoteCompanionV1),
     #[serde(rename = "remote_social_signal")]
     RemoteSocialSignal(RemoteSignalV1),
+    #[serde(rename = "progress_event")]
+    ProgressEvent(coop_cloud::ProgressFeedEventV1),
+    #[serde(rename = "group_ended")]
+    GroupEnded(coop_cloud::GroupEndedV1),
     #[serde(rename = "group_travel")]
     GroupTravel {
         session_epoch: u32,
         record: GroupTravelServerRecord,
+    },
+    BattleManifest {
+        session_epoch: u32,
+        record: BattleManifestRecord,
+    },
+    BattleCommit {
+        session_epoch: u32,
+        record: BattleCommitRecord,
+    },
+    BattleStart {
+        session_epoch: u32,
+        record: BattleStartRecord,
+    },
+    PeerPartyChunk {
+        session_epoch: u32,
+        record: PartySnapshotChunk,
+    },
+    BattleJoinOffer {
+        session_epoch: u32,
+        record: BattleJoinOfferRecord,
+    },
+    BattleConsentOutcome {
+        session_epoch: u32,
+        record: BattleConsentOutcomeRecord,
+    },
+    BattleReserveRejected {
+        session_epoch: u32,
+        record: BattleReserveRejectedRecord,
+    },
+    TurnBundle {
+        session_epoch: u32,
+        record: TurnBundleRecord,
+    },
+    PauseForReconnect {
+        session_epoch: u32,
+        record: PauseForReconnectRecord,
+    },
+    AbortBattle {
+        session_epoch: u32,
+        record: AbortBattleRecord,
     },
 }
 
@@ -264,6 +323,7 @@ pub enum CommandReason {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlEvent {
     OnlineRequest(coop_protocol::OnlineRequest),
+    PairingRequest(coop_protocol::PairingRequest),
     PresenceRearmed {
         command_id: CommandId,
         session_epoch: u32,
@@ -300,10 +360,21 @@ pub enum ControlEvent {
     CompanionState(LocalCompanionV1),
     #[serde(rename = "social_signal")]
     SocialSignal(LocalSignalV1),
+    #[serde(rename = "progress_observation")]
+    ProgressObservation(coop_protocol::ProgressObservationV1),
     #[serde(rename = "rom_presence_reset")]
     RomPresenceReset,
     #[serde(rename = "group_travel")]
     GroupTravel(GroupTravelClientRecord),
+    PartySnapshot(PartySnapshotChunk),
+    BattleReady(BattleReadyRecord),
+    TrainerBattleReserve(TrainerBattleReserveRecord),
+    BattleJoinResponse(BattleJoinResponseRecord),
+    ActionIntent(ActionIntent),
+    TurnResultHash(TurnResultHash),
+    BattleAbortRequest(AbortBattleRecord),
+    BattleFinished(BattleFinishedRecord),
+    CommitApplied(CommitAppliedRecord),
 }
 
 // Serde accepts unknown fields on an internally tagged unit variant even when
@@ -314,6 +385,7 @@ pub enum ControlEvent {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ControlEventWire {
     OnlineRequest(coop_protocol::OnlineRequest),
+    PairingRequest(coop_protocol::PairingRequest),
     PresenceRearmed {
         command_id: CommandId,
         session_epoch: u32,
@@ -350,10 +422,21 @@ enum ControlEventWire {
     CompanionState(LocalCompanionV1),
     #[serde(rename = "social_signal")]
     SocialSignal(LocalSignalV1),
+    #[serde(rename = "progress_observation")]
+    ProgressObservation(coop_protocol::ProgressObservationV1),
     #[serde(rename = "rom_presence_reset")]
     RomPresenceReset {},
     #[serde(rename = "group_travel")]
     GroupTravel(GroupTravelClientRecord),
+    PartySnapshot(PartySnapshotChunk),
+    BattleReady(BattleReadyRecord),
+    TrainerBattleReserve(TrainerBattleReserveRecord),
+    BattleJoinResponse(BattleJoinResponseRecord),
+    ActionIntent(ActionIntent),
+    TurnResultHash(TurnResultHash),
+    BattleAbortRequest(AbortBattleRecord),
+    BattleFinished(BattleFinishedRecord),
+    CommitApplied(CommitAppliedRecord),
 }
 
 impl<'de> Deserialize<'de> for ControlEvent {
@@ -363,6 +446,7 @@ impl<'de> Deserialize<'de> for ControlEvent {
     {
         Ok(match ControlEventWire::deserialize(deserializer)? {
             ControlEventWire::OnlineRequest(value) => Self::OnlineRequest(value),
+            ControlEventWire::PairingRequest(value) => Self::PairingRequest(value),
             ControlEventWire::PresenceRearmed {
                 command_id,
                 session_epoch,
@@ -410,8 +494,18 @@ impl<'de> Deserialize<'de> for ControlEvent {
             ControlEventWire::InteractRemotePlayer(value) => Self::InteractRemotePlayer(value),
             ControlEventWire::CompanionState(value) => Self::CompanionState(value),
             ControlEventWire::SocialSignal(value) => Self::SocialSignal(value),
+            ControlEventWire::ProgressObservation(value) => Self::ProgressObservation(value),
             ControlEventWire::RomPresenceReset {} => Self::RomPresenceReset,
             ControlEventWire::GroupTravel(value) => Self::GroupTravel(value),
+            ControlEventWire::PartySnapshot(value) => Self::PartySnapshot(value),
+            ControlEventWire::BattleReady(value) => Self::BattleReady(value),
+            ControlEventWire::TrainerBattleReserve(value) => Self::TrainerBattleReserve(value),
+            ControlEventWire::BattleJoinResponse(value) => Self::BattleJoinResponse(value),
+            ControlEventWire::ActionIntent(value) => Self::ActionIntent(value),
+            ControlEventWire::TurnResultHash(value) => Self::TurnResultHash(value),
+            ControlEventWire::BattleAbortRequest(value) => Self::BattleAbortRequest(value),
+            ControlEventWire::BattleFinished(value) => Self::BattleFinished(value),
+            ControlEventWire::CommitApplied(value) => Self::CommitApplied(value),
         })
     }
 }
@@ -793,9 +887,14 @@ mod tests {
                 incoming_count: 32,
                 nearby_page: 31,
                 incoming_page: 31,
+                outgoing_count: 0,
+                outgoing_page: 0,
+                location_map_group: 0,
+                location_map_number: 0,
                 nearby_name: "\\".repeat(32),
                 incoming_name: "\\".repeat(32),
                 group_name: "\\".repeat(32),
+                last_partner_name: String::new(),
             },
         };
         let bytes = serde_json::to_vec(&command).unwrap();
@@ -844,6 +943,24 @@ mod tests {
     }
 
     #[test]
+    fn progress_observation_control_record_is_strict() {
+        let event = ControlEvent::ProgressObservation(coop_protocol::ProgressObservationV1 {
+            kind: coop_protocol::ProgressKindV1::BadgeEarned,
+            region_id: coop_protocol::RegionId::Hoenn,
+            subject_id: 2,
+            session_epoch: 7,
+            source_sequence: 44,
+        });
+        let encoded = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            serde_json::from_str::<ControlEvent>(&encoded).unwrap(),
+            event
+        );
+        let extra = encoded.replace("\"subject_id\":2", "\"subject_id\":2,\"extra\":true");
+        assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
+    }
+
+    #[test]
     fn group_travel_control_records_are_typed_strict_and_bounded() {
         let record = coop_protocol::GroupTravelServerRecord {
             kind: coop_protocol::GroupTravelServerKind::Commit,
@@ -853,6 +970,7 @@ mod tests {
             proposal_id: [0xAB; 16],
             result: coop_protocol::GroupTravelResult::None,
             reason: coop_protocol::GroupTravelReason::None,
+            remaining_seconds: 0,
         };
         let command = ControlCommand::GroupTravel {
             session_epoch: 9,
@@ -870,6 +988,177 @@ mod tests {
             .unwrap()
             .insert("extra".into(), true.into());
         assert!(serde_json::from_value::<ControlCommand>(value).is_err());
+    }
+
+    #[test]
+    fn battle_control_records_are_canonical_typed_and_line_bounded() {
+        let battle_id = coop_protocol::BattleId([0xAB; 16]);
+        let command = ControlCommand::BattleManifest {
+            session_epoch: 9,
+            record: BattleManifestRecord {
+                battle_id,
+                turn: 0,
+                seed: coop_protocol::BattleDigest([0xCD; 32]),
+                snapshot_hashes: [
+                    coop_protocol::BattleDigest([1; 32]),
+                    coop_protocol::BattleDigest([2; 32]),
+                ],
+                kind: coop_protocol::BattleKind::Friendly,
+                local_member_slot: 0,
+                trainer_region: coop_protocol::RegionId::Unspecified,
+                trainer_ordinal: 0,
+            },
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert!(json.contains(&"cd".repeat(32)));
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+        let uppercase = json.replace(&"cd".repeat(32), &"CD".repeat(32));
+        assert!(serde_json::from_str::<ControlCommand>(&uppercase).is_err());
+        let event = ControlEvent::PartySnapshot(PartySnapshotChunk {
+            battle_id,
+            party_slot: 0,
+            chunk_index: 0,
+            chunk_count: 1,
+            mon: vec![255; 100],
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+        let command = ControlCommand::PeerPartyChunk {
+            session_epoch: 9,
+            record: PartySnapshotChunk {
+                battle_id,
+                party_slot: 0,
+                chunk_index: 0,
+                chunk_count: 1,
+                mon: vec![0xAB; 100],
+            },
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+    }
+
+    #[test]
+    fn battle_consent_control_records_are_typed_strict_and_bounded() {
+        let battle_id = coop_protocol::BattleId([7; 16]);
+        let event = ControlEvent::TrainerBattleReserve(TrainerBattleReserveRecord {
+            kind: coop_protocol::BattleKind::Friendly,
+            request_nonce: 42,
+            trainer_region: None,
+            trainer_ordinal: None,
+        });
+        let response = ControlEvent::BattleJoinResponse(BattleJoinResponseRecord {
+            battle_id,
+            decision: coop_protocol::BattleDecision::Decline,
+        });
+        for event in [event, response] {
+            let json = serde_json::to_string(&event).unwrap();
+            assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+            assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+        }
+        let command = ControlCommand::BattleJoinOffer {
+            session_epoch: 9,
+            record: BattleJoinOfferRecord {
+                battle_id,
+                kind: coop_protocol::BattleKind::CooperativeTrainer,
+                role: coop_protocol::BattleRole::Requester,
+                request_nonce: 42,
+            },
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+        let extra = json.replace(
+            "\"role\":\"requester\"",
+            "\"role\":\"requester\",\"extra\":1",
+        );
+        assert!(serde_json::from_str::<ControlCommand>(&extra).is_err());
+
+        let command = ControlCommand::BattleConsentOutcome {
+            session_epoch: 9,
+            record: coop_protocol::BattleConsentOutcomeRecord {
+                battle_id,
+                request_nonce: 42,
+                outcome: coop_protocol::BattleConsentOutcome::Expired,
+            },
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+        let extra = json.replace("\"request_nonce\":42", "\"request_nonce\":42,\"extra\":1");
+        assert!(serde_json::from_str::<ControlCommand>(&extra).is_err());
+
+        let command = ControlCommand::BattleReserveRejected {
+            session_epoch: 9,
+            record: coop_protocol::BattleReserveRejectedRecord { request_nonce: 42 },
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+        let extra = json.replace("\"request_nonce\":42", "\"request_nonce\":42,\"extra\":1");
+        assert!(serde_json::from_str::<ControlCommand>(&extra).is_err());
+    }
+
+    #[test]
+    fn battle_finished_event_is_typed_strict_and_line_bounded() {
+        let event = ControlEvent::BattleFinished(coop_protocol::BattleFinishedRecord {
+            battle_id: coop_protocol::BattleId([0xAB; 16]),
+            turn: 32,
+            result: coop_protocol::BattleFinishedResult::Draw,
+            terminal_hash: coop_protocol::BattleDigest([0xCD; 32]),
+        });
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+        let extra = json.replace("\"turn\":32", "\"turn\":32,\"extra\":1");
+        assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
+    }
+
+    #[test]
+    fn battle_commit_control_records_are_typed_strict_and_bounded() {
+        let record = coop_protocol::BattleCommitRecord {
+            battle_id: coop_protocol::BattleId([0xAB; 16]),
+            commit_id: coop_protocol::BattleId([0xCD; 16]),
+            trainer_region: coop_protocol::RegionId::Hoenn,
+            trainer_ordinal: 518,
+            source_revision: 9,
+        };
+        let command = ControlCommand::BattleCommit {
+            session_epoch: 9,
+            record,
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+        let extra = json.replace("\"source_revision\":9", "\"source_revision\":9,\"extra\":1");
+        assert!(serde_json::from_str::<ControlCommand>(&extra).is_err());
+
+        let event = ControlEvent::CommitApplied(record);
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+        let extra = json.replace("\"source_revision\":9", "\"source_revision\":9,\"extra\":1");
+        assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
     }
 
     #[test]

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod auth;
+pub mod battle;
 pub mod compat;
 pub mod desktop;
 pub mod epoch;
@@ -13,17 +14,18 @@ pub mod process;
 pub mod realtime;
 pub mod recovery;
 pub mod session;
+pub mod trade;
 pub mod update;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
 
 pub use auth::{AuthApi, AuthError, AuthSession};
 pub use compat::{BuildCompatibility, CompatibilityError};
+pub use coop_cloud::TrustedManifestKey;
 pub use desktop::{
-    AuthFlow, AuthRequest, AuthFailure, BlockReason, BootstrapInput, Command,
-    CommandRejection, Controller, Dispatch, Effect, RecoveryReason, RecoveryResult,
-    ReleaseReadiness, RetryTarget, Secret, ServiceFailure, SignOutFailure, StartFailure,
-    State, Status, UiModel, UpdateFailure,
+    AuthFailure, AuthFlow, AuthRequest, BlockReason, BootstrapInput, Command, CommandRejection,
+    Controller, Dispatch, Effect, RecoveryReason, RecoveryResult, ReleaseReadiness, RetryTarget,
+    Secret, ServiceFailure, SignOutFailure, StartFailure, State, Status, UiModel, UpdateFailure,
 };
 pub use epoch::{EpochError, EpochRecord, EpochStore};
 pub use group_travel::{GroupTravelError, GroupTravelFuture};
@@ -42,22 +44,26 @@ pub use recovery::{
     RecoveryOutcome, RecoveryReconciler, RecoverySession,
 };
 pub use session::{CloudApi, SessionConfig, SessionError, SessionLifecycle, SessionWorkspace};
-pub use update::{
-    AcceptedGeneration, ArtifactIdentity, ArtifactPayload, ArtifactSet, GenerationArtifact, GenerationHandoff,
-    GenerationStore, InstalledGeneration, ReleaseDescriptor, ReleaseStore, SignedReleaseEnvelope,
-    TrustedReleaseKey, UpdateError, VerifiedRelease, MAX_ARTIFACT_BYTES, MAX_ENVELOPE_BYTES,
+pub use trade::{
+    TRADE_PARTICIPANTS, TradeCommitReceipt, TradeHandoff, TradeHandoffError, TradeHeartbeat,
+    TradePhase, TradePublishedHead, TradeRecoveryJournal, TradeSourceHead, TradeStageToken,
 };
-pub use coop_cloud::TrustedManifestKey;
+pub use update::{
+    AcceptedGeneration, ArtifactIdentity, ArtifactPayload, ArtifactSet, GenerationArtifact,
+    GenerationHandoff, GenerationStore, InstalledGeneration, MAX_ARTIFACT_BYTES,
+    MAX_ENVELOPE_BYTES, ReleaseDescriptor, ReleaseStore, SignedReleaseEnvelope, TrustedReleaseKey,
+    UpdateError, VerifiedRelease,
+};
 
 use std::time::Duration;
 
 use coop_cloud::{
-    AcquireLeaseRequest, ArtifactIdentity as CloudArtifactIdentity, CharacterId, HeartbeatLeaseRequest, LeaseContract,
-    LeaseFence, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse, PrepareSnapshotRequest,
-    ReconnectLeaseRequest, RefreshRequest, RefreshResponse, RegisterRequest, RegisterResponse,
-    ReleaseLeaseRequest, Revision, SignedManifestEnvelope, SnapshotFinalizeRequest,
-    SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse, SnapshotRecord,
-    SnapshotRestoreRequest, SnapshotRestoreResponse, UploadTarget,
+    AcquireLeaseRequest, ArtifactIdentity as CloudArtifactIdentity, CharacterId,
+    HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginRequest, LoginResponse, LogoutRequest,
+    LogoutResponse, PrepareSnapshotRequest, ReconnectLeaseRequest, RefreshRequest, RefreshResponse,
+    RegisterRequest, RegisterResponse, ReleaseLeaseRequest, Revision, SignedManifestEnvelope,
+    SnapshotFinalizeRequest, SnapshotListRequest, SnapshotListResponse, SnapshotPrepareResponse,
+    SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse, UploadTarget,
 };
 use reqwest::{Client, Method, StatusCode, Url};
 use thiserror::Error;
@@ -136,6 +142,16 @@ impl ReqwestCloudApi {
             .build()
             .map_err(HttpClientError::Transport)?;
         Ok(Self { client, base })
+    }
+
+    /// Fetches the authenticated account's group partner for the desktop panel.
+    pub async fn partner_status(
+        &self,
+        auth: &AuthSession,
+    ) -> Result<coop_cloud::PartnerStatusResponse, HttpClientError> {
+        let url = self.url("v1/group/partner")?;
+        let request = self.authenticated(Method::GET, url, auth)?;
+        self.send_json(request, 4 * 1024).await
     }
 
     fn url(&self, path: &str) -> Result<Url, HttpClientError> {
@@ -333,6 +349,201 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn story_travel_recovery(
+        &self,
+        token: coop_cloud::AccessToken,
+        fence: coop_cloud::LeaseFence,
+    ) -> group_travel::GroupTravelFuture<'_, Option<coop_cloud::StoryTravelRecoveryView>> {
+        self.story_travel_recovery_http(token, fence)
+    }
+    fn story_travel_recovery_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+        action: coop_cloud::StoryTravelRecoveryAction,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::StoryTravelRecoveryResolutionView> {
+        self.story_travel_recovery_action_http(token, proposal_id, fence, action)
+    }
+    fn battle_peer_party(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> battle::BattleFuture<'_, battle::BattlePeerPartyView> {
+        Box::pin(async move {
+            self.battle_peer_party_http(&token, group_id, battle_id, fence)
+                .await
+        })
+    }
+    fn battle_commit_snapshot(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        hash: &str,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        let hash = hash.to_owned();
+        Box::pin(async move {
+            self.battle_commit_snapshot_http(&token, group_id, battle_id, fence, key, &hash)
+                .await
+        })
+    }
+    fn battle_ready(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        digest: coop_protocol::BattleDigest,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        Box::pin(async move {
+            self.battle_ready_http(&token, group_id, battle_id, fence, key, digest)
+                .await
+        })
+    }
+    fn battle_inspect_consensus(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        Box::pin(async move {
+            self.battle_inspect_consensus_http(&token, group_id, battle_id, fence)
+                .await
+        })
+    }
+    fn battle_submit_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        turn: u16,
+        action: &str,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        let action = action.to_owned();
+        Box::pin(async move {
+            self.battle_submit_action_http(&token, group_id, battle_id, fence, key, turn, &action)
+                .await
+        })
+    }
+    fn battle_acknowledge_hash(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        turn: u16,
+        hash: &str,
+    ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
+        let hash = hash.to_owned();
+        Box::pin(async move {
+            self.battle_acknowledge_hash_http(&token, group_id, battle_id, fence, key, turn, &hash)
+                .await
+        })
+    }
+    fn battle_reserve(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+        kind: battle::BattleKind,
+        trainer_id: Option<coop_protocol::TrainerInstanceId>,
+        key: coop_cloud::IdempotencyKey,
+    ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
+        Box::pin(async move {
+            self.reserve_battle_http(&token, group_id, fence, kind, trainer_id, key)
+                .await
+        })
+    }
+    fn battle_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> battle::BattleFuture<'_, Option<battle::BattleReservationView>> {
+        Box::pin(async move { self.current_battle_http(&token, group_id, fence).await })
+    }
+    fn battle_action(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        action: &str,
+        key: coop_cloud::IdempotencyKey,
+    ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
+        let action = action.to_owned();
+        Box::pin(async move {
+            self.battle_reservation_action_http(&token, group_id, battle_id, fence, &action, key)
+                .await
+        })
+    }
+    fn battle_finish(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        key: coop_cloud::IdempotencyKey,
+        result: coop_protocol::BattleFinishedResult,
+        turn: u16,
+        state_hash: coop_protocol::BattleDigest,
+    ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
+        Box::pin(async move {
+            self.battle_finish_http(
+                &token, group_id, battle_id, fence, key, result, turn, state_hash,
+            )
+            .await
+        })
+    }
+    fn battle_commit_grant(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        expected_trainer: coop_protocol::TrainerInstanceId,
+        expected_source_digest: coop_protocol::BattleDigest,
+        expected_terminal_turn: u16,
+        expected_terminal_hash: coop_protocol::BattleDigest,
+    ) -> battle::BattleFuture<'_, battle::BattleCommitGrantView> {
+        Box::pin(async move {
+            self.battle_commit_grant_http(
+                &token,
+                group_id,
+                battle_id,
+                fence,
+                &expected_trainer,
+                expected_source_digest,
+                expected_terminal_turn,
+                expected_terminal_hash,
+            )
+            .await
+        })
+    }
+    fn pairing_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::CreatePairingCodeRequest,
+    ) -> online::OnlineFuture<'_, coop_cloud::CreatePairingCodeResponse> {
+        self.pairing_create_http(token, request)
+    }
+    fn pairing_redeem(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::RedeemPairingCodeRequest,
+    ) -> online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
+        self.pairing_redeem_http(token, request)
+    }
     fn group_travel_create(
         &self,
         token: coop_cloud::AccessToken,
@@ -369,6 +580,26 @@ impl CloudApi for ReqwestCloudApi {
         request: coop_cloud::GroupTravelActionRequest,
     ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
         self.group_travel_action_http(token, group_id, proposal_id, request)
+    }
+
+    fn group_travel_scene_marker(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelSceneMarkerRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_scene_marker_http(token, group_id, proposal_id, request)
+    }
+
+    fn group_travel_scene_receipt(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::GroupTravelSceneReceiptRequest,
+    ) -> group_travel::GroupTravelFuture<'_, coop_cloud::GroupTravelProposalView> {
+        self.group_travel_scene_receipt_http(token, group_id, proposal_id, request)
     }
 
     fn online_snapshot(
@@ -668,8 +899,8 @@ impl CloudApi for ReqwestCloudApi {
                     .timeout(SNAPSHOT_UPLOAD_TIMEOUT)
                     .body(bytes),
             )
-                .await
-                .map_err(|_| SessionError::Cloud)
+            .await
+            .map_err(|_| SessionError::Cloud)
         })
     }
     fn finalize<'a>(
@@ -709,12 +940,14 @@ impl CloudApi for ReqwestCloudApi {
 
 #[cfg(test)]
 mod tests {
-    use super::{HttpClientError, ReqwestCloudApi, bounded_body, map_acquire_error, map_cloud_error};
+    use super::{
+        HttpClientError, ReqwestCloudApi, bounded_body, map_acquire_error, map_cloud_error,
+    };
     use crate::{AuthError, AuthSession, CloudApi, RefreshTokenStore, SessionError};
     use coop_cloud::{
-        AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId, HeartbeatLeaseRequest,
-        LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId, RefreshToken,
-        SessionEpoch, SessionId, UnixTimestampMillis, UploadTarget, UserId,
+        AccessToken, ArtifactIdentity as CloudArtifactIdentity, CharacterId, ClientInstanceId,
+        HeartbeatLeaseRequest, LeaseContract, LeaseFence, LoginResponse, Password, RefreshFamilyId,
+        RefreshToken, SessionEpoch, SessionId, UnixTimestampMillis, UploadTarget, UserId,
     };
     use reqwest::StatusCode;
     use std::sync::Arc;

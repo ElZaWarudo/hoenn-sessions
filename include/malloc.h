@@ -41,8 +41,16 @@ struct MemBlock
     u8 data[0];
 };
 
-#define HEAP_SIZE 0x1C500
-extern u8 gHeap[HEAP_SIZE];
+#define HEAP_STORAGE_SIZE 0x1C500
+/* The test ROM's isolated fixtures occupy the heap tail in the linker
+ * overlay. Runtime allocations stay below that tail; contest scratch uses
+ * it only in tests that do not use those fixtures. */
+#if TESTING
+#define HEAP_SIZE 0x19500
+#else
+#define HEAP_SIZE HEAP_STORAGE_SIZE
+#endif
+extern u8 gHeap[HEAP_STORAGE_SIZE];
 
 #if TESTING || !defined(NDEBUG)
 

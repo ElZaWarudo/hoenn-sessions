@@ -270,8 +270,14 @@ mod download_tests {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(23),
             read_bounded(response, 3),
-        ).await;
+        )
+        .await;
         task.abort();
-        assert_eq!(result.expect("read stall must fail before server closes").unwrap_err(), ReleaseError::Transport);
+        assert_eq!(
+            result
+                .expect("read stall must fail before server closes")
+                .unwrap_err(),
+            ReleaseError::Transport
+        );
     }
 }

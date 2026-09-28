@@ -411,11 +411,34 @@ Route104_EventScript_ArriveInDewford::
 
 Route104_EventScript_DeliverLetterReminder::
 	msgbox Route104_Text_LandedInDewfordDeliverLetter, MSGBOX_DEFAULT
+	special Special_CoopGroupTravelFirstBrineySceneComplete
+	goto_if_eq VAR_RESULT, TRUE, Route104_EventScript_GroupVoyageSaveAtDewford
 	releaseall
 	end
 
 Route104_EventScript_LandedInDewford::
 	msgbox DewfordTown_Text_BrineyLandedInDewford, MSGBOX_DEFAULT
+	special Special_CoopGroupTravelFirstBrineySceneComplete
+	goto_if_eq VAR_RESULT, TRUE, Route104_EventScript_GroupVoyageSaveAtDewford
+	releaseall
+	end
+
+Route104_EventScript_GroupVoyageSaveAtDewford::
+	// Allow the scene-complete record to reach the launcher before asking for
+	// the checkpoint that proves this exact post-landing state.
+	delay 30
+Route104_EventScript_GroupVoyageRetrySave::
+	call Common_EventScript_SaveGame
+	goto_if_eq VAR_RESULT, 0, Route104_EventScript_GroupVoyageSaveFailed
+Route104_EventScript_GroupVoyageAwaitReceipt::
+	special Special_CoopGroupTravelFirstBrineyReceiptComplete
+	goto_if_eq VAR_RESULT, TRUE, Route104_EventScript_GroupVoyageFinished
+	delay 30
+	goto Route104_EventScript_GroupVoyageAwaitReceipt
+Route104_EventScript_GroupVoyageSaveFailed::
+	msgbox Route104_Text_GroupVoyageSaveRequired, MSGBOX_DEFAULT
+	goto Route104_EventScript_GroupVoyageRetrySave
+Route104_EventScript_GroupVoyageFinished::
 	releaseall
 	end
 
@@ -993,6 +1016,10 @@ Route104_EventScript_Darian::
 	trainerbattle_single TRAINER_DARIAN, Route104_Text_DarianIntro, Route104_Text_DarianDefeat
 	msgbox Route104_Text_DarianPostBattle, MSGBOX_AUTOCLOSE
 	end
+
+Route104_Text_GroupVoyageSaveRequired:
+	.string "To finish this voyage together, save\n"
+	.string "your game here when connected.$"
 
 Route104_Text_BrineyLivesInSeasideCottage:
 	.string "That seaside cottage is where\n"

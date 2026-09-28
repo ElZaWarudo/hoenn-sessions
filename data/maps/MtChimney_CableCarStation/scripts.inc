@@ -36,6 +36,11 @@ MtChimney_CableCarStation_EventScript_Attendant::
 	end
 
 MtChimney_CableCarStation_EventScript_RideCableCar::
+	setvar VAR_0x8004, 163
+	setvar VAR_0x8005, 6
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, MtChimney_CableCarStation_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, MtChimney_CableCarStation_EventScript_GroupTravelFailed
 	msgbox MtChimney_CableCarStation_Text_StepThisWay, MSGBOX_DEFAULT
 	closemessage
 	applymovement LOCALID_MT_CHIMNEY_CABLE_CAR_ATTENDANT, MtChimney_CableCarStation_Movement_LeadPlayerToCableCar
@@ -47,6 +52,13 @@ MtChimney_CableCarStation_EventScript_RideCableCar::
 	special CableCarWarp
 	special CableCar
 	waitstate
+	release
+	end
+
+MtChimney_CableCarStation_EventScript_GroupTravelWaiting::
+	end
+
+MtChimney_CableCarStation_EventScript_GroupTravelFailed::
 	release
 	end
 

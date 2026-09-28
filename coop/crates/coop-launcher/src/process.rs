@@ -1618,12 +1618,26 @@ impl PumpShared {
     }
 }
 
+enum OnlineWork {
+    Online(coop_protocol::OnlineRequest),
+    Pairing(coop_protocol::PairingRequest),
+}
+
+impl OnlineWork {
+    fn into_event(self) -> ControlEvent {
+        match self {
+            Self::Online(request) => ControlEvent::OnlineRequest(request),
+            Self::Pairing(request) => ControlEvent::PairingRequest(request),
+        }
+    }
+}
+
 /// A control-only connection; the secret is never serialized outside its
 /// synchronous authenticated handshake.  After authentication, one task
 /// exclusively owns the reader half and one task exclusively owns the writer
 /// half.  Callers communicate with those owners only through bounded queues.
 pub struct ControlChannel {
-    online_rx: mpsc::Receiver<(u32, coop_protocol::OnlineRequest)>,
+    online_rx: mpsc::Receiver<(u32, OnlineWork)>,
     critical_tx: mpsc::Sender<CriticalWrite>,
     critical_rx: mpsc::Receiver<ControlEvent>,
     #[allow(dead_code)]
@@ -1706,8 +1720,11 @@ impl ControlChannel {
             ControlCommand::RemotePlayerSpawn(_)
                 | ControlCommand::RemotePlayerUpdate(_)
                 | ControlCommand::RemotePlayerDespawn(_)
+                | ControlCommand::RemoteInteraction(_)
                 | ControlCommand::RemoteCompanion(_)
                 | ControlCommand::RemoteSocialSignal(_)
+                | ControlCommand::ProgressEvent(_)
+                | ControlCommand::GroupEnded(_)
         ) {
             return Err(ProcessError::InvalidArgument);
         }
@@ -1796,8 +1813,11 @@ impl ControlChannel {
             ControlCommand::RemotePlayerSpawn(_)
                 | ControlCommand::RemotePlayerUpdate(_)
                 | ControlCommand::RemotePlayerDespawn(_)
+                | ControlCommand::RemoteInteraction(_)
                 | ControlCommand::RemoteCompanion(_)
                 | ControlCommand::RemoteSocialSignal(_)
+                | ControlCommand::ProgressEvent(_)
+                | ControlCommand::GroupEnded(_)
         ) || generation != self.lifecycle_generation()
         {
             return Err(ProcessError::InvalidArgument);
@@ -1968,7 +1988,7 @@ impl ControlChannel {
             }
             if include_online && let Ok((generation, request)) = self.online_rx.try_recv() {
                 if generation == self.lifecycle_generation() && !self.reset_latched() {
-                    return Ok(ControlEvent::OnlineRequest(request));
+                    return Ok(request.into_event());
                 }
                 continue;
             }
@@ -2020,7 +2040,7 @@ impl ControlChannel {
                     None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
                 },
                 online = self.online_rx.recv(), if include_online => match online {
-                    Some((generation, request)) if generation == self.lifecycle_generation() && !self.reset_latched() => return Ok(ControlEvent::OnlineRequest(request)),
+                    Some((generation, request)) if generation == self.lifecycle_generation() && !self.reset_latched() => return Ok(request.into_event()),
                     Some(_) => {},
                     None => self.shared.set_terminal(ControlTerminalCause::ReaderClosed),
                 },
@@ -2319,7 +2339,7 @@ async fn run_control_reader(
     critical_tx: mpsc::Sender<ControlEvent>,
     interaction_tx: mpsc::Sender<(u32, coop_protocol::PresenceInteractionV1)>,
     signal_tx: mpsc::Sender<(u32, coop_protocol::LocalSignalV1)>,
-    online_tx: mpsc::Sender<(u32, coop_protocol::OnlineRequest)>,
+    online_tx: mpsc::Sender<(u32, OnlineWork)>,
     shared: Arc<PumpShared>,
     mut stop_rx: watch::Receiver<bool>,
 ) {
@@ -2383,7 +2403,29 @@ async fn run_control_reader(
                     continue;
                 }
                 if online_tx
-                    .try_send((shared.current_snapshot().generation, request))
+                    .try_send((
+                        shared.current_snapshot().generation,
+                        OnlineWork::Online(request),
+                    ))
+                    .is_err()
+                {
+                    shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
+                    break;
+                }
+            }
+            ControlEvent::PairingRequest(request) => {
+                if request.encode().is_err() {
+                    shared.set_terminal(ControlTerminalCause::ReaderProtocol);
+                    break;
+                }
+                if shared.current_snapshot().reset_latched {
+                    continue;
+                }
+                if online_tx
+                    .try_send((
+                        shared.current_snapshot().generation,
+                        OnlineWork::Pairing(request),
+                    ))
                     .is_err()
                 {
                     shared.set_terminal(ControlTerminalCause::CriticalLaneClosed);
@@ -2391,9 +2433,19 @@ async fn run_control_reader(
                 }
             }
             ControlEvent::CheckpointReady { .. }
+            | ControlEvent::ProgressObservation(_)
             | ControlEvent::SaveDataUpdated { .. }
             | ControlEvent::CheckpointExpired { .. }
             | ControlEvent::GroupTravel(_)
+            | ControlEvent::TrainerBattleReserve(_)
+            | ControlEvent::BattleJoinResponse(_)
+            | ControlEvent::BattleAbortRequest(_)
+            | ControlEvent::PartySnapshot(_)
+            | ControlEvent::ActionIntent(_)
+            | ControlEvent::BattleReady(_)
+            | ControlEvent::TurnResultHash(_)
+            | ControlEvent::BattleFinished(_)
+            | ControlEvent::CommitApplied(_)
             | ControlEvent::CommandResult { .. } => {
                 let sent = tokio::select! {
                     biased;
@@ -3726,12 +3778,24 @@ impl SupervisedChildren {
                 | ControlEvent::InteractRemotePlayer(_)
                 | ControlEvent::CompanionState(_)
                 | ControlEvent::SocialSignal(_)
+                | ControlEvent::ProgressObservation(_)
                 | ControlEvent::OnlineRequest(_)
+                | ControlEvent::PairingRequest(_)
                 | ControlEvent::PresenceRearmed { .. } => {}
                 // A semantic travel record cannot be discarded to reach a
                 // shutdown ACK. Force the recovery path; a committed proposal
                 // remains server-owned and is replayed on the next session.
-                ControlEvent::GroupTravel(_) | ControlEvent::RomPresenceReset => return false,
+                ControlEvent::GroupTravel(_)
+                | ControlEvent::TrainerBattleReserve(_)
+                | ControlEvent::BattleJoinResponse(_)
+                | ControlEvent::BattleAbortRequest(_)
+                | ControlEvent::PartySnapshot(_)
+                | ControlEvent::BattleReady(_)
+                | ControlEvent::ActionIntent(_)
+                | ControlEvent::TurnResultHash(_)
+                | ControlEvent::BattleFinished(_)
+                | ControlEvent::CommitApplied(_)
+                | ControlEvent::RomPresenceReset => return false,
             }
         }
     }

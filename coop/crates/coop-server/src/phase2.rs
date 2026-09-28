@@ -7,6 +7,7 @@ use std::{
     path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
     sync::{Arc, OnceLock},
+    time::Duration,
 };
 
 use axum::{
@@ -80,9 +81,12 @@ where
 use thiserror::Error;
 
 pub mod auth;
+mod battles;
 mod firebase;
 pub(crate) mod group_travel;
 mod online;
+mod pairing;
+mod partner;
 mod persistent;
 mod portal;
 pub mod presence;
@@ -92,6 +96,7 @@ pub mod releases;
 pub mod saves;
 pub mod sessions;
 pub mod storage;
+mod trades;
 
 pub use presence::{
     PRESENCE_HANDLE_CANDIDATES, PRESENCE_MAP, PRESENCE_MAP_GROUP, PRESENCE_MAP_NUMBER,
@@ -368,14 +373,63 @@ impl Phase2App {
             .merge(
                 Router::new()
                     .route("/v1/groups/invitations", post(create_group_invitation))
+                    .route("/v1/groups/pairing-codes", post(create_pairing_code))
+                    .route("/v1/groups/pairing-codes/redeem", post(redeem_pairing_code))
                     .route("/v1/online/snapshot", post(online_snapshot))
                     .route("/v1/online/actions", post(online_action))
+                    .route("/v1/group/partner", get(get_partner_status))
+                    .route("/v1/group/progress", get(get_progress_feed))
+                    .route("/v1/groups/{group_id}/battles", post(reserve_battle))
+                    .route("/v1/groups/{group_id}/battles/current", get(current_battle))
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/accept",
+                        post(accept_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/decline",
+                        post(decline_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/cancel",
+                        post(cancel_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/snapshot-commitments",
+                        post(commit_battle_snapshot),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/ready",
+                        post(ready_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/consensus",
+                        get(inspect_battle_consensus),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/peer-party",
+                        get(get_battle_peer_party),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/actions",
+                        post(submit_battle_action),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/state-hashes",
+                        post(acknowledge_battle_hash),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/finish",
+                        post(finish_battle),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/battles/{battle_id}/commit-grant",
+                        get(get_battle_commit_grant),
+                    )
                     .route(
                         "/v1/groups/invitations/{invitation_id}/accept",
                         post(accept_group_invitation),
                     )
                     .route("/v1/groups/{group_id}", get(inspect_group))
-                    .route("/v1/groups/{group_id}/travel", post(travel_group))
                     .route(
                         "/v1/groups/{group_id}/travel-proposals",
                         post(create_group_travel_proposal),
@@ -385,12 +439,40 @@ impl Phase2App {
                         get(current_group_travel_proposal),
                     )
                     .route(
+                        "/v1/characters/{character_id}/story-travel-recovery",
+                        get(discover_story_travel_recovery),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/story-travel-recovery/{proposal_id}/actions",
+                        post(resolve_story_travel_recovery),
+                    )
+                    .route(
                         "/v1/groups/{group_id}/travel-proposals/{proposal_id}",
                         get(get_group_travel_proposal),
                     )
                     .route(
                         "/v1/groups/{group_id}/travel-proposals/{proposal_id}/actions",
                         post(act_on_group_travel_proposal),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers",
+                        post(create_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers/{offer_id}",
+                        get(get_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/trade-offers/{offer_id}/decision",
+                        post(decide_trade_offer),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/{proposal_id}/scene-markers",
+                        post(mark_group_travel_scene),
+                    )
+                    .route(
+                        "/v1/groups/{group_id}/travel-proposals/{proposal_id}/scene-receipts",
+                        post(receipt_group_travel_scene),
                     )
                     .layer(axum::extract::DefaultBodyLimit::max(
                         coop_cloud::GROUP_REQUEST_BODY_MAX_BYTES,
@@ -642,6 +724,28 @@ impl Phase2App {
         group_travel::create_invitation(&self.store, actor, &request)
     }
 
+    /// Creates a short-lived, single-use pairing code bound to the caller's
+    /// active lease. The code contains no host or location information.
+    pub fn create_pairing_code(
+        &self,
+        actor: AuthenticatedActor,
+        request: coop_cloud::CreatePairingCodeRequest,
+    ) -> Result<coop_cloud::CreatePairingCodeResponse, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        pairing::create_code(&self.store, actor, &request)
+    }
+
+    /// Redeems a pairing code and forms an active group even when the members
+    /// are on different maps. Each member remains at their current location.
+    pub fn redeem_pairing_code(
+        &self,
+        actor: AuthenticatedActor,
+        request: coop_cloud::RedeemPairingCodeRequest,
+    ) -> Result<coop_cloud::RedeemPairingCodeResponse, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        pairing::redeem_code(&self.store, actor, &request)
+    }
+
     /// Consumes an invitation and creates a symmetric group atomically.
     ///
     /// # Errors
@@ -756,6 +860,272 @@ impl Phase2App {
     ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
         group_travel::act_on_travel_proposal(&self.store, actor, group_id, proposal_id, &request)
+    }
+
+    /// Discovers the caller's own unresolved first-Briney scene marker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, fence, hidden-not-found, ambiguity, or storage error.
+    pub fn discover_story_travel_recovery(
+        &self,
+        actor: AuthenticatedActor,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::StoryTravelRecoveryView, Phase2Error> {
+        group_travel::discover_story_travel_recovery(&self.store, actor, fence)
+    }
+
+    pub fn resolve_story_travel_recovery(
+        &self,
+        actor: AuthenticatedActor,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        fence: coop_cloud::LeaseFence,
+        request: coop_cloud::StoryTravelRecoveryActionRequest,
+    ) -> Result<coop_cloud::StoryTravelRecoveryResolutionView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        group_travel::resolve_story_travel_recovery(
+            &self.store,
+            actor,
+            proposal_id,
+            fence,
+            &request,
+        )
+    }
+
+    pub fn mark_group_travel_scene(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::group::GroupTravelSceneMarkerRequest,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        group_travel::mark_story_scene(&self.store, actor, group_id, proposal_id, &request)
+    }
+
+    pub fn receipt_group_travel_scene(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        proposal_id: coop_cloud::GroupTravelProposalId,
+        request: coop_cloud::group::GroupTravelSceneReceiptRequest,
+    ) -> Result<coop_cloud::GroupTravelProposalView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        group_travel::receipt_story_scene(&self.store, actor, group_id, proposal_id, &request)
+    }
+
+    /// Reserves both current group members for a future battle. This only
+    /// creates a bounded, expiring consent record; it does not start a battle
+    /// or mutate character state.
+    pub fn reserve_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::reserve(&self.store, actor, group_id, fence, &request)
+    }
+
+    /// Returns the caller's live group battle reservation without changing its deadline.
+    pub fn current_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::current(&self.store, actor, group_id, fence)
+    }
+
+    pub fn accept_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationActionRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::accept(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn decline_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationActionRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::decline(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn cancel_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReservationActionRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::cancel(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn commit_battle_snapshot(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleSnapshotCommitRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::commit_snapshot(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn ready_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleReadyRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::ready(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn inspect_battle_consensus(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::inspect_consensus(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    pub fn battle_peer_party(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattlePeerPartyView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::peer_party(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    pub fn submit_battle_action(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleActionIntentRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::submit_action(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    pub fn acknowledge_battle_hash(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleStateHashRequest,
+    ) -> Result<battles::BattleConsensusView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::acknowledge_hash(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    /// Records a paired terminal battle attestation. This is a pre-ledger
+    /// receipt only: it cannot publish a snapshot or award trainer progress.
+    pub fn finish_battle(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+        request: battles::BattleFinishRequest,
+    ) -> Result<battles::BattleReservationView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::finish(&self.store, actor, group_id, battle_id, fence, &request)
+    }
+
+    /// Reads only the caller's server-issued trainer victory grant. It does
+    /// not apply progression or authorize an uploaded save by itself.
+    pub fn battle_commit_grant(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        battle_id: uuid::Uuid,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<battles::BattleCommitGrant, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        battles::retrieve_commit_grant(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    /// Creates one pending two-party trade offer anchoring both snapshot
+    /// heads. This records consent only; staging stays gated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, fence, conflict, capacity, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn create_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeOfferRequest,
+    ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::create_offer(&self.store, actor, group_id, &request)
+    }
+
+    /// Returns one trade offer visible to either participant.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found, fence, or storage error.
+    pub fn get_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::get_offer(&self.store, actor, group_id, offer_id, fence)
+    }
+
+    /// Records one trade consent decision under the runtime transition gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, role, stale-state, conflict, or storage error.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "public operation consumes the request at the service boundary"
+    )]
+    pub fn decide_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        request: coop_cloud::TradeDecisionRequest,
+    ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::decide_offer(&self.store, actor, group_id, offer_id, &request)
     }
 }
 
@@ -876,6 +1246,42 @@ fn loopback_upload_base(address: SocketAddr) -> String {
     format!("http://{address}")
 }
 
+pub(crate) fn spawn_group_expiry_watchdog(app: Phase2App) {
+    let mut shutdown = app.shutdown.subscribe();
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                () = tokio::time::sleep(Duration::from_secs(5)) => {
+                    {
+                        let _gate = app.store.lock_runtime_transition_gate();
+                        match sessions::expire_groups(&app.store) {
+                            Ok(events) => {
+                                for event in events {
+                                    if let Some(session) = event.partner_session {
+                                        app.realtime.queue_group_ended(session, event.group_id);
+                                    }
+                                }
+                            }
+                            Err(error) => eprintln!("group expiry sweep failed: {error}"),
+                        }
+                        if let Err(error) = battles::prune_expired(&app.store) {
+                            eprintln!("battle reservation expiry sweep failed: {error}");
+                        }
+                    }
+                    if let Err(error) = trades::recover_trade_stages(&app.store, app.store.now()) {
+                        eprintln!("trade staging recovery sweep failed: {error}");
+                    }
+                }
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Runs the explicitly selected in-memory Phase 2 service on a loopback
 /// listener. Port zero is supported; upload capabilities use the actual
 /// listener address selected by the operating system.
@@ -893,6 +1299,7 @@ pub async fn serve_phase2_local(address: SocketAddr) -> Result<(), Phase2Error> 
         .map_err(|_| Phase2Error::Internal)?;
     let bound = listener.local_addr().map_err(|_| Phase2Error::Internal)?;
     let app = phase2_app_from_env(loopback_upload_base(bound))?;
+    spawn_group_expiry_watchdog(app.clone());
     let shutdown = app.shutdown.clone();
     axum::serve(listener, app.router())
         .with_graceful_shutdown(production::shutdown(shutdown))
@@ -1144,6 +1551,20 @@ struct GroupTravelProposalPath {
     proposal_id: coop_cloud::GroupTravelProposalId,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoryTravelRecoveryPath {
+    character_id: coop_cloud::CharacterId,
+    proposal_id: coop_cloud::GroupTravelProposalId,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BattlePath {
+    group_id: coop_cloud::GroupId,
+    battle_id: uuid::Uuid,
+}
+
 async fn group_no_store(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     response
@@ -1176,6 +1597,227 @@ async fn online_action(
     )?))
 }
 
+async fn get_partner_status(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<coop_cloud::PartnerStatusResponse>, Phase2Error> {
+    Ok(Json(partner::status(&app, actor(&headers, &app)?)?))
+}
+
+async fn get_progress_feed(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<coop_cloud::ProgressFeedResponse>, Phase2Error> {
+    let events = realtime::progress_feed::recent_for_partner(&app.store, actor(&headers, &app)?)?;
+    Ok(Json(coop_cloud::ProgressFeedResponse {
+        api_version: coop_cloud::ApiVersion::V1,
+        events,
+    }))
+}
+
+async fn reserve_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationRequest>,
+) -> Result<(StatusCode, Json<battles::BattleReservationView>), Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    let response = app.reserve_battle(actor, path.group_id, fence, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn current_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.current_battle(actor, path.group_id, fence)?))
+}
+
+async fn accept_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationActionRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.accept_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn decline_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationActionRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.decline_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn cancel_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReservationActionRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.cancel_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn commit_battle_snapshot(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleSnapshotCommitRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.commit_battle_snapshot(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn inspect_battle_consensus(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.inspect_battle_consensus(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+    )?))
+}
+
+async fn ready_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleReadyRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.ready_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn get_battle_peer_party(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+) -> Result<Json<battles::BattlePeerPartyView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.battle_peer_party(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+    )?))
+}
+
+async fn submit_battle_action(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleActionIntentRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.submit_battle_action(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn acknowledge_battle_hash(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleStateHashRequest>,
+) -> Result<Json<battles::BattleConsensusView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.acknowledge_battle_hash(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn finish_battle(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+    Phase2Json(request): Phase2Json<battles::BattleFinishRequest>,
+) -> Result<Json<battles::BattleReservationView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.finish_battle(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+        request,
+    )?))
+}
+
+async fn get_battle_commit_grant(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<BattlePath>,
+) -> Result<Json<battles::BattleCommitGrant>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.battle_commit_grant(
+        actor,
+        path.group_id,
+        path.battle_id,
+        fence,
+    )?))
+}
+
 async fn create_group_invitation(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
@@ -1183,6 +1825,25 @@ async fn create_group_invitation(
 ) -> Result<(StatusCode, Json<coop_cloud::CreateGroupInvitationResponse>), Phase2Error> {
     let response = app.create_group_invitation(actor(&headers, &app)?, request)?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn create_pairing_code(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::CreatePairingCodeRequest>,
+) -> Result<(StatusCode, Json<coop_cloud::CreatePairingCodeResponse>), Phase2Error> {
+    let response = app.create_pairing_code(actor(&headers, &app)?, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn redeem_pairing_code(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Phase2Json(request): Phase2Json<coop_cloud::RedeemPairingCodeRequest>,
+) -> Result<Json<coop_cloud::RedeemPairingCodeResponse>, Phase2Error> {
+    Ok(Json(
+        app.redeem_pairing_code(actor(&headers, &app)?, request)?,
+    ))
 }
 
 async fn accept_group_invitation(
@@ -1206,27 +1867,15 @@ async fn inspect_group(
     Ok(Json(app.inspect_group(actor, path.group_id, fence)?))
 }
 
-async fn travel_group(
-    State(app): State<Phase2App>,
-    headers: axum::http::HeaderMap,
-    Path(path): Path<GroupPath>,
-    Phase2Json(request): Phase2Json<coop_cloud::GroupTravelRequest>,
-) -> Result<Json<coop_cloud::GroupTravelResponse>, Phase2Error> {
-    Ok(Json(app.travel_group(
-        actor(&headers, &app)?,
-        path.group_id,
-        request,
-    )?))
-}
-
 async fn create_group_travel_proposal(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
     Path(path): Path<GroupPath>,
     Phase2Json(request): Phase2Json<coop_cloud::GroupTravelProposalRequest>,
 ) -> Result<(StatusCode, Json<coop_cloud::GroupTravelProposalView>), Phase2Error> {
-    let response =
+    let mut response =
         app.create_group_travel_proposal(actor(&headers, &app)?, path.group_id, request)?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
     Ok((StatusCode::CREATED, Json(response)))
 }
 
@@ -1237,11 +1886,9 @@ async fn current_group_travel_proposal(
 ) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
     let actor = actor(&headers, &app)?;
     let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
-    Ok(Json(app.current_group_travel_proposal(
-        actor,
-        path.group_id,
-        fence,
-    )?))
+    let mut response = app.current_group_travel_proposal(actor, path.group_id, fence)?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
 }
 
 async fn get_group_travel_proposal(
@@ -1251,12 +1898,10 @@ async fn get_group_travel_proposal(
 ) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
     let actor = actor(&headers, &app)?;
     let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
-    Ok(Json(app.get_group_travel_proposal(
-        actor,
-        path.group_id,
-        path.proposal_id,
-        fence,
-    )?))
+    let mut response =
+        app.get_group_travel_proposal(actor, path.group_id, path.proposal_id, fence)?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
 }
 
 async fn act_on_group_travel_proposal(
@@ -1265,12 +1910,124 @@ async fn act_on_group_travel_proposal(
     Path(path): Path<GroupTravelProposalPath>,
     Phase2Json(request): Phase2Json<coop_cloud::GroupTravelActionRequest>,
 ) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
-    Ok(Json(app.act_on_group_travel_proposal(
+    let mut response = app.act_on_group_travel_proposal(
         actor(&headers, &app)?,
         path.group_id,
         path.proposal_id,
         request,
+    )?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
+}
+
+async fn discover_story_travel_recovery(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+) -> Result<Json<coop_cloud::StoryTravelRecoveryView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(app.discover_story_travel_recovery(actor, fence)?))
+}
+
+async fn resolve_story_travel_recovery(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<StoryTravelRecoveryPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::StoryTravelRecoveryActionRequest>,
+) -> Result<Json<coop_cloud::StoryTravelRecoveryResolutionView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    Ok(Json(app.resolve_story_travel_recovery(
+        actor,
+        path.proposal_id,
+        fence,
+        request,
     )?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TradeOfferPath {
+    group_id: coop_cloud::GroupId,
+    offer_id: coop_cloud::TradeOfferId,
+}
+
+async fn create_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::TradeOfferRequest>,
+) -> Result<(StatusCode, Json<coop_cloud::TradeOfferView>), Phase2Error> {
+    let response = app.create_trade_offer(actor(&headers, &app)?, path.group_id, request)?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn get_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<TradeOfferPath>,
+) -> Result<Json<coop_cloud::TradeOfferView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.get_trade_offer(
+        actor,
+        path.group_id,
+        path.offer_id,
+        fence,
+    )?))
+}
+
+async fn decide_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<TradeOfferPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::TradeDecisionRequest>,
+) -> Result<Json<coop_cloud::TradeOfferView>, Phase2Error> {
+    Ok(Json(app.decide_trade_offer(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.offer_id,
+        request,
+    )?))
+}
+
+async fn mark_group_travel_scene(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupTravelProposalPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::group::GroupTravelSceneMarkerRequest>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    let mut response = app.mark_group_travel_scene(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.proposal_id,
+        request,
+    )?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
+}
+
+async fn receipt_group_travel_scene(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupTravelProposalPath>,
+    Phase2Json(request): Phase2Json<coop_cloud::group::GroupTravelSceneReceiptRequest>,
+) -> Result<Json<coop_cloud::GroupTravelProposalView>, Phase2Error> {
+    let mut response = app.receipt_group_travel_scene(
+        actor(&headers, &app)?,
+        path.group_id,
+        path.proposal_id,
+        request,
+    )?;
+    response.server_now = Some(coop_cloud::UnixTimestampMillis::new(app.store.now()));
+    Ok(Json(response))
 }
 
 async fn resume_package(
@@ -1432,7 +2189,7 @@ mod tests {
         character_sav_with_generation(with_rtc, 1, status_flags)
     }
 
-    fn valid_character_sav(with_rtc: bool) -> Vec<u8> {
+    pub(super) fn valid_character_sav(with_rtc: bool) -> Vec<u8> {
         character_sav_with_status(with_rtc, 0)
     }
 

@@ -100,11 +100,50 @@ EventScript_DepartingNotVermilion::
 	end
 
 EventScript_SetSail::
+	special Special_CoopGroupTravelBillSceneRunning
+	goto_if_eq VAR_RESULT, TRUE, EventScript_SetSailVanilla
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, EventScript_SeagallopGroupTravel
+EventScript_SetSailVanilla::
 	closemessage
 	delay 20
 	fadescreen FADE_TO_BLACK
 	special DoSeagallopFerryScene
 	waitstate
+	end
+
+EventScript_SeagallopGroupTravel::
+	special Special_CoopSeagallopRoute
+	goto_if_eq VAR_RESULT, 0, EventScript_SeagallopGroupTravelFailed
+	copyvar VAR_0x8004, VAR_RESULT
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, EventScript_SeagallopGroupTravelWaiting
+EventScript_SeagallopGroupTravelFailed::
+	msgbox Text_SeagallopGroupTravelUnavailable
+	closemessage
+	releaseall
+	end
+
+EventScript_SeagallopGroupTravelWaiting::
+	end
+
+EventScript_GroupBillSaveAtDestination::
+	@ Keep the automatic Bill scene locked through the finalized checkpoint.
+	delay 30
+EventScript_GroupBillRetrySave::
+	call Common_EventScript_SaveGame
+	goto_if_eq VAR_RESULT, 0, EventScript_GroupBillSaveFailed
+EventScript_GroupBillAwaitReceipt::
+	special Special_CoopGroupTravelFirstBrineyReceiptComplete
+	goto_if_eq VAR_RESULT, TRUE, EventScript_GroupBillFinished
+	delay 30
+	goto EventScript_GroupBillAwaitReceipt
+EventScript_GroupBillSaveFailed::
+	msgbox Text_SeagallopGroupStorySaveRequired, MSGBOX_DEFAULT
+	goto EventScript_GroupBillRetrySave
+EventScript_GroupBillFinished::
+	releaseall
 	end
 
 EventScript_CancelSail::
@@ -197,3 +236,11 @@ EventScript_SailToSevenIsland::
 Text_AllAboardSeagallopNum::
 	.string "All right!\n"
 	.string "All aboard SEAGALLOP HI-SPEED {STR_VAR_1}!$"
+
+Text_SeagallopGroupTravelUnavailable::
+	.string "That voyage isn't available\n"
+	.string "for both of you right now.$"
+
+Text_SeagallopGroupStorySaveRequired::
+	.string "The voyage needs a completed save.\n"
+	.string "Please try again.$"

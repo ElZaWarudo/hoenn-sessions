@@ -37,6 +37,11 @@ Route112_CableCarStation_EventScript_Attendant::
 	end
 
 Route112_CableCarStation_EventScript_RideCableCar::
+	setvar VAR_0x8004, 162
+	setvar VAR_0x8005, 6
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, Route112_CableCarStation_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, Route112_CableCarStation_EventScript_GroupTravelFailed
 	msgbox Route112_CableCarStation_Text_StepThisWay, MSGBOX_DEFAULT
 	closemessage
 	applymovement LOCALID_ROUTE112_CABLE_CAR_ATTENDANT, Route112_CableCarStation_Movement_LeadPlayerToCableCar
@@ -48,6 +53,13 @@ Route112_CableCarStation_EventScript_RideCableCar::
 	special CableCarWarp
 	special CableCar
 	waitstate
+	release
+	end
+
+Route112_CableCarStation_EventScript_GroupTravelWaiting::
+	end
+
+Route112_CableCarStation_EventScript_GroupTravelFailed::
 	release
 	end
 

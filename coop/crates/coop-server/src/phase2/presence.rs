@@ -8,25 +8,26 @@
 //! `coop-protocol`.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt,
     num::NonZeroU64,
     sync::{Arc, Mutex, MutexGuard},
 };
 
 use coop_cloud::{
-    CharacterId, RefreshFamilyId, RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession,
+    CharacterId, GroupId, RefreshFamilyId, RuntimeBuildIdentity, RuntimeLeaseFence,
+    StableRuntimeSession,
 };
 use coop_protocol::{
     CanonicalUsername, DespawnReason, Direction, LocalCompanionV1, LocalPresenceStateV1,
     LocalSignalV1, PresenceHandle, PresenceInteractionV1, RegionId, RemoteCompanionV1,
-    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1,
-    WorldLocation,
+    RemoteInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+    RemoteSignalV1, WorldLocation, WorldZone,
 };
 use thiserror::Error;
 
 use super::AuthenticatedActor;
-use super::storage::{State, StorageError, Store};
+use super::storage::{GroupStatus, State, StorageError, Store};
 
 /// The fixed runtime shard used by the first online presence slice.
 pub const PRESENCE_SHARD_ID: u16 = 1;
@@ -102,6 +103,7 @@ pub enum PresenceOutboundV1 {
     Spawn(RemotePlayerSpawnV1),
     Update(RemotePlayerUpdateV1),
     Despawn(RemotePlayerDespawnV1),
+    Interaction(RemoteInteractionV1),
     Companion(RemoteCompanionV1),
     Signal(RemoteSignalV1),
 }
@@ -113,6 +115,7 @@ impl PresenceOutboundV1 {
             Self::Spawn(value) => value.handle(),
             Self::Update(value) => value.handle(),
             Self::Despawn(value) => value.handle(),
+            Self::Interaction(value) => value.handle(),
             Self::Companion(value) => value.handle(),
             Self::Signal(value) => value.handle(),
         }
@@ -124,6 +127,7 @@ impl PresenceOutboundV1 {
             Self::Spawn(value) => value.server_sequence(),
             Self::Update(value) => value.server_sequence(),
             Self::Despawn(value) => value.server_sequence(),
+            Self::Interaction(value) => value.server_sequence(),
             Self::Companion(value) => value.server_sequence(),
             Self::Signal(value) => value.server_sequence(),
         }
@@ -159,6 +163,7 @@ pub struct PresenceTickReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ValidatedInteraction {
     pub initiator: StableRuntimeSession,
+    pub initiator_handle: PresenceHandle,
     pub target: StableRuntimeSession,
     pub target_handle: PresenceHandle,
 }
@@ -218,6 +223,8 @@ struct PresenceEntry {
     companion: Option<LocalCompanionV1>,
     last_signal_source_sequence: u32,
     social_sequence: u32,
+    /// Last sequence of a group partner advertised from a connected map.
+    adjacent_partner: Option<(PresenceHandle, u32)>,
 }
 
 type VisiblePeer = (PresenceHandle, LocalPresenceStateV1, CanonicalUsername, u32);
@@ -491,6 +498,73 @@ impl fmt::Debug for PresenceService {
 }
 
 impl PresenceService {
+    /// Returns a fresh, authenticated partner location from process-local
+    /// presence. The caller must already hold the runtime transition gate and
+    /// must have established the authenticated active-group relationship.
+    ///
+    /// Presence is intentionally ephemeral: a missing, hidden, stale, or
+    /// lease-invalid connection returns `None`, allowing the caller to use its
+    /// durable last-saved location instead.
+    pub(super) fn live_location_locked(&self, character_id: CharacterId) -> Option<WorldZone> {
+        let now_ms = self.inner.store.presence_now();
+        self.inner
+            .store
+            .read_transaction(|repository| {
+                Ok::<_, StorageError>(self.live_location_from_state(
+                    repository,
+                    character_id,
+                    now_ms,
+                ))
+            })
+            .ok()
+            .flatten()
+    }
+
+    pub(super) fn live_location_from_state(
+        &self,
+        repository: &State,
+        character_id: CharacterId,
+        now_ms: u64,
+    ) -> Option<WorldZone> {
+        let state = self.lock_state();
+        let handle = state.by_character.get(&character_id).copied()?;
+        let entry = state.entries.get(&handle)?;
+        if !entry.advertised
+            || entry.lease_expires_at_ms <= now_ms
+            || now_ms.saturating_sub(entry.last_accepted_at_ms) >= PRESENCE_STALE_MS
+            || entry.state.pose().player_state() != coop_protocol::PlayerState::Overworld
+        {
+            return None;
+        }
+        let user = repository.users_by_id.get(&entry.actor.user_id)?;
+        let character = repository.characters.get(&character_id)?;
+        let lease = repository.leases.get(&character_id)?;
+        if user.disabled
+            || user.character_id != character_id
+            || character.owner != entry.actor.user_id
+            || character.state.world_zone.region != entry.partition.region
+            || character.state.world_zone.channel == 0
+            || character.state.world_zone.channel != entry.partition.channel
+            || character.state.world_zone.map_entry().is_err()
+            || lease.released
+            || lease.contract.expires_at.value() <= now_ms
+            || lease.contract.stable_runtime_session() != entry.stable_session
+        {
+            return None;
+        }
+        if let Some(family_id) = entry.family_id {
+            let family = repository.families.get(&family_id)?;
+            if family.revoked
+                || family.expires_at <= now_ms
+                || family.user_id != entry.actor.user_id
+                || family.character_id != character_id
+            {
+                return None;
+            }
+        }
+        WorldZone::from_location(&entry.state.pose().location(), entry.partition.channel).ok()
+    }
+
     /// Caller holds the shared runtime transition gate; this method never reacquires it.
     pub(super) fn online_peers_locked(
         &self,
@@ -836,6 +910,7 @@ impl PresenceService {
             companion: None,
             last_signal_source_sequence: 0,
             social_sequence: 0,
+            adjacent_partner: None,
         };
         let existing_visible = state.visible_peers(&partition, None);
         if advertised {
@@ -1026,6 +1101,7 @@ impl PresenceService {
             entry.server_sequence = server_sequence;
             entry.advertised = is_advertised;
             entry.queue.clear();
+            entry.adjacent_partner = None;
             entry.username.clone()
         };
         state
@@ -1334,6 +1410,133 @@ impl PresenceService {
         1
     }
 
+    /// Adjacent-map visibility belongs only to the active group partner.
+    /// The ordinary same-map partition remains unchanged for everyone else.
+    fn reconcile_adjacent_partners(
+        state: &mut PresenceState,
+        memberships: &HashMap<CharacterId, GroupId>,
+    ) -> Result<(), PresenceServiceError> {
+        let receivers: Vec<_> = state.entries.keys().copied().collect();
+        for receiver in receivers {
+            let Some(observer) = state.entries.get(&receiver) else {
+                continue;
+            };
+            let observer_partition = observer.partition.clone();
+            let observer_group = memberships.get(&observer.character_id).copied();
+            let desired = observer_group.and_then(|group| {
+                state.entries.values().find_map(|subject| {
+                    let other = &subject.partition;
+                    (subject.connection.handle != receiver
+                        && memberships.get(&subject.character_id) == Some(&group)
+                        && subject.advertised
+                        && other.build == observer_partition.build
+                        && other.shard == observer_partition.shard
+                        && other.region == observer_partition.region
+                        && other.channel == observer_partition.channel
+                        && coop_protocol::catalog::maps_share_edge(
+                            observer_partition.map_group,
+                            observer_partition.map_number,
+                            other.map_group,
+                            other.map_number,
+                        ))
+                    .then(|| {
+                        (
+                            subject.connection.handle,
+                            subject.server_sequence,
+                            subject.published_state.clone(),
+                            subject.username.clone(),
+                        )
+                    })
+                })
+            });
+            let old = state
+                .entries
+                .get(&receiver)
+                .and_then(|entry| entry.adjacent_partner);
+            let desired_handle = desired.as_ref().map(|(handle, ..)| *handle);
+            let mut restore_local = false;
+            if let Some((old_handle, old_sequence)) = old
+                && desired_handle != Some(old_handle)
+            {
+                // A normal same-map spawn already replaced the adjacent view.
+                let now_same_map = state
+                    .entries
+                    .get(&old_handle)
+                    .is_some_and(|subject| subject.partition == observer_partition);
+                if !now_same_map {
+                    let despawn = RemotePlayerDespawnV1::new(
+                        old_handle,
+                        coop_protocol::next_sequence(old_sequence),
+                        DespawnReason::PartitionLeft,
+                    )
+                    .map_err(|_| PresenceServiceError::Internal)?;
+                    if !state.enqueue(receiver, PresenceOutboundV1::Despawn(despawn)) {
+                        state.remove_entry(receiver, DespawnReason::Disconnected);
+                        continue;
+                    }
+                    restore_local = desired_handle.is_none();
+                }
+            }
+            if let Some((handle, sequence, published, username)) = desired {
+                let event = if old.is_some_and(|(old_handle, _)| old_handle == handle) {
+                    if old.is_some_and(|(_, old_sequence)| old_sequence == sequence) {
+                        None
+                    } else {
+                        Some(PresenceOutboundV1::Update(
+                            RemotePlayerUpdateV1::new(handle, sequence, published)
+                                .map_err(|_| PresenceServiceError::Internal)?,
+                        ))
+                    }
+                } else {
+                    Some(PresenceOutboundV1::Spawn(
+                        RemotePlayerSpawnV1::new(handle, sequence, published, username)
+                            .map_err(|_| PresenceServiceError::Internal)?,
+                    ))
+                };
+                if let Some(event) = event {
+                    let is_update = matches!(&event, PresenceOutboundV1::Update(_));
+                    if !state.enqueue(receiver, event) {
+                        if !is_update {
+                            state.remove_entry(receiver, DespawnReason::Disconnected);
+                        }
+                        continue;
+                    }
+                }
+                if let Some(entry) = state.entries.get_mut(&receiver) {
+                    entry.adjacent_partner = Some((handle, sequence));
+                }
+            } else if let Some(entry) = state.entries.get_mut(&receiver) {
+                entry.adjacent_partner = None;
+            }
+            if restore_local {
+                // The ROM keeps one remote. An adjacent partner may have
+                // replaced a local player without changing that player's
+                // server lifecycle, so replay one local Spawn after Despawn.
+                let local = state.entries.values().find_map(|subject| {
+                    (subject.connection.handle != receiver
+                        && subject.partition == observer_partition
+                        && subject.advertised)
+                        .then(|| {
+                            (
+                                subject.connection.handle,
+                                subject.server_sequence,
+                                subject.published_state.clone(),
+                                subject.username.clone(),
+                            )
+                        })
+                });
+                if let Some((handle, sequence, published, username)) = local {
+                    let spawn = RemotePlayerSpawnV1::new(handle, sequence, published, username)
+                        .map_err(|_| PresenceServiceError::Internal)?;
+                    if !state.enqueue(receiver, PresenceOutboundV1::Spawn(spawn)) {
+                        state.remove_entry(receiver, DespawnReason::Disconnected);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Runs one globally gated tick.  Delayed ticks publish at most one
     /// coalesced value and schedule the following window from `now_ms`.
     ///
@@ -1382,16 +1585,25 @@ impl PresenceService {
                 .collect::<Vec<_>>();
             (handles, late_tick_deadline)
         };
-        let validation = self
+        let (validation, memberships) = self
             .inner
             .store
             .read_transaction(|repository| {
-                Ok::<Vec<RepositoryDisposition>, StorageError>(
-                    handles
-                        .iter()
-                        .map(|snapshot| repository_disposition(repository, snapshot, now_ms))
-                        .collect(),
-                )
+                let validation = handles
+                    .iter()
+                    .map(|snapshot| repository_disposition(repository, snapshot, now_ms))
+                    .collect::<Vec<_>>();
+                let memberships = handles
+                    .iter()
+                    .filter_map(|snapshot| {
+                        let group = *repository
+                            .active_group_by_member
+                            .get(&snapshot.character_id)?;
+                        (repository.groups.get(&group)?.status == GroupStatus::Active)
+                            .then_some((snapshot.character_id, group))
+                    })
+                    .collect::<HashMap<_, _>>();
+                Ok::<_, StorageError>((validation, memberships))
             })
             .map_err(|_| PresenceServiceError::Internal)?;
         let mut state = self.lock_state();
@@ -1441,6 +1653,7 @@ impl PresenceService {
                 }
             }
         }
+        Self::reconcile_adjacent_partners(&mut state, &memberships)?;
         report.removed_connections = report
             .observed_connections
             .saturating_sub(state.entries.len());
@@ -1468,15 +1681,24 @@ impl PresenceService {
         interaction
             .validate()
             .map_err(|_| PresenceServiceError::InvalidState)?;
+        let _gate = self.lock_gate()?;
+        let now_ms = self.inner.store.presence_now();
+        let state = self.lock_state();
+        Self::validate_interaction_locked(&state, now_ms, initiator, interaction)
+    }
+
+    fn validate_interaction_locked(
+        state: &PresenceState,
+        now_ms: u64,
+        initiator: PresenceConnection,
+        interaction: PresenceInteractionV1,
+    ) -> Result<ValidatedInteraction, PresenceServiceError> {
         let target_handle = interaction.handle();
         let observed_server_sequence = interaction.observed_server_sequence();
         let observed_warp_sequence = interaction.observed_warp_sequence();
         let observed_x = interaction.x();
         let observed_y = interaction.y();
         std::hint::black_box(interaction);
-        let _gate = self.lock_gate()?;
-        let now_ms = self.inner.store.presence_now();
-        let state = self.lock_state();
         let source = Self::validate_connection(&state, initiator)?;
         if !source.advertised
             || source.lease_expires_at_ms <= now_ms
@@ -1532,9 +1754,90 @@ impl PresenceService {
         }
         Ok(ValidatedInteraction {
             initiator: source.stable_session,
+            initiator_handle: source.connection.handle,
             target: target.stable_session,
             target_handle: target.connection.handle,
         })
+    }
+
+    /// Validates and forwards one interaction while holding one runtime gate.
+    /// This prevents a target update or replacement from interleaving between
+    /// observation validation and recipient enqueue.
+    pub fn validate_and_forward_interaction(
+        &self,
+        initiator: PresenceConnection,
+        interaction: PresenceInteractionV1,
+    ) -> Result<(), PresenceServiceError> {
+        interaction
+            .validate()
+            .map_err(|_| PresenceServiceError::InvalidState)?;
+        let _gate = self.lock_gate()?;
+        let now_ms = self.inner.store.presence_now();
+        let mut state = self.lock_state();
+        let validated = Self::validate_interaction_locked(&state, now_ms, initiator, interaction)?;
+        Self::forward_interaction_locked(&mut state, now_ms, validated)
+    }
+
+    /// Forwards one validated interaction to its authenticated recipient.
+    ///
+    /// Validation and delivery are separate bounded operations so the
+    /// realtime adapter can keep soft rejection handling directed to the
+    /// initiator. The stable-session checks here prevent a replaced handle
+    /// from receiving an interaction that was validated for an older lease.
+    /// A full recipient FIFO returns a soft target-unavailable error; it never
+    /// disconnects either player or turns the interaction into a protocol
+    /// failure.
+    pub fn forward_interaction(
+        &self,
+        validated: ValidatedInteraction,
+    ) -> Result<(), PresenceServiceError> {
+        let _gate = self.lock_gate()?;
+        let now_ms = self.inner.store.presence_now();
+        let mut state = self.lock_state();
+        Self::forward_interaction_locked(&mut state, now_ms, validated)
+    }
+
+    fn forward_interaction_locked(
+        state: &mut PresenceState,
+        now_ms: u64,
+        validated: ValidatedInteraction,
+    ) -> Result<(), PresenceServiceError> {
+        let Some(source) = state.entries.get(&validated.initiator_handle) else {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        };
+        if source.stable_session != validated.initiator
+            || !source.advertised
+            || source.lease_expires_at_ms <= now_ms
+            || now_ms.saturating_sub(source.last_accepted_at_ms) >= PRESENCE_STALE_MS
+        {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        }
+        let Some(target) = state.entries.get(&validated.target_handle) else {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        };
+        if target.stable_session != validated.target
+            || !target.advertised
+            || target.lease_expires_at_ms <= now_ms
+            || now_ms.saturating_sub(target.last_accepted_at_ms) >= PRESENCE_STALE_MS
+            || target.partition != source.partition
+        {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        }
+        let source_handle = source.connection.handle;
+        let interaction_sequence = coop_protocol::next_sequence(source.social_sequence);
+        let interaction = RemoteInteractionV1::new(source_handle, interaction_sequence)
+            .map_err(|_| PresenceServiceError::Internal)?;
+        if !state.enqueue(
+            validated.target_handle,
+            PresenceOutboundV1::Interaction(interaction),
+        ) {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        }
+        let Some(source) = state.entries.get_mut(&source_handle) else {
+            return Err(PresenceServiceError::InteractionTargetUnavailable);
+        };
+        source.social_sequence = interaction_sequence;
+        Ok(())
     }
 
     /// Returns the cumulative update-drop counter without draining events.
@@ -1711,7 +2014,7 @@ mod tests {
     };
     use coop_protocol::{
         AnimationId, AvatarId, DespawnReason, Direction, MovementMode, PlayerState,
-        PresenceInteractionV1, PresencePoseV1, RegionId, WorldLocation,
+        PresenceInteractionV1, PresencePoseV1, RegionId, RemoteInteractionV1, WorldLocation,
     };
     use std::sync::{
         Arc, Barrier,
@@ -2462,6 +2765,67 @@ mod tests {
     }
 
     #[test]
+    fn live_partner_location_is_fresh_lease_bound_and_tracks_ephemeral_map_changes() {
+        let app = Phase2App::test();
+        let actor = account(&app, "live-location", "invite-live-location");
+        let lease = acquire(&app, actor, 901);
+        let service = app.presence();
+        let connection = service
+            .connect(
+                actor,
+                runtime_fence(&lease),
+                pose_at(
+                    WorldLocation::new(RegionId::Hoenn, 0, 19, 4, 5).unwrap(),
+                    1,
+                    PlayerState::Overworld,
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(
+            service
+                .live_location_locked(actor.character_id)
+                .unwrap()
+                .map,
+            "ROUTE104"
+        );
+
+        service
+            .submit_state(
+                connection,
+                pose_with(
+                    WorldLocation::new(RegionId::Hoenn, 0, 20, 3, 5).unwrap(),
+                    0,
+                    Direction::East,
+                    2,
+                    2,
+                    PlayerState::Overworld,
+                ),
+            )
+            .unwrap();
+        assert_eq!(
+            service
+                .live_location_locked(actor.character_id)
+                .unwrap()
+                .map,
+            "ROUTE105"
+        );
+
+        set_liveness(
+            &service,
+            connection.handle(),
+            service
+                .inner
+                .store
+                .presence_now()
+                .saturating_sub(PRESENCE_STALE_MS),
+        );
+        assert!(service.live_location_locked(actor.character_id).is_none());
+
+        service.disconnect(connection).unwrap();
+    }
+
+    #[test]
     fn duplicate_older_zero_and_delayed_source_states_are_fail_closed() {
         let app = Phase2App::test();
         let first = account(&app, "alice", "invite-sequences");
@@ -2874,6 +3238,215 @@ mod tests {
         assert_eq!(
             service.validate_interaction(one, self_interaction),
             Err(PresenceServiceError::InteractionTargetUnavailable)
+        );
+    }
+
+    #[test]
+    fn adjacent_map_presence_is_only_sent_to_the_active_group_partner() {
+        let app = Phase2App::test();
+        let alice = account(&app, "alice", "adjacent-presence-alice");
+        let bob = account(&app, "bob", "adjacent-presence-bob");
+        let bystander = account(&app, "charlie", "adjacent-presence-charlie");
+        let service = app.presence();
+        let alice_lease = acquire(&app, alice, 501);
+        let bob_lease = acquire(&app, bob, 502);
+        let bystander_lease = acquire(&app, bystander, 503);
+        let alice_connection = service
+            .connect(
+                alice,
+                runtime_fence(&alice_lease),
+                pose(1, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let bob_connection = service
+            .connect(
+                bob,
+                runtime_fence(&bob_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let bystander_connection = service
+            .connect(
+                bystander,
+                runtime_fence(&bystander_lease),
+                pose(3, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        for connection in [alice_connection, bob_connection, bystander_connection] {
+            let _ = service.drain(connection).unwrap();
+        }
+        let mut state = service.lock_state();
+        for (connection, map_number) in [
+            (alice_connection, 19), // Route 104.
+            (bob_connection, 20),   // Route 105.
+            (bystander_connection, 20),
+        ] {
+            let handle = connection.handle();
+            let old = state.entries.get(&handle).unwrap().partition.clone();
+            let mut next = old.clone();
+            next.map_group = 0;
+            next.map_number = map_number;
+            state.remove_from_partition(&old, handle);
+            state
+                .partitions
+                .entry(next.clone())
+                .or_default()
+                .insert(handle);
+            let entry = state.entries.get_mut(&handle).unwrap();
+            entry.partition = next;
+            entry.published_state = pose_at(
+                WorldLocation::new(RegionId::Hoenn, 0, map_number, 10, 10).unwrap(),
+                1,
+                PlayerState::Overworld,
+            );
+            entry.state = entry.published_state.clone();
+        }
+        let group = id(coop_cloud::GroupId::new, 777);
+        let memberships = HashMap::from([(alice.character_id, group), (bob.character_id, group)]);
+        PresenceService::reconcile_adjacent_partners(&mut state, &memberships).unwrap();
+        drop(state);
+        let alice_events = service.drain(alice_connection).unwrap().events;
+        assert!(
+            matches!(alice_events.as_slice(), [PresenceOutboundV1::Spawn(spawn)]
+            if spawn.handle() == bob_connection.handle())
+        );
+        let bob_events = service.drain(bob_connection).unwrap().events;
+        assert!(
+            matches!(bob_events.as_slice(), [PresenceOutboundV1::Spawn(spawn)]
+            if spawn.handle() == alice_connection.handle())
+        );
+        assert!(
+            service
+                .drain(bystander_connection)
+                .unwrap()
+                .events
+                .is_empty()
+        );
+
+        let mut state = service.lock_state();
+        let old_sequence = state
+            .entries
+            .get(&bob_connection.handle())
+            .unwrap()
+            .adjacent_partner
+            .unwrap()
+            .1;
+        let local_entry = state.entries.get(&bystander_connection.handle()).unwrap();
+        let queued = PresenceOutboundV1::Spawn(
+            RemotePlayerSpawnV1::new(
+                bystander_connection.handle(),
+                old_sequence,
+                local_entry.published_state.clone(),
+                local_entry.username.clone(),
+            )
+            .unwrap(),
+        );
+        state
+            .entries
+            .get_mut(&bob_connection.handle())
+            .unwrap()
+            .queue = std::iter::repeat_n(queued, PRESENCE_OUTBOUND_QUEUE_CAPACITY).collect();
+        state
+            .entries
+            .get_mut(&alice_connection.handle())
+            .unwrap()
+            .server_sequence = coop_protocol::next_sequence(old_sequence);
+        PresenceService::reconcile_adjacent_partners(&mut state, &memberships).unwrap();
+        assert!(state.entries.contains_key(&bob_connection.handle()));
+        assert_eq!(
+            state
+                .entries
+                .get(&bob_connection.handle())
+                .unwrap()
+                .adjacent_partner
+                .unwrap()
+                .1,
+            old_sequence
+        );
+        state
+            .entries
+            .get_mut(&bob_connection.handle())
+            .unwrap()
+            .queue
+            .clear();
+        PresenceService::reconcile_adjacent_partners(&mut state, &HashMap::new()).unwrap();
+        drop(state);
+        assert!(
+            matches!(service.drain(alice_connection).unwrap().events.as_slice(),
+            [PresenceOutboundV1::Despawn(despawn)] if despawn.handle() == bob_connection.handle())
+        );
+        assert!(
+            matches!(service.drain(bob_connection).unwrap().events.as_slice(),
+            [PresenceOutboundV1::Despawn(despawn), PresenceOutboundV1::Spawn(spawn)]
+                if despawn.handle() == alice_connection.handle()
+                    && spawn.handle() == bystander_connection.handle())
+        );
+    }
+
+    #[test]
+    fn interaction_forwarding_targets_only_recipient_and_backpressure_is_soft() {
+        let app = Phase2App::test();
+        let source_actor = account(&app, "alice", "invite-forward-source");
+        let target_actor = account(&app, "bob", "invite-forward-target");
+        let source_lease = acquire(&app, source_actor, 71);
+        let target_lease = acquire(&app, target_actor, 72);
+        let service = app.presence();
+        let source = service
+            .connect(
+                source_actor,
+                runtime_fence(&source_lease),
+                pose(1, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let target = service
+            .connect(
+                target_actor,
+                runtime_fence(&target_lease),
+                pose(2, 1, 1, PlayerState::Overworld),
+            )
+            .unwrap();
+        let _ = service.drain(target).unwrap();
+        let source_spawn = service.drain(source).unwrap().events;
+        let [PresenceOutboundV1::Spawn(source_view)] = source_spawn.as_slice() else {
+            panic!("expected the target spawn in the source queue");
+        };
+        let observed = observed_interaction(
+            target.handle(),
+            source_view.server_sequence(),
+            source_view.state().pose().warp_sequence(),
+            source_view.state().pose().location().x,
+            source_view.state().pose().location().y,
+        );
+
+        assert_eq!(
+            service.validate_and_forward_interaction(source, observed.clone()),
+            Ok(())
+        );
+        assert!(service.drain(source).unwrap().events.is_empty());
+        let target_events = service.drain(target).unwrap().events;
+        let [PresenceOutboundV1::Interaction(forwarded)] = target_events.as_slice() else {
+            panic!("expected one forwarded interaction in the target queue");
+        };
+        assert_eq!(forwarded.handle(), source.handle());
+
+        {
+            let mut state = service.inner.state.lock().unwrap();
+            for sequence in 1..=PRESENCE_OUTBOUND_QUEUE_CAPACITY as u32 {
+                assert!(state.enqueue(
+                    target.handle(),
+                    PresenceOutboundV1::Interaction(
+                        RemoteInteractionV1::new(source.handle(), sequence).unwrap(),
+                    ),
+                ));
+            }
+        }
+        assert_eq!(
+            service.validate_and_forward_interaction(source, observed),
+            Err(PresenceServiceError::InteractionTargetUnavailable)
+        );
+        assert_eq!(
+            service.drain(target).unwrap().events.len(),
+            PRESENCE_OUTBOUND_QUEUE_CAPACITY
         );
     }
 

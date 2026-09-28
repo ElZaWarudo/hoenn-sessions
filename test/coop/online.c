@@ -169,3 +169,128 @@ TEST("Cloud Coop Online expired selection cannot submit an invitation")
     EXPECT(!CoopOnline_TestInput(B_BUTTON));
     EXPECT(CoopOnline_TestInput(B_BUTTON));
 }
+
+TEST("Cloud Coop ONLINE creates and redeems bounded pairing codes")
+{
+    struct CoopBridgeMessage request, reply;
+    struct CoopPairingStatus status;
+    u8 payload[COOP_PAIRING_RECORD_SIZE] = {0};
+    u8 i;
+    InitOnlineMenu();
+    request = MenuRequest();
+    Reply(&request, COOP_ONLINE_READY);
+    for (i = 0; i < 3; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&request));
+    EXPECT_EQ(request.type, COOP_BRIDGE_MESSAGE_PAIRING_REQUEST);
+    EXPECT_EQ(request.length, COOP_PAIRING_RECORD_SIZE);
+    EXPECT_EQ(request.payload[4], COOP_PAIRING_CREATE);
+    memcpy(payload, request.payload, 4);
+    payload[4] = COOP_PAIRING_CREATED;
+    memcpy(payload + 5, "HX7-4QK", 7);
+    EXPECT(CoopBridgeMessage_Seal(&reply, COOP_BRIDGE_MESSAGE_PAIRING_STATUS,
+                                 ++sHostSequence, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&reply));
+    CoopNetBridge_Poll();
+    CoopOnline_TestPoll();
+    EXPECT(CoopNetBridge_GetPairingStatus(&status));
+    EXPECT_EQ(status.result, COOP_PAIRING_CREATED);
+    EXPECT_EQ(memcmp(status.code, "HX7-4QK", 7), 0);
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(!CoopOnline_TestInput(START_BUTTON));
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&request));
+    EXPECT_EQ(request.type, COOP_BRIDGE_MESSAGE_PAIRING_REQUEST);
+    EXPECT_EQ(request.payload[4], COOP_PAIRING_REDEEM);
+    EXPECT_EQ(request.payload[8], '-');
+}
+
+TEST("Cloud Coop pushed invitation refreshes before accepting and B can dismiss")
+{
+    struct CoopBridgeMessage ready, action;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+    struct CoopBridgeMessage message;
+    InitOnlineMenu();
+    ready = MenuRequest();
+    Reply(&ready, COOP_ONLINE_READY);
+    CoopOnline_TestBeginInvite();
+    ready = MenuRequest();
+    EXPECT_EQ(ready.payload[8], COOP_ONLINE_REFRESH);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    memcpy(payload, ready.payload, 4);
+    payload[4] = COOP_ONLINE_READY;
+    payload[5] = COOP_ONLINE_HAS_INCOMING;
+    payload[7] = 1;
+    memcpy(payload + 48, "may", 3);
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 ++sHostSequence, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    CoopOnline_TestPoll();
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    action = MenuRequest();
+    EXPECT_EQ(action.payload[8], COOP_ONLINE_ACCEPT);
+    EXPECT(memcmp(action.payload + 4, ready.payload, 4) == 0);
+    EXPECT(!CoopOnline_TestInput(B_BUTTON));
+    EXPECT(CoopOnline_TestInput(B_BUTTON));
+}
+
+TEST("Cloud Coop sender can cancel a displayed invitation")
+{
+    struct CoopBridgeMessage ready, action, message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+    InitOnlineMenu();
+    ready = MenuRequest();
+    Reply(&ready, COOP_ONLINE_READY);
+    CoopOnline_TestInput(DPAD_DOWN);
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    ready = MenuRequest();
+    EXPECT_EQ(ready.payload[8], COOP_ONLINE_REFRESH);
+    memcpy(payload, ready.payload, 4);
+    payload[4] = COOP_ONLINE_READY;
+    payload[5] = COOP_ONLINE_HAS_OUTGOING;
+    payload[10] = 1;
+    memcpy(payload + 80, "may", 3);
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 ++sHostSequence, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    CoopOnline_TestPoll();
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    action = MenuRequest();
+    EXPECT_EQ(action.payload[8], COOP_ONLINE_CANCEL);
+    EXPECT(memcmp(action.payload + 4, ready.payload, 4) == 0);
+}
+
+TEST("Cloud Coop grouped Online opens partner location from a catalogued map")
+{
+    struct CoopBridgeMessage ready, message;
+    struct CoopOnlineStatus status;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+    InitOnlineMenu();
+    ready = MenuRequest();
+    memcpy(payload, ready.payload, 4);
+    payload[4] = COOP_ONLINE_READY;
+    payload[5] = COOP_ONLINE_GROUPED | COOP_ONLINE_HAS_LOCATION;
+    payload[14] = 1; // Hoenn's Slateport City is catalogued as map 0:1.
+    memcpy(payload + 80, "may", 3);
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 ++sHostSequence, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    CoopOnline_TestPoll();
+    EXPECT(CoopNetBridge_GetOnlineStatus(&status));
+    EXPECT_EQ(status.location_map_group, 0);
+    EXPECT_EQ(status.location_map_number, 1);
+    CoopOnline_TestInput(DPAD_DOWN);
+    CoopOnline_TestInput(DPAD_DOWN);
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopOnline_TestIsLocationPage());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT(!CoopOnline_TestInput(B_BUTTON));
+    EXPECT(!CoopOnline_TestIsLocationPage());
+}

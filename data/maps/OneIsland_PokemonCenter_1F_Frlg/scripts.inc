@@ -115,6 +115,8 @@ OneIsland_PokemonCenter_1F_EventScript_MeetCelioScene::
 	waitmovement 0
 	setflag FLAG_SYS_PC_STORAGE_DISABLED
 	setvar VAR_MAP_SCENE_ONE_ISLAND_POKEMON_CENTER_1F, 1
+	special Special_CoopGroupTravelBillSceneComplete
+	goto_if_eq VAR_RESULT, TRUE, EventScript_GroupBillSaveAtDestination
 	releaseall
 	end
 
@@ -435,6 +437,27 @@ OneIsland_PokemonCenter_1F_EventScript_LeaveOneIslandTriggerBottom::
 	end
 
 OneIsland_PokemonCenter_1F_EventScript_LeaveOneIslandScene::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, OneIsland_PokemonCenter_1F_EventScript_RequestGroupBillReturn
+	goto OneIsland_PokemonCenter_1F_EventScript_GroupBillReturnStart
+
+OneIsland_PokemonCenter_1F_EventScript_RequestGroupBillReturn::
+	setvar VAR_0x8004, 161
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, OneIsland_PokemonCenter_1F_EventScript_GroupBillWaiting
+	goto OneIsland_PokemonCenter_1F_EventScript_GroupStorySailUnavailable
+
+OneIsland_PokemonCenter_1F_EventScript_GroupBillWaiting::
+	end
+
+@ Only the exact accepted marker resumes the original Bill farewell.
+OneIsland_PokemonCenter_1F_EventScript_GroupBillAcceptedReturnStage::
+	applymovement LOCALID_PLAYER, Common_Movement_WalkRight
+	waitmovement 0
+	goto OneIsland_PokemonCenter_1F_EventScript_GroupBillReturnStart
+
+OneIsland_PokemonCenter_1F_EventScript_GroupBillReturnStart::
 	textcolor NPC_TEXT_COLOR_MALE
 	playse SE_PIN
 	applymovement LOCALID_ONE_ISLAND_POKEMON_CENTER_BILL, Common_Movement_ExclamationMark
@@ -486,6 +509,14 @@ OneIsland_PokemonCenter_1F_EventScript_LeaveOneIslandScene::
 	setvar VAR_0x8004, SEAGALLOP_ONE_ISLAND
 	setvar VAR_0x8006, SEAGALLOP_CINNABAR_ISLAND
 	goto EventScript_SetSail
+	end
+
+OneIsland_PokemonCenter_1F_EventScript_GroupStorySailUnavailable::
+	msgbox Text_SeagallopGroupTravelUnavailable
+	closemessage
+	applymovement LOCALID_PLAYER, Common_Movement_WalkLeft
+	waitmovement 0
+	releaseall
 	end
 
 OneIsland_PokemonCenter_1F_EventScript_PlayerWalkToBillTop::

@@ -59,6 +59,12 @@ pub const REMOTE_PLAYER_DESPAWN_V1_SERVER_SEQUENCE_OFFSET: usize = 8;
 pub const REMOTE_PLAYER_DESPAWN_V1_REASON_OFFSET: usize = 12;
 pub const REMOTE_PLAYER_DESPAWN_V1_RESERVED_OFFSET: usize = 13;
 
+/// Remote interaction notification payload layout (16 bytes).
+pub const REMOTE_INTERACTION_V1_SIZE: usize = 16;
+pub const REMOTE_INTERACTION_V1_HANDLE_OFFSET: usize = 0;
+pub const REMOTE_INTERACTION_V1_SERVER_SEQUENCE_OFFSET: usize = 8;
+pub const REMOTE_INTERACTION_V1_RESERVED_OFFSET: usize = 12;
+
 /// Remote interaction payload layout (20 bytes).
 pub const PRESENCE_INTERACTION_V1_SIZE: usize = 20;
 pub const PRESENCE_INTERACTION_V1_HANDLE_OFFSET: usize = 0;
@@ -73,6 +79,7 @@ pub const LOCAL_PRESENCE_STATE_V1_LEN: usize = LOCAL_PRESENCE_STATE_V1_SIZE;
 pub const REMOTE_PLAYER_SPAWN_V1_LEN: usize = REMOTE_PLAYER_SPAWN_V1_SIZE;
 pub const REMOTE_PLAYER_UPDATE_V1_LEN: usize = REMOTE_PLAYER_UPDATE_V1_SIZE;
 pub const REMOTE_PLAYER_DESPAWN_V1_LEN: usize = REMOTE_PLAYER_DESPAWN_V1_SIZE;
+pub const REMOTE_INTERACTION_V1_LEN: usize = REMOTE_INTERACTION_V1_SIZE;
 pub const PRESENCE_INTERACTION_V1_LEN: usize = PRESENCE_INTERACTION_V1_SIZE;
 
 /// Errors returned by strict presence value and codec operations.
@@ -1448,6 +1455,111 @@ impl<'de> Deserialize<'de> for RemotePlayerDespawnV1 {
     }
 }
 
+/// A server-issued notification that a remote player interacted with us.
+///
+/// The source handle is already authenticated by the realtime session and is
+/// resolved against the receiver's current remote presence table. No client
+/// supplied coordinates or action are trusted by this notification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RemoteInteractionV1 {
+    handle: PresenceHandle,
+    server_sequence: u32,
+}
+
+impl RemoteInteractionV1 {
+    /// Constructs and validates a remote interaction notification.
+    pub fn new(handle: PresenceHandle, server_sequence: u32) -> Result<Self, PresenceError> {
+        ensure_nonzero(server_sequence, "server_sequence")?;
+        Ok(Self {
+            handle,
+            server_sequence,
+        })
+    }
+
+    /// Validates all invariants without changing the value.
+    pub fn validate(&self) -> Result<(), PresenceError> {
+        Self::new(self.handle, self.server_sequence).map(|_| ())
+    }
+
+    #[must_use]
+    pub const fn handle(self) -> PresenceHandle {
+        self.handle
+    }
+
+    #[must_use]
+    pub const fn server_sequence(self) -> u32 {
+        self.server_sequence
+    }
+
+    #[must_use]
+    pub fn encode(self) -> [u8; REMOTE_INTERACTION_V1_SIZE] {
+        let mut output = [0_u8; REMOTE_INTERACTION_V1_SIZE];
+        write_u64(
+            &mut output,
+            REMOTE_INTERACTION_V1_HANDLE_OFFSET,
+            self.handle.as_u64(),
+        );
+        write_u32(
+            &mut output,
+            REMOTE_INTERACTION_V1_SERVER_SEQUENCE_OFFSET,
+            self.server_sequence,
+        );
+        output
+    }
+
+    #[must_use]
+    pub fn to_bytes(self) -> [u8; REMOTE_INTERACTION_V1_SIZE] {
+        self.encode()
+    }
+
+    /// Decodes the exact little-endian interaction notification payload.
+    pub fn decode(bytes: &[u8]) -> Result<Self, PresenceError> {
+        let bytes = require_len(bytes, REMOTE_INTERACTION_V1_SIZE, "remote interaction")?;
+        if bytes[REMOTE_INTERACTION_V1_RESERVED_OFFSET..]
+            .iter()
+            .any(|value| *value != 0)
+        {
+            return Err(PresenceError::NonZeroReserved {
+                offset: REMOTE_INTERACTION_V1_RESERVED_OFFSET,
+                value: bytes[REMOTE_INTERACTION_V1_RESERVED_OFFSET],
+            });
+        }
+        Self::new(
+            PresenceHandle::from_wire(read_u64(bytes, REMOTE_INTERACTION_V1_HANDLE_OFFSET))?,
+            read_u32(bytes, REMOTE_INTERACTION_V1_SERVER_SEQUENCE_OFFSET),
+        )
+    }
+}
+
+impl Serialize for RemoteInteractionV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.validate().map_err(serde::ser::Error::custom)?;
+        let mut output = serializer.serialize_struct("RemoteInteractionV1", 2)?;
+        output.serialize_field("handle", &self.handle)?;
+        output.serialize_field("server_sequence", &self.server_sequence)?;
+        output.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for RemoteInteractionV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WireInteraction {
+            handle: PresenceHandle,
+            server_sequence: u32,
+        }
+        let wire = WireInteraction::deserialize(deserializer)?;
+        Self::new(wire.handle, wire.server_sequence).map_err(serde::de::Error::custom)
+    }
+}
+
 /// An interaction observed against a remote player.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresenceInteractionV1 {
@@ -1724,6 +1836,19 @@ mod tests {
             [
                 239, 205, 171, 137, 103, 69, 35, 1, 4, 0, 0, 0, 2, 0, 0, 0, 252, 255, 9, 0,
             ]
+        );
+        let remote_interaction = RemoteInteractionV1::new(handle, 6).unwrap();
+        assert_eq!(
+            remote_interaction.encode().len(),
+            REMOTE_INTERACTION_V1_SIZE
+        );
+        assert_eq!(
+            RemoteInteractionV1::decode(&remote_interaction.encode()).unwrap(),
+            remote_interaction
+        );
+        assert_eq!(
+            remote_interaction.encode(),
+            [239, 205, 171, 137, 103, 69, 35, 1, 6, 0, 0, 0, 0, 0, 0, 0]
         );
     }
 

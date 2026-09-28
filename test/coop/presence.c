@@ -1849,6 +1849,42 @@ TEST("Cloud Coop presence keeps regional map identity authoritative")
     ExpectStructBytes(&output, snapshot, sizeof(output));
 }
 
+TEST("Cloud Coop connected-map reducer accepts only same-region lifecycle")
+{
+    struct CoopPresenceReducer reducer;
+    struct CoopPresenceSpawn spawn = Spawn(17, 10, 8, 8,
+                                         COOP_PRESENCE_DIRECTION_EAST,
+                                         COOP_PRESENCE_PLAYER_OVERWORLD);
+    struct CoopPresenceUpdate update = {
+        .handle = 17,
+        .server_sequence = 11,
+        .state = State(9, 8, COOP_PRESENCE_DIRECTION_EAST,
+                       COOP_PRESENCE_PLAYER_OVERWORLD),
+    };
+
+    EstablishReducer(&reducer);
+    spawn.state.pose.location.map_group = 0;
+    spawn.state.pose.location.map_number = 19;
+    spawn.state.pose.warp_sequence = 2;
+    EXPECT_EQ(CoopPresenceReducer_ApplySpawn(&reducer, &spawn),
+              COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    EXPECT_EQ(CoopPresenceReducer_ApplySpawnConnected(&reducer, &spawn),
+              COOP_PRESENCE_APPLY_APPLIED);
+    update.state.pose.location.map_group = 0;
+    update.state.pose.location.map_number = 20;
+    update.state.pose.warp_sequence = 3;
+    EXPECT_EQ(CoopPresenceReducer_ApplyUpdate(&reducer, &update),
+              COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+    EXPECT_EQ(CoopPresenceReducer_ApplyUpdateConnected(&reducer, &update),
+              COOP_PRESENCE_APPLY_APPLIED);
+    update.server_sequence = 12;
+    update.state.pose.location.region = COOP_REGION_KANTO;
+    update.state.pose.location.map_group = 37;
+    update.state.pose.location.map_number = 0;
+    EXPECT_EQ(CoopPresenceReducer_ApplyUpdateConnected(&reducer, &update),
+              COOP_PRESENCE_APPLY_PARTITION_MISMATCH);
+}
+
 TEST("Cloud Coop presence reducer preserves snapshots across rejection classes")
 {
     struct CoopPresenceReducer reducer;

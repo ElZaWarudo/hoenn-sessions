@@ -221,6 +221,7 @@ mod durable {
                         invitee: second,
                         expires_at: 1_700_000_030_000,
                         consumed: false,
+                        allow_remote_maps: false,
                     },
                 );
                 for response in [

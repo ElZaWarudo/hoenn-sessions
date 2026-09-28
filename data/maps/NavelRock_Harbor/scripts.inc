@@ -6,6 +6,11 @@ NavelRock_Harbor_EventScript_Sailor::
 	faceplayer
 	msgbox NavelRock_Harbor_Text_SailorReturn, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, NavelRock_Harbor_EventScript_AsYouLike
+	setvar VAR_0x8004, 91
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, NavelRock_Harbor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, NavelRock_Harbor_EventScript_GroupTravelFailed
 	msgbox EventTicket_Text_SailHome, MSGBOX_DEFAULT
 	closemessage
 	applymovement VAR_LAST_TALKED, Common_Movement_WalkInPlaceFasterDown
@@ -16,6 +21,13 @@ NavelRock_Harbor_EventScript_Sailor::
 	call Common_EventScript_FerryDepartIsland
 	warp MAP_LILYCOVE_CITY_HARBOR, 8, 11
 	waitstate
+	release
+	end
+
+NavelRock_Harbor_EventScript_GroupTravelWaiting::
+	end
+
+NavelRock_Harbor_EventScript_GroupTravelFailed::
 	release
 	end
 
