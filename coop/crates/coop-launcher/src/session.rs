@@ -7556,7 +7556,22 @@ mod lifecycle_tests {
             let mut byte = [0_u8; 1];
             stream.read_exact(&mut byte).await.unwrap();
             if byte[0] == b'\n' {
-                return serde_json::from_slice(&line).unwrap();
+                let command = serde_json::from_slice(&line).unwrap();
+                line.clear();
+                // The invite watcher republishes the fake cloud's ungrouped
+                // membership on every poll so a reset ROM can recover it.
+                // Those heartbeats interleave with the commands under test.
+                if matches!(
+                    command,
+                    ControlCommand::GroupStateChanged {
+                        grouped: false,
+                        remote_join_possible: false,
+                        ..
+                    }
+                ) {
+                    continue;
+                }
+                return command;
             }
             line.push(byte[0]);
         }

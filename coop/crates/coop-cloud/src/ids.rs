@@ -636,13 +636,17 @@ scalar_serde!(BridgeAbiVersion, u16);
 pub struct ProtocolVersion(u16);
 
 impl ProtocolVersion {
-    /// Creates a non-zero protocol version.
+    /// Creates a known co-op game protocol version.
+    ///
+    /// Version 2 is the current ROM bridge protocol; version 1 stays readable
+    /// so identities persisted before the bump still deserialize and then fail
+    /// the exact runtime-identity comparison instead of the decoder.
     ///
     /// # Errors
     ///
-    /// Returns an error when `value` is zero.
+    /// Returns an error for any version other than 1 or 2.
     pub fn new(value: u16) -> Result<Self, IdError> {
-        if value == 1 {
+        if matches!(value, 1 | 2) {
             Ok(Self(value))
         } else {
             Err(IdError::UnsupportedVersion(value))
