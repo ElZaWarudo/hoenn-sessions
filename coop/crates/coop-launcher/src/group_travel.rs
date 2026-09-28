@@ -1964,6 +1964,8 @@ const fn route_id(r: GroupTravelRoute) -> &'static str {
         GroupTravelRoute::ReturnTrainLater => "KANTO:LATER_SAFFRON_JOHTO_TRAIN",
         GroupTravelRoute::ReturnGateOriginal => "KANTO:ORIGINAL_ROUTE22_JOHTO_ROUTE22",
         GroupTravelRoute::ReturnGateLater => "KANTO:LATER_ROUTE22_JOHTO_ROUTE22",
+        GroupTravelRoute::CableCarRoute112MtChimney => "HOENN:ROUTE112_MT_CHIMNEY_CABLE_CAR",
+        GroupTravelRoute::CableCarMtChimneyRoute112 => "HOENN:MT_CHIMNEY_ROUTE112_CABLE_CAR",
         GroupTravelRoute::FerryOlivineSouthernIsland => "JOHTO:OLIVINE_SOUTHERN_ISLAND_FERRY",
         GroupTravelRoute::FerryOlivineBirthIsland => "JOHTO:OLIVINE_BIRTH_ISLAND_FERRY",
         GroupTravelRoute::FerryOlivineFarawayIsland => "JOHTO:OLIVINE_FARAWAY_ISLAND_FERRY",

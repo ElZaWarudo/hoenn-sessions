@@ -18,6 +18,7 @@
 #include "constants/johto_content.h"
 #include "constants/flags.h"
 #include "constants/field_specials.h"
+#include "constants/game_stat.h"
 #include "constants/heal_locations.h"
 #include "constants/maps.h"
 #include "constants/seagallop.h"
@@ -355,6 +356,15 @@ static bool8 RouteFields(u8 route, u8 *era, u8 *destination)
     static const u8 sEra[] = {0, 1, 2, 1, 2, 1, 2, 3};
     static const u8 sDestination[] = {0, 3, 4, 1, 2, 5, 6, 7};
     u8 origin, seagallopDestination;
+    if (route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
+     || route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112)
+    {
+        *era = COOP_GROUP_TRAVEL_ERA_HOENN;
+        *destination = route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
+            ? COOP_GROUP_TRAVEL_DEST_MT_CHIMNEY_CABLE_CAR_STATION
+            : COOP_GROUP_TRAVEL_DEST_ROUTE112_CABLE_CAR_STATION;
+        return TRUE;
+    }
     if (IsBillStoryRoute(route))
     {
         *era = COOP_GROUP_TRAVEL_ERA_ORIGINAL;
@@ -467,6 +477,9 @@ static bool8 RouteMatchesDeparture(u8 route, u8 departure)
 {
     switch (departure)
     {
+    case COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR:
+        return route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
+            || route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112;
     case COOP_GROUP_TRAVEL_DEPARTURE_TRAIN:
         return route == COOP_GROUP_TRAVEL_ROUTE_TRAIN_ORIGINAL
             || route == COOP_GROUP_TRAVEL_ROUTE_TRAIN_LATER
@@ -540,6 +553,10 @@ static bool8 IsMaterializedDeparture(u8 route, u8 departure)
     }
     switch (departure)
     {
+    case COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR:
+        map = route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
+            ? MAP_ROUTE112_CABLE_CAR_STATION : MAP_MT_CHIMNEY_CABLE_CAR_STATION;
+        break;
     case COOP_GROUP_TRAVEL_DEPARTURE_TRAIN:
         map = route >= COOP_GROUP_TRAVEL_ROUTE_RETURN_FERRY_ORIGINAL
             ? (route == COOP_GROUP_TRAVEL_ROUTE_RETURN_TRAIN_ORIGINAL
@@ -921,7 +938,8 @@ bool8 CoopGroupTravel_RespondToOffer(bool8 accept)
      && !IsMaterializedDeparture(sTravel.semantic.route, sTravel.semantic.departure))
         accept = FALSE;
     if (accept && (IsSSTidalRoute(sTravel.semantic.route)
-                || IsSSTidalBoardingRoute(sTravel.semantic.route))
+                || IsSSTidalBoardingRoute(sTravel.semantic.route)
+                || sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR)
      && !IsMaterializedDeparture(sTravel.semantic.route, sTravel.semantic.departure))
         accept = FALSE;
     HideVoteCountdown();
@@ -1054,6 +1072,8 @@ static const struct TravelWarp sTravelWarps[] = {
     [159] = {MAP_VERMILION_CITY, WARP_ID_NONE, 23, 32, 23, 32},
     [160] = {MAP_ONE_ISLAND_POKEMON_CENTER_1F, WARP_ID_NONE, 9, 9, 9, 9},
     [161] = {MAP_CINNABAR_ISLAND, WARP_ID_NONE, 21, 7, 21, 7},
+    [COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY] = {MAP_MT_CHIMNEY_CABLE_CAR_STATION, WARP_ID_NONE, 6, 8, 6, 8},
+    [COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112] = {MAP_ROUTE112_CABLE_CAR_STATION, WARP_ID_NONE, 6, 8, 6, 8},
 };
 
 static bool8 StageCommit(void)
@@ -1084,6 +1104,20 @@ static bool8 StageCommit(void)
         return TRUE;
     }
     warp = &sTravelWarps[sTravel.semantic.route];
+    if (sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR)
+    {
+        if (!IsMaterializedDeparture(sTravel.semantic.route, sTravel.semantic.departure))
+            return FALSE;
+        /* Land on the aisle beyond the attendant's reset tile at (6, 7).
+         * This stable tile is also the reconnect receipt position. */
+        VarSet(VAR_CABLE_CAR_STATION_STATE, 0);
+        IncrementGameStat(GAME_STAT_RODE_CABLE_CAR);
+        SetWarpDestination(MAP_GROUP(warp->map), MAP_NUM(warp->map), warp->warp,
+                           warp->warp_x, warp->warp_y);
+        DoWarp();
+        sTravel.controls_locked = FALSE;
+        return TRUE;
+    }
     if (IsSSTidalBoardingRoute(sTravel.semantic.route))
     {
         if (!IsMaterializedDeparture(sTravel.semantic.route, sTravel.semantic.departure)
@@ -1263,7 +1297,8 @@ static enum JohtoTravelDestination DestinationForRecord(const struct CoopGroupTr
         || IsSSTidalBoardingRoute(record->route)
         || IsSSTidalRoute(record->route)
         || IsBrineyRoute(record->route)
-        || IsSeagallopRoute(record->route))
+        || IsSeagallopRoute(record->route)
+        || record->departure == COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR)
         return JOHTO_TRAVEL_DESTINATION_NONE;
     return record->route >= COOP_GROUP_TRAVEL_ROUTE_RETURN_FERRY_ORIGINAL
         ? JOHTO_TRAVEL_DESTINATION_JOHTO
@@ -1671,6 +1706,7 @@ void CoopGroupTravel_Poll(void)
       || IsSSTidalRoute(sTravel.semantic.route)
       || IsBrineyRoute(sTravel.semantic.route)
       || IsSeagallopRoute(sTravel.semantic.route)
+      || sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR
       || (sTravel.semantic.route >= COOP_GROUP_TRAVEL_ROUTE_RETURN_GATE_ORIGINAL
        && sTravel.semantic.route <= COOP_GROUP_TRAVEL_ROUTE_RETURN_GATE_LATER
        && JohtoTravel_CommitAtReceptionGate())

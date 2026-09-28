@@ -176,6 +176,8 @@ pub enum GroupTravelRoute {
     SeagallopBirthVermilion = 159,
     SeagallopBillCinnabarOne = 160,
     SeagallopBillOneCinnabar = 161,
+    CableCarRoute112MtChimney = 162,
+    CableCarMtChimneyRoute112 = 163,
 }
 
 impl GroupTravelRoute {
@@ -302,6 +304,9 @@ impl GroupTravelRoute {
             | Self::FlyHoennEverGrandeCenter
             | Self::FlyHoennEverGrandeLeague
             | Self::FlyHoennBattleFrontier => GroupTravelEra::Hoenn,
+            Self::CableCarRoute112MtChimney | Self::CableCarMtChimneyRoute112 => {
+                GroupTravelEra::Hoenn
+            }
             Self::FlyJohtoNewbark
             | Self::FlyJohtoCherrygrove
             | Self::FlyJohtoViolet
@@ -416,6 +421,8 @@ impl GroupTravelRoute {
             | Self::SeagallopSevenOne => GroupTravelDestination::SeagallopOne,
             Self::SeagallopBillCinnabarOne => GroupTravelDestination::BillOneIslandCenter,
             Self::SeagallopBillOneCinnabar => GroupTravelDestination::BillCinnabar,
+            Self::CableCarRoute112MtChimney => GroupTravelDestination::MtChimneyCableCarStation,
+            Self::CableCarMtChimneyRoute112 => GroupTravelDestination::Route112CableCarStation,
             Self::SeagallopVermilionTwo
             | Self::SeagallopOneTwo
             | Self::SeagallopThreeTwo
@@ -683,6 +690,8 @@ impl GroupTravelRoute {
             159 => Ok(Self::SeagallopBirthVermilion),
             160 => Ok(Self::SeagallopBillCinnabarOne),
             161 => Ok(Self::SeagallopBillOneCinnabar),
+            162 => Ok(Self::CableCarRoute112MtChimney),
+            163 => Ok(Self::CableCarMtChimneyRoute112),
             value => Err(GroupTravelCodecError::InvalidRoute(value)),
         }
     }
@@ -702,6 +711,7 @@ pub enum GroupTravelDeparture {
     SsaquaMaiden = 3,
     Gate = 4,
     Fly = 5,
+    CableCar = 6,
 }
 
 impl GroupTravelDeparture {
@@ -712,6 +722,7 @@ impl GroupTravelDeparture {
             3 => Ok(Self::SsaquaMaiden),
             4 => Ok(Self::Gate),
             5 => Ok(Self::Fly),
+            6 => Ok(Self::CableCar),
             value => Err(GroupTravelCodecError::InvalidDeparture(value)),
         }
     }
@@ -835,6 +846,11 @@ impl GroupTravelDeparture {
                     | GroupTravelRoute::ReturnGateLater
             ),
             Self::Fly => route.is_fly(),
+            Self::CableCar => matches!(
+                route,
+                GroupTravelRoute::CableCarRoute112MtChimney
+                    | GroupTravelRoute::CableCarMtChimneyRoute112
+            ),
         }
     }
 }
@@ -954,6 +970,8 @@ pub enum GroupTravelDestination {
     SSTidalCorridor = 94,
     BillOneIslandCenter = 95,
     BillCinnabar = 96,
+    MtChimneyCableCarStation = 97,
+    Route112CableCarStation = 98,
 }
 
 impl GroupTravelDestination {
@@ -1046,6 +1064,8 @@ impl GroupTravelDestination {
             94 => Ok(Self::SSTidalCorridor),
             95 => Ok(Self::BillOneIslandCenter),
             96 => Ok(Self::BillCinnabar),
+            97 => Ok(Self::MtChimneyCableCarStation),
+            98 => Ok(Self::Route112CableCarStation),
             value => Err(GroupTravelCodecError::InvalidDestination(value)),
         }
     }
@@ -1826,6 +1846,41 @@ mod tests {
             GroupTravelClientRecord::decode(&encoded),
             Err(GroupTravelCodecError::InvalidRoute(32))
         ));
+    }
+
+    #[test]
+    fn cable_car_routes_have_distinct_fixed_destinations_and_departure() {
+        for (wire, route, destination) in [
+            (
+                162,
+                GroupTravelRoute::CableCarRoute112MtChimney,
+                GroupTravelDestination::MtChimneyCableCarStation,
+            ),
+            (
+                163,
+                GroupTravelRoute::CableCarMtChimneyRoute112,
+                GroupTravelDestination::Route112CableCarStation,
+            ),
+        ] {
+            assert_eq!(GroupTravelRoute::from_wire(wire).unwrap(), route);
+            assert_eq!(route.era(), GroupTravelEra::Hoenn);
+            assert_eq!(route.destination(), destination);
+            assert!(GroupTravelDeparture::CableCar.matches_route(route));
+            assert!(!GroupTravelDeparture::Ferry.matches_route(route));
+            let request = GroupTravelClientRecord {
+                kind: GroupTravelClientKind::Request,
+                route,
+                departure: GroupTravelDeparture::CableCar,
+                request_id: 1,
+                proposal_id: [0; 16],
+                result: GroupTravelResult::None,
+                reason: GroupTravelReason::None,
+            };
+            assert_eq!(
+                GroupTravelClientRecord::decode(&request.encode().unwrap()).unwrap(),
+                request
+            );
+        }
     }
     #[test]
     fn story_marker_wire_requires_correlated_first_voyage() {

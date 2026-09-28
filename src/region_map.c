@@ -2943,6 +2943,8 @@ static void CB_ExitFlyMap(void)
             FreeRegionMapIconResources();
 
             if (sFlyMap->choseFlyLocation
+                && !CoopNetBridge_IsGrouped()
+                && !sPartnerFlyMap
                 && JohtoTravel_GetPendingDestination() != JOHTO_TRAVEL_DESTINATION_NONE
                 && (!JohtoTravel_RecordCurrentHeal(
                         GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation))

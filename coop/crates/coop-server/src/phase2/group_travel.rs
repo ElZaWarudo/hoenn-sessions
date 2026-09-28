@@ -144,7 +144,25 @@ fn consent_route_catalog() -> Vec<RouteDefinition> {
     let briney_house =
         || WorldZone::new(RegionId::Hoenn, "ROUTE104_MR_BRINEYS_HOUSE", 1).expect("map catalog");
     let route109 = || WorldZone::new(RegionId::Hoenn, "ROUTE109", 1).expect("map catalog");
+    let route112_cable_car =
+        || WorldZone::new(RegionId::Hoenn, "ROUTE112_CABLE_CAR_STATION", 1).expect("map catalog");
+    let mt_chimney_cable_car =
+        || WorldZone::new(RegionId::Hoenn, "MT_CHIMNEY_CABLE_CAR_STATION", 1).expect("map catalog");
     let mut catalog = vec![
+        route(
+            "HOENN:ROUTE112_MT_CHIMNEY_CABLE_CAR",
+            route112_cable_car(),
+            mt_chimney_cable_car(),
+            0,
+            0,
+        ),
+        route(
+            "HOENN:MT_CHIMNEY_ROUTE112_CABLE_CAR",
+            mt_chimney_cable_car(),
+            route112_cable_car(),
+            0,
+            0,
+        ),
         route(
             "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
             goldenrod(),
@@ -800,6 +818,8 @@ fn departure_matches_route(route: &RouteDefinition, departure: GroupTravelDepart
             ) && departure == GroupTravelDeparture::SsaquaMaiden)
     } else if route.id.ends_with("_ROUTE22") {
         departure == GroupTravelDeparture::Gate
+    } else if route.id.ends_with("_CABLE_CAR") {
+        departure == GroupTravelDeparture::CableCar
     } else if route.source_any {
         departure == GroupTravelDeparture::Fly
     } else {
@@ -2852,6 +2872,35 @@ pub(crate) fn receipt_story_scene(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cable_car_consent_routes_are_directional_and_station_bound() {
+        for (id, source, destination) in [
+            (
+                "HOENN:ROUTE112_MT_CHIMNEY_CABLE_CAR",
+                "ROUTE112_CABLE_CAR_STATION",
+                "MT_CHIMNEY_CABLE_CAR_STATION",
+            ),
+            (
+                "HOENN:MT_CHIMNEY_ROUTE112_CABLE_CAR",
+                "MT_CHIMNEY_CABLE_CAR_STATION",
+                "ROUTE112_CABLE_CAR_STATION",
+            ),
+        ] {
+            let definition = consent_route_definition(id).unwrap();
+            assert_eq!(definition.source.map.as_str(), source);
+            assert_eq!(definition.destination.map.as_str(), destination);
+            assert!(!definition.source_any);
+            assert!(departure_matches_route(
+                &definition,
+                GroupTravelDeparture::CableCar
+            ));
+            assert!(!departure_matches_route(
+                &definition,
+                GroupTravelDeparture::Ferry
+            ));
+        }
+    }
 
     #[test]
     fn bill_story_sources_are_exact_and_publicly_consent_based() {

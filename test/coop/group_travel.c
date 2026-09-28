@@ -35,6 +35,15 @@ static struct CoopGroupTravelRecord Record(u8 kind, u8 route, u32 request, u8 pr
         (void)CoopRegionMap_GroupFlyFields(route, &record.era, &record.destination);
         record.departure = COOP_GROUP_TRAVEL_DEPARTURE_FLY;
     }
+    else if (route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
+          || route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112)
+    {
+        record.era = COOP_GROUP_TRAVEL_ERA_HOENN;
+        record.destination = route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
+            ? COOP_GROUP_TRAVEL_DEST_MT_CHIMNEY_CABLE_CAR_STATION
+            : COOP_GROUP_TRAVEL_DEST_ROUTE112_CABLE_CAR_STATION;
+        record.departure = COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR;
+    }
     else if (route >= COOP_GROUP_TRAVEL_ROUTE_SS_TIDAL_SLATEPORT_BOARD
           && route <= COOP_GROUP_TRAVEL_ROUTE_SS_TIDAL_LILYCOVE_BOARD)
     {
@@ -214,6 +223,8 @@ TEST("Group travel accepts each approved script-locked departure and owns the ha
         {COOP_GROUP_TRAVEL_ROUTE_RETURN_TRAIN_LATER, COOP_GROUP_TRAVEL_DEPARTURE_TRAIN, MAP_KANTO_LATER_SAFFRON_CITY_TRAIN_STATION},
         {COOP_GROUP_TRAVEL_ROUTE_RETURN_GATE_ORIGINAL, COOP_GROUP_TRAVEL_DEPARTURE_GATE, MAP_ROUTE22},
         {COOP_GROUP_TRAVEL_ROUTE_RETURN_GATE_LATER, COOP_GROUP_TRAVEL_DEPARTURE_GATE, MAP_KANTO_LATER_ROUTE22},
+        {COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY, COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR, MAP_ROUTE112_CABLE_CAR_STATION},
+        {COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112, COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR, MAP_MT_CHIMNEY_CABLE_CAR_STATION},
     };
     u32 i;
 
@@ -248,6 +259,38 @@ TEST("Group travel accepts each approved script-locked departure and owns the ha
         EXPECT(!gObjectEvents[0].frozen);
         gObjectEvents[0].active = FALSE;
     }
+}
+
+TEST("Cable car consent uses exact stations and a stable arrival aisle")
+{
+    static const struct { u8 route; u16 source; u16 destination; } sCases[] = {
+        {COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY,
+            MAP_ROUTE112_CABLE_CAR_STATION, MAP_MT_CHIMNEY_CABLE_CAR_STATION},
+        {COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112,
+            MAP_MT_CHIMNEY_CABLE_CAR_STATION, MAP_ROUTE112_CABLE_CAR_STATION},
+    };
+    u32 i;
+
+    for (i = 0; i < ARRAY_COUNT(sCases); i++)
+    {
+        ResetGroupTravelFixture();
+        CoopGroupTravel_TestSetGrouped(TRUE);
+        MaterializeDeparture(sCases[i].source);
+        ScriptContext_SetupScript(EventScript_CoopGroupTravelOffer);
+        EXPECT_EQ(CoopGroupTravel_BeginFromScript(sCases[i].route,
+            COOP_GROUP_TRAVEL_DEPARTURE_FERRY), COOP_GROUP_TRAVEL_BEGIN_REJECTED);
+        EXPECT_EQ(CoopGroupTravel_BeginFromScript(sCases[i].route,
+            COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR), COOP_GROUP_TRAVEL_BEGIN_WAITING);
+        EndDepartureScript();
+
+        MaterializeDeparture(sCases[i].destination);
+        gSaveBlock1Ptr->pos.x = 6;
+        gSaveBlock1Ptr->pos.y = 8;
+        EXPECT(CoopGroupTravel_TestAtExactDestination(sCases[i].route));
+        gSaveBlock1Ptr->pos.y = 7;
+        EXPECT(!CoopGroupTravel_TestAtExactDestination(sCases[i].route));
+    }
+    CoopGroupTravel_Init();
 }
 
 TEST("Group travel rejects unapproved or unmaterialized script departures")

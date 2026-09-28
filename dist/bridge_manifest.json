@@ -12,7 +12,7 @@
   "game_build": {
     "id": "pokecrossroads-beta-1.4-e05c8286-coop-v1",
     "numeric_id": 65536,
-    "rom_sha256": "8f197d7d481277c406ce4c89fbf8231ae4983762082a5679f87919d3a54911bc"
+    "rom_sha256": "15dcbea42a3a0d97916984bc15e69784e3e1bfcfa4383137964b2a46e09ef713"
   },
   "net_bridge": {
     "abi_version": 1,

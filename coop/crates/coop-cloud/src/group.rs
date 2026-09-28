@@ -828,6 +828,8 @@ impl GroupTravelProposalRequest {
             GroupTravelDeparture::Gate
         } else if route_id.as_str() == "HOENN:FLY_LITTLEROOT" {
             GroupTravelDeparture::Fly
+        } else if route_id.as_str().ends_with("_CABLE_CAR") {
+            GroupTravelDeparture::CableCar
         } else {
             return Err(GroupError::InvalidRouteId);
         };
