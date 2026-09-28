@@ -46,10 +46,34 @@ impl MapCatalogEntry {
     }
 }
 
+/// A cardinal map edge from the ROM's authoritative map headers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MapConnectionEntry {
+    pub from_group: u16,
+    pub from_number: u16,
+    pub to_group: u16,
+    pub to_number: u16,
+}
+
 include!("generated_map_catalog.rs");
+include!("generated_map_connections.rs");
 
 /// The complete generated map catalog.
 pub const MAP_CATALOG: &[MapCatalogEntry] = GENERATED_MAP_CATALOG;
+
+/// Exact cardinal map edges. Dive, emerge, and warps are excluded.
+pub const MAP_CONNECTIONS: &[MapConnectionEntry] = GENERATED_MAP_CONNECTIONS;
+
+/// Whether the current map header names the other map as a cardinal neighbor.
+#[must_use]
+pub fn maps_share_edge(from_group: u16, from_number: u16, to_group: u16, to_number: u16) -> bool {
+    MAP_CONNECTIONS.iter().any(|connection| {
+        connection.from_group == from_group
+            && connection.from_number == from_number
+            && connection.to_group == to_group
+            && connection.to_number == to_number
+    })
+}
 
 /// A zero-sized access façade for callers that prefer an object-like API.
 #[derive(Clone, Copy, Debug, Default)]
@@ -199,6 +223,25 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+
+    #[test]
+    fn cardinal_connections_resolve_to_same_region_maps() {
+        assert!(maps_share_edge(0, 19, 0, 20)); // Route 104 to Route 105.
+        assert!(!maps_share_edge(0, 19, 0, 9)); // Littleroot is not adjacent.
+        for connection in MAP_CONNECTIONS {
+            let source = MAP_CATALOG
+                .iter()
+                .find(|entry| {
+                    entry.coordinates() == (connection.from_group, connection.from_number)
+                })
+                .unwrap();
+            let target = MAP_CATALOG
+                .iter()
+                .find(|entry| entry.coordinates() == (connection.to_group, connection.to_number))
+                .unwrap();
+            assert_eq!(source.region, target.region);
+        }
+    }
 
     #[test]
     fn generated_catalog_has_complete_unique_coverage() {

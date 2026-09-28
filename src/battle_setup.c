@@ -1,5 +1,6 @@
 #include "global.h"
 #include "battle.h"
+#include "battle_script_commands.h"
 #include "load_save.h"
 #include "battle_setup.h"
 #include "battle_tower.h"
@@ -33,6 +34,8 @@
 #include "battle_tower.h"
 #include "gym_leader_rematch.h"
 #include "coop/identity.h"
+#include "coop/battle_consent.h"
+#include "coop/battle_runtime.h"
 #include "battle_frontier.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -81,7 +84,10 @@ static void CB2_EndFirstBattle(void);
 static void SaveChangesToPlayerParty(void);
 static void HandleBattleVariantEndParty(void);
 static void CB2_EndTrainerBattle(void);
+static void CB2_EndCoopTrainerBattle(void);
+static void RollbackCoopBattleEntry(void);
 static bool32 IsPlayerDefeated(u32 battleOutcome);
+static void DowngradeBadPoison(void);
 #if FREE_MATCH_CALL == FALSE
 static u16 GetRematchTrainerId(u16 trainerId);
 #endif //FREE_MATCH_CALL
@@ -95,6 +101,16 @@ EWRAM_DATA u16 gPartnerTrainerId = 0;
 EWRAM_DATA static u8 *sTrainerBattleEndScript = NULL;
 EWRAM_DATA static bool8 sShouldCheckTrainerBScript = FALSE;
 EWRAM_DATA static u8 sNoOfPossibleTrainerRetScripts = 0;
+EWRAM_DATA static struct CoopBattleStartupPlan sCoopBattlePlan = {0};
+EWRAM_DATA static bool8 sCoopBattleEntryActive = FALSE;
+EWRAM_DATA static bool8 sCoopBattleEntryPrepared = FALSE;
+EWRAM_DATA static struct Pokemon sCoopOriginalPeerParty[PARTY_SIZE] = {0};
+EWRAM_DATA static u8 sCoopOriginalLocalPartyCount = 0;
+EWRAM_DATA static u8 sCoopOriginalPeerPartyCount = 0;
+EWRAM_DATA static u32 sCoopOriginalBattleTypeFlags = 0;
+EWRAM_DATA static MainCallback sCoopOriginalSavedCallback = NULL;
+EWRAM_DATA static u16 sCoopOriginalPartnerTrainerId = 0;
+EWRAM_DATA static TrainerBattleParameter sCoopOriginalTrainerBattleParameter = {0};
 
 // The first transition is used if the enemy Pokémon are lower level than our Pokémon.
 // Otherwise, the second transition is used.
@@ -255,7 +271,11 @@ static void Task_BattleStart(u8 taskId)
     case 1:
         if (IsBattleTransitionDone() == TRUE)
         {
-            PrepareForFollowerNPCBattle();
+            /* A co-op battle already owns the staged player and peer parties.
+             * Follower preparation would overwrite the saved party and install
+             * a second partner, so keep it out of this dormant entry path. */
+            if (!CoopBattleRuntime_IsEngineActive())
+                PrepareForFollowerNPCBattle();
             CleanupOverworldWindowsAndTilemaps();
             SetMainCallback2(CB2_InitBattle);
             RestartWildEncounterImmunitySteps();
@@ -449,6 +469,157 @@ static void DoTrainerBattle(void)
     IncrementGameStat(GAME_STAT_TOTAL_BATTLES);
     IncrementGameStat(GAME_STAT_TRAINER_BATTLES);
     TryUpdateGymLeaderRematchFromTrainer();
+}
+
+/* Co-op battles do not run vanilla trainer rewards or whiteout handling. A
+ * terminal attestation is queued before the battle resources are released;
+ * only that successful path preserves the local battle-mon changes. */
+static void CB2_EndCoopTrainerBattle(void)
+{
+    bool8 completed = FALSE;
+    bool8 wasScriptedTrainerBattle;
+
+    if (!sCoopBattleEntryPrepared)
+    {
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        return;
+    }
+
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        CoopBattleRuntime_PollTerminal();
+        if (!CoopBattleRuntime_IsEngineFaulted()
+         && CoopBattleRuntime_IsBattleFinishedSent()
+         && CoopBattleRuntime_RestoreLocalParty(&sCoopBattlePlan,
+                                                sCoopBattlePlan.battle_id,
+                                                gParties[B_TRAINER_0],
+                                                gParties[B_TRAINER_0]))
+        {
+            completed = TRUE;
+        }
+        else if (!CoopBattleRuntime_IsEngineFaulted())
+        {
+            /* A full bridge queue is transient. Stay in this callback until
+             * the terminal frame is accepted instead of releasing a battle
+             * whose remote member cannot commit the same result. */
+            return;
+        }
+        if (!completed)
+        {
+            (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_UNAVAILABLE);
+        }
+    }
+    if (!completed)
+        memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.original_local,
+               sizeof(sCoopBattlePlan.original_local));
+    memcpy(gParties[B_TRAINER_2], sCoopOriginalPeerParty,
+           sizeof(sCoopOriginalPeerParty));
+    gPartiesCount[B_TRAINER_0] = sCoopOriginalLocalPartyCount;
+    gPartiesCount[B_TRAINER_2] = sCoopOriginalPeerPartyCount;
+    gBattleTypeFlags = sCoopOriginalBattleTypeFlags;
+    gPartnerTrainerId = sCoopOriginalPartnerTrainerId;
+    gTrainerBattleParameter = sCoopOriginalTrainerBattleParameter;
+    gMain.savedCallback = sCoopOriginalSavedCallback;
+    if (completed)
+        CoopBattleRuntime_CompleteBattle();
+    else
+        CoopBattleRuntime_DisarmEngine();
+    memset(&sCoopBattlePlan, 0, sizeof(sCoopBattlePlan));
+    sCoopBattleEntryActive = FALSE;
+    sCoopBattleEntryPrepared = FALSE;
+    wasScriptedTrainerBattle = CoopBattleConsent_OnTrainerBattleEnded(completed, gBattleOutcome);
+    if (completed && IsPlayerDefeated(gBattleOutcome)
+     && NoAliveMonsForPlayer() && !FlagGet(B_FLAG_NO_WHITEOUT))
+    {
+        if (wasScriptedTrainerBattle)
+            CoopBattleConsent_OnTrainerWhiteout();
+        SetMainCallback2(CB2_WhiteOut);
+        return;
+    }
+    if (completed && !IsPlayerDefeated(gBattleOutcome))
+        DowngradeBadPoison();
+    SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+}
+
+static void RollbackCoopBattleEntry(void)
+{
+    if (!sCoopBattleEntryPrepared)
+        return;
+    memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.original_local,
+           sizeof(sCoopBattlePlan.original_local));
+    memcpy(gParties[B_TRAINER_2], sCoopOriginalPeerParty,
+           sizeof(sCoopOriginalPeerParty));
+    gPartiesCount[B_TRAINER_0] = sCoopOriginalLocalPartyCount;
+    gPartiesCount[B_TRAINER_2] = sCoopOriginalPeerPartyCount;
+    gBattleTypeFlags = sCoopOriginalBattleTypeFlags;
+    gPartnerTrainerId = sCoopOriginalPartnerTrainerId;
+    gTrainerBattleParameter = sCoopOriginalTrainerBattleParameter;
+    gMain.savedCallback = sCoopOriginalSavedCallback;
+    memset(&sCoopBattlePlan, 0, sizeof(sCoopBattlePlan));
+    sCoopBattleEntryActive = FALSE;
+    sCoopBattleEntryPrepared = FALSE;
+}
+
+/* Enter only after the server has released both ready members. The manifest,
+ * complete peer snapshot and unchanged local party are checked before any
+ * battle globals are touched. */
+bool8 BattleSetup_StartCoopTrainerBattle(void)
+{
+    u8 battleId[COOP_BATTLE_ID_SIZE];
+    u8 i;
+
+    if (sCoopBattleEntryActive || sCoopBattleEntryPrepared
+     || !CoopBattleRuntime_IsStartReleased()
+     || !CoopBattleConsent_CopyCurrentBattleId(battleId, sizeof(battleId))
+     || !CoopBattleRuntime_MakeStartupPlan(battleId, gParties[B_TRAINER_0],
+                                           gPartiesCount[B_TRAINER_0], &sCoopBattlePlan))
+        return FALSE;
+
+    /* Capture every mutable field this dormant path is about to replace.  A
+     * failed arm must be indistinguishable from never attempting entry. */
+    memcpy(sCoopOriginalPeerParty, gParties[B_TRAINER_2],
+           sizeof(sCoopOriginalPeerParty));
+    sCoopOriginalLocalPartyCount = gPartiesCount[B_TRAINER_0];
+    sCoopOriginalPeerPartyCount = gPartiesCount[B_TRAINER_2];
+    sCoopOriginalBattleTypeFlags = gBattleTypeFlags;
+    sCoopOriginalSavedCallback = gMain.savedCallback;
+    sCoopOriginalPartnerTrainerId = gPartnerTrainerId;
+    sCoopOriginalTrainerBattleParameter = gTrainerBattleParameter;
+    sCoopBattleEntryPrepared = TRUE;
+
+    /* Arm before changing battle globals.  ArmEngine validates the manifest
+     * and peer snapshot without depending on any battle setup state. */
+    if (!CoopBattleRuntime_ArmEngine(battleId))
+    {
+        RollbackCoopBattleEntry();
+        return FALSE;
+    }
+
+    memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.staged_local,
+           sizeof(sCoopBattlePlan.staged_local));
+    for (i = COOP_BATTLE_MULTI_PARTY_SIZE; i < PARTY_SIZE; i++)
+        ZeroMonData(&gParties[B_TRAINER_0][i]);
+    memcpy(gParties[B_TRAINER_2], sCoopBattlePlan.staged_peer,
+           sizeof(sCoopBattlePlan.staged_peer));
+    for (i = COOP_BATTLE_MULTI_PARTY_SIZE; i < PARTY_SIZE; i++)
+        ZeroMonData(&gParties[B_TRAINER_2][i]);
+    gPartiesCount[B_TRAINER_0] = COOP_BATTLE_MULTI_PARTY_SIZE;
+    gPartiesCount[B_TRAINER_2] = COOP_BATTLE_MULTI_PARTY_SIZE;
+
+    TRAINER_BATTLE_PARAM.opponentA = sCoopBattlePlan.opponent_trainer_id;
+    TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;
+    gPartnerTrainerId = TRAINER_PARTNER(PARTNER_STEVEN);
+    gBattleTypeFlags = BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER
+        | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TRAINER;
+    gMain.savedCallback = CB2_EndCoopTrainerBattle;
+
+    sCoopBattleEntryActive = TRUE;
+    LockPlayerFieldControls();
+    FreezeObjectEvents();
+    StopPlayerAvatar();
+    CreateBattleStartTask(GetTrainerBattleTransition(), 0);
+    ScriptContext_Stop();
+    return TRUE;
 }
 
 static void DoBattlePyramidTrainerHillBattle(void)

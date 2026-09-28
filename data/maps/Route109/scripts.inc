@@ -5,6 +5,11 @@ Route109_MapScripts::
 	.byte 0
 
 Route109_EventScript_StartDepartForDewford::
+	setvar VAR_0x8004, 99
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, Route109_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, Route109_EventScript_GroupTravelFailed
 	call EventScript_BackupMrBrineyLocation
 	setobjectsubpriority LOCALID_ROUTE109_BRINEY, MAP_ROUTE109, 0
 	setobjectsubpriority LOCALID_PLAYER, MAP_ROUTE109, 0
@@ -309,6 +314,13 @@ Route109_EventScript_StayHere::
 
 Route109_EventScript_ChoseNotToSail::
 	msgbox Route109_Text_BrineyTellMeWhenYouNeedToSail, MSGBOX_DEFAULT
+	release
+	end
+
+Route109_EventScript_GroupTravelWaiting::
+	end
+
+Route109_EventScript_GroupTravelFailed::
 	release
 	end
 

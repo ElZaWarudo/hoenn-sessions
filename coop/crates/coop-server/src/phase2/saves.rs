@@ -14,8 +14,8 @@ use subtle::ConstantTimeEq;
 use super::storage::{
     MAX_CHARACTER_SAV, MAX_PENDING_COMMITS, MAX_RESUME_RESPONSE, MAX_RESUME_SS1,
     MAX_RETIRED_SNAPSHOTS, MAX_SNAPSHOT_STORAGE_BYTES, MAX_SNAPSHOTS_PER_CHARACTER,
-    PreparedSnapshot, RESTORE_STAGE_TTL_MS, Store, TicketRecord, UploadObjectRecord,
-    commit_id_allowed, is_artifact_size_allowed,
+    PreparedSnapshot, RESTORE_STAGE_TTL_MS, Store, TicketRecord, TradeStageStatus,
+    UploadObjectRecord, is_artifact_size_allowed,
 };
 use super::{AuthenticatedActor, Phase2Error};
 
@@ -389,7 +389,7 @@ fn identity_registry_contract() -> coop_save::RegistryContract {
     )
 }
 
-fn validate_character_sav(
+pub(crate) fn validate_character_sav(
     bytes: &[u8],
     revision: Revision,
 ) -> Result<coop_save::ValidatedSave, Phase2Error> {
@@ -1071,6 +1071,25 @@ fn snapshot_save(
     validate_character_sav(&bytes, snapshot.revision).map_err(|_| Phase2Error::Conflict)
 }
 
+fn current_head_save(
+    store: &Store,
+    character_id: coop_cloud::CharacterId,
+) -> Result<coop_save::ValidatedSave, Phase2Error> {
+    let snapshot = store.read_transaction(|state| {
+        let character = state
+            .characters
+            .get(&character_id)
+            .ok_or(Phase2Error::NotFound)?;
+        let snapshot_id = character.active_snapshot.ok_or(Phase2Error::Conflict)?;
+        state
+            .snapshots
+            .get(&snapshot_id)
+            .cloned()
+            .ok_or(Phase2Error::Conflict)
+    })?;
+    snapshot_save(store, character_id, &snapshot)
+}
+
 fn validate_finalize_save(
     store: &Store,
     character_id: coop_cloud::CharacterId,
@@ -1164,7 +1183,7 @@ fn cleanup_restore_objects(store: &Store, keys: &[String]) -> Result<(), Phase2E
     Ok(())
 }
 
-fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
+pub(crate) fn seal_object(store: &Store, key: &str) -> Result<(), Phase2Error> {
     for _ in 0..8 {
         store.objects.delete_if_present(key)?;
         if store.objects.retire_if_absent(key)? {
@@ -1207,7 +1226,7 @@ fn snapshot_storage_usage(
         })
 }
 
-fn files_storage_usage(files: &[SnapshotFile]) -> Result<u64, Phase2Error> {
+pub(crate) fn files_storage_usage(files: &[SnapshotFile]) -> Result<u64, Phase2Error> {
     files.iter().try_fold(0_u64, |sum, file| {
         sum.checked_add(file.size_bytes)
             .ok_or(Phase2Error::Internal)
@@ -1233,7 +1252,7 @@ fn prepared_storage_usage(
         })
 }
 
-fn ensure_snapshot_quota(
+fn ensure_snapshot_quota_base(
     state: &super::storage::State,
     character_id: coop_cloud::CharacterId,
     files: &[SnapshotFile],
@@ -1262,6 +1281,123 @@ fn ensure_snapshot_quota(
         return Err(Phase2Error::Busy);
     }
     Ok(())
+}
+
+fn trade_reservation_usage(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    excluded_offer: Option<coop_cloud::TradeOfferId>,
+) -> Result<(usize, u64), Phase2Error> {
+    let live_trade_count = state
+        .trade_staging
+        .iter()
+        .filter(|(offer_id, stage)| {
+            Some(**offer_id) != excluded_offer && stage.status != TradeStageStatus::Published
+        })
+        .filter(|(_, stage)| {
+            stage
+                .outputs
+                .iter()
+                .any(|output| output.character_id == character_id)
+        })
+        .count();
+    let reserved = state
+        .trade_staging
+        .iter()
+        .filter(|(offer_id, stage)| {
+            Some(**offer_id) != excluded_offer && stage.status != TradeStageStatus::Published
+        })
+        .try_fold(0_u64, |total, (_, stage)| {
+            stage
+                .outputs
+                .iter()
+                .enumerate()
+                .filter(|(_, output)| output.character_id == character_id)
+                .try_fold(total, |total, (index, _)| {
+                    total
+                        .checked_add(stage.reserved_bytes[index])
+                        .ok_or(Phase2Error::Internal)
+                })
+        })?;
+    Ok((live_trade_count, reserved))
+}
+
+fn ensure_quota_with_trade_reservations(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_offer: Option<coop_cloud::TradeOfferId>,
+    excluded_snapshot: Option<SnapshotId>,
+    excluded_restore_stage: Option<SnapshotId>,
+) -> Result<(), Phase2Error> {
+    let (live_trade_count, reserved) =
+        trade_reservation_usage(state, character_id, excluded_offer)?;
+    let snapshot_count = state
+        .snapshots
+        .values()
+        .filter(|snapshot| snapshot.character_id == character_id)
+        .count();
+    if snapshot_count
+        .checked_add(live_trade_count)
+        .is_none_or(|count| count >= MAX_SNAPSHOTS_PER_CHARACTER)
+    {
+        return Err(Phase2Error::Busy);
+    }
+    let requested = files_storage_usage(files)?;
+    let used = snapshot_storage_usage(state, character_id)?;
+    let prepared = prepared_storage_usage(state, character_id, excluded_snapshot)?;
+    let restore_staging =
+        restore_staging_storage_usage(state, character_id, excluded_restore_stage)?;
+    let total = used
+        .checked_add(prepared)
+        .and_then(|total| total.checked_add(restore_staging))
+        .and_then(|total| total.checked_add(reserved))
+        .and_then(|total| total.checked_add(requested))
+        .ok_or(Phase2Error::Internal)?;
+    if total > MAX_SNAPSHOT_STORAGE_BYTES {
+        return Err(Phase2Error::Busy);
+    }
+    Ok(())
+}
+
+/// Checks an ordinary snapshot against all live trade reservations. This
+/// prevents a concurrent finalize or restore from consuming capacity already
+/// promised to a consented pair.
+pub(crate) fn ensure_snapshot_quota(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_snapshot: Option<SnapshotId>,
+    excluded_restore_stage: Option<SnapshotId>,
+) -> Result<(), Phase2Error> {
+    ensure_snapshot_quota_base(
+        state,
+        character_id,
+        files,
+        excluded_snapshot,
+        excluded_restore_stage,
+    )?;
+    ensure_quota_with_trade_reservations(
+        state,
+        character_id,
+        files,
+        None,
+        excluded_snapshot,
+        excluded_restore_stage,
+    )
+}
+
+/// Checks a trade output against ordinary snapshot quota plus reservations
+/// held by other live trade stages. The current offer is excluded because its
+/// own reservation is the request being validated or committed.
+pub(crate) fn ensure_trade_snapshot_quota(
+    state: &super::storage::State,
+    character_id: coop_cloud::CharacterId,
+    files: &[SnapshotFile],
+    excluded_offer: Option<coop_cloud::TradeOfferId>,
+) -> Result<(), Phase2Error> {
+    ensure_snapshot_quota_base(state, character_id, files, None, None)?;
+    ensure_quota_with_trade_reservations(state, character_id, files, excluded_offer, None, None)
 }
 
 fn restore_staging_storage_usage(
@@ -1393,9 +1529,6 @@ pub(crate) fn finalize(
     request
         .validate()
         .map_err(|_| Phase2Error::InvalidRequest)?;
-    if !commit_id_allowed(request.last_applied_commit) {
-        return Err(Phase2Error::Forbidden);
-    }
     let now = store.now();
     let prepared = match finalize_preflight(store, actor, request, now)? {
         FinalizePreflight::Replay(record) => return Ok(record),
@@ -1409,6 +1542,14 @@ pub(crate) fn finalize(
         &request.files,
     )?;
     validate_finalize_save(store, request.character_id, request, &incoming_save)?;
+    let source_save = if request.revision > Revision::new(1) {
+        Some(current_head_save(store, request.character_id)?)
+    } else {
+        if request.last_applied_commit.is_some() {
+            return Err(Phase2Error::Conflict);
+        }
+        None
+    };
     let snapshot = finalized_record(request, now)?;
 
     store.write_transaction(|state| {
@@ -1475,6 +1616,18 @@ pub(crate) fn finalize(
             lease.contract.heartbeat_interval_ms,
         )
         .map_err(|_| Phase2Error::Internal)?;
+        if let Some(source_save) = source_save.as_ref() {
+            super::battles::apply_commit_grant(
+                state,
+                actor,
+                request,
+                source_save,
+                &incoming_save,
+                store.now(),
+            )?;
+        } else if request.last_applied_commit.is_some() {
+            return Err(Phase2Error::Conflict);
+        }
         state
             .snapshots
             .insert(request.snapshot_id, snapshot.clone());

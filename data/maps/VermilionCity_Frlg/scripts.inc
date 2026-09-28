@@ -102,7 +102,10 @@ VermilionCity_EventScript_HasMysticTicket::
 	end
 
 VermilionCity_EventScript_ShowMysticTicket::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, VermilionCity_EventScript_ShowMysticTicketGrouped
 	setflag FLAG_SHOWN_MYSTIC_TICKET
+VermilionCity_EventScript_ShowMysticTicketGrouped::
 	msgbox VermilionCity_Text_OhMysticTicketTakeYouToNavelRock
 	return
 
@@ -119,7 +122,10 @@ VermilionCity_EventScript_HasAuroraTicket::
 	end
 
 VermilionCity_EventScript_ShowAuroraTicket::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, VermilionCity_EventScript_ShowAuroraTicketGrouped
 	setflag FLAG_SHOWN_AURORA_TICKET
+VermilionCity_EventScript_ShowAuroraTicketGrouped::
 	msgbox VermilionCity_Text_OhAuroraTicketTakeYouToBirthIsland
 	return
 

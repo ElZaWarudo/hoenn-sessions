@@ -29,7 +29,16 @@ Route104_MrBrineysHouse_EventScript_Briney::
 	end
 
 Route104_MrBrineysHouse_EventScript_SailingIntro::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, Route104_MrBrineysHouse_EventScript_GroupSailingIntro
 	setflag FLAG_MR_BRINEY_SAILING_INTRO
+	msgbox Route104_MrBrineysHouse_Text_WaitUpPeeko, MSGBOX_DEFAULT
+	msgbox Route104_MrBrineysHouse_Text_ItsYouLetsSailToDewford, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, NO, Route104_MrBrineysHouse_EventScript_DeclineDeliverySailing
+	goto Route104_MrBrineysHouse_EventScript_SailToDewford
+	end
+
+Route104_MrBrineysHouse_EventScript_GroupSailingIntro::
 	msgbox Route104_MrBrineysHouse_Text_WaitUpPeeko, MSGBOX_DEFAULT
 	msgbox Route104_MrBrineysHouse_Text_ItsYouLetsSailToDewford, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, Route104_MrBrineysHouse_EventScript_DeclineDeliverySailing
@@ -70,6 +79,29 @@ Route104_MrBrineysHouse_EventScript_DeclineSailing::
 
 Route104_MrBrineysHouse_EventScript_SailToDewford::
 	msgbox Route104_MrBrineysHouse_Text_SetSailForDewford, MSGBOX_DEFAULT
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, Route104_MrBrineysHouse_EventScript_RequestGroupVoyage
+	goto Route104_MrBrineysHouse_EventScript_StartVoyage
+	end
+
+Route104_MrBrineysHouse_EventScript_RequestGroupVoyage::
+	setvar VAR_0x8004, 96
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, Route104_MrBrineysHouse_EventScript_GroupTravelWaiting
+	goto Route104_MrBrineysHouse_EventScript_GroupTravelUnavailable
+	end
+
+Route104_MrBrineysHouse_EventScript_GroupTravelWaiting::
+	end
+
+@ Only the ROM's accepted scene-marker state schedules this entry point.
+Route104_MrBrineysHouse_EventScript_GroupVoyageStart::
+	setflag FLAG_MR_BRINEY_SAILING_INTRO
+	goto Route104_MrBrineysHouse_EventScript_StartVoyage
+	end
+
+Route104_MrBrineysHouse_EventScript_StartVoyage::
 	call EventScript_BackupMrBrineyLocation
 	setvar VAR_BOARD_BRINEY_BOAT_STATE, 1
 	clearflag FLAG_HIDE_ROUTE_104_MR_BRINEY
@@ -91,6 +123,11 @@ Route104_MrBrineysHouse_EventScript_Peeko::
 	playmoncry SPECIES_WINGULL, CRY_MODE_NORMAL
 	msgbox Route104_MrBrineysHouse_Text_Peeko, MSGBOX_DEFAULT
 	waitmoncry
+	release
+	end
+
+Route104_MrBrineysHouse_EventScript_GroupTravelUnavailable::
+	msgbox Route104_MrBrineysHouse_Text_GroupTravelUnavailable, MSGBOX_DEFAULT
 	release
 	end
 
@@ -152,6 +189,10 @@ Route104_MrBrineysHouse_Text_TellMeWheneverYouWantToSail:
 	.string "Well, PEEKO owes her life to you.\p"
 	.string "You just go on and tell me whenever\n"
 	.string "you want to set sail!$"
+
+Route104_MrBrineysHouse_Text_GroupTravelUnavailable:
+	.string "We can't leave together just now.\n"
+	.string "Please try again in a moment.$"
 
 Route104_MrBrineysHouse_Text_Peeko:
 	.string "PEEKO: Pii piihyoro!$"

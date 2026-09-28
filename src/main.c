@@ -26,6 +26,7 @@
 #include "test_runner.h"
 #include "constants/rgb.h"
 #include "coop/net_bridge.h"
+#include "coop/battle_runtime.h"
 
 static void VBlankIntr(void);
 static void HBlankIntr(void);
@@ -384,7 +385,9 @@ static void VBlankIntr(void)
     m4aSoundMain();
     TryReceiveLinkBattleData();
 
-    if (!gTestRunnerEnabled && (!gMain.inBattle || !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED))))
+    if (!gTestRunnerEnabled
+     && !CoopBattleRuntime_IsEngineActive()
+     && (!gMain.inBattle || !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED))))
         AdvanceRandom();
 
     UpdateWirelessStatusIndicatorSprite();

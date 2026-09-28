@@ -16,6 +16,7 @@
 #define COOP_PRESENCE_SPAWN_SIZE 72
 #define COOP_PRESENCE_UPDATE_SIZE 40
 #define COOP_PRESENCE_DESPAWN_SIZE 16
+#define COOP_PRESENCE_REMOTE_INTERACTION_SIZE 16
 #define COOP_PRESENCE_INTERACTION_SIZE 20
 #define COOP_PRESENCE_LOCAL_COMPANION_SIZE 8
 #define COOP_PRESENCE_REMOTE_COMPANION_SIZE 16
@@ -29,6 +30,7 @@
 #define COOP_PRESENCE_SPAWN_V1_SIZE COOP_PRESENCE_SPAWN_SIZE
 #define COOP_PRESENCE_UPDATE_V1_SIZE COOP_PRESENCE_UPDATE_SIZE
 #define COOP_PRESENCE_DESPAWN_V1_SIZE COOP_PRESENCE_DESPAWN_SIZE
+#define COOP_PRESENCE_REMOTE_INTERACTION_V1_SIZE COOP_PRESENCE_REMOTE_INTERACTION_SIZE
 #define COOP_PRESENCE_INTERACTION_V1_SIZE COOP_PRESENCE_INTERACTION_SIZE
 #define COOP_PRESENCE_LOCAL_COMPANION_V1_SIZE COOP_PRESENCE_LOCAL_COMPANION_SIZE
 #define COOP_PRESENCE_REMOTE_COMPANION_V1_SIZE COOP_PRESENCE_REMOTE_COMPANION_SIZE
@@ -69,6 +71,10 @@
 #define COOP_PRESENCE_DESPAWN_SERVER_SEQUENCE_OFFSET 8
 #define COOP_PRESENCE_DESPAWN_REASON_OFFSET 12
 #define COOP_PRESENCE_DESPAWN_RESERVED_OFFSET 13
+
+#define COOP_PRESENCE_REMOTE_INTERACTION_HANDLE_OFFSET 0
+#define COOP_PRESENCE_REMOTE_INTERACTION_SERVER_SEQUENCE_OFFSET 8
+#define COOP_PRESENCE_REMOTE_INTERACTION_RESERVED_OFFSET 12
 
 #define COOP_PRESENCE_INTERACTION_HANDLE_OFFSET 0
 #define COOP_PRESENCE_INTERACTION_SERVER_SEQUENCE_OFFSET 8
@@ -232,6 +238,12 @@ struct CoopPresenceDespawn
     u8 reason;
 };
 
+struct CoopPresenceRemoteInteraction
+{
+    u64 handle;
+    u32 server_sequence;
+};
+
 struct CoopPresenceInteraction
 {
     u64 handle;
@@ -343,6 +355,8 @@ bool8 CoopPresence_DecodeDespawn(const u8 *bytes, u32 length,
                                  struct CoopPresenceDespawn *out);
 bool8 CoopPresence_EncodeDespawn(const struct CoopPresenceDespawn *value,
                                  u8 *bytes, u32 length);
+bool8 CoopPresence_DecodeRemoteInteraction(const u8 *bytes, u32 length,
+                                           struct CoopPresenceRemoteInteraction *out);
 bool8 CoopPresence_DecodeInteraction(const u8 *bytes, u32 length,
                                      struct CoopPresenceInteraction *out);
 bool8 CoopPresence_DecodeLocalCompanion(const u8 *bytes, u32 length,
@@ -378,7 +392,15 @@ const struct CoopPresenceRemote *CoopPresenceReducer_GetRemote(
 enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawn(
     struct CoopPresenceReducer *reducer,
     const struct CoopPresenceSpawn *spawn);
+/* The runtime calls these only after checking the local map header's
+ * cardinal connection against the payload map. */
+enum CoopPresenceApplyResult CoopPresenceReducer_ApplySpawnConnected(
+    struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceSpawn *spawn);
 enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdate(
+    struct CoopPresenceReducer *reducer,
+    const struct CoopPresenceUpdate *update);
+enum CoopPresenceApplyResult CoopPresenceReducer_ApplyUpdateConnected(
     struct CoopPresenceReducer *reducer,
     const struct CoopPresenceUpdate *update);
 enum CoopPresenceApplyResult CoopPresenceReducer_ApplyDespawn(

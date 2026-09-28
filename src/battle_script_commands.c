@@ -75,6 +75,7 @@
 #include "test/battle.h"
 #include "follower_npc.h"
 #include "load_save.h"
+#include "coop/net_bridge.h"
 
 // Helper for accessing command arguments and advancing gBattlescriptCurrInstr.
 //
@@ -11136,7 +11137,12 @@ static void Cmd_trysetcaughtmondexflags(void)
     }
     else
     {
-        HandleSetPokedexFlag(SpeciesToNationalPokedexNum(species), FLAG_SET_CAUGHT, personality);
+        u16 nationalDexNumber = SpeciesToNationalPokedexNum(species);
+        enum CoopRegion region;
+
+        HandleSetPokedexFlag(nationalDexNumber, FLAG_SET_CAUGHT, personality);
+        if (CoopRegion_TryGetActive(&region))
+            (void)CoopNetBridge_ObserveProgress(2, region, nationalDexNumber);
         gBattlescriptCurrInstr = cmd->nextInstr;
     }
 }

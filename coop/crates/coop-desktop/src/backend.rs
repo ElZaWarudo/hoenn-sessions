@@ -8,12 +8,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use coop_cloud::{ClientInstanceId, InvitationCode};
+use coop_cloud::{
+    AcquireLeaseRequest, ApiVersion, ClientInstanceId, GroupTravelProposalStatus, IdempotencyKey,
+    InvitationCode, ReleaseLeaseRequest, StoryTravelRecoveryAction, StoryTravelRecoveryOutcome,
+    StoryTravelRecoveryView,
+};
 use coop_launcher::{
-    ArtifactIdentity, AuthError, AuthSession, BuildCompatibility, CommandSpec, Effect, EpochStore,
-    OsKeychain, RecoveryDiscovery, RecoveryMarker, RecoveryOutcome, RecoveryReconciler,
-    RecoveryResult, RefreshTokenStore, ReleaseReadiness, SessionConfig, SessionLifecycle,
-    StartFailure, TrustedManifestKey, UpdateFailure,
+    ArtifactIdentity, AuthError, AuthSession, BuildCompatibility, CloudApi, CommandSpec, Effect,
+    EpochStore, OsKeychain, RecoveryDiscovery, RecoveryMarker, RecoveryOutcome, RecoveryReconciler,
+    RecoveryResult, RefreshTokenStore, ReleaseReadiness, SessionConfig, SessionError,
+    SessionLifecycle, StartFailure, TrustedManifestKey, UpdateFailure,
     process::{SupervisedChildren, staged_rom_marker_contents, staged_rom_marker_path},
     update::{GenerationStore, UpdateError},
 };
@@ -81,6 +85,24 @@ pub enum BackendEvent {
     SignOutCompleted,
     SignOutFailed(coop_launcher::SignOutFailure),
     RecoveryReconciled(RecoveryResult),
+    PartnerStatus(Result<coop_cloud::PartnerStatusResponse, ()>),
+    StoryRecoveryInspected(StoryRecoveryStatus),
+    StoryRecoveryAbandoned(StoryRecoveryStatus),
+}
+
+/// Deliberately safe desktop copy for a fenced story-travel recovery check.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StoryRecoveryStatus {
+    /// Server confirmed an unresolved scene marker in a closed group.
+    AbandonAvailable,
+    /// A marked scene is still waiting for its group to close.
+    GroupStillActive,
+    /// No unresolved marker remains; ordinary Play can be retried.
+    Clear,
+    /// Server refused Abandon because a finalized scene or changed head exists.
+    MustReconcile,
+    /// The request or lease could not be completed; no local recovery was discarded.
+    Unavailable,
 }
 
 #[derive(Clone)]
@@ -94,6 +116,24 @@ impl BackendHandle {
     pub fn submit(&self, effect: Effect) -> Result<(), BackendError> {
         self.commands
             .send(BackendCommand::Effect(effect))
+            .map_err(|_| BackendError::Closed)
+    }
+
+    pub fn fetch_partner_status(&self) -> Result<(), BackendError> {
+        self.commands
+            .send(BackendCommand::FetchPartnerStatus)
+            .map_err(|_| BackendError::Closed)
+    }
+
+    pub fn inspect_story_recovery(&self) -> Result<(), BackendError> {
+        self.commands
+            .send(BackendCommand::InspectStoryRecovery)
+            .map_err(|_| BackendError::Closed)
+    }
+
+    pub fn abandon_story_recovery(&self) -> Result<(), BackendError> {
+        self.commands
+            .send(BackendCommand::AbandonStoryRecovery)
             .map_err(|_| BackendError::Closed)
     }
 
@@ -170,6 +210,9 @@ pub fn spawn_backend(config: BackendConfig) -> Result<BackendHandle, BackendErro
 
 enum BackendCommand {
     Effect(Effect),
+    FetchPartnerStatus,
+    InspectStoryRecovery,
+    AbandonStoryRecovery,
     RuntimeStarted,
     RuntimeFinished(RuntimeCompletion),
     Shutdown(mpsc::Sender<()>),
@@ -215,6 +258,22 @@ impl BackendActor {
             match command {
                 BackendCommand::Effect(effect) => {
                     self.execute(effect, &events).await;
+                }
+                BackendCommand::FetchPartnerStatus => {
+                    let status = if let Some(auth) = self.auth.as_ref() {
+                        self.api.partner_status(auth).await.map_err(|_| ())
+                    } else {
+                        Err(())
+                    };
+                    let _ = events.send(BackendEvent::PartnerStatus(status));
+                }
+                BackendCommand::InspectStoryRecovery => {
+                    let status = self.story_recovery(false).await;
+                    let _ = events.send(BackendEvent::StoryRecoveryInspected(status));
+                }
+                BackendCommand::AbandonStoryRecovery => {
+                    let status = self.story_recovery(true).await;
+                    let _ = events.send(BackendEvent::StoryRecoveryAbandoned(status));
                 }
                 BackendCommand::RuntimeStarted => {
                     if self
@@ -495,11 +554,10 @@ impl BackendActor {
             .store
             .install_at(&pending.verified, &pending.artifacts, now);
         let installed = match installed {
-            Err(UpdateError::InvalidCompleteGeneration(_)) => self.store.repair_accepted_at(
-                &pending.verified,
-                pending.artifacts,
-                now,
-            ),
+            Err(UpdateError::InvalidCompleteGeneration(_)) => {
+                self.store
+                    .repair_accepted_at(&pending.verified, pending.artifacts, now)
+            }
             result => result,
         };
         match installed {
@@ -782,6 +840,23 @@ impl BackendActor {
         .await
     }
 
+    async fn story_recovery(&mut self, abandon: bool) -> StoryRecoveryStatus {
+        // A failed startup consumed the in-memory AuthSession. The refresh
+        // credential remains in the keychain, and this operation must leave it
+        // there even when the server refuses the requested action.
+        if self.runtime.is_some() {
+            return StoryRecoveryStatus::Unavailable;
+        }
+        let mut auth = match self.take_or_resume_auth().await {
+            Ok(auth) => auth,
+            Err(_) => return StoryRecoveryStatus::Unavailable,
+        };
+        let result =
+            fenced_story_recovery(&self.api, &mut auth, self.keychain.as_ref(), abandon).await;
+        self.auth = Some(auth);
+        result
+    }
+
     async fn rollback_auth(&mut self, auth: &mut AuthSession) -> bool {
         let username = auth.username.to_string();
         if self.config.paths.save_cleanup_username(&username).is_err() {
@@ -846,6 +921,192 @@ impl BackendActor {
     }
 }
 
+fn story_recovery_status(
+    recovery: Option<&StoryTravelRecoveryView>,
+    character_id: coop_cloud::CharacterId,
+) -> StoryRecoveryStatus {
+    match recovery {
+        None => StoryRecoveryStatus::Clear,
+        Some(view)
+            if view.api_version == ApiVersion::V1
+                && view.marker_fence.character_id == character_id
+                && view.scene_nonce != 0 =>
+        {
+            match view.status {
+                GroupTravelProposalStatus::Cancelled => StoryRecoveryStatus::AbandonAvailable,
+                GroupTravelProposalStatus::AwaitingSceneReceipts
+                | GroupTravelProposalStatus::Suspended => StoryRecoveryStatus::GroupStillActive,
+                _ => StoryRecoveryStatus::Unavailable,
+            }
+        }
+        Some(_) => StoryRecoveryStatus::Unavailable,
+    }
+}
+
+fn abandon_proposal_id(
+    recovery: Option<&StoryTravelRecoveryView>,
+    character_id: coop_cloud::CharacterId,
+) -> Option<coop_cloud::GroupTravelProposalId> {
+    recovery
+        .filter(|view| {
+            story_recovery_status(Some(view), character_id) == StoryRecoveryStatus::AbandonAvailable
+        })
+        .map(|view| view.proposal_id)
+}
+
+async fn refresh_story_auth<A: CloudApi>(
+    api: &A,
+    auth: &mut AuthSession,
+    keychain: &dyn RefreshTokenStore,
+) -> Result<(), ()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ())?
+        .as_millis() as u64;
+    if auth.should_refresh_at(now) {
+        auth.refresh(api, keychain).await.map_err(|_| ())?;
+    }
+    Ok(())
+}
+
+async fn fenced_story_recovery<A: CloudApi>(
+    api: &A,
+    auth: &mut AuthSession,
+    keychain: &dyn RefreshTokenStore,
+    abandon: bool,
+) -> StoryRecoveryStatus {
+    if refresh_story_auth(api, auth, keychain).await.is_err() {
+        return StoryRecoveryStatus::Unavailable;
+    }
+    let Ok(client) = ClientInstanceId::new(uuid::Uuid::new_v4()) else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let Ok(acquire_key) = IdempotencyKey::new(uuid::Uuid::new_v4()) else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let acquire = AcquireLeaseRequest::new(auth.character_id, client, acquire_key);
+    let mut lease = api.acquire(auth, acquire).await;
+    if matches!(lease, Err(SessionError::Unauthorized)) {
+        if auth.refresh(api, keychain).await.is_err() {
+            return StoryRecoveryStatus::Unavailable;
+        }
+        lease = api.acquire(auth, acquire).await;
+    } else if matches!(lease, Err(SessionError::Cloud)) {
+        // An acquire response may have been lost after the server committed it.
+        // Replaying the same idempotency key avoids creating another lease.
+        lease = api.acquire(auth, acquire).await;
+    }
+    let Ok(lease) = lease else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let fence = lease.fence();
+    let result = if lease.validate().is_err()
+        || lease.character_id != auth.character_id
+        || lease.client_instance_id != client
+    {
+        StoryRecoveryStatus::Unavailable
+    } else {
+        let result = story_recovery_under_lease(api, auth, keychain, fence, abandon).await;
+        result
+    };
+    // Release on every path after acquire, including a refused Abandon. Keep
+    // the rotating refresh credential for another inspection or Play attempt.
+    let Ok(release_key) = IdempotencyKey::new(uuid::Uuid::new_v4()) else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let release = ReleaseLeaseRequest::new(fence, release_key);
+    if refresh_story_auth(api, auth, keychain).await.is_err() {
+        return StoryRecoveryStatus::Unavailable;
+    }
+    let mut released = api.release(auth, release).await;
+    if matches!(released, Err(SessionError::Unauthorized))
+        && auth.refresh(api, keychain).await.is_ok()
+    {
+        released = api.release(auth, release).await;
+    }
+    if released.is_err() {
+        StoryRecoveryStatus::Unavailable
+    } else {
+        result
+    }
+}
+
+async fn story_recovery_under_lease<A: CloudApi>(
+    api: &A,
+    auth: &mut AuthSession,
+    keychain: &dyn RefreshTokenStore,
+    fence: coop_cloud::LeaseFence,
+    abandon: bool,
+) -> StoryRecoveryStatus {
+    use coop_launcher::GroupTravelError;
+
+    if refresh_story_auth(api, auth, keychain).await.is_err() {
+        return StoryRecoveryStatus::Unavailable;
+    }
+    let Some(token) = auth.access_token().cloned() else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let mut recovery = api.story_travel_recovery(token, fence).await;
+    if matches!(recovery, Err(GroupTravelError::Unauthorized))
+        && auth.refresh(api, keychain).await.is_ok()
+    {
+        let Some(token) = auth.access_token().cloned() else {
+            return StoryRecoveryStatus::Unavailable;
+        };
+        recovery = api.story_travel_recovery(token, fence).await;
+    }
+    let Ok(recovery) = recovery else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let status = story_recovery_status(recovery.as_ref(), auth.character_id);
+    if !abandon || status != StoryRecoveryStatus::AbandonAvailable {
+        return status;
+    }
+    let Some(proposal_id) = abandon_proposal_id(recovery.as_ref(), auth.character_id) else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    if refresh_story_auth(api, auth, keychain).await.is_err() {
+        return StoryRecoveryStatus::Unavailable;
+    }
+    let Some(token) = auth.access_token().cloned() else {
+        return StoryRecoveryStatus::Unavailable;
+    };
+    let mut action = api
+        .story_travel_recovery_action(
+            token,
+            proposal_id,
+            fence,
+            StoryTravelRecoveryAction::Abandon,
+        )
+        .await;
+    if matches!(action, Err(GroupTravelError::Unauthorized))
+        && auth.refresh(api, keychain).await.is_ok()
+    {
+        let Some(token) = auth.access_token().cloned() else {
+            return StoryRecoveryStatus::Unavailable;
+        };
+        action = api
+            .story_travel_recovery_action(
+                token,
+                proposal_id,
+                fence,
+                StoryTravelRecoveryAction::Abandon,
+            )
+            .await;
+    }
+    match action {
+        Ok(view)
+            if view.api_version == ApiVersion::V1
+                && view.proposal_id == proposal_id
+                && view.outcome == StoryTravelRecoveryOutcome::Abandoned =>
+        {
+            StoryRecoveryStatus::Clear
+        }
+        Err(GroupTravelError::Stale) => StoryRecoveryStatus::MustReconcile,
+        _ => StoryRecoveryStatus::Unavailable,
+    }
+}
+
 async fn run_runtime(
     api: coop_launcher::ReqwestCloudApi,
     keychain: Arc<dyn RefreshTokenStore>,
@@ -877,16 +1138,23 @@ async fn run_runtime(
         workspace_parent: paths.workspace_parent().to_owned(),
         bridge_lua_dir: bridge_path.clone(),
     };
-    let mut session =
-        match SessionLifecycle::acquire_with_keychain(&api, auth, config, keychain).await {
-            Ok(session) => session,
-            Err(_) => {
-                return RuntimeCompletion {
-                    auth: None,
-                    outcome: RuntimeOutcome::StartupFailed(StartFailure::Unavailable),
-                };
-            }
-        };
+    let mut session = match SessionLifecycle::acquire_with_keychain(&api, auth, config, keychain)
+        .await
+    {
+        Ok(session) => session,
+        Err(SessionError::StoryTravelRecoveryPending) => {
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::StartupFailed(StartFailure::StoryTravelRecoveryPending),
+            };
+        }
+        Err(_) => {
+            return RuntimeCompletion {
+                auth: None,
+                outcome: RuntimeOutcome::StartupFailed(StartFailure::Unavailable),
+            };
+        }
+    };
     let staged_rom = session.workspace.path().join("game.gba");
     if fs::copy(&rom_path, &staged_rom).is_err() {
         return retain_auth(session, &api).await;
@@ -1047,13 +1315,172 @@ fn delete_local_account(
 #[cfg(test)]
 mod tests {
     use super::{
-        BackendConfig, BackendEvent, RuntimeOutcome, delete_local_account,
-        runtime_completion_event, spawn_backend,
+        BackendConfig, BackendEvent, RuntimeOutcome, StoryRecoveryStatus, abandon_proposal_id,
+        delete_local_account, runtime_completion_event, spawn_backend, story_recovery_status,
     };
     use crate::config::{AccountRecord, RuntimeConfig, UserPaths};
     use coop_cloud::{CharacterId, RefreshToken, UserId};
     use coop_launcher::{KeychainError, RefreshTokenStore, TrustedManifestKey, TrustedReleaseKey};
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn unfinished_scene_can_be_abandoned_only_after_closed_group_is_confirmed() {
+        use coop_cloud::{
+            ApiVersion, ClientInstanceId, GroupId, GroupTravelProposalId,
+            GroupTravelProposalStatus, LeaseFence, Revision, SessionEpoch, SessionId,
+            StoryTravelRecoveryView, UnixTimestampMillis,
+        };
+        let character = CharacterId::new(uuid::Uuid::from_u128(51)).unwrap();
+        let fence = LeaseFence::new(
+            SessionId::new(uuid::Uuid::from_u128(52)).unwrap(),
+            character,
+            Revision::new(1),
+            SessionEpoch::new(1).unwrap(),
+            ClientInstanceId::new(uuid::Uuid::from_u128(53)).unwrap(),
+        );
+        let mut marker = StoryTravelRecoveryView {
+            api_version: ApiVersion::V1,
+            proposal_id: GroupTravelProposalId::new(uuid::Uuid::from_u128(54)).unwrap(),
+            group_id: GroupId::new(uuid::Uuid::from_u128(55)).unwrap(),
+            status: GroupTravelProposalStatus::AwaitingSceneReceipts,
+            marker_fence: fence,
+            scene_nonce: 7,
+            marked_at: UnixTimestampMillis::new(1),
+        };
+        for status in [
+            GroupTravelProposalStatus::AwaitingSceneReceipts,
+            GroupTravelProposalStatus::Suspended,
+        ] {
+            marker.status = status;
+            assert_eq!(
+                story_recovery_status(Some(&marker), character),
+                StoryRecoveryStatus::GroupStillActive
+            );
+            assert_eq!(abandon_proposal_id(Some(&marker), character), None);
+        }
+        marker.status = GroupTravelProposalStatus::Cancelled;
+        assert_eq!(
+            abandon_proposal_id(Some(&marker), character),
+            Some(marker.proposal_id)
+        );
+        assert_eq!(
+            abandon_proposal_id(
+                Some(&marker),
+                CharacterId::new(uuid::Uuid::from_u128(56)).unwrap()
+            ),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn refused_recovery_check_keeps_authenticated_session_for_retry() {
+        use coop_cloud::{
+            AccessToken, LoginRequest, LoginResponse, LogoutRequest, LogoutResponse,
+            RefreshFamilyId, RefreshRequest, RefreshResponse, UnixTimestampMillis,
+        };
+        use coop_launcher::{AuthApi, AuthError, AuthSession};
+
+        struct LoginOnly;
+        impl AuthApi for LoginOnly {
+            fn login(&self, _: LoginRequest) -> coop_launcher::auth::AuthFuture<'_, LoginResponse> {
+                Box::pin(async {
+                    LoginResponse::new(
+                        UserId::new(uuid::Uuid::from_u128(61)).unwrap(),
+                        CharacterId::new(uuid::Uuid::from_u128(62)).unwrap(),
+                        AccessToken::new("test-access").unwrap(),
+                        RefreshToken::new("test-refresh").unwrap(),
+                        RefreshFamilyId::new(uuid::Uuid::from_u128(63)).unwrap(),
+                        UnixTimestampMillis::new(u64::MAX / 4),
+                        UnixTimestampMillis::new(u64::MAX / 4),
+                    )
+                    .map_err(|_| AuthError::InvalidResponse)
+                })
+            }
+            fn refresh(
+                &self,
+                _: RefreshRequest,
+            ) -> coop_launcher::auth::AuthFuture<'_, RefreshResponse> {
+                Box::pin(async { Err(AuthError::Transport) })
+            }
+            fn logout(
+                &self,
+                _: LogoutRequest,
+            ) -> coop_launcher::auth::AuthFuture<'_, LogoutResponse> {
+                Box::pin(async { Err(AuthError::Transport) })
+            }
+        }
+        struct RetainKeychain(AtomicBool);
+        impl RefreshTokenStore for RetainKeychain {
+            fn load(&self, _: &str, _: &str) -> Result<Option<RefreshToken>, KeychainError> {
+                Ok(None)
+            }
+            fn store(&self, _: &str, _: &str, _: &RefreshToken) -> Result<(), KeychainError> {
+                Ok(())
+            }
+            fn delete(&self, _: &str, _: &str) -> Result<(), KeychainError> {
+                self.0.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let paths = UserPaths::from_local_app_data(root.path()).unwrap();
+        let runtime = RuntimeConfig::for_test(
+            "http://127.0.0.1:9",
+            TrustedReleaseKey::new(
+                "release-test",
+                ed25519_dalek::SigningKey::from_bytes(&[1; 32])
+                    .verifying_key()
+                    .to_bytes(),
+            )
+            .unwrap(),
+            TrustedManifestKey::new(
+                "manifest-test",
+                ed25519_dalek::SigningKey::from_bytes(&[2; 32])
+                    .verifying_key()
+                    .to_bytes(),
+            )
+            .unwrap(),
+        );
+        let config = BackendConfig::for_test(paths, runtime).unwrap();
+        let keychain = std::sync::Arc::new(RetainKeychain(AtomicBool::new(false)));
+        let auth = AuthSession::login(
+            &LoginOnly,
+            keychain.as_ref(),
+            "recovery-player",
+            AuthSession::password("test-password").unwrap(),
+        )
+        .await
+        .unwrap();
+        let mut actor = super::BackendActor {
+            api: coop_launcher::ReqwestCloudApi::new(&config.runtime.api_base).unwrap(),
+            release: super::ReleaseClient::new(
+                &config.runtime.api_base,
+                config.runtime.release_key.clone(),
+            )
+            .unwrap(),
+            store: super::GenerationStore::new(config.paths.generations_root()).unwrap(),
+            config,
+            keychain: keychain.clone(),
+            auth: Some(auth),
+            pending_release: None,
+            runtime: None,
+            commands: tokio::sync::mpsc::unbounded_channel().0,
+            shutdown_ack: None,
+            pending_credential_cleanup: None,
+        };
+        assert_eq!(
+            actor.story_recovery(true).await,
+            StoryRecoveryStatus::Unavailable
+        );
+        assert!(
+            actor
+                .auth
+                .as_ref()
+                .and_then(AuthSession::refresh_token)
+                .is_some()
+        );
+        assert!(!keychain.0.load(Ordering::SeqCst));
+    }
 
     struct DeleteOnlyKeychain(AtomicBool);
 

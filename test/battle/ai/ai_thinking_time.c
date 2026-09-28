@@ -5,7 +5,8 @@
 #define AI_FRAME_CEILING_SINGLES_SMART_TRAINER                  8
 #define AI_FRAME_CEILING_DOUBLES_NO_FLAGS                       21
 #define AI_FRAME_CEILING_DOUBLES_SMART_TRAINER                  37
-#define AI_FRAME_CEILING_STEVEN_MULTI                           26
+// The guarded co-op battle path adds one frame in this four-battler case.
+#define AI_FRAME_CEILING_STEVEN_MULTI                           27
 #define AI_FRAME_CEILING_STEVEN_MULTI_SMART_TRAINER             30
 #define AI_FRAME_CEILING_CHECK                                  FALSE // If TRUE, forces all thinking time tests to fail. Useful for printing all actual frame times to console by running the tests
 

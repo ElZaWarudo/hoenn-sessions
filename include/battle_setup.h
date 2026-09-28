@@ -84,6 +84,10 @@ void SetTrainerFlag(u16 trainerId);
 void ClearTrainerFlag(u16 trainerId);
 void ToggleTrainerFlag(u16 trainerId);
 void BattleSetup_StartTrainerBattle(void);
+/* Starts the dormant, server-authorized co-op trainer battle path. The caller
+ * must have a validated trainer manifest and a complete peer party snapshot;
+ * no menu or field interaction invokes this entry yet. */
+bool8 BattleSetup_StartCoopTrainerBattle(void);
 void BattleSetup_StartRematchBattle(void);
 void ShowTrainerIntroSpeech(void);
 const u8 *BattleSetup_GetScriptAddrAfterBattle(void);

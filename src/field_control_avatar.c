@@ -180,6 +180,24 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
     if (TryRunOnFrameMapScript() == TRUE)
         return TRUE;
 
+    if ((gMain.heldKeysRaw & L_BUTTON) != 0)
+    {
+        u8 emote = COOP_PRESENCE_EMOTE_NONE;
+
+        if ((gMain.newKeysRaw & DPAD_UP) != 0)
+            emote = COOP_PRESENCE_EMOTE_EXCLAIM;
+        else if ((gMain.newKeysRaw & DPAD_RIGHT) != 0)
+            emote = COOP_PRESENCE_EMOTE_QUESTION;
+        else if ((gMain.newKeysRaw & DPAD_DOWN) != 0)
+            emote = COOP_PRESENCE_EMOTE_HEART;
+        else if ((gMain.newKeysRaw & DPAD_LEFT) != 0)
+            emote = COOP_PRESENCE_EMOTE_MUSIC;
+        if (emote != COOP_PRESENCE_EMOTE_NONE && CoopPresenceRuntime_TryEmote(emote))
+        {
+            return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
+        }
+    }
+
     if (input->pressedBButton && TrySetupDiveEmergeScript() == TRUE)
         return TRUE;
     if (input->tookStep)
@@ -226,20 +244,13 @@ int ProcessPlayerFieldInput(struct FieldInput *input)
         return TRUE;
 
     /* Co-op social keys use raw button state because the engine remaps L to
-     * A in the cooked key set. L alone pings the current tile; L held with
-     * a fresh SELECT press cycles the 1..8 emote set. The ping arm runs
+     * A in the cooked key set. L alone pings the current tile. The ping arm runs
      * before the remote-interact fallback so a pure L press never doubles
      * as a remapped-A interaction. */
     if ((gMain.newKeysRaw & L_BUTTON) != 0
      && (gMain.newKeysRaw & (u16)(R_BUTTON | SELECT_BUTTON | START_BUTTON | A_BUTTON | B_BUTTON)) == 0)
     {
         if (CoopPresenceRuntime_TryPing())
-            return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
-    }
-    if ((gMain.newKeys & SELECT_BUTTON) != 0
-     && (gMain.heldKeysRaw & L_BUTTON) != 0)
-    {
-        if (CoopPresenceRuntime_TryEmote())
             return FIELD_INPUT_RESULT_CONSUMED_NO_LOCK;
     }
 

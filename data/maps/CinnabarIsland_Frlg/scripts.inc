@@ -9,6 +9,7 @@ CinnabarIsland_OnTransition::
 	call_if_eq VAR_MAP_SCENE_CINNABAR_ISLAND, 1, CinnabarIsland_EventScript_ReadyObjectsSailToOneIsland
 	call_if_eq VAR_MAP_SCENE_CINNABAR_ISLAND, 3, CinnabarIsland_EventScript_ReadyObjectsReturnFromSeviiIslands
 	call_if_eq VAR_MAP_SCENE_CINNABAR_ISLAND_2, 1, CinnabarIsland_EventScript_ReadyObjectsSailToOneIslandFromPokeCenter
+	call_if_eq VAR_MAP_SCENE_CINNABAR_ISLAND_2, 3, CinnabarIsland_EventScript_ReadyObjectsSailToOneIsland
 	end
 
 CinnabarIsland_EventScript_ReadyObjectsSailToOneIslandFromPokeCenter::
@@ -73,6 +74,8 @@ CinnabarIsland_EventScript_ReturnFromSeviiIslands::
 	setvar VAR_MAP_SCENE_CINNABAR_ISLAND, 4
 	setflag FLAG_HIDE_TWO_ISLAND_GAME_CORNER_LOSTELLE
 	clearflag FLAG_HIDE_LOSTELLE_IN_HER_HOME
+	special Special_CoopGroupTravelBillSceneComplete
+	goto_if_eq VAR_RESULT, TRUE, EventScript_GroupBillSaveAtDestination
 	releaseall
 	end
 
@@ -133,6 +136,8 @@ CinnabarIsland_EventScript_AgreeSailToOneIsland::
 	end
 
 CinnabarIsland_EventScript_DeclineSailToOneIsland::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, CinnabarIsland_EventScript_GroupBillDeclineOutdoors
 	msgbox CinnabarIsland_Text_IllBeWaitingInPokeCenter
 	closemessage
 	call_if_unset FLAG_TEMP_2, CinnabarIsland_EventScript_BillExitToPokeCenter
@@ -189,6 +194,45 @@ CinnabarIsland_Movement_BillReEnterPokeCenter::
 
 @ Can be triggered outside, or after talking to Bill in the poke center
 CinnabarIsland_EventScript_SailToOneIsland::
+	special Special_CoopGroupTravelIsGrouped
+	goto_if_eq VAR_RESULT, TRUE, CinnabarIsland_EventScript_RequestGroupBillVoyage
+	goto CinnabarIsland_EventScript_GroupBillVoyageStart
+
+CinnabarIsland_EventScript_RequestGroupBillVoyage::
+	goto_if_eq VAR_MAP_SCENE_CINNABAR_ISLAND, 1, CinnabarIsland_EventScript_PrepareGroupBillVoyage
+	goto_if_ne VAR_MAP_SCENE_CINNABAR_ISLAND, 2, CinnabarIsland_EventScript_GroupStorySailUnavailable
+	goto_if_ne VAR_MAP_SCENE_CINNABAR_ISLAND_2, 3, CinnabarIsland_EventScript_GroupStorySailUnavailable
+
+@ Restore the outdoor starting position before the script can hand off the
+@ request. Reject and cancel can then release controls without replaying OnFrame.
+CinnabarIsland_EventScript_PrepareGroupBillVoyage::
+	call_if_unset FLAG_TEMP_2, CinnabarIsland_EventScript_BillReturnToOutdoorStart1
+	call_if_set FLAG_TEMP_2, CinnabarIsland_EventScript_BillReturnToOutdoorStart2
+	setvar VAR_MAP_SCENE_CINNABAR_ISLAND, 2
+	setvar VAR_MAP_SCENE_CINNABAR_ISLAND_2, 3
+	setvar VAR_0x8004, 160
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, CinnabarIsland_EventScript_GroupBillWaiting
+	goto CinnabarIsland_EventScript_GroupStorySailUnavailable
+
+CinnabarIsland_EventScript_GroupBillWaiting::
+	end
+
+@ Only the exact accepted marker resumes the original Bill departure.
+CinnabarIsland_EventScript_GroupBillAcceptedVoyageStart::
+	getplayerxy VAR_0x8004, VAR_0x8005
+	call_if_eq VAR_0x8005, 6, CinnabarIsland_EventScript_GroupBillStepNorth
+	call_if_unset FLAG_TEMP_2, CinnabarIsland_EventScript_BillApproachPlayer1
+	call_if_set FLAG_TEMP_2, CinnabarIsland_EventScript_BillApproachPlayer2
+	goto CinnabarIsland_EventScript_GroupBillVoyageStart
+
+CinnabarIsland_EventScript_GroupBillStepNorth::
+	applymovement LOCALID_PLAYER, Common_Movement_WalkUp
+	waitmovement 0
+	return
+
+CinnabarIsland_EventScript_GroupBillVoyageStart::
 	call_if_set FLAG_TEMP_2, CinnabarIsland_EventScript_ApproachShore
 	addobject LOCALID_CINNABAR_SEAGALLOP
 	call_if_unset FLAG_TEMP_2, CinnabarIsland_EventScript_BoatArrive
@@ -198,6 +242,7 @@ CinnabarIsland_EventScript_SailToOneIsland::
 	call_if_unset FLAG_TEMP_2, CinnabarIsland_EventScript_BoardBoat
 	call_if_set FLAG_TEMP_2, CinnabarIsland_EventScript_BoardBoatExitedPokeCenter
 	setvar VAR_MAP_SCENE_CINNABAR_ISLAND, 2
+	setvar VAR_MAP_SCENE_CINNABAR_ISLAND_2, 2
 	removeobject LOCALID_CINNABAR_BILL
 	delay 40
 	setflag FLAG_HIDE_CINNABAR_SEAGALLOP
@@ -206,6 +251,74 @@ CinnabarIsland_EventScript_SailToOneIsland::
 	setvar VAR_0x8006, SEAGALLOP_ONE_ISLAND
 	goto EventScript_SetSail
 	end
+
+CinnabarIsland_EventScript_GroupStorySailUnavailable::
+	msgbox Text_SeagallopGroupTravelUnavailable
+	closemessage
+	releaseall
+	end
+
+@ Keep Bill outdoors after a grouped decline. The PC entry has no durable
+@ physical-source proof, so a later offer must begin from this outdoor object.
+CinnabarIsland_EventScript_GroupBillDeclineOutdoors::
+	msgbox CinnabarIsland_Text_GroupBillWaitOutdoors
+	closemessage
+	call_if_unset FLAG_TEMP_2, CinnabarIsland_EventScript_BillReturnToOutdoorStart1
+	call_if_set FLAG_TEMP_2, CinnabarIsland_EventScript_BillReturnToOutdoorStart2
+	setvar VAR_MAP_SCENE_CINNABAR_ISLAND, 2
+	setvar VAR_MAP_SCENE_CINNABAR_ISLAND_2, 3
+	releaseall
+	end
+
+CinnabarIsland_EventScript_GroupBillRetryOutdoors::
+	goto_if_eq VAR_MAP_SCENE_CINNABAR_ISLAND_2, 3, CinnabarIsland_EventScript_GroupBillRetryPrompt
+	lockall
+	releaseall
+	end
+
+CinnabarIsland_EventScript_GroupBillRetryPrompt::
+	lockall
+	faceplayer
+	getplayerxy VAR_0x8004, VAR_0x8005
+	goto_if_ne VAR_0x8004, 20, CinnabarIsland_EventScript_GroupBillRetryPosition
+	goto_if_ne VAR_0x8005, 6, CinnabarIsland_EventScript_GroupBillRetryPosition
+	msgbox CinnabarIsland_Text_ComeWithMeToOneIsland, MSGBOX_YESNO
+	goto_if_eq VAR_RESULT, YES, CinnabarIsland_EventScript_GroupBillRetryPrepare
+	releaseall
+	end
+
+CinnabarIsland_EventScript_GroupBillRetryPosition::
+	msgbox CinnabarIsland_Text_GroupBillStandNorth
+	releaseall
+	end
+
+CinnabarIsland_EventScript_GroupBillRetryPrepare::
+	closemessage
+	setvar VAR_0x8004, 160
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, CinnabarIsland_EventScript_GroupBillWaiting
+	goto CinnabarIsland_EventScript_GroupStorySailUnavailable
+
+CinnabarIsland_EventScript_BillReturnToOutdoorStart1::
+	applymovement LOCALID_CINNABAR_BILL, CinnabarIsland_Movement_BillReturnToOutdoorStart1
+	waitmovement 0
+	return
+
+CinnabarIsland_EventScript_BillReturnToOutdoorStart2::
+	applymovement LOCALID_CINNABAR_BILL, CinnabarIsland_Movement_BillReturnToOutdoorStart2
+	waitmovement 0
+	return
+
+CinnabarIsland_Movement_BillReturnToOutdoorStart1::
+	walk_down
+	step_end
+
+CinnabarIsland_Movement_BillReturnToOutdoorStart2::
+	walk_right
+	walk_right
+	walk_right
+	step_end
 
 CinnabarIsland_EventScript_ApproachShore::
 	applymovement LOCALID_CINNABAR_BILL, CinnabarIsland_Movement_ApproachShore
@@ -408,6 +521,16 @@ CinnabarIsland_Text_IllBeWaitingInPokeCenter::
 	.string "CENTER over there.\p"
 	.string "Come see me when you're done with\n"
 	.string "your business here.$"
+
+CinnabarIsland_Text_GroupBillWaitOutdoors::
+	.string "No hurry. I'll wait here by the shore.\p"
+	.string "Come talk to me when you and your\n"
+	.string "partner are ready to leave.$"
+
+CinnabarIsland_Text_GroupBillStandNorth::
+	.string "Stand just north of me, and we'll\n"
+	.string "leave together.$"
+
 
 CinnabarIsland_Text_MyPalsBoatArrived::
 	.string "Looks like my pal's boat arrived,\n"

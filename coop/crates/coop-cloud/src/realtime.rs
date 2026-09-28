@@ -7,13 +7,15 @@ use std::{fmt, str};
 
 use coop_protocol::{
     LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PresenceHandle, PresenceInteractionV1,
-    RemoteCompanionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
-    RemoteSignalV1,
+    ProgressKindV1, ProgressObservationV1, RegionId, RemoteCompanionV1, RemoteInteractionV1,
+    RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1, RemoteSignalV1,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
-use crate::{RealtimeTicket, RuntimeLeaseFence, UnixTimestampMillis};
+use crate::{
+    CharacterId, GroupId, RealtimeTicket, RuntimeLeaseFence, UnixTimestampMillis, Username,
+};
 
 /// The only realtime wire version currently implemented.
 pub const CURRENT_REALTIME_VERSION: u16 = 1;
@@ -479,6 +481,7 @@ pub enum ClientRealtimeFrameV1 {
     InteractRemotePlayer(PresenceInteractionV1),
     Companion(LocalCompanionV1),
     SocialSignal(LocalSignalV1),
+    ProgressObservation(ProgressObservationV1),
 }
 
 #[derive(Serialize)]
@@ -496,6 +499,7 @@ enum ClientFramePayload {
     InteractRemotePlayer(PresenceInteractionV1),
     Companion(LocalCompanionV1),
     SocialSignal(LocalSignalV1),
+    ProgressObservation(ProgressObservationV1),
 }
 
 #[derive(Deserialize)]
@@ -526,6 +530,11 @@ impl ClientRealtimeFrameV1 {
     #[must_use]
     pub fn social_signal(signal: LocalSignalV1) -> Self {
         Self::SocialSignal(signal)
+    }
+
+    #[must_use]
+    pub fn progress_observation(observation: ProgressObservationV1) -> Self {
+        Self::ProgressObservation(observation)
     }
 
     #[must_use]
@@ -564,6 +573,12 @@ impl Serialize for ClientRealtimeFrameV1 {
                 payload: signal,
             }
             .serialize(serializer),
+            Self::ProgressObservation(observation) => ClientFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "PROGRESS_OBSERVATION",
+                payload: observation,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -590,31 +605,173 @@ impl<'de> Deserialize<'de> for ClientRealtimeFrameV1 {
             ("SOCIAL_SIGNAL", ClientFramePayload::SocialSignal(signal)) => {
                 Ok(Self::SocialSignal(signal))
             }
+            ("PROGRESS_OBSERVATION", ClientFramePayload::ProgressObservation(observation)) => {
+                Ok(Self::ProgressObservation(observation))
+            }
             _ => Err(serde::de::Error::custom("invalid client realtime frame")),
         }
+    }
+}
+
+/// Soft reason a client interaction was not accepted. The connection stays
+/// open; the initiator drops the rejected interaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InteractionRejectReason {
+    TargetUnavailable,
+    ObservationMismatch,
+    OutOfRange,
+}
+
+impl InteractionRejectReason {
+    const fn token(self) -> &'static str {
+        match self {
+            Self::TargetUnavailable => "TARGET_UNAVAILABLE",
+            Self::ObservationMismatch => "OBSERVATION_MISMATCH",
+            Self::OutOfRange => "OUT_OF_RANGE",
+        }
+    }
+
+    fn parse_token(value: &str) -> Result<Self, RealtimeError> {
+        match value {
+            "TARGET_UNAVAILABLE" => Ok(Self::TargetUnavailable),
+            "OBSERVATION_MISMATCH" => Ok(Self::ObservationMismatch),
+            "OUT_OF_RANGE" => Ok(Self::OutOfRange),
+            _ => Err(RealtimeError::MalformedMessage),
+        }
+    }
+}
+
+impl Serialize for InteractionRejectReason {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.token())
+    }
+}
+
+impl<'de> Deserialize<'de> for InteractionRejectReason {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let token = String::deserialize(deserializer)?;
+        Self::parse_token(&token).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Directed reply for a softly rejected interaction. The rejected
+/// interaction is dropped and the realtime connection stays open.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InteractionRejectedV1 {
+    target: PresenceHandle,
+    reason: InteractionRejectReason,
+}
+
+impl InteractionRejectedV1 {
+    #[must_use]
+    pub const fn new(target: PresenceHandle, reason: InteractionRejectReason) -> Self {
+        Self { target, reason }
+    }
+
+    #[must_use]
+    pub const fn target(self) -> PresenceHandle {
+        self.target
+    }
+
+    #[must_use]
+    pub const fn reason(self) -> InteractionRejectReason {
+        self.reason
+    }
+}
+
+impl Serialize for InteractionRejectedV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut output = serializer.serialize_struct("InteractionRejectedV1", 2)?;
+        output.serialize_field("target", &self.target)?;
+        output.serialize_field("reason", &self.reason)?;
+        output.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for InteractionRejectedV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            target: PresenceHandle,
+            reason: InteractionRejectReason,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Ok(Self::new(wire.target, wire.reason))
     }
 }
 
 /// Server-to-client V1 realtime presence frames.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServerRealtimeFrameV1 {
+    InteractionRejected(InteractionRejectedV1),
     PresenceReady(PresenceReadyV1),
+    RemoteInteraction(RemoteInteractionV1),
     RemotePlayerSpawn(RemotePlayerSpawnV1),
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     RemotePlayerDespawn(RemotePlayerDespawnV1),
     RemoteCompanion(RemoteCompanionV1),
     RemoteSocialSignal(RemoteSignalV1),
+    ProgressEvent(ProgressFeedEventV1),
+    GroupEnded(GroupEndedV1),
+}
+
+/// Reconnect grace ended and the server durably closed this group.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupEndedV1 {
+    pub group_id: GroupId,
+}
+
+/// An observational progress event delivered to the partner. These events
+/// are informational only; they never authorize a save or gameplay change.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProgressFeedEventV1 {
+    pub event_id: u64,
+    pub source_character_id: CharacterId,
+    pub source_username: Username,
+    pub kind: ProgressKindV1,
+    pub region_id: RegionId,
+    pub subject_id: u16,
+    pub source_sequence: u32,
+    pub occurred_at: UnixTimestampMillis,
+}
+
+/// Authenticated replay of the bounded observational group history.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProgressFeedResponse {
+    pub api_version: crate::ApiVersion,
+    pub events: Vec<ProgressFeedEventV1>,
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum ServerFramePayload {
+    InteractionRejected(InteractionRejectedV1),
     PresenceReady(PresenceReadyV1),
+    RemoteInteraction(RemoteInteractionV1),
     RemotePlayerSpawn(RemotePlayerSpawnV1),
     RemotePlayerUpdate(RemotePlayerUpdateV1),
     RemotePlayerDespawn(RemotePlayerDespawnV1),
     RemoteCompanion(RemoteCompanionV1),
     RemoteSocialSignal(RemoteSignalV1),
+    ProgressEvent(ProgressFeedEventV1),
+    GroupEnded(GroupEndedV1),
 }
 
 #[derive(Deserialize)]
@@ -653,8 +810,28 @@ impl ServerRealtimeFrameV1 {
     }
 
     #[must_use]
+    pub fn interaction_rejected(rejected: InteractionRejectedV1) -> Self {
+        Self::InteractionRejected(rejected)
+    }
+
+    #[must_use]
+    pub fn remote_interaction(interaction: RemoteInteractionV1) -> Self {
+        Self::RemoteInteraction(interaction)
+    }
+
+    #[must_use]
     pub fn remote_social_signal(signal: RemoteSignalV1) -> Self {
         Self::RemoteSocialSignal(signal)
+    }
+
+    #[must_use]
+    pub fn progress_event(event: ProgressFeedEventV1) -> Self {
+        Self::ProgressEvent(event)
+    }
+
+    #[must_use]
+    pub fn group_ended(group_id: GroupId) -> Self {
+        Self::GroupEnded(GroupEndedV1 { group_id })
     }
 
     #[must_use]
@@ -699,9 +876,33 @@ impl Serialize for ServerRealtimeFrameV1 {
                 payload,
             }
             .serialize(serializer),
+            Self::InteractionRejected(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "INTERACTION_REJECTED",
+                payload,
+            }
+            .serialize(serializer),
+            Self::RemoteInteraction(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "REMOTE_INTERACTION",
+                payload,
+            }
+            .serialize(serializer),
             Self::RemoteSocialSignal(payload) => ServerFrameWire {
                 realtime_version: RealtimeVersion::v1(),
                 kind: "REMOTE_SOCIAL_SIGNAL",
+                payload,
+            }
+            .serialize(serializer),
+            Self::ProgressEvent(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "PROGRESS_EVENT",
+                payload,
+            }
+            .serialize(serializer),
+            Self::GroupEnded(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "GROUP_ENDED",
                 payload,
             }
             .serialize(serializer),
@@ -730,6 +931,9 @@ impl<'de> Deserialize<'de> for ServerRealtimeFrameV1 {
             ("PRESENCE_READY", ServerFramePayload::PresenceReady(readiness)) => {
                 Ok(Self::PresenceReady(readiness))
             }
+            ("REMOTE_INTERACTION", ServerFramePayload::RemoteInteraction(interaction)) => {
+                Ok(Self::RemoteInteraction(interaction))
+            }
             ("REMOTE_PLAYER_SPAWN", ServerFramePayload::RemotePlayerSpawn(spawn)) => {
                 Ok(Self::RemotePlayerSpawn(spawn))
             }
@@ -745,6 +949,13 @@ impl<'de> Deserialize<'de> for ServerRealtimeFrameV1 {
             ("REMOTE_SOCIAL_SIGNAL", ServerFramePayload::RemoteSocialSignal(signal)) => {
                 Ok(Self::RemoteSocialSignal(signal))
             }
+            ("INTERACTION_REJECTED", ServerFramePayload::InteractionRejected(rejected)) => {
+                Ok(Self::InteractionRejected(rejected))
+            }
+            ("PROGRESS_EVENT", ServerFramePayload::ProgressEvent(event)) => {
+                Ok(Self::ProgressEvent(event))
+            }
+            ("GROUP_ENDED", ServerFramePayload::GroupEnded(event)) => Ok(Self::GroupEnded(event)),
             _ => Err(serde::de::Error::custom("invalid server realtime frame")),
         }
     }
@@ -834,6 +1045,7 @@ impl fmt::Display for ClientRealtimeFrameV1 {
             Self::InteractRemotePlayer(_) => "INTERACT_REMOTE_PLAYER",
             Self::Companion(_) => "COMPANION",
             Self::SocialSignal(_) => "SOCIAL_SIGNAL",
+            Self::ProgressObservation(_) => "PROGRESS_OBSERVATION",
         })
     }
 }
@@ -842,11 +1054,15 @@ impl fmt::Display for ServerRealtimeFrameV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::PresenceReady(_) => "PRESENCE_READY",
+            Self::RemoteInteraction(_) => "REMOTE_INTERACTION",
             Self::RemotePlayerSpawn(_) => "REMOTE_PLAYER_SPAWN",
             Self::RemotePlayerUpdate(_) => "REMOTE_PLAYER_UPDATE",
             Self::RemotePlayerDespawn(_) => "REMOTE_PLAYER_DESPAWN",
             Self::RemoteCompanion(_) => "REMOTE_COMPANION",
             Self::RemoteSocialSignal(_) => "REMOTE_SOCIAL_SIGNAL",
+            Self::InteractionRejected(_) => "INTERACTION_REJECTED",
+            Self::ProgressEvent(_) => "PROGRESS_EVENT",
+            Self::GroupEnded(_) => "GROUP_ENDED",
         })
     }
 }
@@ -985,7 +1201,7 @@ mod tests {
         ]
     }
 
-    fn maximum_server_frames() -> [ServerRealtimeFrameV1; 6] {
+    fn maximum_server_frames() -> [ServerRealtimeFrameV1; 8] {
         [
             ServerRealtimeFrameV1::presence_ready(PresenceHandle::new(u64::MAX).unwrap()),
             ServerRealtimeFrameV1::remote_player_spawn(
@@ -1034,6 +1250,17 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            ServerRealtimeFrameV1::progress_event(ProgressFeedEventV1 {
+                event_id: u64::MAX,
+                source_character_id: id(CharacterId::new, u128::MAX - 1),
+                source_username: Username::new("a".repeat(32)).unwrap(),
+                kind: ProgressKindV1::FirstCaught,
+                region_id: RegionId::Johto,
+                subject_id: u16::MAX,
+                source_sequence: u32::MAX,
+                occurred_at: UnixTimestampMillis::new(u64::MAX),
+            }),
+            ServerRealtimeFrameV1::group_ended(id(GroupId::new, u128::MAX - 2)),
         ]
     }
 
@@ -1083,7 +1310,7 @@ mod tests {
         ]
     }
 
-    fn server_frames() -> [ServerRealtimeFrameV1; 6] {
+    fn server_frames() -> [ServerRealtimeFrameV1; 7] {
         [
             ServerRealtimeFrameV1::presence_ready(handle()),
             ServerRealtimeFrameV1::remote_player_spawn(spawn()),
@@ -1091,7 +1318,21 @@ mod tests {
             ServerRealtimeFrameV1::remote_player_despawn(despawn()),
             ServerRealtimeFrameV1::remote_companion(remote_companion()),
             ServerRealtimeFrameV1::remote_social_signal(remote_signal()),
+            ServerRealtimeFrameV1::progress_event(progress_event()),
         ]
+    }
+
+    fn progress_event() -> ProgressFeedEventV1 {
+        ProgressFeedEventV1 {
+            event_id: 4,
+            source_character_id: id(CharacterId::new, 9),
+            source_username: Username::new("abc").unwrap(),
+            kind: ProgressKindV1::BadgeEarned,
+            region_id: RegionId::Hoenn,
+            subject_id: 2,
+            source_sequence: 8,
+            occurred_at: UnixTimestampMillis::new(1_700_000_000_000),
+        }
     }
 
     fn keys(value: &Value) -> BTreeSet<String> {
@@ -1651,7 +1892,7 @@ mod tests {
                 .iter()
                 .map(json_len)
                 .collect::<Vec<_>>(),
-            [163, 488, 443, 148, 153, 172]
+            [163, 488, 443, 148, 153, 172, 329, 105]
         );
         for frame in maximum_server_frames {
             let encoded = encode_server_realtime_frame(&frame).unwrap();
@@ -1661,6 +1902,66 @@ mod tests {
 
         assert_eq!(MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES, 1_024);
         assert_eq!(MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, 2_048);
+    }
+
+    #[test]
+    fn interaction_rejected_roundtrips_with_exact_envelope() {
+        let reasons = [
+            (
+                InteractionRejectReason::TargetUnavailable,
+                "TARGET_UNAVAILABLE",
+            ),
+            (
+                InteractionRejectReason::ObservationMismatch,
+                "OBSERVATION_MISMATCH",
+            ),
+            (InteractionRejectReason::OutOfRange, "OUT_OF_RANGE"),
+        ];
+        for (reason, token) in reasons {
+            let frame = ServerRealtimeFrameV1::interaction_rejected(InteractionRejectedV1::new(
+                handle(),
+                reason,
+            ));
+            assert_eq!(frame.to_string(), "INTERACTION_REJECTED");
+            let encoded = encode_server_realtime_frame(&frame).unwrap();
+            assert!(encoded.len() < MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES);
+            let wire: Value = serde_json::from_slice(&encoded).unwrap();
+            assert_eq!(
+                keys(&wire),
+                BTreeSet::from(["payload".into(), "realtime_version".into(), "type".into(),])
+            );
+            assert_eq!(wire["type"], json!("INTERACTION_REJECTED"));
+            assert_eq!(
+                keys(&wire["payload"]),
+                BTreeSet::from(["reason".into(), "target".into(),])
+            );
+            assert_eq!(wire["payload"]["reason"], json!(token));
+            assert_eq!(decode_server_realtime_frame(&encoded).unwrap(), frame);
+            assert!(decode_client_realtime_frame(&encoded).is_err());
+        }
+    }
+
+    #[test]
+    fn interaction_rejected_payload_fails_closed() {
+        let frame = ServerRealtimeFrameV1::interaction_rejected(InteractionRejectedV1::new(
+            handle(),
+            InteractionRejectReason::OutOfRange,
+        ));
+        let mut value = serde_json::to_value(&frame).unwrap();
+        value["payload"]["extra"] = json!(true);
+        assert!(serde_json::from_value::<ServerRealtimeFrameV1>(value).is_err());
+        let mut mistyped = serde_json::to_value(&frame).unwrap();
+        mistyped["type"] = json!("INTERACTION_REJECTED");
+        mistyped["payload"]["reason"] = json!("STALE");
+        assert!(serde_json::from_value::<ServerRealtimeFrameV1>(mistyped).is_err());
+        let mut zero_handle = serde_json::to_value(&frame).unwrap();
+        zero_handle["payload"]["target"] = json!("0000000000000000");
+        assert!(serde_json::from_value::<ServerRealtimeFrameV1>(zero_handle).is_err());
+        let mut uppercase_handle = serde_json::to_value(&frame).unwrap();
+        uppercase_handle["payload"]["target"] = json!("0123456789ABCDEF");
+        assert!(serde_json::from_value::<ServerRealtimeFrameV1>(uppercase_handle).is_err());
+        let duplicate = br#"{"realtime_version":1,"type":"INTERACTION_REJECTED","payload":{"target":"0123456789abcdef","reason":"OUT_OF_RANGE","reason":"OUT_OF_RANGE"}}"#;
+        assert!(decode_server_realtime_frame(duplicate).is_err());
     }
 
     #[test]

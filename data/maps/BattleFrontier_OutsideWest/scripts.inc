@@ -35,6 +35,15 @@ BattleFrontier_OutsideWest_EventScript_NoSSTicket::
 BattleFrontier_OutsideWest_EventScript_FerryToSlateport::
 	msgbox BattleFrontier_OutsideWest_Text_SlateportItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, BattleFrontier_OutsideWest_EventScript_ChooseNewFerryDestination
+	setvar VAR_0x8004, 83
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, BattleFrontier_OutsideWest_EventScript_FerryToSlateportSolo
+	goto_if_eq VAR_RESULT, 1, BattleFrontier_OutsideWest_EventScript_FerryGroupWaiting
+	release
+	end
+
+BattleFrontier_OutsideWest_EventScript_FerryToSlateportSolo::
 	msgbox BattleFrontier_OutsideWest_Text_PleaseBoardFerry, MSGBOX_DEFAULT
 	call BattleFrontier_OutsideWest_EventScript_BoardFerry
 	warp MAP_SLATEPORT_CITY_HARBOR, 8, 11
@@ -45,6 +54,18 @@ BattleFrontier_OutsideWest_EventScript_FerryToSlateport::
 BattleFrontier_OutsideWest_EventScript_FerryToLilycove::
 	msgbox BattleFrontier_OutsideWest_Text_LilycoveItIs, MSGBOX_YESNO
 	goto_if_eq VAR_RESULT, NO, BattleFrontier_OutsideWest_EventScript_ChooseNewFerryDestination
+	setvar VAR_0x8004, 84
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 0, BattleFrontier_OutsideWest_EventScript_FerryToLilycoveSolo
+	goto_if_eq VAR_RESULT, 1, BattleFrontier_OutsideWest_EventScript_FerryGroupWaiting
+	release
+	end
+
+BattleFrontier_OutsideWest_EventScript_FerryGroupWaiting::
+	end
+
+BattleFrontier_OutsideWest_EventScript_FerryToLilycoveSolo::
 	msgbox BattleFrontier_OutsideWest_Text_PleaseBoardFerry, MSGBOX_DEFAULT
 	call BattleFrontier_OutsideWest_EventScript_BoardFerry
 	warp MAP_LILYCOVE_CITY_HARBOR, 8, 11
