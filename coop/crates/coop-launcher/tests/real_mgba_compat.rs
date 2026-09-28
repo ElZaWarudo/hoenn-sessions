@@ -16,7 +16,9 @@ use coop_launcher::{
 };
 
 fn wait_for_open_save(child: &mut GuardedMgbaChild, implicit_save: &Path) {
-    let save_deadline = Instant::now() + Duration::from_secs(3);
+    // A cold portable profile can take several seconds to initialize on
+    // Windows, especially while the newly staged ROM is scanned.
+    let save_deadline = Instant::now() + Duration::from_secs(15);
     let mut save_ready = false;
     while Instant::now() < save_deadline {
         if fs::metadata(implicit_save)
