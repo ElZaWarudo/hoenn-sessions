@@ -51,6 +51,8 @@ struct CoopNetRuntime
     bool8 recovery_required;
     u32 online_request_id;
     bool8 online_status_valid;
+    bool8 membership_known;
+    bool8 known_grouped;
     u32 pairing_request_id;
     bool8 pairing_status_valid;
     struct CoopPairingStatus pairing_status;
@@ -774,8 +776,20 @@ bool8 CoopNetBridge_TakeProgressNotice(u8 *kind, u8 *region, u16 *subject_id)
 
 bool8 CoopNetBridge_IsGrouped(void)
 {
-    return IsCloudSessionActive() && sCoopNetRuntime.online_status_valid
-        && (sCoopNetRuntime.online_status.flags & COOP_ONLINE_GROUPED) != 0;
+    return IsCloudSessionActive() && sCoopNetRuntime.membership_known
+        && sCoopNetRuntime.known_grouped;
+}
+
+bool8 CoopNetBridge_IsOrMayBeGrouped(void)
+{
+    /* A fresh cloud session may resume an existing group. Keep unilateral
+     * travel closed before its first authenticated status, and through later
+     * refresh or transport loss until an authenticated update confirms the
+     * group ended. */
+    return sCoopNetRuntime.known_grouped
+        || (sCoopNetRuntime.session_epoch != 0 && CoopSave_IsOnlineEnabled()
+            && !sCoopNetRuntime.membership_known)
+        || CoopNetBridge_IsGrouped();
 }
 
 bool8 CoopNetBridge_CanSendBattle(void)
@@ -1061,6 +1075,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
             sCoopNetRuntime.cloud_epoch_accepted = TRUE;
             sCoopNetRuntime.online_status_valid = FALSE;
+            sCoopNetRuntime.membership_known = FALSE;
             sCoopNetRuntime.online_request_id = 0;
             sCoopNetRuntime.pairing_status_valid = FALSE;
             sCoopNetRuntime.pairing_request_id = 0;
@@ -1108,6 +1123,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
         sCoopNetRuntime.cloud_epoch_accepted = TRUE;
         sCoopNetRuntime.online_status_valid = FALSE;
+        sCoopNetRuntime.membership_known = FALSE;
         sCoopNetRuntime.online_request_id = 0;
         sCoopNetRuntime.pairing_status_valid = FALSE;
         sCoopNetRuntime.pairing_request_id = 0;
@@ -1158,6 +1174,28 @@ invalid_invite_notice:
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED)
+    {
+        u16 i;
+
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        if (message->length != 1 || message->payload[0] > 1)
+            goto invalid_group_state;
+        for (i = 1; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+            if (message->payload[i] != 0)
+                goto invalid_group_state;
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        sCoopNetRuntime.membership_known = TRUE;
+        sCoopNetRuntime.known_grouped = message->payload[0] != 0;
+        return FALSE;
+invalid_group_state:
+        gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+        return FALSE;
+    }
+
     if (message->type == COOP_BRIDGE_MESSAGE_PAIRING_STATUS)
     {
         struct CoopPairingStatus status = {0};
@@ -1180,6 +1218,11 @@ invalid_invite_notice:
         {
             sCoopNetRuntime.pairing_status = status;
             sCoopNetRuntime.pairing_status_valid = TRUE;
+            if (status.result == COOP_PAIRING_JOINED)
+            {
+                sCoopNetRuntime.membership_known = TRUE;
+                sCoopNetRuntime.known_grouped = TRUE;
+            }
         }
         return FALSE;
 invalid_pairing_status:
@@ -1205,6 +1248,11 @@ invalid_pairing_status:
         {
             sCoopNetRuntime.online_status = status;
             sCoopNetRuntime.online_status_valid = TRUE;
+            if (status.result == COOP_ONLINE_READY || status.result == COOP_ONLINE_SUCCESS)
+            {
+                sCoopNetRuntime.membership_known = TRUE;
+                sCoopNetRuntime.known_grouped = (status.flags & COOP_ONLINE_GROUPED) != 0;
+            }
         }
         return FALSE;
     }

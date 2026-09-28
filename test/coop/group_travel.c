@@ -1706,6 +1706,39 @@ TEST("Group Fly vote restores its field lock after the map returns")
         FlagClear(FLAG_VISITED_LITTLEROOT_TOWN);
 }
 
+TEST("Group Teleport uses the exact last heal point and waits for consent")
+{
+    const struct HealLocation *heal = GetHealLocation(HEAL_LOCATION_JOHTO_NEW_BARK_TOWN);
+    struct CoopGroupTravelRecord offer = Record(COOP_GROUP_TRAVEL_SERVER_OFFER, 8, 41, 6);
+
+    ResetGroupTravelFixture();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_OnSessionReady();
+    MaterializeDeparture(MAP_ROUTE104);
+    gSaveBlock1Ptr->lastHealLocation.mapGroup = heal->mapGroup;
+    gSaveBlock1Ptr->lastHealLocation.mapNum = heal->mapNum;
+    gSaveBlock1Ptr->lastHealLocation.warpId = WARP_ID_NONE;
+    gSaveBlock1Ptr->lastHealLocation.x = heal->x;
+    gSaveBlock1Ptr->lastHealLocation.y = heal->y;
+    EXPECT(CoopGroupTravel_CanTeleport());
+    EXPECT_EQ(CoopGroupTravel_BeginTeleport(), COOP_GROUP_TRAVEL_BEGIN_WAITING);
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->route, 8);
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->departure, COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT);
+    EXPECT(CoopGroupTravelProtocol_ValidateClient(CoopGroupTravel_TestRecord()));
+    EXPECT(ArePlayerFieldControlsLocked());
+
+    CoopGroupTravel_Init();
+    UnlockPlayerFieldControls();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    offer.departure = COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT;
+    EXPECT(CoopGroupTravelProtocol_ValidateServer(&offer));
+    gSaveBlock1Ptr->lastHealLocation.x++;
+    EXPECT(!CoopGroupTravel_CanTeleport());
+    EXPECT_EQ(CoopGroupTravel_BeginTeleport(), COOP_GROUP_TRAVEL_BEGIN_REJECTED);
+    CoopGroupTravel_Init();
+}
+
 TEST("Group travel refreshes offer countdown from server updates")
 {
     struct CoopGroupTravelRecord offer = Record(COOP_GROUP_TRAVEL_SERVER_OFFER,

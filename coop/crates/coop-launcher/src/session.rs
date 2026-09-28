@@ -3354,7 +3354,9 @@ impl SessionLifecycle {
                 .access_token()
                 .ok_or(SessionError::Unauthorized)?
                 .clone();
-            invites.prepare(api, travel_token.clone(), self.lease.fence());
+            if !online.is_pending() && !pairing.is_pending() {
+                invites.prepare(api, travel_token.clone(), self.lease.fence());
+            }
             let travel_fence = self.lease.fence();
             let travel_generation = children.control().lifecycle_generation();
             group_travel.prepare(api, travel_token, travel_fence, travel_generation);
@@ -3501,10 +3503,15 @@ impl SessionLifecycle {
                     }
                     continue;
                 }
-                _ = tokio::time::sleep_until(invites.next_poll()), if invites.is_idle() => { continue; }
+                _ = tokio::time::sleep_until(invites.next_poll()), if invites.is_idle() && !online.is_pending() && !pairing.is_pending() => { continue; }
                 invite = invites.next() => {
                     match invite {
-                        Ok(Some(username)) => {
+                        Ok(Some(crate::online::InviteWatcherEvent::GroupStateChanged(grouped))) => {
+                            if let Err(error) = children.control().send(&ControlCommand::GroupStateChanged {
+                                session_epoch: self.lease.session_epoch.value(), grouped,
+                            }).await { result = Err(SessionError::Control(error)); }
+                        }
+                        Ok(Some(crate::online::InviteWatcherEvent::InviteReceived(username))) => {
                             if let Err(error) = children.control().send(&ControlCommand::GroupInviteReceived {
                                 session_epoch: self.lease.session_epoch.value(), username,
                             }).await { result = Err(SessionError::Control(error)); }
@@ -3592,6 +3599,7 @@ impl SessionLifecycle {
                             }
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::OnlineRequest(request))) => {
+                            invites.invalidate_poll();
                             if let Err(error) = self
                                 .start_online(api, online, &mut children.control(), request)
                                 .await
@@ -3600,6 +3608,7 @@ impl SessionLifecycle {
                             }
                         }
                         Ok(RawSupervisorEvent::Control(ControlEvent::PairingRequest(request))) => {
+                            invites.invalidate_poll();
                             if let Err(error) = self
                                 .start_pairing(api, pairing, &mut children.control(), request)
                                 .await
@@ -3777,6 +3786,10 @@ impl SessionLifecycle {
                                 }
                                 Err(error) => result = Err(error),
                             }
+                            // Realtime membership events may have been
+                            // buffered during the checkpoint. Cancel a poll
+                            // that began before those events were applied.
+                            invites.invalidate_poll();
                         }
                         Ok(RawSupervisorEvent::Control(_)) => result = Err(SessionError::Realtime),
                         Ok(
@@ -3813,6 +3826,27 @@ impl SessionLifecycle {
                         Ok(RealtimeCoordinatorEvent::Lifecycle(command)) => {
                             let invalid_fence = children.control().reset_latched()
                                 || children.control().lifecycle_generation() != generation;
+                            if !invalid_fence
+                                && matches!(
+                                    &command,
+                                    ControlCommand::GroupStateChanged { .. }
+                                        | ControlCommand::GroupEnded(_)
+                                )
+                            {
+                                invites.invalidate_poll();
+                                if let Some(status) = online.invalidate_for_group_change() {
+                                    if let Err(error) = children
+                                        .control()
+                                        .send(&ControlCommand::OnlineStatus {
+                                            session_epoch: self.lease.session_epoch.value(),
+                                            status,
+                                        })
+                                        .await
+                                    {
+                                        result = Err(SessionError::Control(error));
+                                    }
+                                }
+                            }
                             #[cfg(test)]
                             let enqueue_count = self.realtime_lifecycle_enqueue_burst;
                             #[cfg(not(test))]
@@ -6726,6 +6760,7 @@ mod lifecycle_tests {
                 coop_sidecar::control::ControlCommand::RemotePlayerSpawn(_)
                 | coop_sidecar::control::ControlCommand::OnlineStatus { .. }
                 | coop_sidecar::control::ControlCommand::PairingStatus { .. }
+                | coop_sidecar::control::ControlCommand::GroupStateChanged { .. }
                 | coop_sidecar::control::ControlCommand::GroupInviteReceived { .. }
                 | coop_sidecar::control::ControlCommand::GroupTravel { .. }
                 | coop_sidecar::control::ControlCommand::GroupEnded(_)

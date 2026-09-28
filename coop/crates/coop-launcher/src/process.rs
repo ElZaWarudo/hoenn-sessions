@@ -1817,6 +1817,7 @@ impl ControlChannel {
                 | ControlCommand::RemoteCompanion(_)
                 | ControlCommand::RemoteSocialSignal(_)
                 | ControlCommand::ProgressEvent(_)
+                | ControlCommand::GroupStateChanged { .. }
                 | ControlCommand::GroupEnded(_)
         ) || generation != self.lifecycle_generation()
         {

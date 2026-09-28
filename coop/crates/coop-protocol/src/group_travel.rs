@@ -712,6 +712,7 @@ pub enum GroupTravelDeparture {
     Gate = 4,
     Fly = 5,
     CableCar = 6,
+    Teleport = 7,
 }
 
 impl GroupTravelDeparture {
@@ -723,6 +724,7 @@ impl GroupTravelDeparture {
             4 => Ok(Self::Gate),
             5 => Ok(Self::Fly),
             6 => Ok(Self::CableCar),
+            7 => Ok(Self::Teleport),
             value => Err(GroupTravelCodecError::InvalidDeparture(value)),
         }
     }
@@ -846,6 +848,9 @@ impl GroupTravelDeparture {
                     | GroupTravelRoute::ReturnGateLater
             ),
             Self::Fly => route.is_fly(),
+            Self::Teleport => {
+                route.is_fly() && (route as u8) > (GroupTravelRoute::FlyLittleroot as u8)
+            }
             Self::CableCar => matches!(
                 route,
                 GroupTravelRoute::CableCarRoute112MtChimney
@@ -1881,6 +1886,29 @@ mod tests {
                 request
             );
         }
+    }
+
+    #[test]
+    fn teleport_reuses_fly_destinations_but_excludes_littleroot() {
+        let route = GroupTravelRoute::FlyJohtoNewbark;
+        assert_eq!(
+            GroupTravelDeparture::from_wire(7).unwrap(),
+            GroupTravelDeparture::Teleport
+        );
+        assert!(GroupTravelDeparture::Teleport.matches_route(route));
+        assert!(!GroupTravelDeparture::Teleport.matches_route(GroupTravelRoute::FlyLittleroot));
+        let request = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::Request,
+            route,
+            departure: GroupTravelDeparture::Teleport,
+            request_id: 1,
+            proposal_id: [0; 16],
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+        };
+        let encoded = request.encode().unwrap();
+        assert_eq!(encoded[6], 7);
+        assert_eq!(GroupTravelClientRecord::decode(&encoded).unwrap(), request);
     }
     #[test]
     fn story_marker_wire_requires_correlated_first_voyage() {

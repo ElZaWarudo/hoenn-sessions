@@ -10,6 +10,7 @@
 #include "script.h"
 #include "sprite.h"
 #include "constants/field_effects.h"
+#include "coop/net_bridge.h"
 
 // static functions
 static void FieldCallback_Dig(void);
@@ -18,6 +19,9 @@ static void StartDigFieldEffect(void);
 // text
 bool32 SetUpFieldMove_Dig(void)
 {
+    if (CoopNetBridge_IsOrMayBeGrouped() && !ShouldDoBrailleDigEffect())
+        return FALSE;
+
     if (CanUseDigOrEscapeRopeOnCurMap() == TRUE)
     {
         gFieldCallback2 = FieldCallback_PrepareFadeInFromMenu;

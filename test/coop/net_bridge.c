@@ -644,6 +644,164 @@ TEST("Cloud Coop Online ignores stale responses and clears status on rearm")
     EXPECT(!CoopNetBridge_GetOnlineStatus(&status));
 }
 
+TEST("Known group membership blocks unilateral travel through refresh and disconnect")
+{
+    struct CoopOnlineRequest request = { .request_id = 1, .action = COOP_ONLINE_REFRESH };
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    InitTestBridge();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    InitOnlineTestBridge();
+    /* Before the first authenticated status, the cloud session may resume an
+     * existing group; no vanilla travel may run yet. */
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    payload[0] = 1;
+    payload[5] = COOP_ONLINE_GROUPED;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 2, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    request.request_id = 2;
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    payload[0] = 2;
+    payload[4] = COOP_ONLINE_UNAVAILABLE;
+    payload[5] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 3, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_SESSION_READY;
+    EXPECT(!CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_SESSION_READY;
+    request.request_id = 3;
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    payload[0] = 3;
+    payload[4] = COOP_ONLINE_READY;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 4, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Authenticated group state updates clear unknown membership and reject malformed frames")
+{
+    struct CoopBridgeMessage message;
+    u8 payload[2] = {0};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, payload, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(!CoopNetBridge_IsGrouped());
+
+    payload[0] = 1;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, payload, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopNetBridge_IsGrouped());
+
+    payload[0] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 6, payload, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, payload, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    payload[0] = 2;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, payload, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    payload[0] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, payload, 1));
+    message.payload[1] = 1;
+    message.checksum = CoopBridgeMessage_ComputeChecksum(&message);
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, payload, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(!CoopNetBridge_IsGrouped());
+}
+
+TEST("Pairing redemption keeps group travel guarded until membership refresh")
+{
+    struct CoopPairingRequest request = { .request_id = 1, .action = COOP_PAIRING_REDEEM,
+                                          .code = {'A', 'B', 'C', '-', 'D', 'E', 'F'} };
+    struct CoopBridgeMessage message;
+    u8 ungrouped = 0;
+    u8 joined[COOP_PAIRING_RECORD_SIZE] = {1, 0, 0, 0, COOP_PAIRING_JOINED};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, &ungrouped, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopNetBridge_SendPairingRequest(&request));
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_PAIRING_STATUS,
+                                 3, 7, joined, sizeof(joined)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Same epoch reconnect waits for fresh group membership")
+{
+    struct CoopBridgeMessage message;
+    u8 ungrouped = 0;
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, &ungrouped, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                 3, 7, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(!CoopNetBridge_IsGrouped());
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, &ungrouped, 1));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
 TEST("Cloud Coop Online preserves full names and rejects invalid page indices")
 {
     struct CoopOnlineRequest request = { .request_id = 1, .action = COOP_ONLINE_REFRESH };

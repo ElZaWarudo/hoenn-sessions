@@ -743,7 +743,9 @@ impl Phase2App {
         request: coop_cloud::RedeemPairingCodeRequest,
     ) -> Result<coop_cloud::RedeemPairingCodeResponse, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
-        pairing::redeem_code(&self.store, actor, &request)
+        let response = pairing::redeem_code(&self.store, actor, &request)?;
+        self.queue_group_started(&response.group);
+        Ok(response)
     }
 
     /// Consumes an invitation and creates a symmetric group atomically.
@@ -758,7 +760,37 @@ impl Phase2App {
         request: coop_cloud::AcceptGroupInvitationRequest,
     ) -> Result<coop_cloud::AcceptGroupInvitationResponse, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
-        group_travel::accept_invitation(&self.store, actor, invitation_id, &request)
+        let response =
+            group_travel::accept_invitation(&self.store, actor, invitation_id, &request)?;
+        self.queue_group_started(&response.group);
+        Ok(response)
+    }
+
+    /// Publish only to live sockets for the two leases that own this committed
+    /// group. The watcher remains the replay path when no socket is connected.
+    fn queue_group_started(&self, view: &coop_cloud::GroupView) {
+        let now = self.store.now();
+        let sessions = self.store.read_transaction(|state| {
+            Ok::<_, Phase2Error>(
+                view.members
+                    .iter()
+                    .map(|member| member.character_id)
+                    .filter_map(|member| {
+                        if state.active_group_by_member.get(&member) != Some(&view.group_id) {
+                            return None;
+                        }
+                        let lease = state.leases.get(&member)?;
+                        (!lease.released && lease.contract.expires_at.value() > now)
+                            .then(|| lease.contract.stable_runtime_session())
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+        if let Ok(sessions) = sessions {
+            for session in sessions {
+                self.realtime.queue_group_started(session, view.group_id);
+            }
+        }
     }
 
     /// Returns an active group owned by the caller and fenced to its lease.

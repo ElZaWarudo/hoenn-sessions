@@ -49,8 +49,8 @@ pub use online::{
 };
 pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 pub use realtime::{
-    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, GroupEndedV1, InteractionRejectReason,
-    InteractionRejectedV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
+    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, GroupEndedV1, GroupStartedV1,
+    InteractionRejectReason, InteractionRejectedV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
     MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, MintRealtimeTicketRequest, MintRealtimeTicketResponse,
     PRESENCE_INTERPOLATION_DELAY_MS, PRESENCE_SEND_RATE_HZ, PRESENCE_STALE_MS, PresenceReadyV1,
     ProgressFeedEventV1, ProgressFeedResponse, REALTIME_TICKET_ENCODED_LEN,

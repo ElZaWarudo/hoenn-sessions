@@ -595,10 +595,39 @@ fn map_owner_event(
         RealtimeOwnerEvent::Progress(event) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
             ControlCommand::ProgressEvent(event),
         )),
+        RealtimeOwnerEvent::GroupStarted(event) if *ready => Ok(
+            RealtimeCoordinatorEvent::Lifecycle(ControlCommand::GroupStateChanged {
+                session_epoch: event.session_epoch.value(),
+                grouped: true,
+            }),
+        ),
         RealtimeOwnerEvent::GroupEnded(event) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
             ControlCommand::GroupEnded(event),
         )),
         _ => Err(RealtimeCoordinatorError::Terminated),
+    }
+}
+
+#[cfg(test)]
+mod group_started_tests {
+    use super::*;
+
+    #[test]
+    fn authenticated_group_start_maps_to_membership_command_with_epoch() {
+        let mut ready = true;
+        let event = coop_cloud::GroupStartedV1 {
+            group_id: coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x901)).unwrap(),
+            session_epoch: coop_cloud::SessionEpoch::new(7).unwrap(),
+        };
+        assert!(matches!(
+            map_owner_event(RealtimeOwnerEvent::GroupStarted(event), &mut ready),
+            Ok(RealtimeCoordinatorEvent::Lifecycle(
+                ControlCommand::GroupStateChanged {
+                    session_epoch: 7,
+                    grouped: true,
+                }
+            ))
+        ));
     }
 }
 

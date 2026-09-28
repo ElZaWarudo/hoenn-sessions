@@ -822,6 +822,7 @@ fn departure_matches_route(route: &RouteDefinition, departure: GroupTravelDepart
         departure == GroupTravelDeparture::CableCar
     } else if route.source_any {
         departure == GroupTravelDeparture::Fly
+            || (departure == GroupTravelDeparture::Teleport && route.id != "HOENN:FLY_LITTLEROOT")
     } else {
         false
     }
@@ -2900,6 +2901,21 @@ mod tests {
                 GroupTravelDeparture::Ferry
             ));
         }
+    }
+
+    #[test]
+    fn teleport_uses_consent_fly_routes_except_littleroot() {
+        let destination = consent_route_definition("JOHTO:FLY_NEW_BARK_TOWN").unwrap();
+        assert!(destination.source_any);
+        assert!(departure_matches_route(
+            &destination,
+            GroupTravelDeparture::Teleport
+        ));
+        let littleroot = consent_route_definition("HOENN:FLY_LITTLEROOT").unwrap();
+        assert!(!departure_matches_route(
+            &littleroot,
+            GroupTravelDeparture::Teleport
+        ));
     }
 
     #[test]

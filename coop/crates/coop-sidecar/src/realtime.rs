@@ -426,6 +426,7 @@ pub enum RealtimeOwnerEvent {
     Companion(RemoteCompanionV1),
     Signal(RemoteSignalV1),
     Progress(coop_cloud::ProgressFeedEventV1),
+    GroupStarted(coop_cloud::GroupStartedV1),
     GroupEnded(coop_cloud::GroupEndedV1),
 }
 
@@ -441,6 +442,7 @@ impl RealtimeOwnerEvent {
             Self::Companion(_) => "REMOTE_COMPANION",
             Self::Signal(_) => "REMOTE_SOCIAL_SIGNAL",
             Self::Progress(_) => "PROGRESS_EVENT",
+            Self::GroupStarted(_) => "GROUP_STARTED",
             Self::GroupEnded(_) => "GROUP_ENDED",
         }
     }
@@ -974,6 +976,7 @@ where
                 | ServerRealtimeFrameV1::RemoteCompanion(_)
                 | ServerRealtimeFrameV1::RemoteSocialSignal(_)
                 | ServerRealtimeFrameV1::ProgressEvent(_)
+                | ServerRealtimeFrameV1::GroupStarted(_)
                 | ServerRealtimeFrameV1::GroupEnded(_)) => Receive::Lifecycle(frame),
             }
         }
@@ -1016,6 +1019,11 @@ fn lifecycle_pose_sequence(
     remotes: &mut BTreeMap<PresenceHandle, RemoteState>,
     event_tx: &mpsc::Sender<RealtimeOwnerEvent>,
 ) -> Result<Option<(PresenceHandle, u32)>, RealtimeOutcome> {
+    if let ServerRealtimeFrameV1::GroupStarted(event) = frame {
+        send_event(event_tx, RealtimeOwnerEvent::GroupStarted(event.clone()))
+            .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
+        return Ok(None);
+    }
     if let ServerRealtimeFrameV1::GroupEnded(event) = frame {
         send_event(event_tx, RealtimeOwnerEvent::GroupEnded(event.clone()))
             .map_err(|()| RealtimeOutcome::OwnerBackpressure)?;
@@ -1058,6 +1066,7 @@ fn lifecycle_pose_sequence(
         ServerRealtimeFrameV1::PresenceReady(_)
         | ServerRealtimeFrameV1::InteractionRejected(_)
         | ServerRealtimeFrameV1::ProgressEvent(_)
+        | ServerRealtimeFrameV1::GroupStarted(_)
         | ServerRealtimeFrameV1::GroupEnded(_) => {
             return Err(RealtimeOutcome::ProtocolViolation);
         }
@@ -1186,6 +1195,7 @@ fn apply_lifecycle(
         ServerRealtimeFrameV1::PresenceReady(_)
         | ServerRealtimeFrameV1::InteractionRejected(_)
         | ServerRealtimeFrameV1::ProgressEvent(_)
+        | ServerRealtimeFrameV1::GroupStarted(_)
         | ServerRealtimeFrameV1::GroupEnded(_) => unreachable!(),
         ServerRealtimeFrameV1::RemoteCompanion(_)
         | ServerRealtimeFrameV1::RemoteSocialSignal(_) => {
@@ -1267,6 +1277,29 @@ fn expiry_instant(expires_at: UnixTimestampMillis) -> Option<Instant> {
     let now = unix_now().value();
     let remaining = expires_at.value().checked_sub(now)?;
     Some(Instant::now() + Duration::from_millis(remaining))
+}
+
+#[cfg(test)]
+mod group_started_tests {
+    use super::*;
+
+    #[test]
+    fn group_started_reaches_owner_without_remote_pose() {
+        let group_id = coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x902)).unwrap();
+        let epoch = coop_cloud::SessionEpoch::new(7).unwrap();
+        let frame = ServerRealtimeFrameV1::group_started(group_id, epoch);
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut remotes = BTreeMap::new();
+        assert!(matches!(
+            lifecycle_pose_sequence(&frame, PresenceHandle::new(1).unwrap(), &mut remotes, &tx),
+            Ok(None)
+        ));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(RealtimeOwnerEvent::GroupStarted(event))
+                if event.group_id == group_id && event.session_epoch == epoch
+        ));
+    }
 }
 
 #[cfg(test)]

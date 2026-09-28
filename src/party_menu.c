@@ -4201,6 +4201,13 @@ bool8 FieldCallback_PrepareFadeInFromMenu(void)
     return TRUE;
 }
 
+bool8 FieldCallback_PrepareFadeInForGroupTravel(void)
+{
+    FadeInFromBlack();
+    CreateTask(Task_FieldMoveWaitForFade, 8);
+    return TRUE;
+}
+
 // Same as above, but removes follower Pokémon
 bool8 FieldCallback_PrepareFadeInForTeleport(void)
 {

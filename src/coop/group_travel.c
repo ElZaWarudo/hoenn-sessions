@@ -473,6 +473,15 @@ static bool8 IsGrouped(void)
     return CoopNetBridge_IsGrouped();
 }
 
+static bool8 IsOrMayBeGrouped(void)
+{
+#if TESTING
+    if (sTravel.test_grouped_set)
+        return sTravel.test_grouped;
+#endif
+    return CoopNetBridge_IsOrMayBeGrouped();
+}
+
 static bool8 RouteMatchesDeparture(u8 route, u8 departure)
 {
     switch (departure)
@@ -507,9 +516,12 @@ static bool8 RouteMatchesDeparture(u8 route, u8 departure)
             || route == COOP_GROUP_TRAVEL_ROUTE_RETURN_GATE_ORIGINAL
             || route == COOP_GROUP_TRAVEL_ROUTE_RETURN_GATE_LATER;
     case COOP_GROUP_TRAVEL_DEPARTURE_FLY:
+    case COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT:
     {
         u8 era, destination;
-        return route >= COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT
+        return route >= (departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT
+                ? COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT + 1
+                : COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT)
             && route <= COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER
             && CoopRegionMap_GroupFlyFields(route, &era, &destination);
     }
@@ -524,7 +536,8 @@ static bool8 IsMaterializedDeparture(u8 route, u8 departure)
 
     if (!RouteMatchesDeparture(route, departure) || gSaveBlock1Ptr == NULL)
         return FALSE;
-    if (departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY)
+    if (departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
+     || departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT)
         return TRUE;
     if (IsBillStoryRoute(route))
     {
@@ -820,7 +833,8 @@ enum CoopGroupTravelBeginResult CoopGroupTravel_Begin(u8 route)
     if (sTravel.state != STATE_IDLE || route < 1 || route >= COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT)
         return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
     if (!IsGrouped())
-        return COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
+        return IsOrMayBeGrouped() ? COOP_GROUP_TRAVEL_BEGIN_REJECTED
+                                : COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
     if (!IsSafeOverworld())
         return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
     SetRoute(&sTravel.semantic, route);
@@ -849,7 +863,8 @@ enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFly(u8 route)
     if (sTravel.state != STATE_IDLE)
         return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
     if (!IsGrouped())
-        return COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
+        return IsOrMayBeGrouped() ? COOP_GROUP_TRAVEL_BEGIN_REJECTED
+                                : COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
     if (!CoopRegionMap_GroupFlyFields(route, &era, &destination)
      || !CoopRegionMap_GroupFlyUnlocked(route))
         return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
@@ -875,6 +890,61 @@ enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFly(u8 route)
     return COOP_GROUP_TRAVEL_BEGIN_WAITING;
 }
 
+static u8 TeleportRoute(void)
+{
+    u32 heal;
+    u8 route;
+
+    if (gSaveBlock1Ptr == NULL || gSaveBlock1Ptr->lastHealLocation.warpId != WARP_ID_NONE)
+        return 0;
+    heal = GetHealLocationIndexByWarpData(&gSaveBlock1Ptr->lastHealLocation);
+    if (heal == HEAL_LOCATION_NONE)
+        return 0;
+    for (route = COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT + 1;
+         route <= COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER; route++)
+        if (CoopRegionMap_GroupFlyHealLocation(route) == heal
+         && RouteMatchesDeparture(route, COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT))
+            return route;
+    return 0;
+}
+
+bool8 CoopGroupTravel_CanTeleport(void)
+{
+    return TeleportRoute() != 0;
+}
+
+enum CoopGroupTravelBeginResult CoopGroupTravel_BeginTeleport(void)
+{
+    u8 route;
+
+    if (sTravel.state != STATE_IDLE)
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    if (!IsGrouped())
+        return IsOrMayBeGrouped() ? COOP_GROUP_TRAVEL_BEGIN_REJECTED
+                                : COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
+    route = TeleportRoute();
+    if (route == 0)
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    SetRoute(&sTravel.semantic, route);
+    sTravel.semantic.departure = COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT;
+    sTravel.recovered_state = FALSE;
+    sTravel.semantic.kind = COOP_GROUP_TRAVEL_CLIENT_REQUEST;
+    sTravel.semantic.request_id = sTravel.next_request_id++;
+    if (sTravel.next_request_id == 0)
+        sTravel.next_request_id = 1;
+    if (!SendSemantic())
+    {
+        memset(&sTravel.semantic, 0, sizeof(sTravel.semantic));
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    }
+    LockPlayerFieldControls();
+    sTravel.controls_locked = TRUE;
+    sTravel.state = STATE_REQUESTING;
+    sTravel.semantic_queued = TRUE;
+    sTravel.departure = COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT;
+    return COOP_GROUP_TRAVEL_BEGIN_WAITING;
+}
+
 enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFromScript(u8 route, u8 departure)
 {
     if (sTravel.state != STATE_IDLE || !IsMaterializedDeparture(route, departure)
@@ -882,7 +952,8 @@ enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFromScript(u8 route, u8 dep
      || !ScriptContext_IsEnabled() || !ArePlayerFieldControlsLocked())
         return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
     if (!IsGrouped())
-        return COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
+        return IsOrMayBeGrouped() ? COOP_GROUP_TRAVEL_BEGIN_REJECTED
+                                : COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
     SetRoute(&sTravel.semantic, route);
     sTravel.semantic.departure = departure;
     sTravel.recovered_state = FALSE;
@@ -1083,7 +1154,8 @@ static bool8 StageCommit(void)
     u32 heal;
     enum JohtoTravelDestination target;
 
-    if (sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY)
+    if (sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
+     || sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT)
     {
         if (sTravel.semantic.route == COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT)
         {
@@ -1291,6 +1363,7 @@ static bool8 AtExactDestination(void)
 static enum JohtoTravelDestination DestinationForRecord(const struct CoopGroupTravelRecord *record)
 {
     if (record->departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
+        || record->departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT
         || IsOutboundIslandRoute(record->route)
         || IsIslandReturnRoute(record->route)
         || IsHoennHarborRoute(record->route)
@@ -1699,6 +1772,7 @@ void CoopGroupTravel_Poll(void)
         (void)ReleaseTravelBoundary();
     if (sTravel.state == STATE_COMMITTING && AtExactDestination()
      && (sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
+      || sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT
       || IsOutboundIslandRoute(sTravel.semantic.route)
       || IsIslandReturnRoute(sTravel.semantic.route)
       || IsHoennHarborRoute(sTravel.semantic.route)
@@ -1842,7 +1916,7 @@ void Special_CoopGroupTravelBegin(void)
         departure = COOP_GROUP_TRAVEL_DEPARTURE_TRAIN;
     gSpecialVar_Result = CoopGroupTravel_BeginFromScript(gSpecialVar_0x8004, departure);
 }
-void Special_CoopGroupTravelIsGrouped(void) { gSpecialVar_Result = IsGrouped(); }
+void Special_CoopGroupTravelIsGrouped(void) { gSpecialVar_Result = IsOrMayBeGrouped(); }
 void Special_CoopSeagallopRoute(void)
 {
     gSpecialVar_Result = SeagallopRouteForEndpoints(gSpecialVar_0x8004, gSpecialVar_0x8006);
@@ -1858,7 +1932,8 @@ void Special_CoopGroupTravelGetOffer(void)
     {
         gSpecialVar_0x8004 = offer.route;
         gSpecialVar_0x8005 = offer.departure;
-        if (offer.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY)
+        if (offer.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
+         || offer.departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT)
             GetMapNameGeneric(gStringVar1, CoopRegionMap_GroupFlyMapSection(offer.route));
         else if (offer.route >= COOP_GROUP_TRAVEL_ROUTE_OLIVINE_SOUTHERN_ISLAND)
         {

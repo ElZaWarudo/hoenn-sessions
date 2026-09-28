@@ -346,6 +346,32 @@ impl RealtimeTransportState {
         }
     }
 
+    pub(crate) fn queue_group_started(
+        &self,
+        session: StableRuntimeSession,
+        group_id: coop_cloud::GroupId,
+    ) {
+        let Ok(recipients) = self.progress_recipients.lock() else {
+            return;
+        };
+        let Some(recipient_ids) = recipients.get(&session.character_id) else {
+            return;
+        };
+        let Ok(mut outbound) = self.progress_outbound.lock() else {
+            return;
+        };
+        let frame = ServerRealtimeFrameV1::group_started(group_id, session.session_epoch);
+        for (recipient_id, registered_session) in recipient_ids {
+            if *registered_session == session {
+                let queue = outbound.entry(*recipient_id).or_default();
+                if queue.len() >= MAX_QUEUED_PROGRESS_EVENTS_PER_CHARACTER {
+                    queue.pop_front();
+                }
+                queue.push_back(frame.clone());
+            }
+        }
+    }
+
     fn queue_progress(&self, recipient: CharacterId, frame: ServerRealtimeFrameV1) {
         let Ok(recipients) = self.progress_recipients.lock() else {
             return;
@@ -1136,6 +1162,14 @@ async fn realtime_session(
         let _ = close_socket(&mut socket, code).await;
         return;
     }
+    if let Err(code) =
+        filter_group_start_frames(&app, redemption.runtime.session, &mut startup_frames).await
+    {
+        app.realtime
+            .unregister_progress_recipient(character_id, progress_recipient);
+        let _ = close_socket(&mut socket, code).await;
+        return;
+    }
     initial_frames.extend(startup_frames);
     run_connected_session(
         &app,
@@ -1216,6 +1250,10 @@ async fn run_connected_session(
                 let mut frames = drain.events.iter().map(server_frame).collect::<Vec<_>>();
                 frames.extend(app.realtime.drain_progress(progress_recipient));
                 if let Err(code) = filter_group_end_frames(app, runtime.session, &mut frames).await {
+                    let _ = close_socket(socket, code).await;
+                    return;
+                }
+                if let Err(code) = filter_group_start_frames(app, runtime.session, &mut frames).await {
                     let _ = close_socket(socket, code).await;
                     return;
                 }
@@ -1350,6 +1388,53 @@ async fn filter_group_end_frames(
         .map_err(|_| 1011_u16)?;
     frames.retain(|frame| match frame {
         ServerRealtimeFrameV1::GroupEnded(event) => Some(event.group_id) == current,
+        _ => true,
+    });
+    Ok(())
+}
+
+async fn filter_group_start_frames(
+    app: &Phase2App,
+    session: StableRuntimeSession,
+    frames: &mut Vec<ServerRealtimeFrameV1>,
+) -> Result<(), u16> {
+    if !frames
+        .iter()
+        .any(|frame| matches!(frame, ServerRealtimeFrameV1::GroupStarted(_)))
+    {
+        return Ok(());
+    }
+    let store = app.store.clone();
+    let current = app
+        .realtime
+        .run_presence(move || {
+            let _gate = store.lock_runtime_transition_gate();
+            let now = store.now();
+            store.read_transaction(|state| {
+                let Some(lease) = state.leases.get(&session.character_id) else {
+                    return Ok::<_, Phase2Error>(None);
+                };
+                if lease.released
+                    || lease.contract.expires_at.value() <= now
+                    || lease.contract.stable_runtime_session() != session
+                {
+                    return Ok::<_, Phase2Error>(None);
+                }
+                Ok::<_, Phase2Error>(
+                    state
+                        .active_group_by_member
+                        .get(&session.character_id)
+                        .copied(),
+                )
+            })
+        })
+        .await
+        .map_err(|error| error.close_code())?
+        .map_err(|_| 1011_u16)?;
+    frames.retain(|frame| match frame {
+        ServerRealtimeFrameV1::GroupStarted(event) => {
+            event.session_epoch == session.session_epoch && Some(event.group_id) == current
+        }
         _ => true,
     });
     Ok(())
@@ -2515,6 +2600,151 @@ mod tests {
         assert!(state.drain_progress(stale_socket).is_empty());
         state.unregister_progress_recipient(recipient, active_socket);
         state.unregister_progress_recipient(recipient, stale_socket);
+    }
+
+    #[test]
+    fn group_started_fanout_is_fenced_to_current_runtime() {
+        let state = RealtimeTransportState::new();
+        let recipient = CharacterId::new(uuid::Uuid::from_u128(0x714)).unwrap();
+        let current = StableRuntimeSession::new(
+            SessionId::new(uuid::Uuid::from_u128(0x715)).unwrap(),
+            recipient,
+            SessionEpoch::new(2).unwrap(),
+            ClientInstanceId::new(uuid::Uuid::from_u128(0x716)).unwrap(),
+        );
+        let stale = StableRuntimeSession::new(
+            current.session_id,
+            recipient,
+            SessionEpoch::new(1).unwrap(),
+            current.client_instance_id,
+        );
+        let active_socket = state.register_progress_recipient(current);
+        let stale_socket = state.register_progress_recipient(stale);
+        let group_id = coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x717)).unwrap();
+        state.queue_group_started(current, group_id);
+        assert_eq!(
+            state.drain_progress(active_socket),
+            vec![ServerRealtimeFrameV1::group_started(
+                group_id,
+                current.session_epoch
+            )]
+        );
+        assert!(state.drain_progress(stale_socket).is_empty());
+    }
+
+    #[tokio::test]
+    async fn invitation_and_pairing_commits_notify_both_member_sessions() {
+        for mode in 0..3 {
+            let app = Phase2App::test();
+            let (first, first_runtime) =
+                presence_fixture(&app, "group-start-a", "GroupStartA", 0x800);
+            let (second, second_runtime) =
+                presence_fixture(&app, "group-start-b", "GroupStartB", 0x810);
+            let first_socket = app
+                .realtime
+                .register_progress_recipient(first_runtime.session);
+            let second_socket = app
+                .realtime
+                .register_progress_recipient(second_runtime.session);
+            let (first_fence, second_fence) = app
+                .store
+                .inspect_state(|state| {
+                    (
+                        state.leases[&first.character_id].contract.fence(),
+                        state.leases[&second.character_id].contract.fence(),
+                    )
+                })
+                .unwrap();
+            let group_id = if mode == 2 {
+                let code = app
+                    .create_pairing_code(
+                        first,
+                        coop_cloud::CreatePairingCodeRequest::new(first_fence),
+                    )
+                    .unwrap();
+                app.redeem_pairing_code(
+                    second,
+                    coop_cloud::RedeemPairingCodeRequest::new(second_fence, code.code),
+                )
+                .unwrap()
+                .group
+                .group_id
+            } else {
+                let invitation = app
+                    .create_group_invitation(
+                        first,
+                        coop_cloud::CreateGroupInvitationRequest::new(
+                            first_fence,
+                            second.character_id,
+                            IdempotencyKey::new(uuid::Uuid::from_u128(0x818)).unwrap(),
+                        ),
+                    )
+                    .unwrap();
+                if mode == 1 {
+                    let response = super::super::online::action(
+                        &app,
+                        second,
+                        &coop_cloud::OnlineActionRequest {
+                            api_version: coop_cloud::ApiVersion::V1,
+                            fence: second_fence,
+                            idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(0x819))
+                                .unwrap(),
+                            action: coop_cloud::OnlineAction::Accept {
+                                invitation_id: invitation.invitation_id,
+                            },
+                        },
+                    )
+                    .unwrap();
+                    let coop_cloud::OnlineActionResponse::Accepted { group } = response else {
+                        panic!("expected accepted group")
+                    };
+                    group.group_id
+                } else {
+                    app.accept_group_invitation(
+                        second,
+                        invitation.invitation_id,
+                        coop_cloud::AcceptGroupInvitationRequest::new(
+                            second_fence,
+                            IdempotencyKey::new(uuid::Uuid::from_u128(0x819)).unwrap(),
+                        ),
+                    )
+                    .unwrap()
+                    .group
+                    .group_id
+                }
+            };
+            assert_eq!(
+                app.realtime.drain_progress(first_socket),
+                vec![ServerRealtimeFrameV1::group_started(
+                    group_id,
+                    first_runtime.session.session_epoch
+                )]
+            );
+            assert_eq!(
+                app.realtime.drain_progress(second_socket),
+                vec![ServerRealtimeFrameV1::group_started(
+                    group_id,
+                    second_runtime.session.session_epoch
+                )]
+            );
+            let mut stale = vec![ServerRealtimeFrameV1::group_started(
+                group_id,
+                first_runtime.session.session_epoch,
+            )];
+            app.store
+                .write_transaction(|state| {
+                    state.active_group_by_member.remove(&first.character_id);
+                    Ok::<_, Phase2Error>(())
+                })
+                .unwrap();
+            filter_group_start_frames(&app, first_runtime.session, &mut stale)
+                .await
+                .unwrap();
+            assert!(
+                stale.is_empty(),
+                "a queued start must not revive an ended group"
+            );
+        }
     }
 
     #[test]

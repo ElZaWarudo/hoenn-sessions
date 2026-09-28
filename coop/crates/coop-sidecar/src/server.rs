@@ -2599,6 +2599,7 @@ impl LocalSidecar {
                     command,
                     ControlCommand::OnlineStatus { .. }
                         | ControlCommand::PairingStatus { .. }
+                        | ControlCommand::GroupStateChanged { .. }
                         | ControlCommand::GroupInviteReceived { .. }
                 ) {
                     return Ok(false);
@@ -3522,6 +3523,26 @@ impl LocalSidecar {
                 self.handle_group_travel_command(command, bridge, session)
                     .await
             };
+        }
+        if let ControlCommand::GroupStateChanged {
+            session_epoch,
+            grouped,
+        } = command
+        {
+            if session_epoch != self.session_epoch
+                || session.checkpoint_state.is_quiescing()
+                || !session.acknowledged_rom_ready
+                || self.pending_presence_rearm.is_some()
+            {
+                return Ok(());
+            }
+            let frame = BridgeFrame::new(
+                MessageType::GroupStateChanged,
+                self.sequence_state.take_sidecar_sequence(),
+                self.session_epoch,
+                &[u8::from(grouped)],
+            )?;
+            return bridge.send(&frame, Direction::SidecarToRom).await;
         }
         if let ControlCommand::GroupInviteReceived {
             session_epoch,
@@ -5181,6 +5202,7 @@ fn command_parts(
         ),
         ControlCommand::OnlineStatus { .. }
         | ControlCommand::PairingStatus { .. }
+        | ControlCommand::GroupStateChanged { .. }
         | ControlCommand::GroupInviteReceived { .. } => {
             unreachable!("Online messages bypass ledger")
         }
@@ -5250,6 +5272,7 @@ fn command_epoch(command: &ControlCommand) -> u32 {
         ControlCommand::PresenceRearm(value) => value.session_epoch,
         ControlCommand::OnlineStatus { session_epoch, .. }
         | ControlCommand::PairingStatus { session_epoch, .. }
+        | ControlCommand::GroupStateChanged { session_epoch, .. }
         | ControlCommand::GroupInviteReceived { session_epoch, .. } => *session_epoch,
         ControlCommand::CheckpointGrant(command) => command.session_epoch,
         ControlCommand::CheckpointAbort(command) => command.session_epoch,
@@ -5351,6 +5374,7 @@ fn deferred_command_waits_for_bridge_state(
         ControlCommand::PresenceRearm(_)
         | ControlCommand::OnlineStatus { .. }
         | ControlCommand::PairingStatus { .. }
+        | ControlCommand::GroupStateChanged { .. }
         | ControlCommand::GroupInviteReceived { .. }
         | ControlCommand::RemotePlayerSpawn(_)
         | ControlCommand::RemotePlayerUpdate(_)
@@ -6980,6 +7004,56 @@ mod tests {
             ControlEvent::RomPresenceReset
         ));
         assert!(!session.rearm_after_reboot);
+    }
+
+    #[tokio::test]
+    async fn group_state_changed_uses_single_byte_payload_and_current_epoch() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, _control_peer) = control_writer_pair().await;
+        let mut deferred = VecDeque::new();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        sidecar
+            .handle_active_control_event(
+                Some(Ok(ControlCommand::GroupStateChanged {
+                    session_epoch: TEST_SESSION_EPOCH,
+                    grouped: true,
+                })),
+                &mut bridge,
+                &mut control,
+                &mut deferred,
+                &mut session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::GroupStateChanged);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(frame.payload(), &[1]);
+
+        sidecar
+            .handle_active_control_event(
+                Some(Ok(ControlCommand::GroupStateChanged {
+                    session_epoch: TEST_SESSION_EPOCH + 1,
+                    grouped: false,
+                })),
+                &mut bridge,
+                &mut control,
+                &mut deferred,
+                &mut session,
+            )
+            .await
+            .unwrap();
+        assert_no_bridge_data(&mut bridge_peer).await;
     }
 
     #[tokio::test]

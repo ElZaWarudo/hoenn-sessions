@@ -206,6 +206,7 @@ bool8 CoopNetBridge_GetPairingStatus(struct CoopPairingStatus *status);
 bool8 CoopNetBridge_TakeInviteNotice(void);
 bool8 CoopNetBridge_TakeProgressNotice(u8 *kind, u8 *region, u16 *subject_id);
 bool8 CoopNetBridge_IsGrouped(void);
+bool8 CoopNetBridge_IsOrMayBeGrouped(void);
 bool8 CoopNetBridge_CanSendBattle(void);
 enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);

@@ -263,6 +263,7 @@ pub(super) fn action(
                 invitation_id,
                 &AcceptGroupInvitationRequest::new(request.fence, request.idempotency_key),
             )?;
+            app.queue_group_started(&response.group);
             Ok(OnlineActionResponse::Accepted {
                 group: response.group,
             })

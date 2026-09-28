@@ -162,6 +162,10 @@ impl<'de> Deserialize<'de> for CommandId {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ControlCommand {
+    GroupStateChanged {
+        session_epoch: u32,
+        grouped: bool,
+    },
     GroupInviteReceived {
         session_epoch: u32,
         username: String,
