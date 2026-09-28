@@ -380,7 +380,7 @@ TEST("Cloud Coop retains progress observations across a full outbound FIFO")
     EXPECT(found);
 }
 
-TEST("Cloud Coop Brock request starts only before his first defeat")
+TEST("Cloud Coop Brock uses the solo path until save commits are supported")
 {
     struct CoopBridgeMessage message;
     struct MapHeader savedMapHeader = gMapHeader;
@@ -392,13 +392,8 @@ TEST("Cloud Coop Brock request starts only before his first defeat")
     wasDefeated = HasTrainerBeenFought(TRAINER_LEADER_BROCK);
     ClearTrainerFlag(TRAINER_LEADER_BROCK);
     Special_CoopBattleConsentBeginBrock();
-    EXPECT_EQ(gSpecialVar_Result, TRUE);
-    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
-    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_TRAINER_BATTLE_RESERVE);
-    EXPECT_EQ(message.payload[0], COOP_BATTLE_KIND_COOPERATIVE_TRAINER);
-    EXPECT_EQ(message.payload[5], COOP_REGION_KANTO);
-    EXPECT_EQ(message.payload[6] | ((u16)message.payload[7] << 8),
-              COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL);
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    EXPECT(!CoopNetBridge_DequeueGameToNetwork(&message));
 
     InitOnlineTestBridge();
     SetTrainerFlag(TRAINER_LEADER_BROCK);

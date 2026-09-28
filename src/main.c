@@ -385,8 +385,8 @@ static void VBlankIntr(void)
     m4aSoundMain();
     TryReceiveLinkBattleData();
 
-    if (!CoopBattleRuntime_IsEngineActive()
-     && !gTestRunnerEnabled
+    if (!gTestRunnerEnabled
+     && !CoopBattleRuntime_IsEngineActive()
      && (!gMain.inBattle || !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED))))
         AdvanceRandom();
 

@@ -3151,9 +3151,21 @@ static void BattleMainCB1(void)
     u16 pauseTurn;
     u8 missingSlot;
 
+    if (!CoopBattleRuntime_IsEngineActive())
+    {
+        if (sCoopFaultCleanupStarted || sCoopPauseWindowId != WINDOW_NONE)
+        {
+            sCoopFaultCleanupStarted = FALSE;
+            ClearCoopBattlePauseOverlay();
+        }
+        gBattleMainFunc();
+        for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+            gBattlerControllerFuncs[battler](battler);
+        return;
+    }
+
     // A pending finish must keep retrying while the battle is paused.
-    if (CoopBattleRuntime_IsEngineActive() && !CoopBattleRuntime_IsEngineFaulted()
-     && !sCoopFaultCleanupStarted)
+    if (!CoopBattleRuntime_IsEngineFaulted() && !sCoopFaultCleanupStarted)
         CoopBattleRuntime_PollTerminal();
 
     if (!CoopBattleRuntime_IsEngineActive())
@@ -4929,8 +4941,11 @@ static void HandleTurnActionSelectionState(void)
         }
     }
 
-    TrySubmitCoopPlayerAction();
-    TryBindCoopAutomaticPeerAction();
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        TrySubmitCoopPlayerAction();
+        TryBindCoopAutomaticPeerAction();
+    }
 
     // Check if everyone chose actions.
     if (gBattleCommunication[ACTIONS_CONFIRMED_COUNT] == gBattlersCount)
