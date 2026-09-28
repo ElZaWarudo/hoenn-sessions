@@ -3680,6 +3680,85 @@ mod tests {
     }
 
     #[test]
+    fn pairing_code_groups_players_on_their_own_maps_without_moving_them() {
+        let app = super::super::Phase2App::test();
+        let (inviter, inviter_lease) = account(&app, "pairhost", "pair-host");
+        let (joiner, joiner_lease) = account(&app, "pairjoin", "pair-join");
+        let zones = [
+            (
+                inviter,
+                WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).expect("cave"),
+            ),
+            (
+                joiner,
+                WorldZone::new(RegionId::Hoenn, "ROUTE105", 1).expect("route"),
+            ),
+        ];
+        app.store
+            .write_transaction(|state| {
+                for (actor, zone) in &zones {
+                    state
+                        .characters
+                        .get_mut(&actor.character_id)
+                        .ok_or(Phase2Error::Internal)?
+                        .state
+                        .world_zone = zone.clone();
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("separate maps");
+        let revisions_before = app
+            .store
+            .read_transaction(|state| {
+                Ok::<_, Phase2Error>(
+                    zones
+                        .each_ref()
+                        .map(|(actor, _)| state.characters[&actor.character_id].world_revision),
+                )
+            })
+            .expect("revisions");
+
+        let code = super::super::pairing::create_code(
+            &app.store,
+            inviter,
+            &coop_cloud::CreatePairingCodeRequest::new(inviter_lease.fence()),
+        )
+        .expect("code");
+        let joined = super::super::pairing::redeem_code(
+            &app.store,
+            joiner,
+            &coop_cloud::RedeemPairingCodeRequest::new(joiner_lease.fence(), code.code),
+        )
+        .expect("redeem forms the group immediately");
+
+        let group_id = joined.group.group_id;
+        let view_zone = |actor: AuthenticatedActor| {
+            let index = joined
+                .group
+                .members
+                .iter()
+                .position(|member| member.character_id == actor.character_id)
+                .expect("member");
+            joined.group.member_world_zones[index].clone()
+        };
+        for (actor, zone) in &zones {
+            assert_eq!(&view_zone(*actor), zone);
+        }
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(state.groups[&group_id].status, GroupStatus::Active);
+                for (index, (actor, zone)) in zones.iter().enumerate() {
+                    assert_eq!(state.active_group_by_member[&actor.character_id], group_id);
+                    let character = &state.characters[&actor.character_id];
+                    assert_eq!(&character.state.world_zone, zone);
+                    assert_eq!(character.world_revision, revisions_before[index]);
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("members stay put");
+    }
+
+    #[test]
     fn remembered_partner_invitation_allows_remote_maps_and_is_idempotent() {
         let app = super::super::Phase2App::test();
         let (first, first_lease, second, second_lease, group_id) = two_member_group(&app);
