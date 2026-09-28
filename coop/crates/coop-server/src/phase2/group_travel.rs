@@ -3787,16 +3787,16 @@ mod tests {
             "SEAGALLOP:BIRTH_VERMILION_FERRY",
         ];
         let catalog = consent_route_catalog();
-        assert_eq!(catalog.len(), 160);
+        assert_eq!(catalog.len(), 162);
         assert_eq!(
             catalog.last().expect("story route").id,
             BILL_ONE_CINNABAR_ROUTE_ID
         );
-        assert_eq!(catalog[12].id, "HOENN:FLY_LITTLEROOT");
+        assert_eq!(catalog[14].id, "HOENN:FLY_LITTLEROOT");
         assert_eq!(
             catalog
                 .iter()
-                .skip(13)
+                .skip(15)
                 .take(expected.len())
                 .map(|route| route.id)
                 .collect::<Vec<_>>(),
