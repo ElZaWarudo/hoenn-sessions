@@ -7077,6 +7077,7 @@ mod tests {
                 result: coop_protocol::GroupTravelResult::None,
                 reason: coop_protocol::GroupTravelReason::None,
                 remaining_seconds: 0,
+                endpoint: None,
             },
         }]);
         let mut session = ActiveSessionState {
@@ -10366,6 +10367,7 @@ mod tests {
                 result: coop_protocol::GroupTravelResult::None,
                 reason: coop_protocol::GroupTravelReason::None,
                 remaining_seconds: 0,
+                endpoint: None,
             },
         };
         let mut session = ActiveSessionState {
@@ -10405,6 +10407,7 @@ mod tests {
             proposal_id: [0; 16],
             result: coop_protocol::GroupTravelResult::None,
             reason: coop_protocol::GroupTravelReason::None,
+            endpoint: None,
         };
         let payload = record.encode().expect("valid group-travel payload");
 

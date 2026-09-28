@@ -976,6 +976,7 @@ mod tests {
             result: coop_protocol::GroupTravelResult::None,
             reason: coop_protocol::GroupTravelReason::None,
             remaining_seconds: 0,
+            endpoint: None,
         };
         let command = ControlCommand::GroupTravel {
             session_epoch: 9,

@@ -48,6 +48,7 @@
 #include "constants/items.h"
 #include "constants/songs.h"
 #include "coop/net_bridge.h"
+#include "coop/group_travel.h"
 
 // Flight Call function
 extern const u8 EventScript_UseFlightCall[];
@@ -1134,6 +1135,12 @@ static void ItemUseOnFieldCB_EscapeRope(u8 taskId)
     DisplayItemMessageOnField(taskId, gStringVar4, Task_UseDigEscapeRopeOnField);
 }
 
+static void ItemUseOnFieldCB_GroupEscapeRope(u8 taskId)
+{
+    (void)CoopGroupTravel_BeginEscapeRope();
+    DestroyTask(taskId);
+}
+
 bool8 CanUseDigOrEscapeRopeOnCurMap(void)
 {
     if (!CheckFollowerNPCFlag(FOLLOWER_NPC_FLAG_CAN_LEAVE_ROUTE))
@@ -1147,9 +1154,13 @@ bool8 CanUseDigOrEscapeRopeOnCurMap(void)
 
 void ItemUseOutOfBattle_EscapeRope(u8 taskId)
 {
-    if (!CoopNetBridge_IsOrMayBeGrouped() && CanUseDigOrEscapeRopeOnCurMap() == TRUE)
+    if (CanUseDigOrEscapeRopeOnCurMap() == TRUE
+     && (!CoopNetBridge_IsOrMayBeGrouped()
+         || (CoopNetBridge_IsGrouped() && CoopGroupTravel_CanEscape())))
     {
-        sItemUseOnFieldCB = ItemUseOnFieldCB_EscapeRope;
+        sItemUseOnFieldCB = CoopNetBridge_IsGrouped()
+            ? ItemUseOnFieldCB_GroupEscapeRope
+            : ItemUseOnFieldCB_EscapeRope;
         SetUpItemUseOnFieldCallback(taskId);
     }
     else

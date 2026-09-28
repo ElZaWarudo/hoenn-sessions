@@ -6,6 +6,7 @@
 #include "field_screen_effect.h"
 #include "heal_location.h"
 #include "item.h"
+#include "item_use.h"
 #include "johto/kanto_travel.h"
 #include "main.h"
 #include "overworld.h"
@@ -21,7 +22,9 @@
 #include "constants/game_stat.h"
 #include "constants/heal_locations.h"
 #include "constants/maps.h"
+#include "constants/map_groups.h"
 #include "constants/seagallop.h"
+#include "../data/map_group_count.h"
 
 enum RuntimeState
 {
@@ -141,6 +144,63 @@ static void ShowVoteCountdown(void)
 }
 
 static bool8 IsZero(const u8 *bytes, u32 size) { while (size--) if (*bytes++) return FALSE; return TRUE; }
+static bool8 IsDynamicEscapeRoute(u8 route)
+{
+    return route == COOP_GROUP_TRAVEL_ROUTE_DIG
+        || route == COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE;
+}
+
+static bool8 IsValidDynamicMap(u8 group, u8 number)
+{
+    return group <= 127 && number <= 127
+        && group < MAP_GROUPS_COUNT && number < MAP_GROUP_COUNT[group];
+}
+
+static bool8 DynamicEscapeTargetValid(const struct CoopGroupTravelRecord *record)
+{
+    const struct MapHeader *target;
+    u8 x, y;
+
+    if (!IsValidDynamicMap(record->era, record->destination)
+     || !IsValidDynamicMap(record->reserved0, record->reserved1[0]))
+        return FALSE;
+    x = record->reserved1[1];
+    y = record->reserved1[2];
+    if (x > 127 || y > 127)
+        return FALSE;
+    target = Overworld_GetMapHeaderByGroupAndId(record->reserved0,
+                                                  record->reserved1[0]);
+    return target != NULL && target->mapLayout != NULL
+        && x < target->mapLayout->width && y < target->mapLayout->height;
+}
+
+static bool8 CurrentEscapeMatches(const struct CoopGroupTravelRecord *record)
+{
+    const struct WarpData *escape;
+
+    if (gSaveBlock1Ptr == NULL || !CanUseDigOrEscapeRopeOnCurMap()
+     || !DynamicEscapeTargetValid(record))
+        return FALSE;
+    escape = &gSaveBlock1Ptr->escapeWarp;
+    return gSaveBlock1Ptr->location.mapGroup == record->era
+        && gSaveBlock1Ptr->location.mapNum == record->destination
+        && escape->warpId == WARP_ID_NONE
+        && escape->mapGroup == record->reserved0
+        && escape->mapNum == record->reserved1[0]
+        && escape->x == record->reserved1[1]
+        && escape->y == record->reserved1[2];
+}
+
+static bool8 SameDynamicEndpoint(const struct CoopGroupTravelRecord *left,
+                                 const struct CoopGroupTravelRecord *right)
+{
+    return !IsDynamicEscapeRoute(left->route)
+        || (left->era == right->era
+         && left->destination == right->destination
+         && left->reserved0 == right->reserved0
+         && memcmp(left->reserved1, right->reserved1,
+                   sizeof(left->reserved1)) == 0);
+}
 static bool8 IsOutboundIslandRoute(u8 route)
 {
     return route >= COOP_GROUP_TRAVEL_ROUTE_OLIVINE_SOUTHERN_ISLAND
@@ -283,6 +343,11 @@ static bool8 HasRouteTicket(u8 route)
     u16 item;
     u8 origin, destination;
 
+    if (route == COOP_GROUP_TRAVEL_ROUTE_DIG)
+        return TRUE;
+    if (route == COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE)
+        return CheckBagHasItem(ITEM_ESCAPE_ROPE, 1);
+
     if (SeagallopRouteEndpoints(route, &origin, &destination))
     {
         /* The sailor's destination menu is local to the requester. Check
@@ -356,6 +421,12 @@ static bool8 RouteFields(u8 route, u8 *era, u8 *destination)
     static const u8 sEra[] = {0, 1, 2, 1, 2, 1, 2, 3};
     static const u8 sDestination[] = {0, 3, 4, 1, 2, 5, 6, 7};
     u8 origin, seagallopDestination;
+    if (IsDynamicEscapeRoute(route))
+    {
+        *era = 0;
+        *destination = 0;
+        return TRUE;
+    }
     if (route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
      || route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112)
     {
@@ -486,6 +557,10 @@ static bool8 RouteMatchesDeparture(u8 route, u8 departure)
 {
     switch (departure)
     {
+    case COOP_GROUP_TRAVEL_DEPARTURE_DIG:
+        return route == COOP_GROUP_TRAVEL_ROUTE_DIG;
+    case COOP_GROUP_TRAVEL_DEPARTURE_ESCAPE_ROPE:
+        return route == COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE;
     case COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR:
         return route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_ROUTE112_MT_CHIMNEY
             || route == COOP_GROUP_TRAVEL_ROUTE_CABLE_CAR_MT_CHIMNEY_ROUTE112;
@@ -536,6 +611,8 @@ static bool8 IsMaterializedDeparture(u8 route, u8 departure)
 
     if (!RouteMatchesDeparture(route, departure) || gSaveBlock1Ptr == NULL)
         return FALSE;
+    if (IsDynamicEscapeRoute(route))
+        return CurrentEscapeMatches(&sTravel.semantic);
     if (departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
      || departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT)
         return TRUE;
@@ -647,6 +724,13 @@ static bool8 IsMaterializedDeparture(u8 route, u8 departure)
 static bool8 ValidateCommon(const struct CoopGroupTravelRecord *record)
 {
     u8 era, destination;
+    if (record == NULL || record->request_id == 0
+     || !RouteMatchesDeparture(record->route, record->departure)
+     || record->result > COOP_GROUP_TRAVEL_RESULT_APPLIED
+     || record->reason > COOP_GROUP_TRAVEL_REASON_UNSAFE)
+        return FALSE;
+    if (IsDynamicEscapeRoute(record->route))
+        return DynamicEscapeTargetValid(record);
     return record != NULL && record->request_id != 0
         && RouteFields(record->route, &era, &destination)
         && record->era == era && record->destination == destination
@@ -721,6 +805,28 @@ static void SetRoute(struct CoopGroupTravelRecord *record, u8 route)
     memset(record, 0, sizeof(*record));
     record->route = route;
     (void)RouteFields(route, &record->era, &record->destination);
+}
+
+static bool8 FillDynamicEscapeRecord(struct CoopGroupTravelRecord *record)
+{
+    const struct WarpData *escape;
+
+    if (gSaveBlock1Ptr == NULL)
+        return FALSE;
+    escape = &gSaveBlock1Ptr->escapeWarp;
+    if (gSaveBlock1Ptr->location.mapGroup < 0
+     || gSaveBlock1Ptr->location.mapNum < 0
+     || escape->mapGroup < 0 || escape->mapNum < 0
+     || escape->x < 0 || escape->x > 127
+     || escape->y < 0 || escape->y > 127)
+        return FALSE;
+    record->era = gSaveBlock1Ptr->location.mapGroup;
+    record->destination = gSaveBlock1Ptr->location.mapNum;
+    record->reserved0 = escape->mapGroup;
+    record->reserved1[0] = escape->mapNum;
+    record->reserved1[1] = escape->x;
+    record->reserved1[2] = escape->y;
+    return CurrentEscapeMatches(record);
 }
 
 static bool8 IsSafeOverworld(void)
@@ -945,9 +1051,61 @@ enum CoopGroupTravelBeginResult CoopGroupTravel_BeginTeleport(void)
     return COOP_GROUP_TRAVEL_BEGIN_WAITING;
 }
 
+bool8 CoopGroupTravel_CanEscape(void)
+{
+    struct CoopGroupTravelRecord record;
+
+    SetRoute(&record, COOP_GROUP_TRAVEL_ROUTE_DIG);
+    return FillDynamicEscapeRecord(&record);
+}
+
+static enum CoopGroupTravelBeginResult BeginDynamicEscape(u8 route, u8 departure)
+{
+    if (sTravel.state != STATE_IDLE)
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    if (!IsGrouped())
+        return IsOrMayBeGrouped() ? COOP_GROUP_TRAVEL_BEGIN_REJECTED
+                                : COOP_GROUP_TRAVEL_BEGIN_NOT_GROUPED;
+    if (!HasRouteTicket(route))
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    SetRoute(&sTravel.semantic, route);
+    sTravel.semantic.departure = departure;
+    if (!FillDynamicEscapeRecord(&sTravel.semantic))
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    sTravel.recovered_state = FALSE;
+    sTravel.semantic.kind = COOP_GROUP_TRAVEL_CLIENT_REQUEST;
+    sTravel.semantic.request_id = sTravel.next_request_id++;
+    if (sTravel.next_request_id == 0)
+        sTravel.next_request_id = 1;
+    if (!SendSemantic())
+    {
+        memset(&sTravel.semantic, 0, sizeof(sTravel.semantic));
+        return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
+    }
+    LockPlayerFieldControls();
+    sTravel.controls_locked = TRUE;
+    sTravel.state = STATE_REQUESTING;
+    sTravel.semantic_queued = TRUE;
+    sTravel.departure = departure;
+    return COOP_GROUP_TRAVEL_BEGIN_WAITING;
+}
+
+enum CoopGroupTravelBeginResult CoopGroupTravel_BeginDig(void)
+{
+    return BeginDynamicEscape(COOP_GROUP_TRAVEL_ROUTE_DIG,
+                              COOP_GROUP_TRAVEL_DEPARTURE_DIG);
+}
+
+enum CoopGroupTravelBeginResult CoopGroupTravel_BeginEscapeRope(void)
+{
+    return BeginDynamicEscape(COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE,
+                              COOP_GROUP_TRAVEL_DEPARTURE_ESCAPE_ROPE);
+}
+
 enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFromScript(u8 route, u8 departure)
 {
-    if (sTravel.state != STATE_IDLE || !IsMaterializedDeparture(route, departure)
+    if (IsDynamicEscapeRoute(route) || sTravel.state != STATE_IDLE
+     || !IsMaterializedDeparture(route, departure)
      || !HasRouteTicket(route)
      || !ScriptContext_IsEnabled() || !ArePlayerFieldControlsLocked())
         return COOP_GROUP_TRAVEL_BEGIN_REJECTED;
@@ -1000,6 +1158,9 @@ enum CoopGroupTravelOfferState CoopGroupTravel_GetOffer(struct CoopGroupTravelRe
 bool8 CoopGroupTravel_RespondToOffer(bool8 accept)
 {
     if (sTravel.state != STATE_OFFER_READY) return FALSE;
+    if (accept && IsDynamicEscapeRoute(sTravel.semantic.route)
+     && !CurrentEscapeMatches(&sTravel.semantic))
+        accept = FALSE;
     if (accept && sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
      && !CoopRegionMap_GroupFlyUnlocked(sTravel.semantic.route))
         accept = FALSE;
@@ -1153,6 +1314,24 @@ static bool8 StageCommit(void)
     u32 flyHeal;
     u32 heal;
     enum JohtoTravelDestination target;
+
+    if (IsDynamicEscapeRoute(sTravel.semantic.route))
+    {
+        if (!CurrentEscapeMatches(&sTravel.semantic))
+            return FALSE;
+        if (sTravel.semantic.route == COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE
+         && I_KEY_ESCAPE_ROPE < GEN_8
+         && !RemoveBagItem(ITEM_ESCAPE_ROPE, 1))
+            return FALSE;
+        Overworld_ResetStateAfterDigEscRope();
+        SetWarpDestination(sTravel.semantic.reserved0,
+                           sTravel.semantic.reserved1[0], WARP_ID_NONE,
+                           sTravel.semantic.reserved1[1],
+                           sTravel.semantic.reserved1[2]);
+        DoWarp();
+        sTravel.controls_locked = FALSE;
+        return TRUE;
+    }
 
     if (sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
      || sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT)
@@ -1328,14 +1507,21 @@ static bool8 StageCommit(void)
     return TRUE;
 }
 
-static bool8 AtRouteDestination(u8 route)
+static bool8 AtRouteDestination(const struct CoopGroupTravelRecord *record)
 {
     const struct TravelWarp *warp;
     const struct HealLocation *healLocation;
     u32 heal;
+    u8 route = record->route;
 
     if (route < COOP_GROUP_TRAVEL_ROUTE_TRAIN_ORIGINAL)
         return FALSE;
+    if (IsDynamicEscapeRoute(route))
+        return gSaveBlock1Ptr != NULL && DynamicEscapeTargetValid(record)
+            && gSaveBlock1Ptr->location.mapGroup == record->reserved0
+            && gSaveBlock1Ptr->location.mapNum == record->reserved1[0]
+            && gSaveBlock1Ptr->pos.x == record->reserved1[1]
+            && gSaveBlock1Ptr->pos.y == record->reserved1[2];
     if (route > COOP_GROUP_TRAVEL_ROUTE_FLY_LITTLEROOT
      && route <= COOP_GROUP_TRAVEL_ROUTE_FLY_BATTLE_FRONTIER)
     {
@@ -1357,13 +1543,14 @@ static bool8 AtRouteDestination(u8 route)
 
 static bool8 AtExactDestination(void)
 {
-    return AtRouteDestination(sTravel.semantic.route);
+    return AtRouteDestination(&sTravel.semantic);
 }
 
 static enum JohtoTravelDestination DestinationForRecord(const struct CoopGroupTravelRecord *record)
 {
     if (record->departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
         || record->departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT
+        || IsDynamicEscapeRoute(record->route)
         || IsOutboundIslandRoute(record->route)
         || IsIslandReturnRoute(record->route)
         || IsHoennHarborRoute(record->route)
@@ -1402,7 +1589,7 @@ static bool8 IsRecoverableDestination(const struct CoopGroupTravelRecord *record
         return FALSE;
     if (IsMaidenInProgress(record))
         return TRUE;
-    if (!AtRouteDestination(record->route))
+    if (!AtRouteDestination(record))
         return FALSE;
     pending = JohtoTravel_GetPendingDestination();
     return pending == JOHTO_TRAVEL_DESTINATION_NONE
@@ -1411,7 +1598,10 @@ static bool8 IsRecoverableDestination(const struct CoopGroupTravelRecord *record
 
 static bool8 IsCurrentTravelSource(const struct CoopGroupTravelRecord *record)
 {
-    return IsGrouped() && IsMaterializedDeparture(record->route, record->departure)
+    return IsGrouped()
+        && (IsDynamicEscapeRoute(record->route)
+            ? CurrentEscapeMatches(record)
+            : IsMaterializedDeparture(record->route, record->departure))
         && (record->route != COOP_GROUP_TRAVEL_ROUTE_BRINEY_HOUSE_DEWFORD
             || HasBrineyAtSource(record->route));
 }
@@ -1541,7 +1731,7 @@ bool8 CoopGroupTravel_ReceiveServer(const struct CoopGroupTravelRecord *record)
         if (record->kind == COOP_GROUP_TRAVEL_SERVER_COMMIT)
         {
             HideVoteCountdown();
-            at_destination = AtRouteDestination(record->route);
+            at_destination = AtRouteDestination(record);
             sTravel.semantic = *record;
             sTravel.departure = record->departure;
             sTravel.recovered_state = TRUE;
@@ -1570,6 +1760,7 @@ bool8 CoopGroupTravel_ReceiveServer(const struct CoopGroupTravelRecord *record)
             bool8 matches = record->request_id == sTravel.semantic.request_id
                 && record->route == sTravel.semantic.route
                 && record->departure == sTravel.semantic.departure
+                && SameDynamicEndpoint(record, &sTravel.semantic)
                 && memcmp(record->proposal_id, sTravel.semantic.proposal_id, 16) == 0;
             if (matches && (sTravel.state == STATE_OFFER_DEFERRED
                          || sTravel.state == STATE_OFFER_READY))
@@ -1591,13 +1782,15 @@ bool8 CoopGroupTravel_ReceiveServer(const struct CoopGroupTravelRecord *record)
         if (sTravel.state != STATE_IDLE
          && record->request_id == sTravel.semantic.request_id
          && record->route == sTravel.semantic.route
-         && record->departure == sTravel.semantic.departure)
+         && record->departure == sTravel.semantic.departure
+         && SameDynamicEndpoint(record, &sTravel.semantic))
             ClearAndUnlock(FALSE);
         return TRUE;
     }
     if (record->request_id != sTravel.semantic.request_id
         || record->route != sTravel.semantic.route
-        || record->departure != sTravel.semantic.departure)
+        || record->departure != sTravel.semantic.departure
+        || !SameDynamicEndpoint(record, &sTravel.semantic))
         return FALSE;
     if (record->kind == COOP_GROUP_TRAVEL_SERVER_REQUESTING)
     {
@@ -1773,6 +1966,7 @@ void CoopGroupTravel_Poll(void)
     if (sTravel.state == STATE_COMMITTING && AtExactDestination()
      && (sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
       || sTravel.semantic.departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT
+      || IsDynamicEscapeRoute(sTravel.semantic.route)
       || IsOutboundIslandRoute(sTravel.semantic.route)
       || IsIslandReturnRoute(sTravel.semantic.route)
       || IsHoennHarborRoute(sTravel.semantic.route)
@@ -1935,6 +2129,15 @@ void Special_CoopGroupTravelGetOffer(void)
         if (offer.departure == COOP_GROUP_TRAVEL_DEPARTURE_FLY
          || offer.departure == COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT)
             GetMapNameGeneric(gStringVar1, CoopRegionMap_GroupFlyMapSection(offer.route));
+        else if (IsDynamicEscapeRoute(offer.route))
+        {
+            const struct MapHeader *mapHeader = Overworld_GetMapHeaderByGroupAndId(
+                offer.reserved0, offer.reserved1[0]);
+            if (mapHeader != NULL && mapHeader->regionMapSectionId != MAPSEC_NONE)
+                GetMapNameGeneric(gStringVar1, mapHeader->regionMapSectionId);
+            else
+                StringCopy(gStringVar1, sNextPortText);
+        }
         else if (offer.route >= COOP_GROUP_TRAVEL_ROUTE_OLIVINE_SOUTHERN_ISLAND)
         {
             const struct TravelWarp *warp = &sTravelWarps[offer.route];

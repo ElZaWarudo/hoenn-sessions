@@ -11,21 +11,30 @@
 #include "sprite.h"
 #include "constants/field_effects.h"
 #include "coop/net_bridge.h"
+#include "coop/group_travel.h"
 
 // static functions
 static void FieldCallback_Dig(void);
+static void FieldCallback_GroupDig(void);
 static void StartDigFieldEffect(void);
 
 // text
 bool32 SetUpFieldMove_Dig(void)
 {
-    if (CoopNetBridge_IsOrMayBeGrouped() && !ShouldDoBrailleDigEffect())
+    if (CoopNetBridge_IsOrMayBeGrouped() && !CoopNetBridge_IsGrouped()
+     && !ShouldDoBrailleDigEffect())
+        return FALSE;
+    if (CoopNetBridge_IsGrouped() && !ShouldDoBrailleDigEffect()
+     && !CoopGroupTravel_CanEscape())
         return FALSE;
 
     if (CanUseDigOrEscapeRopeOnCurMap() == TRUE)
     {
-        gFieldCallback2 = FieldCallback_PrepareFadeInFromMenu;
-        gPostMenuFieldCallback = FieldCallback_Dig;
+        gFieldCallback2 = CoopNetBridge_IsGrouped() && !ShouldDoBrailleDigEffect()
+            ? FieldCallback_PrepareFadeInForGroupTravel
+            : FieldCallback_PrepareFadeInFromMenu;
+        gPostMenuFieldCallback = CoopNetBridge_IsGrouped() && !ShouldDoBrailleDigEffect()
+            ? FieldCallback_GroupDig : FieldCallback_Dig;
         return TRUE;
     }
     else
@@ -39,6 +48,11 @@ static void FieldCallback_Dig(void)
     Overworld_ResetStateAfterDigEscRope();
     gFieldEffectArguments[0] = GetCursorSelectionMonId();
     ScriptContext_SetupScript(EventScript_UseDig);
+}
+
+static void FieldCallback_GroupDig(void)
+{
+    (void)CoopGroupTravel_BeginDig();
 }
 
 bool8 FldEff_UseDig(void)

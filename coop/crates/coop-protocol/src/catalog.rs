@@ -18,6 +18,25 @@ pub struct MapCatalogEntry {
     pub map_group: u16,
     /// The numeric map-number coordinate used by the ROM bridge.
     pub map_number: u16,
+    /// The map layout width in walkable tile coordinates.
+    pub width: u16,
+    /// The map layout height in walkable tile coordinates.
+    pub height: u16,
+    /// Whether the engine permits Dig/Escape Rope on this map.
+    pub allow_escaping: bool,
+    /// Start index of this map's generated vanilla escape endpoints.
+    pub escape_targets_start: u16,
+    /// Number of generated vanilla escape endpoints for this map.
+    pub escape_targets_len: u16,
+}
+
+/// One vanilla escape endpoint inherited from an outdoor map warp.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MapEscapeTarget {
+    pub map_group: u8,
+    pub map_number: u8,
+    pub x: u8,
+    pub y: u8,
 }
 
 impl MapCatalogEntry {
@@ -37,6 +56,20 @@ impl MapCatalogEntry {
     #[must_use]
     pub const fn coordinates(&self) -> (u16, u16) {
         (self.map_group, self.map_number)
+    }
+
+    /// Returns the generated dimensions as `(width, height)`.
+    #[must_use]
+    pub const fn dimensions(&self) -> (u16, u16) {
+        (self.width, self.height)
+    }
+
+    /// Returns the generated vanilla escape endpoints for this map.
+    #[must_use]
+    pub fn escape_targets(&self) -> &'static [MapEscapeTarget] {
+        let start = usize::from(self.escape_targets_start);
+        let end = start + usize::from(self.escape_targets_len);
+        &GENERATED_MAP_ESCAPE_TARGETS[start..end]
     }
 
     /// Returns the stable region-qualified spelling used by identity APIs.
