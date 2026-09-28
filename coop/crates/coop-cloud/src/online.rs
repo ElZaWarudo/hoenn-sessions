@@ -62,8 +62,17 @@ pub struct OnlineSnapshotResponse {
     pub outgoing: Vec<OnlineInvitation>,
     pub incoming_next: Option<GroupInvitationId>,
     pub group: Option<OnlineGroup>,
+    /// A live outgoing invitation or pairing code can let a peer join remotely.
+    /// Older V1 servers omit this field; guard travel until a capable server
+    /// reports the authoritative state.
+    #[serde(default = "remote_join_unknown")]
+    pub remote_join_possible: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_partner: Option<OnlineRememberedPartner>,
+}
+
+fn remote_join_unknown() -> bool {
+    true
 }
 
 fn page<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>

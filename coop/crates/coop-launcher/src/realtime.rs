@@ -599,6 +599,7 @@ fn map_owner_event(
             RealtimeCoordinatorEvent::Lifecycle(ControlCommand::GroupStateChanged {
                 session_epoch: event.session_epoch.value(),
                 grouped: true,
+                remote_join_possible: false,
             }),
         ),
         RealtimeOwnerEvent::GroupEnded(event) if *ready => Ok(RealtimeCoordinatorEvent::Lifecycle(
@@ -625,6 +626,7 @@ mod group_started_tests {
                 ControlCommand::GroupStateChanged {
                     session_epoch: 7,
                     grouped: true,
+                    remote_join_possible: false,
                 }
             ))
         ));

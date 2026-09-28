@@ -1609,12 +1609,22 @@ async fn online_snapshot(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
     Phase2Json(request): Phase2Json<coop_cloud::OnlineSnapshotRequest>,
-) -> Result<Json<coop_cloud::OnlineSnapshotResponse>, Phase2Error> {
-    Ok(Json(online::snapshot(
-        &app,
-        actor(&headers, &app)?,
-        &request,
-    )?))
+) -> Result<Json<serde_json::Value>, Phase2Error> {
+    let snapshot = online::snapshot(&app, actor(&headers, &app)?, &request)?;
+    let mut response = serde_json::to_value(snapshot).map_err(|_| Phase2Error::Internal)?;
+    /* Legacy launchers reject unknown V1 fields. Only opt-in clients receive
+     * the new safety bit. An older server ignores the header, and the new
+     * launcher treats an omitted bit as join possible. */
+    if headers
+        .get("x-coop-online-remote-join")
+        .and_then(|value| value.to_str().ok())
+        != Some("1")
+    {
+        if let Some(object) = response.as_object_mut() {
+            object.remove("remote_join_possible");
+        }
+    }
+    Ok(Json(response))
 }
 
 async fn online_action(

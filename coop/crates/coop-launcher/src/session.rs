@@ -3504,11 +3504,11 @@ impl SessionLifecycle {
                     continue;
                 }
                 _ = tokio::time::sleep_until(invites.next_poll()), if invites.is_idle() && !online.is_pending() && !pairing.is_pending() => { continue; }
-                invite = invites.next() => {
+                invite = invites.next(), if !online.is_pending() && !pairing.is_pending() => {
                     match invite {
-                        Ok(Some(crate::online::InviteWatcherEvent::GroupStateChanged(grouped))) => {
+                        Ok(Some(crate::online::InviteWatcherEvent::GroupStateChanged { grouped, remote_join_possible })) => {
                             if let Err(error) = children.control().send(&ControlCommand::GroupStateChanged {
-                                session_epoch: self.lease.session_epoch.value(), grouped,
+                                session_epoch: self.lease.session_epoch.value(), grouped, remote_join_possible,
                             }).await { result = Err(SessionError::Control(error)); }
                         }
                         Ok(Some(crate::online::InviteWatcherEvent::InviteReceived(username))) => {
@@ -6094,6 +6094,7 @@ mod lifecycle_tests {
                     outgoing: vec![],
                     incoming_next: None,
                     group: None,
+                    remote_join_possible: false,
                     last_partner: None,
                 })
             })
@@ -6359,7 +6360,7 @@ mod lifecycle_tests {
                 "size": 9244,
                 "magic": 1_347_111_759,
                 "abi_version": 1,
-                "game_protocol_version": 1,
+                "game_protocol_version": 2,
                 "byte_order": "little",
                 "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
                 "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},

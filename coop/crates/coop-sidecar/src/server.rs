@@ -3527,6 +3527,7 @@ impl LocalSidecar {
         if let ControlCommand::GroupStateChanged {
             session_epoch,
             grouped,
+            remote_join_possible,
         } = command
         {
             if session_epoch != self.session_epoch
@@ -3540,7 +3541,7 @@ impl LocalSidecar {
                 MessageType::GroupStateChanged,
                 self.sequence_state.take_sidecar_sequence(),
                 self.session_epoch,
-                &[u8::from(grouped)],
+                &[u8::from(grouped), u8::from(remote_join_possible)],
             )?;
             return bridge.send(&frame, Direction::SidecarToRom).await;
         }
@@ -7007,7 +7008,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn group_state_changed_uses_single_byte_payload_and_current_epoch() {
+    async fn group_state_changed_uses_two_byte_payload_and_current_epoch() {
         let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await
             .unwrap();
@@ -7025,6 +7026,7 @@ mod tests {
                 Some(Ok(ControlCommand::GroupStateChanged {
                     session_epoch: TEST_SESSION_EPOCH,
                     grouped: true,
+                    remote_join_possible: true,
                 })),
                 &mut bridge,
                 &mut control,
@@ -7038,13 +7040,14 @@ mod tests {
         let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
         assert_eq!(frame.message_type(), MessageType::GroupStateChanged);
         assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
-        assert_eq!(frame.payload(), &[1]);
+        assert_eq!(frame.payload(), &[1, 1]);
 
         sidecar
             .handle_active_control_event(
                 Some(Ok(ControlCommand::GroupStateChanged {
                     session_epoch: TEST_SESSION_EPOCH + 1,
                     grouped: false,
+                    remote_join_possible: false,
                 })),
                 &mut bridge,
                 &mut control,

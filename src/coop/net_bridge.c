@@ -53,6 +53,10 @@ struct CoopNetRuntime
     bool8 online_status_valid;
     bool8 membership_known;
     bool8 known_grouped;
+    bool8 remote_join_possible;
+    bool8 local_join_request_pending;
+    u32 local_join_online_request_id;
+    u32 local_join_pairing_request_id;
     u32 pairing_request_id;
     bool8 pairing_status_valid;
     struct CoopPairingStatus pairing_status;
@@ -656,6 +660,13 @@ bool8 CoopNetBridge_SendOnlineRequest(const struct CoopOnlineRequest *request)
         return FALSE;
     sCoopNetRuntime.online_request_id = request->request_id;
     sCoopNetRuntime.online_status_valid = FALSE;
+    if (request->action == COOP_ONLINE_INVITE
+     || request->action == COOP_ONLINE_INVITE_LAST_PARTNER)
+    {
+        sCoopNetRuntime.local_join_request_pending = TRUE;
+        sCoopNetRuntime.local_join_online_request_id = request->request_id;
+        sCoopNetRuntime.remote_join_possible = TRUE;
+    }
     return TRUE;
 }
 
@@ -739,6 +750,12 @@ bool8 CoopNetBridge_SendPairingRequest(const struct CoopPairingRequest *request)
         return FALSE;
     sCoopNetRuntime.pairing_request_id = request->request_id;
     sCoopNetRuntime.pairing_status_valid = FALSE;
+    if (request->action == COOP_PAIRING_CREATE)
+    {
+        sCoopNetRuntime.local_join_request_pending = TRUE;
+        sCoopNetRuntime.local_join_pairing_request_id = request->request_id;
+        sCoopNetRuntime.remote_join_possible = TRUE;
+    }
     return TRUE;
 }
 
@@ -787,6 +804,8 @@ bool8 CoopNetBridge_IsOrMayBeGrouped(void)
      * refresh or transport loss until an authenticated update confirms the
      * group ended. */
     return sCoopNetRuntime.known_grouped
+        || sCoopNetRuntime.remote_join_possible
+        || sCoopNetRuntime.local_join_request_pending
         || (sCoopNetRuntime.session_epoch != 0 && CoopSave_IsOnlineEnabled()
             && !sCoopNetRuntime.membership_known)
         || CoopNetBridge_IsGrouped();
@@ -835,7 +854,7 @@ static bool8 DecodeOnlineStatus(struct CoopOnlineStatus *status, const struct Co
     u32 i;
 
     if (message->length != COOP_ONLINE_STATUS_SIZE || payload[4] > COOP_ONLINE_FAILED
-     || (payload[5] & ~63) != 0 || payload[6] > 32 || payload[7] > 32
+     || (payload[5] & ~127) != 0 || payload[6] > 32 || payload[7] > 32
      || payload[8] > 31 || payload[9] > 31
      || payload[10] > 4 || payload[11] >= (payload[10] == 0 ? 1 : payload[10])
      || ((payload[5] & COOP_ONLINE_GROUPED) && payload[10] != 0)
@@ -1076,6 +1095,9 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             sCoopNetRuntime.cloud_epoch_accepted = TRUE;
             sCoopNetRuntime.online_status_valid = FALSE;
             sCoopNetRuntime.membership_known = FALSE;
+            sCoopNetRuntime.local_join_request_pending = FALSE;
+            sCoopNetRuntime.local_join_online_request_id = 0;
+            sCoopNetRuntime.local_join_pairing_request_id = 0;
             sCoopNetRuntime.online_request_id = 0;
             sCoopNetRuntime.pairing_status_valid = FALSE;
             sCoopNetRuntime.pairing_request_id = 0;
@@ -1124,6 +1146,9 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         sCoopNetRuntime.cloud_epoch_accepted = TRUE;
         sCoopNetRuntime.online_status_valid = FALSE;
         sCoopNetRuntime.membership_known = FALSE;
+        sCoopNetRuntime.local_join_request_pending = FALSE;
+        sCoopNetRuntime.local_join_online_request_id = 0;
+        sCoopNetRuntime.local_join_pairing_request_id = 0;
         sCoopNetRuntime.online_request_id = 0;
         sCoopNetRuntime.pairing_status_valid = FALSE;
         sCoopNetRuntime.pairing_request_id = 0;
@@ -1182,14 +1207,22 @@ invalid_invite_notice:
          || message->session_epoch != sCoopNetRuntime.session_epoch
          || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
             return FALSE;
-        if (message->length != 1 || message->payload[0] > 1)
+        if (message->length != 2 || message->payload[0] > 1
+         || message->payload[1] > 1)
             goto invalid_group_state;
-        for (i = 1; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+        for (i = 2; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
             if (message->payload[i] != 0)
                 goto invalid_group_state;
         sCoopNetRuntime.rx_sequence = message->sequence;
         sCoopNetRuntime.membership_known = TRUE;
         sCoopNetRuntime.known_grouped = message->payload[0] != 0;
+        sCoopNetRuntime.remote_join_possible = message->payload[1] != 0;
+        /* The watcher is paused during artifact mutations. A frame delivered
+         * after a mutation reply is the first snapshot that may release its
+         * local guard; an older Online Refresh reply never may. */
+        sCoopNetRuntime.local_join_request_pending =
+            sCoopNetRuntime.local_join_online_request_id != 0
+            || sCoopNetRuntime.local_join_pairing_request_id != 0;
         return FALSE;
 invalid_group_state:
         gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
@@ -1218,6 +1251,13 @@ invalid_group_state:
         {
             sCoopNetRuntime.pairing_status = status;
             sCoopNetRuntime.pairing_status_valid = TRUE;
+            if (status.request_id == sCoopNetRuntime.local_join_pairing_request_id)
+            {
+                /* Wait for a watcher snapshot started after the mutation;
+                 * a concurrent Online Refresh may still hold older state. */
+                sCoopNetRuntime.remote_join_possible = TRUE;
+                sCoopNetRuntime.local_join_pairing_request_id = 0;
+            }
             if (status.result == COOP_PAIRING_JOINED)
             {
                 sCoopNetRuntime.membership_known = TRUE;
@@ -1244,6 +1284,11 @@ invalid_pairing_status:
             return FALSE;
         }
         sCoopNetRuntime.rx_sequence = message->sequence;
+        if (status.request_id == sCoopNetRuntime.local_join_online_request_id)
+        {
+            sCoopNetRuntime.local_join_online_request_id = 0;
+            sCoopNetRuntime.remote_join_possible = TRUE;
+        }
         if (status.request_id == sCoopNetRuntime.online_request_id)
         {
             sCoopNetRuntime.online_status = status;
@@ -1252,6 +1297,8 @@ invalid_pairing_status:
             {
                 sCoopNetRuntime.membership_known = TRUE;
                 sCoopNetRuntime.known_grouped = (status.flags & COOP_ONLINE_GROUPED) != 0;
+                sCoopNetRuntime.remote_join_possible =
+                    (status.flags & COOP_ONLINE_REMOTE_JOIN_POSSIBLE) != 0;
             }
         }
         return FALSE;

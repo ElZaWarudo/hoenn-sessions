@@ -33,7 +33,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub const CONTROL_PROTOCOL_VERSION: u16 = 2;
+pub const CONTROL_PROTOCOL_VERSION: u16 = 3;
 /// The terminating LF is included in this limit.
 pub const MAX_CONTROL_LINE_BYTES: usize = 768;
 pub const CONTROL_HANDSHAKE_ACCEPTED_LINE: &[u8] = b"{\"ok\":true}\n";
@@ -165,6 +165,7 @@ pub enum ControlCommand {
     GroupStateChanged {
         session_epoch: u32,
         grouped: bool,
+        remote_join_possible: bool,
     },
     GroupInviteReceived {
         session_epoch: u32,

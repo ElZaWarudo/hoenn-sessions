@@ -78,101 +78,107 @@ pub(super) fn snapshot(
 ) -> Result<OnlineSnapshotResponse, Phase2Error> {
     let _gate = app.store.lock_runtime_transition_gate();
     let now = app.store.now();
-    let mut response =
-        app.store
-            .read_transaction(|state| -> Result<_, Phase2Error> {
-                groups::authenticate_caller(state, actor, request.fence.character_id)?;
-                groups::lease_matches(state, actor.character_id, request.fence, now)?;
-                let group = state
-                    .active_group_by_member
-                    .get(&actor.character_id)
-                    .map(|id| {
-                        let view = groups::group_view(state, *id)?;
-                        if !view
+    let mut response = app
+        .store
+        .read_transaction(|state| -> Result<_, Phase2Error> {
+            groups::authenticate_caller(state, actor, request.fence.character_id)?;
+            groups::lease_matches(state, actor.character_id, request.fence, now)?;
+            let group = state
+                .active_group_by_member
+                .get(&actor.character_id)
+                .map(|id| {
+                    let view = groups::group_view(state, *id)?;
+                    if !view
+                        .members
+                        .iter()
+                        .any(|m| m.character_id == actor.character_id)
+                        || view
                             .members
                             .iter()
-                            .any(|m| m.character_id == actor.character_id)
-                            || view.members.iter().any(|m| {
-                                state.active_group_by_member.get(&m.character_id) != Some(id)
-                            })
-                        {
-                            return Err(Phase2Error::Internal);
-                        }
-                        for member in &view.members {
-                            groups::validate_member(state, member.character_id)?;
-                        }
-                        let counterpart = view
-                            .members
-                            .iter()
-                            .find(|m| m.character_id != actor.character_id)
-                            .ok_or(Phase2Error::Internal)?
-                            .character_id;
-                        Ok(OnlineGroup {
-                            username: username(state, counterpart)?,
-                            group: view,
-                        })
+                            .any(|m| state.active_group_by_member.get(&m.character_id) != Some(id))
+                    {
+                        return Err(Phase2Error::Internal);
+                    }
+                    for member in &view.members {
+                        groups::validate_member(state, member.character_id)?;
+                    }
+                    let counterpart = view
+                        .members
+                        .iter()
+                        .find(|m| m.character_id != actor.character_id)
+                        .ok_or(Phase2Error::Internal)?
+                        .character_id;
+                    Ok(OnlineGroup {
+                        username: username(state, counterpart)?,
+                        group: view,
                     })
-                    .transpose()?;
-                let mut records: Vec<_> = state
-                    .group_invitations
-                    .values()
-                    .filter(|invitation| {
-                        invitation.invitee == actor.character_id
-                            && !invitation.consumed
-                            && invitation.expires_at > now
-                            && request
-                                .incoming_after
-                                .is_none_or(|after| invitation.invitation_id > after)
-                    })
-                    .collect();
-                records.sort_by_key(|invitation| invitation.invitation_id);
-                let has_more = records.len() > ONLINE_PAGE_SIZE;
-                records.truncate(ONLINE_PAGE_SIZE);
-                let incoming_next = if has_more {
-                    records.last().map(|invitation| invitation.invitation_id)
-                } else {
-                    None
-                };
-                let incoming = records
-                    .into_iter()
-                    .map(|record| {
-                        Ok(OnlineInvitation {
-                            invitation: groups::build_invitation_view(record)?,
-                            username: username(state, record.inviter)?,
-                        })
-                    })
-                    .collect::<Result<_, Phase2Error>>()?;
-                let mut sent: Vec<_> = state
-                    .group_invitations
-                    .values()
-                    .filter(|invitation| {
-                        invitation.inviter == actor.character_id
-                            && !invitation.consumed
-                            && invitation.expires_at > now
-                    })
-                    .collect();
-                sent.sort_by_key(|invitation| invitation.invitation_id);
-                sent.truncate(ONLINE_PAGE_SIZE);
-                let outgoing = sent
-                    .into_iter()
-                    .map(|record| {
-                        Ok(OnlineInvitation {
-                            invitation: groups::build_invitation_view(record)?,
-                            username: username(state, record.invitee)?,
-                        })
-                    })
-                    .collect::<Result<_, Phase2Error>>()?;
-                let last_partner = last_partner_view(state, actor.character_id)?;
-                Ok(OnlineSnapshotResponse {
-                    api_version: ApiVersion::V1,
-                    nearby: Vec::new(),
-                    incoming,
-                    outgoing,
-                    incoming_next,
-                    group,
-                    last_partner,
                 })
-            })?;
+                .transpose()?;
+            let mut records: Vec<_> = state
+                .group_invitations
+                .values()
+                .filter(|invitation| {
+                    invitation.invitee == actor.character_id
+                        && !invitation.consumed
+                        && invitation.expires_at > now
+                        && request
+                            .incoming_after
+                            .is_none_or(|after| invitation.invitation_id > after)
+                })
+                .collect();
+            records.sort_by_key(|invitation| invitation.invitation_id);
+            let has_more = records.len() > ONLINE_PAGE_SIZE;
+            records.truncate(ONLINE_PAGE_SIZE);
+            let incoming_next = if has_more {
+                records.last().map(|invitation| invitation.invitation_id)
+            } else {
+                None
+            };
+            let incoming = records
+                .into_iter()
+                .map(|record| {
+                    Ok(OnlineInvitation {
+                        invitation: groups::build_invitation_view(record)?,
+                        username: username(state, record.inviter)?,
+                    })
+                })
+                .collect::<Result<_, Phase2Error>>()?;
+            let mut sent: Vec<_> = state
+                .group_invitations
+                .values()
+                .filter(|invitation| {
+                    invitation.inviter == actor.character_id
+                        && !invitation.consumed
+                        && invitation.expires_at > now
+                })
+                .collect();
+            sent.sort_by_key(|invitation| invitation.invitation_id);
+            let remote_join_possible = !sent.is_empty()
+                || state.group_pairing_codes.values().any(|code| {
+                    code.inviter == actor.character_id && !code.consumed && code.expires_at > now
+                });
+            sent.truncate(ONLINE_PAGE_SIZE);
+            let outgoing = sent
+                .into_iter()
+                .map(|record| {
+                    Ok(OnlineInvitation {
+                        invitation: groups::build_invitation_view(record)?,
+                        username: username(state, record.invitee)?,
+                    })
+                })
+                .collect::<Result<_, Phase2Error>>()?;
+            let last_partner = last_partner_view(state, actor.character_id)?;
+            Ok(OnlineSnapshotResponse {
+                api_version: ApiVersion::V1,
+                nearby: Vec::new(),
+                incoming,
+                outgoing,
+                incoming_next,
+                group,
+                remote_join_possible,
+                last_partner,
+            })
+        })?;
     if let Some(group) = response.group.as_mut() {
         let counterpart = group
             .group

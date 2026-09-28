@@ -40,6 +40,7 @@ enum CoopOnlineFlags
     COOP_ONLINE_HAS_OUTGOING = 8,
     COOP_ONLINE_HAS_LOCATION = 16,
     COOP_ONLINE_HAS_LAST_PARTNER = 32,
+    COOP_ONLINE_REMOTE_JOIN_POSSIBLE = 64,
 };
 
 struct CoopOnlineRequest

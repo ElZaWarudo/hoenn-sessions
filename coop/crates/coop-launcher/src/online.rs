@@ -253,6 +253,7 @@ impl ReqwestCloudApi {
                 self.client
                     .post(url)
                     .bearer_auth(token.expose_secret())
+                    .header("x-coop-online-remote-join", "1")
                     .json(&request),
                 16 * 1024,
             )
@@ -510,7 +511,10 @@ impl<'a> OnlineOwner<'a> {
 /// Polls the authoritative invitation list without disturbing an open menu
 /// view. IDs remain in the launcher; the ROM receives only a notification.
 pub(crate) enum InviteWatcherEvent {
-    GroupStateChanged(bool),
+    GroupStateChanged {
+        grouped: bool,
+        remote_join_possible: bool,
+    },
     InviteReceived(String),
 }
 
@@ -521,7 +525,7 @@ pub(crate) struct InviteWatcher<'a> {
     next_poll: Instant,
     seen: Vec<(coop_cloud::GroupInvitationId, u64)>,
     announcements: std::collections::VecDeque<String>,
-    membership_pending: Option<bool>,
+    membership_pending: Option<(bool, bool)>,
 }
 
 impl<'a> Default for InviteWatcher<'a> {
@@ -582,8 +586,11 @@ impl<'a> InviteWatcher<'a> {
     }
 
     pub(crate) async fn next(&mut self) -> Result<Option<InviteWatcherEvent>, OnlineError> {
-        if let Some(grouped) = self.membership_pending.take() {
-            return Ok(Some(InviteWatcherEvent::GroupStateChanged(grouped)));
+        if let Some((grouped, remote_join_possible)) = self.membership_pending.take() {
+            return Ok(Some(InviteWatcherEvent::GroupStateChanged {
+                grouped,
+                remote_join_possible,
+            }));
         }
         if let Some(username) = self.announcements.pop_front() {
             return Ok(Some(InviteWatcherEvent::InviteReceived(username)));
@@ -597,13 +604,18 @@ impl<'a> InviteWatcher<'a> {
         Ok(self
             .membership_pending
             .take()
-            .map(InviteWatcherEvent::GroupStateChanged))
+            .map(
+                |(grouped, remote_join_possible)| InviteWatcherEvent::GroupStateChanged {
+                    grouped,
+                    remote_join_possible,
+                },
+            ))
     }
 
     fn observe(&mut self, snapshot: OnlineSnapshotResponse, now: u64) {
         // Emit on every successful poll so a ROM reset within the same lease
         // can recover the authoritative membership without opening Online.
-        self.membership_pending = Some(snapshot.group.is_some());
+        self.membership_pending = Some((snapshot.group.is_some(), snapshot.remote_join_possible));
         self.seen.retain(|(_, expires)| *expires > now);
         for entry in snapshot.incoming {
             let invite = entry.invitation;
@@ -718,6 +730,9 @@ fn snapshot_status(
     character_id: coop_cloud::CharacterId,
 ) -> OnlineStatus {
     let mut status = empty_status(request.request_id, result);
+    if snapshot.remote_join_possible {
+        status.flags |= 64;
+    }
     status.nearby_count = u8::try_from(snapshot.nearby.len()).unwrap_or(32).min(32);
     status.incoming_count = u8::try_from(snapshot.incoming.len()).unwrap_or(32).min(32);
     status.outgoing_count = u8::try_from(snapshot.outgoing.len()).unwrap_or(4).min(4);
@@ -807,6 +822,7 @@ mod tests {
             outgoing: vec![],
             incoming_next: None,
             group: None,
+            remote_join_possible: false,
             last_partner: None,
         }
     }
@@ -868,7 +884,10 @@ mod tests {
         watcher.observe(snapshot(), 2000);
         assert!(matches!(
             watcher.next().await.unwrap(),
-            Some(InviteWatcherEvent::GroupStateChanged(false))
+            Some(InviteWatcherEvent::GroupStateChanged {
+                grouped: false,
+                remote_join_possible: false
+            })
         ));
 
         // A menu request discards a prior poll's membership before the menu
@@ -897,8 +916,40 @@ mod tests {
         watcher.observe(serde_json::from_value(response).unwrap(), 2002);
         assert!(matches!(
             watcher.next().await.unwrap(),
-            Some(InviteWatcherEvent::GroupStateChanged(true))
+            Some(InviteWatcherEvent::GroupStateChanged {
+                grouped: true,
+                remote_join_possible: false
+            })
         ));
+    }
+
+    #[tokio::test]
+    async fn watcher_and_online_status_report_remote_join_availability() {
+        let mut response = snapshot();
+        response.remote_join_possible = true;
+        let mut watcher = InviteWatcher::default();
+        watcher.observe(response.clone(), 2000);
+        assert!(matches!(
+            watcher.next().await.unwrap(),
+            Some(InviteWatcherEvent::GroupStateChanged {
+                grouped: false,
+                remote_join_possible: true
+            })
+        ));
+        let status = snapshot_status(
+            request(1, 0, OnlineAction::Refresh),
+            &response,
+            OnlineResult::Ready,
+            fence().character_id,
+        );
+        assert_eq!(status.flags & 64, 64);
+        assert_eq!(
+            OnlineStatus::decode(&status.encode().unwrap()).unwrap(),
+            status
+        );
+        watcher.observe(response, 2001);
+        watcher.invalidate_poll();
+        assert!(watcher.membership_pending.is_none());
     }
 
     #[test]
