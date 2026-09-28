@@ -9,6 +9,7 @@
 #include "event_object_movement.h"
 #include "field_camera.h"
 #include "field_control_avatar.h"
+#include "field_message_box.h"
 #include "fieldmap.h"
 #include "load_save.h"
 #include "main.h"
@@ -16,6 +17,7 @@
 #include "palette.h"
 #include "script.h"
 #include "sprite.h"
+#include "text.h"
 #include "constants/flags.h"
 #include "constants/map_types.h"
 #include "constants/metatile_labels.h"
@@ -307,6 +309,11 @@ static void EndRuntimeFixture(const struct RuntimeFixtureBackup *backup)
         if ((SpriteTileAllocBitmapOp(i, 2) != 0) != (expected != 0))
             SpriteTileAllocBitmapOp(i, expected != 0);
     }
+    /* Transport teardown can publish a field notice after the fixture has
+     * restored the overworld. Retire its printer and task before the runner
+     * checks for leaked resources. */
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
 }
 
 TEST("Cloud Coop presence sequence domains remain wrap-safe")
@@ -349,6 +356,42 @@ TEST("Cloud Coop presence runtime keeps the bounded V1 contract")
     remote.localId = LOCALID_NONE;
     EXPECT(!CoopPresenceRuntime_IsRemoteObject(&remote));
     CoopPresenceRuntime_Reset();
+}
+
+TEST("Cloud Coop group ended notice displays without a partner sprite")
+{
+    const u8 groupId[16] = {1};
+    const u8 nextGroupId[16] = {2};
+    bool8 scriptWasEnabled = ScriptContext_IsEnabled();
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    // The test runner uses the script context; field notices wait for it to yield.
+    if (scriptWasEnabled)
+        ScriptContext_Stop();
+    InitFieldMessageBox();
+    CoopPresenceRuntime_Init();
+    EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
+    EXPECT(!CoopPresenceRuntime_QueueGroupEnded(groupId, 15));
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(groupId, sizeof(groupId)));
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_AUTO_SCROLL);
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(groupId, sizeof(groupId)));
+    HideFieldMessageBox();
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    CoopPresenceRuntime_SetSessionEpoch(1);
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(nextGroupId, sizeof(nextGroupId)));
+    CoopPresenceRuntime_SetSessionEpoch(2);
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    // New epoch must not inherit the old UUID tombstone or blocked notice.
+    EXPECT(CoopPresenceRuntime_QueueGroupEnded(nextGroupId, sizeof(nextGroupId)));
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_AUTO_SCROLL);
+    HideFieldMessageBox();
+    if (scriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
 
 TEST("Cloud Coop presence runtime queues exact lifecycle frames atomically")
@@ -1199,6 +1242,8 @@ TEST("Cloud Coop field input preserves vanilla interaction precedence")
     EXPECT_EQ(ProcessPlayerFieldInput(&input), FIELD_INPUT_RESULT_SCRIPT_STARTED);
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     ScriptContext_Stop();
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
 
     /* Reset the complete runtime fixture before proving the remote-only path.
      * This keeps the script context and local object teardown independent of

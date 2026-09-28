@@ -139,7 +139,7 @@ async fn online_snapshot_is_authenticated_fenced_and_bounded() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         json_body(response).await,
-        json!({"api_version":1,"nearby":[],"incoming":[],"incoming_next":null,"group":null})
+        json!({"api_version":1,"nearby":[],"incoming":[],"outgoing":[],"incoming_next":null,"group":null})
     );
     let response = request(&router, Method::POST, "/v1/online/snapshot", None, body).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -263,14 +263,40 @@ async fn incoming_pagination_decline_and_foreign_invitation_are_safe() {
     let app = app();
     let router = app.router();
     let (_, sender, sender_lease, _) = account(&router, &app, "onlinesender", "ONLINE-S").await;
+    let (_, other_sender, other_sender_lease, _) =
+        account(&router, &app, "onlineother", "ONLINE-O").await;
     let (recipient_id, recipient, recipient_lease, _) =
         account(&router, &app, "onlinereceiver", "ONLINE-R").await;
     let mut ids = Vec::new();
-    for _ in 0..5 {
+    for _ in 0..3 {
         ids.push(invite(&router, &sender, &sender_lease, recipient_id.character_id).await["invitation_id"].clone());
     }
+    for _ in 0..2 {
+        ids.push(
+            invite(
+                &router,
+                &other_sender,
+                &other_sender_lease,
+                recipient_id.character_id,
+            )
+            .await["invitation_id"]
+                .clone(),
+        );
+    }
+    let sent = snapshot(&router, &sender, &sender_lease, Value::Null).await;
+    assert_eq!(sent["outgoing"].as_array().unwrap().len(), 3);
+    assert!(
+        sent["outgoing"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["username"] == "onlinereceiver")
+    );
+    let other_sent = snapshot(&router, &other_sender, &other_sender_lease, Value::Null).await;
+    assert_eq!(other_sent["outgoing"].as_array().unwrap().len(), 2);
     ids.sort_by_key(|id| id.as_str().unwrap().to_owned());
     let first = snapshot(&router, &recipient, &recipient_lease, Value::Null).await;
+    assert!(first["outgoing"].as_array().unwrap().is_empty());
     assert_eq!(first["incoming"].as_array().unwrap().len(), 4);
     let second = snapshot(
         &router,

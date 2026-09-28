@@ -1,6 +1,8 @@
 #include "global.h"
 #include "battle_caps.h"
 #include "battle.h"
+#include "coop/battle_runtime.h"
+#include "coop/net_bridge.h"
 #include "battle_anim.h"
 #include "battle_ai_main.h"
 #include "battle_ai_record.h"
@@ -85,6 +87,7 @@ extern const struct BgTemplate gBattleBgTemplates[];
 extern const struct WindowTemplate *const gBattleWindowTemplates[];
 
 static void CB2_InitBattleInternal(void);
+static void SeedActiveCoopBattleRng(void);
 static void CB2_PreInitMultiBattle(void);
 static void CB2_PreInitIngamePlayerPartnerBattle(void);
 static void CB2_HandleStartMultiPartnerBattle(void);
@@ -94,6 +97,7 @@ static void TryCorrectShedinjaLanguage(struct Pokemon *mon);
 static enum BattleTrainer GetBattlerTrainerFromParty(struct Pokemon *party);
 static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum);
 static void BattleMainCB1(void);
+static void ClearCoopBattlePauseOverlay(void);
 static void CB2_EndLinkBattle(void);
 static void EndLinkBattleInSteps(void);
 static void CB2_InitAskRecordBattle(void);
@@ -252,6 +256,22 @@ COMMON_DATA u8 gLeveledUpInBattle = 0;
 COMMON_DATA u8 gHealthboxSpriteIds[MAX_BATTLERS_COUNT] = {0};
 COMMON_DATA u8 gMultiUsePlayerCursor = 0;
 COMMON_DATA u8 gNumberOfMovesToChoose = 0;
+static EWRAM_DATA bool8 sCoopFaultCleanupStarted = FALSE;
+#define COOP_PAUSE_WINDOW_LEFT 7
+#define COOP_PAUSE_WINDOW_TOP_OFFSET 7
+#define COOP_PAUSE_WINDOW_WIDTH 16
+#define COOP_PAUSE_WINDOW_HEIGHT 4
+// The normal battle windows end at tile 0x3BB in BG0's 0x400-tile charblock.
+#define COOP_PAUSE_WINDOW_BASE_TILE 0x3C0
+static EWRAM_DATA u8 sCoopPauseWindowId = 0;
+static EWRAM_DATA u8 sCoopPauseWindowTop = 0;
+static EWRAM_DATA bool8 sCoopPauseIsLocalDisconnect = FALSE;
+static EWRAM_DATA u16 sCoopPauseUnderlay[COOP_PAUSE_WINDOW_WIDTH * COOP_PAUSE_WINDOW_HEIGHT];
+static const u8 sText_CoopWaitingForPartner[] = _("Waiting for partner");
+static const u8 sText_CoopToReconnect[] = _("to reconnect");
+static const u8 sText_CoopReconnecting[] = _("Reconnecting...");
+static const u8 sText_CoopPleaseWait[] = _("Please wait");
+static const u8 sCoopPauseTextColors[] = {15, 1, 6};
 
 static const struct ScanlineEffectParams sIntroScanlineParams16Bit =
 {
@@ -522,6 +542,12 @@ static void CB2_InitBattleInternal(void)
 {
     s32 i;
 
+    sCoopFaultCleanupStarted = FALSE;
+    sCoopPauseWindowId = WINDOW_NONE;
+    /* The engine latch is armed only for a validated trainer manifest. Seed
+     * once, before setup or trainer-party generation consumes either stream. */
+    SeedActiveCoopBattleRng();
+
     SetHBlankCallback(NULL);
     SetVBlankCallback(NULL);
 
@@ -617,7 +643,8 @@ static void CB2_InitBattleInternal(void)
 
     for (i = 0; i < PARTY_SIZE; i++)
     {
-        AdjustFriendship(&gParties[B_TRAINER_0][i], FRIENDSHIP_EVENT_LEAGUE_BATTLE);
+        if (!CoopBattleRuntime_IsEngineActive())
+            AdjustFriendship(&gParties[B_TRAINER_0][i], FRIENDSHIP_EVENT_LEAGUE_BATTLE);
 
         // Apply party-wide start-of-battle form changes for both sides.
         for (enum BattleTrainer trainer = B_TRAINER_0; trainer < MAX_BATTLE_TRAINERS; trainer++)
@@ -637,6 +664,31 @@ static void CB2_InitBattleInternal(void)
     #endif
 
     gBattleCommunication[MULTIUSE_STATE] = 0;
+}
+
+static void SeedActiveCoopBattleRng(void)
+{
+    u8 manifest[COOP_BATTLE_MANIFEST_SIZE];
+    u32 seed = 2166136261u;
+    u8 i;
+
+    if (!CoopBattleRuntime_IsEngineActive())
+        return;
+    if (!CoopNetBridge_CanSendBattle()
+     || !CoopBattleRuntime_GetManifest(manifest, sizeof(manifest)))
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    /* BATTLE_MANIFEST seed occupies [18, 50). Its canonical bytes are the
+     * same on both members, independent of local member slot. */
+    for (i = 18; i < 50; i++)
+    {
+        seed ^= manifest[i];
+        seed *= 16777619u;
+    }
+    SeedRng(seed);
+    SeedRng2(seed);
 }
 
 #define BUFFER_PARTY_VS_SCREEN_STATUS(party, flags, i)                      \
@@ -1500,13 +1552,17 @@ static void CB2_PreInitIngamePlayerPartnerBattle(void)
     switch (gBattleCommunication[MULTIUSE_STATE])
     {
     case 0:
-        gMultiPartnerParty = Alloc(sizeof(struct MultiPartnerMenuPokemon) * PARTY_SIZE); // Up to 6 Pokemon for Ingame Partner multis
-        SetMultiPartnerMenuParty(B_TRAINER_2);
+        if (!CoopBattleRuntime_IsEngineActive())
+        {
+            gMultiPartnerParty = Alloc(sizeof(struct MultiPartnerMenuPokemon) * PARTY_SIZE); // Up to 6 Pokemon for Ingame Partner multis
+            SetMultiPartnerMenuParty(B_TRAINER_2);
+        }
         gBattleCommunication[MULTIUSE_STATE]++;
         *savedCallback = gMain.savedCallback;
         *savedBattleTypeFlags = gBattleTypeFlags;
         gMain.savedCallback = CB2_PreInitIngamePlayerPartnerBattle;
-        if ((!PlayerHasFollowerNPC() || !FollowerNPCIsBattlePartner() || (FNPC_NPC_FOLLOWER_PARTY_PREVIEW && FollowerNPCIsBattlePartner())))
+        if (!CoopBattleRuntime_IsEngineActive()
+         && (!PlayerHasFollowerNPC() || !FollowerNPCIsBattlePartner() || (FNPC_NPC_FOLLOWER_PARTY_PREVIEW && FollowerNPCIsBattlePartner())))
         {
             ShowPartyMenuToShowcaseMultiBattleParty();
         }
@@ -1773,6 +1829,8 @@ void BattleMainCB2(void)
 
 static void FreeRestoreBattleData(void)
 {
+    ClearCoopBattlePauseOverlay();
+    sCoopFaultCleanupStarted = FALSE;
     gMain.callback1 = gPreBattleCallback1;
     gScanlineEffect.state = 3;
     gMain.inBattle = FALSE;
@@ -2034,6 +2092,12 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum)
     u8 retVal;
     bool32 halfTeam = (BattleSideHasTwoTrainers(GetBattlerTrainerFromParty(party) & BIT_SIDE) && !AreMultiPartiesFullTeams());
 
+    /* The co-op runtime always stages a three-mon side.  Keep the supported
+     * trainer encounter at the same size even though the opponent has no
+     * vanilla partner trainer to make the normal half-team calculation. */
+    if (CoopBattleRuntime_IsEngineActive())
+        halfTeam = TRUE;
+
     if (trainerNum == TRAINER_SECRET_BASE)
         return 0;
     if (GetTrainerStructFromId(trainerNum)->overrideTrainer)
@@ -2069,7 +2133,8 @@ void CreateTrainerPartyForPlayer(void)
 void VBlankCB_Battle(void)
 {
     // Change gRngSeed every vblank unless the battle could be recorded.
-    if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED)))
+    if (!CoopBattleRuntime_IsEngineActive()
+     && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_RECORDED)))
         AdvanceRandom();
 
     SetGpuReg(REG_OFFSET_BG0HOFS, gBattle_BG0_X);
@@ -2999,8 +3064,129 @@ void BeginBattleIntro(void)
     gBattleMainFunc = DoBattleIntro;
 }
 
+static void ShowCoopBattlePauseOverlay(bool8 localDisconnect)
+{
+    struct WindowTemplate window = {
+        .bg = 0,
+        .tilemapLeft = COOP_PAUSE_WINDOW_LEFT,
+        .width = COOP_PAUSE_WINDOW_WIDTH,
+        .height = COOP_PAUSE_WINDOW_HEIGHT,
+        .paletteNum = 0,
+        .baseBlock = COOP_PAUSE_WINDOW_BASE_TILE,
+    };
+    const u16 *tilemap;
+    u8 scrollRow = (gBattle_BG0_Y & 0x1FF) / 8;
+    u8 top = scrollRow + COOP_PAUSE_WINDOW_TOP_OFFSET;
+    s32 firstX;
+    s32 secondX;
+
+    // BG0's 32x64 tilemap is scrolled to rows 0, 20, or 40 for the
+    // battlefield, action menu, and move menu. Keep this window in view.
+    if (top + COOP_PAUSE_WINDOW_HEIGHT > 64)
+        top = scrollRow > 60 ? 0 : scrollRow;
+    if (sCoopPauseWindowId != WINDOW_NONE && sCoopPauseWindowTop == top
+     && sCoopPauseIsLocalDisconnect == localDisconnect)
+        return;
+    ClearCoopBattlePauseOverlay();
+    tilemap = GetBgTilemapBuffer(0);
+    if (tilemap == NULL)
+        return;
+
+    window.tilemapTop = top;
+    sCoopPauseWindowId = AddWindow(&window);
+    if (sCoopPauseWindowId == WINDOW_NONE)
+        return;
+    sCoopPauseWindowTop = top;
+    sCoopPauseIsLocalDisconnect = localDisconnect;
+
+    for (u8 y = 0; y < COOP_PAUSE_WINDOW_HEIGHT; y++)
+    {
+        for (u8 x = 0; x < COOP_PAUSE_WINDOW_WIDTH; x++)
+            sCoopPauseUnderlay[y * COOP_PAUSE_WINDOW_WIDTH + x] =
+                tilemap[(sCoopPauseWindowTop + y) * 32 + COOP_PAUSE_WINDOW_LEFT + x];
+    }
+
+    firstX = (COOP_PAUSE_WINDOW_WIDTH * 8 - GetStringWidth(FONT_SMALL,
+              localDisconnect ? sText_CoopReconnecting : sText_CoopWaitingForPartner, 0)) / 2;
+    secondX = (COOP_PAUSE_WINDOW_WIDTH * 8 - GetStringWidth(FONT_SMALL,
+               localDisconnect ? sText_CoopPleaseWait : sText_CoopToReconnect, 0)) / 2;
+    if (firstX < 0)
+        firstX = 0;
+    if (secondX < 0)
+        secondX = 0;
+    FillWindowPixelBuffer(sCoopPauseWindowId, PIXEL_FILL(15));
+    AddTextPrinterParameterized3(sCoopPauseWindowId, FONT_SMALL, firstX, 2,
+                                 sCoopPauseTextColors, TEXT_SKIP_DRAW,
+                                 localDisconnect ? sText_CoopReconnecting : sText_CoopWaitingForPartner);
+    AddTextPrinterParameterized3(sCoopPauseWindowId, FONT_SMALL, secondX, 17,
+                                 sCoopPauseTextColors, TEXT_SKIP_DRAW,
+                                 localDisconnect ? sText_CoopPleaseWait : sText_CoopToReconnect);
+    PutWindowTilemap(sCoopPauseWindowId);
+    CopyWindowToVram(sCoopPauseWindowId, COPYWIN_FULL);
+}
+
+static void ClearCoopBattlePauseOverlay(void)
+{
+    u16 *tilemap = GetBgTilemapBuffer(0);
+
+    if (sCoopPauseWindowId == WINDOW_NONE)
+        return;
+
+    if (tilemap != NULL)
+    {
+        for (u8 y = 0; y < COOP_PAUSE_WINDOW_HEIGHT; y++)
+        {
+            for (u8 x = 0; x < COOP_PAUSE_WINDOW_WIDTH; x++)
+                tilemap[(sCoopPauseWindowTop + y) * 32 + COOP_PAUSE_WINDOW_LEFT + x] =
+                    sCoopPauseUnderlay[y * COOP_PAUSE_WINDOW_WIDTH + x];
+        }
+        CopyBgTilemapBufferToVram(0);
+    }
+    RemoveWindow(sCoopPauseWindowId);
+    sCoopPauseWindowId = WINDOW_NONE;
+}
+
 static void BattleMainCB1(void)
 {
+    u16 pauseTurn;
+    u8 missingSlot;
+
+    // A pending finish must keep retrying while the battle is paused.
+    if (CoopBattleRuntime_IsEngineActive() && !CoopBattleRuntime_IsEngineFaulted()
+     && !sCoopFaultCleanupStarted)
+        CoopBattleRuntime_PollTerminal();
+
+    if (!CoopBattleRuntime_IsEngineActive())
+    {
+        sCoopFaultCleanupStarted = FALSE;
+        ClearCoopBattlePauseOverlay();
+    }
+    else if (CoopBattleRuntime_IsEngineFaulted() && !sCoopFaultCleanupStarted)
+    {
+        ClearCoopBattlePauseOverlay();
+        /* A malformed action, unsupported engine branch, or lost transport
+         * must leave the battle through the ordinary resource cleanup path.
+         * The co-op end callback then restores the six-mon local party. */
+        (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_UNAVAILABLE);
+        gBattleOutcome = B_OUTCOME_PLAYER_TELEPORTED;
+        gCurrentActionFuncId = B_ACTION_FINISHED;
+        gBattleMainFunc = HandleEndTurn_FinishBattle;
+        sCoopFaultCleanupStarted = TRUE;
+    }
+    else if (!sCoopFaultCleanupStarted && !CoopBattleRuntime_IsSessionReady())
+    {
+        ShowCoopBattlePauseOverlay(TRUE);
+        return;
+    }
+    else if (!sCoopFaultCleanupStarted && CoopBattleRuntime_GetPause(&pauseTurn, &missingSlot))
+    {
+        ShowCoopBattlePauseOverlay(FALSE);
+        return;
+    }
+    else
+    {
+        ClearCoopBattlePauseOverlay();
+    }
     gBattleMainFunc();
     for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
         gBattlerControllerFuncs[battler](battler);
@@ -3900,6 +4086,33 @@ void BattleTurnPassed(void)
 
 bool32 EndTurnEvents(void) // Called from Battle Script
 {
+    u16 coopTurn;
+    enum CoopBattleTurnReportResult report;
+
+    if (CoopBattleRuntime_IsTurnHashPending())
+    {
+        // The end-turn cleanup and digest ran once. Do not mutate them again.
+        report = CoopBattleRuntime_RetryTurnHash();
+        if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+            return TRUE;
+        if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+        {
+            CoopBattleRuntime_FailEngine();
+            return TRUE;
+        }
+        if (gBattleOutcome != 0)
+        {
+            gCurrentActionFuncId = B_ACTION_FINISHED;
+            SetBattleCallback(RunTurnActionsFunctions);
+        }
+        else
+        {
+            SetAiLogicDataForTurn(gAiLogicData);
+            SetBattleCallback(HandleTurnActionSelectionState);
+        }
+        return FALSE;
+    }
+
     gBattleStruct->speedTieBreaks = RandomUniform(RNG_SPEED_TIE, 0, Factorial(MAX_BATTLERS_COUNT) - 1);
 
     TurnValuesCleanUp(TRUE);
@@ -3920,6 +4133,21 @@ bool32 EndTurnEvents(void) // Called from Battle Script
 
     if (gBattleOutcome != 0)
     {
+        if (CoopBattleRuntime_IsEngineActive())
+        {
+            /* This is the first point at which the terminal end-turn effects
+             * and volatile cleanup are stable. Keep the digest before the
+             * terminal presentation starts mutating battle globals. */
+            coopTurn = gBattleResults.battleTurnCounter + 1;
+            report = CoopBattleRuntime_ReportTurnState(coopTurn, gBattleOutcome);
+            if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+                return TRUE;
+            if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+            {
+                CoopBattleRuntime_FailEngine();
+                return TRUE;
+            }
+        }
         gCurrentActionFuncId = B_ACTION_FINISHED;
         SetBattleCallback(RunTurnActionsFunctions);
         return FALSE;
@@ -3955,6 +4183,18 @@ bool32 EndTurnEvents(void) // Called from Battle Script
     BattlePutTextOnWindow(gText_EmptyString3, B_WIN_MSG);
     AssignUsableGimmicks();
     SetShellSideArmCategory();
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        coopTurn = gBattleResults.battleTurnCounter;
+        report = CoopBattleRuntime_ReportTurnState(coopTurn, 0);
+        if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+            return TRUE;
+        if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+        {
+            CoopBattleRuntime_FailEngine();
+            return TRUE;
+        }
+    }
     SetAiLogicDataForTurn(gAiLogicData); // get assumed abilities, hold effects, etc of all battlers
     SetBattleCallback(HandleTurnActionSelectionState);
 
@@ -4077,11 +4317,92 @@ enum
     STATE_SELECTION_SCRIPT_MAY_RUN
 };
 
+static void TrySubmitCoopPlayerAction(void)
+{
+    enum BattlerId battler = GetBattlerAtPosition(B_POSITION_PLAYER_LEFT);
+    struct CoopBattleAction action = {0};
+    u8 encoded[COOP_BATTLE_ACTION_SIZE];
+    u8 localSlot;
+    u8 targetPosition;
+
+    if (!CoopBattleRuntime_IsEngineActive()
+     || CoopBattleRuntime_IsEngineFaulted()
+     || CoopBattleRuntime_IsLocalActionSubmitted()
+     || gBattleCommunication[battler] != STATE_WAIT_ACTION_CONFIRMED)
+        return;
+    localSlot = CoopBattleRuntime_EngineLocalMemberSlot();
+    switch (gChosenActionByBattler[battler])
+    {
+    case B_ACTION_USE_MOVE:
+        if (gBattleMons[battler].volatiles.multipleTurns
+         || gBattleMons[battler].volatiles.rechargeTimer > 0)
+        {
+            action.kind = COOP_BATTLE_ACTION_AUTO_MOVE;
+            break;
+        }
+        if (gBattleStruct->gimmick.toActivate & (1u << battler))
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+        if (gBattleStruct->moveTarget[battler] >= gBattlersCount)
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+        targetPosition = GetBattlerPosition(gBattleStruct->moveTarget[battler]);
+        action.kind = COOP_BATTLE_ACTION_MOVE;
+        action.index = gBattleStruct->chosenMovePositions[battler];
+        action.target = CoopBattleRuntime_TranslateTarget(targetPosition, localSlot);
+        break;
+    case B_ACTION_SWITCH:
+        action.kind = COOP_BATTLE_ACTION_SWITCH;
+        action.index = gBattleStruct->monToSwitchIntoId[battler];
+        break;
+    case B_ACTION_NOTHING_FAINTED:
+        action.kind = COOP_BATTLE_ACTION_NO_ACTION;
+        break;
+    default:
+        /* Bag, run and other actions require a shared action contract. */
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    if (!CoopBattleRuntime_EncodeAction(&action, encoded, sizeof(encoded)))
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    CoopBattleRuntime_SubmitLocalAction(&action);
+}
+
+static void TryBindCoopAutomaticPeerAction(void)
+{
+    enum BattlerId peer = GetBattlerAtPosition(B_POSITION_PLAYER_RIGHT);
+    u8 expectedKind;
+
+    if (!CoopBattleRuntime_IsEngineActive()
+     || CoopBattleRuntime_IsEngineFaulted()
+     || !CoopBattleRuntime_IsLocalActionSubmitted()
+     || gBattleCommunication[peer] != STATE_WAIT_ACTION_CONFIRMED)
+        return;
+    if (gChosenActionByBattler[peer] == B_ACTION_NOTHING_FAINTED)
+        expectedKind = COOP_BATTLE_ACTION_NO_ACTION;
+    else if (gChosenActionByBattler[peer] == B_ACTION_USE_MOVE
+          && (gBattleMons[peer].volatiles.multipleTurns
+           || gBattleMons[peer].volatiles.rechargeTimer > 0))
+        expectedKind = COOP_BATTLE_ACTION_AUTO_MOVE;
+    else
+        return;
+    CoopBattleRuntime_ConfirmPeerAutomaticAction(expectedKind);
+}
+
 static void HandleTurnActionSelectionState(void)
 {
     s32 i;
 
-    bool32 reverseBattlerLogicOrder = RandomPercentage(RNG_AI_REVERSE_BATTLER_LOGIC_ORDER, GetConfig(AI_REVERSE_BATTLER_LOGIC_ORDER_CHANCE)) && IsDoubleBattle();
+    bool32 reverseBattlerLogicOrder = !CoopBattleRuntime_IsEngineActive()
+        && RandomPercentage(RNG_AI_REVERSE_BATTLER_LOGIC_ORDER, GetConfig(AI_REVERSE_BATTLER_LOGIC_ORDER_CHANCE))
+        && IsDoubleBattle();
 
     gBattleCommunication[ACTIONS_CONFIRMED_COUNT] = 0;
     for (enum BattlerId battlerIndex = 0; battlerIndex < gBattlersCount; battlerIndex++)
@@ -4153,6 +4474,15 @@ static void HandleTurnActionSelectionState(void)
         case STATE_WAIT_ACTION_CHOSEN: // Try to perform an action.
             if (!IsBattleControllerActiveOrPendingSyncAnywhere(battler))
             {
+                if (CoopBattleRuntime_IsEngineActive()
+                 && position == B_POSITION_PLAYER_LEFT
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_USE_MOVE
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_SWITCH
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_NOTHING_FAINTED)
+                {
+                    CoopBattleRuntime_FailEngine();
+                    return;
+                }
                 RecordedBattle_SetBattlerAction(battler, gBattleResources->bufferB[battler][1]);
                 gChosenActionByBattler[battler] = gBattleResources->bufferB[battler][1];
 
@@ -4367,6 +4697,14 @@ static void HandleTurnActionSelectionState(void)
         case STATE_WAIT_ACTION_CASE_CHOSEN:
             if (!IsBattleControllerActiveOrPendingSyncAnywhere(battler))
             {
+                if (CoopBattleRuntime_IsEngineActive()
+                 && position == B_POSITION_PLAYER_LEFT
+                 && gChosenActionByBattler[battler] == B_ACTION_USE_MOVE
+                 && (gBattleResources->bufferB[battler][2] & RET_GIMMICK))
+                {
+                    CoopBattleRuntime_FailEngine();
+                    return;
+                }
                 switch (gChosenActionByBattler[battler])
                 {
                 case B_ACTION_USE_MOVE:
@@ -4591,9 +4929,18 @@ static void HandleTurnActionSelectionState(void)
         }
     }
 
+    TrySubmitCoopPlayerAction();
+    TryBindCoopAutomaticPeerAction();
+
     // Check if everyone chose actions.
     if (gBattleCommunication[ACTIONS_CONFIRMED_COUNT] == gBattlersCount)
     {
+        if (CoopBattleRuntime_IsEngineActive())
+        {
+            if (!CoopBattleRuntime_IsEngineTurnReady())
+                return;
+            CoopBattleRuntime_FinishEngineTurn();
+        }
         RecordedBattle_CheckMovesetChanges(B_RECORD_MODE_RECORDING);
 
         if (WILD_DOUBLE_BATTLE
@@ -4701,7 +5048,8 @@ u32 GetBattlerTotalSpeedStat(enum BattlerId battler, enum Ability ability, enum 
         speed *= 2;
 
     // player's badge boost
-    if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK | BATTLE_TYPE_FRONTIER))
+    if (!CoopBattleRuntime_IsEngineActive()
+        && !(gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK | BATTLE_TYPE_FRONTIER))
         && ShouldGetStatBadgeBoost(B_FLAG_BADGE_BOOST_SPEED, battler)
         && IsOnPlayerSide(battler))
     {
@@ -5291,6 +5639,7 @@ static void CheckChangingTurnOrderEffects(void)
     gBattleCommunication[3] = 0;
     gBattleCommunication[4] = 0;
     gBattleResources->battleScriptsStack->size = 0;
+
 }
 
 static void RunTurnActionsFunctions(void)
@@ -5327,7 +5676,14 @@ static void HandleEndTurn_BattleWon(void)
 {
     gCurrentActionFuncId = 0;
 
-    if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        /* Keep the terminal script side-effect free.  The dormant co-op
+         * callback owns the eventual server result and party restoration. */
+        BattleStopLowHpSound();
+        gBattlescriptCurrInstr = BattleScript_FrontierTrainerBattleWon;
+    }
+    else if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
     {
         gSpecialVar_Result = gBattleOutcome;
         gBattleTextBuff1[0] = gBattleOutcome;
@@ -5385,7 +5741,13 @@ static void HandleEndTurn_BattleLost(void)
 {
     gCurrentActionFuncId = 0;
 
-    if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        /* Do not run the normal partner whiteout branch: it deducts money and
+         * routes through vanilla trainer-loss handling. */
+        gBattlescriptCurrInstr = BattleScript_LocalBattleLostEnd;
+    }
+    else if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
     {
         if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER)
         {
@@ -5432,6 +5794,15 @@ static void HandleEndTurn_BattleLost(void)
 static void HandleEndTurn_RanFromBattle(void)
 {
     gCurrentActionFuncId = 0;
+
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        CoopBattleRuntime_FailEngine();
+        gBattleOutcome = B_OUTCOME_PLAYER_TELEPORTED;
+        gCurrentActionFuncId = B_ACTION_FINISHED;
+        gBattleMainFunc = HandleEndTurn_FinishBattle;
+        return;
+    }
 
     if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER && gBattleTypeFlags & BATTLE_TYPE_TRAINER)
     {
@@ -5482,14 +5853,15 @@ static void HandleEndTurn_FinishBattle(void)
 {
     if (gCurrentActionFuncId == B_ACTION_TRY_FINISH || gCurrentActionFuncId == B_ACTION_FINISHED)
     {
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
+        if (!CoopBattleRuntime_IsEngineActive()
+         && !(gBattleTypeFlags & (BATTLE_TYPE_LINK
                                   | BATTLE_TYPE_RECORDED_LINK
                                   | BATTLE_TYPE_FIRST_BATTLE
                                   | BATTLE_TYPE_SAFARI
                                   | BATTLE_TYPE_EREADER_TRAINER
                                   | BATTLE_TYPE_CATCH_TUTORIAL
                                   | BATTLE_TYPE_FRONTIER))
-            && !(gBattleTypeFlags & BATTLE_TYPE_GHOST && IsGhostBattleWithoutScope()))
+         && !(gBattleTypeFlags & BATTLE_TYPE_GHOST && IsGhostBattleWithoutScope()))
         {
             for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
             {
@@ -5510,7 +5882,8 @@ static void HandleEndTurn_FinishBattle(void)
             TryPutPokemonTodayOnAir();
         }
 
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
+        if (!CoopBattleRuntime_IsEngineActive()
+         && !(gBattleTypeFlags & (BATTLE_TYPE_LINK
                                   | BATTLE_TYPE_EREADER_TRAINER
                                   | BATTLE_TYPE_RECORDED_LINK
                                   | BATTLE_TYPE_TRAINER_HILL
@@ -5546,7 +5919,8 @@ static void HandleEndTurn_FinishBattle(void)
 
         BeginFastPaletteFade(3);
         FadeOutMapMusic(5);
-        if (B_TRAINERS_KNOCK_OFF_ITEMS == TRUE || B_RESTORE_HELD_BATTLE_ITEMS >= GEN_9)
+        if (!CoopBattleRuntime_IsEngineActive()
+         && (B_TRAINERS_KNOCK_OFF_ITEMS == TRUE || B_RESTORE_HELD_BATTLE_ITEMS >= GEN_9))
             TryRestoreHeldItems();
 
         for (u32 i = 0; i < PARTY_SIZE; i++)
@@ -5557,7 +5931,8 @@ static void HandleEndTurn_FinishBattle(void)
             if (!changedForm && B_RECALCULATE_STATS >= GEN_5)
                 CalculateMonStats(&gParties[B_TRAINER_0][i]);
         }
-        EndBattleLevelCaps();
+        if (!CoopBattleRuntime_IsEngineActive())
+            EndBattleLevelCaps();
         RecordedBattle_SetPlaybackFinished();
         if (gTestRunnerEnabled)
             TestRunner_Battle_AfterLastTurn();
@@ -5599,17 +5974,19 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
         else
             gSaveBlock3Ptr->dexNavChain = 0;
 
-        ClearCurrentTrainerWantRematchVsSeeker();
+        if (!CoopBattleRuntime_IsEngineActive())
+            ClearCurrentTrainerWantRematchVsSeeker();
         gDexNavSpecies = SPECIES_NONE;
         ResetSpriteData();
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_LINK
+        if (!CoopBattleRuntime_IsEngineActive()
+         && !(gBattleTypeFlags & (BATTLE_TYPE_LINK
                                   | BATTLE_TYPE_RECORDED_LINK
                                   | BATTLE_TYPE_FIRST_BATTLE
                                   | BATTLE_TYPE_SAFARI
                                   | BATTLE_TYPE_FRONTIER
                                   | BATTLE_TYPE_EREADER_TRAINER
                                   | BATTLE_TYPE_CATCH_TUTORIAL))
-            && (B_EVOLUTION_AFTER_WHITEOUT >= GEN_6
+         && (B_EVOLUTION_AFTER_WHITEOUT >= GEN_6
                 || gBattleOutcome == B_OUTCOME_WON
                 || gBattleOutcome == B_OUTCOME_CAUGHT))
         {
@@ -5627,7 +6004,8 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
     {
         // To account for Battle Factory and Slateport Battle Tent, enemy parties are zeroed out in the facilitites respective src/xxx.c files
         // The ZeroEnemyPartyMons() call happens in SaveXXXChallenge function (eg. SaveFactoryChallenge)
-        if (!(gBattleTypeFlags & (BATTLE_TYPE_FRONTIER | BATTLE_TYPE_ROAMER)))
+        if (!CoopBattleRuntime_IsEngineActive()
+         && !(gBattleTypeFlags & (BATTLE_TYPE_FRONTIER | BATTLE_TYPE_ROAMER)))
         {
             ZeroEnemyPartyMons();
         }
@@ -5684,7 +6062,8 @@ static void WaitForEvoSceneToFinish(void)
 
 static void ReturnFromBattleToOverworld(void)
 {
-    if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
+    if (!CoopBattleRuntime_IsEngineActive()
+     && !(gBattleTypeFlags & BATTLE_TYPE_LINK))
     {
         CalculatePlayerPartyCount();
         RandomlyGivePartyPokerus();

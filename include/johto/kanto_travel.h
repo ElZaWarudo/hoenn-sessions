@@ -35,6 +35,8 @@ bool8 JohtoTravel_PrepareCrossing(void);
 bool8 JohtoTravel_CommitCrossing(void);
 /* Map-load hook: intermediate worlds are a no-op and preserve pending state. */
 bool8 JohtoTravel_TryCommitArrival(void);
+/* The shared reception gate has Kanto map context even on the Johto return side. */
+bool8 JohtoTravel_CommitAtReceptionGate(void);
 
 /* The real Later-world initializer marks completion after applying defaults. */
 bool8 JohtoTravel_NeedsLaterKantoInitialization(void);

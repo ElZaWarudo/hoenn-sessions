@@ -468,6 +468,7 @@ impl AppState {
     /// Returns an error when a member is in a battle, no catalog route exists,
     /// or any protocol entitlement check fails. All zones are unchanged on
     /// failure.
+    #[cfg(test)]
     #[allow(clippy::too_many_lines)]
     pub fn travel(&self, group_id: Uuid, route_id: &str) -> Result<GroupView, ServiceError> {
         let mut state = self.write_state()?;
@@ -1579,14 +1580,6 @@ async fn get_group_http(
     Ok(Json(state.group(group_id)?))
 }
 
-async fn travel_http(
-    State(state): State<AppState>,
-    ApiPath(group_id): ApiPath<Uuid>,
-    ApiJson(request): ApiJson<TravelRequest>,
-) -> Result<Json<GroupView>, ServiceError> {
-    Ok(Json(state.travel(group_id, &request.route_id)?))
-}
-
 async fn reserve_battle_http(
     State(state): State<AppState>,
     ApiPath(group_id): ApiPath<Uuid>,
@@ -1679,7 +1672,6 @@ pub fn app_with_state(state: AppState) -> Router {
         .route("/v1/participants/{character_id}", get(get_participant_http))
         .route("/v1/groups", post(create_group_http))
         .route("/v1/groups/{group_id}", get(get_group_http))
-        .route("/v1/groups/{group_id}/travel", post(travel_http))
         .route(
             "/v1/groups/{group_id}/battles/reserve",
             post(reserve_battle_http),
@@ -2039,9 +2031,9 @@ mod tests {
             r#"{"destination":{"region":"KANTO","map":"PALLET_TOWN","channel":1},"route":{"from":"HOENN","to":"KANTO","minimum_badges":0,"minimum_story_checkpoint":0}}"#,
         )
         .await;
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let body: serde_json::Value = response_json(response).await;
-        assert_eq!(body["error"]["code"], "invalid_json");
+        assert_eq!(body["error"]["code"], "route_not_found");
     }
 
     #[test]

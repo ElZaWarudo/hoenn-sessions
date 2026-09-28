@@ -269,6 +269,10 @@ uuid_id!(
     /// A server-issued two-player travel proposal identifier.
     GroupTravelProposalId
 );
+uuid_id!(
+    /// A server-issued two-player party-trade offer identifier.
+    TradeOfferId
+);
 
 /// A monotonically increasing snapshot or character revision.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]

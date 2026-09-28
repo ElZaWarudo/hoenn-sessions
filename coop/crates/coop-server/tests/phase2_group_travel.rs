@@ -488,7 +488,8 @@ async fn real_http_invite_accept_inspect_and_bounded_rejections() {
         serde_json::to_value(travel).expect("travel json"),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    // The direct travel endpoint is retired; travel must use a proposal.
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let _ = second_client;
 }

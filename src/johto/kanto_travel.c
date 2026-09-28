@@ -8,6 +8,7 @@
 #include "johto/save.h"
 #include "constants/heal_locations.h"
 #include "constants/johto_content.h"
+#include "constants/maps.h"
 
 static bool8 IsValidDestination(u16 destination)
 {
@@ -241,6 +242,32 @@ bool8 JohtoTravel_TryCommitArrival(void)
         || JohtoTravel_GetCurrentContext() != targetContext)
         return FALSE;
     return JohtoTravel_CommitCrossing();
+}
+
+bool8 JohtoTravel_CommitAtReceptionGate(void)
+{
+    enum JohtoTravelContext targetContext;
+    u16 targetHeal;
+    struct WarpData previousHeal;
+
+    if (gSaveBlock1Ptr == NULL
+        || gSaveBlock1Ptr->location.mapGroup != MAP_GROUP(MAP_RECEPTION_GATE)
+        || gSaveBlock1Ptr->location.mapNum != MAP_NUM(MAP_RECEPTION_GATE)
+        || gSaveBlock1Ptr->pos.x != 18
+        || gSaveBlock1Ptr->pos.y != 9
+        || JohtoTravel_GetPendingDestination() != JOHTO_TRAVEL_DESTINATION_JOHTO
+        || !ResolvePendingTarget(&targetContext, &targetHeal)
+        || targetContext != JOHTO_TRAVEL_CONTEXT_JOHTO)
+        return FALSE;
+    previousHeal = gSaveBlock1Ptr->lastHealLocation;
+    if (!SetActiveHealLocation(targetHeal))
+        return FALSE;
+    if (!JohtoTravel_ClearPendingDestination())
+    {
+        gSaveBlock1Ptr->lastHealLocation = previousHeal;
+        return FALSE;
+    }
+    return TRUE;
 }
 
 bool8 JohtoTravel_IsLaterInitialized(void)

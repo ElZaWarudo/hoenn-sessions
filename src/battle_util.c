@@ -33,6 +33,7 @@
 #include "battle_message.h"
 #include "battle_ai_record.h"
 #include "battle_ai_util.h"
+#include "coop/battle_runtime.h"
 #include "event_data.h"
 #include "link.h"
 #include "malloc.h"
@@ -1805,9 +1806,12 @@ bool32 HandleFaintedMonActions(void)
                  && !(gBattleStruct->givenExpMons & (1u << gBattlerPartyIndexes[gBattleStruct->eventState.faintedActionBattler]))
                  && !(gAbsentBattlerFlags & (1u << gBattleStruct->eventState.faintedActionBattler)))
                 {
-                    BattleScriptExecute(BattleScript_GiveExp);
-                    gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_SET_ABSENT_FLAGS;
-                    return TRUE;
+                    if (!CoopBattleRuntime_IsEngineActive())
+                    {
+                        BattleScriptExecute(BattleScript_GiveExp);
+                        gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_SET_ABSENT_FLAGS;
+                        return TRUE;
+                    }
                 }
             } while (++gBattleStruct->eventState.faintedActionBattler != gBattlersCount);
             gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_WAIT_STATE;
@@ -9781,6 +9785,13 @@ bool32 IsSleepClauseEnabled(void)
 
 bool32 AreMultiPartiesFullTeams(void)
 {
+    /* Co-op trainer battles stage exactly three local and three peer mons;
+     * never let a global multi-team setting widen that bounded snapshot. */
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        gSpecialVar_Result = FALSE;
+        return FALSE;
+    }
 #if TESTING
     if (IsAITest())
     {

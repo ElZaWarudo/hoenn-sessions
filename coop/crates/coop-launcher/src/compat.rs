@@ -1119,8 +1119,14 @@ mod tests {
         let manifest = directory.path().join("manifest.json");
         fs::write(&manifest, serde_json::to_vec(&value).unwrap()).unwrap();
         let build = super::BuildCompatibility::load_android(&manifest, &rom).unwrap();
-        assert_eq!(build.target.mgba_version, coop_cloud::MgbaVersion::new("0.10.5").unwrap());
+        assert_eq!(
+            build.target.mgba_version,
+            coop_cloud::MgbaVersion::new("0.10.5").unwrap()
+        );
         fs::write(&rom, b"corrupted").unwrap();
-        assert!(matches!(super::BuildCompatibility::load_android(&manifest, &rom), Err(CompatibilityError::RomHash)));
+        assert!(matches!(
+            super::BuildCompatibility::load_android(&manifest, &rom),
+            Err(CompatibilityError::RomHash)
+        ));
     }
 }

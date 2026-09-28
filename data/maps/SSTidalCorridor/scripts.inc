@@ -119,6 +119,11 @@ SSTidalCorridor_EventScript_ExitSailor::
 	end
 
 SSTidalCorridor_EventScript_ExitLilycove::
+	setvar VAR_0x8004, 94
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, SSTidalCorridor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, SSTidalCorridor_EventScript_GroupTravelFailed
 	setrespawn HEAL_LOCATION_LILYCOVE_CITY
 	msgbox SSTidalCorridor_Text_WeveArrived, MSGBOX_DEFAULT
 	call_if_set FLAG_RECEIVED_TM_SNATCH, SSTidalCorridor_EventScript_HideSnatchGiver
@@ -128,11 +133,23 @@ SSTidalCorridor_EventScript_ExitLilycove::
 	end
 
 SSTidalCorridor_EventScript_ExitSlateport::
+	setvar VAR_0x8004, 95
+	setvar VAR_0x8005, 2
+	special Special_CoopGroupTravelBegin
+	goto_if_eq VAR_RESULT, 1, SSTidalCorridor_EventScript_GroupTravelWaiting
+	goto_if_eq VAR_RESULT, 2, SSTidalCorridor_EventScript_GroupTravelFailed
 	setrespawn HEAL_LOCATION_SLATEPORT_CITY
 	msgbox SSTidalCorridor_Text_WeveArrived, MSGBOX_DEFAULT
 	call_if_set FLAG_RECEIVED_TM_SNATCH, SSTidalCorridor_EventScript_HideSnatchGiver
 	warp MAP_SLATEPORT_CITY_HARBOR, 8, 11
 	waitstate
+	release
+	end
+
+SSTidalCorridor_EventScript_GroupTravelWaiting::
+	end
+
+SSTidalCorridor_EventScript_GroupTravelFailed::
 	release
 	end
 
@@ -205,6 +222,7 @@ SSTidalCorridor_EventScript_ScottScene::
 	setvar VAR_SS_TIDAL_SCOTT_STATE, 1
 	releaseall
 	end
+
 
 SSTidalCorridor_Movement_ScottApproachPlayer:
 	walk_left

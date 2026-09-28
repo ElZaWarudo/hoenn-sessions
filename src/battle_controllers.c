@@ -1,5 +1,6 @@
 #include "global.h"
 #include "battle.h"
+#include "coop/battle_runtime.h"
 #include "battle_ai_main.h"
 #include "battle_anim.h"
 #include "battle_arena.h"
@@ -100,6 +101,9 @@ bool32 BattlerIsWally(enum BattlerId battlerId)
 
 bool32 BattlerHasAi(enum BattlerId battlerId)
 {
+    if (CoopBattleRuntime_IsEngineActive()
+     && GetBattlerPosition(battlerId) == B_POSITION_PLAYER_RIGHT)
+        return FALSE;
     switch (gBattlerBattleController[battlerId])
     {
     case BATTLE_CONTROLLER_OPPONENT:

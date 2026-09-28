@@ -23,6 +23,8 @@ protocol.types = {
   GROUP_TRAVEL_CLIENT = 0x000F,
   COMPANION_STATE = 0x0010,
   SOCIAL_SIGNAL = 0x0011,
+  BATTLE_ABORT_REQUEST = 0x0014,
+  BATTLE_READY = 0x0015,
   SESSION_READY = 0x0100,
   REMOTE_PLAYER_SPAWN = 0x0101,
   REMOTE_PLAYER_UPDATE = 0x0102,
@@ -40,6 +42,9 @@ protocol.types = {
   GROUP_TRAVEL_SERVER = 0x010E,
   REMOTE_COMPANION = 0x010F,
   REMOTE_SOCIAL_SIGNAL = 0x0110,
+  BATTLE_RESERVE_REJECTED = 0x0116,
+  BATTLE_START = 0x0117,
+  GROUP_ENDED = 0x0118,
 }
 
 local function is_integer(value)
@@ -49,13 +54,13 @@ end
 function protocol.is_outbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.ROM_READY
-    and message_type <= protocol.types.SOCIAL_SIGNAL
+    and message_type <= protocol.types.BATTLE_READY
 end
 
 function protocol.is_inbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.SESSION_READY
-    and message_type <= protocol.types.REMOTE_SOCIAL_SIGNAL
+    and message_type <= protocol.types.GROUP_ENDED
 end
 
 protocol.GROUP_TRAVEL_RECORD_SIZE = 32
@@ -68,16 +73,61 @@ local function route_era_destination(route)
   local values = {
     [1] = {1, 3}, [2] = {2, 4}, [3] = {1, 1},
     [4] = {2, 2}, [5] = {1, 5}, [6] = {2, 6},
+    [66] = {1, 14}, [67] = {2, 14},
+    [68] = {1, 12}, [69] = {2, 12},
+    [70] = {1, 66}, [71] = {2, 66},
+    [72] = {3, 72}, [73] = {3, 73}, [74] = {3, 74}, [75] = {3, 75},
+    [76] = {3, 72}, [77] = {3, 73}, [78] = {3, 74}, [79] = {3, 75},
+    [80] = {3, 80}, [81] = {3, 80}, [82] = {3, 80},
+      [83] = {3, 81}, [84] = {3, 80},
+      [85] = {3, 72}, [86] = {3, 76}, [87] = {3, 73},
+      [88] = {3, 74}, [89] = {3, 75}, [90] = {3, 75},
+      [91] = {3, 80},
+    [92] = {3, 94}, [93] = {3, 94},
+    [94] = {3, 80}, [95] = {3, 81},
+    [97] = {3, 82}, [98] = {3, 83}, [99] = {3, 19},
   }
   local value = values[route]
-  if not value then return nil end
-  return value[1], value[2]
+  if value then return value[1], value[2] end
+  if not is_integer(route) then return nil end
+  if route >= 100 and route <= 159 then
+    local destination
+    if route <= 155 then
+      local origin = (route - 100) // 7
+      local slot = (route - 100) % 7
+      destination = slot >= origin and slot + 1 or slot
+    elseif route == 156 then destination = 8
+    elseif route == 157 then destination = 0
+    elseif route == 158 then destination = 9
+    else destination = 0 end
+    return destination == 0 and 1 or 5, 84 + destination
+  end
+  if route < 7 or route > 65 or route == 32 then return nil end
+  if route == 7 or (route >= 18 and route <= 31) or route >= 63 then
+    return 3, route
+  end
+  if route <= 17 then return 4, route end
+  if (route >= 33 and route <= 43) or (route >= 61 and route <= 62) then
+    return 1, route
+  end
+  if route <= 53 then return 2, route end
+  return 5, route
 end
 
 local function departure_matches_route(route, departure)
   if route == 1 or route == 2 then return departure == 1 end
   if route == 3 or route == 4 then return departure == 2 or departure == 3 end
   if route == 5 or route == 6 then return departure == 4 end
+  if route >= 7 and route <= 65 and route ~= 32 then return departure == 5 end
+  if route == 66 or route == 67 then return departure == 2 end
+  if route == 68 or route == 69 then return departure == 1 end
+  if route == 70 or route == 71 then return departure == 4 end
+  if route >= 72 and route <= 79 then return departure == 2 end
+  if route >= 80 and route <= 84 then return departure == 2 end
+  if route >= 85 and route <= 91 then return departure == 2 end
+  if route >= 92 and route <= 95 then return departure == 2 end
+  if route >= 97 and route <= 99 then return departure == 2 end
+  if route >= 100 and route <= 159 then return departure == 2 end
   return false
 end
 
@@ -86,7 +136,7 @@ function protocol.decode_group_travel(payload, direction)
     return nil, "group-travel record must contain exactly 32 bytes"
   end
   local kind, route, era, destination, result, reason, departure, reserved, request_id, proposal_id,
-    tail = string.unpack("<I1I1I1I1I1I1I1I1I4c16c4", payload)
+    remaining_seconds, tail = string.unpack("<I1I1I1I1I1I1I1I1I4c16I1c3", payload)
   if reserved ~= 0 or not all_zero(tail) then
     return nil, "group-travel reserved bytes must be zero"
   end
@@ -103,23 +153,26 @@ function protocol.decode_group_travel(payload, direction)
   local proposal_zero = all_zero(proposal_id)
   local valid
   if direction == "outbound" then
-    valid = (kind == 1 and proposal_zero and result == 0 and reason == 0)
+    valid = remaining_seconds == 0 and ((kind == 1 and proposal_zero and result == 0 and reason == 0)
       or (kind == 2 and not proposal_zero and (result == 1 or result == 2) and reason == 0)
       or (kind == 3 and result == 0 and reason == 2)
-      or (kind == 4 and not proposal_zero and result == 3 and reason == 0)
+      or (kind == 4 and not proposal_zero and result == 3 and reason == 0))
   elseif direction == "inbound" then
-    valid = (kind == 1 and proposal_zero and result == 0 and reason == 0)
+    valid = remaining_seconds <= 30
+      and ((kind == 1 and proposal_zero and result == 0 and reason == 0)
       or ((kind == 2 or kind == 3) and not proposal_zero and result == 0 and reason == 0)
       or (kind == 4 and result == 0 and reason > 0
         and (not proposal_zero or reason == 3 or reason == 4))
-      or (kind == 5 and not proposal_zero and result == 3 and reason == 0)
+      or (kind == 5 and not proposal_zero and result == 3 and reason == 0))
+      and ((kind == 1 or kind == 2) or remaining_seconds == 0)
   else
     return nil, "group-travel direction is required"
   end
   if not valid then return nil, "invalid group-travel phase fields" end
   return { kind = kind, route = route, era = era, destination = destination,
     departure = departure,
-    result = result, reason = reason, request_id = request_id, proposal_id = proposal_id }
+    result = result, reason = reason, request_id = request_id, proposal_id = proposal_id,
+    remaining_seconds = remaining_seconds }
 end
 
 function protocol.encode_group_travel(record, direction)
@@ -129,9 +182,9 @@ function protocol.encode_group_travel(record, direction)
   end
   local era, destination = route_era_destination(record.route)
   if not era then return nil, "invalid group-travel route" end
-  local payload = string.pack("<I1I1I1I1I1I1I1I1I4c16I4", record.kind, record.route,
+  local payload = string.pack("<I1I1I1I1I1I1I1I1I4c16I1I1I1I1", record.kind, record.route,
     era, destination, record.result or 0, record.reason or 0, record.departure or 0, 0, record.request_id,
-    record.proposal_id, 0)
+    record.proposal_id, record.remaining_seconds or 0, 0, 0, 0)
   local decoded, err = protocol.decode_group_travel(payload, direction)
   if not decoded then return nil, err end
   return payload

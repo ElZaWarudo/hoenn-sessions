@@ -139,6 +139,7 @@ mapsec_u16_t CorrectSpecialMapSecId(mapsec_u16_t mapSecId);
 void ShowRegionMapForPokedexAreaScreen(struct RegionMap *regionMap);
 void PokedexAreaScreen_UpdateRegionMapVariablesAndVideoRegs(s16 x, s16 y);
 void CB2_OpenFlyMap(void);
+void CoopRegionMap_OpenPartnerFlyMap(void);
 bool8 IsRegionMapZoomed(void);
 void TrySetPlayerIconBlink(void);
 void BlendRegionMap(u16 color, u32 coeff);
@@ -151,6 +152,11 @@ void SetForcedFlightRegionWithKantoEra(enum RegionMapType region, enum KantoEra 
 void ClearForcedFlightRegion(void);
 void CancelFlightCall(void);
 bool32 CanFlyToRegionMapSection(mapsec_u16_t mapSecId);
+u8 CoopRegionMap_GroupFlyRouteForSelection(mapsec_u16_t mapSecId, u16 posWithinMapSec);
+bool8 CoopRegionMap_GroupFlyFields(u8 route, u8 *era, u8 *destination);
+bool8 CoopRegionMap_GroupFlyUnlocked(u8 route);
+u32 CoopRegionMap_GroupFlyHealLocation(u8 route);
+mapsec_u16_t CoopRegionMap_GroupFlyMapSection(u8 route);
 
 //Pokenav Fly funcs
 u32 FilterFlyDestination(struct RegionMap* regionMap);

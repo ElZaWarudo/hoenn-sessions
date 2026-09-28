@@ -7,10 +7,10 @@
 //! cleanup have one small, auditable boundary.
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc::SyncSender,
     },
     time::{Duration, Instant},
@@ -29,7 +29,7 @@ use axum::{
     routing::{get, post},
 };
 use coop_cloud::{
-    ClientRealtimeFrameV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
+    CharacterId, ClientRealtimeFrameV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
     MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, MintRealtimeTicketRequest, MintRealtimeTicketResponse,
     REALTIME_TICKET_ENTROPY_BYTES, REALTIME_TICKET_REQUEST_BODY_MAX_BYTES, RealtimeTicket,
     RefreshFamilyId, RuntimeLeaseFence, ServerRealtimeFrameV1, StableRuntimeSession,
@@ -45,6 +45,9 @@ use super::presence::{
 use super::storage::{
     MAX_REALTIME_TICKETS_GLOBAL, RealtimeTicketRecord, State as StorageState, Store,
 };
+
+#[path = "progress_feed.rs"]
+pub(crate) mod progress_feed;
 use super::{AuthenticatedActor, Phase2App, Phase2Error};
 
 const MAX_REALTIME_GLOBAL_SOCKETS: usize = 1_024;
@@ -66,6 +69,8 @@ const PRESENCE_DISCONNECT_WAIT: Duration = Duration::from_secs(2);
 /// state) normally reaps idle clients first; this closes the transport when a
 /// stalled tick or half-open connection leaves one behind.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_QUEUED_PROGRESS_EVENTS_PER_CHARACTER: usize = 32;
+type ProgressRecipientId = u64;
 
 /// Reports whether a realtime socket has been silent longer than the idle
 /// budget. Extracted so the backstop bound is unit-tested.
@@ -77,6 +82,13 @@ fn is_idle_expired(last_inbound: Instant, now: Instant) -> bool {
 pub(crate) struct RealtimeTransportState {
     admission: Mutex<AdmissionState>,
     ticket_mints: Mutex<HashMap<coop_cloud::UserId, VecDeque<Instant>>>,
+    /// Realtime progress fanout is process-local and only retained while the
+    /// recipient has an authenticated socket. The durable history lives in
+    /// `State::group_progress_feeds`.
+    progress_recipients:
+        Mutex<HashMap<CharacterId, HashMap<ProgressRecipientId, StableRuntimeSession>>>,
+    progress_outbound: Mutex<HashMap<ProgressRecipientId, VecDeque<ServerRealtimeFrameV1>>>,
+    next_progress_recipient: AtomicU64,
     /// Presence methods are synchronous because their state and repository
     /// adapters are synchronous. Keep their work off Tokio worker threads and
     /// reject new work when the bounded executor is occupied.
@@ -93,6 +105,9 @@ impl RealtimeTransportState {
         Self {
             admission: Mutex::new(AdmissionState::default()),
             ticket_mints: Mutex::new(HashMap::new()),
+            progress_recipients: Mutex::new(HashMap::new()),
+            progress_outbound: Mutex::new(HashMap::new()),
+            next_progress_recipient: AtomicU64::new(1),
             presence_workers: Arc::new(Semaphore::new(31)),
             tick_worker: Arc::new(Semaphore::new(1)),
             tick_started: AtomicBool::new(false),
@@ -271,6 +286,98 @@ impl RealtimeTransportState {
             state: Arc::clone(self),
             key: None,
         })
+    }
+
+    fn register_progress_recipient(&self, session: StableRuntimeSession) -> ProgressRecipientId {
+        let recipient = self.next_progress_recipient.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut recipients) = self.progress_recipients.lock() {
+            recipients
+                .entry(session.character_id)
+                .or_default()
+                .insert(recipient, session);
+            if let Ok(mut outbound) = self.progress_outbound.lock() {
+                outbound.entry(recipient).or_default();
+            }
+        }
+        recipient
+    }
+
+    fn unregister_progress_recipient(
+        &self,
+        character_id: CharacterId,
+        recipient: ProgressRecipientId,
+    ) {
+        if let Ok(mut recipients) = self.progress_recipients.lock() {
+            if let Some(ids) = recipients.get_mut(&character_id) {
+                ids.remove(&recipient);
+                if ids.is_empty() {
+                    recipients.remove(&character_id);
+                }
+            }
+            if let Ok(mut outbound) = self.progress_outbound.lock() {
+                outbound.remove(&recipient);
+            }
+        }
+    }
+
+    pub(crate) fn queue_group_ended(
+        &self,
+        session: StableRuntimeSession,
+        group_id: coop_cloud::GroupId,
+    ) {
+        let Ok(recipients) = self.progress_recipients.lock() else {
+            return;
+        };
+        let Some(recipient_ids) = recipients.get(&session.character_id) else {
+            return;
+        };
+        let Ok(mut outbound) = self.progress_outbound.lock() else {
+            return;
+        };
+        let frame = ServerRealtimeFrameV1::group_ended(group_id);
+        for (recipient_id, registered_session) in recipient_ids {
+            if *registered_session == session {
+                let queue = outbound.entry(*recipient_id).or_default();
+                if queue.len() >= MAX_QUEUED_PROGRESS_EVENTS_PER_CHARACTER {
+                    queue.pop_front();
+                }
+                queue.push_back(frame.clone());
+            }
+        }
+    }
+
+    fn queue_progress(&self, recipient: CharacterId, frame: ServerRealtimeFrameV1) {
+        let Ok(recipients) = self.progress_recipients.lock() else {
+            return;
+        };
+        let Some(recipient_ids) = recipients.get(&recipient) else {
+            return;
+        };
+        let Ok(mut outbound) = self.progress_outbound.lock() else {
+            return;
+        };
+        for recipient_id in recipient_ids.keys() {
+            let queue = outbound.entry(*recipient_id).or_default();
+            if queue.len() >= MAX_QUEUED_PROGRESS_EVENTS_PER_CHARACTER {
+                queue.pop_front();
+            }
+            queue.push_back(frame.clone());
+        }
+    }
+
+    fn drain_progress(&self, recipient: ProgressRecipientId) -> Vec<ServerRealtimeFrameV1> {
+        let Ok(mut outbound) = self.progress_outbound.lock() else {
+            return Vec::new();
+        };
+        let Some(queue) = outbound.get_mut(&recipient) else {
+            return Vec::new();
+        };
+        let count = queue.len().min(MAX_QUEUED_PROGRESS_EVENTS_PER_CHARACTER);
+        let frames = queue.drain(..count).collect::<Vec<_>>();
+        if queue.is_empty() {
+            outbound.remove(&recipient);
+        }
+        frames
     }
 }
 
@@ -871,7 +978,8 @@ async fn realtime_session(
                     Ok(
                         ClientRealtimeFrameV1::InteractRemotePlayer(_)
                         | ClientRealtimeFrameV1::Companion(_)
-                        | ClientRealtimeFrameV1::SocialSignal(_),
+                        | ClientRealtimeFrameV1::SocialSignal(_)
+                        | ClientRealtimeFrameV1::ProgressObservation(_),
                     )
                     | Err(_) => {
                         let _ = close_socket(&mut socket, 1008).await;
@@ -920,12 +1028,13 @@ async fn realtime_session(
     {
         Ok(Ok(permit)) => {
             let (sender, receiver) = tokio::sync::oneshot::channel();
+            let runtime = redemption.runtime.clone();
             tokio::task::spawn_blocking(move || {
                 let _permit = permit;
                 let result = presence.connect_and_drain_with_family(
                     redemption.actor,
                     redemption.family_id,
-                    redemption.runtime,
+                    runtime,
                     initial,
                 );
                 if let Err(Ok((connection, _))) = sender.send(result) {
@@ -954,18 +1063,94 @@ async fn realtime_session(
         .start_tick_worker(app.presence(), app.shutdown.subscribe());
     let mut presence_guard =
         PresenceGuard::new(Arc::clone(&app.realtime), app.presence(), connection);
+    let character_id = redemption.actor.character_id;
     let mut initial_frames = Vec::with_capacity(initial_drain.events.len() + 1);
     initial_frames.push(ServerRealtimeFrameV1::presence_ready(connection.handle()));
     initial_frames.extend(initial_drain.events.iter().map(server_frame));
+    // Register before reading durable history. Any event accepted during the
+    // replay read is queued for this exact socket and merged by event ID below.
+    let progress_recipient = app
+        .realtime
+        .register_progress_recipient(redemption.runtime.session);
+    let store = app.store.clone();
+    let replay_actor = redemption.actor;
+    let progress_frames = if let Ok(Ok(events)) = app
+        .realtime
+        .run_presence(move || progress_feed::recent_for_partner(&store, replay_actor))
+        .await
+    {
+        // Replay only the newest bounded slice so a reconnect cannot turn
+        // feed history into an unbounded initial write burst.
+        merge_progress_frames(
+            events
+                .into_iter()
+                .rev()
+                .take(8)
+                .rev()
+                .map(ServerRealtimeFrameV1::progress_event)
+                .collect(),
+            app.realtime.drain_progress(progress_recipient),
+        )
+    } else {
+        app.realtime.drain_progress(progress_recipient)
+    };
+    let store = app.store.clone();
+    let partner_session = redemption.runtime.session;
+    let pending_notice = app
+        .realtime
+        .run_presence(move || {
+            super::sessions::pending_group_end_for_session(&store, partner_session)
+        })
+        .await;
+    let pending_notice = match pending_notice {
+        Ok(Ok(notice)) => notice,
+        Ok(Err(_)) => {
+            app.realtime
+                .unregister_progress_recipient(character_id, progress_recipient);
+            let _ = close_socket(&mut socket, 1011).await;
+            return;
+        }
+        Err(error) => {
+            app.realtime
+                .unregister_progress_recipient(character_id, progress_recipient);
+            let _ = close_socket(&mut socket, error.close_code()).await;
+            return;
+        }
+    };
+    let replay_notice = pending_notice
+        .map(ServerRealtimeFrameV1::group_ended)
+        .into_iter()
+        .collect();
+    // Drain again after the durable read. An expiry between the first drain
+    // and this read is now present in both sources and deduped by group ID.
+    let late_frames = app.realtime.drain_progress(progress_recipient);
+    let mut startup_frames = merge_progress_frames(
+        replay_notice,
+        merge_progress_frames(progress_frames, late_frames),
+    );
+    if let Err(code) =
+        filter_group_end_frames(&app, redemption.runtime.session, &mut startup_frames).await
+    {
+        app.realtime
+            .unregister_progress_recipient(character_id, progress_recipient);
+        let _ = close_socket(&mut socket, code).await;
+        return;
+    }
+    initial_frames.extend(startup_frames);
     run_connected_session(
         &app,
         &mut socket,
         connection,
+        progress_recipient,
+        redemption.actor,
+        redemption.runtime.clone(),
         initial_frames,
         rate,
         &mut shutdown,
     )
     .await;
+    app.realtime
+        .unregister_progress_recipient(character_id, progress_recipient);
     let presence = app.presence();
     let disconnected = app
         .realtime
@@ -983,6 +1168,9 @@ async fn run_connected_session(
     app: &Phase2App,
     socket: &mut WebSocket,
     connection: PresenceConnection,
+    progress_recipient: ProgressRecipientId,
+    actor: AuthenticatedActor,
+    runtime: RuntimeLeaseFence,
     initial_frames: Vec<ServerRealtimeFrameV1>,
     mut rate: InboundRate,
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
@@ -1025,7 +1213,12 @@ async fn run_connected_session(
                         return;
                     }
                 };
-                let frames = drain.events.iter().map(server_frame).collect::<Vec<_>>();
+                let mut frames = drain.events.iter().map(server_frame).collect::<Vec<_>>();
+                frames.extend(app.realtime.drain_progress(progress_recipient));
+                if let Err(code) = filter_group_end_frames(app, runtime.session, &mut frames).await {
+                    let _ = close_socket(socket, code).await;
+                    return;
+                }
                 if send_frames(socket, &frames).await.is_err() {
                     return;
                 }
@@ -1055,7 +1248,11 @@ async fn run_connected_session(
                             }
                             Ok(ClientRealtimeFrameV1::InteractRemotePlayer(interaction)) => {
                                 let presence = app.presence();
-                                match app.realtime.run_presence(move || presence.validate_interaction(connection, interaction)).await {
+                                let interaction_target = interaction.handle();
+                                let interaction_result = app.realtime.run_presence(move || {
+                                    presence.validate_and_forward_interaction(connection, interaction)
+                                }).await;
+                                match classify_interaction_result(&mut *socket, interaction_target, interaction_result).await {
                                     Ok(Ok(_)) => {}
                                     Ok(Err(error)) => { let _ = close_presence_error(socket, error).await; return; }
                                     Err(error) => { let _ = close_socket(socket, error.close_code()).await; return; }
@@ -1075,6 +1272,36 @@ async fn run_connected_session(
                                     Ok(Ok(_)) => {},
                                     Ok(Err(error)) => { let _ = close_presence_error(socket, error).await; return; }
                                     Err(error) => { let _ = close_socket(socket, error.close_code()).await; return; }
+                                }
+                            }
+                            Ok(ClientRealtimeFrameV1::ProgressObservation(observation)) => {
+                                let store = app.store.clone();
+                                let runtime = runtime.clone();
+                                let accepted = app
+                                    .realtime
+                                    .run_presence(move || {
+                                        progress_feed::accept(&store, actor, runtime, observation)
+                                    })
+                                    .await;
+                                match accepted {
+                                    Ok(Ok(Some(accepted))) => {
+                                        app.realtime.queue_progress(
+                                            accepted.recipient,
+                                            accepted.frame,
+                                        );
+                                    }
+                                    Ok(Ok(None)) => {}
+                                    // A valid observation over the feed budget is
+                                    // a soft rejection, not a protocol violation.
+                                    Ok(Err(Phase2Error::Busy)) => {}
+                                    Ok(Err(_)) => {
+                                        let _ = close_socket(socket, 1008).await;
+                                        return;
+                                    }
+                                    Err(error) => {
+                                        let _ = close_socket(socket, error.close_code()).await;
+                                        return;
+                                    }
                                 }
                             }
                             Err(coop_cloud::RealtimeError::MessageTooLarge) => { let _ = close_socket(socket, 1009).await; return; }
@@ -1103,6 +1330,31 @@ async fn run_connected_session(
     }
 }
 
+async fn filter_group_end_frames(
+    app: &Phase2App,
+    session: StableRuntimeSession,
+    frames: &mut Vec<ServerRealtimeFrameV1>,
+) -> Result<(), u16> {
+    if !frames
+        .iter()
+        .any(|frame| matches!(frame, ServerRealtimeFrameV1::GroupEnded(_)))
+    {
+        return Ok(());
+    }
+    let store = app.store.clone();
+    let current = app
+        .realtime
+        .run_presence(move || super::sessions::pending_group_end_for_session(&store, session))
+        .await
+        .map_err(|error| error.close_code())?
+        .map_err(|_| 1011_u16)?;
+    frames.retain(|frame| match frame {
+        ServerRealtimeFrameV1::GroupEnded(event) => Some(event.group_id) == current,
+        _ => true,
+    });
+    Ok(())
+}
+
 fn server_frame(event: &PresenceOutboundV1) -> ServerRealtimeFrameV1 {
     match event {
         PresenceOutboundV1::Spawn(value) => {
@@ -1114,9 +1366,43 @@ fn server_frame(event: &PresenceOutboundV1) -> ServerRealtimeFrameV1 {
         PresenceOutboundV1::Despawn(value) => {
             ServerRealtimeFrameV1::remote_player_despawn(value.clone())
         }
+        PresenceOutboundV1::Interaction(value) => ServerRealtimeFrameV1::remote_interaction(*value),
         PresenceOutboundV1::Companion(value) => ServerRealtimeFrameV1::remote_companion(*value),
         PresenceOutboundV1::Signal(value) => ServerRealtimeFrameV1::remote_social_signal(*value),
     }
+}
+
+fn progress_event_id(frame: &ServerRealtimeFrameV1) -> Option<u64> {
+    match frame {
+        ServerRealtimeFrameV1::ProgressEvent(event) => Some(event.event_id),
+        _ => None,
+    }
+}
+
+/// Merges durable replay with the per-connection queue. Registering before
+/// replay closes the loss window; event IDs remove the duplicate caused when
+/// an event is persisted and queued between the two reads.
+fn merge_progress_frames(
+    replay: Vec<ServerRealtimeFrameV1>,
+    queued: Vec<ServerRealtimeFrameV1>,
+) -> Vec<ServerRealtimeFrameV1> {
+    let mut by_id = BTreeMap::new();
+    let mut notices = Vec::new();
+    let mut seen_group_ends = HashSet::new();
+    for frame in replay.into_iter().chain(queued) {
+        if let Some(event_id) = progress_event_id(&frame) {
+            by_id.entry(event_id).or_insert(frame);
+        } else if let ServerRealtimeFrameV1::GroupEnded(event) = &frame {
+            if seen_group_ends.insert(event.group_id) {
+                notices.push(frame);
+            }
+        } else {
+            notices.push(frame);
+        }
+    }
+    let mut frames: Vec<_> = by_id.into_values().collect();
+    frames.extend(notices);
+    frames
 }
 
 #[derive(Default)]
@@ -1208,6 +1494,59 @@ async fn close_presence_error(
     close_socket(socket, presence_close_code(&error)).await
 }
 
+/// Maps a soft interaction failure to its directed not-accepted reason.
+/// Returns `None` for genuine protocol, authentication, lease, capacity,
+/// or internal violations, which keep their close behavior.
+fn interaction_rejection(
+    error: &PresenceServiceError,
+) -> Option<coop_cloud::InteractionRejectReason> {
+    match error {
+        PresenceServiceError::InteractionTargetUnavailable => {
+            Some(coop_cloud::InteractionRejectReason::TargetUnavailable)
+        }
+        PresenceServiceError::InteractionObservationMismatch => {
+            Some(coop_cloud::InteractionRejectReason::ObservationMismatch)
+        }
+        PresenceServiceError::InteractionOutOfRange => {
+            Some(coop_cloud::InteractionRejectReason::OutOfRange)
+        }
+        _ => None,
+    }
+}
+
+/// Folds one interaction validation result into the shape the connected
+/// session loop already matches on. Soft rejections (`stale observation`,
+/// `target unavailable`, `out of range`) are answered with a directed
+/// `INTERACTION_REJECTED` reply and folded into `Ok(Ok(()))` so the
+/// connection stays open and the rejected interaction is dropped. Genuine
+/// violations pass through untouched so the caller still closes. A failed
+/// reply send collapses to a worker failure close.
+async fn classify_interaction_result(
+    socket: &mut WebSocket,
+    target: coop_protocol::PresenceHandle,
+    result: Result<Result<(), PresenceServiceError>, PresenceWorkError>,
+) -> Result<Result<(), PresenceServiceError>, PresenceWorkError> {
+    match result {
+        Ok(Ok(_)) => Ok(Ok(())),
+        Ok(Err(error)) => {
+            let Some(reason) = interaction_rejection(&error) else {
+                return Ok(Err(error));
+            };
+            let frame = ServerRealtimeFrameV1::interaction_rejected(
+                coop_cloud::InteractionRejectedV1::new(target, reason),
+            );
+            if send_frames(socket, std::slice::from_ref(&frame))
+                .await
+                .is_err()
+            {
+                return Err(PresenceWorkError::Failed);
+            }
+            Ok(Ok(()))
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn presence_close_code(error: &PresenceServiceError) -> u16 {
     match error {
         PresenceServiceError::GlobalCapacity | PresenceServiceError::PartitionCapacity => 1013,
@@ -1237,12 +1576,14 @@ mod tests {
     use super::*;
     use coop_cloud::{
         AcquireLeaseRequest, CharacterId, ClientInstanceId, IdempotencyKey, InvitationCode,
-        LoginRequest, Password, RealtimeTicket, RegisterRequest, SessionEpoch, SessionId, UserId,
+        LoginRequest, Password, ProgressFeedEventV1, RealtimeTicket, RegisterRequest, SessionEpoch,
+        SessionId, UnixTimestampMillis, UserId, Username,
     };
     use coop_protocol::{
         AnimationId, AvatarId, CanonicalUsername, DespawnReason, Direction, LocalPresenceStateV1,
-        MovementMode, PlayerState, PresenceHandle, PresencePoseV1, RemotePlayerDespawnV1,
-        RemotePlayerSpawnV1, RemotePlayerUpdateV1, WorldLocation,
+        MovementMode, PlayerState, PresenceHandle, PresencePoseV1, ProgressKindV1,
+        ProgressObservationV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1, RemotePlayerUpdateV1,
+        WorldLocation,
     };
     use http_body_util::BodyExt;
     use std::sync::{Arc, Barrier};
@@ -1985,6 +2326,94 @@ mod tests {
     }
 
     #[test]
+    fn soft_interaction_rejections_map_to_replies_not_close() {
+        assert_eq!(
+            interaction_rejection(&PresenceServiceError::InteractionTargetUnavailable),
+            Some(coop_cloud::InteractionRejectReason::TargetUnavailable)
+        );
+        assert_eq!(
+            interaction_rejection(&PresenceServiceError::InteractionObservationMismatch),
+            Some(coop_cloud::InteractionRejectReason::ObservationMismatch)
+        );
+        assert_eq!(
+            interaction_rejection(&PresenceServiceError::InteractionOutOfRange),
+            Some(coop_cloud::InteractionRejectReason::OutOfRange)
+        );
+        let target = coop_protocol::PresenceHandle::new(0x0123_4567_89ab_cdef).unwrap();
+        for (error, reason) in [
+            (
+                PresenceServiceError::InteractionTargetUnavailable,
+                coop_cloud::InteractionRejectReason::TargetUnavailable,
+            ),
+            (
+                PresenceServiceError::InteractionObservationMismatch,
+                coop_cloud::InteractionRejectReason::ObservationMismatch,
+            ),
+            (
+                PresenceServiceError::InteractionOutOfRange,
+                coop_cloud::InteractionRejectReason::OutOfRange,
+            ),
+        ] {
+            let frame = ServerRealtimeFrameV1::interaction_rejected(
+                coop_cloud::InteractionRejectedV1::new(
+                    target,
+                    interaction_rejection(&error).unwrap(),
+                ),
+            );
+            assert_eq!(
+                frame,
+                ServerRealtimeFrameV1::interaction_rejected(
+                    coop_cloud::InteractionRejectedV1::new(target, reason)
+                )
+            );
+            let bytes = coop_cloud::encode_server_realtime_frame(&frame).unwrap();
+            assert_eq!(
+                coop_cloud::decode_server_realtime_frame(&bytes).unwrap(),
+                frame
+            );
+        }
+    }
+
+    #[test]
+    fn interaction_violations_still_close() {
+        let violations = [
+            PresenceServiceError::Authentication,
+            PresenceServiceError::LeaseInactive,
+            PresenceServiceError::LeaseFenceMismatch,
+            PresenceServiceError::IncompatibleBuild,
+            PresenceServiceError::UnsupportedZone,
+            PresenceServiceError::InvalidState,
+            PresenceServiceError::NotConnected,
+            PresenceServiceError::GlobalCapacity,
+            PresenceServiceError::PartitionCapacity,
+            PresenceServiceError::HandleAllocation,
+            PresenceServiceError::Internal,
+        ];
+        assert!(
+            violations
+                .iter()
+                .all(|error| interaction_rejection(error).is_none())
+        );
+        assert!(
+            [
+                PresenceServiceError::Authentication,
+                PresenceServiceError::LeaseInactive,
+                PresenceServiceError::LeaseFenceMismatch,
+                PresenceServiceError::IncompatibleBuild,
+                PresenceServiceError::UnsupportedZone,
+                PresenceServiceError::InvalidState,
+                PresenceServiceError::NotConnected,
+            ]
+            .iter()
+            .all(|error| super::presence_close_code(error) == 1008)
+        );
+        assert_eq!(
+            super::presence_close_code(&PresenceServiceError::Internal),
+            1011
+        );
+    }
+
+    #[test]
     fn idle_backstop_bounds_silent_sockets() {
         let now = Instant::now();
         assert!(!is_idle_expired(now, now));
@@ -1997,5 +2426,344 @@ mod tests {
             now,
             now + IDLE_TIMEOUT + Duration::from_secs(1)
         ));
+    }
+
+    #[test]
+    fn solo_progress_observation_is_ignored_without_closing_presence() {
+        let (app, headers, request) = ticket_fixture();
+        let actor = auth::actor_from_headers(&app.store, &headers).unwrap();
+        let observation = ProgressObservationV1 {
+            kind: ProgressKindV1::BadgeEarned,
+            region_id: coop_protocol::RegionId::Hoenn,
+            subject_id: 0,
+            session_epoch: request.runtime().session.session_epoch.value(),
+            source_sequence: 1,
+        };
+        let accepted =
+            progress_feed::accept(&app.store, actor, request.runtime().clone(), observation)
+                .unwrap();
+        assert!(accepted.is_none());
+        let count = app
+            .store
+            .inspect_state(|state| state.group_progress_feeds.len())
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    fn queued_progress_frame(event_id: u64) -> ServerRealtimeFrameV1 {
+        ServerRealtimeFrameV1::progress_event(ProgressFeedEventV1 {
+            event_id,
+            source_character_id: CharacterId::new(uuid::Uuid::from_u128(0x700)).unwrap(),
+            source_username: Username::new("partner").unwrap(),
+            kind: ProgressKindV1::BadgeEarned,
+            region_id: coop_protocol::RegionId::Hoenn,
+            subject_id: 0,
+            source_sequence: event_id as u32,
+            occurred_at: UnixTimestampMillis::new(event_id),
+        })
+    }
+
+    #[test]
+    fn overlapping_progress_sockets_each_receive_their_own_queue() {
+        let state = RealtimeTransportState::new();
+        let recipient = CharacterId::new(uuid::Uuid::from_u128(0x701)).unwrap();
+        let session = StableRuntimeSession::new(
+            SessionId::new(uuid::Uuid::from_u128(0x702)).unwrap(),
+            recipient,
+            SessionEpoch::new(1).unwrap(),
+            ClientInstanceId::new(uuid::Uuid::from_u128(0x703)).unwrap(),
+        );
+        let first = state.register_progress_recipient(session);
+        let second = state.register_progress_recipient(session);
+        let first_frame = queued_progress_frame(1);
+        state.queue_progress(recipient, first_frame.clone());
+        assert_eq!(state.drain_progress(first), vec![first_frame.clone()]);
+        assert_eq!(state.drain_progress(second), vec![first_frame]);
+
+        let second_frame = queued_progress_frame(2);
+        state.unregister_progress_recipient(recipient, first);
+        state.queue_progress(recipient, second_frame.clone());
+        assert!(state.drain_progress(first).is_empty());
+        assert_eq!(state.drain_progress(second), vec![second_frame]);
+        state.unregister_progress_recipient(recipient, second);
+    }
+
+    #[test]
+    fn group_ended_goes_only_to_current_partner_session() {
+        let state = RealtimeTransportState::new();
+        let recipient = CharacterId::new(uuid::Uuid::from_u128(0x710)).unwrap();
+        let current = StableRuntimeSession::new(
+            SessionId::new(uuid::Uuid::from_u128(0x711)).unwrap(),
+            recipient,
+            SessionEpoch::new(2).unwrap(),
+            ClientInstanceId::new(uuid::Uuid::from_u128(0x712)).unwrap(),
+        );
+        let stale = StableRuntimeSession::new(
+            SessionId::new(uuid::Uuid::from_u128(0x711)).unwrap(),
+            recipient,
+            SessionEpoch::new(1).unwrap(),
+            ClientInstanceId::new(uuid::Uuid::from_u128(0x712)).unwrap(),
+        );
+        let active_socket = state.register_progress_recipient(current);
+        let stale_socket = state.register_progress_recipient(stale);
+        let group_id = coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x713)).unwrap();
+        state.queue_group_ended(current, group_id);
+        assert_eq!(
+            state.drain_progress(active_socket),
+            vec![ServerRealtimeFrameV1::group_ended(group_id)]
+        );
+        assert!(state.drain_progress(stale_socket).is_empty());
+        state.unregister_progress_recipient(recipient, active_socket);
+        state.unregister_progress_recipient(recipient, stale_socket);
+    }
+
+    #[test]
+    fn progress_replay_merge_closes_read_registration_race_without_duplicates() {
+        let first = queued_progress_frame(1);
+        let second = queued_progress_frame(2);
+        let third = queued_progress_frame(3);
+        let merged = merge_progress_frames(
+            vec![first.clone(), second.clone()],
+            vec![second, third.clone()],
+        );
+        assert_eq!(merged, vec![first, queued_progress_frame(2), third]);
+    }
+
+    #[test]
+    fn replay_merge_retains_group_ended_during_registration() {
+        let notice = ServerRealtimeFrameV1::group_ended(
+            coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x720)).unwrap(),
+        );
+        assert_eq!(
+            merge_progress_frames(vec![queued_progress_frame(1)], vec![notice.clone()]),
+            vec![queued_progress_frame(1), notice]
+        );
+    }
+
+    #[tokio::test]
+    async fn expired_group_notice_survives_partner_reconnect_within_grace() {
+        let app = Phase2App::test();
+        let (expired, _) = presence_fixture(&app, "group-end-offline-a", "GroupEndOfflineA", 0x731);
+        let (partner, runtime) =
+            presence_fixture(&app, "group-end-offline-b", "GroupEndOfflineB", 0x733);
+        let group_id = coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x735)).unwrap();
+        let now = app.store.now();
+        let old_fence = app
+            .store
+            .write_transaction(|state| {
+                state.groups.insert(
+                    group_id,
+                    super::super::storage::GroupRecord {
+                        group: coop_cloud::Group::new(expired.character_id, partner.character_id)
+                            .unwrap(),
+                        zone: coop_protocol::WorldZone::new(
+                            coop_protocol::RegionId::Hoenn,
+                            "LITTLEROOT_TOWN",
+                            0,
+                        )
+                        .unwrap(),
+                        status: super::super::storage::GroupStatus::Active,
+                        zone_revision: 0,
+                    },
+                );
+                state
+                    .active_group_by_member
+                    .insert(expired.character_id, group_id);
+                state
+                    .active_group_by_member
+                    .insert(partner.character_id, group_id);
+                state
+                    .leases
+                    .get_mut(&expired.character_id)
+                    .unwrap()
+                    .grace_until = now - 1;
+                let lease = state.leases.get_mut(&partner.character_id).unwrap();
+                let fence = lease.contract.fence();
+                lease.contract.expires_at =
+                    super::super::storage::Store::unix_timestamp(now - 1).unwrap();
+                assert!(lease.grace_until > now);
+                Ok::<_, Phase2Error>(fence)
+            })
+            .unwrap();
+
+        let ended = super::super::sessions::expire_groups(&app.store).unwrap();
+        assert_eq!(ended.len(), 1);
+        assert_eq!(ended[0].partner_session, Some(runtime.session));
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(&app.store, runtime.session)
+                .unwrap(),
+            None,
+        );
+
+        let rotated = super::super::sessions::reconnect(
+            &app.store,
+            partner,
+            &coop_cloud::ReconnectLeaseRequest::new(
+                old_fence,
+                coop_cloud::IdempotencyKey::new(uuid::Uuid::from_u128(0x736)).unwrap(),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(
+                &app.store,
+                rotated.stable_runtime_session(),
+            )
+            .unwrap(),
+            Some(group_id),
+        );
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(&app.store, runtime.session)
+                .unwrap(),
+            None,
+        );
+        let replaced = app
+            .acquire(
+                partner,
+                coop_cloud::AcquireLeaseRequest::new(
+                    partner.character_id,
+                    runtime.session.client_instance_id,
+                    coop_cloud::IdempotencyKey::new(uuid::Uuid::from_u128(0x737)).unwrap(),
+                )
+                .replacing_same_client(),
+            )
+            .unwrap();
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(
+                &app.store,
+                replaced.stable_runtime_session(),
+            )
+            .unwrap(),
+            Some(group_id),
+        );
+    }
+
+    #[tokio::test]
+    async fn expired_group_replays_to_partner_after_socket_gap_only_on_same_lease() {
+        let app = Phase2App::test();
+        let (expired, _) = presence_fixture(&app, "group-end-expired", "GroupEndExpired", 0x721);
+        let (partner, runtime) =
+            presence_fixture(&app, "group-end-partner", "GroupEndPartner", 0x722);
+        let group_id = coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x723)).unwrap();
+        let now = app.store.now();
+        app.store
+            .write_transaction(|state| {
+                state.groups.insert(
+                    group_id,
+                    super::super::storage::GroupRecord {
+                        group: coop_cloud::Group::new(expired.character_id, partner.character_id)
+                            .unwrap(),
+                        zone: coop_protocol::WorldZone::new(
+                            coop_protocol::RegionId::Hoenn,
+                            "LITTLEROOT_TOWN",
+                            0,
+                        )
+                        .unwrap(),
+                        status: super::super::storage::GroupStatus::Active,
+                        zone_revision: 0,
+                    },
+                );
+                state
+                    .active_group_by_member
+                    .insert(expired.character_id, group_id);
+                state
+                    .active_group_by_member
+                    .insert(partner.character_id, group_id);
+                state
+                    .leases
+                    .get_mut(&expired.character_id)
+                    .unwrap()
+                    .grace_until = now.saturating_sub(1);
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+
+        // No recipient is registered when the durable expiry commits.
+        let ended = super::super::sessions::expire_groups(&app.store).unwrap();
+        assert_eq!(ended.len(), 1);
+        assert_eq!(ended[0].partner_session, Some(runtime.session));
+        app.realtime.queue_group_ended(runtime.session, group_id);
+        let socket = app.realtime.register_progress_recipient(runtime.session);
+        assert!(app.realtime.drain_progress(socket).is_empty());
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(&app.store, runtime.session)
+                .unwrap(),
+            Some(group_id)
+        );
+        let replay = ServerRealtimeFrameV1::group_ended(group_id);
+        assert_eq!(
+            merge_progress_frames(vec![replay.clone()], vec![replay.clone()]),
+            vec![replay]
+        );
+        assert!(
+            super::super::sessions::expire_groups(&app.store)
+                .unwrap()
+                .is_empty()
+        );
+
+        // Expiry after an empty first drain, but before the durable read,
+        // appears in both the late queue and replay. Startup sends it once.
+        let first_drain = app.realtime.drain_progress(socket);
+        assert!(first_drain.is_empty());
+        app.realtime.queue_group_ended(runtime.session, group_id);
+        let durable =
+            super::super::sessions::pending_group_end_for_session(&app.store, runtime.session)
+                .unwrap()
+                .map(ServerRealtimeFrameV1::group_ended)
+                .into_iter()
+                .collect();
+        let late_drain = app.realtime.drain_progress(socket);
+        assert_eq!(
+            merge_progress_frames(durable, merge_progress_frames(first_drain, late_drain)),
+            vec![ServerRealtimeFrameV1::group_ended(group_id)]
+        );
+
+        // A new active group suppresses both stored replay and a queued old
+        // closure. The real formation paths also remove the durable record.
+        let new_group_id = coop_cloud::GroupId::new(uuid::Uuid::from_u128(0x724)).unwrap();
+        app.store
+            .write_transaction(|state| {
+                state
+                    .active_group_by_member
+                    .insert(partner.character_id, new_group_id);
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(&app.store, runtime.session)
+                .unwrap(),
+            None
+        );
+        let mut queued = vec![ServerRealtimeFrameV1::group_ended(group_id)];
+        filter_group_end_frames(&app, runtime.session, &mut queued)
+            .await
+            .unwrap();
+        assert!(queued.is_empty());
+        app.store
+            .write_transaction(|state| {
+                state.group_end_notices.remove(&partner.character_id);
+                state.active_group_by_member.remove(&partner.character_id);
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(&app.store, runtime.session)
+                .unwrap(),
+            None
+        );
+
+        let wrong_session = StableRuntimeSession::new(
+            runtime.session.session_id,
+            partner.character_id,
+            SessionEpoch::new(runtime.session.session_epoch.value() + 1).unwrap(),
+            runtime.session.client_instance_id,
+        );
+        assert_eq!(
+            super::super::sessions::pending_group_end_for_session(&app.store, wrong_session)
+                .unwrap(),
+            None
+        );
+        app.realtime
+            .unregister_progress_recipient(partner.character_id, socket);
     }
 }

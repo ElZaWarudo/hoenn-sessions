@@ -602,18 +602,28 @@ fn repairs_damaged_accepted_release_without_lowering_sequence_floor() {
     drop(held);
     store.repair_accepted_at(&release, &payloads, NOW).unwrap();
     assert_eq!(
-        store.open_accepted_current(&trusted, NOW).unwrap().release_id(),
+        store
+            .open_accepted_current(&trusted, NOW)
+            .unwrap()
+            .release_id(),
         release.release_id()
     );
 
-    fs::write(installed.path().join(update::SIGNED_RELEASE_ENVELOPE), b"{}").unwrap();
+    fs::write(
+        installed.path().join(update::SIGNED_RELEASE_ENVELOPE),
+        b"{}",
+    )
+    .unwrap();
     assert!(matches!(
         store.open_accepted_current(&trusted, NOW),
         Err(UpdateError::MalformedEnvelope)
     ));
     store.repair_accepted_at(&release, &payloads, NOW).unwrap();
     assert_eq!(
-        store.open_accepted_current(&trusted, NOW).unwrap().release_id(),
+        store
+            .open_accepted_current(&trusted, NOW)
+            .unwrap()
+            .release_id(),
         release.release_id()
     );
 

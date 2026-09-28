@@ -23,8 +23,8 @@ fn main() -> std::process::ExitCode {
 fn run_windows() -> std::process::ExitCode {
     use std::sync::{Arc, atomic::AtomicBool};
 
+    use backend::{BOOTSTRAP_RESTART_CODE, BackendConfig, spawn_backend};
     use coop_launcher::{BootstrapInput, RecoveryDiscovery};
-    use backend::{BackendConfig, spawn_backend, BOOTSTRAP_RESTART_CODE};
     use renderer::DesktopApp;
 
     let config = match BackendConfig::compiled() {

@@ -1,4 +1,6 @@
 #include "global.h"
+#include "coop/group_travel.h"
+#include "event_data.h"
 #include "heal_location.h"
 #include "load_save.h"
 #include "region_map.h"
@@ -12,6 +14,7 @@
 #include "test/test.h"
 
 extern bool8 gFlightCallFromBag;
+extern void Johto_CommitKantoTravel(void);
 
 static void SetCurrentMap(u16 map, u16 mapSecId)
 {
@@ -98,6 +101,28 @@ TEST("Arrival hook preserves a Flight crossing through intermediate worlds")
     EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
     ExpectActiveHeal(HEAL_LOCATION_KANTO_LATER_PALLET_TOWN);
     EXPECT(!JohtoTravel_TryCommitArrival());
+}
+
+TEST("Solo Route 22 return commits Johto heal at the reception gate")
+{
+    CoopGroupTravel_Init();
+    JohtoSave_InitializeCurrent();
+    SetCurrentMap(MAP_ROUTE22, MAPSEC_ROUTE_22);
+    SetActiveHeal(HEAL_LOCATION_PALLET_TOWN);
+    EXPECT(JohtoTravel_SetPendingDestination(JOHTO_TRAVEL_DESTINATION_JOHTO));
+    EXPECT(JohtoTravel_PrepareCrossing());
+
+    SetCurrentMap(MAP_RECEPTION_GATE, MAPSEC_KANTO_VICTORY_ROAD);
+    gSaveBlock1Ptr->pos.x = 17;
+    gSaveBlock1Ptr->pos.y = 9;
+    EXPECT(!JohtoTravel_CommitAtReceptionGate());
+    EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_JOHTO);
+    gSaveBlock1Ptr->pos.x = 18;
+    EXPECT_EQ(JohtoTravel_GetCurrentContext(), JOHTO_TRAVEL_CONTEXT_KANTO_ORIGINAL);
+    Johto_CommitKantoTravel();
+    EXPECT_EQ(gSpecialVar_Result, TRUE);
+    EXPECT_EQ(JohtoTravel_GetPendingDestination(), JOHTO_TRAVEL_DESTINATION_NONE);
+    ExpectActiveHeal(HEAL_LOCATION_JOHTO_NEW_BARK_TOWN);
 }
 
 TEST("Cancelling Flight Call clears its bag and forced-era state")

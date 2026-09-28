@@ -20,6 +20,7 @@
 #include "constants/items.h"
 #include "constants/pokemon.h"
 #include "battle_util.h"
+#include "coop/battle_runtime.h"
 #include "constants/songs.h"
 
 // function declarations
@@ -6942,8 +6943,10 @@ static void SpriteCB_MindBlownExplosion(struct Sprite *sprite)
 
 void SpriteCB_RandomCentredHits(struct Sprite *sprite)
 {
+    // Animation timing differs between clients; keep visual draws off the
+    // shared gameplay RNG while a cooperative battle is active.
     if (gBattleAnimArgs[1] == -1)
-        gBattleAnimArgs[1] = Random() & 3;
+        gBattleAnimArgs[1] = (CoopBattleRuntime_IsEngineActive() ? Random2() : Random()) & 3;
 
     StartSpriteAffineAnim(sprite, gBattleAnimArgs[1]);
 
@@ -6962,8 +6965,8 @@ void SpriteCB_RandomCentredHits(struct Sprite *sprite)
             InitSpritePosToAnimTarget(sprite, FALSE);
     }
 
-    sprite->x2 += (Random() % 48) - 24;
-    sprite->y2 += (Random() % 24) - 12;
+    sprite->x2 += ((CoopBattleRuntime_IsEngineActive() ? Random2() : Random()) % 48) - 24;
+    sprite->y2 += ((CoopBattleRuntime_IsEngineActive() ? Random2() : Random()) % 24) - 12;
 
     StoreSpriteCallbackInData6(sprite, DestroySpriteAndMatrix);
     sprite->callback = RunStoredCallbackWhenAffineAnimEnds;
@@ -8319,7 +8322,9 @@ void AnimTask_StickySyrup(u8 taskId)
 
 void AnimTask_RandomBool(u8 taskId)
 {
-    if (RandomPercentage(RNG_NONE, 50))
+    // Animation timing differs between peers. Keep its coin flip out of the
+    // gameplay RNG while a deterministic co-op battle is active.
+    if (CoopBattleRuntime_IsEngineActive() ? (Random2() & 1) : RandomPercentage(RNG_NONE, 50))
         gBattleAnimArgs[ARG_RET_ID] = TRUE;
     else
         gBattleAnimArgs[ARG_RET_ID] = FALSE;

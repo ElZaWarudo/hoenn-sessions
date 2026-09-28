@@ -7,9 +7,14 @@
 
 use std::array;
 
+mod pokemon;
+mod trade;
+pub use pokemon::{BoxPokemon, PartyPokemon, PokemonError, PokemonIdentity, PokemonSlot};
+pub use trade::{TradeError, trade_party_pokemon};
+
 use coop_protocol::{
-    IdentityKind, RegionId,
-    identity_catalog::{resolve_badge_bit, resolve_ordinal},
+    IdentityKind, ProtocolError, RegionId, TrainerInstanceId,
+    identity_catalog::{resolve_badge_bit, resolve_ordinal, trainer},
 };
 use thiserror::Error;
 
@@ -29,6 +34,36 @@ pub const SAVE_BLOCK3_CHUNK_OFFSET: usize = 3968;
 pub const SAVE_BLOCK3_CHUNK_SIZE: usize = 116;
 /// Total reassembled `SaveBlock3` capacity in a slot.
 pub const SAVE_BLOCK3_CAPACITY: usize = SAVE_BLOCK3_CHUNK_SIZE * SECTORS_PER_SLOT;
+/// Serialized size of `SaveBlock1` (`src/save.c` asserts `0x3F08`).
+pub const SAVE_BLOCK1_SIZE: usize = 0x3f08;
+/// `sizeof(struct PokemonStorage)` in the ROM. The final sector has a shorter
+/// checksummed payload, so exposing its remaining padding would be unsafe.
+pub const PC_STORAGE_CAPACITY: usize = 34_144;
+
+// SaveBlock1 fields used to prove that the first Mr. Briney voyage scene has
+// completed. These offsets are part of the ROM save ABI; keep the parser
+// parameterized by the destination map because the Dewford map number still
+// needs emulator verification.
+const SAVE_BLOCK1_LOCATION_OFFSET: usize = 0x04;
+const SAVE_BLOCK1_FLAGS_OFFSET: usize = 0x1270;
+const SAVE_BLOCK1_VARS_OFFSET: usize = 0x139c;
+const SAVE_BLOCK1_BILL_EVIDENCE_END: usize = SAVE_BLOCK1_VARS_OFFSET + 2 * (0x18a + 1);
+const SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET: usize = 0x14b8;
+const SAVE_BLOCK1_EVIDENCE_END: usize =
+    SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET + std::mem::size_of::<u16>();
+const FLAG_NORMAN_MATCH_CALL_BYTE_OFFSET: usize = SAVE_BLOCK1_FLAGS_OFFSET + 0x26;
+const FLAG_BRINEY_DEWFORD_BYTE_OFFSET: usize = SAVE_BLOCK1_FLAGS_OFFSET + 0x5c;
+const FLAG_NORMAN_MATCH_CALL_MASK: u8 = 0x04;
+const FLAG_HIDE_MR_BRINEY_DEWFORD_MASK: u8 = 0x10;
+const FLAG_HIDE_MR_BRINEY_BOAT_DEWFORD_MASK: u8 = 0x80;
+const FLAG_HIDE_ROUTE_104_MR_BRINEY_BOAT_MASK: u8 = 0x40;
+const FLAG_DEFEATED_WALLY_VICTORY_ROAD: usize = 0x7E;
+const VAR_VICTORY_ROAD_1F_STATE: usize = 0x40C3;
+const FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY: usize = 0x35A;
+/// Canonical CSP1 ordinal for `HOENN:TRAINER_WALLY_1`.
+const WALLY_VICTORY_ROAD_TRAINER_ORDINAL: u16 = 518;
+const SAVE_BLOCK1_WALLY_EVIDENCE_END: usize =
+    SAVE_BLOCK1_VARS_OFFSET + 2 * (VAR_VICTORY_ROAD_1F_STATE - 0x4000 + 1);
 
 /// Offset of the cloud extension inside `SaveBlock3`.
 pub const COOP_SAVE_OFFSET: usize = 4;
@@ -157,7 +192,142 @@ pub struct CharacterLineage {
     pub player_trainer_id: [u8; PLAYER_TRAINER_ID_SIZE],
 }
 
+/// Selected-slot `SaveBlock1` evidence for the first Mr. Briney voyage.
+///
+/// The fields retain the raw location and board-state values along with the
+/// decoded flag predicates. This is deliberately evidence only: callers must
+/// supply the expected destination map after the ROM's map IDs have been
+/// verified in an emulator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BrineyVoyageEvidence {
+    /// SaveBlock1 location map group, stored as the ROM's unsigned byte.
+    pub map_group: u8,
+    /// SaveBlock1 location map number, stored as the ROM's unsigned byte.
+    pub map_num: u8,
+    /// Raw `VAR_BOARD_BRINEY_BOAT_STATE` value.
+    pub board_briney_boat_state: u16,
+    /// Whether `FLAG_ENABLE_NORMAN_MATCH_CALL` is set.
+    pub norman_match_call_enabled: bool,
+    /// Whether `FLAG_HIDE_MR_BRINEY_DEWFORD_TOWN` is set.
+    pub dewford_briney_hidden: bool,
+    /// Whether `FLAG_HIDE_MR_BRINEY_BOAT_DEWFORD_TOWN` is set.
+    pub dewford_boat_hidden: bool,
+    /// Whether `FLAG_HIDE_ROUTE_104_MR_BRINEY_BOAT` is set.
+    pub route104_boat_hidden: bool,
+}
+
+impl BrineyVoyageEvidence {
+    /// Returns whether all post-scene evidence matches the supplied map.
+    ///
+    /// The expected map group and number are parameters instead of constants
+    /// because the Dewford destination numeric ID must be confirmed against
+    /// an emulator save before any caller selects it.
+    #[must_use]
+    pub const fn is_first_voyage_post_scene_at(
+        self,
+        expected_map_group: u8,
+        expected_map_num: u8,
+    ) -> bool {
+        self.map_group == expected_map_group
+            && self.map_num == expected_map_num
+            && self.board_briney_boat_state == 0
+            && self.norman_match_call_enabled
+            && !self.dewford_briney_hidden
+            && !self.dewford_boat_hidden
+            && self.route104_boat_hidden
+    }
+}
+
+/// Selected-slot evidence for Bill's first Seagallop crossings.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BillVoyageEvidence {
+    pub map_group: u8,
+    pub map_num: u8,
+    pub cinnabar_scene: u16,
+    pub one_island_harbor_scene: u16,
+    pub one_island_center_scene: u16,
+    pub sevii_map_123: bool,
+    pub pc_storage_disabled: bool,
+    pub lostelle_hidden_at_game_corner: bool,
+    pub lostelle_visible_at_home: bool,
+}
+
+impl BillVoyageEvidence {
+    #[must_use]
+    pub const fn is_cinnabar_to_one_post_scene(self) -> bool {
+        self.map_group == 64
+            && self.map_num == 0
+            && self.cinnabar_scene >= 2
+            && self.one_island_harbor_scene >= 3
+            && self.one_island_center_scene >= 1
+            && self.sevii_map_123
+            && self.pc_storage_disabled
+    }
+
+    #[must_use]
+    pub const fn is_one_to_cinnabar_post_scene(self) -> bool {
+        self.map_group == 37
+            && self.map_num == 8
+            && self.one_island_center_scene >= 3
+            && self.cinnabar_scene >= 4
+            && self.lostelle_hidden_at_game_corner
+            && self.lostelle_visible_at_home
+    }
+}
+
+/// Selected-slot evidence for Wally's Victory Road battle.
+///
+/// The `defeated_wally_flag` field is the ROM's legacy story flag. The
+/// `canonical_trainer_defeated` field comes from the CSP1 trainer bitset and
+/// is the identity used for co-op authorization; callers must not substitute
+/// the legacy flag for that canonical bit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WallyVictoryRoadEvidence {
+    /// Whether `FLAG_DEFEATED_WALLY_VICTORY_ROAD` is set.
+    pub defeated_wally_flag: bool,
+    /// Raw `VAR_VICTORY_ROAD_1F_STATE` value (one or two after either battle).
+    pub victory_road_1f_state: u16,
+    /// Whether `FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY` is set.
+    pub entrance_wally_hidden: bool,
+    /// Whether CSP1 ordinal 518 (`HOENN:TRAINER_WALLY_1`) is defeated.
+    pub canonical_trainer_defeated: bool,
+}
+
+impl WallyVictoryRoadEvidence {
+    /// Returns whether the selected save contains the expected post-battle fields.
+    /// These client-written fields still require a server-issued gameplay commit.
+    #[must_use]
+    pub const fn is_post_battle(self) -> bool {
+        self.defeated_wally_flag
+            && matches!(self.victory_road_1f_state, 1 | 2)
+            && !self.entrance_wally_hidden
+            && self.canonical_trainer_defeated
+    }
+}
+
 impl CoopSaveV1 {
+    /// Returns the canonical progress record for one campaign region.
+    #[must_use]
+    pub fn progress_for(&self, region: RegionId) -> Option<&RegionalProgress> {
+        self.regional_progress
+            .iter()
+            .find(|progress| progress.region == region)
+    }
+
+    /// Whether the finalized save records a clear of this registered trainer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the identity is absent from the frozen registry.
+    pub fn defeated_trainer(&self, identity: &TrainerInstanceId) -> Result<bool, ProtocolError> {
+        let ordinal = trainer(identity)?
+            .ordinal
+            .expect("registered trainer identities have ordinals");
+        let byte = usize::from(ordinal / 8);
+        let mask = 1_u8 << (ordinal % 8);
+        Ok(self.defeated_trainers[byte] & mask != 0)
+    }
+
     /// Whether legacy migration found an identity collision that requires
     /// explicit resolution before online play.
     #[must_use]
@@ -207,6 +377,7 @@ pub struct ValidatedSave {
     selected_slot: SaveSlot,
     counter: u32,
     save_block3: [u8; SAVE_BLOCK3_CAPACITY],
+    logical_sector_offsets: [usize; SECTORS_PER_SLOT],
     character_lineage: CharacterLineage,
     coop: CoopSaveV1,
 }
@@ -255,6 +426,116 @@ impl ValidatedSave {
     #[must_use]
     pub const fn save_block3(&self) -> &[u8; SAVE_BLOCK3_CAPACITY] {
         &self.save_block3
+    }
+
+    /// Reads a bounded logical range of selected-slot `SaveBlock1` bytes.
+    #[must_use]
+    pub fn save_block1_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
+        self.logical_range(1, SAVE_BLOCK1_SIZE, offset, length)
+    }
+
+    /// Reads the selected slot's bounded first-voyage evidence.
+    ///
+    /// The range is taken from the already validated, ROM-selected slot. No
+    /// caller-provided raw bytes can reach this parser.
+    #[must_use]
+    pub fn briney_voyage_evidence(&self) -> BrineyVoyageEvidence {
+        let save_block1 = self
+            .save_block1_range(0, SAVE_BLOCK1_EVIDENCE_END)
+            .expect("first-voyage evidence range is inside SaveBlock1");
+        let dewford_flags = save_block1[FLAG_BRINEY_DEWFORD_BYTE_OFFSET];
+
+        BrineyVoyageEvidence {
+            map_group: save_block1[SAVE_BLOCK1_LOCATION_OFFSET],
+            map_num: save_block1[SAVE_BLOCK1_LOCATION_OFFSET + 1],
+            board_briney_boat_state: read_u16(
+                &save_block1,
+                SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET,
+            ),
+            norman_match_call_enabled: save_block1[FLAG_NORMAN_MATCH_CALL_BYTE_OFFSET]
+                & FLAG_NORMAN_MATCH_CALL_MASK
+                != 0,
+            dewford_briney_hidden: dewford_flags & FLAG_HIDE_MR_BRINEY_DEWFORD_MASK != 0,
+            dewford_boat_hidden: dewford_flags & FLAG_HIDE_MR_BRINEY_BOAT_DEWFORD_MASK != 0,
+            route104_boat_hidden: dewford_flags & FLAG_HIDE_ROUTE_104_MR_BRINEY_BOAT_MASK != 0,
+        }
+    }
+
+    #[must_use]
+    pub fn bill_voyage_evidence(&self) -> BillVoyageEvidence {
+        let block = self
+            .save_block1_range(0, SAVE_BLOCK1_BILL_EVIDENCE_END)
+            .expect("Bill evidence range is inside SaveBlock1");
+        let var = |id: usize| read_u16(&block, SAVE_BLOCK1_VARS_OFFSET + 2 * (id - 0x4000));
+        let flag = |id: usize| block[SAVE_BLOCK1_FLAGS_OFFSET + id / 8] & (1 << (id % 8)) != 0;
+        BillVoyageEvidence {
+            map_group: block[SAVE_BLOCK1_LOCATION_OFFSET],
+            map_num: block[SAVE_BLOCK1_LOCATION_OFFSET + 1],
+            cinnabar_scene: var(0x4171),
+            one_island_harbor_scene: var(0x4175),
+            one_island_center_scene: var(0x4176),
+            sevii_map_123: flag(0x15f),
+            pc_storage_disabled: flag(0x15e),
+            lostelle_hidden_at_game_corner: flag(0x852),
+            lostelle_visible_at_home: !flag(0x853),
+        }
+    }
+
+    /// Reads selected-slot evidence for Wally's Victory Road battle.
+    ///
+    /// The story flag and variables are decoded from the ROM-selected
+    /// `SaveBlock1`; canonical battle completion is read from CSP1 trainer
+    /// ordinal 518 (`HOENN:TRAINER_WALLY_1`) rather than the legacy trainer
+    /// flag range.
+    #[must_use]
+    pub fn wally_victory_road_evidence(&self) -> WallyVictoryRoadEvidence {
+        let block = self
+            .save_block1_range(0, SAVE_BLOCK1_WALLY_EVIDENCE_END)
+            .expect("Wally evidence range is inside SaveBlock1");
+        let flag = |id: usize| block[SAVE_BLOCK1_FLAGS_OFFSET + id / 8] & (1 << (id % 8)) != 0;
+        let ordinal = usize::from(WALLY_VICTORY_ROAD_TRAINER_ORDINAL);
+        let canonical_trainer_defeated =
+            self.coop.defeated_trainers[ordinal / 8] & (1 << (ordinal % 8)) != 0;
+
+        WallyVictoryRoadEvidence {
+            defeated_wally_flag: flag(FLAG_DEFEATED_WALLY_VICTORY_ROAD),
+            victory_road_1f_state: read_u16(
+                &block,
+                SAVE_BLOCK1_VARS_OFFSET + 2 * (VAR_VICTORY_ROAD_1F_STATE - 0x4000),
+            ),
+            entrance_wally_hidden: flag(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY),
+            canonical_trainer_defeated,
+        }
+    }
+
+    /// Reads a bounded logical range of selected-slot PC-storage bytes.
+    #[must_use]
+    pub fn pc_storage_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
+        self.logical_range(6, PC_STORAGE_CAPACITY, offset, length)
+    }
+
+    fn logical_range(
+        &self,
+        first_sector: usize,
+        capacity: usize,
+        offset: usize,
+        length: usize,
+    ) -> Option<Vec<u8>> {
+        let end = offset.checked_add(length)?;
+        if end > capacity {
+            return None;
+        }
+        let mut result = Vec::with_capacity(length);
+        let mut cursor = offset;
+        while cursor < end {
+            let logical = first_sector + cursor / SAVE_BLOCK3_CHUNK_OFFSET;
+            let inside = cursor % SAVE_BLOCK3_CHUNK_OFFSET;
+            let count = (end - cursor).min(SAVE_BLOCK3_CHUNK_OFFSET - inside);
+            let start = self.logical_sector_offsets[logical] + inside;
+            result.extend_from_slice(&self.raw[start..start + count]);
+            cursor += count;
+        }
+        Some(result)
     }
 
     /// In-game identity carried by the selected committed save slot.
@@ -531,6 +812,7 @@ struct ValidatedSlot {
     slot: SaveSlot,
     counter: u32,
     save_block3: [u8; SAVE_BLOCK3_CAPACITY],
+    logical_sector_offsets: [usize; SECTORS_PER_SLOT],
     character_lineage: CharacterLineage,
 }
 
@@ -603,6 +885,7 @@ pub fn parse(
         selected_slot: selected.slot,
         counter: selected.counter,
         save_block3: selected.save_block3,
+        logical_sector_offsets: selected.logical_sector_offsets,
         character_lineage: selected.character_lineage,
         coop,
     })
@@ -728,6 +1011,7 @@ fn validate_slot(flash: &[u8], slot: SaveSlot) -> Result<ValidatedSlot, SlotErro
         slot,
         counter,
         save_block3,
+        logical_sector_offsets,
         character_lineage,
     })
 }

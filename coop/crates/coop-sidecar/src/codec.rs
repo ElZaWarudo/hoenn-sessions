@@ -36,6 +36,10 @@ pub enum MessageType {
     GroupTravelClient = 0x000F,
     CompanionState = 0x0010,
     SocialSignal = 0x0011,
+    PairingRequest = 0x0012,
+    ProgressObservation = 0x0013,
+    BattleAbortRequest = 0x0014,
+    BattleReady = 0x0015,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -53,6 +57,14 @@ pub enum MessageType {
     GroupTravelServer = 0x010E,
     RemoteCompanion = 0x010F,
     RemoteSocialSignal = 0x0110,
+    RemoteInteraction = 0x0111,
+    ProgressEvent = 0x0113,
+    PairingStatus = 0x0112,
+    PeerPartyChunk = 0x0114,
+    BattleConsentOutcome = 0x0115,
+    BattleReserveRejected = 0x0116,
+    BattleStart = 0x0117,
+    GroupEnded = 0x0118,
 }
 
 impl MessageType {
@@ -75,7 +87,11 @@ impl MessageType {
             | Self::OnlineRequest
             | Self::GroupTravelClient
             | Self::CompanionState
-            | Self::SocialSignal => Direction::RomToSidecar,
+            | Self::SocialSignal
+            | Self::ProgressObservation
+            | Self::BattleAbortRequest
+            | Self::BattleReady => Direction::RomToSidecar,
+            Self::PairingRequest => Direction::RomToSidecar,
             Self::SessionReady
             | Self::RemotePlayerSpawn
             | Self::RemotePlayerUpdate
@@ -92,7 +108,15 @@ impl MessageType {
             | Self::OnlineStatus
             | Self::GroupTravelServer
             | Self::RemoteCompanion
-            | Self::RemoteSocialSignal => Direction::SidecarToRom,
+            | Self::RemoteSocialSignal
+            | Self::RemoteInteraction => Direction::SidecarToRom,
+            Self::ProgressEvent => Direction::SidecarToRom,
+            Self::PairingStatus => Direction::SidecarToRom,
+            Self::PeerPartyChunk => Direction::SidecarToRom,
+            Self::BattleConsentOutcome => Direction::SidecarToRom,
+            Self::BattleReserveRejected | Self::BattleStart | Self::GroupEnded => {
+                Direction::SidecarToRom
+            }
         }
     }
 }
@@ -119,6 +143,10 @@ impl TryFrom<u16> for MessageType {
             0x000F => Self::GroupTravelClient,
             0x0010 => Self::CompanionState,
             0x0011 => Self::SocialSignal,
+            0x0012 => Self::PairingRequest,
+            0x0013 => Self::ProgressObservation,
+            0x0014 => Self::BattleAbortRequest,
+            0x0015 => Self::BattleReady,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -136,6 +164,14 @@ impl TryFrom<u16> for MessageType {
             0x010E => Self::GroupTravelServer,
             0x010F => Self::RemoteCompanion,
             0x0110 => Self::RemoteSocialSignal,
+            0x0111 => Self::RemoteInteraction,
+            0x0113 => Self::ProgressEvent,
+            0x0112 => Self::PairingStatus,
+            0x0114 => Self::PeerPartyChunk,
+            0x0115 => Self::BattleConsentOutcome,
+            0x0116 => Self::BattleReserveRejected,
+            0x0117 => Self::BattleStart,
+            0x0118 => Self::GroupEnded,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -440,12 +476,16 @@ mod tests {
     fn social_message_types_preserve_direction() {
         let companion = BridgeFrame::new(MessageType::CompanionState, 5, 9, &[0_u8; 8]).unwrap();
         let signal = BridgeFrame::new(MessageType::SocialSignal, 6, 9, &[0_u8; 12]).unwrap();
+        let progress =
+            BridgeFrame::new(MessageType::ProgressObservation, 9, 9, &[1, 1, 2, 0]).unwrap();
         let remote_companion =
             BridgeFrame::new(MessageType::RemoteCompanion, 7, 9, &[0_u8; 16]).unwrap();
         let remote_signal =
             BridgeFrame::new(MessageType::RemoteSocialSignal, 8, 9, &[0_u8; 20]).unwrap();
         assert_eq!(companion.direction(), Direction::RomToSidecar);
         assert_eq!(signal.direction(), Direction::RomToSidecar);
+        assert_eq!(progress.direction(), Direction::RomToSidecar);
+        assert_eq!(progress.payload(), &[1, 1, 2, 0]);
         assert_eq!(remote_companion.direction(), Direction::SidecarToRom);
         assert_eq!(remote_signal.direction(), Direction::SidecarToRom);
         assert!(companion.ensure_direction(Direction::SidecarToRom).is_err());
@@ -466,5 +506,155 @@ mod tests {
         assert_eq!(client.payload().len(), 32);
         assert!(client.ensure_direction(Direction::SidecarToRom).is_err());
         assert!(server.ensure_direction(Direction::RomToSidecar).is_err());
+    }
+
+    #[test]
+    fn battle_message_types_have_strict_direction_and_fit_frame() {
+        use coop_protocol::{
+            BattleDigest, BattleId, BattleManifestRecord, BattleReadyRecord, BattleStartRecord,
+            TurnBundleRecord,
+        };
+        let id = BattleId([7; 16]);
+        let manifest = BattleManifestRecord {
+            battle_id: id,
+            turn: 0,
+            seed: BattleDigest([1; 32]),
+            snapshot_hashes: [BattleDigest([2; 32]), BattleDigest([3; 32])],
+            kind: coop_protocol::BattleKind::Friendly,
+            local_member_slot: 0,
+            trainer_region: coop_protocol::RegionId::Unspecified,
+            trainer_ordinal: 0,
+        };
+        let bundle = TurnBundleRecord {
+            battle_id: id,
+            turn: 1,
+            actions: [vec![1; 48], vec![2; 48]],
+        };
+        for (message_type, payload) in [
+            (MessageType::BattleManifest, manifest.encode().unwrap()),
+            (MessageType::TurnBundle, bundle.encode().unwrap()),
+            (
+                MessageType::BattleStart,
+                BattleStartRecord { battle_id: id }.encode().unwrap(),
+            ),
+        ] {
+            let frame = BridgeFrame::new(message_type, 1, 9, &payload).unwrap();
+            assert_eq!(frame.direction(), Direction::SidecarToRom);
+            assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
+            assert_eq!(
+                BridgeFrame::decode_for(&frame.encode(), Direction::SidecarToRom)
+                    .unwrap()
+                    .payload(),
+                payload
+            );
+        }
+        for message_type in [
+            MessageType::PartySnapshot,
+            MessageType::ActionIntent,
+            MessageType::TurnResultHash,
+            MessageType::BattleReady,
+        ] {
+            assert_eq!(message_type.direction(), Direction::RomToSidecar);
+        }
+        let ready = BattleReadyRecord {
+            battle_id: id,
+            party_digest: BattleDigest([4; 32]),
+        };
+        let payload = ready.encode().unwrap();
+        let frame = BridgeFrame::new(MessageType::BattleReady, 2, 9, &payload).unwrap();
+        assert_eq!(
+            BridgeFrame::decode_for(&frame.encode(), Direction::RomToSidecar)
+                .unwrap()
+                .payload(),
+            payload
+        );
+    }
+
+    #[test]
+    fn peer_party_chunk_has_server_direction_and_exact_wire_length() {
+        use coop_protocol::{BattleId, PartySnapshotChunk};
+        let chunk = PartySnapshotChunk {
+            battle_id: BattleId([7; 16]),
+            party_slot: 0,
+            chunk_index: 0,
+            chunk_count: 1,
+            mon: vec![0xAB; 100],
+        };
+        let payload = chunk.encode().unwrap();
+        assert_eq!(payload.len(), 120);
+        let frame = BridgeFrame::new(MessageType::PeerPartyChunk, 4, 9, &payload).unwrap();
+        assert_eq!(frame.direction(), Direction::SidecarToRom);
+        assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
+        assert_eq!(
+            BridgeFrame::decode_for(&frame.encode(), Direction::SidecarToRom)
+                .unwrap()
+                .payload(),
+            payload
+        );
+    }
+
+    #[test]
+    fn battle_consent_message_types_preserve_direction_and_exact_payloads() {
+        use coop_protocol::{
+            BattleConsentOutcome, BattleConsentOutcomeRecord, BattleDecision, BattleId,
+            BattleJoinOfferRecord, BattleJoinResponseRecord, BattleKind,
+            BattleReserveRejectedRecord, BattleRole, TrainerBattleReserveRecord,
+        };
+        let id = BattleId([7; 16]);
+        let reserve = TrainerBattleReserveRecord {
+            kind: BattleKind::Friendly,
+            request_nonce: 42,
+            trainer_region: None,
+            trainer_ordinal: None,
+        };
+        let response = BattleJoinResponseRecord {
+            battle_id: id,
+            decision: BattleDecision::Accept,
+        };
+        let offer = BattleJoinOfferRecord {
+            battle_id: id,
+            kind: BattleKind::Friendly,
+            role: BattleRole::Responder,
+            request_nonce: 0,
+        };
+        for (kind, payload) in [
+            (MessageType::TrainerBattleReserve, reserve.encode().unwrap()),
+            (MessageType::BattleJoinResponse, response.encode().unwrap()),
+        ] {
+            let frame = BridgeFrame::new(kind, 2, 9, &payload).unwrap();
+            assert_eq!(frame.direction(), Direction::RomToSidecar);
+            assert!(frame.ensure_direction(Direction::SidecarToRom).is_err());
+        }
+        let payload = offer.encode().unwrap();
+        let frame = BridgeFrame::new(MessageType::BattleJoinOffer, 3, 9, &payload).unwrap();
+        assert_eq!(frame.direction(), Direction::SidecarToRom);
+        assert_eq!(frame.payload().len(), 22);
+        assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
+
+        let outcome = BattleConsentOutcomeRecord {
+            battle_id: id,
+            request_nonce: 42,
+            outcome: BattleConsentOutcome::Accepted,
+        };
+        let payload = outcome.encode().unwrap();
+        let frame = BridgeFrame::new(MessageType::BattleConsentOutcome, 4, 9, &payload).unwrap();
+        assert_eq!(frame.direction(), Direction::SidecarToRom);
+        assert_eq!(frame.payload().len(), BattleConsentOutcomeRecord::WIRE_SIZE);
+        assert_eq!(
+            BridgeFrame::decode_for(&frame.encode(), Direction::SidecarToRom)
+                .unwrap()
+                .payload(),
+            payload
+        );
+
+        let rejected = BattleReserveRejectedRecord { request_nonce: 42 };
+        let payload = rejected.encode().unwrap();
+        let frame = BridgeFrame::new(MessageType::BattleReserveRejected, 5, 9, &payload).unwrap();
+        assert_eq!(frame.direction(), Direction::SidecarToRom);
+        assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
+        assert_eq!(
+            BattleReserveRejectedRecord::decode(frame.payload()),
+            Ok(rejected)
+        );
     }
 }

@@ -5,7 +5,10 @@ use std::{future::Future, pin::Pin, time::Duration};
 use coop_cloud::{
     AccessToken, ApiVersion, GroupId, GroupTravelAction, GroupTravelActionRequest,
     GroupTravelProposalId, GroupTravelProposalRequest, GroupTravelProposalStatus,
-    GroupTravelProposalView, IdempotencyKey, LeaseFence, OnlineSnapshotRequest,
+    GroupTravelProposalView, GroupTravelSceneMarkerRequest, GroupTravelSceneReceiptRequest,
+    IdempotencyKey, LeaseFence, OnlineSnapshotRequest, SnapshotRecord, StoryTravelRecoveryAction,
+    StoryTravelRecoveryActionRequest, StoryTravelRecoveryOutcome,
+    StoryTravelRecoveryResolutionView, StoryTravelRecoveryView,
 };
 use coop_protocol::{
     GroupTravelClientKind, GroupTravelClientRecord, GroupTravelDeparture, GroupTravelReason,
@@ -40,6 +43,43 @@ pub enum GroupTravelError {
 
 pub type GroupTravelFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, GroupTravelError>> + Send + 'a>>;
+
+fn validate_story_recovery(
+    view: StoryTravelRecoveryView,
+    character_id: coop_cloud::CharacterId,
+) -> Result<StoryTravelRecoveryView, GroupTravelError> {
+    if view.api_version != ApiVersion::V1
+        || view.marker_fence.character_id != character_id
+        || view.scene_nonce == 0
+        || !matches!(
+            view.status,
+            GroupTravelProposalStatus::AwaitingSceneReceipts
+                | GroupTravelProposalStatus::Suspended
+                | GroupTravelProposalStatus::Cancelled
+        )
+    {
+        return Err(GroupTravelError::InvalidResponse);
+    }
+    Ok(view)
+}
+
+fn validate_story_recovery_resolution(
+    view: StoryTravelRecoveryResolutionView,
+    proposal_id: GroupTravelProposalId,
+    action: StoryTravelRecoveryAction,
+) -> Result<StoryTravelRecoveryResolutionView, GroupTravelError> {
+    let expected = match action {
+        StoryTravelRecoveryAction::Reconcile => StoryTravelRecoveryOutcome::Reconciled,
+        StoryTravelRecoveryAction::Abandon => StoryTravelRecoveryOutcome::Abandoned,
+    };
+    if view.api_version != ApiVersion::V1
+        || view.proposal_id != proposal_id
+        || view.outcome != expected
+    {
+        return Err(GroupTravelError::InvalidResponse);
+    }
+    Ok(view)
+}
 
 fn map_http_error(error: &HttpClientError) -> GroupTravelError {
     match error {
@@ -189,6 +229,118 @@ impl ReqwestCloudApi {
             .await
         })
     }
+
+    pub(crate) fn group_travel_scene_marker_http(
+        &self,
+        token: AccessToken,
+        group_id: GroupId,
+        proposal_id: GroupTravelProposalId,
+        request: GroupTravelSceneMarkerRequest,
+    ) -> GroupTravelFuture<'_, GroupTravelProposalView> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/groups/{group_id}/travel-proposals/{proposal_id}/scene-markers"
+                ))
+                .map_err(|error| map_http_error(&error))?;
+            self.send_group_travel(
+                self.group_travel_request(Method::POST, url, &token, request.fence())
+                    .json(&request),
+                StatusCode::OK,
+            )
+            .await
+        })
+    }
+
+    pub(crate) fn group_travel_scene_receipt_http(
+        &self,
+        token: AccessToken,
+        group_id: GroupId,
+        proposal_id: GroupTravelProposalId,
+        request: GroupTravelSceneReceiptRequest,
+    ) -> GroupTravelFuture<'_, GroupTravelProposalView> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/groups/{group_id}/travel-proposals/{proposal_id}/scene-receipts"
+                ))
+                .map_err(|error| map_http_error(&error))?;
+            self.send_group_travel(
+                self.group_travel_request(Method::POST, url, &token, request.fence())
+                    .json(&request),
+                StatusCode::OK,
+            )
+            .await
+        })
+    }
+
+    pub(crate) fn story_travel_recovery_http(
+        &self,
+        token: AccessToken,
+        fence: LeaseFence,
+    ) -> GroupTravelFuture<'_, Option<StoryTravelRecoveryView>> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/characters/{}/story-travel-recovery",
+                    fence.character_id
+                ))
+                .map_err(|error| map_http_error(&error))?;
+            let response = self
+                .group_travel_request(Method::GET, url, &token, fence)
+                .send()
+                .await
+                .map_err(|_| GroupTravelError::Unavailable)?;
+            match response.status() {
+                StatusCode::OK => {
+                    let bytes = crate::bounded_body(response, RESPONSE_MAX_BYTES)
+                        .await
+                        .map_err(|error| map_http_error(&error))?;
+                    let view = serde_json::from_slice(&bytes)
+                        .map_err(|_| GroupTravelError::InvalidResponse)?;
+                    validate_story_recovery(view, fence.character_id).map(Some)
+                }
+                StatusCode::NOT_FOUND => Ok(None),
+                status => Err(map_http_error(&HttpClientError::Status(status))),
+            }
+        })
+    }
+
+    pub(crate) fn story_travel_recovery_action_http(
+        &self,
+        token: AccessToken,
+        proposal_id: GroupTravelProposalId,
+        fence: LeaseFence,
+        action: StoryTravelRecoveryAction,
+    ) -> GroupTravelFuture<'_, StoryTravelRecoveryResolutionView> {
+        Box::pin(async move {
+            let url = self
+                .url(&format!(
+                    "v1/characters/{}/story-travel-recovery/{proposal_id}/actions",
+                    fence.character_id
+                ))
+                .map_err(|error| map_http_error(&error))?;
+            let request = StoryTravelRecoveryActionRequest {
+                api_version: ApiVersion::V1,
+                action,
+            };
+            let response = self
+                .group_travel_request(Method::POST, url, &token, fence)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|_| GroupTravelError::Unavailable)?;
+            if response.status() != StatusCode::OK {
+                return Err(map_http_error(&HttpClientError::Status(response.status())));
+            }
+            let bytes = crate::bounded_body(response, RESPONSE_MAX_BYTES)
+                .await
+                .map_err(|error| map_http_error(&error))?;
+            let view =
+                serde_json::from_slice(&bytes).map_err(|_| GroupTravelError::InvalidResponse)?;
+            validate_story_recovery_resolution(view, proposal_id, action)
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -225,7 +377,21 @@ struct TrackedProposal {
     request_id: u32,
     role: Role,
     status: GroupTravelProposalStatus,
+    vote_deadline: Option<tokio::time::Instant>,
     pending_action: Option<PendingAction>,
+    marker_requested: bool,
+    pending_marker: bool,
+    marker_accepted: bool,
+    marker_fence: Option<LeaseFence>,
+    scene_complete: bool,
+    pending_receipt: Option<GroupTravelSceneReceiptRequest>,
+    receipt_accepted: bool,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StoryCheckpointToken {
+    group_id: GroupId,
+    proposal_id: GroupTravelProposalId,
+    marker_fence: LeaseFence,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Outbound {
@@ -256,6 +422,8 @@ enum PendingKind {
     Get,
     Create,
     Action,
+    Marker,
+    Receipt,
 }
 struct PendingWork<'a> {
     kind: PendingKind,
@@ -292,6 +460,21 @@ enum Completion {
         pending: PendingAction,
         result: Result<GroupTravelProposalView, GroupTravelError>,
     },
+    Marker {
+        fence: LeaseFence,
+        generation: u32,
+        group_id: GroupId,
+        proposal_id: GroupTravelProposalId,
+        result: Result<GroupTravelProposalView, GroupTravelError>,
+    },
+    Receipt {
+        fence: LeaseFence,
+        generation: u32,
+        group_id: GroupId,
+        proposal_id: GroupTravelProposalId,
+        request: GroupTravelSceneReceiptRequest,
+        result: Result<GroupTravelProposalView, GroupTravelError>,
+    },
 }
 impl Completion {
     const fn generation(&self) -> u32 {
@@ -300,7 +483,9 @@ impl Completion {
             | Self::Current { generation, .. }
             | Self::Get { generation, .. }
             | Self::Create { generation, .. }
-            | Self::Action { generation, .. } => *generation,
+            | Self::Action { generation, .. }
+            | Self::Marker { generation, .. }
+            | Self::Receipt { generation, .. } => *generation,
         }
     }
 }
@@ -347,6 +532,70 @@ impl Default for GroupTravelOwner<'_> {
     }
 }
 impl<'a> GroupTravelOwner<'a> {
+    /// Capture eligibility before granting a checkpoint. An older finalized
+    /// save cannot become story evidence when SceneComplete arrives later.
+    pub(crate) fn story_checkpoint_token(&self, fence: LeaseFence) -> Option<StoryCheckpointToken> {
+        let tracked = self.tracked.as_ref()?;
+        let marker_fence = tracked.marker_fence?;
+        (is_story_route(tracked.route)
+            && matches!(
+                tracked.status,
+                GroupTravelProposalStatus::AwaitingSceneReceipts
+                    | GroupTravelProposalStatus::Suspended
+            )
+            && tracked.marker_accepted
+            && tracked.scene_complete
+            && !tracked.receipt_accepted
+            && tracked.pending_receipt.is_none()
+            && marker_fence.session_id == fence.session_id
+            && marker_fence.session_epoch == fence.session_epoch
+            && marker_fence.character_id == fence.character_id
+            && marker_fence.current_revision == fence.current_revision)
+            .then_some(StoryCheckpointToken {
+                group_id: tracked.group_id,
+                proposal_id: tracked.proposal_id,
+                marker_fence,
+            })
+    }
+
+    pub(crate) fn story_checkpoint_finalized(
+        &mut self,
+        token: StoryCheckpointToken,
+        snapshot: &SnapshotRecord,
+        fence: LeaseFence,
+    ) -> Result<(), SessionError> {
+        let tracked = self.tracked.as_mut().ok_or(SessionError::Realtime)?;
+        if tracked.group_id != token.group_id
+            || tracked.proposal_id != token.proposal_id
+            || tracked.marker_fence != Some(token.marker_fence)
+            || !tracked.marker_accepted
+            || !tracked.scene_complete
+            || tracked.pending_receipt.is_some()
+            || tracked.receipt_accepted
+            || snapshot.character_id != fence.character_id
+            || snapshot.session_id != token.marker_fence.session_id
+            || snapshot.session_epoch != token.marker_fence.session_epoch
+            || snapshot.parent_revision != token.marker_fence.current_revision
+            || snapshot.revision != fence.current_revision
+        {
+            return Err(SessionError::Realtime);
+        }
+        tracked.pending_receipt = Some(GroupTravelSceneReceiptRequest {
+            api_version: ApiVersion::V1,
+            session_id: fence.session_id,
+            character_id: fence.character_id,
+            current_revision: fence.current_revision,
+            session_epoch: fence.session_epoch,
+            client_instance_id: fence.client_instance_id,
+            snapshot_id: snapshot.snapshot_id,
+        });
+        // A GET prepared before the checkpoint carries the old revision and
+        // must not complete ahead of the post-save receipt.
+        self.pending = None;
+        self.next_poll = tokio::time::Instant::now();
+        Ok(())
+    }
+
     fn enter_generation(&mut self, generation: u32) {
         if self.generation == Some(generation) {
             return;
@@ -421,6 +670,58 @@ impl<'a> GroupTravelOwner<'a> {
                         fence,
                         generation,
                         pending,
+                        result,
+                    }
+                }),
+            });
+            return;
+        }
+        if let Some(tracked) = &self.tracked
+            && tracked.pending_marker
+        {
+            let group_id = tracked.group_id;
+            let proposal_id = tracked.proposal_id;
+            let request = GroupTravelSceneMarkerRequest {
+                api_version: ApiVersion::V1,
+                session_id: fence.session_id,
+                character_id: fence.character_id,
+                current_revision: fence.current_revision,
+                session_epoch: fence.session_epoch,
+                client_instance_id: fence.client_instance_id,
+                scene_nonce: tracked.request_id,
+            };
+            self.pending = Some(PendingWork {
+                kind: PendingKind::Marker,
+                future: Box::pin(async move {
+                    Completion::Marker {
+                        fence,
+                        generation,
+                        group_id,
+                        proposal_id,
+                        result: retry_scene_marker(api, token, group_id, proposal_id, request)
+                            .await,
+                    }
+                }),
+            });
+            return;
+        }
+        if let Some(tracked) = &self.tracked
+            && let Some(request) = tracked.pending_receipt.clone()
+        {
+            let group_id = tracked.group_id;
+            let proposal_id = tracked.proposal_id;
+            self.pending = Some(PendingWork {
+                kind: PendingKind::Receipt,
+                future: Box::pin(async move {
+                    let result =
+                        retry_scene_receipt(api, token, group_id, proposal_id, request.clone())
+                            .await;
+                    Completion::Receipt {
+                        fence,
+                        generation,
+                        group_id,
+                        proposal_id,
+                        request,
                         result,
                     }
                 }),
@@ -557,6 +858,8 @@ impl<'a> GroupTravelOwner<'a> {
             GroupTravelClientKind::Decision => self.handle_decision(fence, record),
             GroupTravelClientKind::Cancel => self.handle_cancel(fence, record),
             GroupTravelClientKind::Applied => self.handle_applied(fence, record),
+            GroupTravelClientKind::SceneMarkerRequest => self.handle_scene_marker(record),
+            GroupTravelClientKind::SceneComplete => self.handle_scene_complete(fence, record),
         }
     }
     fn handle_request(
@@ -724,6 +1027,54 @@ impl<'a> GroupTravelOwner<'a> {
             return Ok(());
         }
         self.schedule_action(fence, GroupTravelAction::Applied)
+    }
+    fn handle_scene_marker(&mut self, r: GroupTravelClientRecord) -> Result<(), SessionError> {
+        let Some(t) = self.tracked.as_mut() else {
+            return Err(SessionError::Realtime);
+        };
+        if !is_story_route(t.route)
+            || t.status != GroupTravelProposalStatus::AwaitingSceneReceipts
+            || !record_matches(t, r, false)
+        {
+            return Err(SessionError::Realtime);
+        }
+        t.marker_requested = true;
+        if t.marker_accepted {
+            self.queue_for_tracked_state();
+            return Ok(());
+        }
+        t.pending_marker = true;
+        self.next_poll = tokio::time::Instant::now();
+        Ok(())
+    }
+    fn handle_scene_complete(
+        &mut self,
+        fence: LeaseFence,
+        r: GroupTravelClientRecord,
+    ) -> Result<(), SessionError> {
+        let Some(t) = self.tracked.as_mut() else {
+            return Err(SessionError::Realtime);
+        };
+        if t.scene_complete
+            && t.marker_fence.is_some_and(|marker| {
+                marker.session_id == fence.session_id
+                    && marker.session_epoch == fence.session_epoch
+                    && marker.character_id == fence.character_id
+            })
+            && record_matches(t, r, false)
+        {
+            return Ok(());
+        }
+        if !is_story_route(t.route)
+            || t.status != GroupTravelProposalStatus::AwaitingSceneReceipts
+            || !t.marker_accepted
+            || t.marker_fence != Some(fence)
+            || !record_matches(t, r, false)
+        {
+            return Err(SessionError::Realtime);
+        }
+        t.scene_complete = true;
+        Ok(())
     }
     fn schedule_action(
         &mut self,
@@ -913,6 +1264,108 @@ impl<'a> GroupTravelOwner<'a> {
                     }
                 }
             }
+            Completion::Marker {
+                fence,
+                generation,
+                group_id,
+                proposal_id,
+                result,
+            } => {
+                if let Some(t) = &mut self.tracked
+                    && t.group_id == group_id
+                    && t.proposal_id == proposal_id
+                    && t.pending_marker
+                {
+                    match result {
+                        Ok(view) => {
+                            validate_view(&view, group_id, fence)?;
+                            let member = view
+                                .expected_members
+                                .iter()
+                                .position(|m| m.character_id == fence.character_id)
+                                .ok_or(SessionError::Realtime)?;
+                            if view.proposal_id != proposal_id
+                                || view.route_id.as_str() != route_id(t.route)
+                                || !view.scene_marked_by[member]
+                            {
+                                return Err(SessionError::Realtime);
+                            }
+                            t.pending_marker = false;
+                            t.marker_accepted = true;
+                            t.marker_fence = Some(fence);
+                            self.observe_view(&view, fence, generation)?;
+                        }
+                        Err(GroupTravelError::Unavailable) => {
+                            self.schedule_transient_poll_failure()
+                        }
+                        Err(GroupTravelError::Unauthorized) => {
+                            return Err(SessionError::Unauthorized);
+                        }
+                        Err(GroupTravelError::Stale | GroupTravelError::NotFound) => {
+                            t.pending_marker = false;
+                            self.next_poll = tokio::time::Instant::now();
+                        }
+                        Err(GroupTravelError::InvalidResponse) => {
+                            return Err(SessionError::Realtime);
+                        }
+                    }
+                }
+            }
+            Completion::Receipt {
+                fence,
+                generation,
+                group_id,
+                proposal_id,
+                request,
+                result,
+            } => {
+                if let Some(t) = &mut self.tracked
+                    && t.group_id == group_id
+                    && t.proposal_id == proposal_id
+                    && t.pending_receipt.as_ref() == Some(&request)
+                {
+                    match result {
+                        Ok(view) => {
+                            validate_view(&view, group_id, fence)?;
+                            let member = view
+                                .expected_members
+                                .iter()
+                                .position(|m| m.character_id == fence.character_id)
+                                .ok_or(SessionError::Realtime)?;
+                            if view.proposal_id != proposal_id
+                                || view.route_id.as_str() != route_id(t.route)
+                                || !view.scene_marked_by[member]
+                                || !view.scene_receipted_by[member]
+                                || !matches!(
+                                    view.status,
+                                    GroupTravelProposalStatus::AwaitingSceneReceipts
+                                        | GroupTravelProposalStatus::Suspended
+                                        | GroupTravelProposalStatus::Committed
+                                )
+                            {
+                                return Err(SessionError::Realtime);
+                            }
+                            t.pending_receipt = None;
+                            t.receipt_accepted = true;
+                            self.observe_view(&view, fence, generation)?;
+                        }
+                        Err(GroupTravelError::Unavailable) => {
+                            self.schedule_transient_poll_failure()
+                        }
+                        Err(GroupTravelError::Unauthorized) => {
+                            return Err(SessionError::Unauthorized);
+                        }
+                        Err(GroupTravelError::Stale | GroupTravelError::NotFound) => {
+                            // Keep the exact immutable snapshot request for
+                            // recovery; a head change must not select another.
+                            self.schedule_transient_poll_failure();
+                        }
+                        Err(GroupTravelError::InvalidResponse) => {
+                            return Err(SessionError::Realtime);
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -974,7 +1427,15 @@ impl<'a> GroupTravelOwner<'a> {
             request_id: p.request_id,
             role: Role::Requester,
             status: v.status,
+            vote_deadline: vote_deadline(v),
             pending_action: None,
+            marker_requested: false,
+            pending_marker: false,
+            marker_accepted: false,
+            marker_fence: None,
+            scene_complete: false,
+            pending_receipt: None,
+            receipt_accepted: false,
         });
         Ok(())
     }
@@ -987,6 +1448,19 @@ impl<'a> GroupTravelOwner<'a> {
         validate_view(v, v.group_id, fence)?;
         let route = route_from_id(v.route_id.as_str()).ok_or(SessionError::Realtime)?;
         if !v.departure.matches_route(route) {
+            return Err(SessionError::Realtime);
+        }
+        if matches!(
+            v.status,
+            GroupTravelProposalStatus::AwaitingSceneReceipts | GroupTravelProposalStatus::Suspended
+        ) && !is_story_route(route)
+        {
+            return Err(SessionError::Realtime);
+        }
+        if is_story_route(route)
+            && v.status == GroupTravelProposalStatus::Committed
+            && (v.scene_marked_by != [true, true] || v.scene_receipted_by != [true, true])
+        {
             return Err(SessionError::Realtime);
         }
         let role = if v.requester_character_id == fence.character_id {
@@ -1003,7 +1477,15 @@ impl<'a> GroupTravelOwner<'a> {
                 request_id: request_id_from_proposal(v.proposal_id),
                 role,
                 status: v.status,
+                vote_deadline: vote_deadline(v),
                 pending_action: None,
+                marker_requested: false,
+                pending_marker: false,
+                marker_accepted: false,
+                marker_fence: None,
+                scene_complete: false,
+                pending_receipt: None,
+                receipt_accepted: false,
             });
         }
         let Some(t) = &mut self.tracked else {
@@ -1018,14 +1500,31 @@ impl<'a> GroupTravelOwner<'a> {
             return Err(SessionError::Realtime);
         }
         t.status = v.status;
+        t.vote_deadline = vote_deadline(v);
+        if is_story_route(route)
+            && v.status != GroupTravelProposalStatus::AwaitingSceneReceipts
+            && self.outbound.is_some_and(|out| {
+                matches!(
+                    out.record.kind,
+                    GroupTravelServerKind::SceneReady | GroupTravelServerKind::SceneMarkerAccepted
+                )
+            })
+        {
+            self.outbound = None;
+        }
         match v.status {
             GroupTravelProposalStatus::Pending | GroupTravelProposalStatus::Committed => {
                 self.queue_for_tracked_state();
             }
+            GroupTravelProposalStatus::AwaitingSceneReceipts => self.queue_for_tracked_state(),
+            GroupTravelProposalStatus::Suspended => {}
             GroupTravelProposalStatus::Declined => {
                 self.queue_terminal_reason(GroupTravelReason::ParticipantDeclined);
             }
             GroupTravelProposalStatus::Cancelled => {
+                if is_story_route(route) && t.marker_accepted {
+                    return Err(SessionError::StoryTravelRecoveryPending);
+                }
                 self.queue_terminal_reason(GroupTravelReason::RequesterCanceled);
             }
             GroupTravelProposalStatus::Expired => {
@@ -1037,18 +1536,44 @@ impl<'a> GroupTravelOwner<'a> {
     }
     fn queue_for_tracked_state(&mut self) {
         let Some(t) = &self.tracked else { return };
+        if is_story_route(t.route) && t.status == GroupTravelProposalStatus::Committed {
+            // Both finalized scene receipts have committed. Complete clears
+            // the ROM's scene session; the ROM checks its Dewford landing and
+            // never treats this record as permission to warp.
+            let complete = server_record(
+                GroupTravelServerKind::Complete,
+                t,
+                GroupTravelResult::Applied,
+                GroupTravelReason::None,
+            );
+            self.queue_outbound(complete, DeliveryDisposition::ClearTracked);
+            return;
+        }
         let kind = match t.status {
             GroupTravelProposalStatus::Pending if t.role == Role::Requester => {
                 GroupTravelServerKind::Requesting
             }
             GroupTravelProposalStatus::Pending => GroupTravelServerKind::Offer,
             GroupTravelProposalStatus::Committed => GroupTravelServerKind::Commit,
+            GroupTravelProposalStatus::AwaitingSceneReceipts
+                if t.marker_requested && t.marker_accepted =>
+            {
+                GroupTravelServerKind::SceneMarkerAccepted
+            }
+            GroupTravelProposalStatus::AwaitingSceneReceipts => GroupTravelServerKind::SceneReady,
             _ => return,
         };
         let record = if kind == GroupTravelServerKind::Requesting {
-            requesting_record(t.route, t.departure, t.request_id)
+            let mut record = requesting_record(t.route, t.departure, t.request_id);
+            record.remaining_seconds = remaining_vote_seconds(t);
+            record
         } else {
-            server_record(kind, t, GroupTravelResult::None, GroupTravelReason::None)
+            let mut record =
+                server_record(kind, t, GroupTravelResult::None, GroupTravelReason::None);
+            if kind == GroupTravelServerKind::Offer {
+                record.remaining_seconds = remaining_vote_seconds(t);
+            }
+            record
         };
         self.queue_outbound(record, DeliveryDisposition::Retain);
     }
@@ -1251,6 +1776,52 @@ async fn retry_action<A: CloudApi>(
         v => v,
     }
 }
+async fn retry_scene_marker<A: CloudApi>(
+    api: &A,
+    token: AccessToken,
+    group_id: GroupId,
+    proposal_id: GroupTravelProposalId,
+    request: GroupTravelSceneMarkerRequest,
+) -> Result<GroupTravelProposalView, GroupTravelError> {
+    let first = tokio::time::timeout(
+        REQUEST_TIMEOUT,
+        api.group_travel_scene_marker(token.clone(), group_id, proposal_id, request.clone()),
+    )
+    .await
+    .unwrap_or(Err(GroupTravelError::Unavailable));
+    match first {
+        Err(GroupTravelError::Unavailable) => tokio::time::timeout(
+            REQUEST_TIMEOUT,
+            api.group_travel_scene_marker(token, group_id, proposal_id, request),
+        )
+        .await
+        .unwrap_or(Err(GroupTravelError::Unavailable)),
+        result => result,
+    }
+}
+async fn retry_scene_receipt<A: CloudApi>(
+    api: &A,
+    token: AccessToken,
+    group_id: GroupId,
+    proposal_id: GroupTravelProposalId,
+    request: GroupTravelSceneReceiptRequest,
+) -> Result<GroupTravelProposalView, GroupTravelError> {
+    let first = tokio::time::timeout(
+        REQUEST_TIMEOUT,
+        api.group_travel_scene_receipt(token.clone(), group_id, proposal_id, request.clone()),
+    )
+    .await
+    .unwrap_or(Err(GroupTravelError::Unavailable));
+    match first {
+        Err(GroupTravelError::Unavailable) => tokio::time::timeout(
+            REQUEST_TIMEOUT,
+            api.group_travel_scene_receipt(token, group_id, proposal_id, request),
+        )
+        .await
+        .unwrap_or(Err(GroupTravelError::Unavailable)),
+        result => result,
+    }
+}
 fn transient_poll_backoff(failures: u8) -> Duration {
     let exponent = failures.saturating_sub(1).min(6);
     let base_millis =
@@ -1307,6 +1878,21 @@ fn request_id_from_proposal(p: GroupTravelProposalId) -> u32 {
 fn proposal_bytes(p: GroupTravelProposalId) -> [u8; 16] {
     *p.as_uuid().as_bytes()
 }
+fn vote_deadline(v: &GroupTravelProposalView) -> Option<tokio::time::Instant> {
+    let server_now = v.server_now?.value();
+    let remaining_ms = v.expires_at.value().saturating_sub(server_now).min(30_000);
+    Some(tokio::time::Instant::now() + Duration::from_millis(remaining_ms))
+}
+fn remaining_vote_seconds(t: &TrackedProposal) -> u8 {
+    t.vote_deadline
+        .map(|deadline| {
+            deadline
+                .saturating_duration_since(tokio::time::Instant::now())
+                .as_secs()
+                .min(30) as u8
+        })
+        .unwrap_or(0)
+}
 fn requesting_record(
     route: GroupTravelRoute,
     departure: GroupTravelDeparture,
@@ -1320,6 +1906,7 @@ fn requesting_record(
         proposal_id: [0; 16],
         result: GroupTravelResult::None,
         reason: GroupTravelReason::None,
+        remaining_seconds: 0,
     }
 }
 fn server_record(
@@ -1336,6 +1923,7 @@ fn server_record(
         proposal_id: proposal_bytes(t.proposal_id),
         result,
         reason,
+        remaining_seconds: 0,
     }
 }
 fn abort_before_create(
@@ -1350,8 +1938,18 @@ fn abort_before_create(
         proposal_id: [0; 16],
         result: GroupTravelResult::None,
         reason,
+        remaining_seconds: 0,
     }
 }
+const fn is_story_route(route: GroupTravelRoute) -> bool {
+    matches!(
+        route,
+        GroupTravelRoute::FerryBrineyHouseDewford
+            | GroupTravelRoute::SeagallopBillCinnabarOne
+            | GroupTravelRoute::SeagallopBillOneCinnabar
+    )
+}
+
 const fn route_id(r: GroupTravelRoute) -> &'static str {
     match r {
         GroupTravelRoute::TrainOriginal => "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
@@ -1360,6 +1958,166 @@ const fn route_id(r: GroupTravelRoute) -> &'static str {
         GroupTravelRoute::FerryLater => "JOHTO:OLIVINE_KANTO_LATER_FERRY",
         GroupTravelRoute::GateOriginal => "KANTO:RECEPTION_GATE_KANTO_ORIGINAL_ROUTE22",
         GroupTravelRoute::GateLater => "KANTO:RECEPTION_GATE_KANTO_LATER_ROUTE22",
+        GroupTravelRoute::ReturnFerryOriginal => "KANTO:ORIGINAL_VERMILION_JOHTO_FERRY",
+        GroupTravelRoute::ReturnFerryLater => "KANTO:LATER_VERMILION_JOHTO_FERRY",
+        GroupTravelRoute::ReturnTrainOriginal => "KANTO:ORIGINAL_SAFFRON_JOHTO_TRAIN",
+        GroupTravelRoute::ReturnTrainLater => "KANTO:LATER_SAFFRON_JOHTO_TRAIN",
+        GroupTravelRoute::ReturnGateOriginal => "KANTO:ORIGINAL_ROUTE22_JOHTO_ROUTE22",
+        GroupTravelRoute::ReturnGateLater => "KANTO:LATER_ROUTE22_JOHTO_ROUTE22",
+        GroupTravelRoute::FerryOlivineSouthernIsland => "JOHTO:OLIVINE_SOUTHERN_ISLAND_FERRY",
+        GroupTravelRoute::FerryOlivineBirthIsland => "JOHTO:OLIVINE_BIRTH_ISLAND_FERRY",
+        GroupTravelRoute::FerryOlivineFarawayIsland => "JOHTO:OLIVINE_FARAWAY_ISLAND_FERRY",
+        GroupTravelRoute::FerryOlivineBattleFrontier => "JOHTO:OLIVINE_BATTLE_FRONTIER_FERRY",
+        GroupTravelRoute::FerryVermilionSouthernIsland => {
+            "KANTO_LATER:VERMILION_SOUTHERN_ISLAND_FERRY"
+        }
+        GroupTravelRoute::FerryVermilionBirthIsland => "KANTO_LATER:VERMILION_BIRTH_ISLAND_FERRY",
+        GroupTravelRoute::FerryVermilionFarawayIsland => {
+            "KANTO_LATER:VERMILION_FARAWAY_ISLAND_FERRY"
+        }
+        GroupTravelRoute::FerryVermilionBattleFrontier => {
+            "KANTO_LATER:VERMILION_BATTLE_FRONTIER_FERRY"
+        }
+        GroupTravelRoute::FerrySouthernIslandLilycove => "HOENN:SOUTHERN_ISLAND_LILYCOVE_FERRY",
+        GroupTravelRoute::FerryBirthIslandLilycove => "HOENN:BIRTH_ISLAND_LILYCOVE_FERRY",
+        GroupTravelRoute::FerryFarawayIslandLilycove => "HOENN:FARAWAY_ISLAND_LILYCOVE_FERRY",
+        GroupTravelRoute::FerryBattleFrontierSlateport => "HOENN:BATTLE_FRONTIER_SLATEPORT_FERRY",
+        GroupTravelRoute::FerryBattleFrontierLilycove => "HOENN:BATTLE_FRONTIER_LILYCOVE_FERRY",
+        GroupTravelRoute::FerryLilycoveSouthernIsland => "HOENN:LILYCOVE_SOUTHERN_ISLAND_FERRY",
+        GroupTravelRoute::FerryLilycoveNavelRock => "HOENN:LILYCOVE_NAVEL_ROCK_FERRY",
+        GroupTravelRoute::FerryLilycoveBirthIsland => "HOENN:LILYCOVE_BIRTH_ISLAND_FERRY",
+        GroupTravelRoute::FerryLilycoveFarawayIsland => "HOENN:LILYCOVE_FARAWAY_ISLAND_FERRY",
+        GroupTravelRoute::FerryLilycoveBattleFrontier => "HOENN:LILYCOVE_BATTLE_FRONTIER_FERRY",
+        GroupTravelRoute::FerrySlateportBattleFrontier => "HOENN:SLATEPORT_BATTLE_FRONTIER_FERRY",
+        GroupTravelRoute::FerryNavelRockLilycove => "HOENN:NAVEL_ROCK_LILYCOVE_FERRY",
+        GroupTravelRoute::FerrySSTidalSlateportBoard => "HOENN:SLATEPORT_SS_TIDAL_BOARD_FERRY",
+        GroupTravelRoute::FerrySSTidalLilycoveBoard => "HOENN:LILYCOVE_SS_TIDAL_BOARD_FERRY",
+        GroupTravelRoute::FerrySSTidalLilycoveExit => "HOENN:SS_TIDAL_LILYCOVE_EXIT_FERRY",
+        GroupTravelRoute::FerrySSTidalSlateportExit => "HOENN:SS_TIDAL_SLATEPORT_EXIT_FERRY",
+        GroupTravelRoute::FerryBrineyHouseDewford => "HOENN:BRINEY_HOUSE_DEWFORD_FERRY",
+        GroupTravelRoute::FerryDewfordBrineyHouse => "HOENN:DEWFORD_BRINEY_HOUSE_FERRY",
+        GroupTravelRoute::FerryDewfordRoute109 => "HOENN:DEWFORD_ROUTE109_FERRY",
+        GroupTravelRoute::FerryRoute109Dewford => "HOENN:ROUTE109_DEWFORD_FERRY",
+        GroupTravelRoute::SeagallopVermilionOne => "SEAGALLOP:VERMILION_ONE_FERRY",
+        GroupTravelRoute::SeagallopVermilionTwo => "SEAGALLOP:VERMILION_TWO_FERRY",
+        GroupTravelRoute::SeagallopVermilionThree => "SEAGALLOP:VERMILION_THREE_FERRY",
+        GroupTravelRoute::SeagallopVermilionFour => "SEAGALLOP:VERMILION_FOUR_FERRY",
+        GroupTravelRoute::SeagallopVermilionFive => "SEAGALLOP:VERMILION_FIVE_FERRY",
+        GroupTravelRoute::SeagallopVermilionSix => "SEAGALLOP:VERMILION_SIX_FERRY",
+        GroupTravelRoute::SeagallopVermilionSeven => "SEAGALLOP:VERMILION_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopOneVermilion => "SEAGALLOP:ONE_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopOneTwo => "SEAGALLOP:ONE_TWO_FERRY",
+        GroupTravelRoute::SeagallopOneThree => "SEAGALLOP:ONE_THREE_FERRY",
+        GroupTravelRoute::SeagallopOneFour => "SEAGALLOP:ONE_FOUR_FERRY",
+        GroupTravelRoute::SeagallopOneFive => "SEAGALLOP:ONE_FIVE_FERRY",
+        GroupTravelRoute::SeagallopOneSix => "SEAGALLOP:ONE_SIX_FERRY",
+        GroupTravelRoute::SeagallopOneSeven => "SEAGALLOP:ONE_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopTwoVermilion => "SEAGALLOP:TWO_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopTwoOne => "SEAGALLOP:TWO_ONE_FERRY",
+        GroupTravelRoute::SeagallopTwoThree => "SEAGALLOP:TWO_THREE_FERRY",
+        GroupTravelRoute::SeagallopTwoFour => "SEAGALLOP:TWO_FOUR_FERRY",
+        GroupTravelRoute::SeagallopTwoFive => "SEAGALLOP:TWO_FIVE_FERRY",
+        GroupTravelRoute::SeagallopTwoSix => "SEAGALLOP:TWO_SIX_FERRY",
+        GroupTravelRoute::SeagallopTwoSeven => "SEAGALLOP:TWO_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopThreeVermilion => "SEAGALLOP:THREE_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopThreeOne => "SEAGALLOP:THREE_ONE_FERRY",
+        GroupTravelRoute::SeagallopThreeTwo => "SEAGALLOP:THREE_TWO_FERRY",
+        GroupTravelRoute::SeagallopThreeFour => "SEAGALLOP:THREE_FOUR_FERRY",
+        GroupTravelRoute::SeagallopThreeFive => "SEAGALLOP:THREE_FIVE_FERRY",
+        GroupTravelRoute::SeagallopThreeSix => "SEAGALLOP:THREE_SIX_FERRY",
+        GroupTravelRoute::SeagallopThreeSeven => "SEAGALLOP:THREE_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopFourVermilion => "SEAGALLOP:FOUR_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopFourOne => "SEAGALLOP:FOUR_ONE_FERRY",
+        GroupTravelRoute::SeagallopFourTwo => "SEAGALLOP:FOUR_TWO_FERRY",
+        GroupTravelRoute::SeagallopFourThree => "SEAGALLOP:FOUR_THREE_FERRY",
+        GroupTravelRoute::SeagallopFourFive => "SEAGALLOP:FOUR_FIVE_FERRY",
+        GroupTravelRoute::SeagallopFourSix => "SEAGALLOP:FOUR_SIX_FERRY",
+        GroupTravelRoute::SeagallopFourSeven => "SEAGALLOP:FOUR_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopFiveVermilion => "SEAGALLOP:FIVE_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopFiveOne => "SEAGALLOP:FIVE_ONE_FERRY",
+        GroupTravelRoute::SeagallopFiveTwo => "SEAGALLOP:FIVE_TWO_FERRY",
+        GroupTravelRoute::SeagallopFiveThree => "SEAGALLOP:FIVE_THREE_FERRY",
+        GroupTravelRoute::SeagallopFiveFour => "SEAGALLOP:FIVE_FOUR_FERRY",
+        GroupTravelRoute::SeagallopFiveSix => "SEAGALLOP:FIVE_SIX_FERRY",
+        GroupTravelRoute::SeagallopFiveSeven => "SEAGALLOP:FIVE_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopSixVermilion => "SEAGALLOP:SIX_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopSixOne => "SEAGALLOP:SIX_ONE_FERRY",
+        GroupTravelRoute::SeagallopSixTwo => "SEAGALLOP:SIX_TWO_FERRY",
+        GroupTravelRoute::SeagallopSixThree => "SEAGALLOP:SIX_THREE_FERRY",
+        GroupTravelRoute::SeagallopSixFour => "SEAGALLOP:SIX_FOUR_FERRY",
+        GroupTravelRoute::SeagallopSixFive => "SEAGALLOP:SIX_FIVE_FERRY",
+        GroupTravelRoute::SeagallopSixSeven => "SEAGALLOP:SIX_SEVEN_FERRY",
+        GroupTravelRoute::SeagallopSevenVermilion => "SEAGALLOP:SEVEN_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopSevenOne => "SEAGALLOP:SEVEN_ONE_FERRY",
+        GroupTravelRoute::SeagallopSevenTwo => "SEAGALLOP:SEVEN_TWO_FERRY",
+        GroupTravelRoute::SeagallopSevenThree => "SEAGALLOP:SEVEN_THREE_FERRY",
+        GroupTravelRoute::SeagallopSevenFour => "SEAGALLOP:SEVEN_FOUR_FERRY",
+        GroupTravelRoute::SeagallopSevenFive => "SEAGALLOP:SEVEN_FIVE_FERRY",
+        GroupTravelRoute::SeagallopSevenSix => "SEAGALLOP:SEVEN_SIX_FERRY",
+        GroupTravelRoute::SeagallopVermilionNavel => "SEAGALLOP:VERMILION_NAVEL_FERRY",
+        GroupTravelRoute::SeagallopNavelVermilion => "SEAGALLOP:NAVEL_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopVermilionBirth => "SEAGALLOP:VERMILION_BIRTH_FERRY",
+        GroupTravelRoute::SeagallopBirthVermilion => "SEAGALLOP:BIRTH_VERMILION_FERRY",
+        GroupTravelRoute::SeagallopBillCinnabarOne => "KANTO:CINNABAR_ONE_BILL_FERRY",
+        GroupTravelRoute::SeagallopBillOneCinnabar => "SEVII:ONE_CINNABAR_BILL_FERRY",
+        GroupTravelRoute::FlyLittleroot => "HOENN:FLY_LITTLEROOT",
+        GroupTravelRoute::FlyJohtoNewbark => "JOHTO:FLY_NEW_BARK_TOWN",
+        GroupTravelRoute::FlyJohtoCherrygrove => "JOHTO:FLY_CHERRYGROVE_CITY",
+        GroupTravelRoute::FlyJohtoViolet => "JOHTO:FLY_VIOLET_CITY",
+        GroupTravelRoute::FlyJohtoAzalea => "JOHTO:FLY_AZALEA_TOWN",
+        GroupTravelRoute::FlyJohtoGoldenrod => "JOHTO:FLY_GOLDENROD_CITY",
+        GroupTravelRoute::FlyJohtoEcruteak => "JOHTO:FLY_ECRUTEAK_CITY",
+        GroupTravelRoute::FlyJohtoOlivine => "JOHTO:FLY_OLIVINE_CITY",
+        GroupTravelRoute::FlyJohtoCianwood => "JOHTO:FLY_CIANWOOD_CITY",
+        GroupTravelRoute::FlyJohtoMahogany => "JOHTO:FLY_MAHOGANYTOWN",
+        GroupTravelRoute::FlyJohtoBlackthorn => "JOHTO:FLY_BLACKTHORN_CITY",
+        GroupTravelRoute::FlyHoennOldale => "HOENN:FLY_OLDALE_TOWN",
+        GroupTravelRoute::FlyHoennDewford => "HOENN:FLY_DEWFORD_TOWN",
+        GroupTravelRoute::FlyHoennLavaridge => "HOENN:FLY_LAVARIDGE_TOWN",
+        GroupTravelRoute::FlyHoennFallarbor => "HOENN:FLY_FALLARBOR_TOWN",
+        GroupTravelRoute::FlyHoennVerdanturf => "HOENN:FLY_VERDANTURF_TOWN",
+        GroupTravelRoute::FlyHoennPacifidlog => "HOENN:FLY_PACIFIDLOG_TOWN",
+        GroupTravelRoute::FlyHoennPetalburg => "HOENN:FLY_PETALBURG_CITY",
+        GroupTravelRoute::FlyHoennSlateport => "HOENN:FLY_SLATEPORT_CITY",
+        GroupTravelRoute::FlyHoennMauville => "HOENN:FLY_MAUVILLE_CITY",
+        GroupTravelRoute::FlyHoennRustboro => "HOENN:FLY_RUSTBORO_CITY",
+        GroupTravelRoute::FlyHoennFortree => "HOENN:FLY_FORTREE_CITY",
+        GroupTravelRoute::FlyHoennLilycove => "HOENN:FLY_LILYCOVE_CITY",
+        GroupTravelRoute::FlyHoennMossdeep => "HOENN:FLY_MOSSDEEP_CITY",
+        GroupTravelRoute::FlyHoennSootopolis => "HOENN:FLY_SOOTOPOLIS_CITY",
+        GroupTravelRoute::FlyKantoOriginalPallet => "KANTO:FLY_PALLET_TOWN",
+        GroupTravelRoute::FlyKantoOriginalViridian => "KANTO:FLY_VIRIDIAN_CITY",
+        GroupTravelRoute::FlyKantoOriginalPewter => "KANTO:FLY_PEWTER_CITY",
+        GroupTravelRoute::FlyKantoOriginalCerulean => "KANTO:FLY_CERULEAN_CITY",
+        GroupTravelRoute::FlyKantoOriginalLavender => "KANTO:FLY_LAVENDER_TOWN",
+        GroupTravelRoute::FlyKantoOriginalVermilion => "KANTO:FLY_VERMILION_CITY",
+        GroupTravelRoute::FlyKantoOriginalCeladon => "KANTO:FLY_CELADON_CITY",
+        GroupTravelRoute::FlyKantoOriginalFuchsia => "KANTO:FLY_FUCHSIA_CITY",
+        GroupTravelRoute::FlyKantoOriginalCinnabar => "KANTO:FLY_CINNABAR_ISLAND",
+        GroupTravelRoute::FlyKantoOriginalIndigo => "KANTO:FLY_INDIGO_PLATEAU",
+        GroupTravelRoute::FlyKantoOriginalSaffron => "KANTO:FLY_SAFFRON_CITY",
+        GroupTravelRoute::FlyKantoLaterPallet => "KANTO_LATER:FLY_PALLET_TOWN",
+        GroupTravelRoute::FlyKantoLaterViridian => "KANTO_LATER:FLY_VIRIDIAN_CITY",
+        GroupTravelRoute::FlyKantoLaterPewter => "KANTO_LATER:FLY_PEWTER_CITY",
+        GroupTravelRoute::FlyKantoLaterCerulean => "KANTO_LATER:FLY_CERULEAN_CITY",
+        GroupTravelRoute::FlyKantoLaterLavender => "KANTO_LATER:FLY_LAVENDER_TOWN",
+        GroupTravelRoute::FlyKantoLaterVermilion => "KANTO_LATER:FLY_VERMILION_CITY",
+        GroupTravelRoute::FlyKantoLaterCeladon => "KANTO_LATER:FLY_CELADON_CITY",
+        GroupTravelRoute::FlyKantoLaterFuchsia => "KANTO_LATER:FLY_FUCHSIA_CITY",
+        GroupTravelRoute::FlyKantoLaterSaffron => "KANTO_LATER:FLY_SAFFRON_CITY",
+        GroupTravelRoute::FlyKantoLaterCinnabar => "KANTO_LATER:FLY_CINNABAR_ISLAND",
+        GroupTravelRoute::FlySeviiOneIsland => "SEVII:FLY_ONE_ISLAND",
+        GroupTravelRoute::FlySeviiTwoIsland => "SEVII:FLY_TWO_ISLAND",
+        GroupTravelRoute::FlySeviiThreeIsland => "SEVII:FLY_THREE_ISLAND",
+        GroupTravelRoute::FlySeviiFourIsland => "SEVII:FLY_FOUR_ISLAND",
+        GroupTravelRoute::FlySeviiFiveIsland => "SEVII:FLY_FIVE_ISLAND",
+        GroupTravelRoute::FlySeviiSevenIsland => "SEVII:FLY_SEVEN_ISLAND",
+        GroupTravelRoute::FlySeviiSixIsland => "SEVII:FLY_SIX_ISLAND",
+        GroupTravelRoute::FlyKantoRoute4PokemonCenter => "KANTO:FLY_ROUTE_4_POKECENTER",
+        GroupTravelRoute::FlyKantoRoute10PokemonCenter => "KANTO:FLY_ROUTE_10_POKECENTER",
+        GroupTravelRoute::FlyHoennEverGrandeCenter => "HOENN:FLY_EVER_GRANDE_CITY_CENTER",
+        GroupTravelRoute::FlyHoennEverGrandeLeague => "HOENN:FLY_EVER_GRANDE_CITY_LEAGUE",
+        GroupTravelRoute::FlyHoennBattleFrontier => "HOENN:FLY_BATTLE_FRONTIER",
     }
 }
 fn route_from_id(id: &str) -> Option<GroupTravelRoute> {
@@ -1370,6 +2128,160 @@ fn route_from_id(id: &str) -> Option<GroupTravelRoute> {
         GroupTravelRoute::FerryLater,
         GroupTravelRoute::GateOriginal,
         GroupTravelRoute::GateLater,
+        GroupTravelRoute::ReturnFerryOriginal,
+        GroupTravelRoute::ReturnFerryLater,
+        GroupTravelRoute::ReturnTrainOriginal,
+        GroupTravelRoute::ReturnTrainLater,
+        GroupTravelRoute::ReturnGateOriginal,
+        GroupTravelRoute::ReturnGateLater,
+        GroupTravelRoute::FerryOlivineSouthernIsland,
+        GroupTravelRoute::FerryOlivineBirthIsland,
+        GroupTravelRoute::FerryOlivineFarawayIsland,
+        GroupTravelRoute::FerryOlivineBattleFrontier,
+        GroupTravelRoute::FerryVermilionSouthernIsland,
+        GroupTravelRoute::FerryVermilionBirthIsland,
+        GroupTravelRoute::FerryVermilionFarawayIsland,
+        GroupTravelRoute::FerryVermilionBattleFrontier,
+        GroupTravelRoute::FerrySouthernIslandLilycove,
+        GroupTravelRoute::FerryBirthIslandLilycove,
+        GroupTravelRoute::FerryFarawayIslandLilycove,
+        GroupTravelRoute::FerryBattleFrontierSlateport,
+        GroupTravelRoute::FerryBattleFrontierLilycove,
+        GroupTravelRoute::FerryLilycoveSouthernIsland,
+        GroupTravelRoute::FerryLilycoveNavelRock,
+        GroupTravelRoute::FerryLilycoveBirthIsland,
+        GroupTravelRoute::FerryLilycoveFarawayIsland,
+        GroupTravelRoute::FerryLilycoveBattleFrontier,
+        GroupTravelRoute::FerrySlateportBattleFrontier,
+        GroupTravelRoute::FerryNavelRockLilycove,
+        GroupTravelRoute::FerrySSTidalSlateportBoard,
+        GroupTravelRoute::FerrySSTidalLilycoveBoard,
+        GroupTravelRoute::FerrySSTidalLilycoveExit,
+        GroupTravelRoute::FerrySSTidalSlateportExit,
+        GroupTravelRoute::FerryBrineyHouseDewford,
+        GroupTravelRoute::FerryDewfordBrineyHouse,
+        GroupTravelRoute::FerryDewfordRoute109,
+        GroupTravelRoute::FerryRoute109Dewford,
+        GroupTravelRoute::SeagallopVermilionOne,
+        GroupTravelRoute::SeagallopVermilionTwo,
+        GroupTravelRoute::SeagallopVermilionThree,
+        GroupTravelRoute::SeagallopVermilionFour,
+        GroupTravelRoute::SeagallopVermilionFive,
+        GroupTravelRoute::SeagallopVermilionSix,
+        GroupTravelRoute::SeagallopVermilionSeven,
+        GroupTravelRoute::SeagallopOneVermilion,
+        GroupTravelRoute::SeagallopOneTwo,
+        GroupTravelRoute::SeagallopOneThree,
+        GroupTravelRoute::SeagallopOneFour,
+        GroupTravelRoute::SeagallopOneFive,
+        GroupTravelRoute::SeagallopOneSix,
+        GroupTravelRoute::SeagallopOneSeven,
+        GroupTravelRoute::SeagallopTwoVermilion,
+        GroupTravelRoute::SeagallopTwoOne,
+        GroupTravelRoute::SeagallopTwoThree,
+        GroupTravelRoute::SeagallopTwoFour,
+        GroupTravelRoute::SeagallopTwoFive,
+        GroupTravelRoute::SeagallopTwoSix,
+        GroupTravelRoute::SeagallopTwoSeven,
+        GroupTravelRoute::SeagallopThreeVermilion,
+        GroupTravelRoute::SeagallopThreeOne,
+        GroupTravelRoute::SeagallopThreeTwo,
+        GroupTravelRoute::SeagallopThreeFour,
+        GroupTravelRoute::SeagallopThreeFive,
+        GroupTravelRoute::SeagallopThreeSix,
+        GroupTravelRoute::SeagallopThreeSeven,
+        GroupTravelRoute::SeagallopFourVermilion,
+        GroupTravelRoute::SeagallopFourOne,
+        GroupTravelRoute::SeagallopFourTwo,
+        GroupTravelRoute::SeagallopFourThree,
+        GroupTravelRoute::SeagallopFourFive,
+        GroupTravelRoute::SeagallopFourSix,
+        GroupTravelRoute::SeagallopFourSeven,
+        GroupTravelRoute::SeagallopFiveVermilion,
+        GroupTravelRoute::SeagallopFiveOne,
+        GroupTravelRoute::SeagallopFiveTwo,
+        GroupTravelRoute::SeagallopFiveThree,
+        GroupTravelRoute::SeagallopFiveFour,
+        GroupTravelRoute::SeagallopFiveSix,
+        GroupTravelRoute::SeagallopFiveSeven,
+        GroupTravelRoute::SeagallopSixVermilion,
+        GroupTravelRoute::SeagallopSixOne,
+        GroupTravelRoute::SeagallopSixTwo,
+        GroupTravelRoute::SeagallopSixThree,
+        GroupTravelRoute::SeagallopSixFour,
+        GroupTravelRoute::SeagallopSixFive,
+        GroupTravelRoute::SeagallopSixSeven,
+        GroupTravelRoute::SeagallopSevenVermilion,
+        GroupTravelRoute::SeagallopSevenOne,
+        GroupTravelRoute::SeagallopSevenTwo,
+        GroupTravelRoute::SeagallopSevenThree,
+        GroupTravelRoute::SeagallopSevenFour,
+        GroupTravelRoute::SeagallopSevenFive,
+        GroupTravelRoute::SeagallopSevenSix,
+        GroupTravelRoute::SeagallopVermilionNavel,
+        GroupTravelRoute::SeagallopNavelVermilion,
+        GroupTravelRoute::SeagallopVermilionBirth,
+        GroupTravelRoute::SeagallopBirthVermilion,
+        GroupTravelRoute::SeagallopBillCinnabarOne,
+        GroupTravelRoute::SeagallopBillOneCinnabar,
+        GroupTravelRoute::FlyLittleroot,
+        GroupTravelRoute::FlyJohtoNewbark,
+        GroupTravelRoute::FlyJohtoCherrygrove,
+        GroupTravelRoute::FlyJohtoViolet,
+        GroupTravelRoute::FlyJohtoAzalea,
+        GroupTravelRoute::FlyJohtoGoldenrod,
+        GroupTravelRoute::FlyJohtoEcruteak,
+        GroupTravelRoute::FlyJohtoOlivine,
+        GroupTravelRoute::FlyJohtoCianwood,
+        GroupTravelRoute::FlyJohtoMahogany,
+        GroupTravelRoute::FlyJohtoBlackthorn,
+        GroupTravelRoute::FlyHoennOldale,
+        GroupTravelRoute::FlyHoennDewford,
+        GroupTravelRoute::FlyHoennLavaridge,
+        GroupTravelRoute::FlyHoennFallarbor,
+        GroupTravelRoute::FlyHoennVerdanturf,
+        GroupTravelRoute::FlyHoennPacifidlog,
+        GroupTravelRoute::FlyHoennPetalburg,
+        GroupTravelRoute::FlyHoennSlateport,
+        GroupTravelRoute::FlyHoennMauville,
+        GroupTravelRoute::FlyHoennRustboro,
+        GroupTravelRoute::FlyHoennFortree,
+        GroupTravelRoute::FlyHoennLilycove,
+        GroupTravelRoute::FlyHoennMossdeep,
+        GroupTravelRoute::FlyHoennSootopolis,
+        GroupTravelRoute::FlyKantoOriginalPallet,
+        GroupTravelRoute::FlyKantoOriginalViridian,
+        GroupTravelRoute::FlyKantoOriginalPewter,
+        GroupTravelRoute::FlyKantoOriginalCerulean,
+        GroupTravelRoute::FlyKantoOriginalLavender,
+        GroupTravelRoute::FlyKantoOriginalVermilion,
+        GroupTravelRoute::FlyKantoOriginalCeladon,
+        GroupTravelRoute::FlyKantoOriginalFuchsia,
+        GroupTravelRoute::FlyKantoOriginalCinnabar,
+        GroupTravelRoute::FlyKantoOriginalIndigo,
+        GroupTravelRoute::FlyKantoOriginalSaffron,
+        GroupTravelRoute::FlyKantoLaterPallet,
+        GroupTravelRoute::FlyKantoLaterViridian,
+        GroupTravelRoute::FlyKantoLaterPewter,
+        GroupTravelRoute::FlyKantoLaterCerulean,
+        GroupTravelRoute::FlyKantoLaterLavender,
+        GroupTravelRoute::FlyKantoLaterVermilion,
+        GroupTravelRoute::FlyKantoLaterCeladon,
+        GroupTravelRoute::FlyKantoLaterFuchsia,
+        GroupTravelRoute::FlyKantoLaterSaffron,
+        GroupTravelRoute::FlyKantoLaterCinnabar,
+        GroupTravelRoute::FlySeviiOneIsland,
+        GroupTravelRoute::FlySeviiTwoIsland,
+        GroupTravelRoute::FlySeviiThreeIsland,
+        GroupTravelRoute::FlySeviiFourIsland,
+        GroupTravelRoute::FlySeviiFiveIsland,
+        GroupTravelRoute::FlySeviiSevenIsland,
+        GroupTravelRoute::FlySeviiSixIsland,
+        GroupTravelRoute::FlyKantoRoute4PokemonCenter,
+        GroupTravelRoute::FlyKantoRoute10PokemonCenter,
+        GroupTravelRoute::FlyHoennEverGrandeCenter,
+        GroupTravelRoute::FlyHoennEverGrandeLeague,
+        GroupTravelRoute::FlyHoennBattleFrontier,
     ]
     .into_iter()
     .find(|r| route_id(*r) == id)
@@ -1428,6 +2340,7 @@ mod tests {
             ],
             status: s,
             expires_at: coop_cloud::UnixTimestampMillis::new(99_999),
+            server_now: None,
             commit: (s == GroupTravelProposalStatus::Committed).then_some(GroupTravelCommit {
                 group_zone_revision: 5,
                 members: [
@@ -1443,6 +2356,8 @@ mod tests {
                 destination: d,
             }),
             applied_by: [false, false],
+            scene_marked_by: [false, false],
+            scene_receipted_by: [false, false],
         }
     }
     fn client(
@@ -1479,7 +2394,15 @@ mod tests {
             request_id: 7,
             role,
             status,
+            vote_deadline: None,
             pending_action: None,
+            marker_requested: false,
+            pending_marker: false,
+            marker_accepted: false,
+            marker_fence: None,
+            scene_complete: false,
+            pending_receipt: None,
+            receipt_accepted: false,
         }
     }
     #[test]
@@ -1491,6 +2414,70 @@ mod tests {
             GroupTravelRoute::FerryLater,
             GroupTravelRoute::GateOriginal,
             GroupTravelRoute::GateLater,
+            GroupTravelRoute::FlyLittleroot,
+            GroupTravelRoute::FlyJohtoNewbark,
+            GroupTravelRoute::FlyJohtoCherrygrove,
+            GroupTravelRoute::FlyJohtoViolet,
+            GroupTravelRoute::FlyJohtoAzalea,
+            GroupTravelRoute::FlyJohtoGoldenrod,
+            GroupTravelRoute::FlyJohtoEcruteak,
+            GroupTravelRoute::FlyJohtoOlivine,
+            GroupTravelRoute::FlyJohtoCianwood,
+            GroupTravelRoute::FlyJohtoMahogany,
+            GroupTravelRoute::FlyJohtoBlackthorn,
+            GroupTravelRoute::FlyHoennOldale,
+            GroupTravelRoute::FlyHoennDewford,
+            GroupTravelRoute::FlyHoennLavaridge,
+            GroupTravelRoute::FlyHoennFallarbor,
+            GroupTravelRoute::FlyHoennVerdanturf,
+            GroupTravelRoute::FlyHoennPacifidlog,
+            GroupTravelRoute::FlyHoennPetalburg,
+            GroupTravelRoute::FlyHoennSlateport,
+            GroupTravelRoute::FlyHoennMauville,
+            GroupTravelRoute::FlyHoennRustboro,
+            GroupTravelRoute::FlyHoennFortree,
+            GroupTravelRoute::FlyHoennLilycove,
+            GroupTravelRoute::FlyHoennMossdeep,
+            GroupTravelRoute::FlyHoennSootopolis,
+            GroupTravelRoute::FlyKantoOriginalPallet,
+            GroupTravelRoute::FlyKantoOriginalViridian,
+            GroupTravelRoute::FlyKantoOriginalPewter,
+            GroupTravelRoute::FlyKantoOriginalCerulean,
+            GroupTravelRoute::FlyKantoOriginalLavender,
+            GroupTravelRoute::FlyKantoOriginalVermilion,
+            GroupTravelRoute::FlyKantoOriginalCeladon,
+            GroupTravelRoute::FlyKantoOriginalFuchsia,
+            GroupTravelRoute::FlyKantoOriginalCinnabar,
+            GroupTravelRoute::FlyKantoOriginalIndigo,
+            GroupTravelRoute::FlyKantoOriginalSaffron,
+            GroupTravelRoute::FlyKantoLaterPallet,
+            GroupTravelRoute::FlyKantoLaterViridian,
+            GroupTravelRoute::FlyKantoLaterPewter,
+            GroupTravelRoute::FlyKantoLaterCerulean,
+            GroupTravelRoute::FlyKantoLaterLavender,
+            GroupTravelRoute::FlyKantoLaterVermilion,
+            GroupTravelRoute::FlyKantoLaterCeladon,
+            GroupTravelRoute::FlyKantoLaterFuchsia,
+            GroupTravelRoute::FlyKantoLaterSaffron,
+            GroupTravelRoute::FlyKantoLaterCinnabar,
+            GroupTravelRoute::FlySeviiOneIsland,
+            GroupTravelRoute::FlySeviiTwoIsland,
+            GroupTravelRoute::FlySeviiThreeIsland,
+            GroupTravelRoute::FlySeviiFourIsland,
+            GroupTravelRoute::FlySeviiFiveIsland,
+            GroupTravelRoute::FlySeviiSevenIsland,
+            GroupTravelRoute::FlySeviiSixIsland,
+            GroupTravelRoute::FlyKantoRoute4PokemonCenter,
+            GroupTravelRoute::FlyKantoRoute10PokemonCenter,
+            GroupTravelRoute::FlyHoennEverGrandeCenter,
+            GroupTravelRoute::FlyHoennEverGrandeLeague,
+            GroupTravelRoute::FlyHoennBattleFrontier,
+            GroupTravelRoute::ReturnFerryOriginal,
+            GroupTravelRoute::ReturnFerryLater,
+            GroupTravelRoute::ReturnTrainOriginal,
+            GroupTravelRoute::ReturnTrainLater,
+            GroupTravelRoute::ReturnGateOriginal,
+            GroupTravelRoute::ReturnGateLater,
         ] {
             assert_eq!(route_from_id(route_id(r)), Some(r));
         }
@@ -2051,5 +3038,397 @@ mod tests {
             current.finish_view_result(Ok(Some(wrong)), f, 1, Some(pid())),
             Err(SessionError::Realtime)
         ));
+    }
+
+    #[test]
+    fn story_recovery_response_requires_own_marked_attempt() {
+        let own = cid(1);
+        let view = StoryTravelRecoveryView {
+            api_version: ApiVersion::V1,
+            proposal_id: pid(),
+            group_id: gid(),
+            status: GroupTravelProposalStatus::Suspended,
+            marker_fence: fence(own),
+            scene_nonce: 7,
+            marked_at: coop_cloud::UnixTimestampMillis::new(100),
+        };
+        assert_eq!(validate_story_recovery(view.clone(), own), Ok(view.clone()));
+        assert_eq!(
+            validate_story_recovery(view.clone(), cid(2)),
+            Err(GroupTravelError::InvalidResponse)
+        );
+        let mut invalid = view.clone();
+        invalid.scene_nonce = 0;
+        assert_eq!(
+            validate_story_recovery(invalid, own),
+            Err(GroupTravelError::InvalidResponse)
+        );
+        let mut invalid = view;
+        invalid.status = GroupTravelProposalStatus::Committed;
+        assert_eq!(
+            validate_story_recovery(invalid, own),
+            Err(GroupTravelError::InvalidResponse)
+        );
+    }
+    #[test]
+    fn first_voyage_marker_waits_for_server_ack_and_completes_after_both_receipts() {
+        let own = cid(1);
+        let f = fence(own);
+        let mut awaiting = proposal(GroupTravelProposalStatus::AwaitingSceneReceipts);
+        awaiting.route_id =
+            RouteId::new(route_id(GroupTravelRoute::FerryBrineyHouseDewford)).unwrap();
+        awaiting.departure = GroupTravelDeparture::Ferry;
+        let mut owner = GroupTravelOwner::default();
+        owner.observe_view(&awaiting, f, 1).unwrap();
+        assert_eq!(
+            owner.outbound.unwrap().record.kind,
+            GroupTravelServerKind::SceneReady
+        );
+        let marker = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::SceneMarkerRequest,
+            route: GroupTravelRoute::FerryBrineyHouseDewford,
+            departure: GroupTravelDeparture::Ferry,
+            request_id: request_id_from_proposal(pid()),
+            proposal_id: proposal_bytes(pid()),
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+        };
+        owner.handle(f, 1, marker).unwrap();
+        assert!(owner.tracked.as_ref().unwrap().pending_marker);
+        assert_eq!(
+            owner.outbound.unwrap().record.kind,
+            GroupTravelServerKind::SceneReady
+        );
+        let mut accepted = awaiting.clone();
+        accepted.scene_marked_by[0] = true;
+        owner
+            .finish(Completion::Marker {
+                fence: f,
+                generation: 1,
+                group_id: gid(),
+                proposal_id: pid(),
+                result: Ok(accepted),
+            })
+            .unwrap();
+        assert_eq!(
+            owner.outbound.unwrap().record.kind,
+            GroupTravelServerKind::SceneMarkerAccepted
+        );
+        let complete = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::SceneComplete,
+            ..marker
+        };
+        owner.handle(f, 1, complete).unwrap();
+        assert!(owner.tracked.as_ref().unwrap().scene_complete);
+        let mut unrelated = complete;
+        unrelated.proposal_id = [8; 16];
+        assert!(matches!(
+            owner.handle(f, 1, unrelated),
+            Err(SessionError::Realtime)
+        ));
+        let mut committed = awaiting;
+        committed.status = GroupTravelProposalStatus::Committed;
+        committed.commit = proposal(GroupTravelProposalStatus::Committed).commit;
+        assert!(matches!(
+            owner.observe_view(&committed, f, 1),
+            Err(SessionError::Realtime)
+        ));
+        committed.scene_marked_by = [true, true];
+        committed.scene_receipted_by = [true, true];
+        owner.observe_view(&committed, f, 1).unwrap();
+        let final_record = owner.outbound.unwrap().record;
+        assert_eq!(final_record.kind, GroupTravelServerKind::Complete);
+        assert_eq!(
+            final_record.route,
+            GroupTravelRoute::FerryBrineyHouseDewford
+        );
+        assert_eq!(final_record.result, GroupTravelResult::Applied);
+        owner.acknowledge_delivery(final_record).unwrap();
+        assert!(owner.tracked.is_none());
+    }
+
+    #[test]
+    fn bill_story_routes_wait_for_exact_scene_and_two_receipts() {
+        let own = cid(1);
+        let f = fence(own);
+        for route in [
+            GroupTravelRoute::SeagallopBillCinnabarOne,
+            GroupTravelRoute::SeagallopBillOneCinnabar,
+        ] {
+            let mut awaiting = proposal(GroupTravelProposalStatus::AwaitingSceneReceipts);
+            awaiting.route_id = RouteId::new(route_id(route)).unwrap();
+            awaiting.departure = GroupTravelDeparture::Ferry;
+            let mut owner = GroupTravelOwner::default();
+            owner.observe_view(&awaiting, f, 1).unwrap();
+            let marker = GroupTravelClientRecord {
+                kind: GroupTravelClientKind::SceneMarkerRequest,
+                route,
+                departure: GroupTravelDeparture::Ferry,
+                request_id: request_id_from_proposal(pid()),
+                proposal_id: proposal_bytes(pid()),
+                result: GroupTravelResult::None,
+                reason: GroupTravelReason::None,
+            };
+            owner.handle(f, 1, marker).unwrap();
+            let mut accepted = awaiting.clone();
+            accepted.scene_marked_by[0] = true;
+            owner
+                .finish(Completion::Marker {
+                    fence: f,
+                    generation: 1,
+                    group_id: gid(),
+                    proposal_id: pid(),
+                    result: Ok(accepted),
+                })
+                .unwrap();
+            assert!(owner.story_checkpoint_token(f).is_none());
+            let complete = GroupTravelClientRecord {
+                kind: GroupTravelClientKind::SceneComplete,
+                ..marker
+            };
+            owner.handle(f, 1, complete).unwrap();
+            assert!(owner.story_checkpoint_token(f).is_some());
+            let mut committed = awaiting;
+            committed.status = GroupTravelProposalStatus::Committed;
+            committed.commit = proposal(GroupTravelProposalStatus::Committed).commit;
+            committed.scene_marked_by = [true, true];
+            committed.scene_receipted_by = [true, true];
+            owner.observe_view(&committed, f, 1).unwrap();
+            assert_eq!(
+                owner.outbound.unwrap().record.kind,
+                GroupTravelServerKind::Complete
+            );
+        }
+    }
+
+    #[test]
+    fn first_voyage_receipt_names_only_the_checkpoint_started_after_scene_completion() {
+        let own = cid(1);
+        let marker_fence = fence(own);
+        let mut tracked = tracked(
+            Role::Requester,
+            GroupTravelProposalStatus::AwaitingSceneReceipts,
+        );
+        tracked.route = GroupTravelRoute::FerryBrineyHouseDewford;
+        tracked.departure = GroupTravelDeparture::Ferry;
+        tracked.request_id = request_id_from_proposal(pid());
+        tracked.marker_requested = true;
+        tracked.marker_accepted = true;
+        tracked.marker_fence = Some(marker_fence);
+        let mut owner = GroupTravelOwner::default();
+        owner.tracked = Some(tracked);
+        owner.enter_generation(1);
+        assert!(owner.story_checkpoint_token(marker_fence).is_none());
+        let complete = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::SceneComplete,
+            route: GroupTravelRoute::FerryBrineyHouseDewford,
+            departure: GroupTravelDeparture::Ferry,
+            request_id: request_id_from_proposal(pid()),
+            proposal_id: proposal_bytes(pid()),
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+        };
+        owner.handle(marker_fence, 1, complete).unwrap();
+        let token = owner.story_checkpoint_token(marker_fence).unwrap();
+        let mut finalized_fence = marker_fence;
+        finalized_fence.current_revision = Revision::new(8);
+        let snapshot = SnapshotRecord {
+            api_version: ApiVersion::V1,
+            snapshot_id: coop_cloud::SnapshotId::new(Uuid::from_u128(70)).unwrap(),
+            session_id: marker_fence.session_id,
+            character_id: own,
+            parent_revision: marker_fence.current_revision,
+            revision: finalized_fence.current_revision,
+            session_epoch: marker_fence.session_epoch,
+            files: Vec::new(),
+            pending_commits_sha256: coop_cloud::Sha256Digest::of_bytes(b"test"),
+            last_applied_commit: None,
+            created_at: coop_cloud::UnixTimestampMillis::new(1),
+        };
+        let mut old = snapshot.clone();
+        old.parent_revision = Revision::new(6);
+        assert!(
+            owner
+                .story_checkpoint_finalized(token, &old, finalized_fence)
+                .is_err()
+        );
+        owner
+            .story_checkpoint_finalized(token, &snapshot, finalized_fence)
+            .unwrap();
+        let request = owner
+            .tracked
+            .as_ref()
+            .unwrap()
+            .pending_receipt
+            .clone()
+            .unwrap();
+        assert_eq!(request.snapshot_id, snapshot.snapshot_id);
+        assert_eq!(request.current_revision, snapshot.revision);
+        assert!(owner.story_checkpoint_token(finalized_fence).is_none());
+        owner
+            .finish(Completion::Receipt {
+                fence: finalized_fence,
+                generation: 1,
+                group_id: gid(),
+                proposal_id: pid(),
+                request: request.clone(),
+                result: Err(GroupTravelError::Unavailable),
+            })
+            .unwrap();
+        assert_eq!(
+            owner.tracked.as_ref().unwrap().pending_receipt,
+            Some(request.clone())
+        );
+        owner.enter_generation(2);
+        assert!(owner.handle(finalized_fence, 2, complete).is_ok());
+        let mut accepted = proposal(GroupTravelProposalStatus::AwaitingSceneReceipts);
+        accepted.route_id =
+            RouteId::new(route_id(GroupTravelRoute::FerryBrineyHouseDewford)).unwrap();
+        accepted.departure = GroupTravelDeparture::Ferry;
+        accepted.scene_marked_by[0] = true;
+        accepted.scene_receipted_by[0] = true;
+        owner
+            .finish(Completion::Receipt {
+                fence: finalized_fence,
+                generation: 2,
+                group_id: gid(),
+                proposal_id: pid(),
+                request: request.clone(),
+                result: Ok(accepted),
+            })
+            .unwrap();
+        assert!(owner.tracked.as_ref().unwrap().receipt_accepted);
+        assert!(owner.tracked.as_ref().unwrap().pending_receipt.is_none());
+    }
+
+    #[test]
+    fn first_voyage_marker_rejects_unproven_response() {
+        let own = cid(1);
+        let f = fence(own);
+        let mut awaiting = proposal(GroupTravelProposalStatus::AwaitingSceneReceipts);
+        awaiting.route_id =
+            RouteId::new(route_id(GroupTravelRoute::FerryBrineyHouseDewford)).unwrap();
+        awaiting.departure = GroupTravelDeparture::Ferry;
+        let mut owner = GroupTravelOwner::default();
+        owner.observe_view(&awaiting, f, 1).unwrap();
+        owner
+            .handle(
+                f,
+                1,
+                GroupTravelClientRecord {
+                    kind: GroupTravelClientKind::SceneMarkerRequest,
+                    route: GroupTravelRoute::FerryBrineyHouseDewford,
+                    departure: GroupTravelDeparture::Ferry,
+                    request_id: request_id_from_proposal(pid()),
+                    proposal_id: proposal_bytes(pid()),
+                    result: GroupTravelResult::None,
+                    reason: GroupTravelReason::None,
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            owner.finish(Completion::Marker {
+                fence: f,
+                generation: 1,
+                group_id: gid(),
+                proposal_id: pid(),
+                result: Ok(awaiting),
+            }),
+            Err(SessionError::Realtime)
+        ));
+    }
+    #[test]
+    fn first_voyage_request_enters_normal_group_consent() {
+        let mut owner = GroupTravelOwner::default();
+        let record = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::Request,
+            route: GroupTravelRoute::FerryBrineyHouseDewford,
+            departure: GroupTravelDeparture::Ferry,
+            request_id: 7,
+            proposal_id: [0; 16],
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+        };
+        owner.handle(fence(cid(1)), 1, record).unwrap();
+        assert_eq!(
+            owner.outbound.unwrap().record.kind,
+            GroupTravelServerKind::Requesting
+        );
+        assert!(owner.pending_request.is_some());
+        assert!(owner.tracked.is_none());
+    }
+
+    #[test]
+    fn story_recovery_action_response_matches_request() {
+        let reconciled = StoryTravelRecoveryResolutionView {
+            api_version: ApiVersion::V1,
+            proposal_id: pid(),
+            outcome: StoryTravelRecoveryOutcome::Reconciled,
+        };
+        assert_eq!(
+            validate_story_recovery_resolution(
+                reconciled.clone(),
+                pid(),
+                StoryTravelRecoveryAction::Reconcile
+            ),
+            Ok(reconciled.clone())
+        );
+        assert_eq!(
+            validate_story_recovery_resolution(
+                reconciled.clone(),
+                pid(),
+                StoryTravelRecoveryAction::Abandon
+            ),
+            Err(GroupTravelError::InvalidResponse)
+        );
+        assert_eq!(
+            validate_story_recovery_resolution(
+                reconciled,
+                GroupTravelProposalId::new(Uuid::from_u128(41)).unwrap(),
+                StoryTravelRecoveryAction::Reconcile
+            ),
+            Err(GroupTravelError::InvalidResponse)
+        );
+    }
+
+    #[test]
+    fn story_receipt_statuses_do_not_create_ordinary_travel_state() {
+        let f = fence(cid(2));
+        for status in [
+            GroupTravelProposalStatus::AwaitingSceneReceipts,
+            GroupTravelProposalStatus::Suspended,
+        ] {
+            let mut owner = GroupTravelOwner::default();
+            assert!(matches!(
+                owner.observe_view(&proposal(status), f, 1),
+                Err(SessionError::Realtime)
+            ));
+            assert!(owner.tracked.is_none());
+            assert!(owner.outbound.is_none());
+        }
+    }
+
+    #[test]
+    fn vote_seconds_follow_server_clock_even_when_local_clock_differs() {
+        let mut view = proposal(GroupTravelProposalStatus::Pending);
+        view.expires_at = coop_cloud::UnixTimestampMillis::new(1_000_030_000);
+        view.server_now = Some(coop_cloud::UnixTimestampMillis::new(1_000_001_000));
+        let decoded: GroupTravelProposalView =
+            serde_json::from_slice(&serde_json::to_vec(&view).unwrap()).unwrap();
+        assert_eq!(decoded.server_now, view.server_now);
+        let mut owner = GroupTravelOwner::default();
+        owner
+            .observe_view(&view, fence(cid(2)), 1)
+            .expect("valid offer");
+        let record = owner.outbound.expect("offer record").record;
+        assert_eq!(record.kind, GroupTravelServerKind::Offer);
+        assert!((28..=29).contains(&record.remaining_seconds));
+        assert_eq!(record.encode().unwrap()[28], record.remaining_seconds);
+
+        view.server_now = Some(view.expires_at);
+        owner
+            .observe_view(&view, fence(cid(2)), 1)
+            .expect("expired update");
+        assert_eq!(owner.outbound.unwrap().record.remaining_seconds, 0);
     }
 }
