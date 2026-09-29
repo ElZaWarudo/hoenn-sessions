@@ -30,6 +30,17 @@ struct ScriptContext;
  *   then gives the badge, TM and story flags as in vanilla. The partner gets
  *   the same grants from sHoennGyms when it lacks this badge and holds every
  *   earlier one (COOP_TRAINER_REWARD_GYM_PARTNER); otherwise it helps.
+ * - Hoenn story battle (A9, sCoopStoryBattles): the requester gets the
+ *   trainer flag, match-call registration and the prize; its own post-battle
+ *   script then sets the story state as in vanilla. A partner at the same
+ *   story point (the battle's story flag clear, its story var at the value
+ *   the requester's script needed, its trainer still on the map) gets the
+ *   same state from data/scripts/coop_story_rewards.inc
+ *   (COOP_TRAINER_REWARD_STORY_PARTNER) when the battle's grant is pure
+ *   flag/var/item state; otherwise, and for battles whose script drives a
+ *   scene the partner's map cannot rebuild, the partner helps.
+ *   COOP_STORY_KIND_ORDINARY entries (story grunts and admins whose script
+ *   only shows text) keep the ordinary trainer-flag rule.
  *
  * Apply runs at most once per armed battle, so a resumed post-battle script or
  * a re-entered end callback can never pay twice. */
@@ -50,6 +61,54 @@ enum CoopTrainerRewardRole
     COOP_TRAINER_REWARD_GYM_PARTNER, // participant partner of a gym win: the
                                      // badge, TM and story grants are applied
                                      // and the notice script must be shown
+    COOP_TRAINER_REWARD_STORY_PARTNER, // participant partner of a story win:
+                                       // the story state is applied and the
+                                       // story notice script must be shown
+};
+
+/* Hoenn story battles (A9). Every trainer of sCoopStoryTrainers maps to one
+ * entry; the server mirrors the table (trainer_rules.rs parses it). */
+enum CoopStoryBattle
+{
+    /* Grants: pure state the partner's map scripts rebuild. */
+    COOP_STORY_RIVAL_ROUTE103,
+    COOP_STORY_RIVAL_ROUTE110,
+    COOP_STORY_RIVAL_ROUTE119,
+    COOP_STORY_RIVAL_LILYCOVE,
+    COOP_STORY_WALLY_MAUVILLE,
+    COOP_STORY_WALLY_VICTORY_ROAD,
+    COOP_STORY_GRUNT_JAGGED_PASS,
+    COOP_STORY_MATT_AQUA_HIDEOUT,
+    COOP_STORY_MAXIE_MT_CHIMNEY,
+    COOP_STORY_SIDNEY,
+    COOP_STORY_PHOEBE,
+    COOP_STORY_GLACIA,
+    COOP_STORY_DRAKE,
+    COOP_STORY_STEVEN_METEOR_FALLS,
+    /* Helpers: the partner earns EXP only. */
+    COOP_STORY_RIVAL_RUSTBORO,
+    COOP_STORY_GRUNT_PETALBURG_WOODS,
+    COOP_STORY_GRUNT_RUSTURF_TUNNEL,
+    COOP_STORY_GRUNTS_OCEANIC_MUSEUM,
+    COOP_STORY_SHELLY_WEATHER_INSTITUTE,
+    COOP_STORY_GRUNTS_SPACE_CENTER,
+    COOP_STORY_MAXIE_MAGMA_HIDEOUT,
+    COOP_STORY_ARCHIE_SEAFLOOR_CAVERN,
+    COOP_STORY_CHAMPION_WALLACE,
+    /* Ordinary: the trainer flag decides, as for a route trainer. */
+    COOP_STORY_AQUA_HIDEOUT_GRUNTS,
+    COOP_STORY_ADMINS,
+    COOP_STORY_WALLY_VICTORY_ROAD_EXIT,
+    COOP_STORY_COUNT
+};
+
+#define COOP_STORY_NONE 0xFF
+
+enum CoopStoryKind
+{
+    COOP_STORY_KIND_ORDINARY,
+    COOP_STORY_KIND_GRANT,
+    COOP_STORY_KIND_HELPER,
 };
 
 /* Arms the recorder when a co-op trainer battle is entered. */
@@ -90,9 +149,29 @@ const u8 *CoopTrainerRewards_GetGymNoticeScript(u16 trainerId);
  * and whether it fit in the bag (EventScript_ObtainItemMessage's inputs). */
 void CoopTrainerRewards_LoadGymNoticeItem(struct ScriptContext *ctx);
 
+/* The story battle a trainer belongs to, or COOP_STORY_NONE (a rematch entry
+ * is not a story battle; see CoopTrainerEncounter_IsSupportedTrainer). */
+u8 CoopTrainerRewards_GetStoryBattle(u16 trainerId);
+enum CoopStoryKind CoopTrainerRewards_GetStoryKind(u8 battle);
+/* Story leaders, admins, the Elite Four and the champion keep their whole
+ * team in co-op, like gym leaders; everyone else fields at most three. */
+bool8 CoopTrainerRewards_IsFullTeamClass(u8 trainerClass);
+/* "Same story point" for a GRANT battle on this ROM: the battle's story flag
+ * is clear, its story var holds the value the requester's script needed and
+ * the trainer's object is not hidden. FALSE for any other kind. */
+bool8 CoopTrainerRewards_IsStoryPartnerEligible(u8 battle);
+/* The partner's notice for a STORY_PARTNER result. */
+const u8 *CoopTrainerRewards_GetStoryNoticeScript(void);
+/* callnatives from the story notice script: hide the objects the grant just
+ * hid (as removeobject would), then load VAR_0x8004 (1: redraw the Elite Four
+ * door), VAR_0x8005 (an item was given), VAR_0x8000/1/7 (item, one, fit). */
+void CoopTrainerRewards_SyncStoryObjects(struct ScriptContext *ctx);
+void CoopTrainerRewards_LoadStoryNotice(struct ScriptContext *ctx);
+
 #if TESTING
 bool8 CoopTrainerRewards_TestIsArmed(void);
 u8 CoopTrainerRewards_TestGetFaintRecord(u8 opponentSlot);
+u16 CoopTrainerRewards_TestGetStoryHideMask(void);
 #endif
 
 #endif // GUARD_COOP_TRAINER_REWARDS_H

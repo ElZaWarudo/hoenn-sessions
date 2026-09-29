@@ -11,6 +11,7 @@
 #include "data.h"
 #include "evolution_scene.h"
 #include "event_data.h"
+#include "event_object_movement.h"
 #include "item.h"
 #include "main.h"
 #include "mastery.h"
@@ -23,13 +24,15 @@
 #include "constants/flags.h"
 #include "constants/hold_effects.h"
 #include "constants/items.h"
+#include "constants/maps.h"
 #include "constants/opponents.h"
 #include "constants/trainers.h"
+#include "constants/vars.h"
 
 _Static_assert(COOP_BATTLE_MULTI_PARTY_SIZE <= 3,
                "a faint record holds three staged-slot bits per field");
 
-/* 11 bytes of EWRAM: everything else is derived after the battle. */
+/* 14 bytes of EWRAM: everything else is derived after the battle. */
 struct CoopTrainerRewardState
 {
     u8 faints[PARTY_SIZE]; // per opponent party slot, see COOP_TRAINER_REWARD_*
@@ -37,11 +40,21 @@ struct CoopTrainerRewardState
     bool8 armed;
     u8 money_multiplier;
     u8 gym_notice;         // GYM_NOTICE_* after a GYM_PARTNER settlement
+    u8 story_notice;       // STORY_NOTICE_* after a STORY_PARTNER settlement
+    u16 story_hide_mask;   // gObjectEvents slots the story grant hid
 };
 
 #define GYM_NOTICE_PENDING  0x80
 #define GYM_NOTICE_TM_GIVEN 0x40
 #define GYM_NOTICE_GYM_MASK 0x07
+
+#define STORY_NOTICE_PENDING     0x80
+#define STORY_NOTICE_ITEM_GIVEN  0x40
+#define STORY_NOTICE_BATTLE_MASK 0x1F
+
+_Static_assert(COOP_STORY_COUNT <= STORY_NOTICE_BATTLE_MASK + 1,
+               "a story notice holds the battle in five bits");
+_Static_assert(OBJECT_EVENTS_COUNT <= 16, "one hide-mask bit per object event");
 
 static EWRAM_DATA struct CoopTrainerRewardState sRewards = {0};
 
@@ -172,6 +185,316 @@ static void GrantGymToPartner(u8 gym)
 static void PayPrize(u16 trainerId, u8 moneyMultiplier)
 {
     AddMoney(&gSaveBlock1Ptr->money, CoopTrainerRewards_GetPrizeMoney(trainerId, moneyMultiplier));
+}
+
+/* A9: the Hoenn story battles. The inventory and the reason for each kind are
+ * in docs/plans/2026-09-29-coop-trainers-and-outcome-ledger-plan.md; the
+ * grant scripts are data/scripts/coop_story_rewards.inc.
+ *
+ * GRANT: the partner at the same story point gets the post-battle script's
+ * flags, vars and item. The requester's script checked the story var (and the
+ * trainer's object was on its map) before the battle, and its post-battle
+ * script sets the story flag, so the partner qualifies with the flag clear,
+ * the var at storyValue and presenceFlag clear.
+ * HELPER: the post-battle script drives a scene (a legendary awakening, the
+ * Hall of Fame, a gift Pokémon, a trainer used by two different battles...)
+ * the partner's map cannot rebuild; the partner earns EXP only.
+ * ORDINARY: the script only shows text; the trainer flag decides.
+ *
+ * The server mirrors this table (coop-server trainer_rules.rs parses the
+ * lines below; keep one entry per line). */
+struct CoopStoryBattleInfo
+{
+    u8 kind;
+    u16 storyFlag;    // set by the battle's script; the partner needs it clear (0: none)
+    u16 storyVar;     // 0: none; else the partner needs VarGet == storyValue
+    u16 storyValue;
+    u16 presenceFlag; // the trainer's object flag; the partner needs it clear (0: none)
+    u16 item;         // given like `giveitem` (ITEM_NONE: none)
+    u16 redrawMap;    // the Elite Four room whose door the notice opens, or MAP_UNDEFINED
+    const u8 *grantScript;
+};
+
+struct CoopStoryTrainer
+{
+    u16 trainer;
+    u8 battle;
+};
+
+extern const u8 CoopStory_EventScript_GrantRivalRoute103[];
+extern const u8 CoopStory_EventScript_GrantRivalRoute110[];
+extern const u8 CoopStory_EventScript_GrantRivalRoute119[];
+extern const u8 CoopStory_EventScript_GrantRivalLilycove[];
+extern const u8 CoopStory_EventScript_GrantWallyMauville[];
+extern const u8 CoopStory_EventScript_GrantWallyVictoryRoad[];
+extern const u8 CoopStory_EventScript_GrantGruntJaggedPass[];
+extern const u8 CoopStory_EventScript_GrantMattAquaHideout[];
+extern const u8 CoopStory_EventScript_GrantMaxieMtChimney[];
+extern const u8 CoopStory_EventScript_GrantSidney[];
+extern const u8 CoopStory_EventScript_GrantPhoebe[];
+extern const u8 CoopStory_EventScript_GrantGlacia[];
+extern const u8 CoopStory_EventScript_GrantDrake[];
+extern const u8 CoopStory_EventScript_GrantStevenMeteorFalls[];
+extern const u8 CoopStory_EventScript_Notice[];
+
+#define GRANT COOP_STORY_KIND_GRANT
+#define HELPER COOP_STORY_KIND_HELPER
+#define ORDINARY COOP_STORY_KIND_ORDINARY
+
+static const struct CoopStoryBattleInfo sCoopStoryBattles[COOP_STORY_COUNT] =
+{
+    [COOP_STORY_RIVAL_ROUTE103] = {GRANT, FLAG_DEFEATED_RIVAL_ROUTE103, 0, 0, FLAG_HIDE_ROUTE_103_RIVAL, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantRivalRoute103},
+    [COOP_STORY_RIVAL_ROUTE110] = {GRANT, 0, VAR_ROUTE110_STATE, 0, FLAG_HIDE_ROUTE_110_RIVAL, ITEM_DOWSING_MACHINE, MAP_UNDEFINED, CoopStory_EventScript_GrantRivalRoute110},
+    [COOP_STORY_RIVAL_ROUTE119] = {GRANT, FLAG_RECEIVED_HM_FLY, VAR_ROUTE119_STATE, 0, 0, ITEM_HM_FLY, MAP_UNDEFINED, CoopStory_EventScript_GrantRivalRoute119},
+    [COOP_STORY_RIVAL_LILYCOVE] = {GRANT, FLAG_MET_RIVAL_LILYCOVE, 0, 0, FLAG_HIDE_LILYCOVE_CITY_RIVAL, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantRivalLilycove},
+    [COOP_STORY_WALLY_MAUVILLE] = {GRANT, FLAG_DEFEATED_WALLY_MAUVILLE, 0, 0, FLAG_HIDE_MAUVILLE_CITY_WALLY, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantWallyMauville},
+    [COOP_STORY_WALLY_VICTORY_ROAD] = {GRANT, FLAG_DEFEATED_WALLY_VICTORY_ROAD, VAR_VICTORY_ROAD_1F_STATE, 0, 0, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantWallyVictoryRoad},
+    [COOP_STORY_GRUNT_JAGGED_PASS] = {GRANT, FLAG_BEAT_MAGMA_GRUNT_JAGGED_PASS, 0, 0, FLAG_HIDE_JAGGED_PASS_MAGMA_GUARD, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantGruntJaggedPass},
+    [COOP_STORY_MATT_AQUA_HIDEOUT] = {GRANT, FLAG_TEAM_AQUA_ESCAPED_IN_SUBMARINE, 0, 0, FLAG_HIDE_AQUA_HIDEOUT_GRUNTS, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantMattAquaHideout},
+    [COOP_STORY_MAXIE_MT_CHIMNEY] = {GRANT, FLAG_DEFEATED_EVIL_TEAM_MT_CHIMNEY, 0, 0, FLAG_HIDE_MT_CHIMNEY_TEAM_MAGMA, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantMaxieMtChimney},
+    [COOP_STORY_SIDNEY] = {GRANT, FLAG_DEFEATED_ELITE_4_SIDNEY, VAR_ELITE_4_STATE, 1, 0, ITEM_NONE, MAP_EVER_GRANDE_CITY_SIDNEYS_ROOM, CoopStory_EventScript_GrantSidney},
+    [COOP_STORY_PHOEBE] = {GRANT, FLAG_DEFEATED_ELITE_4_PHOEBE, VAR_ELITE_4_STATE, 2, 0, ITEM_NONE, MAP_EVER_GRANDE_CITY_PHOEBES_ROOM, CoopStory_EventScript_GrantPhoebe},
+    [COOP_STORY_GLACIA] = {GRANT, FLAG_DEFEATED_ELITE_4_GLACIA, VAR_ELITE_4_STATE, 3, 0, ITEM_NONE, MAP_EVER_GRANDE_CITY_GLACIAS_ROOM, CoopStory_EventScript_GrantGlacia},
+    [COOP_STORY_DRAKE] = {GRANT, FLAG_DEFEATED_ELITE_4_DRAKE, VAR_ELITE_4_STATE, 4, 0, ITEM_NONE, MAP_EVER_GRANDE_CITY_DRAKES_ROOM, CoopStory_EventScript_GrantDrake},
+    [COOP_STORY_STEVEN_METEOR_FALLS] = {GRANT, FLAG_DEFEATED_METEOR_FALLS_STEVEN, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, CoopStory_EventScript_GrantStevenMeteorFalls},
+    [COOP_STORY_RIVAL_RUSTBORO] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_GRUNT_PETALBURG_WOODS] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_GRUNT_RUSTURF_TUNNEL] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_GRUNTS_OCEANIC_MUSEUM] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_SHELLY_WEATHER_INSTITUTE] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_GRUNTS_SPACE_CENTER] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_MAXIE_MAGMA_HIDEOUT] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_ARCHIE_SEAFLOOR_CAVERN] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_CHAMPION_WALLACE] = {HELPER, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_AQUA_HIDEOUT_GRUNTS] = {ORDINARY, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_ADMINS] = {ORDINARY, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+    [COOP_STORY_WALLY_VICTORY_ROAD_EXIT] = {ORDINARY, 0, 0, 0, 0, ITEM_NONE, MAP_UNDEFINED, NULL},
+};
+
+static const struct CoopStoryTrainer sCoopStoryTrainers[] =
+{
+    {TRAINER_MAY_ROUTE_103_TREECKO, COOP_STORY_RIVAL_ROUTE103},
+    {TRAINER_MAY_ROUTE_103_TORCHIC, COOP_STORY_RIVAL_ROUTE103},
+    {TRAINER_MAY_ROUTE_103_MUDKIP, COOP_STORY_RIVAL_ROUTE103},
+    {TRAINER_BRENDAN_ROUTE_103_TREECKO, COOP_STORY_RIVAL_ROUTE103},
+    {TRAINER_BRENDAN_ROUTE_103_TORCHIC, COOP_STORY_RIVAL_ROUTE103},
+    {TRAINER_BRENDAN_ROUTE_103_MUDKIP, COOP_STORY_RIVAL_ROUTE103},
+    {TRAINER_MAY_ROUTE_110_TREECKO, COOP_STORY_RIVAL_ROUTE110},
+    {TRAINER_MAY_ROUTE_110_TORCHIC, COOP_STORY_RIVAL_ROUTE110},
+    {TRAINER_MAY_ROUTE_110_MUDKIP, COOP_STORY_RIVAL_ROUTE110},
+    {TRAINER_BRENDAN_ROUTE_110_TREECKO, COOP_STORY_RIVAL_ROUTE110},
+    {TRAINER_BRENDAN_ROUTE_110_TORCHIC, COOP_STORY_RIVAL_ROUTE110},
+    {TRAINER_BRENDAN_ROUTE_110_MUDKIP, COOP_STORY_RIVAL_ROUTE110},
+    {TRAINER_MAY_ROUTE_119_TREECKO, COOP_STORY_RIVAL_ROUTE119},
+    {TRAINER_MAY_ROUTE_119_TORCHIC, COOP_STORY_RIVAL_ROUTE119},
+    {TRAINER_MAY_ROUTE_119_MUDKIP, COOP_STORY_RIVAL_ROUTE119},
+    {TRAINER_BRENDAN_ROUTE_119_TREECKO, COOP_STORY_RIVAL_ROUTE119},
+    {TRAINER_BRENDAN_ROUTE_119_TORCHIC, COOP_STORY_RIVAL_ROUTE119},
+    {TRAINER_BRENDAN_ROUTE_119_MUDKIP, COOP_STORY_RIVAL_ROUTE119},
+    {TRAINER_MAY_LILYCOVE_TREECKO, COOP_STORY_RIVAL_LILYCOVE},
+    {TRAINER_MAY_LILYCOVE_TORCHIC, COOP_STORY_RIVAL_LILYCOVE},
+    {TRAINER_MAY_LILYCOVE_MUDKIP, COOP_STORY_RIVAL_LILYCOVE},
+    {TRAINER_BRENDAN_LILYCOVE_TREECKO, COOP_STORY_RIVAL_LILYCOVE},
+    {TRAINER_BRENDAN_LILYCOVE_TORCHIC, COOP_STORY_RIVAL_LILYCOVE},
+    {TRAINER_BRENDAN_LILYCOVE_MUDKIP, COOP_STORY_RIVAL_LILYCOVE},
+    {TRAINER_WALLY_MAUVILLE, COOP_STORY_WALLY_MAUVILLE},
+    {TRAINER_WALLY_VR_1, COOP_STORY_WALLY_VICTORY_ROAD},
+    {TRAINER_GRUNT_JAGGED_PASS, COOP_STORY_GRUNT_JAGGED_PASS},
+    {TRAINER_MATT, COOP_STORY_MATT_AQUA_HIDEOUT},
+    {TRAINER_MAXIE_MT_CHIMNEY, COOP_STORY_MAXIE_MT_CHIMNEY},
+    {TRAINER_SIDNEY, COOP_STORY_SIDNEY},
+    {TRAINER_PHOEBE, COOP_STORY_PHOEBE},
+    {TRAINER_GLACIA, COOP_STORY_GLACIA},
+    {TRAINER_DRAKE, COOP_STORY_DRAKE},
+    {TRAINER_STEVEN, COOP_STORY_STEVEN_METEOR_FALLS},
+    {TRAINER_MAY_RUSTBORO_TREECKO, COOP_STORY_RIVAL_RUSTBORO},
+    {TRAINER_MAY_RUSTBORO_TORCHIC, COOP_STORY_RIVAL_RUSTBORO},
+    {TRAINER_MAY_RUSTBORO_MUDKIP, COOP_STORY_RIVAL_RUSTBORO},
+    {TRAINER_BRENDAN_RUSTBORO_TREECKO, COOP_STORY_RIVAL_RUSTBORO},
+    {TRAINER_BRENDAN_RUSTBORO_TORCHIC, COOP_STORY_RIVAL_RUSTBORO},
+    {TRAINER_BRENDAN_RUSTBORO_MUDKIP, COOP_STORY_RIVAL_RUSTBORO},
+    {TRAINER_GRUNT_PETALBURG_WOODS, COOP_STORY_GRUNT_PETALBURG_WOODS},
+    {TRAINER_GRUNT_RUSTURF_TUNNEL, COOP_STORY_GRUNT_RUSTURF_TUNNEL},
+    {TRAINER_GRUNT_MUSEUM_1, COOP_STORY_GRUNTS_OCEANIC_MUSEUM},
+    {TRAINER_GRUNT_MUSEUM_2, COOP_STORY_GRUNTS_OCEANIC_MUSEUM},
+    {TRAINER_SHELLY_WEATHER_INSTITUTE, COOP_STORY_SHELLY_WEATHER_INSTITUTE},
+    {TRAINER_GRUNT_SPACE_CENTER_2, COOP_STORY_GRUNTS_SPACE_CENTER},
+    {TRAINER_GRUNT_SPACE_CENTER_5, COOP_STORY_GRUNTS_SPACE_CENTER},
+    {TRAINER_GRUNT_SPACE_CENTER_6, COOP_STORY_GRUNTS_SPACE_CENTER},
+    {TRAINER_GRUNT_SPACE_CENTER_7, COOP_STORY_GRUNTS_SPACE_CENTER},
+    {TRAINER_MAXIE_MAGMA_HIDEOUT, COOP_STORY_MAXIE_MAGMA_HIDEOUT},
+    {TRAINER_ARCHIE, COOP_STORY_ARCHIE_SEAFLOOR_CAVERN},
+    {TRAINER_WALLACE, COOP_STORY_CHAMPION_WALLACE},
+    {TRAINER_GRUNT_AQUA_HIDEOUT_1, COOP_STORY_AQUA_HIDEOUT_GRUNTS},
+    {TRAINER_GRUNT_AQUA_HIDEOUT_2, COOP_STORY_AQUA_HIDEOUT_GRUNTS},
+    {TRAINER_GRUNT_AQUA_HIDEOUT_3, COOP_STORY_AQUA_HIDEOUT_GRUNTS},
+    {TRAINER_GRUNT_AQUA_HIDEOUT_4, COOP_STORY_AQUA_HIDEOUT_GRUNTS},
+    {TRAINER_SHELLY_SEAFLOOR_CAVERN, COOP_STORY_ADMINS},
+    {TRAINER_TABITHA_MT_CHIMNEY, COOP_STORY_ADMINS},
+    {TRAINER_TABITHA_MAGMA_HIDEOUT, COOP_STORY_ADMINS},
+    {TRAINER_WALLY_VR_2, COOP_STORY_WALLY_VICTORY_ROAD_EXIT},
+};
+
+#undef GRANT
+#undef HELPER
+#undef ORDINARY
+
+u8 CoopTrainerRewards_GetStoryBattle(u16 trainerId)
+{
+    u32 i;
+
+    if (trainerId == TRAINER_NONE)
+        return COOP_STORY_NONE;
+    for (i = 0; i < ARRAY_COUNT(sCoopStoryTrainers); i++)
+        if (sCoopStoryTrainers[i].trainer == trainerId)
+            return sCoopStoryTrainers[i].battle;
+    return COOP_STORY_NONE;
+}
+
+enum CoopStoryKind CoopTrainerRewards_GetStoryKind(u8 battle)
+{
+    return battle < COOP_STORY_COUNT ? sCoopStoryBattles[battle].kind : COOP_STORY_KIND_ORDINARY;
+}
+
+bool8 CoopTrainerRewards_IsFullTeamClass(u8 trainerClass)
+{
+    switch (trainerClass)
+    {
+    case TRAINER_CLASS_LEADER:
+    case TRAINER_CLASS_ELITE_FOUR:
+    case TRAINER_CLASS_CHAMPION:
+    case TRAINER_CLASS_AQUA_ADMIN:
+    case TRAINER_CLASS_AQUA_LEADER:
+    case TRAINER_CLASS_MAGMA_ADMIN:
+    case TRAINER_CLASS_MAGMA_LEADER:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+bool8 CoopTrainerRewards_IsStoryPartnerEligible(u8 battle)
+{
+    const struct CoopStoryBattleInfo *entry;
+
+    if (battle >= COOP_STORY_COUNT)
+        return FALSE;
+    entry = &sCoopStoryBattles[battle];
+    if (entry->kind != COOP_STORY_KIND_GRANT || entry->grantScript == NULL)
+        return FALSE;
+    if (entry->storyFlag != 0 && FlagGet(entry->storyFlag))
+        return FALSE;
+    if (entry->storyVar != 0 && VarGet(entry->storyVar) != entry->storyValue)
+        return FALSE;
+    if (entry->presenceFlag != 0 && FlagGet(entry->presenceFlag))
+        return FALSE;
+    return TRUE;
+}
+
+const u8 *CoopTrainerRewards_GetStoryNoticeScript(void)
+{
+    return CoopStory_EventScript_Notice;
+}
+
+/* The object's hide flag from its map template (0 for objects without one,
+ * such as a follower or an object the map does not list). */
+static u16 GetStoryObjectFlag(const struct ObjectEvent *object)
+{
+    const struct ObjectEventTemplate *template;
+
+    if (!object->active || object->isPlayer)
+        return 0;
+    template = GetObjectEventTemplateByLocalIdAndMap(object->localId, object->mapNum,
+                                                     object->mapGroup);
+    return template != NULL ? template->flagId : 0;
+}
+
+/* Objects on the partner's screen whose hide flag is clear. */
+static u16 GetShownFlaggedObjects(void)
+{
+    u16 mask = 0;
+    u32 i;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        u16 flag = GetStoryObjectFlag(&gObjectEvents[i]);
+
+        if (flag != 0 && !FlagGet(flag))
+            mask |= 1u << i;
+    }
+    return mask;
+}
+
+/* The post-battle script's state, applied to the partner's save at once so an
+ * interrupted notice cannot lose it. Objects it hides that are on the
+ * partner's screen (a rival standing on the same route) are removed by the
+ * notice, exactly as the map would not spawn them on its next load. */
+static void GrantStoryToPartner(u8 battle)
+{
+    const struct CoopStoryBattleInfo *entry = &sCoopStoryBattles[battle];
+    u16 shown = GetShownFlaggedObjects();
+    u16 hidden = 0;
+    bool8 itemGiven = FALSE;
+    u32 i;
+
+    RunScriptImmediately(entry->grantScript);
+    /* `giveitem` in the vanilla script: a full bag only shows a message. */
+    if (entry->item != ITEM_NONE)
+        itemGiven = AddBagItem(entry->item, 1);
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        u16 flag = GetStoryObjectFlag(&gObjectEvents[i]);
+
+        if ((shown & (1u << i)) && flag != 0 && FlagGet(flag))
+            hidden |= 1u << i;
+    }
+    sRewards.story_hide_mask = hidden;
+    sRewards.story_notice = STORY_NOTICE_PENDING | (itemGiven ? STORY_NOTICE_ITEM_GIVEN : 0) | battle;
+}
+
+void CoopTrainerRewards_SyncStoryObjects(struct ScriptContext *ctx)
+{
+    u32 i;
+
+    for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+    {
+        struct ObjectEvent *object = &gObjectEvents[i];
+        u16 flag;
+
+        if (!(sRewards.story_hide_mask & (1u << i)))
+            continue;
+        flag = GetStoryObjectFlag(object);
+        if (flag != 0 && FlagGet(flag))
+            RemoveObjectEvent(object);
+    }
+    sRewards.story_hide_mask = 0;
+}
+
+void CoopTrainerRewards_LoadStoryNotice(struct ScriptContext *ctx)
+{
+    u8 notice = sRewards.story_notice;
+    const struct CoopStoryBattleInfo *entry;
+
+    gSpecialVar_0x8004 = FALSE;
+    gSpecialVar_0x8005 = FALSE;
+    gSpecialVar_0x8000 = ITEM_NONE;
+    gSpecialVar_0x8001 = 0;
+    gSpecialVar_0x8007 = FALSE;
+    sRewards.story_notice = 0;
+    if (!(notice & STORY_NOTICE_PENDING)
+     || (notice & STORY_NOTICE_BATTLE_MASK) >= COOP_STORY_COUNT)
+        return;
+    entry = &sCoopStoryBattles[notice & STORY_NOTICE_BATTLE_MASK];
+    gSpecialVar_0x8004 = entry->redrawMap != MAP_UNDEFINED
+        && gSaveBlock1Ptr->location.mapGroup == MAP_GROUP(entry->redrawMap)
+        && gSaveBlock1Ptr->location.mapNum == MAP_NUM(entry->redrawMap);
+    if (entry->item != ITEM_NONE)
+    {
+        gSpecialVar_0x8005 = TRUE;
+        gSpecialVar_0x8000 = entry->item;
+        gSpecialVar_0x8001 = 1;
+        gSpecialVar_0x8007 = (notice & STORY_NOTICE_ITEM_GIVEN) != 0;
+    }
 }
 
 static u32 CountBits(u32 bits)
@@ -411,6 +734,7 @@ enum CoopTrainerRewardRole CoopTrainerRewards_Apply(bool8 won, u16 trainerId,
     enum CoopTrainerRewardRole role;
     u16 base;
     u8 gym;
+    u8 story;
     u32 i;
 
     /* Disarm first: whatever happens below, this battle is settled. */
@@ -422,6 +746,10 @@ enum CoopTrainerRewardRole CoopTrainerRewards_Apply(bool8 won, u16 trainerId,
         return COOP_TRAINER_REWARD_NONE;
 
     gym = CoopTrainerRewards_GetHoennGym(trainerId);
+    story = CoopTrainerRewards_GetStoryBattle(trainerId);
+    if (story != COOP_STORY_NONE
+     && CoopTrainerRewards_GetStoryKind(story) == COOP_STORY_KIND_ORDINARY)
+        story = COOP_STORY_NONE; // the ordinary trainer-flag rule below
     if (gym != COOP_HOENN_GYM_NONE)
     {
         /* The requester reached the battle through the leader's unbeaten
@@ -437,6 +765,29 @@ enum CoopTrainerRewardRole CoopTrainerRewards_Apply(bool8 won, u16 trainerId,
             SetTrainerFlag(trainerId);
             if (!requester)
                 GrantGymToPartner(gym);
+        }
+        else
+        {
+            role = COOP_TRAINER_REWARD_HELPER;
+        }
+    }
+    else if (story != COOP_STORY_NONE)
+    {
+        /* The requester's own story script led to the battle and sets the
+         * story state when it resumes; vanilla pays every such win (an Elite
+         * Four member is fought again on each run). A partner at the same
+         * story point of a GRANT battle gets that state now; anyone else
+         * helps. */
+        if (requester || CoopTrainerRewards_IsStoryPartnerEligible(story))
+        {
+            role = requester ? COOP_TRAINER_REWARD_PARTICIPANT
+                             : COOP_TRAINER_REWARD_STORY_PARTNER;
+            PayPrize(trainerId, state.money_multiplier);
+            /* CB2_EndTrainerBattle's win branch for this trainer. */
+            BattleSetup_RegisterTrainerInMatchCall(trainerId);
+            SetTrainerFlag(trainerId);
+            if (!requester)
+                GrantStoryToPartner(story);
         }
         else
         {
@@ -524,5 +875,10 @@ bool8 CoopTrainerRewards_TestIsArmed(void)
 u8 CoopTrainerRewards_TestGetFaintRecord(u8 opponentSlot)
 {
     return opponentSlot < PARTY_SIZE ? sRewards.faints[opponentSlot] : 0;
+}
+
+u16 CoopTrainerRewards_TestGetStoryHideMask(void)
+{
+    return sRewards.story_hide_mask;
 }
 #endif

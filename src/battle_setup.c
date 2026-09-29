@@ -572,12 +572,13 @@ static void CB2_EndCoopTrainerBattle(void)
     }
     if (completed && !IsPlayerDefeated(gBattleOutcome))
         DowngradeBadPoison();
-    if (requester && !won
-     && CoopTrainerRewards_GetHoennGym(rewardTrainerId) != COOP_HOENN_GYM_NONE)
+    if (requester && !won)
     {
-        /* A gym leader's post-battle script grants the badge without
-         * checking the outcome (vanilla whites out first). A co-op loss
-         * with local mons still standing releases the field instead. */
+        /* Every parked post-battle script assumes a win: a gym leader's
+         * grants the badge, a story script sets its story state, a route
+         * trainer's shows its defeat text (vanilla whites out first). A
+         * co-op loss with local mons still standing releases the field
+         * instead; the trainer stays unbeaten and its scene can replay. */
         ScriptContext_SetupScript(EventScript_CoopTrainerEncounterRelease);
         ScriptContext_Stop();
     }
@@ -586,6 +587,13 @@ static void CB2_EndCoopTrainerBattle(void)
         /* The partner has no leader script of its own. Its grants are
          * already applied; this only shows the badge and the TM. */
         ScriptContext_SetupScript(CoopTrainerRewards_GetGymNoticeScript(rewardTrainerId));
+        ScriptContext_Stop();
+    }
+    else if (rewardRole == COOP_TRAINER_REWARD_STORY_PARTNER)
+    {
+        /* Likewise for a story battle: the state is applied; the notice
+         * hides the objects it hid and shows the item. */
+        ScriptContext_SetupScript(CoopTrainerRewards_GetStoryNoticeScript());
         ScriptContext_Stop();
     }
     if (CoopTrainerRewards_HasPendingEvolutions())

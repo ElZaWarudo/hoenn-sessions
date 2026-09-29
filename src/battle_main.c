@@ -2161,10 +2161,11 @@ u8 CreateCoopTrainerParty(struct Pokemon *party, const struct Trainer *trainer, 
 {
     u32 firstMonIndex = 0xFFFFFFFF;
     u32 i;
-    /* Gym leaders keep their whole team; everyone else fields at most three
-     * against the two players' one to three each. Both ROMs read the same
-     * trainer data, so they agree on the size. */
-    bool32 halfTeam = trainer->trainerClass != TRAINER_CLASS_LEADER;
+    /* Gym leaders, story admins and bosses, the Elite Four and the champion
+     * keep their whole team; everyone else fields at most three against the
+     * two players' one to three each. Both ROMs read the same trainer data,
+     * so they agree on the size. */
+    bool32 halfTeam = !CoopTrainerRewards_IsFullTeamClass(trainer->trainerClass);
     u8 retVal = CreateNPCTrainerPartyInternal(party, trainer, halfTeam, battleTypeFlags, &firstMonIndex);
 
     if (firstMonIndex == 0xFFFFFFFF)

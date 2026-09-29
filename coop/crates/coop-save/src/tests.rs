@@ -1359,6 +1359,28 @@ fn reads_hoenn_badge_flags_in_gym_order() {
 }
 
 #[test]
+fn reads_script_vars_as_var_get_does() {
+    let mut bytes = valid_image(20, 21);
+    // VAR_ROUTE110_STATE (0x4069) and the last saved variable.
+    let last = crate::VARS_START + crate::SAVE_BLOCK1_VAR_COUNT - 1;
+    for (var, value) in [(0x4069_usize, 0x0102_u16), (last, 7)] {
+        let offset = crate::SAVE_BLOCK1_VARS_OFFSET + 2 * (var - crate::VARS_START);
+        write_logical_range(
+            &mut bytes,
+            SaveSlot::Second,
+            1,
+            offset,
+            &value.to_le_bytes(),
+        );
+    }
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.event_var(0x4069), Some(0x0102));
+    assert_eq!(save.event_var(last), Some(7));
+    assert_eq!(save.event_var(last + 1), None);
+    assert_eq!(save.event_var(crate::VARS_START - 1), None);
+}
+
+#[test]
 fn reads_money_trainer_flags_experience_and_locates_pokemon() {
     let mut bytes = valid_image(20, 21);
     // Money is stored XOR the SaveBlock2 encryption key, as GetMoney reads it.

@@ -2175,12 +2175,13 @@ EventScript_CoopBattleConsentRespond::
 	end
 
 @ Replaces the parked trainer script after an aborted co-op trainer battle
-@ or a lost co-op gym battle: no flag was set, so the trainer stays fightable.
+@ or a requester's lost co-op battle: no flag was set, so the trainer stays fightable.
 EventScript_CoopTrainerEncounterRelease::
 	releaseall
 	end
 
 	.include "data/scripts/coop_gym_rewards.inc"
+	.include "data/scripts/coop_story_rewards.inc"
 
 Text_CoopBattleConsentCoop:
 	.string "Battle alongside your partner?$"

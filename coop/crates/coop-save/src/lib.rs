@@ -60,6 +60,8 @@ pub const TRAINER_FLAGS_START: usize = 0x500;
 pub const TRAINER_FLAGS_END: usize = 0xb55;
 /// First of the eight Hoenn badge flags, in gym order.
 pub const FLAG_BADGE01_GET: usize = 0xb5d;
+/// First script variable ID (`VARS_START`): `VAR_x` lives at index `x - 0x4000`.
+pub const VARS_START: usize = 0x4000;
 const VAR_BOARD_BRINEY_BOAT_STATE: usize = 0x408e;
 const SAVE_BLOCK1_BILL_EVIDENCE_END: usize = SAVE_BLOCK1_VARS_OFFSET + 2 * (0x18a + 1);
 const SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET: usize =
@@ -486,6 +488,18 @@ impl ValidatedSave {
         }
         let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
         Some(byte & (1 << (flag % 8)) != 0)
+    }
+
+    /// A `SaveBlock1` script variable (`VAR_*`, `0x4000` and up) as
+    /// `VarGet` reads it. `None` for an ID outside the saved variable array.
+    #[must_use]
+    pub fn event_var(&self, var: usize) -> Option<u16> {
+        let index = var.checked_sub(VARS_START)?;
+        if index >= SAVE_BLOCK1_VAR_COUNT {
+            return None;
+        }
+        let bytes = self.save_block1_range(SAVE_BLOCK1_VARS_OFFSET + 2 * index, 2)?;
+        Some(u16::from_le_bytes(bytes.try_into().ok()?))
     }
 
     /// The eight Hoenn badge flags (`FLAG_BADGE01_GET` .. `FLAG_BADGE08_GET`)
@@ -1360,6 +1374,7 @@ mod layout_tests {
                 super::TRAINER_FLAGS_END,
             ),
             ("COOP_SAVE_LAYOUT_FLAG_BADGE01_GET", super::FLAG_BADGE01_GET),
+            ("COOP_SAVE_LAYOUT_VARS_START", super::VARS_START),
         ] {
             assert_eq!(header_value(header, name), value, "{name}");
         }

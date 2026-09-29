@@ -63,12 +63,13 @@ void CoopBattleConsent_OnTrainerWhiteout(void);
 /* Phase 1 trainer classes: everything except gym leaders, Elite Four,
  * champions, rivals, villain admins/leaders/bosses and frontier brains. */
 bool8 CoopTrainerEncounter_IsPhaseOneClass(u8 trainerClass);
-/* Phase 1 classes plus the Hoenn gym leaders and their rematches. */
+/* Phase 1 classes plus the Hoenn gym leaders, the Hoenn story battles
+ * (sCoopStoryBattles) and their rematches. */
 bool8 CoopTrainerEncounter_IsSupportedTrainer(u16 trainerId);
 /* Eligible modes: single, no-intro and double for supported trainers; the
  * match-call rematch modes (special BattleSetup_StartRematchBattle) for
  * rematch entries; the continue-script modes only for a Hoenn gym leader's
- * first battle, and only while the requester lacks that badge. */
+ * first battle (while the requester lacks that badge) and the story battles. */
 bool8 CoopTrainerEncounter_IsEligible(u16 trainerId);
 bool8 CoopTrainerEncounter_TryBegin(u16 trainerId);
 /* TRUE while this ROM's own parked trainer script is in the co-op battle,

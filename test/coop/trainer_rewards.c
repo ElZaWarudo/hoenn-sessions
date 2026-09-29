@@ -691,3 +691,292 @@ TEST("Cloud Coop gym requester is paid and leaves the badge to the leader's scri
     RestoreSave();
     EndRewardFixture();
 }
+
+/* A9: Hoenn story battles. */
+TEST("Cloud Coop story table maps each story trainer to its battle and kind")
+{
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_MAY_ROUTE_103_TREECKO), COOP_STORY_RIVAL_ROUTE103);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_BRENDAN_ROUTE_103_MUDKIP), COOP_STORY_RIVAL_ROUTE103);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_BRENDAN_ROUTE_119_TORCHIC), COOP_STORY_RIVAL_ROUTE119);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_WALLY_VR_1), COOP_STORY_WALLY_VICTORY_ROAD);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_SIDNEY), COOP_STORY_SIDNEY);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_WALLACE), COOP_STORY_CHAMPION_WALLACE);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryKind(COOP_STORY_MATT_AQUA_HIDEOUT), COOP_STORY_KIND_GRANT);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryKind(COOP_STORY_RIVAL_RUSTBORO), COOP_STORY_KIND_HELPER);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryKind(COOP_STORY_ARCHIE_SEAFLOOR_CAVERN), COOP_STORY_KIND_HELPER);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryKind(COOP_STORY_CHAMPION_WALLACE), COOP_STORY_KIND_HELPER);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryKind(COOP_STORY_ADMINS), COOP_STORY_KIND_ORDINARY);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_TABITHA_MT_CHIMNEY), COOP_STORY_ADMINS);
+    /* Rematch entries and route trainers are not story battles. */
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_WALLY_VR_3), COOP_STORY_NONE);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_CALVIN_1), COOP_STORY_NONE);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_ROXANNE_1), COOP_STORY_NONE);
+    EXPECT_EQ(CoopTrainerRewards_GetStoryBattle(TRAINER_NONE), COOP_STORY_NONE);
+    /* Party size: story leaders, admins, the Elite Four and the champion keep
+     * their team like gym leaders; rivals and grunts keep the cap. */
+    EXPECT(CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_LEADER));
+    EXPECT(CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_ELITE_FOUR));
+    EXPECT(CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_CHAMPION));
+    EXPECT(CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_MAGMA_LEADER));
+    EXPECT(CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_AQUA_ADMIN));
+    EXPECT(!CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_RIVAL));
+    EXPECT(!CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_TEAM_AQUA));
+    EXPECT(!CoopTrainerRewards_IsFullTeamClass(TRAINER_CLASS_YOUNGSTER));
+}
+
+TEST("Cloud Coop story requester is paid and leaves the story state to its own script")
+{
+    u8 staged[1] = {0};
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_MAY_ROUTE_110_TREECKO, 1);
+    u16 held;
+
+    BeginRewardFixture();
+    SnapshotSave();
+    VarSet(VAR_ROUTE110_STATE, 0);
+    FlagClear(FLAG_HIDE_ROUTE_110_RIVAL);
+    ClearTrainerFlag(TRAINER_MAY_ROUTE_110_TREECKO);
+    held = CountTotalItemQuantityInBag(ITEM_DOWSING_MACHINE);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MAY_ROUTE_110_TREECKO, staged, 1, TRUE),
+              COOP_TRAINER_REWARD_PARTICIPANT);
+    EXPECT(HasTrainerBeenFought(TRAINER_MAY_ROUTE_110_TREECKO));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000 + prize);
+    /* Route110_EventScript_MayDefeated, resumed next, does the rest. */
+    EXPECT_EQ(VarGet(VAR_ROUTE110_STATE), 0);
+    EXPECT(!FlagGet(FLAG_HIDE_ROUTE_110_RIVAL));
+    EXPECT_EQ(CountTotalItemQuantityInBag(ITEM_DOWSING_MACHINE), held);
+    /* Settled once. */
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MAY_ROUTE_110_TREECKO, staged, 1, TRUE),
+              COOP_TRAINER_REWARD_NONE);
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000 + prize);
+    RestoreSave();
+    EndRewardFixture();
+}
+
+TEST("Cloud Coop rival partner at the same story point gets the rival grants once")
+{
+    u8 staged[1] = {0};
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_BRENDAN_ROUTE_110_MUDKIP, 1);
+    u16 held;
+
+    BeginRewardFixture();
+    SnapshotSave();
+    VarSet(VAR_ROUTE110_STATE, 0);
+    FlagClear(FLAG_HIDE_ROUTE_110_RIVAL);
+    FlagClear(FLAG_HIDE_ROUTE_110_RIVAL_ON_BIKE);
+    ClearTrainerFlag(TRAINER_BRENDAN_ROUTE_110_MUDKIP);
+    held = CountTotalItemQuantityInBag(ITEM_DOWSING_MACHINE);
+    if (held != 0)
+        EXPECT(RemoveBagItem(ITEM_DOWSING_MACHINE, held));
+    EXPECT(CoopTrainerRewards_IsStoryPartnerEligible(COOP_STORY_RIVAL_ROUTE110));
+    WinWithOneFaint();
+    /* The requester fought Brendan; this partner's own rival may differ. */
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_BRENDAN_ROUTE_110_MUDKIP, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_STORY_PARTNER);
+    EXPECT_EQ(VarGet(VAR_ROUTE110_STATE), 1);
+    EXPECT(FlagGet(FLAG_HIDE_ROUTE_110_RIVAL));
+    EXPECT(FlagGet(FLAG_HIDE_ROUTE_110_RIVAL_ON_BIKE));
+    EXPECT_EQ(CountTotalItemQuantityInBag(ITEM_DOWSING_MACHINE), 1);
+    EXPECT(HasTrainerBeenFought(TRAINER_BRENDAN_ROUTE_110_MUDKIP));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000 + prize);
+    /* The notice shows the item that was given, once. */
+    CoopTrainerRewards_LoadStoryNotice(NULL);
+    EXPECT_EQ(gSpecialVar_0x8004, FALSE);
+    EXPECT_EQ(gSpecialVar_0x8005, TRUE);
+    EXPECT_EQ(gSpecialVar_0x8000, ITEM_DOWSING_MACHINE);
+    EXPECT_EQ(gSpecialVar_0x8007, TRUE);
+    CoopTrainerRewards_LoadStoryNotice(NULL);
+    EXPECT_EQ(gSpecialVar_0x8005, FALSE);
+    /* No double grant: the story point has passed, so a later win helps. */
+    EXPECT(!CoopTrainerRewards_IsStoryPartnerEligible(COOP_STORY_RIVAL_ROUTE110));
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_BRENDAN_ROUTE_110_MUDKIP, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_HELPER);
+    EXPECT_EQ(CountTotalItemQuantityInBag(ITEM_DOWSING_MACHINE), 1);
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000 + prize);
+    RestoreSave();
+    EndRewardFixture();
+}
+
+TEST("Cloud Coop rival partner behind or ahead of the story point helps")
+{
+    u8 staged[1] = {0};
+    u32 before;
+    u32 attempt;
+
+    for (attempt = 0; attempt < 3; attempt++)
+    {
+        BeginRewardFixture();
+        SnapshotSave();
+        FlagClear(FLAG_DEFEATED_RIVAL_ROUTE103);
+        FlagClear(FLAG_HIDE_ROUTE_103_RIVAL);
+        VarSet(VAR_BIRCH_LAB_STATE, 3);
+        ClearTrainerFlag(TRAINER_MAY_ROUTE_103_TORCHIC);
+        if (attempt == 0)
+            FlagSet(FLAG_DEFEATED_RIVAL_ROUTE103); // already past it
+        else if (attempt == 1)
+            FlagSet(FLAG_HIDE_ROUTE_103_RIVAL);    // the rival is not there yet
+        WinWithOneFaint();
+        before = GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_EXP);
+        if (attempt == 2)
+        {
+            EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MAY_ROUTE_103_TORCHIC, staged, 1, FALSE),
+                      COOP_TRAINER_REWARD_STORY_PARTNER);
+            EXPECT(FlagGet(FLAG_DEFEATED_RIVAL_ROUTE103));
+            EXPECT(FlagGet(FLAG_HIDE_ROUTE_103_RIVAL));
+            EXPECT_EQ(VarGet(VAR_BIRCH_LAB_STATE), 4);
+            EXPECT_EQ(VarGet(VAR_OLDALE_RIVAL_STATE), 1);
+            EXPECT(!FlagGet(FLAG_HIDE_OLDALE_TOWN_RIVAL));
+            EXPECT(!FlagGet(FLAG_HIDE_LITTLEROOT_TOWN_BIRCHS_LAB_RIVAL));
+            CoopTrainerRewards_LoadStoryNotice(NULL);
+        }
+        else
+        {
+            EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MAY_ROUTE_103_TORCHIC, staged, 1, FALSE),
+                      COOP_TRAINER_REWARD_HELPER);
+            EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000);
+            EXPECT(!HasTrainerBeenFought(TRAINER_MAY_ROUTE_103_TORCHIC));
+            EXPECT_EQ(VarGet(VAR_BIRCH_LAB_STATE), 3);
+        }
+        EXPECT_GT(GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_EXP), before);
+        RestoreSave();
+        EndRewardFixture();
+    }
+}
+
+TEST("Cloud Coop admin partner grant is Matt's submarine escape state")
+{
+    u8 staged[1] = {0};
+
+    BeginRewardFixture();
+    SnapshotSave();
+    FlagClear(FLAG_TEAM_AQUA_ESCAPED_IN_SUBMARINE);
+    FlagClear(FLAG_HIDE_AQUA_HIDEOUT_GRUNTS);
+    FlagClear(FLAG_HIDE_LILYCOVE_CITY_AQUA_GRUNTS);
+    FlagClear(FLAG_HIDE_AQUA_HIDEOUT_B2F_SUBMARINE_SHADOW);
+    ClearTrainerFlag(TRAINER_MATT);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MATT, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_STORY_PARTNER);
+    EXPECT(FlagGet(FLAG_TEAM_AQUA_ESCAPED_IN_SUBMARINE));
+    EXPECT(FlagGet(FLAG_HIDE_LILYCOVE_CITY_AQUA_GRUNTS));
+    EXPECT(FlagGet(FLAG_HIDE_AQUA_HIDEOUT_B2F_SUBMARINE_SHADOW));
+    /* Matt's own script now shows only his post-battle text. */
+    EXPECT(HasTrainerBeenFought(TRAINER_MATT));
+    CoopTrainerRewards_LoadStoryNotice(NULL);
+    EXPECT_EQ(gSpecialVar_0x8005, FALSE);
+    RestoreSave();
+    EndRewardFixture();
+}
+
+TEST("Cloud Coop leader partner grant at Mt Chimney and helper at the Magma Hideout")
+{
+    u8 staged[1] = {0};
+
+    BeginRewardFixture();
+    SnapshotSave();
+    FlagClear(FLAG_DEFEATED_EVIL_TEAM_MT_CHIMNEY);
+    FlagClear(FLAG_HIDE_MT_CHIMNEY_TEAM_MAGMA);
+    FlagClear(FLAG_HIDE_MT_CHIMNEY_TEAM_AQUA);
+    FlagSet(FLAG_HIDE_FALLARBOR_HOUSE_PROF_COZMO);
+    FlagSet(FLAG_HIDE_MT_CHIMNEY_LAVA_COOKIE_LADY);
+    ClearTrainerFlag(TRAINER_MAXIE_MT_CHIMNEY);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MAXIE_MT_CHIMNEY, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_STORY_PARTNER);
+    EXPECT(FlagGet(FLAG_DEFEATED_EVIL_TEAM_MT_CHIMNEY));
+    EXPECT(FlagGet(FLAG_HIDE_MT_CHIMNEY_TEAM_MAGMA));
+    EXPECT(FlagGet(FLAG_HIDE_MT_CHIMNEY_TEAM_AQUA));
+    EXPECT(!FlagGet(FLAG_HIDE_FALLARBOR_HOUSE_PROF_COZMO));
+    EXPECT(FlagGet(FLAG_HIDE_METEOR_FALLS_1F_1R_COZMO));
+    EXPECT(!FlagGet(FLAG_HIDE_MT_CHIMNEY_LAVA_COOKIE_LADY));
+    CoopTrainerRewards_LoadStoryNotice(NULL);
+
+    /* The Magma Hideout battle follows Groudon's awakening, which only the
+     * requester saw: the partner helps, whatever its own story point. */
+    FlagClear(FLAG_GROUDON_AWAKENED_MAGMA_HIDEOUT);
+    ClearTrainerFlag(TRAINER_MAXIE_MAGMA_HIDEOUT);
+    SetMoney(&gSaveBlock1Ptr->money, 1000);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_MAXIE_MAGMA_HIDEOUT, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_HELPER);
+    EXPECT(!FlagGet(FLAG_GROUDON_AWAKENED_MAGMA_HIDEOUT));
+    EXPECT(!HasTrainerBeenFought(TRAINER_MAXIE_MAGMA_HIDEOUT));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000);
+    RestoreSave();
+    EndRewardFixture();
+}
+
+TEST("Cloud Coop Elite Four partner in the same room gets only the defeated flag")
+{
+    u8 staged[1] = {0};
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_PHOEBE, 1);
+
+    BeginRewardFixture();
+    SnapshotSave();
+    FlagSet(FLAG_DEFEATED_ELITE_4_SIDNEY);
+    FlagClear(FLAG_DEFEATED_ELITE_4_PHOEBE);
+    FlagClear(FLAG_DEFEATED_ELITE_4_GLACIA);
+    FlagClear(FLAG_SYS_GAME_CLEAR);
+    /* Still in Sidney's room (door closed behind it): not Phoebe's point. */
+    VarSet(VAR_ELITE_4_STATE, 1);
+    EXPECT(!CoopTrainerRewards_IsStoryPartnerEligible(COOP_STORY_PHOEBE));
+    VarSet(VAR_ELITE_4_STATE, 2);
+    EXPECT(CoopTrainerRewards_IsStoryPartnerEligible(COOP_STORY_PHOEBE));
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_PHOEBE, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_STORY_PARTNER);
+    EXPECT(FlagGet(FLAG_DEFEATED_ELITE_4_PHOEBE));
+    EXPECT(!FlagGet(FLAG_DEFEATED_ELITE_4_GLACIA));
+    EXPECT_EQ(VarGet(VAR_ELITE_4_STATE), 2); // the next room's walk-in sets 3
+    EXPECT(!FlagGet(FLAG_SYS_GAME_CLEAR));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000 + prize);
+    CoopTrainerRewards_LoadStoryNotice(NULL); // not standing in that room here
+    EXPECT_EQ(gSpecialVar_0x8004, FALSE);
+    EXPECT(!CoopTrainerRewards_IsStoryPartnerEligible(COOP_STORY_PHOEBE));
+
+    /* The champion's script runs the Hall of Fame: the partner helps. */
+    SetMoney(&gSaveBlock1Ptr->money, 1000);
+    ClearTrainerFlag(TRAINER_WALLACE);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_WALLACE, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_HELPER);
+    EXPECT(!FlagGet(FLAG_SYS_GAME_CLEAR));
+    EXPECT(!HasTrainerBeenFought(TRAINER_WALLACE));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 1000);
+    RestoreSave();
+    EndRewardFixture();
+}
+
+TEST("Cloud Coop Wally partner grant at Victory Road and ordinary story grunts")
+{
+    u8 staged[1] = {0};
+
+    BeginRewardFixture();
+    SnapshotSave();
+    VarSet(VAR_VICTORY_ROAD_1F_STATE, 0);
+    FlagClear(FLAG_DEFEATED_WALLY_VICTORY_ROAD);
+    FlagSet(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY);
+    ClearTrainerFlag(TRAINER_WALLY_VR_1);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_WALLY_VR_1, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_STORY_PARTNER);
+    EXPECT(FlagGet(FLAG_DEFEATED_WALLY_VICTORY_ROAD));
+    EXPECT_EQ(VarGet(VAR_VICTORY_ROAD_1F_STATE), 1);
+    EXPECT(!FlagGet(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY));
+    EXPECT(HasTrainerBeenFought(TRAINER_WALLY_VR_1));
+    CoopTrainerRewards_LoadStoryNotice(NULL);
+
+    /* An Aqua Hideout grunt's continue script only shows text. */
+    SetMoney(&gSaveBlock1Ptr->money, 1000);
+    ClearTrainerFlag(TRAINER_GRUNT_AQUA_HIDEOUT_2);
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_GRUNT_AQUA_HIDEOUT_2, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_PARTICIPANT);
+    EXPECT(HasTrainerBeenFought(TRAINER_GRUNT_AQUA_HIDEOUT_2));
+    WinWithOneFaint();
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, TRAINER_GRUNT_AQUA_HIDEOUT_2, staged, 1, FALSE),
+              COOP_TRAINER_REWARD_HELPER);
+    RestoreSave();
+    EndRewardFixture();
+}

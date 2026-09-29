@@ -129,3 +129,92 @@ Follow-ups recorded while implementing A7-A8:
 - A requester's co-op loss against a route trainer with local mons still
   standing resumes the trainer's post-battle script (defeat text) instead
   of releasing the field; no flag or money is given. Gyms already release.
+  Fixed in A9: every requester loss (route, rematch, gym, story) releases.
+
+### A9: Hoenn story battles
+
+Rule: story flags go to both players if the partner is at the same story
+point; otherwise the partner helps (EXP only, no money, no flags). The
+requester's own post-battle script always runs as in vanilla after a win;
+a requester loss with local mons standing releases the field (the trainer
+stays unbeaten and its scene can replay; an object that walked up to the
+player stays there until the map reloads). "Same story point" is the
+concrete state the requester's script needed before the battle: the
+battle's story flag clear, its story var at that value, and the trainer's
+object not hidden. A GRANT battle's partner gets the pure flag/var/item
+state of the post-battle script (`data/scripts/coop_story_rewards.inc`);
+objects it hides that are on the partner's screen are removed by the
+notice, as the next map load would. HELPER battles drive a scene the
+partner's map cannot rebuild. ORDINARY entries only show text, so the
+trainer flag decides as for a route trainer. Tables: `sCoopStoryBattles`
+and `sCoopStoryTrainers` (`src/coop/trainer_rewards.c`), mirrored by
+`HOENN_STORY_BATTLES` in `trainer_rules.rs` (a test parses the C tables
+and the flag/var headers).
+
+Inventory (from `data/maps/*/scripts.inc`; NI = trainerbattle_no_intro,
+CS = trainerbattle_single with a post-battle script):
+
+| Battle | Trainers | Map script | Mode | Post-battle script sets | Partner |
+|---|---|---|---|---|---|
+| Rival, Route 103 | MAY/BRENDAN_ROUTE_103_* | Route103 Rival (object) | NI | rival leaves; BIRCH_LAB_STATE 4, OLDALE_RIVAL_STATE 1, DEFEATED_RIVAL_ROUTE103, lab/Oldale rival shown | GRANT (flag clear, rival shown) |
+| Rival, Rustboro / Route 104 | MAY/BRENDAN_RUSTBORO_* | RustboroCity and Route104 (optional) | NI | DEFEATED_RIVAL_RUSTBORO or DEFEATED_RIVAL_ROUTE_104 | HELPER: one trainer ID for two battles; the partner cannot tell which |
+| Rival, Route 110 | MAY/BRENDAN_ROUTE_110_* | Route110 RivalTrigger (coord, ROUTE110_STATE 0) | NI | Dowsing Machine, rival bikes away, ROUTE110_STATE 1 | GRANT (var 0, rival shown) |
+| Rival, Route 119 | MAY/BRENDAN_ROUTE_119_* | Route119 RivalTrigger (coord, ROUTE119_STATE 0) | NI | HM Fly + RECEIVED_HM_FLY, ROUTE119_STATE 1, Scott scene (SCOTT_STATE +1) | GRANT (var 0, no Fly) |
+| Rival, Lilycove | MAY/BRENDAN_LILYCOVE_* | LilycoveCity Rival (optional) | NI | rival flies away, MET_RIVAL_LILYCOVE, rival's bedroom shown | GRANT (flag clear, rival shown; bedroom follows the partner's own rival) |
+| Wally, Mauville | WALLY_MAUVILLE | MauvilleCity Wally | NI (called) | Wally/uncle leave, DEFEATED_WALLY_MAUVILLE, Verdanturf Wally shown, first Wally call, Scott scene | GRANT (flag clear, Wally shown) |
+| Wally, Victory Road | WALLY_VR_1 | VictoryRoad_1F trigger (VICTORY_ROAD_1F_STATE 0) | NI after the legacy special (off) | DEFEATED_WALLY_VICTORY_ROAD, entrance Wally shown, state 1/2 | GRANT (var 0, flag clear); the partner's Wally waits at spot 1 |
+| Wally, Victory Road exit | WALLY_VR_2 (+VR_3..5 rematches) | VictoryRoad_1F ExitWally | single / rematch | text | ORDINARY / rematch rule |
+| Grunt, Petalburg Woods | GRUNT_PETALBURG_WOODS | PetalburgWoods (coord) | NI | grunt flees, researcher gives Great Ball, scene | HELPER |
+| Grunt, Rusturf Tunnel | GRUNT_RUSTURF_TUNNEL | RusturfTunnel | NI | Devon Goods, Briney and Peeko scene, Rustboro state | HELPER |
+| Grunts, Oceanic Museum | GRUNT_MUSEUM_1/2 | SlateportCity_OceanicMuseum_2F | NI | Archie scene, party healed, Devon Parts handed over | HELPER |
+| Grunt, Jagged Pass | GRUNT_JAGGED_PASS | JaggedPass MagmaHideoutGuard | NI | BEAT_MAGMA_GRUNT_JAGGED_PASS | GRANT (flag clear, guard shown) |
+| Grunts, Aqua Hideout | GRUNT_AQUA_HIDEOUT_1..4 | AquaHideout_1F/B1F/B2F | CS | text | ORDINARY (trainer flag) |
+| Matt | MATT | AquaHideout_B2F | CS | submarine leaves; TEAM_AQUA_ESCAPED_IN_SUBMARINE, Lilycove grunts hidden | GRANT (flag clear, grunts shown) |
+| Shelly, Weather Institute | SHELLY_WEATHER_INSTITUTE | Route119_WeatherInstitute_2F | CS | Aqua leaves, gift Castform (givemon), institute state | HELPER (gift Pokémon and scene) |
+| Shelly, Seafloor; Tabitha, Mt. Chimney and Magma Hideout | SHELLY_SEAFLOOR_CAVERN, TABITHA_MT_CHIMNEY, TABITHA_MAGMA_HIDEOUT | their maps | single | text | ORDINARY (trainer flag) |
+| Maxie, Mt. Chimney | MAXIE_MT_CHIMNEY | MtChimney Maxie | NI | Magma and Aqua leave; DEFEATED_EVIL_TEAM_MT_CHIMNEY, Cozmo and cookie lady flags | GRANT (flag clear, Magma shown) |
+| Maxie, Magma Hideout | MAXIE_MAGMA_HIDEOUT | MagmaHideout_4F | NI after Groudon awakens | Groudon gone, Slateport states, GROUDON_AWAKENED | HELPER (pre-battle awakening only on the requester) |
+| Archie, Seafloor Cavern | ARCHIE | SeafloorCavern_Room9 | NI | Kyogre awakens, weather, warp | HELPER |
+| Grunts, Space Center | GRUNT_SPACE_CENTER_2/5/6/7 | MossdeepCity_SpaceCenter_1F/2F | NI | stair guard and center vars inside the Maxie/Tabitha scene | HELPER |
+| Elite Four | SIDNEY, PHOEBE, GLACIA, DRAKE | EverGrandeCity_*Room | NI | DEFEATED_ELITE_4_*, door opens (Drake: fan counter) | GRANT (flag clear, ELITE_4_STATE = 1..4, i.e. in that room); the notice opens the door when the partner stands in it |
+| Champion | WALLACE | EverGrandeCity_ChampionsRoom | NI | rival and Birch scene, Hall of Fame, credits | HELPER (never run on the partner) |
+| Steven, Meteor Falls | STEVEN | MeteorFalls_StevensCave | NI | DEFEATED_METEOR_FALLS_STEVEN | GRANT (flag clear) |
+
+Out of scope: Steven's multi battle with Maxie and Tabitha at the Space
+Center (an NPC-partner battle), the Kanto early-rival mode (Hoenn's rivals
+use no-intro battles), two-trainer approaches, frontier brains and Kanto.
+
+Party size: gym leaders, Aqua/Magma admins and leaders, the Elite Four and
+the champion field their whole team; rivals, Wally, Steven and grunts keep
+the three cap and the second-mon rule. The Elite Four is a gauntlet: each
+side's staged mons keep their HP and PP after each battle (the party
+restore preserves the battle changes), exactly as vanilla carries the party
+from room to room.
+
+Wally: the legacy special (`Special_CoopBattleConsentBeginWally`) and its
+ledger commit stay off; the script's `trainerbattle_no_intro` goes through
+the shared co-op hook with local rewards. The server moved Wally from the
+ledger to `Local` with the story rule and keeps his exact Victory Road map.
+The ledger path remains for persisted `CommitPending` records; its tests
+opt back in per thread.
+
+Server: story battles are `TrainerRule::Story`; the requester is always
+allowed (its own story script reached the battle, and Elite Four flags are
+cleared on each run, so a lagging save must not refuse it); the partner
+participates only in a GRANT battle at its story point, read from the
+SaveBlock1 flags and vars of the last finalized save
+(`ValidatedSave::event_var`, `COOP_SAVE_LAYOUT_VARS_START`). The ROM stays
+authoritative for the local rewards.
+
+Follow-ups recorded while implementing A9:
+- A partner's story role on the server can lag its live ROM (last cloud
+  save); money and grants follow the ROM.
+- Story grants skip presentation-only parts (walk-outs, fly-away, Scott,
+  submarine, fades). The Route 119 Scott and Mauville Scott `SCOTT_STATE`
+  increments are applied.
+- The no-intro story grunts that were already eligible as route trainers
+  (Petalburg Woods, Rusturf, Museum, Space Center) are now HELPER: before
+  A9 their partner got the trainer flag and prize without the story state.
+- A requester loss in a scripted scene (a coord-triggered rival) leaves the
+  approaching object where it stopped; re-stepping on the trigger replays
+  the approach from there until the map reloads.

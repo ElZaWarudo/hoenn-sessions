@@ -832,9 +832,12 @@ void Special_CoopBattleConsentRespond(void)
 
 void Special_CoopBattleConsentBeginWally(void)
 {
-    /* The co-op result still needs a save checkpoint before and after the
-     * battle. Route the story encounter through its normal battle until the
-     * complete save handoff can be finalized without a time limit. */
+    /* The ledger handoff behind this special (the ROM waits for a server
+     * commit before the script continues) still needs a save checkpoint
+     * before and after the battle, with no time limit. Wally's co-op battle
+     * now goes through the local-reward path instead: the script's
+     * trainerbattle_no_intro reaches BattleSetup_StartTrainerBattle, whose
+     * co-op hook offers the battle like every other story battle (A9). */
     gSpecialVar_Result = FALSE;
 }
 
@@ -954,17 +957,33 @@ bool8 CoopTrainerEncounter_IsPhaseOneClass(u8 trainerClass)
     }
 }
 
-/* Phase 1 classes, plus the eight Hoenn gym leaders and their match-call
- * rematches (A8). Every other story class keeps the vanilla battle (A9). */
+/* Phase 1 classes, the eight Hoenn gym leaders and their match-call rematches
+ * (A8), and the Hoenn story battles with their rematches (A9, the rivals,
+ * Wally, the admins and bosses, story grunts, the Elite Four, the champion
+ * and Steven). Every other story class (Kanto, the frontier brains) keeps the
+ * vanilla battle. */
 bool8 CoopTrainerEncounter_IsSupportedTrainer(u16 trainerId)
 {
-    return CoopTrainerEncounter_IsPhaseOneClass(GetTrainerClassFromId(trainerId))
-        || CoopTrainerRewards_IsHoennGymLeader(trainerId);
+    u16 base;
+
+    if (CoopTrainerEncounter_IsPhaseOneClass(GetTrainerClassFromId(trainerId))
+     || CoopTrainerRewards_IsHoennGymLeader(trainerId)
+     || CoopTrainerRewards_GetStoryBattle(trainerId) != COOP_STORY_NONE)
+        return TRUE;
+    return BattleSetup_GetRematchBaseTrainer(trainerId, &base)
+        && CoopTrainerRewards_GetStoryBattle(base) != COOP_STORY_NONE;
+}
+
+static bool8 IsStoryTrainer(u16 trainerId)
+{
+    return CoopTrainerRewards_GetHoennGym(trainerId) != COOP_HOENN_GYM_NONE
+        || CoopTrainerRewards_GetStoryBattle(trainerId) != COOP_STORY_NONE;
 }
 
 /* The script-continuing modes carry story post-battle scripts. Only a Hoenn
- * gym leader's first battle may use them here; its script is the gym's own
- * badge/TM grant, which the partner mirrors (CoopTrainerRewards_Apply). */
+ * gym leader's first battle and the story battles may use them here: their
+ * post-battle scripts are known (the gym grants, sCoopStoryBattles). The
+ * match-call registration scripts of route trainers stay vanilla. */
 static bool8 IsEligibleBattleMode(u16 trainerId)
 {
     switch (GetTrainerBattleMode())
@@ -977,7 +996,7 @@ static bool8 IsEligibleBattleMode(u16 trainerId)
     case TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC:
     case TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE:
     case TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE_NO_MUSIC:
-        return CoopTrainerRewards_GetHoennGym(trainerId) != COOP_HOENN_GYM_NONE;
+        return IsStoryTrainer(trainerId);
 #if FREE_MATCH_CALL == FALSE
     case TRAINER_BATTLE_REMATCH:
     case TRAINER_BATTLE_REMATCH_DOUBLE:
@@ -985,8 +1004,8 @@ static bool8 IsEligibleBattleMode(u16 trainerId)
         return BattleSetup_GetRematchBaseTrainer(trainerId, NULL);
 #endif //FREE_MATCH_CALL
     default:
-        /* Early rival, two trainers without intro, pyramid and hill modes
-         * stay vanilla. */
+        /* Early rival (a Kanto mode: Hoenn's rivals use no-intro battles),
+         * two trainers without intro, pyramid and hill modes stay vanilla. */
         return FALSE;
     }
 }

@@ -1158,3 +1158,161 @@ TEST("Cloud Coop gym partner win applies the grants and shows the badge notice")
     RestoreSave();
     EndEncounterFixture();
 }
+
+/* A9: Hoenn story battles. */
+TEST("Cloud Coop story encounters are eligible in the modes their scripts use")
+{
+    BeginEncounterFixture();
+    SnapshotSave();
+    /* Rivals, Wally, the Elite Four, the champion and the bosses use
+     * no-intro battles; Matt and the Aqua Hideout grunts continue-script. */
+    EXPECT(IsEligibleAs(TRAINER_MAY_ROUTE_103_TREECKO, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_BRENDAN_LILYCOVE_MUDKIP, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_WALLY_VR_1, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_SIDNEY, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_WALLACE, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_ARCHIE, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_STEVEN, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(IsEligibleAs(TRAINER_MATT, TRAINER_BATTLE_CONTINUE_SCRIPT));
+    EXPECT(IsEligibleAs(TRAINER_SHELLY_WEATHER_INSTITUTE, TRAINER_BATTLE_CONTINUE_SCRIPT));
+    EXPECT(IsEligibleAs(TRAINER_GRUNT_AQUA_HIDEOUT_1, TRAINER_BATTLE_CONTINUE_SCRIPT));
+    EXPECT(IsEligibleAs(TRAINER_TABITHA_MT_CHIMNEY, TRAINER_BATTLE_SINGLE));
+    /* Wally's exit battle and its match-call rematches. */
+    EXPECT(IsEligibleAs(TRAINER_WALLY_VR_2, TRAINER_BATTLE_SINGLE));
+    EXPECT(IsEligibleAs(TRAINER_WALLY_VR_3, TRAINER_BATTLE_REMATCH));
+    EXPECT(CoopTrainerEncounter_IsSupportedTrainer(TRAINER_WALLY_VR_5));
+    /* Route trainers' match-call registration scripts stay vanilla. */
+    EXPECT(!IsEligibleAs(TRAINER_CALVIN_1, TRAINER_BATTLE_CONTINUE_SCRIPT));
+    EXPECT(!IsEligibleAs(TRAINER_TIANA, TRAINER_BATTLE_CONTINUE_SCRIPT));
+    /* Two trainers without intro and the Kanto early-rival mode stay vanilla. */
+    EXPECT(!IsEligibleAs(TRAINER_SIDNEY, TRAINER_BATTLE_TWO_TRAINERS_NO_INTRO));
+    EXPECT(!IsEligibleAs(TRAINER_MAY_ROUTE_103_TREECKO, TRAINER_BATTLE_EARLY_RIVAL));
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop Wally and Brock legacy specials stay off and Wally uses the encounter hook")
+{
+    BeginEncounterFixture();
+    gSpecialVar_Result = 0xFFFF;
+    Special_CoopBattleConsentBeginWally();
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    gSpecialVar_Result = 0xFFFF;
+    Special_CoopBattleConsentBeginBrock();
+    EXPECT_EQ(gSpecialVar_Result, FALSE);
+    /* The script then runs trainerbattle_no_intro TRAINER_WALLY_VR_1. */
+    EXPECT(IsEligibleAs(TRAINER_WALLY_VR_1, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop route trainer requester loss releases the field instead of the defeat text")
+{
+    struct RewardBattleState saved;
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    ParkSentinelScript();
+    RunCoopTrainerBattle(&saved, 49, B_OUTCOME_LOST);
+    EXPECT(!HasTrainerBeenFought(ENCOUNTER_TRAINER));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500);
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 3); // replaced by releaseall; end
+    EXPECT(!ArePlayerFieldControlsLocked());
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop story requester win pays and resumes the story script")
+{
+    struct RewardBattleState saved;
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_MAY_ROUTE_110_TORCHIC, 1);
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    VarSet(VAR_ROUTE110_STATE, 0);
+    ParkSentinelScript();
+    RunCoopBattleAgainst(&saved, 50, B_OUTCOME_WON, TRAINER_MAY_ROUTE_110_TORCHIC,
+                         TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT, BattleSetup_StartTrainerBattle);
+    EXPECT(HasTrainerBeenFought(TRAINER_MAY_ROUTE_110_TORCHIC));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    EXPECT_EQ(VarGet(VAR_ROUTE110_STATE), 0); // the rival's script sets it
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 0); // the parked script ran
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop story requester loss releases the field instead of the story script")
+{
+    struct RewardBattleState saved;
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    VarSet(VAR_ROUTE110_STATE, 0);
+    ParkSentinelScript();
+    RunCoopBattleAgainst(&saved, 51, B_OUTCOME_LOST, TRAINER_MAY_ROUTE_110_TORCHIC,
+                         TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT, BattleSetup_StartTrainerBattle);
+    EXPECT(!HasTrainerBeenFought(TRAINER_MAY_ROUTE_110_TORCHIC));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500);
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 3); // released, the story never ran
+    EXPECT(!ArePlayerFieldControlsLocked());
+    EXPECT_EQ(VarGet(VAR_ROUTE110_STATE), 0);
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop story partner win at Victory Road applies the grant and shows the notice")
+{
+    struct RewardBattleState saved;
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_WALLY_VR_1, 1);
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    VarSet(VAR_VICTORY_ROAD_1F_STATE, 0);
+    FlagClear(FLAG_DEFEATED_WALLY_VICTORY_ROAD);
+    FlagSet(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY);
+    ParkSentinelScript();
+    sPlayPartner = TRUE;
+    RunCoopBattleAgainst(&saved, 52, B_OUTCOME_WON, TRAINER_WALLY_VR_1,
+                         TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT, BattleSetup_StartTrainerBattle);
+    sPlayPartner = FALSE;
+    EXPECT(FlagGet(FLAG_DEFEATED_WALLY_VICTORY_ROAD));
+    EXPECT_EQ(VarGet(VAR_VICTORY_ROAD_1F_STATE), 1);
+    EXPECT(!FlagGet(FLAG_HIDE_VICTORY_ROAD_ENTRANCE_WALLY));
+    EXPECT(HasTrainerBeenFought(TRAINER_WALLY_VR_1));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    EXPECT_EQ(CoopTrainerRewards_TestGetStoryHideMask(), 0);
+    /* The notice replaced the field script (the parked one never runs). */
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 3);
+    ScriptContext_Init();
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop story partner behind the story point helps and keeps its script")
+{
+    struct RewardBattleState saved;
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    VarSet(VAR_VICTORY_ROAD_1F_STATE, 1);
+    FlagSet(FLAG_DEFEATED_WALLY_VICTORY_ROAD);
+    ParkSentinelScript();
+    sPlayPartner = TRUE;
+    RunCoopBattleAgainst(&saved, 53, B_OUTCOME_WON, TRAINER_WALLY_VR_1,
+                         TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT, BattleSetup_StartTrainerBattle);
+    sPlayPartner = FALSE;
+    EXPECT(!HasTrainerBeenFought(TRAINER_WALLY_VR_1));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500);
+    EXPECT_EQ(VarGet(VAR_VICTORY_ROAD_1F_STATE), 1);
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    ScriptContext_Init();
+    EndEncounterFixture();
+}

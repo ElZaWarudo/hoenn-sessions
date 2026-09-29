@@ -20,7 +20,7 @@ use super::storage::{
     MAX_BATTLE_ACTION_BYTES, MAX_BATTLE_IDEMPOTENCY, MAX_BATTLE_IDEMPOTENCY_PER_MEMBER,
     MAX_BATTLE_RESERVATIONS, MAX_BATTLE_TURNS, Store,
 };
-use super::trainer_rules::{MemberStanding, TrainerRule, trainer_rule};
+use super::trainer_rules::{HOENN_STORY_BATTLES, MemberStanding, TrainerRule, trainer_rule};
 use super::{AuthenticatedActor, Phase2Error};
 
 const OP_RESERVE: &str = "battle_reserve_v1";
@@ -777,6 +777,14 @@ fn party_anchor(
             TrainerRule::Gym { .. } => {
                 standing.badges = save.hoenn_badges().ok_or(Phase2Error::Conflict)?;
             }
+            // The story flags and vars live in the same SaveBlock1 arrays.
+            TrainerRule::Story { battle } => {
+                standing.story_point = HOENN_STORY_BATTLES
+                    .get(*battle)
+                    .ok_or(Phase2Error::Internal)?
+                    .at_story_point(|flag| save.event_flag(flag), |var| save.event_var(var))
+                    .ok_or(Phase2Error::Conflict)?;
+            }
         }
     }
     Ok((
@@ -800,10 +808,33 @@ struct TrainerEncounter {
     rule: TrainerRule,
 }
 
+const WALLY_VICTORY_ROAD: &str = "HOENN:TRAINER_WALLY_1";
+
+#[cfg(test)]
+thread_local! {
+    /// The progression-ledger path (`BattleRewardMode::Ledger`: a Won result
+    /// becomes `CommitPending` with commit grants) is no longer chosen for
+    /// any trainer, but records persisted by an older server can still be in
+    /// it. Tests of that machinery put Wally back on it for their thread.
+    static LEGACY_WALLY_LEDGER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn legacy_wally_ledger() -> bool {
+    LEGACY_WALLY_LEDGER.with(std::cell::Cell::get)
+}
+
+#[cfg(not(test))]
+const fn legacy_wally_ledger() -> bool {
+    false
+}
+
 // Every trainer with a persisted ordinal in the identity catalog can become a
-// cooperative battle with local rewards. Wally keeps his configured story map
-// and the server progression ledger. The catalog carries no trainer map, so
-// other encounters are located only by the two members' positions.
+// cooperative battle with local rewards. Wally's Victory Road battle keeps his
+// configured story map; since A9 it is a local-reward story battle like the
+// others (the ROM's legacy Wally special stays off). The catalog carries no
+// trainer map, so other encounters are located only by the two members'
+// positions.
 fn trainer_encounter(trainer_id: &TrainerInstanceId) -> Result<TrainerEncounter, Phase2Error> {
     let entry = identity_catalog::trainer(trainer_id).map_err(|_| Phase2Error::Conflict)?;
     if entry.kind != IdentityKind::Trainer || entry.ordinal.is_none() {
@@ -813,7 +844,8 @@ fn trainer_encounter(trainer_id: &TrainerInstanceId) -> Result<TrainerEncounter,
         .region
         .ensure_concrete()
         .map_err(|_| Phase2Error::Conflict)?;
-    if trainer_id.as_str() == "HOENN:TRAINER_WALLY_1" {
+    let wally = trainer_id.as_str() == WALLY_VICTORY_ROAD;
+    if wally && legacy_wally_ledger() {
         return Ok(TrainerEncounter {
             region,
             map: Some("VICTORY_ROAD_1F"),
@@ -824,7 +856,7 @@ fn trainer_encounter(trainer_id: &TrainerInstanceId) -> Result<TrainerEncounter,
     }
     Ok(TrainerEncounter {
         region,
-        map: None,
+        map: wally.then_some("VICTORY_ROAD_1F"),
         minimum_story_checkpoint: 0,
         reward_mode: BattleRewardMode::Local,
         rule: trainer_rule(trainer_id),
@@ -2814,6 +2846,32 @@ mod tests {
         defeated_trainers: &[&str],
         badges: u8,
     ) -> String {
+        seed_finalized_story(app, actor, revision, defeated_trainers, badges, &[], &[])
+    }
+
+    /// Sets one SaveBlock1 script variable in the selected fixture slot.
+    fn write_save_block1_var(bytes: &mut [u8], var: usize, value: u16) {
+        let position = coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (var - coop_save::VARS_START);
+        for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+            let position = position + index;
+            let logical = 1 + position / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
+            let physical = selected_physical(bytes, logical);
+            let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+            bytes[start + position % coop_save::SAVE_BLOCK3_CHUNK_OFFSET] = byte;
+            rewrite_sector_checksum(bytes, logical);
+        }
+    }
+
+    /// `seed_finalized_progress` with story flags and vars written too.
+    fn seed_finalized_story(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        revision: u64,
+        defeated_trainers: &[&str],
+        badges: u8,
+        flags: &[(usize, bool)],
+        vars: &[(usize, u16)],
+    ) -> String {
         let lease = app
             .store
             .inspect_state(|state| state.leases[&actor.character_id].contract)
@@ -2825,6 +2883,12 @@ mod tests {
                 coop_save::FLAG_BADGE01_GET + badge,
                 badges & (1 << badge) != 0,
             );
+        }
+        for &(flag, set) in flags {
+            write_save_block1_flag(&mut bytes, flag, set);
+        }
+        for &(var, value) in vars {
+            write_save_block1_var(&mut bytes, var, value);
         }
         if !defeated_trainers.is_empty() || revision > 1 {
             let ordinals: Vec<u16> = defeated_trainers
@@ -3780,6 +3844,9 @@ mod tests {
         LeaseFence,
         LeaseFence,
     ) {
+        // Most tests below exercise the legacy ledger path through Wally;
+        // `local_wally` switches this thread back to the production rule.
+        LEGACY_WALLY_LEDGER.with(|legacy| legacy.set(true));
         let app = Phase2App::test();
         app.add_invitation("battle-a").expect("invite a");
         app.add_invitation("battle-b").expect("invite b");
@@ -6106,7 +6173,7 @@ mod tests {
     }
 
     #[test]
-    fn wally_stays_ledger_with_unchanged_wire_shape() {
+    fn legacy_wally_ledger_keeps_its_unchanged_wire_shape() {
         let (app, a, _, group, fa, _) = fixture();
         let view = app
             .reserve_battle(a, group, fa, trainer_request(995, "HOENN:TRAINER_WALLY_1"))
@@ -6120,6 +6187,138 @@ mod tests {
         let (_, _, _, _, _, _, reservation, grants) = pending_wally();
         assert_eq!(reservation.reward_mode, BattleRewardMode::Ledger);
         assert_eq!(grants.len(), 2);
+    }
+
+    const FLAG_DEFEATED_WALLY_VICTORY_ROAD: usize = 0x7e;
+    const VAR_VICTORY_ROAD_1F_STATE: usize = 0x40c3;
+    const VAR_ELITE_4_STATE: usize = 0x409c;
+    const FLAG_DEFEATED_ELITE_4_SIDNEY: usize = 0x4fb;
+
+    /// The production rule: Wally's Victory Road battle is a local-reward
+    /// story battle (A9). Both members stand on Victory Road 1F.
+    fn local_wally() -> (
+        Phase2App,
+        AuthenticatedActor,
+        AuthenticatedActor,
+        GroupId,
+        LeaseFence,
+        LeaseFence,
+    ) {
+        let fixture = fixture();
+        LEGACY_WALLY_LEDGER.with(|legacy| legacy.set(false));
+        fixture
+    }
+
+    #[test]
+    fn wally_is_a_local_story_battle_with_a_story_point_partner_role() {
+        for (partner_flag, partner_var, expected) in [
+            (false, 0, BattleMemberRole::Participant), // same story point
+            (false, 1, BattleMemberRole::Helper),      // already past it
+            (true, 0, BattleMemberRole::Helper),       // flag already set
+        ] {
+            let (app, a, b, group, fa, _) = local_wally();
+            // A lagging requester save (Wally already recorded) is not
+            // refused: its own story script decides on the ROM.
+            seed_finalized_story(
+                &app,
+                a,
+                2,
+                &[],
+                0xff,
+                &[(FLAG_DEFEATED_WALLY_VICTORY_ROAD, true)],
+                &[(VAR_VICTORY_ROAD_1F_STATE, 1)],
+            );
+            seed_finalized_story(
+                &app,
+                b,
+                2,
+                &[],
+                0xff,
+                &[(FLAG_DEFEATED_WALLY_VICTORY_ROAD, partner_flag)],
+                &[(VAR_VICTORY_ROAD_1F_STATE, partner_var)],
+            );
+            let view = app
+                .reserve_battle(a, group, fa, trainer_request(1100, "HOENN:TRAINER_WALLY_1"))
+                .expect("wally reserve");
+            assert_eq!(view.reward_mode, BattleRewardMode::Local);
+            assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+            assert_eq!(role_of(&view, b), expected, "{partner_flag} {partner_var}");
+        }
+    }
+
+    #[test]
+    fn wally_story_battle_keeps_the_exact_victory_road_map() {
+        let (app, a, b, group, fa, _) = local_wally();
+        place(&app, b, RegionId::Hoenn, "VICTORY_ROAD_B1F", 1);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(1110, "HOENN:TRAINER_WALLY_1")),
+            Err(Phase2Error::Conflict)
+        );
+    }
+
+    #[test]
+    fn elite_four_partner_participates_only_in_the_same_room_run() {
+        for (partner_var, sidney_beaten, expected) in [
+            (1, false, BattleMemberRole::Participant),
+            (2, false, BattleMemberRole::Helper), // a room further
+            (1, true, BattleMemberRole::Helper),  // already beat Sidney
+        ] {
+            let (app, a, b, group, fa, _) = local_fixture();
+            place(&app, a, RegionId::Hoenn, "EVER_GRANDE_CITY_SIDNEYS_ROOM", 1);
+            place(&app, b, RegionId::Hoenn, "EVER_GRANDE_CITY_SIDNEYS_ROOM", 1);
+            seed_finalized_story(&app, a, 2, &[], 0xff, &[], &[(VAR_ELITE_4_STATE, 1)]);
+            seed_finalized_story(
+                &app,
+                b,
+                2,
+                &[],
+                0xff,
+                &[(FLAG_DEFEATED_ELITE_4_SIDNEY, sidney_beaten)],
+                &[(VAR_ELITE_4_STATE, partner_var)],
+            );
+            let view = app
+                .reserve_battle(a, group, fa, trainer_request(1120, "HOENN:TRAINER_SIDNEY"))
+                .expect("elite four reserve");
+            assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+            assert_eq!(role_of(&view, b), expected, "{partner_var} {sidney_beaten}");
+        }
+    }
+
+    #[test]
+    fn helper_story_battles_never_make_the_partner_a_participant() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(
+            &app,
+            a,
+            RegionId::Hoenn,
+            "EVER_GRANDE_CITY_CHAMPIONS_ROOM",
+            1,
+        );
+        place(
+            &app,
+            b,
+            RegionId::Hoenn,
+            "EVER_GRANDE_CITY_CHAMPIONS_ROOM",
+            1,
+        );
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1130, "HOENN:TRAINER_WALLACE"))
+            .expect("champion reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Helper);
+        // An ordinary story entry (an admin whose script only shows text)
+        // keeps the trainer-flag rule.
+        let (app, a, b, group, fa, _) = local_fixture();
+        let view = app
+            .reserve_battle(
+                a,
+                group,
+                fa,
+                trainer_request(1131, "HOENN:TRAINER_TABITHA_MT_CHIMNEY"),
+            )
+            .expect("admin reserve");
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
     }
 
     #[test]

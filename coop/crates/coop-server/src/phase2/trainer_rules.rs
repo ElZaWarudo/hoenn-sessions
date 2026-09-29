@@ -1,9 +1,12 @@
 //! Which cooperative trainer battles a member may request, and whether each
-//! member joins as a participant or a helper (A7 rematches, A8 Hoenn gyms).
+//! member joins as a participant or a helper (A7 rematches, A8 Hoenn gyms,
+//! A9 Hoenn story battles).
 //!
-//! The tables mirror the ROM: `gRematchTable` in `src/battle_setup.c` and
-//! `sHoennGyms` in `src/coop/trainer_rewards.c`. The tests below parse both
-//! sources, so an edit on either side fails here until the other follows.
+//! The tables mirror the ROM: `gRematchTable` in `src/battle_setup.c`,
+//! `sHoennGyms`, `sCoopStoryBattles` and `sCoopStoryTrainers` in
+//! `src/coop/trainer_rewards.c`. The tests below parse those sources (and the
+//! flag and var headers), so an edit on either side fails here until the
+//! other follows.
 //! The ROM stays authoritative for the rewards themselves (option A): these
 //! roles come from the last finalized cloud save and can lag the live game.
 
@@ -684,6 +687,336 @@ pub(super) const HOENN_REMATCHES: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// How a Hoenn story battle treats the partner (`enum CoopStoryKind`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum StoryKind {
+    /// A partner at the same story point gets the post-battle state.
+    Grant,
+    /// The post-battle script drives a scene the partner's map cannot
+    /// rebuild: the partner only helps.
+    Helper,
+    /// The script only shows text: the trainer flag decides, as for a route
+    /// trainer.
+    Ordinary,
+}
+
+/// One entry of the ROM's `sCoopStoryBattles`, with its trainers from
+/// `sCoopStoryTrainers` (canonical IDs). Flags and vars are SaveBlock1 IDs.
+#[derive(Debug)]
+pub(super) struct StoryBattle {
+    /// The ROM's `COOP_STORY_*` name.
+    pub name: &'static str,
+    pub kind: StoryKind,
+    /// Set by the post-battle script; the partner needs it clear.
+    pub story_flag: Option<usize>,
+    /// The var and the value the requester's script needed before the
+    /// battle; the partner needs the same value.
+    pub story_var: Option<(usize, u16)>,
+    /// The trainer's object flag; the partner needs it clear (the trainer is
+    /// on its map).
+    pub presence_flag: Option<usize>,
+    pub trainers: &'static [&'static str],
+}
+
+impl StoryBattle {
+    /// Whether a save is at this battle's story point, as the ROM's
+    /// `CoopTrainerRewards_IsStoryPartnerEligible` decides. `None` when a
+    /// flag or var is outside the saved arrays.
+    pub(super) fn at_story_point(
+        &self,
+        flag: impl Fn(usize) -> Option<bool>,
+        var: impl Fn(usize) -> Option<u16>,
+    ) -> Option<bool> {
+        if self.kind != StoryKind::Grant {
+            return Some(false);
+        }
+        if let Some(story_flag) = self.story_flag
+            && flag(story_flag)?
+        {
+            return Some(false);
+        }
+        if let Some((story_var, value)) = self.story_var
+            && var(story_var)? != value
+        {
+            return Some(false);
+        }
+        if let Some(presence) = self.presence_flag
+            && flag(presence)?
+        {
+            return Some(false);
+        }
+        Some(true)
+    }
+}
+
+const VAR_ELITE_4_STATE: usize = 0x409c;
+
+/// The Hoenn story battles (A9), in the ROM's `enum CoopStoryBattle` order.
+/// The inventory behind each kind is in
+/// docs/plans/2026-09-29-coop-trainers-and-outcome-ledger-plan.md.
+pub(super) const HOENN_STORY_BATTLES: &[StoryBattle] = &[
+    StoryBattle {
+        name: "COOP_STORY_RIVAL_ROUTE103",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x82), // FLAG_DEFEATED_RIVAL_ROUTE103
+        story_var: None,
+        presence_flag: Some(0x2d3), // FLAG_HIDE_ROUTE_103_RIVAL
+        trainers: &[
+            "HOENN:TRAINER_MAY_ROUTE_103_TREECKO",
+            "HOENN:TRAINER_MAY_ROUTE_103_TORCHIC",
+            "HOENN:TRAINER_MAY_ROUTE_103_MUDKIP",
+            "HOENN:TRAINER_BRENDAN_ROUTE_103_TREECKO",
+            "HOENN:TRAINER_BRENDAN_ROUTE_103_TORCHIC",
+            "HOENN:TRAINER_BRENDAN_ROUTE_103_MUDKIP",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_RIVAL_ROUTE110",
+        kind: StoryKind::Grant,
+        story_flag: None,
+        story_var: Some((0x4069, 0)), // VAR_ROUTE110_STATE
+        presence_flag: Some(0x397),   // FLAG_HIDE_ROUTE_110_RIVAL
+        trainers: &[
+            "HOENN:TRAINER_MAY_ROUTE_110_TREECKO",
+            "HOENN:TRAINER_MAY_ROUTE_110_TORCHIC",
+            "HOENN:TRAINER_MAY_ROUTE_110_MUDKIP",
+            "HOENN:TRAINER_BRENDAN_ROUTE_110_TREECKO",
+            "HOENN:TRAINER_BRENDAN_ROUTE_110_TORCHIC",
+            "HOENN:TRAINER_BRENDAN_ROUTE_110_MUDKIP",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_RIVAL_ROUTE119",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x6e),       // FLAG_RECEIVED_HM_FLY
+        story_var: Some((0x4072, 0)), // VAR_ROUTE119_STATE
+        presence_flag: None,
+        trainers: &[
+            "HOENN:TRAINER_MAY_ROUTE_119_TREECKO",
+            "HOENN:TRAINER_MAY_ROUTE_119_TORCHIC",
+            "HOENN:TRAINER_MAY_ROUTE_119_MUDKIP",
+            "HOENN:TRAINER_BRENDAN_ROUTE_119_TREECKO",
+            "HOENN:TRAINER_BRENDAN_ROUTE_119_TORCHIC",
+            "HOENN:TRAINER_BRENDAN_ROUTE_119_MUDKIP",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_RIVAL_LILYCOVE",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x124), // FLAG_MET_RIVAL_LILYCOVE
+        story_var: None,
+        presence_flag: Some(0x3cb), // FLAG_HIDE_LILYCOVE_CITY_RIVAL
+        trainers: &[
+            "HOENN:TRAINER_MAY_LILYCOVE_TREECKO",
+            "HOENN:TRAINER_MAY_LILYCOVE_TORCHIC",
+            "HOENN:TRAINER_MAY_LILYCOVE_MUDKIP",
+            "HOENN:TRAINER_BRENDAN_LILYCOVE_TREECKO",
+            "HOENN:TRAINER_BRENDAN_LILYCOVE_TORCHIC",
+            "HOENN:TRAINER_BRENDAN_LILYCOVE_MUDKIP",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_WALLY_MAUVILLE",
+        kind: StoryKind::Grant,
+        story_flag: Some(0xbe), // FLAG_DEFEATED_WALLY_MAUVILLE
+        story_var: None,
+        presence_flag: Some(0x324), // FLAG_HIDE_MAUVILLE_CITY_WALLY
+        trainers: &["HOENN:TRAINER_WALLY_MAUVILLE"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_WALLY_VICTORY_ROAD",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x7e),       // FLAG_DEFEATED_WALLY_VICTORY_ROAD
+        story_var: Some((0x40c3, 0)), // VAR_VICTORY_ROAD_1F_STATE
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_WALLY_1"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_GRUNT_JAGGED_PASS",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x139), // FLAG_BEAT_MAGMA_GRUNT_JAGGED_PASS
+        story_var: None,
+        presence_flag: Some(0x34f), // FLAG_HIDE_JAGGED_PASS_MAGMA_GUARD
+        trainers: &["HOENN:TRAINER_GRUNT_JAGGED_PASS"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_MATT_AQUA_HIDEOUT",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x70), // FLAG_TEAM_AQUA_ESCAPED_IN_SUBMARINE
+        story_var: None,
+        presence_flag: Some(0x39c), // FLAG_HIDE_AQUA_HIDEOUT_GRUNTS
+        trainers: &["HOENN:TRAINER_MATT"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_MAXIE_MT_CHIMNEY",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x8b), // FLAG_DEFEATED_EVIL_TEAM_MT_CHIMNEY
+        story_var: None,
+        presence_flag: Some(0x39f), // FLAG_HIDE_MT_CHIMNEY_TEAM_MAGMA
+        trainers: &["HOENN:TRAINER_MAXIE_MT_CHIMNEY"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_SIDNEY",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x4fb), // FLAG_DEFEATED_ELITE_4_SIDNEY
+        story_var: Some((VAR_ELITE_4_STATE, 1)),
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_SIDNEY"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_PHOEBE",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x4fc), // FLAG_DEFEATED_ELITE_4_PHOEBE
+        story_var: Some((VAR_ELITE_4_STATE, 2)),
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_PHOEBE"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_GLACIA",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x4fd), // FLAG_DEFEATED_ELITE_4_GLACIA
+        story_var: Some((VAR_ELITE_4_STATE, 3)),
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_GLACIA"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_DRAKE",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x4fe), // FLAG_DEFEATED_ELITE_4_DRAKE
+        story_var: Some((VAR_ELITE_4_STATE, 4)),
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_DRAKE"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_STEVEN_METEOR_FALLS",
+        kind: StoryKind::Grant,
+        story_flag: Some(0x4f8), // FLAG_DEFEATED_METEOR_FALLS_STEVEN
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_STEVEN"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_RIVAL_RUSTBORO",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &[
+            "HOENN:TRAINER_MAY_RUSTBORO_TREECKO",
+            "HOENN:TRAINER_MAY_RUSTBORO_TORCHIC",
+            "HOENN:TRAINER_MAY_RUSTBORO_MUDKIP",
+            "HOENN:TRAINER_BRENDAN_RUSTBORO_TREECKO",
+            "HOENN:TRAINER_BRENDAN_RUSTBORO_TORCHIC",
+            "HOENN:TRAINER_BRENDAN_RUSTBORO_MUDKIP",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_GRUNT_PETALBURG_WOODS",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_GRUNT_PETALBURG_WOODS"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_GRUNT_RUSTURF_TUNNEL",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_GRUNT_RUSTURF_TUNNEL"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_GRUNTS_OCEANIC_MUSEUM",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &[
+            "HOENN:TRAINER_GRUNT_MUSEUM_1",
+            "HOENN:TRAINER_GRUNT_MUSEUM_2",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_SHELLY_WEATHER_INSTITUTE",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_SHELLY_WEATHER_INSTITUTE"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_GRUNTS_SPACE_CENTER",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &[
+            "HOENN:TRAINER_GRUNT_SPACE_CENTER_2",
+            "HOENN:TRAINER_GRUNT_SPACE_CENTER_5",
+            "HOENN:TRAINER_GRUNT_SPACE_CENTER_6",
+            "HOENN:TRAINER_GRUNT_SPACE_CENTER_7",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_MAXIE_MAGMA_HIDEOUT",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_MAXIE_MAGMA_HIDEOUT"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_ARCHIE_SEAFLOOR_CAVERN",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_ARCHIE"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_CHAMPION_WALLACE",
+        kind: StoryKind::Helper,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_WALLACE"],
+    },
+    StoryBattle {
+        name: "COOP_STORY_AQUA_HIDEOUT_GRUNTS",
+        kind: StoryKind::Ordinary,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &[
+            "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_1",
+            "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_2",
+            "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_3",
+            "HOENN:TRAINER_GRUNT_AQUA_HIDEOUT_4",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_ADMINS",
+        kind: StoryKind::Ordinary,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &[
+            "HOENN:TRAINER_SHELLY_SEAFLOOR_CAVERN",
+            "HOENN:TRAINER_TABITHA_MT_CHIMNEY",
+            "HOENN:TRAINER_TABITHA_MAGMA_HIDEOUT",
+        ],
+    },
+    StoryBattle {
+        name: "COOP_STORY_WALLY_VICTORY_ROAD_EXIT",
+        kind: StoryKind::Ordinary,
+        story_flag: None,
+        story_var: None,
+        presence_flag: None,
+        trainers: &["HOENN:TRAINER_WALLY_VR_2"],
+    },
+];
+
 /// How a catalogued trainer's battle is authorized and rewarded.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum TrainerRule {
@@ -694,6 +1027,9 @@ pub(super) enum TrainerRule {
     Rematch { base: TrainerInstanceId },
     /// A Hoenn gym leader's first battle (`badge` is the gym index).
     Gym { badge: u8 },
+    /// A Hoenn story battle of kind `Grant` or `Helper` (an index into
+    /// `HOENN_STORY_BATTLES`).
+    Story { battle: usize },
 }
 
 /// What one member's last finalized save says about the requested trainer.
@@ -705,6 +1041,9 @@ pub(super) struct MemberStanding {
     pub base_defeated: bool,
     /// Hoenn badge flags, bit 0 for the Stone Badge (read only for gyms).
     pub badges: u8,
+    /// For a story battle, whether the save is at its story point
+    /// (`StoryBattle::at_story_point`).
+    pub story_point: bool,
 }
 
 /// The rule for a trainer that already resolved in the identity catalog.
@@ -714,6 +1053,15 @@ pub(super) fn trainer_rule(trainer: &TrainerInstanceId) -> TrainerRule {
         return TrainerRule::Gym {
             badge: u8::try_from(badge).expect("eight gyms"),
         };
+    }
+    if let Some(battle) = HOENN_STORY_BATTLES
+        .iter()
+        .position(|story| story.trainers.contains(&id))
+    {
+        if HOENN_STORY_BATTLES[battle].kind != StoryKind::Ordinary {
+            return TrainerRule::Story { battle };
+        }
+        return TrainerRule::Ordinary;
     }
     HOENN_REMATCHES
         .iter()
@@ -728,11 +1076,16 @@ impl TrainerRule {
     /// A first battle needs an unbeaten trainer; a rematch needs the first
     /// battle beaten (the match call that offers it exists only then); a gym
     /// leader needs the requester not to hold the badge yet.
+    /// A story battle is always allowed: the requester's own story script
+    /// reached it (the ROM decides), and its flags need not be monotonic
+    /// (the Elite Four flags are cleared on every run), so a lagging save
+    /// must not refuse it.
     pub(super) fn requester_allowed(&self, standing: MemberStanding) -> bool {
         match self {
             Self::Ordinary => !standing.defeated,
             Self::Rematch { .. } => standing.base_defeated,
             Self::Gym { badge } => standing.badges & (1 << badge) == 0,
+            Self::Story { .. } => true,
         }
     }
 
@@ -746,6 +1099,8 @@ impl TrainerRule {
             Self::Ordinary => !standing.defeated,
             Self::Rematch { .. } => standing.base_defeated,
             Self::Gym { badge } => standing.badges == (1_u8 << badge) - 1,
+            // `story_point` is only ever true for a Grant battle.
+            Self::Story { .. } => standing.story_point,
         }
     }
 }
@@ -764,6 +1119,7 @@ mod tests {
             defeated,
             base_defeated,
             badges,
+            story_point: false,
         }
     }
 
@@ -832,11 +1188,18 @@ mod tests {
 
     #[test]
     fn every_table_trainer_is_catalogued() {
-        let ids = HOENN_GYM_LEADERS.iter().chain(
-            HOENN_REMATCHES
-                .iter()
-                .flat_map(|(base, later)| std::iter::once(base).chain(later.iter())),
-        );
+        let ids = HOENN_GYM_LEADERS
+            .iter()
+            .chain(
+                HOENN_REMATCHES
+                    .iter()
+                    .flat_map(|(base, later)| std::iter::once(base).chain(later.iter())),
+            )
+            .chain(
+                HOENN_STORY_BATTLES
+                    .iter()
+                    .flat_map(|story| story.trainers.iter()),
+            );
         for id in ids {
             let trainer = TrainerInstanceId::parse(id).unwrap();
             let entry = identity_catalog::trainer(&trainer).expect(id);
@@ -873,7 +1236,10 @@ mod tests {
                 base: TrainerInstanceId::parse("HOENN:TRAINER_JUAN_1").unwrap()
             }
         );
-        assert_eq!(rule("HOENN:TRAINER_SIDNEY"), TrainerRule::Ordinary);
+        assert_eq!(
+            rule("HOENN:TRAINER_SIDNEY"),
+            TrainerRule::Story { battle: 9 }
+        );
     }
 
     #[test]
@@ -912,5 +1278,200 @@ mod tests {
         assert!(!calvin.requester_allowed(standing(true, false, 0)));
         assert!(calvin.participates(standing(false, true, 0xff)));
         assert!(!calvin.participates(standing(true, false, 0)));
+    }
+
+    /// `#define NAME 0xHEX` lines of a ROM constants header.
+    fn hex_defines(source: &str) -> std::collections::HashMap<String, usize> {
+        source
+            .lines()
+            .filter_map(|line| {
+                let mut words = line.split_whitespace();
+                if words.next()? != "#define" {
+                    return None;
+                }
+                let name = words.next()?;
+                let value = words.next()?.strip_prefix("0x")?;
+                Some((name.to_owned(), usize::from_str_radix(value, 16).ok()?))
+            })
+            .collect()
+    }
+
+    struct RomStory {
+        name: String,
+        kind: StoryKind,
+        story_flag: Option<usize>,
+        story_var: Option<(usize, u16)>,
+        presence_flag: Option<usize>,
+        trainers: Vec<String>,
+    }
+
+    /// `sCoopStoryBattles` and `sCoopStoryTrainers` of the ROM, with flag
+    /// and var names resolved from its headers and trainers mapped to their
+    /// canonical IDs.
+    fn rom_story_battles() -> Vec<RomStory> {
+        let source = include_str!("../../../../../src/coop/trainer_rewards.c");
+        let mut names = hex_defines(include_str!("../../../../../include/constants/flags.h"));
+        names.extend(hex_defines(include_str!(
+            "../../../../../include/constants/vars.h"
+        )));
+        let resolve = |name: &str| -> Option<usize> {
+            (name != "0").then(|| *names.get(name).unwrap_or_else(|| panic!("{name}")))
+        };
+        let battles_table = source
+            .split("sCoopStoryBattles[COOP_STORY_COUNT] =")
+            .nth(1)
+            .expect("sCoopStoryBattles")
+            .split("};")
+            .next()
+            .unwrap();
+        let mut battles: Vec<RomStory> = battles_table
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix('['))
+            .map(|line| {
+                let (name, rest) = line.split_once(']').unwrap();
+                let fields: Vec<&str> = rest
+                    .split_once('{')
+                    .unwrap()
+                    .1
+                    .split(',')
+                    .map(str::trim)
+                    .collect();
+                let kind = match fields[0] {
+                    "GRANT" => StoryKind::Grant,
+                    "HELPER" => StoryKind::Helper,
+                    "ORDINARY" => StoryKind::Ordinary,
+                    other => panic!("kind {other}"),
+                };
+                RomStory {
+                    name: name.to_owned(),
+                    kind,
+                    story_flag: resolve(fields[1]),
+                    story_var: resolve(fields[2])
+                        .map(|var| (var, fields[3].parse().expect("story value"))),
+                    presence_flag: resolve(fields[4]),
+                    trainers: Vec::new(),
+                }
+            })
+            .collect();
+        let trainers_table = source
+            .split("sCoopStoryTrainers[] =")
+            .nth(1)
+            .expect("sCoopStoryTrainers")
+            .split("};")
+            .next()
+            .unwrap();
+        for line in trainers_table.lines() {
+            let Some(entry) = line.trim().strip_prefix('{') else {
+                continue;
+            };
+            // The table's own opening brace has no entry.
+            let Some((legacy, battle)) = entry.split_once(',') else {
+                continue;
+            };
+            let battle = battle.trim().trim_end_matches("},");
+            let canonical = identity_catalog::all_identities()
+                .iter()
+                .find(|identity| {
+                    identity.kind == coop_protocol::IdentityKind::Trainer
+                        && identity.region == coop_protocol::RegionId::Hoenn
+                        && identity.legacy_symbol == Some(legacy.trim())
+                })
+                .unwrap_or_else(|| panic!("{legacy} is not catalogued"))
+                .qualified_id;
+            battles
+                .iter_mut()
+                .find(|story| story.name == battle)
+                .unwrap_or_else(|| panic!("{battle}"))
+                .trainers
+                .push(canonical.to_owned());
+        }
+        battles
+    }
+
+    #[test]
+    fn story_table_matches_the_rom_story_table() {
+        let rom = rom_story_battles();
+        assert_eq!(rom.len(), HOENN_STORY_BATTLES.len());
+        for (rom, story) in rom.iter().zip(HOENN_STORY_BATTLES) {
+            assert_eq!(rom.name, story.name);
+            assert_eq!(rom.kind, story.kind, "{}", story.name);
+            assert_eq!(rom.story_flag, story.story_flag, "{}", story.name);
+            assert_eq!(rom.story_var, story.story_var, "{}", story.name);
+            assert_eq!(rom.presence_flag, story.presence_flag, "{}", story.name);
+            assert_eq!(rom.trainers, story.trainers, "{}", story.name);
+        }
+        // A trainer belongs to one battle, and never to a gym or a rematch.
+        let mut seen = std::collections::HashSet::new();
+        for id in HOENN_STORY_BATTLES.iter().flat_map(|story| story.trainers) {
+            assert!(seen.insert(*id), "{id}");
+            assert!(!HOENN_GYM_LEADERS.contains(id), "{id}");
+            assert!(
+                !HOENN_REMATCHES.iter().any(|(_, later)| later.contains(id)),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn story_rules_resolve_by_kind() {
+        let wally = rule("HOENN:TRAINER_WALLY_1");
+        assert_eq!(wally, TrainerRule::Story { battle: 5 });
+        assert_eq!(HOENN_STORY_BATTLES[5].name, "COOP_STORY_WALLY_VICTORY_ROAD");
+        assert!(matches!(
+            rule("HOENN:TRAINER_WALLACE"),
+            TrainerRule::Story { .. }
+        ));
+        // Ordinary story entries keep the trainer-flag rule; Wally's exit
+        // battle keeps its match-call rematches.
+        assert_eq!(
+            rule("HOENN:TRAINER_TABITHA_MT_CHIMNEY"),
+            TrainerRule::Ordinary
+        );
+        assert_eq!(rule("HOENN:TRAINER_WALLY_VR_2"), TrainerRule::Ordinary);
+        assert_eq!(
+            rule("HOENN:TRAINER_WALLY_VR_4"),
+            TrainerRule::Rematch {
+                base: TrainerInstanceId::parse("HOENN:TRAINER_WALLY_VR_2").unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn story_requester_is_always_allowed_and_partners_need_the_story_point() {
+        let sidney = rule("HOENN:TRAINER_SIDNEY");
+        let at_point = MemberStanding {
+            story_point: true,
+            ..MemberStanding::default()
+        };
+        // A lagging save (flag set from an earlier run) never refuses.
+        assert!(sidney.requester_allowed(standing(true, false, 0xff)));
+        assert!(sidney.participates(at_point));
+        assert!(!sidney.participates(standing(false, false, 0xff)));
+    }
+
+    #[test]
+    fn story_point_needs_flag_clear_var_value_and_the_trainer_present() {
+        let route110 = &HOENN_STORY_BATTLES[1];
+        let sidney = &HOENN_STORY_BATTLES[9];
+        let champion = HOENN_STORY_BATTLES
+            .iter()
+            .find(|story| story.name == "COOP_STORY_CHAMPION_WALLACE")
+            .unwrap();
+        let flags = |set: &'static [usize]| move |flag: usize| Some(set.contains(&flag));
+        let var = |value: u16| move |_: usize| Some(value);
+        assert_eq!(route110.at_story_point(flags(&[]), var(0)), Some(true));
+        assert_eq!(route110.at_story_point(flags(&[]), var(1)), Some(false));
+        // The rival is still hidden: an earlier story point.
+        assert_eq!(
+            route110.at_story_point(flags(&[0x397]), var(0)),
+            Some(false)
+        );
+        assert_eq!(sidney.at_story_point(flags(&[]), var(1)), Some(true));
+        assert_eq!(sidney.at_story_point(flags(&[0x4fb]), var(1)), Some(false));
+        assert_eq!(sidney.at_story_point(flags(&[]), var(2)), Some(false));
+        // A flag the save cannot hold makes the standing unknown.
+        assert_eq!(sidney.at_story_point(|_| None, var(1)), None);
+        // Helper battles never grant.
+        assert_eq!(champion.at_story_point(flags(&[]), var(0)), Some(false));
     }
 }

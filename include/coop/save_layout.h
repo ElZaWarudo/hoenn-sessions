@@ -16,5 +16,7 @@
 #define COOP_SAVE_LAYOUT_TRAINER_FLAGS_END 0xB55
 /* The eight Hoenn badges are FLAG_BADGE01_GET .. +7 (co-op gym roles). */
 #define COOP_SAVE_LAYOUT_FLAG_BADGE01_GET 0xB5D
+/* VAR_x is SaveBlock1 vars[x - VARS_START] (co-op story battle roles). */
+#define COOP_SAVE_LAYOUT_VARS_START 0x4000
 
 #endif // GUARD_COOP_SAVE_LAYOUT_H
