@@ -121,4 +121,11 @@
     <string name="touch_settings">On-screen controls</string>
     <string name="touch_reset">Reset all</string>
     <string name="touch_move">Move controls</string>
+    <string name="join_partner_title">Join your partner</string>
+    <string name="join_partner_message">Group up with code %1$s? You both stay on your own maps.</string>
+    <string name="join_partner_confirm">Join</string>
+    <string name="join_after_start">Group link received. Start playing to join.</string>
+    <string name="join_joined">Grouped with your partner. You both stay on your own maps.</string>
+    <string name="join_refused">That code is expired, already used, or you are already in a group.</string>
+    <string name="join_unavailable">Could not join right now. Try again in a moment.</string>
 </resources>

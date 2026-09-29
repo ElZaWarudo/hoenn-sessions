@@ -121,4 +121,11 @@
     <string name="touch_settings">Controles en pantalla</string>
     <string name="touch_reset">Restablecer todo</string>
     <string name="touch_move">Mover controles</string>
+    <string name="join_partner_title">Unirse a tu compañero</string>
+    <string name="join_partner_message">¿Formar grupo con el código %1$s? Cada uno sigue en su mapa.</string>
+    <string name="join_partner_confirm">Unirse</string>
+    <string name="join_after_start">Enlace de grupo recibido. Empieza a jugar para unirte.</string>
+    <string name="join_joined">Grupo formado. Cada uno sigue en su mapa.</string>
+    <string name="join_refused">El código expiró, ya se usó o ya estás en un grupo.</string>
+    <string name="join_unavailable">No se pudo unir ahora. Inténtalo de nuevo en un momento.</string>
 </resources>
