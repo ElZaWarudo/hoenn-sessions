@@ -34,6 +34,7 @@
 #include "battle_ai_record.h"
 #include "battle_ai_util.h"
 #include "coop/battle_runtime.h"
+#include "coop/trainer_rewards.h"
 #include "event_data.h"
 #include "link.h"
 #include "malloc.h"
@@ -1240,6 +1241,7 @@ void ResetSentPokesToOpponentValue(void)
 
     for (i = 1; i < gBattlersCount; i += 2)
         gSentPokesToOpponent[(i & BIT_FLANK) >> 1] = bits;
+    CoopTrainerRewards_OnSentPokesReset();
 }
 
 void OpponentSwitchInResetSentPokesToOpponentValue(enum BattlerId battler)
@@ -1258,6 +1260,7 @@ void OpponentSwitchInResetSentPokesToOpponentValue(enum BattlerId battler)
                 bits |= 1u << gBattlerPartyIndexes[i];
         }
         gSentPokesToOpponent[flank] = bits;
+        CoopTrainerRewards_OnOpponentSwitchIn(battler);
     }
 }
 
@@ -1272,6 +1275,7 @@ void UpdateSentPokesToOpponentValue(enum BattlerId battler)
         s32 i;
         for (i = 1; i < gBattlersCount; i++)
             gSentPokesToOpponent[(i & BIT_FLANK) >> 1] |= 1u << gBattlerPartyIndexes[battler];
+        CoopTrainerRewards_OnPlayerSwitchIn(battler);
     }
 }
 
@@ -1812,6 +1816,10 @@ bool32 HandleFaintedMonActions(void)
                         gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_SET_ABSENT_FLAGS;
                         return TRUE;
                     }
+                    /* Co-op: record who earned the EXP; it is applied to
+                     * the local party after the battle (hashed state is
+                     * left untouched). */
+                    CoopTrainerRewards_RecordFaint(gBattleStruct->eventState.faintedActionBattler);
                 }
             } while (++gBattleStruct->eventState.faintedActionBattler != gBattlersCount);
             gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_WAIT_STATE;

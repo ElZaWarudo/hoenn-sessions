@@ -6,6 +6,7 @@
 #include "battle_gimmick.h"
 #include "battle_util.h"
 #include "config_changes.h"
+#include "coop/battle_runtime.h"
 #include "constants/johto_content.h"
 #include "event_data.h"
 #include "region_map.h"
@@ -174,6 +175,10 @@ void BeginBattleLevelCaps(void)
                           | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_TRAINER_HILL | BATTLE_TYPE_EREADER_TRAINER
                           | BATTLE_TYPE_FIRST_BATTLE | BATTLE_TYPE_SAFARI | BATTLE_TYPE_CATCH_TUTORIAL
                           | BATTLE_TYPE_POKEDUDE | BATTLE_TYPE_RAID)))
+        return;
+    // Co-op battles hash both parties every turn and restore them afterwards.
+    // Projecting only the local copy would split the digest from the peer.
+    if (CoopBattleRuntime_IsEngineActive())
         return;
     // The test runner uses recorded playback to drive ordinary wild battles.
     if ((gBattleTypeFlags & BATTLE_TYPE_RECORDED) && !(gTestRunnerEnabled && (gBattleTypeFlags & BATTLE_TYPE_IS_MASTER)))

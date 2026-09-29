@@ -1,12 +1,14 @@
 #include "global.h"
 #include "battle.h"
 #include "battle_setup.h"
+#include "battle_util.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
 #include "coop/generated_regional_identities.h"
 #include "coop/net_bridge.h"
 #include "coop/region.h"
 #include "coop/save.h"
+#include "coop/trainer_rewards.h"
 #include "constants/battle_setup.h"
 #include "constants/event_objects.h"
 #include "constants/layouts.h"
@@ -21,6 +23,7 @@
 #include "fieldmap.h"
 #include "main.h"
 #include "malloc.h"
+#include "money.h"
 #include "overworld.h"
 #include "palette.h"
 #include "pokemon.h"
@@ -602,6 +605,7 @@ TEST("Cloud Coop accepted trainer encounter starts co-op and an abort releases t
     struct CoopBridgeMessage message;
     MainCallback endBattle;
     bool8 wasFought;
+    u32 money;
     u32 nonce;
     u8 i;
 
@@ -611,6 +615,7 @@ TEST("Cloud Coop accepted trainer encounter starts co-op and an abort releases t
     CreateUsableMon(&gParties[B_TRAINER_0][0], SPECIES_CHARMANDER, 1);
     gPartiesCount[B_TRAINER_0] = 1;
     wasFought = HasTrainerBeenFought(ENCOUNTER_TRAINER);
+    money = GetMoney(&gSaveBlock1Ptr->money);
 
     nonce = BeginParkedEncounter();
     DeliverRequesterOffer(37, nonce);
@@ -640,6 +645,8 @@ TEST("Cloud Coop accepted trainer encounter starts co-op and an abort releases t
     EXPECT(!CoopBattleRuntime_IsEngineActive());
     EXPECT_EQ(gMain.callback2, CB2_ReturnToFieldContinueScriptPlayMapMusic);
     EXPECT_EQ(HasTrainerBeenFought(ENCOUNTER_TRAINER), wasFought);
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), money);
+    EXPECT(!CoopTrainerRewards_TestIsArmed());
     EXPECT(TakeOutbound(COOP_BRIDGE_MESSAGE_BATTLE_ABORT_REQUEST, &message));
     EXPECT_EQ(message.payload[0], 37);
     EXPECT(!ScriptContext_IsEnabled());
@@ -735,5 +742,147 @@ TEST("Cloud Coop trainer encounter partner prompt declines itself after ten seco
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     Special_CoopBattleConsentGetOffer();
     EXPECT_EQ(gSpecialVar_Result, 0);
+    EndEncounterFixture();
+}
+
+/* Battle-time state a completed co-op trainer battle leaves behind. */
+struct RewardBattleState
+{
+    struct Pokemon enemy[PARTY_SIZE];
+    u32 money;
+    bool8 fought;
+    u8 outcome;
+    u8 battlers;
+    u16 party_indexes[MAX_BATTLERS_COUNT];
+    u8 positions[MAX_BATTLERS_COUNT];
+    u8 absent;
+};
+
+/* Party slot 0 is fainted and stays home; slot 1 fights and slot 2 is staged
+ * on the bench, so the staged-to-party mapping is exercised. The opponent's
+ * first mon faints to the local lead, then the battle ends with outcome. */
+static void RunCoopTrainerBattle(struct RewardBattleState *saved, u8 id, u8 outcome)
+{
+    u32 nonce;
+    u16 zero = 0;
+    u8 i;
+
+    memcpy(saved->enemy, gParties[B_TRAINER_1], sizeof(saved->enemy));
+    saved->money = GetMoney(&gSaveBlock1Ptr->money);
+    saved->fought = HasTrainerBeenFought(ENCOUNTER_TRAINER);
+    saved->outcome = gBattleOutcome;
+    saved->battlers = gBattlersCount;
+    memcpy(saved->party_indexes, gBattlerPartyIndexes, sizeof(saved->party_indexes));
+    memcpy(saved->positions, gBattlerPositions, sizeof(saved->positions));
+    saved->absent = gAbsentBattlerFlags;
+    ClearTrainerFlag(ENCOUNTER_TRAINER);
+    SetMoney(&gSaveBlock1Ptr->money, 500);
+
+    for (i = 0; i < PARTY_SIZE; i++)
+        ZeroMonData(&gParties[B_TRAINER_0][i]);
+    CreateUsableMon(&gParties[B_TRAINER_0][0], SPECIES_PIDGEY, 3);
+    SetMonData(&gParties[B_TRAINER_0][0], MON_DATA_HP, &zero);
+    CreateUsableMon(&gParties[B_TRAINER_0][1], SPECIES_CHARMANDER, 1);
+    CreateUsableMon(&gParties[B_TRAINER_0][2], SPECIES_TREECKO, 4);
+    gPartiesCount[B_TRAINER_0] = 3;
+
+    nonce = BeginParkedEncounter();
+    DeliverRequesterOffer(id, nonce);
+    DeliverOutcome(id, nonce, COOP_BATTLE_CONSENT_ACCEPTED);
+    CoopBattleConsent_Poll();
+    ReleaseAcceptedEncounter(id);
+    CoopBattleConsent_Poll();
+    EXPECT(CoopBattleRuntime_IsEngineActive());
+    EXPECT(CoopTrainerRewards_TestIsArmed());
+    DrainOutbound();
+    /* Staged in battle: Charmander in slot 0, Treecko in slot 1. */
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_SPECIES), SPECIES_CHARMANDER);
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][1], MON_DATA_SPECIES), SPECIES_TREECKO);
+
+    CreateMon(&gParties[B_TRAINER_1][0], SPECIES_POOCHYENA, 20, 7, OTID_STRUCT_PRESET(2));
+    gBattlersCount = MAX_BATTLERS_COUNT;
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+    {
+        gBattlerPositions[i] = i;
+        gBattlerPartyIndexes[i] = 0;
+    }
+    gAbsentBattlerFlags = 0;
+    ResetSentPokesToOpponentValue();
+    CoopTrainerRewards_RecordFaint(1);
+    /* Nothing is applied while the battle (and its digest) is running. */
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_LEVEL), 5);
+    if (outcome == B_OUTCOME_WON)
+        CoopTrainerRewards_OnBattleWon(1);
+    gBattleOutcome = outcome;
+    CoopBattleRuntime_TestSetBattleFinishedSent();
+    gMain.savedCallback();
+    EXPECT(!CoopBattleRuntime_IsEngineActive());
+    EXPECT(!CoopTrainerEncounter_TestIsPending());
+    EXPECT(!CoopTrainerRewards_TestIsArmed());
+    /* The full party is back in its original order. */
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_SPECIES), SPECIES_PIDGEY);
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][1], MON_DATA_SPECIES), SPECIES_CHARMANDER);
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][2], MON_DATA_SPECIES), SPECIES_TREECKO);
+}
+
+static void RestoreRewardBattleState(const struct RewardBattleState *saved)
+{
+    memcpy(gParties[B_TRAINER_1], saved->enemy, sizeof(saved->enemy));
+    SetMoney(&gSaveBlock1Ptr->money, saved->money);
+    if (saved->fought)
+        SetTrainerFlag(ENCOUNTER_TRAINER);
+    else
+        ClearTrainerFlag(ENCOUNTER_TRAINER);
+    gBattleOutcome = saved->outcome;
+    gBattlersCount = saved->battlers;
+    memcpy(gBattlerPartyIndexes, saved->party_indexes, sizeof(saved->party_indexes));
+    memcpy(gBattlerPositions, saved->positions, sizeof(saved->positions));
+    gAbsentBattlerFlags = saved->absent;
+    gLeveledUpInBattle = 0;
+}
+
+TEST("Cloud Coop trainer win sets the flag, pays once and applies EXP after the battle")
+{
+    struct RewardBattleState saved;
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(ENCOUNTER_TRAINER, 1);
+    u8 staged[1] = {1};
+
+    BeginEncounterFixture();
+    RunCoopTrainerBattle(&saved, 43, B_OUTCOME_WON);
+    EXPECT(HasTrainerBeenFought(ENCOUNTER_TRAINER));
+    EXPECT_GT(prize, 0);
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    /* Only the local mon that fought gained EXP, at its own party slot. */
+    EXPECT_GT(GetMonData(&gParties[B_TRAINER_0][1], MON_DATA_LEVEL), 5);
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][2], MON_DATA_LEVEL), 5);
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_LEVEL), 5);
+    /* The level-up goes through the post-battle evolution pass, which
+     * finds nothing to evolve and resumes the parked trainer script. */
+    EXPECT_EQ(gLeveledUpInBattle, 1u << 1);
+    EXPECT_EQ(gMain.callback2, CB2_CoopTrainerRewardEvolutions);
+    gMain.callback2();
+    EXPECT_EQ(gMain.callback2, CB2_ReturnToFieldContinueScriptPlayMapMusic);
+    EXPECT_EQ(gLeveledUpInBattle, 0);
+    /* The resumed script cannot collect a second prize. */
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, ENCOUNTER_TRAINER, staged, 1),
+              COOP_TRAINER_REWARD_NONE);
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    RestoreRewardBattleState(&saved);
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop trainer loss leaves the trainer, money and EXP untouched")
+{
+    struct RewardBattleState saved;
+
+    BeginEncounterFixture();
+    RunCoopTrainerBattle(&saved, 44, B_OUTCOME_LOST);
+    EXPECT(!HasTrainerBeenFought(ENCOUNTER_TRAINER));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500);
+    EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][1], MON_DATA_LEVEL), 5);
+    EXPECT_EQ(gLeveledUpInBattle, 0);
+    /* Local mons are still standing, so there is no whiteout. */
+    EXPECT_EQ(gMain.callback2, CB2_ReturnToFieldContinueScriptPlayMapMusic);
+    RestoreRewardBattleState(&saved);
     EndEncounterFixture();
 }

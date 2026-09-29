@@ -73,6 +73,9 @@ void RestoreTarget(void);
 bool32 CanBurnHitThaw(enum Move move);
 bool32 CanMoveThawTarget(enum Ability abilityAtk, enum Move move);
 bool32 CanFireMoveThawTarget(enum Move move);
+struct Pokemon;
+void ApplyMonExperienceMultipliers(s32 *expAmount, struct Pokemon *expGetter, u8 faintedLevel);
+u32 GetTrainerPrizeMoney(u16 trainerId, u32 multiplier, bool32 doubleBattle);
 
 extern void (*const gBattleScriptingCommandsTable[])(void);
 extern const struct StatFractions gAccuracyStageRatios[];

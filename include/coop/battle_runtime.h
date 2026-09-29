@@ -146,6 +146,7 @@ void CoopBattleRuntime_ForgetTerminalCommit(void);
 bool8 CoopBattleRuntime_IsStartReleased(void);
 #if TESTING
 void CoopBattleRuntime_TestSetReadyForStart(void);
+void CoopBattleRuntime_TestSetBattleFinishedSent(void);
 #endif
 bool8 CoopBattleRuntime_HasManifest(void);
 bool8 CoopBattleRuntime_GetManifest(u8 *payload, u16 capacity);

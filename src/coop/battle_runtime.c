@@ -905,6 +905,14 @@ void CoopBattleRuntime_TestSetReadyForStart(void)
     sBattleRuntime.peer_party_count = 1;
     sBattleRuntime.next_peer_party_slot = 1;
 }
+
+/* Stands in for an accepted BATTLE_FINISHED frame so field tests can end a
+ * co-op battle as completed without replaying its turns. */
+void CoopBattleRuntime_TestSetBattleFinishedSent(void)
+{
+    sBattleRuntime.terminal_sent = TRUE;
+    sBattleRuntime.terminal_pending = FALSE;
+}
 #endif
 
 bool8 CoopBattleRuntime_RequestAbort(u8 reason)

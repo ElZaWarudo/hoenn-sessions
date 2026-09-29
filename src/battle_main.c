@@ -3,6 +3,7 @@
 #include "battle.h"
 #include "coop/battle_runtime.h"
 #include "coop/net_bridge.h"
+#include "coop/trainer_rewards.h"
 #include "battle_anim.h"
 #include "battle_ai_main.h"
 #include "battle_ai_record.h"
@@ -5694,7 +5695,9 @@ static void HandleEndTurn_BattleWon(void)
     if (CoopBattleRuntime_IsEngineActive())
     {
         /* Keep the terminal script side-effect free.  The dormant co-op
-         * callback owns the eventual server result and party restoration. */
+         * callback owns the eventual server result and party restoration.
+         * The prize is paid there too; only its multiplier is captured. */
+        CoopTrainerRewards_OnBattleWon(gBattleStruct->moneyMultiplier);
         BattleStopLowHpSound();
         gBattlescriptCurrInstr = BattleScript_FrontierTrainerBattleWon;
     }

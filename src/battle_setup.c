@@ -36,6 +36,7 @@
 #include "coop/identity.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
+#include "coop/trainer_rewards.h"
 #include "battle_frontier.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -481,6 +482,9 @@ static void CB2_EndCoopTrainerBattle(void)
 {
     bool8 completed = FALSE;
     bool8 wasScriptedTrainerBattle;
+    u8 rewardSlots[COOP_BATTLE_MULTI_PARTY_SIZE];
+    u8 rewardSlotCount;
+    u16 rewardTrainerId;
 
     if (!sCoopBattleEntryPrepared)
     {
@@ -527,10 +531,21 @@ static void CB2_EndCoopTrainerBattle(void)
         CoopBattleRuntime_CompleteBattle();
     else
         CoopBattleRuntime_DisarmEngine();
+    /* Both ROMs resolved the same opponent from the attested manifest
+     * identity; the responder never saw the requester's trainer script. */
+    rewardTrainerId = sCoopBattlePlan.opponent_trainer_id;
+    rewardSlotCount = sCoopBattlePlan.staged_local_count;
+    memcpy(rewardSlots, sCoopBattlePlan.local_slots, sizeof(rewardSlots));
     memset(&sCoopBattlePlan, 0, sizeof(sCoopBattlePlan));
     sCoopBattleEntryActive = FALSE;
     sCoopBattleEntryPrepared = FALSE;
     wasScriptedTrainerBattle = CoopBattleConsent_OnTrainerBattleEnded(completed, gBattleOutcome);
+    /* Local rewards, once per battle and only for a completed win of an
+     * ordinary trainer (Wally/Brock keep their scripted outcome path). The
+     * party is already restored, so EXP lands on the real mons. */
+    (void)CoopTrainerRewards_Apply(completed && gBattleOutcome == B_OUTCOME_WON
+                                       && !wasScriptedTrainerBattle,
+                                   rewardTrainerId, rewardSlots, rewardSlotCount);
     if (CoopTrainerEncounter_OnBattleEnded(completed))
     {
         /* An aborted encounter never resumes the parked trainer script:
@@ -551,7 +566,10 @@ static void CB2_EndCoopTrainerBattle(void)
     }
     if (completed && !IsPlayerDefeated(gBattleOutcome))
         DowngradeBadPoison();
-    SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+    if (CoopTrainerRewards_HasPendingEvolutions())
+        SetMainCallback2(CB2_CoopTrainerRewardEvolutions);
+    else
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
 }
 
 static void RollbackCoopBattleEntry(void)
@@ -641,6 +659,7 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
     sShouldCheckTrainerBScript = FALSE;
     gWhichTrainerToFaceAfterBattle = 0;
 
+    CoopTrainerRewards_Begin();
     sCoopBattleEntryActive = TRUE;
     LockPlayerFieldControls();
     FreezeObjectEvents();

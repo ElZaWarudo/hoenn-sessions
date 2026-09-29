@@ -6165,9 +6165,7 @@ static void Cmd_hitanimation(void)
 
 static u32 GetTrainerMoneyToGive(u16 trainerId)
 {
-    u32 lastMonLevel = 0;
     u32 moneyReward;
-    u8 trainerMoney = 0;
 
     if (trainerId == TRAINER_SECRET_BASE)
     {
@@ -6175,21 +6173,29 @@ static u32 GetTrainerMoneyToGive(u16 trainerId)
     }
     else
     {
-        const struct TrainerMon *party = GetTrainerPartyFromId(trainerId);
-        if (party == NULL)
-            return 20;
-        lastMonLevel = party[GetTrainerPartySizeFromId(trainerId) - 1].lvl;
-        trainerMoney = gTrainerClasses[GetTrainerClassFromId(trainerId)].money ?: 5;
-
-        if (gBattleTypeFlags & BATTLE_TYPE_TWO_OPPONENTS)
-            moneyReward = 4 * lastMonLevel * gBattleStruct->moneyMultiplier * trainerMoney;
-        else if (IsDoubleBattle())
-            moneyReward = 4 * lastMonLevel * gBattleStruct->moneyMultiplier * 2 * trainerMoney;
-        else
-            moneyReward = 4 * lastMonLevel * gBattleStruct->moneyMultiplier * trainerMoney;
+        moneyReward = GetTrainerPrizeMoney(trainerId, gBattleStruct->moneyMultiplier,
+                                           !(gBattleTypeFlags & BATTLE_TYPE_TWO_OPPONENTS)
+                                           && IsDoubleBattle());
     }
 
     return moneyReward;
+}
+
+/* The prize for one ordinary trainer; doubleBattle doubles it as in a
+ * single-trainer double battle. Shared with the co-op trainer rewards. */
+u32 GetTrainerPrizeMoney(u16 trainerId, u32 multiplier, bool32 doubleBattle)
+{
+    u32 lastMonLevel;
+    u8 trainerMoney;
+    const struct TrainerMon *party = GetTrainerPartyFromId(trainerId);
+
+    if (party == NULL)
+        return 20;
+    lastMonLevel = party[GetTrainerPartySizeFromId(trainerId) - 1].lvl;
+    trainerMoney = gTrainerClasses[GetTrainerClassFromId(trainerId)].money ?: 5;
+    if (doubleBattle)
+        return 4 * lastMonLevel * multiplier * 2 * trainerMoney;
+    return 4 * lastMonLevel * multiplier * trainerMoney;
 }
 
 static void Cmd_getmoneyreward(void)
@@ -11927,15 +11933,23 @@ u8 GetFirstFaintedPartyIndex(enum BattlerId battler)
 
 void ApplyExperienceMultipliers(s32 *expAmount, u8 expGetterMonId, u8 faintedBattler)
 {
-    enum HoldEffect holdEffect = GetMonHoldEffect(&gParties[B_TRAINER_0][expGetterMonId]);
+    ApplyMonExperienceMultipliers(expAmount, &gParties[B_TRAINER_0][expGetterMonId],
+                                  gBattleMons[faintedBattler].level);
+}
 
-    if (IsTradedMon(&gParties[B_TRAINER_0][expGetterMonId]))
+/* The battle-free core of ApplyExperienceMultipliers: co-op trainer rewards
+ * apply the same multipliers after the battle has been torn down. */
+void ApplyMonExperienceMultipliers(s32 *expAmount, struct Pokemon *expGetter, u8 faintedLevel)
+{
+    enum HoldEffect holdEffect = GetMonHoldEffect(expGetter);
+
+    if (IsTradedMon(expGetter))
         *expAmount = (*expAmount * 150) / 100;
     if (holdEffect == HOLD_EFFECT_LUCKY_EGG)
         *expAmount = (*expAmount * 150) / 100;
-    if (B_UNEVOLVED_EXP_MULTIPLIER >= GEN_6 && IsMonPastEvolutionLevel(&gParties[B_TRAINER_0][expGetterMonId]))
+    if (B_UNEVOLVED_EXP_MULTIPLIER >= GEN_6 && IsMonPastEvolutionLevel(expGetter))
         *expAmount = (*expAmount * 4915) / 4096;
-    if (B_AFFECTION_MECHANICS == TRUE && GetMonAffectionHearts(&gParties[B_TRAINER_0][expGetterMonId]) >= AFFECTION_FOUR_HEARTS)
+    if (B_AFFECTION_MECHANICS == TRUE && GetMonAffectionHearts(expGetter) >= AFFECTION_FOUR_HEARTS)
         *expAmount = (*expAmount * 4915) / 4096;
     if (CheckBagHasItem(ITEM_EXP_CHARM, 1)) //is also for other exp boosting Powers if/when implemented
         *expAmount = (*expAmount * 150) / 100;
@@ -11945,8 +11959,7 @@ void ApplyExperienceMultipliers(s32 *expAmount, u8 expGetterMonId, u8 faintedBat
         // Note: There is an edge case where if a Pokémon receives a large amount of exp, it wouldn't be properly calculated
         //       because of multiplying by scaling factor(the value would simply be larger than an u32 can hold). Hence u64 is needed.
         u64 value = *expAmount;
-        u8 faintedLevel = gBattleMons[faintedBattler].level;
-        u8 expGetterLevel = GetMonData(&gParties[B_TRAINER_0][expGetterMonId], MON_DATA_LEVEL);
+        u8 expGetterLevel = GetMonData(expGetter, MON_DATA_LEVEL);
 
         value *= sExperienceScalingFactors[(faintedLevel * 2) + 10];
         value /= sExperienceScalingFactors[faintedLevel + expGetterLevel + 10];
