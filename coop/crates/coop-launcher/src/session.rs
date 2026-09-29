@@ -224,6 +224,39 @@ fn queue_pending_battle(
     Ok(())
 }
 
+/// One in-game trade cloud call with a single refresh-and-retry on 401. A
+/// second 401 ends the session like every other authenticated call.
+macro_rules! trade_call {
+    ($session:ident, $api:ident, |$token:ident| $call:expr) => {{
+        $session.refresh_if_needed($api).await?;
+        let $token = $session
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let mut result = $call.await;
+        if matches!(
+            result,
+            Err(crate::trade_offer::TradeOfferError::Unauthorized)
+        ) {
+            $session.refresh_required($api).await?;
+            let $token = $session
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            result = $call.await;
+        }
+        if matches!(
+            result,
+            Err(crate::trade_offer::TradeOfferError::Unauthorized)
+        ) {
+            return Err(SessionError::Unauthorized);
+        }
+        result
+    }};
+}
+
 #[derive(Clone, Copy)]
 enum RealtimeSource {
     Control,
@@ -493,7 +526,9 @@ where
                     | ControlEvent::TurnResultHash(_)
                     | ControlEvent::BattleFinished(_)
                     | ControlEvent::CommitApplied(_)
-                    | ControlEvent::TradeCommitApplied(_))) => {
+                    | ControlEvent::TradeCommitApplied(_)
+                    | ControlEvent::TradeOfferRequest(_)
+                    | ControlEvent::TradeOfferDecision(_))) => {
                     queue_pending_battle(pending_battle, event)?;
                 }
                 RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
@@ -515,6 +550,44 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    /// `POST /v1/groups/{group_id}/trade-offers` (an open in-game offer).
+    fn trade_offer_create(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _request: coop_cloud::TradeOfferRequest,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `GET /v1/groups/{group_id}/trade-offers/{offer_id}`.
+    fn trade_offer_get(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _offer_id: coop_cloud::TradeOfferId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `GET /v1/groups/{group_id}/trade-offers/current`; `Ok(None)` when no
+    /// open offer is pending.
+    fn trade_offer_current(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, Option<coop_cloud::TradeOfferCurrentView>> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
+    /// `POST /v1/groups/{group_id}/trade-offers/{offer_id}/decision`.
+    fn trade_offer_decide(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _group_id: coop_cloud::GroupId,
+        _request: coop_cloud::TradeDecisionRequest,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        Box::pin(async { Err(crate::trade_offer::TradeOfferError::Unavailable) })
+    }
     /// `GET /v1/characters/{character_id}/ledger/open` under the lease fence.
     /// `Ok(None)` means the character has no open outcome-ledger entry.
     fn ledger_open(
@@ -1573,6 +1646,8 @@ pub struct SessionLifecycle {
     /// The open outcome-ledger trade this session delivers to the ROM. Its
     /// commit ID is mirrored into `pending_commits.json` until declared.
     ledger: crate::ledger::LedgerOwner,
+    /// The in-game trade offers this session relays between ROM and cloud.
+    trade_offers: crate::trade_offer::TradeOfferOwner,
     #[cfg(test)]
     realtime_mint_state_probe: Option<Arc<tokio::sync::Notify>>,
     #[cfg(test)]
@@ -2144,6 +2219,7 @@ impl SessionLifecycle {
             pending_battle: VecDeque::new(),
             pending_applied_commit: None,
             ledger: crate::ledger::LedgerOwner::default(),
+            trade_offers: crate::trade_offer::TradeOfferOwner::default(),
             #[cfg(test)]
             realtime_mint_state_probe: None,
             #[cfg(test)]
@@ -2312,6 +2388,484 @@ impl SessionLifecycle {
                 session_epoch: self.lease.session_epoch.value(),
                 record,
             })
+    }
+
+    /// Resolves this member's group for the trade UI. `None` means the
+    /// lookup failed; `Some(None)` means this member is not grouped.
+    async fn trade_group<A: CloudApi>(
+        &mut self,
+        api: &A,
+    ) -> Result<Option<Option<coop_cloud::GroupId>>, SessionError> {
+        let now = tokio::time::Instant::now();
+        if let Some(group) = self.trade_offers.fresh_group(now) {
+            return Ok(Some(Some(group)));
+        }
+        self.refresh_if_needed(api).await?;
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let request = coop_cloud::OnlineSnapshotRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            incoming_after: None,
+        };
+        let response = tokio::time::timeout(
+            crate::trade_offer::REQUEST_TIMEOUT,
+            api.online_snapshot(token, request),
+        )
+        .await;
+        match response {
+            Ok(Ok(response)) if response.api_version == coop_cloud::ApiVersion::V1 => {
+                let character_id = self.lease.character_id;
+                let group = response
+                    .group
+                    .filter(|group| {
+                        group
+                            .group
+                            .members
+                            .iter()
+                            .any(|member| member.character_id == character_id)
+                    })
+                    .map(|group| group.group.group_id);
+                self.trade_offers.set_group(group, now);
+                Ok(Some(group))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn trade_status(&self, record: coop_protocol::TradeOfferStatusRecord) -> ControlCommand {
+        ControlCommand::TradeOfferStatus {
+            session_epoch: self.lease.session_epoch.value(),
+            record,
+        }
+    }
+
+    /// Withdraws this member's own offer with a reject. Returns what the
+    /// requester's ROM is told: a race with the partner's accept reports
+    /// `Accepted` (the ledger then delivers the trade), and a failed call
+    /// keeps the offer queued for withdrawal.
+    async fn withdraw_trade_offer<A: CloudApi>(
+        &mut self,
+        api: &A,
+        offer: crate::trade_offer::Requester,
+    ) -> Result<Option<coop_protocol::TradeOfferOutcome>, SessionError> {
+        use crate::trade_offer::TradeOfferError;
+        use coop_protocol::TradeOfferOutcome;
+        let own = offer.own_slot(self.lease.character_id);
+        let partner =
+            offer.view.slots[usize::from(offer.view.members[0] == self.lease.character_id)];
+        let request = coop_cloud::TradeDecisionRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            offer_id: offer.view.offer_id,
+            own_slot: own,
+            partner_slot: partner,
+            decision: coop_cloud::TradeDecision::Reject,
+            own_pokemon: None,
+            idempotency_key: IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| SessionError::Realtime)?,
+        };
+        let result = trade_call!(self, api, |token| api.trade_offer_decide(
+            token,
+            offer.group_id,
+            request
+        ));
+        let outcome = match result {
+            Ok(view) if view.status == coop_cloud::TradeOfferStatus::Accepted => {
+                Some(TradeOfferOutcome::Accepted)
+            }
+            Ok(view) if view.status == coop_cloud::TradeOfferStatus::Expired => {
+                Some(TradeOfferOutcome::Expired)
+            }
+            Ok(_) => Some(TradeOfferOutcome::Cancelled),
+            // Only an accepted offer refuses a reject.
+            Err(TradeOfferError::Conflict) => Some(TradeOfferOutcome::Accepted),
+            Err(TradeOfferError::Expired | TradeOfferError::NotFound) => {
+                Some(TradeOfferOutcome::Expired)
+            }
+            Err(_) => None,
+        };
+        if outcome == Some(TradeOfferOutcome::Accepted) {
+            self.ledger.request_poll();
+        }
+        Ok(outcome)
+    }
+
+    /// Handles the ROM's `TradeOfferRequest`: creates an open offer against
+    /// the checkpoint the ROM just took, or withdraws it.
+    async fn handle_trade_offer_request<A: CloudApi>(
+        &mut self,
+        api: &A,
+        record: coop_protocol::TradeOfferRequestRecord,
+        generation: u32,
+    ) -> Result<Vec<ControlCommand>, SessionError> {
+        use crate::trade_offer::{
+            Requester, TradeOfferError, failure_outcome, offer_token, requester_status,
+        };
+        use coop_protocol::{TradeOfferAction, TradeOfferOutcome};
+        self.trade_offers.observe_generation(generation);
+        let now = tokio::time::Instant::now();
+        if record.action == TradeOfferAction::Cancel {
+            let Some(offer) = self
+                .trade_offers
+                .requester
+                .filter(|offer| offer.request_id == record.request_id)
+            else {
+                return Ok(vec![self.trade_status(requester_status(
+                    record.request_id,
+                    0,
+                    TradeOfferOutcome::Cancelled,
+                ))]);
+            };
+            self.trade_offers.requester = None;
+            let outcome = match self.withdraw_trade_offer(api, offer).await? {
+                Some(outcome) => outcome,
+                None => {
+                    // Keep withdrawing on the poll cadence; the ROM stops
+                    // waiting now. The server offer lapses in any case.
+                    self.trade_offers.withdraw = Some(offer);
+                    TradeOfferOutcome::Cancelled
+                }
+            };
+            self.trade_offers.schedule(now);
+            return Ok(vec![self.trade_status(requester_status(
+                record.request_id,
+                offer.token(),
+                outcome,
+            ))]);
+        }
+
+        if let Some(offer) = self.trade_offers.requester {
+            let outcome = if offer.request_id == record.request_id {
+                TradeOfferOutcome::Pending
+            } else {
+                TradeOfferOutcome::Busy
+            };
+            let token = if outcome == TradeOfferOutcome::Pending {
+                offer.token()
+            } else {
+                0
+            };
+            return Ok(vec![self.trade_status(requester_status(
+                record.request_id,
+                token,
+                outcome,
+            ))]);
+        }
+        let fail = |this: &Self, outcome| {
+            Ok(vec![this.trade_status(requester_status(
+                record.request_id,
+                0,
+                outcome,
+            ))])
+        };
+        if self.trade_offers.responder.is_some() || self.trade_offers.withdraw.is_some() {
+            return fail(self, TradeOfferOutcome::Busy);
+        }
+        if self.revision.is_initial() {
+            return fail(self, TradeOfferOutcome::Stale);
+        }
+        let group_id = match self.trade_group(api).await? {
+            None => return fail(self, TradeOfferOutcome::Unavailable),
+            Some(None) => return fail(self, TradeOfferOutcome::PartnerUnavailable),
+            Some(Some(group_id)) => group_id,
+        };
+        let request = coop_cloud::TradeOfferRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            group_id,
+            own_slot: coop_cloud::PartyPosition::new(record.slot).ok_or(SessionError::Realtime)?,
+            partner_slot: None,
+            partner_expected_revision: None,
+            own_pokemon: Some(coop_cloud::TradePokemonKey {
+                personality: record.personality,
+                ot_id: record.ot_id,
+            }),
+            idempotency_key: IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| SessionError::Realtime)?,
+        };
+        let mut result = trade_call!(self, api, |token| api
+            .trade_offer_create(token, group_id, request));
+        if matches!(result, Err(TradeOfferError::Unavailable)) {
+            // Same idempotency key: a lost response replays the same offer.
+            result = trade_call!(self, api, |token| api
+                .trade_offer_create(token, group_id, request));
+        }
+        let outcome = match result {
+            Ok(view)
+                if view.status == coop_cloud::TradeOfferStatus::Pending && view.partner_chooses =>
+            {
+                self.trade_offers.requester = Some(Requester {
+                    request_id: record.request_id,
+                    group_id,
+                    view,
+                    generation,
+                });
+                self.trade_offers.schedule(now);
+                return Ok(vec![self.trade_status(requester_status(
+                    record.request_id,
+                    offer_token(view.offer_id),
+                    TradeOfferOutcome::Pending,
+                ))]);
+            }
+            Ok(_) => TradeOfferOutcome::Unavailable,
+            Err(TradeOfferError::Conflict) => {
+                // Another live offer blocks this one, or the checkpoint did
+                // not hold the picked Pokémon in that slot.
+                let fence = self.lease.fence();
+                let live = trade_call!(self, api, |token| api
+                    .trade_offer_current(token, group_id, fence));
+                if matches!(live, Ok(Some(_))) {
+                    TradeOfferOutcome::Busy
+                } else {
+                    TradeOfferOutcome::Stale
+                }
+            }
+            Err(TradeOfferError::NotFound) => {
+                self.trade_offers.forget_group();
+                TradeOfferOutcome::PartnerUnavailable
+            }
+            Err(error) => failure_outcome(error),
+        };
+        fail(self, outcome)
+    }
+
+    /// Handles the ROM's `TradeOfferDecision` for the offer it was shown.
+    async fn handle_trade_offer_decision<A: CloudApi>(
+        &mut self,
+        api: &A,
+        record: coop_protocol::TradeOfferDecisionRecord,
+        generation: u32,
+    ) -> Result<Vec<ControlCommand>, SessionError> {
+        use crate::trade_offer::{TradeOfferError, failure_outcome, responder_status};
+        use coop_protocol::{TradeOfferDecision, TradeOfferOutcome};
+        self.trade_offers.observe_generation(generation);
+        let Some(offer) = self
+            .trade_offers
+            .responder
+            .filter(|offer| offer.token() == record.offer_token)
+        else {
+            // The prompt outlived the offer: tell an accepting ROM it lapsed.
+            return Ok(match record.decision {
+                TradeOfferDecision::Accept => vec![self.trade_status(responder_status(
+                    record.offer_token,
+                    TradeOfferOutcome::Expired,
+                ))],
+                TradeOfferDecision::Decline => Vec::new(),
+            });
+        };
+        self.trade_offers.responder = None;
+        self.trade_offers.mark_seen(offer.view.offer_id);
+        self.trade_offers.schedule(tokio::time::Instant::now());
+        let accept = record.decision == TradeOfferDecision::Accept;
+        let request = coop_cloud::TradeDecisionRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            fence: self.lease.fence(),
+            offer_id: offer.view.offer_id,
+            own_slot: coop_cloud::PartyPosition::new(record.slot).ok_or(SessionError::Realtime)?,
+            partner_slot: offer.initiator_slot(),
+            decision: if accept {
+                coop_cloud::TradeDecision::Accept
+            } else {
+                coop_cloud::TradeDecision::Reject
+            },
+            own_pokemon: accept.then_some(coop_cloud::TradePokemonKey {
+                personality: record.personality,
+                ot_id: record.ot_id,
+            }),
+            idempotency_key: IdempotencyKey::new(uuid::Uuid::new_v4())
+                .map_err(|_| SessionError::Realtime)?,
+        };
+        let mut result = trade_call!(self, api, |token| api.trade_offer_decide(
+            token,
+            offer.group_id,
+            request
+        ));
+        if matches!(result, Err(TradeOfferError::Unavailable)) {
+            result = trade_call!(self, api, |token| api.trade_offer_decide(
+                token,
+                offer.group_id,
+                request
+            ));
+        }
+        if !accept {
+            // A decline needs no answer; a lost one lapses on the server.
+            return Ok(Vec::new());
+        }
+        let outcome = match result {
+            Ok(view) if view.status == coop_cloud::TradeOfferStatus::Accepted => {
+                TradeOfferOutcome::Accepted
+            }
+            Ok(_) => TradeOfferOutcome::Unavailable,
+            Err(TradeOfferError::Conflict) => {
+                // Learn why: the requester withdrew, it lapsed, or this
+                // member's checkpoint or ledger was not ready.
+                let fence = self.lease.fence();
+                let view = trade_call!(self, api, |token| api.trade_offer_get(
+                    token,
+                    offer.group_id,
+                    offer.view.offer_id,
+                    fence
+                ));
+                match view.map(|view| view.status) {
+                    Ok(coop_cloud::TradeOfferStatus::Rejected) => TradeOfferOutcome::Cancelled,
+                    Ok(coop_cloud::TradeOfferStatus::Expired) => TradeOfferOutcome::Expired,
+                    Ok(coop_cloud::TradeOfferStatus::Accepted) => TradeOfferOutcome::Accepted,
+                    Ok(coop_cloud::TradeOfferStatus::Pending) => TradeOfferOutcome::Stale,
+                    Err(_) => TradeOfferOutcome::Unavailable,
+                }
+            }
+            Err(error) => failure_outcome(error),
+        };
+        if outcome == TradeOfferOutcome::Accepted {
+            self.ledger.request_poll();
+        }
+        Ok(vec![
+            self.trade_status(responder_status(offer.token(), outcome)),
+        ])
+    }
+
+    /// Advances the in-game trade offers when their poll is due: a pending
+    /// withdrawal, the requester's outcome, and the partner's offer.
+    async fn poll_trade_offers<A: CloudApi>(
+        &mut self,
+        api: &A,
+        generation: u32,
+    ) -> Result<Vec<ControlCommand>, SessionError> {
+        use crate::trade_offer::{
+            Responder, TradeOfferError, outcome_of, received_record, requester_status,
+            responder_status,
+        };
+        use coop_protocol::TradeOfferOutcome;
+        self.trade_offers.observe_generation(generation);
+        let now = tokio::time::Instant::now();
+        let mut commands = Vec::new();
+        if !self.trade_offers.poll_due(now) {
+            if let Some(received) = self.trade_offers.take_received(generation) {
+                commands.push(ControlCommand::TradeOfferReceived {
+                    session_epoch: self.lease.session_epoch.value(),
+                    record: received,
+                });
+            }
+            return Ok(commands);
+        }
+        if let Some(offer) = self.trade_offers.withdraw
+            && self.withdraw_trade_offer(api, offer).await?.is_some()
+        {
+            self.trade_offers.withdraw = None;
+        }
+        if let Some(offer) = self.trade_offers.requester {
+            let fence = self.lease.fence();
+            let result = trade_call!(self, api, |token| api.trade_offer_get(
+                token,
+                offer.group_id,
+                offer.view.offer_id,
+                fence
+            ));
+            let outcome = match result {
+                Ok(view) => outcome_of(view.status),
+                Err(TradeOfferError::NotFound | TradeOfferError::Expired) => {
+                    Some(TradeOfferOutcome::Expired)
+                }
+                Err(_) => None,
+            };
+            if let Some(outcome) = outcome {
+                self.trade_offers.requester = None;
+                if outcome == TradeOfferOutcome::Accepted {
+                    self.ledger.request_poll();
+                }
+                commands.push(self.trade_status(requester_status(
+                    offer.request_id,
+                    offer.token(),
+                    outcome,
+                )));
+            }
+        } else if self.trade_offers.withdraw.is_none() {
+            match self.trade_group(api).await? {
+                Some(Some(group_id)) => {
+                    let fence = self.lease.fence();
+                    let current = trade_call!(self, api, |token| api
+                        .trade_offer_current(token, group_id, fence));
+                    let character_id = self.lease.character_id;
+                    let shown = match current {
+                        Ok(Some(current))
+                            if current.offer.initiator != character_id
+                                && current.offer.partner_chooses
+                                && current.offer.members.contains(&character_id) =>
+                        {
+                            Some(current)
+                        }
+                        Ok(_) => None,
+                        Err(TradeOfferError::NotFound) => {
+                            self.trade_offers.forget_group();
+                            None
+                        }
+                        // Transient: keep the prompt as it is.
+                        Err(_) => {
+                            self.trade_offers.schedule(now);
+                            return Ok(commands);
+                        }
+                    };
+                    if let Some(old) = self.trade_offers.responder
+                        && shown.is_none_or(|current| current.offer.offer_id != old.view.offer_id)
+                    {
+                        // The shown offer is gone: learn why and close the
+                        // prompt.
+                        self.trade_offers.responder = None;
+                        let view = trade_call!(self, api, |token| api.trade_offer_get(
+                            token,
+                            old.group_id,
+                            old.view.offer_id,
+                            fence
+                        ));
+                        let outcome = match view.map(|view| view.status) {
+                            Ok(coop_cloud::TradeOfferStatus::Rejected) => {
+                                TradeOfferOutcome::Cancelled
+                            }
+                            Ok(coop_cloud::TradeOfferStatus::Accepted) => {
+                                self.ledger.request_poll();
+                                TradeOfferOutcome::Accepted
+                            }
+                            _ => TradeOfferOutcome::Expired,
+                        };
+                        commands.push(self.trade_status(responder_status(old.token(), outcome)));
+                    }
+                    if let Some(current) = shown
+                        && self.trade_offers.responder.is_none()
+                        && !self.trade_offers.seen(current.offer.offer_id)
+                        && let Some(received) = received_record(&current)
+                    {
+                        self.trade_offers.mark_seen(current.offer.offer_id);
+                        self.trade_offers.responder = Some(Responder {
+                            group_id,
+                            view: current.offer,
+                            received,
+                            delivered_generation: None,
+                        });
+                    }
+                }
+                Some(None) => {
+                    if let Some(old) = self.trade_offers.responder.take() {
+                        commands.push(self.trade_status(responder_status(
+                            old.token(),
+                            TradeOfferOutcome::PartnerUnavailable,
+                        )));
+                    }
+                }
+                None => {}
+            }
+        }
+        if let Some(received) = self.trade_offers.take_received(generation) {
+            commands.push(ControlCommand::TradeOfferReceived {
+                session_epoch: self.lease.session_epoch.value(),
+                record: received,
+            });
+        }
+        self.trade_offers.schedule(now);
+        Ok(commands)
     }
 
     /// Records a ROM acknowledgement so the next finalize declares it. A
@@ -3325,6 +3879,11 @@ impl SessionLifecycle {
                         RawSupervisorEvent::Control(ControlEvent::TradeCommitApplied(record)) => {
                             self.accept_trade_commit_applied(record)?;
                         }
+                        // Trade offers need the realtime loop; keep them in order.
+                        RawSupervisorEvent::Control(event @ (ControlEvent::TradeOfferRequest(_)
+                            | ControlEvent::TradeOfferDecision(_))) => {
+                            queue_pending_battle(&mut self.pending_battle, event)?;
+                        }
                         RawSupervisorEvent::Control(event @ (ControlEvent::PartySnapshot(_)
                             | ControlEvent::BattleReady(_)
                             | ControlEvent::ActionIntent(_)
@@ -3640,6 +4199,22 @@ impl SessionLifecycle {
                     ControlEvent::TradeCommitApplied(record) => {
                         self.accept_trade_commit_applied(record)?;
                     }
+                    ControlEvent::TradeOfferRequest(record) => {
+                        for command in self
+                            .handle_trade_offer_request(api, record, travel_generation)
+                            .await?
+                        {
+                            children.control().send(&command).await?;
+                        }
+                    }
+                    ControlEvent::TradeOfferDecision(record) => {
+                        for command in self
+                            .handle_trade_offer_decision(api, record, travel_generation)
+                            .await?
+                        {
+                            children.control().send(&command).await?;
+                        }
+                    }
                     event @ (ControlEvent::PartySnapshot(_)
                     | ControlEvent::BattleReady(_)
                     | ControlEvent::ActionIntent(_)
@@ -3666,6 +4241,10 @@ impl SessionLifecycle {
             if let Some(command) = self.take_ledger_delivery(travel_generation) {
                 children.control().send(&command).await?;
             }
+            for command in self.poll_trade_offers(api, travel_generation).await? {
+                children.control().send(&command).await?;
+            }
+            let trade_wake = self.trade_offers.next_wake();
             battle.prepare(
                 api,
                 self.auth
@@ -3731,6 +4310,7 @@ impl SessionLifecycle {
                     continue;
                 }
                 _ = tokio::time::sleep_until(invites.next_poll()), if invites.is_idle() && !online.is_pending() && !pairing.is_pending() => { continue; }
+                () = tokio::time::sleep_until(trade_wake) => { continue; }
                 invite = invites.next(), if !online.is_pending() && !pairing.is_pending() => {
                     match invite {
                         Ok(Some(crate::online::InviteWatcherEvent::GroupStateChanged { grouped, remote_join_possible })) => {
@@ -3920,6 +4500,18 @@ impl SessionLifecycle {
                             record,
                         ))) => {
                             if let Err(error) = self.accept_trade_commit_applied(record) {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(
+                            event @ (ControlEvent::TradeOfferRequest(_)
+                            | ControlEvent::TradeOfferDecision(_)),
+                        )) => {
+                            // Handled at the top of the loop with the ledger
+                            // poll, in arrival order.
+                            if let Err(error) =
+                                queue_pending_battle(&mut self.pending_battle, event)
+                            {
                                 result = Err(error);
                             }
                         }
@@ -4764,7 +5356,9 @@ impl SessionLifecycle {
                     | ControlEvent::TurnResultHash(_)
                     | ControlEvent::BattleFinished(_)
                     | ControlEvent::CommitApplied(_)
-                    | ControlEvent::TradeCommitApplied(_)),
+                    | ControlEvent::TradeCommitApplied(_)
+                    | ControlEvent::TradeOfferRequest(_)
+                    | ControlEvent::TradeOfferDecision(_)),
                 )) => {
                     queue_pending_battle(&mut self.pending_battle, event)?;
                     priority = RealtimeSource::Realtime;
@@ -4984,7 +5578,9 @@ impl SessionLifecycle {
             | ControlEvent::TurnResultHash(_)
             | ControlEvent::BattleFinished(_)
             | ControlEvent::CommitApplied(_)
-            | ControlEvent::TradeCommitApplied(_)) => queue_pending_battle(pending_battle, event),
+            | ControlEvent::TradeCommitApplied(_)
+            | ControlEvent::TradeOfferRequest(_)
+            | ControlEvent::TradeOfferDecision(_)) => queue_pending_battle(pending_battle, event),
             ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
             | ControlEvent::PairingRequest(_)
@@ -6326,7 +6922,7 @@ mod lifecycle_tests {
                     return Err(error);
                 }
                 Ok(coop_cloud::StoryTravelRecoveryResolutionView {
-                    api_version: coop_cloud::ApiVersion::V1,
+                    api_version: ApiVersion::V1,
                     proposal_id,
                     outcome: match action {
                         coop_cloud::StoryTravelRecoveryAction::Reconcile => {
@@ -6346,7 +6942,7 @@ mod lifecycle_tests {
         ) -> crate::online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
             Box::pin(async {
                 Ok(coop_cloud::PartnerStatusResponse {
-                    api_version: coop_cloud::ApiVersion::V1,
+                    api_version: ApiVersion::V1,
                     partner: None,
                 })
             })
@@ -6371,7 +6967,7 @@ mod lifecycle_tests {
                 self.online_started.notify_one();
                 tokio::time::sleep(delay).await;
                 Ok(coop_cloud::OnlineSnapshotResponse {
-                    api_version: coop_cloud::ApiVersion::V1,
+                    api_version: ApiVersion::V1,
                     nearby: vec![],
                     incoming: vec![],
                     outgoing: vec![],
@@ -6647,7 +7243,7 @@ mod lifecycle_tests {
                 "size": 9244,
                 "magic": 1_347_111_759,
                 "abi_version": 1,
-                "game_protocol_version": 3,
+                "game_protocol_version": 4,
                 "byte_order": "little",
                 "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
                 "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},
@@ -6776,7 +7372,7 @@ mod lifecycle_tests {
         status: coop_cloud::GroupTravelProposalStatus,
     ) -> coop_cloud::StoryTravelRecoveryView {
         coop_cloud::StoryTravelRecoveryView {
-            api_version: coop_cloud::ApiVersion::V1,
+            api_version: ApiVersion::V1,
             proposal_id: coop_cloud::GroupTravelProposalId::new(uuid::Uuid::from_u128(0xabc))
                 .unwrap(),
             group_id: coop_cloud::GroupId::new(uuid::Uuid::from_u128(0xdef)).unwrap(),
@@ -7058,6 +7654,8 @@ mod lifecycle_tests {
                 | coop_sidecar::control::ControlCommand::BattleManifest { .. }
                 | coop_sidecar::control::ControlCommand::BattleCommit { .. }
                 | coop_sidecar::control::ControlCommand::TradeCommit { .. }
+                | coop_sidecar::control::ControlCommand::TradeOfferReceived { .. }
+                | coop_sidecar::control::ControlCommand::TradeOfferStatus { .. }
                 | coop_sidecar::control::ControlCommand::BattleStart { .. }
                 | coop_sidecar::control::ControlCommand::PeerPartyChunk { .. }
                 | coop_sidecar::control::ControlCommand::TurnBundle { .. }
@@ -8340,7 +8938,7 @@ mod lifecycle_tests {
         assert_eq!(
             status,
             Ok(coop_cloud::PartnerStatusResponse {
-                api_version: coop_cloud::ApiVersion::V1,
+                api_version: ApiVersion::V1,
                 partner: None,
             })
         );

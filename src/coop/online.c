@@ -2,6 +2,7 @@
 #include "coop/online.h"
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
+#include "coop/trade_offer.h"
 #include "event_object_lock.h"
 #include "event_object_movement.h"
 #include "field_player_avatar.h"
@@ -22,6 +23,8 @@
 
 #define ONLINE_TIMEOUT_FRAMES 300
 #define PAIRING_TIMEOUT_FRAMES 600
+/* HandleInput's result that closes the menu and starts the trade script. */
+#define ONLINE_CLOSE_FOR_TRADE 2
 
 enum OnlinePage { ONLINE_HOME, ONLINE_NEARBY, ONLINE_INCOMING, ONLINE_OUTGOING, ONLINE_LOCATION, ONLINE_PAIRING, ONLINE_PAIRING_ENTRY, ONLINE_LAST_PARTNER };
 
@@ -77,6 +80,7 @@ static const u8 sJoinQuestion[] = _("Join this player's group?");
 static const u8 sYesJoin[] = _("Yes - join");
 static const u8 sNoDecline[] = _("No - decline");
 static const u8 sLeave[] = _("Leave group");
+static const u8 sTradeWithPartner[] = _("Trade with partner");
 static const u8 sRefresh[] = _("Refresh");
 static const u8 sBack[] = _("Back");
 static const u8 sInvite[] = _("Send invitation");
@@ -140,7 +144,7 @@ static u8 OptionCount(void)
     if (sPage == ONLINE_PAIRING) return 3;
     if (sPage == ONLINE_PAIRING_ENTRY) return 0;
     if (sPage == ONLINE_LAST_PARTNER) return 2;
-    return sPage == ONLINE_HOME ? (sStatus.flags & COOP_ONLINE_GROUPED ? 7 : (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER ? 7 : 6))
+    return sPage == ONLINE_HOME ? (sStatus.flags & COOP_ONLINE_GROUPED ? 8 : (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER ? 7 : 6))
                                : (sPage == ONLINE_LOCATION ? 2 : (sPage == ONLINE_INCOMING ? 5 : 4));
 }
 
@@ -184,7 +188,12 @@ static bool8 OptionEnabled(u8 option)
     if (sPage == ONLINE_PAIRING) return TRUE;
     if (sPage == ONLINE_LAST_PARTNER) return option != 0 || CanAct(COOP_ONLINE_INVITE_LAST_PARTNER);
     if (sPage == ONLINE_HOME)
-        return option != 4 || !(sStatus.flags & COOP_ONLINE_GROUPED) || CanAct(COOP_ONLINE_LEAVE);
+    {
+        if (!(sStatus.flags & COOP_ONLINE_GROUPED)) return TRUE;
+        // A trade needs a known group and an idle co-op session.
+        if (option == 4) return CanAct(COOP_ONLINE_LEAVE) && CoopTradeOffer_CanBegin();
+        return option != 5 || CanAct(COOP_ONLINE_LEAVE);
+    }
     if (sPage == ONLINE_LOCATION) return TRUE;
     if (sPage == ONLINE_NEARBY)
     {
@@ -258,7 +267,8 @@ static void Draw(void)
         options[0] = sNearby; options[1] = sIncoming; options[2] = sOutgoing;
         if (sStatus.flags & COOP_ONLINE_GROUPED)
         {
-            options[3] = sWhere; options[4] = sLeave; options[5] = sRefresh; options[6] = sBack;
+            options[3] = sWhere; options[4] = sTradeWithPartner; options[5] = sLeave;
+            options[6] = sRefresh; options[7] = sBack;
         }
         else if (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER)
         { options[3] = sLastPartner; options[4] = sPairing; options[5] = sRefresh; options[6] = sBack; }
@@ -485,7 +495,11 @@ static bool8 HandleInput(u16 keys)
     {
         if (sCursor < 3) { sPage = sCursor == 0 ? ONLINE_NEARBY : (sCursor == 1 ? ONLINE_INCOMING : ONLINE_OUTGOING); sCursor = 0; Send(COOP_ONLINE_REFRESH, 0); }
         else if (sCursor == 3 && (sStatus.flags & COOP_ONLINE_GROUPED)) { sPage = ONLINE_LOCATION; sCursor = 0; Draw(); }
-        else if (sCursor == 4 && (sStatus.flags & COOP_ONLINE_GROUPED)) Send(COOP_ONLINE_LEAVE, 0);
+        else if (sCursor == 4 && (sStatus.flags & COOP_ONLINE_GROUPED))
+        {
+            if (OptionEnabled(4)) return ONLINE_CLOSE_FOR_TRADE;
+        }
+        else if (sCursor == 5 && (sStatus.flags & COOP_ONLINE_GROUPED)) Send(COOP_ONLINE_LEAVE, 0);
         else if (!(sStatus.flags & COOP_ONLINE_GROUPED) && (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER) && sCursor == 3) { sPage = ONLINE_LAST_PARTNER; sCursor = 0; Draw(); }
         else if (!(sStatus.flags & COOP_ONLINE_GROUPED) && sCursor == (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER ? 4 : 3)) { sPage = ONLINE_PAIRING; sCursor = 0; sPairingStatusValid = FALSE; Draw(); }
         else Send(COOP_ONLINE_REFRESH, 0);
@@ -544,8 +558,10 @@ static void Begin(bool8 invited)
 
 static void Task_Online(u8 taskId)
 {
+    u8 close;
     Poll();
-    if (HandleInput(gMain.newKeys))
+    close = HandleInput(gMain.newKeys);
+    if (close)
     {
         PlaySE(SE_SELECT);
         ClearStdWindowAndFrame(sWindowId, TRUE);
@@ -557,6 +573,8 @@ static void Task_Online(u8 taskId)
         ScriptUnfreezeObjectEvents();
         UnlockPlayerFieldControls();
         DestroyTask(taskId);
+        if (close == ONLINE_CLOSE_FOR_TRADE)
+            CoopTradeOffer_StartRequestScript();
     }
 }
 

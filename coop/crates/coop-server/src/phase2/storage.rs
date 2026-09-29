@@ -823,6 +823,9 @@ pub(crate) struct TradeOfferRecord {
     #[serde(default)]
     pub consents: [bool; 2],
     pub expires_at: u64,
+    /// The initiator's offered Pokémon, read at creation for an open offer.
+    #[serde(default)]
+    pub offered: Option<coop_cloud::TradeOfferedPokemon>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]

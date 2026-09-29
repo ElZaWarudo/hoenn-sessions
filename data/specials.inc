@@ -692,3 +692,9 @@ gSpecials::
 	def_special Special_CoopGroupTravelFirstBrineyReceiptComplete
 	def_special Special_CoopGroupTravelBillSceneComplete
 	def_special Special_CoopGroupTravelBillSceneRunning
+	def_special Special_CoopTradeBeginOffer
+	def_special Special_CoopTradeBufferOffer
+	def_special Special_CoopTradeRespond
+	def_special Special_CoopTradeWait
+	def_special Special_CoopTradeBufferResult
+	def_special Special_CoopTradeFinish

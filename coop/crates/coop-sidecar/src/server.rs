@@ -3834,6 +3834,24 @@ impl LocalSidecar {
                 session_epoch,
                 record,
             } => (session_epoch, MessageType::TradeCommit, record.encode()),
+            // Offer prompts and statuses ride the same ordered lane: a
+            // TradeCommit can never overtake the ACCEPTED status before it.
+            ControlCommand::TradeOfferReceived {
+                session_epoch,
+                record,
+            } => (
+                session_epoch,
+                MessageType::TradeOfferReceived,
+                record.encode(),
+            ),
+            ControlCommand::TradeOfferStatus {
+                session_epoch,
+                record,
+            } => (
+                session_epoch,
+                MessageType::TradeOfferStatus,
+                record.encode(),
+            ),
             ControlCommand::BattleStart {
                 session_epoch,
                 record,
@@ -4115,7 +4133,9 @@ impl LocalSidecar {
             | MessageType::BattleAbortRequest
             | MessageType::BattleFinished
             | MessageType::BattleReady
-            | MessageType::CommitApplied => {
+            | MessageType::CommitApplied
+            | MessageType::TradeOfferRequest
+            | MessageType::TradeOfferDecision => {
                 if frame.session_epoch() != self.session_epoch || !session.acknowledged_rom_ready {
                     return Err(SidecarError::ProtocolViolation("invalid battle event"));
                 }
@@ -4187,6 +4207,16 @@ impl LocalSidecar {
                         CommitAppliedRecord::decode(frame.payload()).map_err(|_| {
                             SidecarError::ProtocolViolation("invalid commit applied event")
                         })?,
+                    ),
+                    MessageType::TradeOfferRequest => ControlEvent::TradeOfferRequest(
+                        coop_protocol::TradeOfferRequestRecord::decode(frame.payload()).map_err(
+                            |_| SidecarError::ProtocolViolation("invalid trade offer request"),
+                        )?,
+                    ),
+                    MessageType::TradeOfferDecision => ControlEvent::TradeOfferDecision(
+                        coop_protocol::TradeOfferDecisionRecord::decode(frame.payload()).map_err(
+                            |_| SidecarError::ProtocolViolation("invalid trade offer decision"),
+                        )?,
                     ),
                     _ => unreachable!(),
                 };
@@ -5274,6 +5304,8 @@ fn command_parts(
         | ControlCommand::BattleManifest { .. }
         | ControlCommand::BattleCommit { .. }
         | ControlCommand::TradeCommit { .. }
+        | ControlCommand::TradeOfferReceived { .. }
+        | ControlCommand::TradeOfferStatus { .. }
         | ControlCommand::BattleStart { .. }
         | ControlCommand::PeerPartyChunk { .. }
         | ControlCommand::BattleJoinOffer { .. }
@@ -5309,6 +5341,8 @@ fn command_epoch(command: &ControlCommand) -> u32 {
         | ControlCommand::BattleManifest { .. }
         | ControlCommand::BattleCommit { .. }
         | ControlCommand::TradeCommit { .. }
+        | ControlCommand::TradeOfferReceived { .. }
+        | ControlCommand::TradeOfferStatus { .. }
         | ControlCommand::BattleStart { .. }
         | ControlCommand::PeerPartyChunk { .. }
         | ControlCommand::BattleJoinOffer { .. }
@@ -5342,6 +5376,8 @@ fn is_battle_command(command: &ControlCommand) -> bool {
         ControlCommand::BattleManifest { .. }
             | ControlCommand::BattleCommit { .. }
             | ControlCommand::TradeCommit { .. }
+            | ControlCommand::TradeOfferReceived { .. }
+            | ControlCommand::TradeOfferStatus { .. }
             | ControlCommand::BattleStart { .. }
             | ControlCommand::PeerPartyChunk { .. }
             | ControlCommand::BattleJoinOffer { .. }
@@ -5365,6 +5401,8 @@ fn group_travel_command_waits_for_ready(
         | ControlCommand::BattleManifest { session_epoch: command_epoch, .. }
         | ControlCommand::BattleCommit { session_epoch: command_epoch, .. }
         | ControlCommand::TradeCommit { session_epoch: command_epoch, .. }
+        | ControlCommand::TradeOfferReceived { session_epoch: command_epoch, .. }
+        | ControlCommand::TradeOfferStatus { session_epoch: command_epoch, .. }
         | ControlCommand::BattleStart { session_epoch: command_epoch, .. }
         | ControlCommand::PeerPartyChunk { session_epoch: command_epoch, .. }
         | ControlCommand::BattleJoinOffer { session_epoch: command_epoch, .. }
@@ -5411,6 +5449,8 @@ fn deferred_command_waits_for_bridge_state(
         | ControlCommand::BattleManifest { .. }
         | ControlCommand::BattleCommit { .. }
         | ControlCommand::TradeCommit { .. }
+        | ControlCommand::TradeOfferReceived { .. }
+        | ControlCommand::TradeOfferStatus { .. }
         | ControlCommand::BattleStart { .. }
         | ControlCommand::PeerPartyChunk { .. }
         | ControlCommand::BattleJoinOffer { .. }
@@ -11086,6 +11126,214 @@ mod tests {
         assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
         assert_eq!(frame.payload(), record.encode().unwrap().as_slice());
         assert_eq!(frame.payload().len(), 128);
+    }
+
+    #[tokio::test]
+    async fn trade_offer_prompts_and_statuses_forward_only_to_a_ready_rom() {
+        use coop_protocol::{
+            TradeOfferOutcome, TradeOfferReceivedRecord, TradeOfferRole, TradeOfferStatusRecord,
+        };
+        let received = TradeOfferReceivedRecord {
+            offer_token: 0x0102_0304,
+            species: 263,
+            level: 5,
+            is_egg: false,
+            nickname: [0xC4, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+        };
+        let status = TradeOfferStatusRecord {
+            role: TradeOfferRole::Requester,
+            outcome: TradeOfferOutcome::Accepted,
+            request_id: 7,
+            offer_token: 0x0102_0304,
+        };
+        let commands = |session_epoch| {
+            [
+                (
+                    ControlCommand::TradeOfferReceived {
+                        session_epoch,
+                        record: received,
+                    },
+                    MessageType::TradeOfferReceived,
+                    received.encode().unwrap(),
+                ),
+                (
+                    ControlCommand::TradeOfferStatus {
+                        session_epoch,
+                        record: status,
+                    },
+                    MessageType::TradeOfferStatus,
+                    status.encode().unwrap(),
+                ),
+            ]
+        };
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        for (command, _, _) in commands(TEST_SESSION_EPOCH) {
+            assert!(is_battle_command(&command));
+            assert!(!is_presence_command(&command));
+            assert!(group_travel_command_waits_for_ready(
+                &command,
+                &session,
+                TEST_SESSION_EPOCH,
+                false
+            ));
+            sidecar
+                .handle_battle_command(command, &mut bridge, &session)
+                .await
+                .unwrap();
+        }
+        assert!(
+            timeout(
+                Duration::from_millis(50),
+                bridge_peer.read_exact(&mut bytes)
+            )
+            .await
+            .is_err()
+        );
+        session.acknowledged_rom_ready = true;
+        for (command, _, _) in commands(TEST_SESSION_EPOCH - 1) {
+            sidecar
+                .handle_battle_command(command, &mut bridge, &session)
+                .await
+                .unwrap();
+        }
+        assert!(
+            timeout(
+                Duration::from_millis(50),
+                bridge_peer.read_exact(&mut bytes)
+            )
+            .await
+            .is_err()
+        );
+        for (command, message_type, payload) in commands(TEST_SESSION_EPOCH) {
+            sidecar
+                .handle_battle_command(command, &mut bridge, &session)
+                .await
+                .unwrap();
+            bridge_peer.read_exact(&mut bytes).await.unwrap();
+            let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+            assert_eq!(frame.message_type(), message_type);
+            assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+            assert_eq!(frame.payload(), payload.as_slice());
+        }
+    }
+
+    #[tokio::test]
+    async fn trade_offer_requests_and_decisions_are_forwarded_as_control_events() {
+        use coop_protocol::{
+            TradeOfferAction, TradeOfferDecision, TradeOfferDecisionRecord, TradeOfferRequestRecord,
+        };
+        let request = TradeOfferRequestRecord {
+            action: TradeOfferAction::Offer,
+            slot: 1,
+            request_id: 5,
+            personality: 0x0BAD_F00D,
+            ot_id: 0x2222_4444,
+        };
+        let decision = TradeOfferDecisionRecord {
+            decision: TradeOfferDecision::Accept,
+            slot: 0,
+            offer_token: 9,
+            personality: 3,
+            ot_id: 4,
+        };
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        for (sequence, message_type, payload, event) in [
+            (
+                2,
+                MessageType::TradeOfferRequest,
+                request.encode().unwrap(),
+                ControlEvent::TradeOfferRequest(request),
+            ),
+            (
+                3,
+                MessageType::TradeOfferDecision,
+                decision.encode().unwrap(),
+                ControlEvent::TradeOfferDecision(decision),
+            ),
+        ] {
+            let frame =
+                BridgeFrame::new(message_type, sequence, TEST_SESSION_EPOCH, &payload).unwrap();
+            sidecar
+                .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                .await
+                .unwrap();
+            assert_eq!(read_event(&mut control_peer).await, event);
+        }
+
+        // Stale epoch, unready ROM or malformed payload: a protocol violation
+        // that forwards nothing.
+        let mut bad_slot = request.encode().unwrap();
+        bad_slot[1] = 6;
+        for (epoch, ready, message_type, candidate) in [
+            (
+                TEST_SESSION_EPOCH + 1,
+                true,
+                MessageType::TradeOfferRequest,
+                request.encode().unwrap(),
+            ),
+            (
+                TEST_SESSION_EPOCH,
+                false,
+                MessageType::TradeOfferDecision,
+                decision.encode().unwrap(),
+            ),
+            (
+                TEST_SESSION_EPOCH,
+                true,
+                MessageType::TradeOfferRequest,
+                bad_slot,
+            ),
+            (
+                TEST_SESSION_EPOCH,
+                true,
+                MessageType::TradeOfferDecision,
+                decision.encode().unwrap()[..15].to_vec(),
+            ),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame = BridgeFrame::new(message_type, 2, epoch, &candidate).unwrap();
+            assert!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[tokio::test]

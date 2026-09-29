@@ -2,7 +2,7 @@ use crc32fast::Hasher;
 use thiserror::Error;
 
 pub const BRIDGE_ABI_VERSION: u16 = 1;
-pub const GAME_PROTOCOL_VERSION: u16 = 3;
+pub const GAME_PROTOCOL_VERSION: u16 = 4;
 pub const BRIDGE_PAYLOAD_SIZE: usize = 128;
 pub const BRIDGE_FRAME_SIZE: usize = 144;
 const CHECKSUM_OFFSET: usize = 140;
@@ -40,6 +40,12 @@ pub enum MessageType {
     ProgressObservation = 0x0013,
     BattleAbortRequest = 0x0014,
     BattleReady = 0x0015,
+    /// The ROM offers a party Pokémon to its partner, or withdraws the offer
+    /// (`coop_protocol::TradeOfferRequestRecord`, 16 bytes).
+    TradeOfferRequest = 0x0016,
+    /// The partner's answer to a received offer
+    /// (`coop_protocol::TradeOfferDecisionRecord`, 16 bytes).
+    TradeOfferDecision = 0x0017,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -69,6 +75,12 @@ pub enum MessageType {
     /// `coop_protocol::TradeCommitRecord` layout; the ROM acknowledges it with
     /// a 28-byte `CommitApplied` (`coop_protocol::TradeCommitAppliedRecord`).
     TradeCommit = 0x0119,
+    /// The partner offers a Pokémon (`coop_protocol::TradeOfferReceivedRecord`,
+    /// 20 bytes).
+    TradeOfferReceived = 0x011A,
+    /// Where an offer stands (`coop_protocol::TradeOfferStatusRecord`, 12
+    /// bytes).
+    TradeOfferStatus = 0x011B,
 }
 
 impl MessageType {
@@ -94,7 +106,9 @@ impl MessageType {
             | Self::SocialSignal
             | Self::ProgressObservation
             | Self::BattleAbortRequest
-            | Self::BattleReady => Direction::RomToSidecar,
+            | Self::BattleReady
+            | Self::TradeOfferRequest
+            | Self::TradeOfferDecision => Direction::RomToSidecar,
             Self::PairingRequest => Direction::RomToSidecar,
             Self::SessionReady
             | Self::RemotePlayerSpawn
@@ -121,7 +135,9 @@ impl MessageType {
             Self::BattleReserveRejected
             | Self::BattleStart
             | Self::GroupEnded
-            | Self::TradeCommit => Direction::SidecarToRom,
+            | Self::TradeCommit
+            | Self::TradeOfferReceived
+            | Self::TradeOfferStatus => Direction::SidecarToRom,
         }
     }
 }
@@ -152,6 +168,8 @@ impl TryFrom<u16> for MessageType {
             0x0013 => Self::ProgressObservation,
             0x0014 => Self::BattleAbortRequest,
             0x0015 => Self::BattleReady,
+            0x0016 => Self::TradeOfferRequest,
+            0x0017 => Self::TradeOfferDecision,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -178,6 +196,8 @@ impl TryFrom<u16> for MessageType {
             0x0117 => Self::BattleStart,
             0x0118 => Self::GroupEnded,
             0x0119 => Self::TradeCommit,
+            0x011A => Self::TradeOfferReceived,
+            0x011B => Self::TradeOfferStatus,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -677,6 +697,93 @@ mod tests {
             serde_json::from_value::<TradeCommitRecord>(json).unwrap(),
             record
         );
+    }
+
+    #[test]
+    fn trade_offer_messages_have_fixed_types_directions_and_single_frames() {
+        use coop_protocol::{
+            TradeOfferAction, TradeOfferDecision, TradeOfferDecisionRecord, TradeOfferOutcome,
+            TradeOfferReceivedRecord, TradeOfferRequestRecord, TradeOfferRole,
+            TradeOfferStatusRecord,
+        };
+        let request = TradeOfferRequestRecord {
+            action: TradeOfferAction::Offer,
+            slot: 1,
+            request_id: 7,
+            personality: 0x0BAD_F00D,
+            ot_id: 0x2222_4444,
+        };
+        let decision = TradeOfferDecisionRecord {
+            decision: TradeOfferDecision::Accept,
+            slot: 0,
+            offer_token: 9,
+            personality: 1,
+            ot_id: 2,
+        };
+        let received = TradeOfferReceivedRecord {
+            offer_token: 9,
+            species: 263,
+            level: 4,
+            is_egg: false,
+            nickname: [0xFF; 10],
+        };
+        let status = TradeOfferStatusRecord {
+            role: TradeOfferRole::Requester,
+            outcome: TradeOfferOutcome::Pending,
+            request_id: 7,
+            offer_token: 9,
+        };
+        for (message_type, wire, direction, payload) in [
+            (
+                MessageType::TradeOfferRequest,
+                0x0016_u16,
+                Direction::RomToSidecar,
+                request.encode().unwrap(),
+            ),
+            (
+                MessageType::TradeOfferDecision,
+                0x0017,
+                Direction::RomToSidecar,
+                decision.encode().unwrap(),
+            ),
+            (
+                MessageType::TradeOfferReceived,
+                0x011A,
+                Direction::SidecarToRom,
+                received.encode().unwrap(),
+            ),
+            (
+                MessageType::TradeOfferStatus,
+                0x011B,
+                Direction::SidecarToRom,
+                status.encode().unwrap(),
+            ),
+        ] {
+            assert_eq!(MessageType::try_from(wire), Ok(message_type));
+            assert_eq!(message_type as u16, wire);
+            assert_eq!(message_type.direction(), direction);
+            let frame = BridgeFrame::new(message_type, 3, 9, &payload).unwrap();
+            let bytes = frame.encode();
+            assert_eq!(bytes.len(), BRIDGE_FRAME_SIZE);
+            assert_eq!(&bytes[0..2], &wire.to_le_bytes());
+            assert!(BridgeFrame::decode_for(&bytes, direction).is_ok());
+            let other = if direction == Direction::RomToSidecar {
+                Direction::SidecarToRom
+            } else {
+                Direction::RomToSidecar
+            };
+            assert!(BridgeFrame::decode_for(&bytes, other).is_err());
+        }
+        assert_eq!(
+            TradeOfferRequestRecord::decode(&request.encode().unwrap()),
+            Ok(request)
+        );
+        assert_eq!(
+            TradeOfferStatusRecord::decode(&status.encode().unwrap()),
+            Ok(status)
+        );
+        assert!(MessageType::try_from(0x0018).is_err());
+        assert!(MessageType::try_from(0x011C).is_err());
     }
 
     #[test]

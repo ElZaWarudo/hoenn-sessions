@@ -32,7 +32,11 @@ use coop_cloud::{
     SnapshotRecord, SnapshotRestoreRequest, SnapshotRestoreResponse, TradeDecision,
     TradeDecisionRequest, TradeOfferRequest, TradeOfferView, TrustedManifestKey, UploadTarget,
 };
-use coop_protocol::{TradeCommitAppliedRecord, TradeCommitRecord};
+use coop_protocol::{
+    TradeCommitAppliedRecord, TradeCommitRecord, TradeOfferAction, TradeOfferDecision,
+    TradeOfferDecisionRecord, TradeOfferOutcome, TradeOfferReceivedRecord, TradeOfferRequestRecord,
+    TradeOfferRole, TradeOfferStatusRecord,
+};
 use coop_server::{Phase2App, Phase2Config};
 use coop_sidecar::control::{ControlCommand, ControlEvent};
 use tempfile::{TempDir, tempdir};
@@ -197,6 +201,46 @@ impl CloudApi for LossyCloud {
         request: OnlineActionRequest,
     ) -> crate::online::OnlineFuture<'_, OnlineActionResponse> {
         CloudApi::online_action(&self.inner, token, request)
+    }
+    fn online_snapshot(
+        &self,
+        token: coop_cloud::AccessToken,
+        request: coop_cloud::OnlineSnapshotRequest,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
+        CloudApi::online_snapshot(&self.inner, token, request)
+    }
+    fn trade_offer_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: GroupId,
+        request: TradeOfferRequest,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, TradeOfferView> {
+        CloudApi::trade_offer_create(&self.inner, token, group_id, request)
+    }
+    fn trade_offer_get(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        fence: coop_cloud::LeaseFence,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, TradeOfferView> {
+        CloudApi::trade_offer_get(&self.inner, token, group_id, offer_id, fence)
+    }
+    fn trade_offer_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, Option<coop_cloud::TradeOfferCurrentView>> {
+        CloudApi::trade_offer_current(&self.inner, token, group_id, fence)
+    }
+    fn trade_offer_decide(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: GroupId,
+        request: TradeDecisionRequest,
+    ) -> crate::trade_offer::TradeOfferFuture<'_, TradeOfferView> {
+        CloudApi::trade_offer_decide(&self.inner, token, group_id, request)
     }
     fn acquire<'a>(
         &'a self,
@@ -404,6 +448,89 @@ impl Member {
 
     fn acknowledge(&mut self, ack: TradeCommitAppliedRecord) {
         self.session.accept_trade_commit_applied(ack).unwrap();
+    }
+
+    /// The ROM's `TradeOfferRequest` for `party[slot]` (control generation 1).
+    async fn offer<A: CloudApi>(
+        &mut self,
+        api: &A,
+        request_id: u32,
+        slot: u8,
+        mon: &[u8; 100],
+    ) -> Vec<ControlCommand> {
+        let (personality, ot_id) = key_of(mon);
+        self.session
+            .handle_trade_offer_request(
+                api,
+                TradeOfferRequestRecord {
+                    action: TradeOfferAction::Offer,
+                    slot,
+                    request_id,
+                    personality,
+                    ot_id,
+                },
+                1,
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn cancel<A: CloudApi>(&mut self, api: &A, request_id: u32) -> Vec<ControlCommand> {
+        self.session
+            .handle_trade_offer_request(
+                api,
+                TradeOfferRequestRecord {
+                    action: TradeOfferAction::Cancel,
+                    slot: 0,
+                    request_id,
+                    personality: 0,
+                    ot_id: 0,
+                },
+                1,
+            )
+            .await
+            .unwrap()
+    }
+
+    /// The ROM's `TradeOfferDecision`; `mon` is `None` for a decline.
+    async fn decide<A: CloudApi>(
+        &mut self,
+        api: &A,
+        offer_token: u32,
+        choice: Option<(u8, &[u8; 100])>,
+    ) -> Vec<ControlCommand> {
+        let record = match choice {
+            Some((slot, mon)) => {
+                let (personality, ot_id) = key_of(mon);
+                TradeOfferDecisionRecord {
+                    decision: TradeOfferDecision::Accept,
+                    slot,
+                    offer_token,
+                    personality,
+                    ot_id,
+                }
+            }
+            None => TradeOfferDecisionRecord {
+                decision: TradeOfferDecision::Decline,
+                slot: 0,
+                offer_token,
+                personality: 0,
+                ot_id: 0,
+            },
+        };
+        self.session
+            .handle_trade_offer_decision(api, record, 1)
+            .await
+            .unwrap()
+    }
+
+    /// One session-loop turn after the trade poll came due.
+    async fn poll_offers<A: CloudApi>(&mut self, api: &A, generation: u32) -> Vec<ControlCommand> {
+        self.session.trade_offers.request_poll();
+        self.session
+            .poll_trade_offers(api, generation)
+            .await
+            .unwrap()
     }
 
     async fn open_entry<A: CloudApi>(&self, api: &A) -> Option<LedgerEntryView> {
@@ -620,8 +747,9 @@ impl World {
                 fence: self.one.session.lease.fence(),
                 group_id: self.group_id,
                 own_slot: PartyPosition::new(own).unwrap(),
-                partner_slot: PartyPosition::new(partner).unwrap(),
-                partner_expected_revision: self.two.session.revision,
+                partner_slot: PartyPosition::new(partner),
+                partner_expected_revision: Some(self.two.session.revision),
+                own_pokemon: None,
                 idempotency_key: key(),
             },
         )
@@ -641,6 +769,7 @@ impl World {
                 own_slot: PartyPosition::new(partner).unwrap(),
                 partner_slot: PartyPosition::new(own).unwrap(),
                 decision: TradeDecision::Accept,
+                own_pokemon: None,
                 idempotency_key: key(),
             },
         )
@@ -909,6 +1038,190 @@ async fn reordered_party_applies_to_the_moved_slot_and_finalizes() {
         Revision::new(2)
     );
     assert_eq!(world.one.open_entry(&world.api).await, None);
+    world.stop().await;
+}
+
+fn single_status(commands: &[ControlCommand]) -> TradeOfferStatusRecord {
+    match commands {
+        [ControlCommand::TradeOfferStatus { record, .. }] => *record,
+        other => panic!("expected one trade offer status, got {other:?}"),
+    }
+}
+
+fn single_received(commands: &[ControlCommand]) -> TradeOfferReceivedRecord {
+    match commands {
+        [ControlCommand::TradeOfferReceived { record, .. }] => *record,
+        other => panic!("expected one received offer, got {other:?}"),
+    }
+}
+
+/// The in-game flow end to end: the requester's ROM message creates the
+/// offer against its fresh checkpoint, the partner's launcher shows it, the
+/// partner's ROM accepts with its own Pokémon after its checkpoint, both ROMs
+/// learn the outcome, and both apply the ledger's `TradeCommit`.
+#[tokio::test]
+async fn trade_started_by_a_rom_message_is_decided_and_applied_by_both_roms() {
+    let _serial = SERIAL.lock().await;
+    let (one_party, two_party) = parties();
+    let mut world = World::new(one_party, two_party).await;
+
+    // Requester: checkpoint, then offer party slot 1.
+    assert_eq!(
+        world.one.checkpoint(&world.api, &one_party).await.unwrap(),
+        Revision::new(2)
+    );
+    let pending = single_status(&world.one.offer(&world.api, 41, 1, &one_party[1]).await);
+    assert_eq!(pending.role, TradeOfferRole::Requester);
+    assert_eq!(pending.outcome, TradeOfferOutcome::Pending);
+    assert_eq!(pending.request_id, 41);
+    let token = pending.offer_token;
+    assert_ne!(token, 0);
+    // A repeated request frame replays the same pending status.
+    assert_eq!(
+        single_status(&world.one.offer(&world.api, 41, 1, &one_party[1]).await),
+        pending
+    );
+    assert!(world.one.poll_offers(&world.api, 1).await.is_empty());
+
+    // Partner: its poll finds the offer and shows it once per ROM boot.
+    let received = single_received(&world.two.poll_offers(&world.api, 1).await);
+    assert_eq!(received.offer_token, token);
+    assert_eq!(received.species, 2);
+    assert!(!received.is_egg);
+    assert_eq!(received.nickname, one_party[1][8..18]);
+    assert!(world.two.poll_offers(&world.api, 1).await.is_empty());
+
+    // Partner: checkpoint, then accept with its own slot 0.
+    assert_eq!(
+        world.two.checkpoint(&world.api, &two_party).await.unwrap(),
+        Revision::new(2)
+    );
+    let accepted = single_status(
+        &world
+            .two
+            .decide(&world.api, token, Some((0, &two_party[0])))
+            .await,
+    );
+    assert_eq!(accepted.role, TradeOfferRole::Responder);
+    assert_eq!(accepted.outcome, TradeOfferOutcome::Accepted);
+    assert_eq!(accepted.offer_token, token);
+
+    // Requester: the next poll reports the acceptance.
+    let outcome = single_status(&world.one.poll_offers(&world.api, 1).await);
+    assert_eq!(outcome.outcome, TradeOfferOutcome::Accepted);
+    assert_eq!((outcome.request_id, outcome.offer_token), (41, token));
+    assert!(world.one.poll_offers(&world.api, 1).await.is_empty());
+
+    // Both ROMs apply the ledger's commits and declare them.
+    let mut roms = [FakeRom::boot(&one_party), FakeRom::boot(&two_party)];
+    for (index, member) in [&mut world.one, &mut world.two].into_iter().enumerate() {
+        let record = member.deliver(&world.api, 1).await.expect("trade commit");
+        let ack = roms[index].receive(&record).expect("ROM applies");
+        member.acknowledge(ack);
+        assert_eq!(
+            member
+                .checkpoint(&world.api, &roms[index].party)
+                .await
+                .unwrap(),
+            Revision::new(3)
+        );
+        assert_eq!(member.open_entry(&world.api).await, None);
+    }
+    assert_eq!(roms[0].party, vec![one_party[0], two_party[0]]);
+    assert_eq!(roms[1].party, vec![one_party[1], two_party[1]]);
+    assert_eq!((roms[0].applies, roms[1].applies), (1, 1));
+    world.stop().await;
+}
+
+/// Failures come back to the ROM as short outcomes and nothing is issued:
+/// a stale checkpoint, a second local offer, a crossing partner offer, mail,
+/// a decline, a requester cancel, a late accept and a ROM restart.
+#[tokio::test]
+async fn trade_offer_refusals_declines_and_cancels_reach_the_rom() {
+    let _serial = SERIAL.lock().await;
+    let (one_party, two_party) = parties();
+    let mut world = World::new(one_party, two_party).await;
+
+    // The checkpoint holds one_party[0] in slot 0, not the named Pokémon.
+    let stale = single_status(&world.one.offer(&world.api, 1, 0, &one_party[1]).await);
+    assert_eq!(stale.outcome, TradeOfferOutcome::Stale);
+    assert_eq!(stale.offer_token, 0);
+
+    let first = single_status(&world.one.offer(&world.api, 2, 0, &one_party[0]).await);
+    assert_eq!(first.outcome, TradeOfferOutcome::Pending);
+    // A second offer from the same ROM while one is open.
+    assert_eq!(
+        single_status(&world.one.offer(&world.api, 3, 1, &one_party[1]).await).outcome,
+        TradeOfferOutcome::Busy
+    );
+    // The partner's crossing offer is refused by the server's one-per-group
+    // rule.
+    assert_eq!(
+        single_status(&world.two.offer(&world.api, 9, 0, &two_party[0]).await).outcome,
+        TradeOfferOutcome::Busy
+    );
+
+    // The partner declines: no answer to its ROM, the requester is told.
+    let shown = single_received(&world.two.poll_offers(&world.api, 1).await);
+    assert!(
+        world
+            .two
+            .decide(&world.api, shown.offer_token, None)
+            .await
+            .is_empty()
+    );
+    let declined = single_status(&world.one.poll_offers(&world.api, 1).await);
+    assert_eq!(declined.outcome, TradeOfferOutcome::Declined);
+    assert_eq!(declined.request_id, 2);
+    // A declined offer is never shown again.
+    assert!(world.two.poll_offers(&world.api, 1).await.is_empty());
+
+    // The requester cancels while the partner's prompt is up; the partner's
+    // next poll closes the prompt and a late accept is told it lapsed.
+    let second = single_status(&world.one.offer(&world.api, 4, 1, &one_party[1]).await);
+    assert_eq!(second.outcome, TradeOfferOutcome::Pending);
+    let shown = single_received(&world.two.poll_offers(&world.api, 1).await);
+    assert_eq!(shown.offer_token, second.offer_token);
+    let cancelled = single_status(&world.one.cancel(&world.api, 4).await);
+    assert_eq!(cancelled.outcome, TradeOfferOutcome::Cancelled);
+    assert_eq!(cancelled.offer_token, second.offer_token);
+    let closed = single_status(&world.two.poll_offers(&world.api, 1).await);
+    assert_eq!(closed.role, TradeOfferRole::Responder);
+    assert_eq!(closed.outcome, TradeOfferOutcome::Cancelled);
+    let late = single_status(
+        &world
+            .two
+            .decide(&world.api, second.offer_token, Some((0, &two_party[0])))
+            .await,
+    );
+    assert_eq!(late.outcome, TradeOfferOutcome::Expired);
+    // A repeated cancel is idempotent.
+    assert_eq!(
+        single_status(&world.one.cancel(&world.api, 4).await).outcome,
+        TradeOfferOutcome::Cancelled
+    );
+
+    // A restarted requester ROM (new control generation) withdraws its offer.
+    let third = single_status(&world.one.offer(&world.api, 5, 0, &one_party[0]).await);
+    assert_eq!(third.outcome, TradeOfferOutcome::Pending);
+    assert_eq!(world.one.poll_offers(&world.api, 2).await, vec![]);
+    assert_eq!(world.one.session.trade_offers.withdraw, None);
+    assert_eq!(world.two.poll_offers(&world.api, 1).await, vec![]);
+
+    // Mail is refused before the partner is ever asked.
+    let mut mail_party = one_party;
+    mail_party[1][85] = 0;
+    assert_eq!(
+        world.one.checkpoint(&world.api, &mail_party).await.unwrap(),
+        Revision::new(2)
+    );
+    assert_eq!(
+        single_status(&world.one.offer(&world.api, 6, 1, &mail_party[1]).await).outcome,
+        TradeOfferOutcome::Mail
+    );
+    assert!(world.two.poll_offers(&world.api, 1).await.is_empty());
+    assert_eq!(world.one.open_entry(&world.api).await, None);
+    assert_eq!(world.two.open_entry(&world.api).await, None);
     world.stop().await;
 }
 

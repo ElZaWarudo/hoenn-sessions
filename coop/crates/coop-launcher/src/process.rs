@@ -2448,6 +2448,8 @@ async fn run_control_reader(
             | ControlEvent::BattleFinished(_)
             | ControlEvent::CommitApplied(_)
             | ControlEvent::TradeCommitApplied(_)
+            | ControlEvent::TradeOfferRequest(_)
+            | ControlEvent::TradeOfferDecision(_)
             | ControlEvent::CommandResult { .. } => {
                 let sent = tokio::select! {
                     biased;
@@ -3798,6 +3800,8 @@ impl SupervisedChildren {
                 | ControlEvent::BattleFinished(_)
                 | ControlEvent::CommitApplied(_)
                 | ControlEvent::TradeCommitApplied(_)
+                | ControlEvent::TradeOfferRequest(_)
+                | ControlEvent::TradeOfferDecision(_)
                 | ControlEvent::RomPresenceReset => return false,
             }
         }

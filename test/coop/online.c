@@ -9,6 +9,8 @@
 #include "coop/online.h"
 #include "coop/net_bridge.h"
 #include "coop/save.h"
+#include "coop/trade_offer.h"
+#include "pokemon.h"
 #include "test/test.h"
 
 TEST("Cloud Coop Online window graphics preserve field borders and tilemaps")
@@ -457,9 +459,35 @@ TEST("Cloud Coop grouped Online omits Last partner even with the flag")
     EXPECT(!CoopOnline_TestIsLastPartnerPage());
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     EXPECT(!CoopOnline_TestInput(B_BUTTON));
-    for (i = 0; i < 4; i++) CoopOnline_TestInput(DPAD_DOWN);
-    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Index 4 is Leave group, not Pair by code.
+    for (i = 0; i < 5; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Index 5 is Leave group, not Pair by code.
     ready = MenuRequest();
     EXPECT_EQ(ready.payload[8], COOP_ONLINE_LEAVE);
     EXPECT(!CoopOnline_TestIsPairingPage());
+}
+
+TEST("Cloud Coop grouped Online offers Trade with partner only when a trade can start")
+{
+    struct CoopBridgeMessage ready;
+    u8 i;
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_TREECKO, 5, 0x01020304, OTID_STRUCT_PRESET(0x0A0B0C0D));
+    gPlayerPartyCount = CalculatePlayerPartyCount();
+    InitOnlineMenu();
+    ready = MenuRequest();
+    ReplyStatus(&ready, COOP_ONLINE_READY, COOP_ONLINE_GROUPED, NULL);
+    // One Pokemon cannot be traded: the entry is shown but disabled.
+    for (i = 0; i < 4; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    CreateMon(&gPlayerParty[1], SPECIES_ZIGZAGOON, 4, 0x0BADF00D, OTID_STRUCT_PRESET(0x22224444));
+    gPlayerPartyCount = CalculatePlayerPartyCount();
+    EXPECT(CoopTradeOffer_CanBegin());
+    // Index 4 closes the menu and starts the trade script; nothing is sent yet.
+    EXPECT_EQ(CoopOnline_TestInput(A_BUTTON), 2);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    // Eight entries: Back sits at index 7.
+    for (i = 0; i < 3; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT_EQ(CoopOnline_TestInput(A_BUTTON), TRUE);
 }

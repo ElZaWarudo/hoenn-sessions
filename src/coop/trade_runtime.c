@@ -265,7 +265,7 @@ static void FinishCheckpoint(void)
     sTradeRuntime.state = COOP_TRADE_STATE_IDLE;
 }
 
-static bool8 RunCheckpointSave(void)
+bool8 CoopTradeRuntime_RunCheckpointSave(void)
 {
     u8 status;
 
@@ -338,7 +338,7 @@ static void PollCheckpointWaiting(void)
     case COOP_CHECKPOINT_STATE_GRANTED:
         if (CoopNetBridge_ConsumeCheckpointGrant()
          && CoopNetBridge_IsCheckpointAuthorizedForSave()
-         && RunCheckpointSave())
+         && CoopTradeRuntime_RunCheckpointSave())
         {
             FinishCheckpoint();
             return;

@@ -470,6 +470,10 @@ impl Phase2App {
                         post(create_trade_offer),
                     )
                     .route(
+                        "/v1/groups/{group_id}/trade-offers/current",
+                        get(current_trade_offer),
+                    )
+                    .route(
                         "/v1/groups/{group_id}/trade-offers/{offer_id}",
                         get(get_trade_offer),
                     )
@@ -1146,6 +1150,22 @@ impl Phase2App {
     ) -> Result<coop_cloud::TradeOfferView, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
         trades::get_offer(&self.store, actor, group_id, offer_id, fence)
+    }
+
+    /// Returns the group's pending open trade offer and the offered Pokémon.
+    ///
+    /// # Errors
+    ///
+    /// Returns a hidden-not-found (also when no open offer is pending),
+    /// fence, or storage error.
+    pub fn current_trade_offer(
+        &self,
+        actor: AuthenticatedActor,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<coop_cloud::TradeOfferCurrentView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        trades::current_offer(&self.store, actor, group_id, fence)
     }
 
     /// Records one trade consent decision under the runtime transition gate.
@@ -2034,6 +2054,20 @@ async fn create_trade_offer(
 ) -> Result<(StatusCode, Json<coop_cloud::TradeOfferView>), Phase2Error> {
     let response = app.create_trade_offer(actor(&headers, &app)?, path.group_id, request)?;
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+async fn current_trade_offer(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<GroupPath>,
+) -> Result<Json<coop_cloud::TradeOfferCurrentView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, actor.character_id, &app)?;
+    Ok(Json(app.current_trade_offer(
+        actor,
+        path.group_id,
+        fence,
+    )?))
 }
 
 async fn get_trade_offer(

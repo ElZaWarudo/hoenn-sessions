@@ -219,6 +219,44 @@ Follow-ups recorded while implementing A9:
   approaching object where it stopped; re-stepping on the trigger replays
   the approach from there until the map reloads.
 
+### B8: In-game trade UI (game protocol 4)
+
+Entry point: ONLINE > "Trade with partner" (grouped only, between "Where is
+my partner?" and "Leave group"); no start menu change. Flow: party menu,
+checkpoint, `TradeOfferRequest` (0x0016), launcher creates the offer,
+`TradeOfferStatus` (0x011B) back; the partner's launcher polls
+`GET .../trade-offers/current` every 3 s and sends `TradeOfferReceived`
+(0x011A); the partner's ROM prompts when the field is free (45 s), picks a
+Pokémon, checkpoints and sends `TradeOfferDecision` (0x0017). Accepted
+offers issue the ledger entries; the existing `TradeCommit` delivery
+applies them. Mail and a player's last non-egg Pokémon are refused at
+selection; eggs are allowed (the server allows them).
+
+Server changes the UI forced:
+- The existing offer anchored the partner's slot and revision at creation,
+  but the partner picks after seeing the offer and checkpoints first. An
+  *open* offer (no `partner_slot`/`partner_expected_revision`) re-anchors
+  the accepting side to its current head, fence and chosen slot at accept
+  time; strict offers keep the old rules.
+- `own_pokemon` (personality, OT ID) on the offer and the accept: a slot
+  that no longer holds the picked Pokémon is `Conflict` (stale head).
+- Open offers read the initiator's slot at creation (mail refused before
+  the partner is asked) and keep a species/level/egg/nickname summary.
+- New `GET /v1/groups/{group_id}/trade-offers/current`; offer TTL 30 s ->
+  60 s to fit poll, prompt, party menu and checkpoint.
+
+Follow-ups recorded while implementing B8:
+- Nicknames cross as the 10 boxed bytes; 11-12 character nicknames of this
+  fork are shown truncated in the partner's prompt.
+- A cancel lost to a transport outage can race the partner's accept; the
+  trade then completes atomically through the ledger anyway.
+- After an accept the field stays locked until the `TradeCommit` arrives
+  (10 s cap); a commit later than that finds the Pokémon by personality,
+  so moving it to the PC in that window still rejects the commit.
+- The partner's Yes/No box is not closed when the requester withdraws; the
+  withdrawal is shown when it is answered.
+- Not verified with two real players yet.
+
 ## C. Friendly battles (4.6), decided 2026-09-29
 
 - Singles and doubles, on the existing lockstep engine: each ROM stages the

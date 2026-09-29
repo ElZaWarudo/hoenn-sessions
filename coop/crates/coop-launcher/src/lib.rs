@@ -17,6 +17,7 @@ pub mod realtime;
 pub mod recovery;
 pub mod session;
 pub mod trade;
+pub mod trade_offer;
 pub mod update;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
@@ -633,6 +634,43 @@ impl CloudApi for ReqwestCloudApi {
         request: coop_cloud::OnlineSnapshotRequest,
     ) -> online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
         self.online_snapshot_http(token, request)
+    }
+
+    fn trade_offer_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeOfferRequest,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_create_http(token, group_id, request)
+    }
+
+    fn trade_offer_get(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        fence: coop_cloud::LeaseFence,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_get_http(token, group_id, offer_id, fence)
+    }
+
+    fn trade_offer_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> trade_offer::TradeOfferFuture<'_, Option<coop_cloud::TradeOfferCurrentView>> {
+        self.trade_offer_current_http(token, group_id, fence)
+    }
+
+    fn trade_offer_decide(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeDecisionRequest,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_decide_http(token, group_id, request)
     }
 
     fn online_action(

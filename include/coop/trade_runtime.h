@@ -54,6 +54,9 @@ enum CoopTradeInboundResult CoopTradeRuntime_ReceiveCommit(const u8 *payload, u1
 void CoopTradeRuntime_PreserveOutbound(void);
 void CoopTradeRuntime_Poll(void);
 enum CoopTradeRuntimeState CoopTradeRuntime_GetState(void);
+/* Writes the checkpoint save after a consumed, authorized grant. Shared with
+ * the trade offer UI, which checkpoints before an offer or an accept. */
+bool8 CoopTradeRuntime_RunCheckpointSave(void);
 
 #if TESTING
 void CoopTradeRuntime_TestSetSaveDryRun(bool8 enabled);

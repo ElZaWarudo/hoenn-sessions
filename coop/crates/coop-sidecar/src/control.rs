@@ -19,7 +19,8 @@ use coop_protocol::{
     LocalSignalV1, PartySnapshotChunk, PauseForReconnectRecord, PresenceInteractionV1,
     RemoteCompanionV1, RemoteInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
     RemotePlayerUpdateV1, RemoteSignalV1, TradeCommitAppliedRecord, TradeCommitRecord,
-    TrainerBattleReserveRecord, TurnBundleRecord, TurnResultHash,
+    TradeOfferDecisionRecord, TradeOfferReceivedRecord, TradeOfferRequestRecord,
+    TradeOfferStatusRecord, TrainerBattleReserveRecord, TurnBundleRecord, TurnResultHash,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -222,6 +223,17 @@ pub enum ControlCommand {
         session_epoch: u32,
         record: TradeCommitRecord,
     },
+    /// The partner offers a Pokémon: bridge message `TradeOfferReceived`
+    /// (0x011A). The ROM answers with [`ControlEvent::TradeOfferDecision`].
+    TradeOfferReceived {
+        session_epoch: u32,
+        record: TradeOfferReceivedRecord,
+    },
+    /// Where an offer stands: bridge message `TradeOfferStatus` (0x011B).
+    TradeOfferStatus {
+        session_epoch: u32,
+        record: TradeOfferStatusRecord,
+    },
     BattleStart {
         session_epoch: u32,
         record: BattleStartRecord,
@@ -390,6 +402,11 @@ pub enum ControlEvent {
     /// The ROM applied a [`ControlCommand::TradeCommit`]; decoded from a
     /// 28-byte `CommitApplied` (0x000B) bridge payload.
     TradeCommitApplied(TradeCommitAppliedRecord),
+    /// The player offers a party Pokémon or withdraws the offer
+    /// (`TradeOfferRequest`, 0x0016).
+    TradeOfferRequest(TradeOfferRequestRecord),
+    /// The player answers a received offer (`TradeOfferDecision`, 0x0017).
+    TradeOfferDecision(TradeOfferDecisionRecord),
 }
 
 // Serde accepts unknown fields on an internally tagged unit variant even when
@@ -453,6 +470,8 @@ enum ControlEventWire {
     BattleFinished(BattleFinishedRecord),
     CommitApplied(CommitAppliedRecord),
     TradeCommitApplied(TradeCommitAppliedRecord),
+    TradeOfferRequest(TradeOfferRequestRecord),
+    TradeOfferDecision(TradeOfferDecisionRecord),
 }
 
 impl<'de> Deserialize<'de> for ControlEvent {
@@ -523,6 +542,8 @@ impl<'de> Deserialize<'de> for ControlEvent {
             ControlEventWire::BattleFinished(value) => Self::BattleFinished(value),
             ControlEventWire::CommitApplied(value) => Self::CommitApplied(value),
             ControlEventWire::TradeCommitApplied(value) => Self::TradeCommitApplied(value),
+            ControlEventWire::TradeOfferRequest(value) => Self::TradeOfferRequest(value),
+            ControlEventWire::TradeOfferDecision(value) => Self::TradeOfferDecision(value),
         })
     }
 }
@@ -1211,6 +1232,75 @@ mod tests {
         assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
         let extra = json.replace("\"slot\":5", "\"slot\":5,\"extra\":1");
         assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
+    }
+
+    #[test]
+    fn trade_offer_control_records_are_typed_strict_and_bounded() {
+        use coop_protocol::{
+            TradeOfferAction, TradeOfferDecision, TradeOfferOutcome, TradeOfferRole,
+        };
+        let commands = [
+            ControlCommand::TradeOfferReceived {
+                session_epoch: u32::MAX,
+                record: TradeOfferReceivedRecord {
+                    offer_token: u32::MAX,
+                    species: u16::MAX,
+                    level: 100,
+                    is_egg: true,
+                    nickname: [0xFF; 10],
+                },
+            },
+            ControlCommand::TradeOfferStatus {
+                session_epoch: 3,
+                record: TradeOfferStatusRecord {
+                    role: TradeOfferRole::Requester,
+                    outcome: TradeOfferOutcome::PartnerUnavailable,
+                    request_id: 4,
+                    offer_token: 0,
+                },
+            },
+        ];
+        for (command, tag) in commands
+            .into_iter()
+            .zip(["trade_offer_received", "trade_offer_status"])
+        {
+            let json = serde_json::to_string(&command).unwrap();
+            assert!(json.starts_with(&format!("{{\"type\":\"{tag}\"")), "{json}");
+            assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+            assert_eq!(
+                serde_json::from_str::<ControlCommand>(&json).unwrap(),
+                command
+            );
+            let extra = json.replacen("\"session_epoch\"", "\"extra\":1,\"session_epoch\"", 1);
+            assert!(serde_json::from_str::<ControlCommand>(&extra).is_err());
+        }
+        let events = [
+            ControlEvent::TradeOfferRequest(TradeOfferRequestRecord {
+                action: TradeOfferAction::Offer,
+                slot: 5,
+                request_id: u32::MAX,
+                personality: u32::MAX,
+                ot_id: u32::MAX,
+            }),
+            ControlEvent::TradeOfferDecision(TradeOfferDecisionRecord {
+                decision: TradeOfferDecision::Decline,
+                slot: 0,
+                offer_token: 1,
+                personality: 0,
+                ot_id: 0,
+            }),
+        ];
+        for (event, tag) in events
+            .into_iter()
+            .zip(["trade_offer_request", "trade_offer_decision"])
+        {
+            let json = serde_json::to_string(&event).unwrap();
+            assert!(json.starts_with(&format!("{{\"type\":\"{tag}\"")), "{json}");
+            assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+            assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+            let extra = json.replacen("\"slot\"", "\"extra\":1,\"slot\"", 1);
+            assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
+        }
     }
 
     #[test]

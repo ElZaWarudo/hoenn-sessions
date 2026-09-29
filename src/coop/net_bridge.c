@@ -7,6 +7,7 @@
 #include "coop/presence_runtime.h"
 #include "coop/progress.h"
 #include "coop/save.h"
+#include "coop/trade_offer.h"
 #include "coop/trade_runtime.h"
 #include "johto/bug_contest.h"
 #include "constants/map_groups.h"
@@ -83,13 +84,13 @@ static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
 static bool8 IsOutboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_ROM_READY
-        && type <= COOP_BRIDGE_MESSAGE_BATTLE_READY;
+        && type <= COOP_BRIDGE_MESSAGE_TRADE_OFFER_DECISION;
 }
 
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_TRADE_COMMIT;
+        && type <= COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -1132,6 +1133,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             CoopGroupTravel_OnSessionReady();
             CoopBattleConsent_OnSessionReady();
             CoopBattleRuntime_OnSessionReady(sCoopNetRuntime.session_epoch);
+            CoopTradeOffer_OnSessionReady();
             return TRUE;
         }
         else if (sCoopNetRuntime.session_epoch != 0
@@ -1177,6 +1179,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         CoopGroupTravel_OnSessionReady();
         CoopBattleConsent_OnSessionReady();
         CoopBattleRuntime_OnSessionReady(sCoopNetRuntime.session_epoch);
+        CoopTradeOffer_OnSessionReady();
         return TRUE;
     }
 
@@ -1585,6 +1588,33 @@ invalid_pairing_status:
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_TRADE_OFFER_RECEIVED
+     || message->type == COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS)
+    {
+        u16 i;
+        bool8 accepted;
+
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        accepted = message->length <= COOP_NET_BRIDGE_PAYLOAD_SIZE;
+        for (i = message->length; accepted && i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+            if (message->payload[i] != 0)
+                accepted = FALSE;
+        if (accepted)
+            accepted = message->type == COOP_BRIDGE_MESSAGE_TRADE_OFFER_RECEIVED
+                ? CoopTradeOffer_ReceiveOffer(message->payload, message->length)
+                : CoopTradeOffer_ReceiveStatus(message->payload, message->length);
+        if (!accepted)
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        return FALSE;
+    }
+
     /* Later milestones add handlers for the remaining documented inbound
      * messages. Until then, do not advance the receive sequence for one. */
     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
@@ -1620,6 +1650,7 @@ static void ObserveSidecarHeartbeat(void)
             CoopGroupTravel_OnTransportLost();
             CoopBattleConsent_OnTransportLost();
             CoopBattleRuntime_OnTransportLost();
+            CoopTradeOffer_OnTransportLost();
             CancelCheckpointAuthorization();
         }
     }
@@ -1645,6 +1676,7 @@ void CoopNetBridge_Init(void)
     CoopBattleConsent_Init();
     CoopBattleRuntime_Init();
     CoopTradeRuntime_Init();
+    CoopTradeOffer_Init();
 
     TryAnnounceRomReady();
 }
@@ -1701,6 +1733,8 @@ void CoopNetBridge_Poll(void)
     /* Runs before the checkpoint early returns below: it owns the trade
      * checkpoint it requests and must observe the grant. */
     CoopTradeRuntime_Poll();
+    /* The trade offer UI also owns the checkpoints it requests. */
+    CoopTradeOffer_Poll();
 
     if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY) == 0)
         return;
