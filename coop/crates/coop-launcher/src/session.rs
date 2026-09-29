@@ -550,6 +550,7 @@ pub trait CloudApi: AuthApi {
         _fence: coop_cloud::LeaseFence,
         _key: IdempotencyKey,
         _hash: &str,
+        _party_records: Option<Vec<String>>,
     ) -> crate::battle::BattleFuture<'_, crate::battle::BattleConsensusView> {
         Box::pin(async { Err(crate::battle::BattleApiError::Unavailable) })
     }

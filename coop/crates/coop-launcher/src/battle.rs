@@ -60,6 +60,30 @@ pub enum BattleKind {
     Friendly,
 }
 
+/// Who applies a trainer battle's rewards. `Local` battles are applied by
+/// each ROM and carry their staged party records to the server.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BattleRewardMode {
+    #[default]
+    Ledger,
+    Local,
+}
+
+impl BattleRewardMode {
+    const fn is_ledger(&self) -> bool {
+        matches!(self, Self::Ledger)
+    }
+}
+
+/// A member who already beat the trainer joins a local battle as a helper.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BattleMemberRole {
+    Participant,
+    Helper,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BattleStatus {
@@ -90,6 +114,10 @@ pub struct BattleReservationView {
     pub trainer_id: Option<TrainerInstanceId>,
     pub status: BattleStatus,
     pub expires_at: UnixTimestampMillis,
+    #[serde(default, skip_serializing_if = "BattleRewardMode::is_ledger")]
+    pub reward_mode: BattleRewardMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_roles: Option<[BattleMemberRole; 2]>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -189,6 +217,9 @@ struct SnapshotRequest<'a> {
     api_version: ApiVersion,
     idempotency_key: IdempotencyKey,
     snapshot_hash: &'a str,
+    /// Exact staged party records, sent only for local-reward battles.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    party_records: Option<&'a [String]>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -483,12 +514,14 @@ impl ReqwestCloudApi {
         fence: LeaseFence,
         idempotency_key: IdempotencyKey,
         snapshot_hash: &str,
+        party_records: Option<&[String]>,
     ) -> Result<BattleConsensusView, BattleApiError> {
         let url = self.battle_url(group_id, Some(battle_id), "/snapshot-commitments")?;
         let request = SnapshotRequest {
             api_version: ApiVersion::V1,
             idempotency_key,
             snapshot_hash,
+            party_records,
         };
         self.battle_consensus_response(
             self.battle_request(Method::POST, url, token, fence)
@@ -692,6 +725,7 @@ struct Tracked {
     trainer_identity: Option<(RegionId, u16)>,
     role: BattleRole,
     nonce: u32,
+    local_rewards: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -700,6 +734,7 @@ enum ConsensusJob {
     Commit {
         hash: String,
         key: IdempotencyKey,
+        records: Option<Vec<String>>,
     },
     Ready {
         digest: BattleDigest,
@@ -1568,7 +1603,7 @@ impl<'a> BattleOwner<'a> {
                     api.battle_inspect_consensus(token, tracked.group_id, tracked.battle_id, fence)
                         .await
                 }
-                ConsensusJob::Commit { hash, key } => {
+                ConsensusJob::Commit { hash, key, records } => {
                     api.battle_commit_snapshot(
                         token,
                         tracked.group_id,
@@ -1576,6 +1611,7 @@ impl<'a> BattleOwner<'a> {
                         fence,
                         *key,
                         hash,
+                        records.clone(),
                     )
                     .await
                 }
@@ -1700,6 +1736,9 @@ impl<'a> BattleOwner<'a> {
                 ConsensusJob::Commit {
                     hash: hash.clone(),
                     key: *key,
+                    records: tracked
+                        .local_rewards
+                        .then(|| self.party.iter().map(|mon| hex_string(mon)).collect()),
                 }
             } else if self.ready_from_rom
                 && !self.submitted_ready
@@ -3094,6 +3133,7 @@ impl<'a> BattleOwner<'a> {
                         },
                         role,
                         nonce,
+                        local_rewards: view.reward_mode == BattleRewardMode::Local,
                     };
                     if let Some(old) = self
                         .tracked
@@ -4597,8 +4637,55 @@ mod tests {
             trainer_identity: Some((coop_protocol::RegionId::Hoenn, 518)),
             role: coop_protocol::BattleRole::Requester,
             nonce: 1,
+            local_rewards: false,
         });
         (owner, fence, view)
+    }
+
+    #[test]
+    fn local_reward_views_parse_and_send_staged_records_only_when_local() {
+        let mut local = reservation_json();
+        local["trainer_id"] = json!("HOENN:TRAINER_CALVIN_1");
+        local["reward_mode"] = json!("LOCAL");
+        local["member_roles"] = json!(["PARTICIPANT", "HELPER"]);
+        let view: super::BattleReservationView = serde_json::from_value(local.clone()).unwrap();
+        assert_eq!(view.reward_mode, super::BattleRewardMode::Local);
+        assert_eq!(
+            view.member_roles,
+            Some([
+                super::BattleMemberRole::Participant,
+                super::BattleMemberRole::Helper
+            ])
+        );
+        assert_eq!(serde_json::to_value(&view).unwrap(), local);
+        let ledger: super::BattleReservationView =
+            serde_json::from_value(reservation_json()).unwrap();
+        assert_eq!(ledger.reward_mode, super::BattleRewardMode::Ledger);
+        assert_eq!(serde_json::to_value(&ledger).unwrap(), reservation_json());
+
+        let (mut owner, _fence, view) = tracked_owner();
+        owner.party = vec![vec![0xAB; coop_protocol::BATTLE_PARTY_MON_SIZE]];
+        owner.snapshot = Some(("11".repeat(32), super::new_key()));
+        owner.accepted_battle = Some(view.battle_id);
+        let tracked = owner.tracked.unwrap();
+        let super::ConsensusJob::Commit { records, .. } = owner.consensus_job(tracked) else {
+            panic!("snapshot commit expected");
+        };
+        assert_eq!(
+            records, None,
+            "ledger battles keep the anchored-save commit"
+        );
+        let local_tracked = super::Tracked {
+            local_rewards: true,
+            ..tracked
+        };
+        let super::ConsensusJob::Commit { records, .. } = owner.consensus_job(local_tracked) else {
+            panic!("snapshot commit expected");
+        };
+        assert_eq!(
+            records,
+            Some(vec!["ab".repeat(coop_protocol::BATTLE_PARTY_MON_SIZE)])
+        );
     }
 
     #[test]
@@ -5978,6 +6065,7 @@ mod tests {
             trainer_identity: Some((coop_protocol::RegionId::Hoenn, 518)),
             role: coop_protocol::BattleRole::Responder,
             nonce: 0,
+            local_rewards: false,
         });
         owner.submitted_actions = 1;
         owner.peer_delivered = true;

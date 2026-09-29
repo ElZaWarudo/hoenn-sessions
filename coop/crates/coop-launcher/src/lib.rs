@@ -386,11 +386,20 @@ impl CloudApi for ReqwestCloudApi {
         fence: coop_cloud::LeaseFence,
         key: coop_cloud::IdempotencyKey,
         hash: &str,
+        party_records: Option<Vec<String>>,
     ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
         let hash = hash.to_owned();
         Box::pin(async move {
-            self.battle_commit_snapshot_http(&token, group_id, battle_id, fence, key, &hash)
-                .await
+            self.battle_commit_snapshot_http(
+                &token,
+                group_id,
+                battle_id,
+                fence,
+                key,
+                &hash,
+                party_records.as_deref(),
+            )
+            .await
         })
     }
     fn battle_ready(
