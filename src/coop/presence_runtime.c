@@ -249,6 +249,13 @@ void CoopPresenceRuntime_HidePartnerName(void)
         HidePartnerName();
 }
 
+#if TESTING
+u8 CoopPresenceRuntime_TestNameWindow(void)
+{
+    return sCoopPresenceRuntime.name_window;
+}
+#endif
+
 static void UpdatePartnerName(const struct CoopPresenceRemote *remote)
 {
     struct WindowTemplate window = {
@@ -1231,6 +1238,23 @@ static u16 FollowerGraphicsId(u16 species, u8 flags)
     return graphics_id;
 }
 
+/* The partner's form id selects the form species to draw.  GetFormSpeciesId
+ * does not bound its table index, so an unknown form keeps the sent species. */
+static u16 RemoteFollowerSpecies(u16 species, u8 form)
+{
+    const u16 *forms = GetSpeciesFormTable(species);
+    u8 i;
+
+    if (forms == NULL)
+        return species;
+    for (i = 0; i <= form; i++)
+    {
+        if (forms[i] == FORM_SPECIES_END)
+            return species;
+    }
+    return forms[form];
+}
+
 static void ClearFollowerIdentity(void)
 {
     sCoopPresenceRuntime.follower_owned = FALSE;
@@ -1353,6 +1377,7 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
     u8 object_id;
     u8 created_id;
     u16 generation;
+    u16 species;
 
     if (remote == NULL || !sCoopPresenceRuntime.remote_companion_valid
      || remote->handle != sCoopPresenceRuntime.remote_companion_handle
@@ -1364,17 +1389,21 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
         target_x = map_x;
         target_y = (s16)(map_y + 1);
     }
-    graphics_id = FollowerGraphicsId(sCoopPresenceRuntime.remote_companion_species,
-                                     sCoopPresenceRuntime.remote_companion_flags);
+    species = RemoteFollowerSpecies(sCoopPresenceRuntime.remote_companion_species,
+                                    sCoopPresenceRuntime.remote_companion_form);
+    graphics_id = FollowerGraphicsId(species, sCoopPresenceRuntime.remote_companion_flags);
     graphics = GetObjectEventGraphicsInfo(graphics_id);
     if (graphics == NULL)
         return FALSE;
+    /* Species sprites use a dynamic palette that the spawn path loads from
+     * the graphics id; it is not in the static object-event palette table. */
     if (graphics->paletteTag != TAG_NONE
+     && graphics->paletteTag != OBJ_EVENT_PAL_TAG_DYNAMIC
      && LoadObjectEventPalette(graphics->paletteTag) == 0xFF)
         return FALSE;
 
     if (sCoopPresenceRuntime.follower_owned
-     && (sCoopPresenceRuntime.follower_species != sCoopPresenceRuntime.remote_companion_species
+     && (sCoopPresenceRuntime.follower_species != species
       || sCoopPresenceRuntime.follower_flags != sCoopPresenceRuntime.remote_companion_flags))
         RemoveFollowerRenderer();
 
@@ -1402,7 +1431,7 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
             sCoopPresenceRuntime.follower_object_id = object_id;
             sCoopPresenceRuntime.follower_sprite_id = gObjectEvents[object_id].spriteId;
             sCoopPresenceRuntime.follower_generation = generation;
-            sCoopPresenceRuntime.follower_species = sCoopPresenceRuntime.remote_companion_species;
+            sCoopPresenceRuntime.follower_species = species;
             sCoopPresenceRuntime.follower_flags = sCoopPresenceRuntime.remote_companion_flags;
             sCoopPresenceRuntime.follower_x = target_x;
             sCoopPresenceRuntime.follower_y = target_y;
@@ -1420,7 +1449,7 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
             sCoopPresenceRuntime.follower_owned = TRUE;
             sCoopPresenceRuntime.follower_object_id = object_id;
             sCoopPresenceRuntime.follower_sprite_id = object_event->spriteId;
-            sCoopPresenceRuntime.follower_species = sCoopPresenceRuntime.remote_companion_species;
+            sCoopPresenceRuntime.follower_species = species;
             sCoopPresenceRuntime.follower_flags = sCoopPresenceRuntime.remote_companion_flags;
             sCoopPresenceRuntime.follower_x = object_event->currentCoords.x;
             sCoopPresenceRuntime.follower_y = object_event->currentCoords.y;
@@ -1553,6 +1582,10 @@ static bool8 ReadLeadCompanion(u16 *species, u8 *form, u8 *flags)
             continue;
         if (GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG))
             continue;
+        /* Unown letters live in the personality, not MON_DATA_SPECIES; the
+         * local follower draws the letter form, so publish that form too. */
+        if (candidate == SPECIES_UNOWN)
+            candidate = (u16)GetUnownSpeciesId(GetMonData(&gPlayerParty[i], MON_DATA_PERSONALITY));
         *species = candidate;
         *form = GetFormIdFromFormSpeciesId(candidate);
         *flags = IsMonShiny(&gPlayerParty[i]) ? COOP_PRESENCE_COMPANION_FLAG_SHINY : 0;
