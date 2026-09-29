@@ -58,6 +58,8 @@ pub const SAVE_BLOCK1_VAR_COUNT: usize = 0x18c;
 pub const SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET: usize = 0xb4;
 pub const TRAINER_FLAGS_START: usize = 0x500;
 pub const TRAINER_FLAGS_END: usize = 0xb55;
+/// First of the eight Hoenn badge flags, in gym order.
+pub const FLAG_BADGE01_GET: usize = 0xb5d;
 const VAR_BOARD_BRINEY_BOAT_STATE: usize = 0x408e;
 const SAVE_BLOCK1_BILL_EVIDENCE_END: usize = SAVE_BLOCK1_VARS_OFFSET + 2 * (0x18a + 1);
 const SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET: usize =
@@ -473,6 +475,27 @@ impl ValidatedSave {
         }
         let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
         Some(byte & (1 << (flag % 8)) != 0)
+    }
+
+    /// Whether a `SaveBlock1` event flag is set. `None` for a flag outside
+    /// the saved flag array.
+    #[must_use]
+    pub fn event_flag(&self, flag: usize) -> Option<bool> {
+        if flag / 8 >= SAVE_BLOCK1_FLAG_BYTES {
+            return None;
+        }
+        let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
+        Some(byte & (1 << (flag % 8)) != 0)
+    }
+
+    /// The eight Hoenn badge flags (`FLAG_BADGE01_GET` .. `FLAG_BADGE08_GET`)
+    /// as a mask, bit 0 for the Stone Badge.
+    #[must_use]
+    pub fn hoenn_badges(&self) -> Option<u8> {
+        (0..8).try_fold(0_u8, |mask, badge| {
+            let set = self.event_flag(FLAG_BADGE01_GET + badge)?;
+            Some(if set { mask | (1 << badge) } else { mask })
+        })
     }
 
     /// Reads the selected slot's bounded first-voyage evidence.
@@ -1336,6 +1359,7 @@ mod layout_tests {
                 "COOP_SAVE_LAYOUT_TRAINER_FLAGS_END",
                 super::TRAINER_FLAGS_END,
             ),
+            ("COOP_SAVE_LAYOUT_FLAG_BADGE01_GET", super::FLAG_BADGE01_GET),
         ] {
             assert_eq!(header_value(header, name), value, "{name}");
         }

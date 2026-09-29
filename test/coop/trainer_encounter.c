@@ -5,22 +5,27 @@
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
 #include "coop/generated_regional_identities.h"
+#include "coop/identity.h"
 #include "coop/net_bridge.h"
 #include "coop/region.h"
 #include "coop/save.h"
 #include "coop/trainer_rewards.h"
 #include "constants/battle_setup.h"
 #include "constants/event_objects.h"
+#include "constants/items.h"
 #include "constants/layouts.h"
 #include "constants/opponents.h"
 #include "constants/region_map_sections.h"
+#include "constants/rematches.h"
 #include "constants/trainers.h"
+#include "constants/vars.h"
 #include "event_data.h"
 #include "event_object_lock.h"
 #include "event_object_movement.h"
 #include "field_message_box.h"
 #include "field_player_avatar.h"
 #include "fieldmap.h"
+#include "item.h"
 #include "main.h"
 #include "malloc.h"
 #include "money.h"
@@ -227,13 +232,22 @@ static void EndEncounterFixture(void)
     sFixture = NULL;
 }
 
-/* Runs dotrainerbattle's entry and returns the reservation nonce. */
-static u32 BeginParkedEncounter(void)
+static u16 HoennOrdinal(u16 trainerId)
+{
+    u16 ordinal = 0;
+
+    EXPECT(CoopIdentity_ResolveTrainerOrdinal(COOP_REGION_HOENN, trainerId, &ordinal));
+    return ordinal;
+}
+
+/* Runs the battle entry (dotrainerbattle's or the rematch special's) for
+ * the trainer the script set, and returns the reservation nonce. */
+static u32 BeginParkedEncounterWith(void (*startBattle)(void))
 {
     struct CoopBridgeMessage message;
     u32 nonce;
 
-    BattleSetup_StartTrainerBattle();
+    startBattle();
     EXPECT(CoopTrainerEncounter_TestIsPending());
     EXPECT(!ScriptContext_IsEnabled());
     EXPECT(ArePlayerFieldControlsLocked());
@@ -245,11 +259,18 @@ static u32 BeginParkedEncounter(void)
     EXPECT_EQ(message.payload[0], COOP_BATTLE_KIND_COOPERATIVE_TRAINER);
     EXPECT_EQ(message.payload[5], COOP_REGION_HOENN);
     EXPECT_EQ(message.payload[6] | ((u16)message.payload[7] << 8),
-              COOP_TRAINER_HOENN_TRAINER_CALVIN_1_ORDINAL);
+              HoennOrdinal(TRAINER_BATTLE_PARAM.opponentA));
     nonce = message.payload[1] | ((u32)message.payload[2] << 8)
         | ((u32)message.payload[3] << 16) | ((u32)message.payload[4] << 24);
     EXPECT_NE(nonce, 0);
     return nonce;
+}
+
+static u32 BeginParkedEncounter(void)
+{
+    EXPECT_EQ(TRAINER_BATTLE_PARAM.opponentA, ENCOUNTER_TRAINER);
+    EXPECT_EQ(HoennOrdinal(ENCOUNTER_TRAINER), COOP_TRAINER_HOENN_TRAINER_CALVIN_1_ORDINAL);
+    return BeginParkedEncounterWith(BattleSetup_StartTrainerBattle);
 }
 
 static void DeliverRequesterOffer(u8 id, u32 nonce)
@@ -584,21 +605,20 @@ static void CreateUsableMon(struct Pokemon *mon, enum Species species, u32 perso
     CalculateMonStats(mon);
 }
 
-static void ReleaseAcceptedEncounter(u8 id)
+static void ReleaseAcceptedEncounterFor(u8 id, u16 trainerId)
 {
     u8 manifest[COOP_BATTLE_MANIFEST_SIZE] = {0};
     u8 chunk[COOP_BATTLE_PARTY_SNAPSHOT_SIZE] = {0};
     u8 start[COOP_BATTLE_START_SIZE] = {0};
     struct Pokemon peer;
+    u16 ordinal = HoennOrdinal(trainerId);
 
     manifest[0] = id;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_MANIFEST_KIND_TRAINER;
     manifest[COOP_BATTLE_MANIFEST_MEMBER_SLOT_OFFSET] = 0;
     manifest[COOP_BATTLE_MANIFEST_REGION_OFFSET] = COOP_REGION_HOENN;
-    manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET] =
-        (u8)COOP_TRAINER_HOENN_TRAINER_CALVIN_1_ORDINAL;
-    manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET + 1] =
-        COOP_TRAINER_HOENN_TRAINER_CALVIN_1_ORDINAL >> 8;
+    manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET] = (u8)ordinal;
+    manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET + 1] = ordinal >> 8;
     EXPECT(CoopBattleRuntime_ComputePartyDigest(gParties[B_TRAINER_0],
                                                  gPartiesCount[B_TRAINER_0],
                                                  &manifest[50], COOP_BATTLE_DIGEST_SIZE));
@@ -618,6 +638,11 @@ static void ReleaseAcceptedEncounter(u8 id)
     EXPECT_EQ(CoopBattleRuntime_ReceiveStart(start, sizeof(start)),
               COOP_BATTLE_INBOUND_ACCEPTED);
     EXPECT(CoopBattleRuntime_IsStartReleased());
+}
+
+static void ReleaseAcceptedEncounter(u8 id)
+{
+    ReleaseAcceptedEncounterFor(id, ENCOUNTER_TRAINER);
 }
 
 TEST("Cloud Coop accepted trainer encounter starts co-op and an abort releases the trainer")
@@ -768,9 +793,14 @@ TEST("Cloud Coop trainer encounter partner prompt declines itself after ten seco
     EndEncounterFixture();
 }
 
+/* TRUE turns the harness's ROM into the partner just before the battle
+ * returns to the field: it did not park the trainer script. */
+static bool8 sPlayPartner;
+
 /* Battle-time state a completed co-op trainer battle leaves behind. */
 struct RewardBattleState
 {
+    u16 trainer;
     struct Pokemon enemy[PARTY_SIZE];
     u32 money;
     bool8 fought;
@@ -784,22 +814,25 @@ struct RewardBattleState
 /* Party slot 0 is fainted and stays home; slot 1 fights and slot 2 is staged
  * on the bench, so the staged-to-party mapping is exercised. The opponent's
  * first mon faints to the local lead, then the battle ends with outcome. */
-static void RunCoopTrainerBattle(struct RewardBattleState *saved, u8 id, u8 outcome)
+static void RunCoopBattleAgainst(struct RewardBattleState *saved, u8 id, u8 outcome,
+                                 u16 trainerId, u8 mode, void (*startBattle)(void))
 {
     u32 nonce;
     u16 zero = 0;
     u8 i;
 
+    saved->trainer = trainerId;
     memcpy(saved->enemy, gParties[B_TRAINER_1], sizeof(saved->enemy));
     saved->money = GetMoney(&gSaveBlock1Ptr->money);
-    saved->fought = HasTrainerBeenFought(ENCOUNTER_TRAINER);
+    saved->fought = HasTrainerBeenFought(trainerId);
     saved->outcome = gBattleOutcome;
     saved->battlers = gBattlersCount;
     memcpy(saved->party_indexes, gBattlerPartyIndexes, sizeof(saved->party_indexes));
     memcpy(saved->positions, gBattlerPositions, sizeof(saved->positions));
     saved->absent = gAbsentBattlerFlags;
-    ClearTrainerFlag(ENCOUNTER_TRAINER);
+    ClearTrainerFlag(trainerId);
     SetMoney(&gSaveBlock1Ptr->money, 500);
+    SetTrainer(trainerId, mode);
 
     for (i = 0; i < PARTY_SIZE; i++)
         ZeroMonData(&gParties[B_TRAINER_0][i]);
@@ -809,14 +842,15 @@ static void RunCoopTrainerBattle(struct RewardBattleState *saved, u8 id, u8 outc
     CreateUsableMon(&gParties[B_TRAINER_0][2], SPECIES_TREECKO, 4);
     gPartiesCount[B_TRAINER_0] = 3;
 
-    nonce = BeginParkedEncounter();
+    nonce = BeginParkedEncounterWith(startBattle);
     DeliverRequesterOffer(id, nonce);
     DeliverOutcome(id, nonce, COOP_BATTLE_CONSENT_ACCEPTED);
     CoopBattleConsent_Poll();
-    ReleaseAcceptedEncounter(id);
+    ReleaseAcceptedEncounterFor(id, trainerId);
     CoopBattleConsent_Poll();
     EXPECT(CoopBattleRuntime_IsEngineActive());
     EXPECT(CoopTrainerRewards_TestIsArmed());
+    EXPECT_EQ(TRAINER_BATTLE_PARAM.opponentA, trainerId);
     DrainOutbound();
     /* Staged in battle: Charmander in slot 0, Treecko in slot 1. */
     EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][0], MON_DATA_SPECIES), SPECIES_CHARMANDER);
@@ -838,6 +872,8 @@ static void RunCoopTrainerBattle(struct RewardBattleState *saved, u8 id, u8 outc
         CoopTrainerRewards_OnBattleWon(1);
     gBattleOutcome = outcome;
     CoopBattleRuntime_TestSetBattleFinishedSent();
+    if (sPlayPartner)
+        CoopTrainerEncounter_TestPlayPartner();
     gMain.savedCallback();
     EXPECT(!CoopBattleRuntime_IsEngineActive());
     EXPECT(!CoopTrainerEncounter_TestIsPending());
@@ -848,14 +884,20 @@ static void RunCoopTrainerBattle(struct RewardBattleState *saved, u8 id, u8 outc
     EXPECT_EQ(GetMonData(&gParties[B_TRAINER_0][2], MON_DATA_SPECIES), SPECIES_TREECKO);
 }
 
+static void RunCoopTrainerBattle(struct RewardBattleState *saved, u8 id, u8 outcome)
+{
+    RunCoopBattleAgainst(saved, id, outcome, ENCOUNTER_TRAINER, TRAINER_BATTLE_SINGLE,
+                         BattleSetup_StartTrainerBattle);
+}
+
 static void RestoreRewardBattleState(const struct RewardBattleState *saved)
 {
     memcpy(gParties[B_TRAINER_1], saved->enemy, sizeof(saved->enemy));
     SetMoney(&gSaveBlock1Ptr->money, saved->money);
     if (saved->fought)
-        SetTrainerFlag(ENCOUNTER_TRAINER);
+        SetTrainerFlag(saved->trainer);
     else
-        ClearTrainerFlag(ENCOUNTER_TRAINER);
+        ClearTrainerFlag(saved->trainer);
     gBattleOutcome = saved->outcome;
     gBattlersCount = saved->battlers;
     memcpy(gBattlerPartyIndexes, saved->party_indexes, sizeof(saved->party_indexes));
@@ -887,7 +929,7 @@ TEST("Cloud Coop trainer win sets the flag, pays once and applies EXP after the 
     EXPECT_EQ(gMain.callback2, CB2_ReturnToFieldContinueScriptPlayMapMusic);
     EXPECT_EQ(gLeveledUpInBattle, 0);
     /* The resumed script cannot collect a second prize. */
-    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, ENCOUNTER_TRAINER, staged, 1),
+    EXPECT_EQ(CoopTrainerRewards_Apply(TRUE, ENCOUNTER_TRAINER, staged, 1, FALSE),
               COOP_TRAINER_REWARD_NONE);
     EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
     RestoreRewardBattleState(&saved);
@@ -907,5 +949,212 @@ TEST("Cloud Coop trainer loss leaves the trainer, money and EXP untouched")
     /* Local mons are still standing, so there is no whiteout. */
     EXPECT_EQ(gMain.callback2, CB2_ReturnToFieldContinueScriptPlayMapMusic);
     RestoreRewardBattleState(&saved);
+    EndEncounterFixture();
+}
+
+/* A7/A8: rematches and gyms touch badges, vars, the bag and match-call
+ * state, so these tests put SaveBlock1 and SaveBlock3 back byte for byte. */
+static struct SaveBlock1 *sSavedBlock1;
+static struct SaveBlock3 *sSavedBlock3;
+
+static void SnapshotSave(void)
+{
+    sSavedBlock1 = Alloc(sizeof(*gSaveBlock1Ptr));
+    sSavedBlock3 = Alloc(sizeof(*gSaveBlock3Ptr));
+    EXPECT(sSavedBlock1 != NULL && sSavedBlock3 != NULL);
+    memcpy(sSavedBlock1, gSaveBlock1Ptr, sizeof(*gSaveBlock1Ptr));
+    memcpy(sSavedBlock3, gSaveBlock3Ptr, sizeof(*gSaveBlock3Ptr));
+}
+
+static void RestoreSave(void)
+{
+    memcpy(gSaveBlock1Ptr, sSavedBlock1, sizeof(*gSaveBlock1Ptr));
+    memcpy(gSaveBlock3Ptr, sSavedBlock3, sizeof(*gSaveBlock3Ptr));
+    Free(sSavedBlock3);
+    Free(sSavedBlock1);
+    sSavedBlock1 = NULL;
+    sSavedBlock3 = NULL;
+}
+
+static void ClearHoennBadges(void)
+{
+    u8 i;
+
+    for (i = 0; i < COOP_HOENN_GYM_COUNT; i++)
+        FlagClear(FLAG_BADGE01_GET + i);
+}
+
+/* Stands in for the trainer script parked after the battle entry: running
+ * it sets VAR_BRINEY_LOCATION to 0, so a test can tell whether the co-op
+ * end resumed it or replaced it. */
+extern const u8 EventScript_BackupMrBrineyLocation[];
+
+static void ParkSentinelScript(void)
+{
+    VarSet(VAR_BRINEY_LOCATION, 3);
+    ScriptContext_SetupScript(EventScript_BackupMrBrineyLocation);
+    ScriptContext_Stop();
+}
+
+/* Finishes the post-battle evolution pass, then resumes the field script. */
+static void ReturnToFieldAndRunScript(void)
+{
+    if (gMain.callback2 == CB2_CoopTrainerRewardEvolutions)
+        gMain.callback2();
+    EXPECT_EQ(gMain.callback2, CB2_ReturnToFieldContinueScriptPlayMapMusic);
+    EXPECT(!ScriptContext_IsEnabled());
+    gMain.callback2 = CB2_Overworld;
+    ScriptContext_Enable();
+    (void)ScriptContext_RunScript();
+}
+
+TEST("Cloud Coop rematch and gym encounters are eligible in their own modes")
+{
+    BeginEncounterFixture();
+    SnapshotSave();
+    ClearHoennBadges();
+    /* Match-call rematches: the rematch entry the script swapped in. */
+    EXPECT(IsEligibleAs(TRAINER_CALVIN_2, TRAINER_BATTLE_REMATCH));
+    EXPECT(IsEligibleAs(TRAINER_CALVIN_5, TRAINER_BATTLE_REMATCH_DOUBLE));
+    EXPECT(IsEligibleAs(TRAINER_ROXANNE_2, TRAINER_BATTLE_REMATCH_DOUBLE));
+    EXPECT(!IsEligibleAs(TRAINER_CALVIN_1, TRAINER_BATTLE_REMATCH));
+    /* Gym leaders' first battles, whatever mode their script uses. */
+    EXPECT(IsEligibleAs(TRAINER_ROXANNE_1, TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC));
+    EXPECT(IsEligibleAs(TRAINER_JUAN_1, TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC));
+    EXPECT(IsEligibleAs(TRAINER_TATE_AND_LIZA_1, TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE_NO_MUSIC));
+    EXPECT(IsEligibleAs(TRAINER_NORMAN_1, TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT));
+    EXPECT(CoopTrainerEncounter_IsSupportedTrainer(TRAINER_WINONA_1));
+    EXPECT(CoopTrainerEncounter_IsSupportedTrainer(TRAINER_WINONA_4));
+    /* Other story scripts stay vanilla, even for a rematch entry. */
+    EXPECT(!IsEligibleAs(TRAINER_CALVIN_1, TRAINER_BATTLE_CONTINUE_SCRIPT));
+    EXPECT(!IsEligibleAs(TRAINER_CALVIN_2, TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC));
+    EXPECT(!IsEligibleAs(TRAINER_ROXANNE_2, TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC));
+    /* A requester that already holds the badge keeps the vanilla battle. */
+    FlagSet(FLAG_BADGE01_GET);
+    EXPECT(!IsEligibleAs(TRAINER_ROXANNE_1, TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC));
+    EXPECT(IsEligibleAs(TRAINER_ROXANNE_2, TRAINER_BATTLE_REMATCH_DOUBLE));
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop rematch encounter falls back to the vanilla rematch start")
+{
+    TrainerBattleParameter before;
+    u32 nonce;
+
+    BeginEncounterFixture();
+    SetTrainer(TRAINER_CALVIN_2, TRAINER_BATTLE_REMATCH);
+    before = gTrainerBattleParameter;
+    nonce = BeginParkedEncounterWith(BattleSetup_StartRematchBattle);
+    CoopBattleConsent_Poll();
+    EXPECT(CoopTrainerEncounter_TestIsPending());
+    DeliverRejected(nonce);
+    CoopBattleConsent_Poll();
+    EXPECT(!CoopTrainerEncounter_TestIsPending());
+    EXPECT_EQ(memcmp(&gTrainerBattleParameter, &before, sizeof(before)), 0);
+    EXPECT_EQ(gBattleTypeFlags, BATTLE_TYPE_TRAINER);
+    /* The vanilla rematch start, not dotrainerbattle's: it leaves the
+     * approach count alone. */
+    EXPECT_EQ(gNoOfApproachingTrainers, 1);
+    EXPECT(!CoopBattleRuntime_IsEngineActive());
+    EXPECT(IsFieldMessageBoxHidden());
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop rematch win through the co-op end records the vanilla rematch")
+{
+    struct RewardBattleState saved;
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_CALVIN_2, 1);
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    SetTrainerFlag(TRAINER_CALVIN_1);
+    gSaveBlock1Ptr->trainerRematches[REMATCH_CALVIN] = 1;
+    RunCoopBattleAgainst(&saved, 45, B_OUTCOME_WON, TRAINER_CALVIN_2,
+                         TRAINER_BATTLE_REMATCH, BattleSetup_StartRematchBattle);
+    EXPECT(HasTrainerBeenFought(TRAINER_CALVIN_2));
+    EXPECT_EQ(gSaveBlock1Ptr->trainerRematches[REMATCH_CALVIN], 0);
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop gym requester win pays and resumes the leader's own script")
+{
+    struct RewardBattleState saved;
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_ROXANNE_1, 1);
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    ClearHoennBadges();
+    FlagClear(FLAG_RECEIVED_TM_ROCK_TOMB);
+    ParkSentinelScript();
+    RunCoopBattleAgainst(&saved, 46, B_OUTCOME_WON, TRAINER_ROXANNE_1,
+                         TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC, BattleSetup_StartTrainerBattle);
+    EXPECT(HasTrainerBeenFought(TRAINER_ROXANNE_1));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    /* RoxanneDefeated, resumed next, gives the badge and TM: not Apply. */
+    EXPECT(!FlagGet(FLAG_BADGE01_GET));
+    EXPECT(!FlagGet(FLAG_RECEIVED_TM_ROCK_TOMB));
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 0); // the parked script ran
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop gym requester loss releases the field instead of the badge script")
+{
+    struct RewardBattleState saved;
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    ClearHoennBadges();
+    ParkSentinelScript();
+    RunCoopBattleAgainst(&saved, 47, B_OUTCOME_LOST, TRAINER_ROXANNE_1,
+                         TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC, BattleSetup_StartTrainerBattle);
+    EXPECT(!HasTrainerBeenFought(TRAINER_ROXANNE_1));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500);
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 3); // replaced by releaseall; end
+    EXPECT(!ArePlayerFieldControlsLocked());
+    EXPECT(!FlagGet(FLAG_BADGE01_GET));
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
+    EndEncounterFixture();
+}
+
+TEST("Cloud Coop gym partner win applies the grants and shows the badge notice")
+{
+    struct RewardBattleState saved;
+    u32 prize = CoopTrainerRewards_GetPrizeMoney(TRAINER_ROXANNE_1, 1);
+    u16 held;
+
+    BeginEncounterFixture();
+    SnapshotSave();
+    ClearHoennBadges();
+    FlagClear(FLAG_DEFEATED_RUSTBORO_GYM);
+    FlagClear(FLAG_RECEIVED_TM_ROCK_TOMB);
+    held = CountTotalItemQuantityInBag(ITEM_TM_ROCK_TOMB);
+    if (held != 0)
+        EXPECT(RemoveBagItem(ITEM_TM_ROCK_TOMB, held));
+    ParkSentinelScript();
+    sPlayPartner = TRUE;
+    RunCoopBattleAgainst(&saved, 48, B_OUTCOME_WON, TRAINER_ROXANNE_1,
+                         TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC, BattleSetup_StartTrainerBattle);
+    sPlayPartner = FALSE;
+    EXPECT(FlagGet(FLAG_BADGE01_GET));
+    EXPECT(FlagGet(FLAG_DEFEATED_RUSTBORO_GYM));
+    EXPECT(FlagGet(FLAG_RECEIVED_TM_ROCK_TOMB));
+    EXPECT_EQ(CountTotalItemQuantityInBag(ITEM_TM_ROCK_TOMB), 1);
+    EXPECT(HasTrainerBeenFought(TRAINER_ROXANNE_1));
+    EXPECT_EQ(GetMoney(&gSaveBlock1Ptr->money), 500 + prize);
+    /* The notice replaced the field script (the parked one never runs). */
+    ReturnToFieldAndRunScript();
+    EXPECT_EQ(VarGet(VAR_BRINEY_LOCATION), 3);
+    ScriptContext_Init();
+    RestoreRewardBattleState(&saved);
+    RestoreSave();
     EndEncounterFixture();
 }

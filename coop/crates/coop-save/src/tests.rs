@@ -1335,6 +1335,30 @@ fn checksum_ignores_partial_words_and_uses_end_around_fold() {
 }
 
 #[test]
+fn reads_hoenn_badge_flags_in_gym_order() {
+    let mut bytes = valid_image(20, 21);
+    // Stone, Knuckle and Heat: badges 1, 2 and 4 (bits 0, 1 and 3). The
+    // synthetic filler may hold any bits, so every badge flag is written.
+    for badge in 0..8 {
+        let flag = crate::FLAG_BADGE01_GET + badge;
+        let offset = crate::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8;
+        let save = parse(&bytes, TEST_REGISTRY).unwrap();
+        let current = save.save_block1_range(offset, 1).unwrap()[0];
+        let mask = 1 << (flag % 8);
+        let value = if [0, 1, 3].contains(&badge) {
+            current | mask
+        } else {
+            current & !mask
+        };
+        write_logical_range(&mut bytes, SaveSlot::Second, 1, offset, &[value]);
+    }
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.hoenn_badges(), Some(0b0000_1011));
+    assert_eq!(save.event_flag(crate::FLAG_BADGE01_GET + 2), Some(false));
+    assert_eq!(save.event_flag(crate::SAVE_BLOCK1_FLAG_BYTES * 8), None);
+}
+
+#[test]
 fn reads_money_trainer_flags_experience_and_locates_pokemon() {
     let mut bytes = valid_image(20, 21);
     // Money is stored XOR the SaveBlock2 encryption key, as GetMoney reads it.

@@ -108,3 +108,24 @@ Follow-ups recorded while implementing A4-A5 and B5-B6:
   evolutions and match-call registration.
 - The badge level cap is skipped in co-op battles (it projected only the
   local copy of the party).
+
+Follow-ups recorded while implementing A7-A8:
+- Rematches: `special BattleSetup_StartRematchBattle` has the same co-op hook
+  as dotrainerbattle; the fallback starts the vanilla rematch. A player who
+  has beaten the first battle is a participant (rematch prize); only the
+  requester's ROM records the vanilla rematch win (flag, match-call
+  registration, cleared rematch state). The server table mirrors
+  `gRematchTable` and a test parses the C source.
+- Gyms: the eight Hoenn leaders (and their rematches) are eligible; Kanto
+  and Johto leaders and Brock's special stay vanilla. The partner's grants
+  are `data/scripts/coop_gym_rewards.inc` (from each gym's `scripts.inc`)
+  plus the TM in C; map redraws, Norman's walk-out cutscene and the
+  match-call registration messages are not replayed on the partner.
+- Server gym roles read the FLAG_BADGE01..08 flags of the last finalized
+  save. A character that also progressed a Kanto campaign in the same save
+  shares those flags; the ROM decides the rewards either way.
+- A lost co-op gym battle (local mons still standing) releases the field
+  instead of resuming the leader's script, which would grant the badge.
+- A requester's co-op loss against a route trainer with local mons still
+  standing resumes the trainer's post-battle script (defeat text) instead
+  of releasing the field; no flag or money is given. Gyms already release.

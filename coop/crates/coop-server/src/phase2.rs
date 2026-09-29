@@ -98,6 +98,7 @@ pub mod saves;
 pub mod sessions;
 pub mod storage;
 mod trades;
+mod trainer_rules;
 
 pub use presence::{
     PRESENCE_HANDLE_CANDIDATES, PRESENCE_MAP, PRESENCE_MAP_GROUP, PRESENCE_MAP_NUMBER,

@@ -7,6 +7,7 @@
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "coop/region.h"
+#include "coop/trainer_rewards.h"
 #include "battle_pyramid.h"
 #include "data.h"
 #include "event_data.h"
@@ -356,7 +357,12 @@ static void PollTrainerEncounter(void)
     {
         sConsent.encounter_state = ENCOUNTER_NONE;
         HideFieldMessageBox();
-        BattleSetup_StartVanillaTrainerBattle();
+        /* The parked parameters are untouched, so their mode still says
+         * which vanilla entry the script was about to run. */
+        if (IsRematchBattleMode(GetTrainerBattleMode()))
+            BattleSetup_StartVanillaRematchBattle();
+        else
+            BattleSetup_StartVanillaTrainerBattle();
     }
 }
 
@@ -948,6 +954,43 @@ bool8 CoopTrainerEncounter_IsPhaseOneClass(u8 trainerClass)
     }
 }
 
+/* Phase 1 classes, plus the eight Hoenn gym leaders and their match-call
+ * rematches (A8). Every other story class keeps the vanilla battle (A9). */
+bool8 CoopTrainerEncounter_IsSupportedTrainer(u16 trainerId)
+{
+    return CoopTrainerEncounter_IsPhaseOneClass(GetTrainerClassFromId(trainerId))
+        || CoopTrainerRewards_IsHoennGymLeader(trainerId);
+}
+
+/* The script-continuing modes carry story post-battle scripts. Only a Hoenn
+ * gym leader's first battle may use them here; its script is the gym's own
+ * badge/TM grant, which the partner mirrors (CoopTrainerRewards_Apply). */
+static bool8 IsEligibleBattleMode(u16 trainerId)
+{
+    switch (GetTrainerBattleMode())
+    {
+    case TRAINER_BATTLE_SINGLE:
+    case TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT: // also Norman's gym battle
+    case TRAINER_BATTLE_DOUBLE:
+        return TRUE;
+    case TRAINER_BATTLE_CONTINUE_SCRIPT:
+    case TRAINER_BATTLE_CONTINUE_SCRIPT_NO_MUSIC:
+    case TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE:
+    case TRAINER_BATTLE_CONTINUE_SCRIPT_DOUBLE_NO_MUSIC:
+        return CoopTrainerRewards_GetHoennGym(trainerId) != COOP_HOENN_GYM_NONE;
+#if FREE_MATCH_CALL == FALSE
+    case TRAINER_BATTLE_REMATCH:
+    case TRAINER_BATTLE_REMATCH_DOUBLE:
+        /* ConfigureTrainerBattle already swapped in the rematch entry. */
+        return BattleSetup_GetRematchBaseTrainer(trainerId, NULL);
+#endif //FREE_MATCH_CALL
+    default:
+        /* Early rival, two trainers without intro, pyramid and hill modes
+         * stay vanilla. */
+        return FALSE;
+    }
+}
+
 static bool8 IsCooldownTrainer(u16 trainerId)
 {
     return sConsent.cooldown_trainer_id != TRAINER_NONE
@@ -969,18 +1012,10 @@ bool8 CoopTrainerEncounter_IsEligible(u16 trainerId)
 {
     enum CoopRegion region;
     u16 ordinal;
+    u8 gym;
 
-    switch (GetTrainerBattleMode())
-    {
-    case TRAINER_BATTLE_SINGLE:
-    case TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT:
-    case TRAINER_BATTLE_DOUBLE:
-        break;
-    default:
-        /* Early rival, two trainers without intro, continue-script (story),
-         * rematch, pyramid and hill modes stay vanilla in phase 1. */
+    if (!IsEligibleBattleMode(trainerId))
         return FALSE;
-    }
     if (trainerId == TRAINER_NONE || trainerId == TRAINER_SECRET_BASE
      || trainerId != TRAINER_BATTLE_PARAM.opponentA
      || gNoOfApproachingTrainers == 2
@@ -1001,7 +1036,13 @@ bool8 CoopTrainerEncounter_IsEligible(u16 trainerId)
         return FALSE;
     if (!CoopRegion_TryGetActive(&region)
      || !CoopIdentity_ResolveTrainerOrdinal(region, trainerId, &ordinal)
-     || !CoopTrainerEncounter_IsPhaseOneClass(GetTrainerClassFromId(trainerId)))
+     || !CoopTrainerEncounter_IsSupportedTrainer(trainerId))
+        return FALSE;
+    /* A leader's script only reaches the battle while its trainer flag is
+     * clear. A requester that already holds the badge anyway (a cleared
+     * flag) keeps the vanilla battle, so a badge is never granted twice. */
+    gym = CoopTrainerRewards_GetHoennGym(trainerId);
+    if (gym != COOP_HOENN_GYM_NONE && FlagGet(FLAG_BADGE01_GET + gym))
         return FALSE;
     return IsPartnerNearby();
 }
@@ -1024,6 +1065,11 @@ bool8 CoopTrainerEncounter_TryBegin(u16 trainerId)
     HideFieldMessageBox();
     (void)ShowFieldMessage(sWaitingForPartnerText);
     return TRUE;
+}
+
+bool8 CoopTrainerEncounter_IsRequesterBattle(void)
+{
+    return sConsent.encounter_state == ENCOUNTER_IN_BATTLE;
 }
 
 bool8 CoopTrainerEncounter_OnBattleEnded(bool8 completed)
@@ -1051,5 +1097,11 @@ void CoopTrainerEncounter_TestSetPartnerNearby(s8 nearby)
 bool8 CoopTrainerEncounter_TestIsPending(void)
 {
     return sConsent.encounter_state != ENCOUNTER_NONE;
+}
+
+void CoopTrainerEncounter_TestPlayPartner(void)
+{
+    if (sConsent.encounter_state == ENCOUNTER_IN_BATTLE)
+        sConsent.encounter_state = ENCOUNTER_NONE;
 }
 #endif

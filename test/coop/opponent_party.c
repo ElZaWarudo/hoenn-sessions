@@ -26,7 +26,8 @@ static const u8 sNameAlice[] = _("ALICE");
 static const u8 sNameBob[] = _("BOB");
 
 /* The test build has its own trainer table, so the trainers are built here
- * the way trainerproc emits them (Calvin, Fredrick, a four-mon leader). */
+ * the way trainerproc emits them (Calvin, Fredrick, a four-mon leader and a
+ * four-mon hiker with the same party). */
 static const struct TrainerMon sSingleParty[] =
 {
     {
@@ -74,6 +75,16 @@ static const struct Trainer sPairTrainer =
     .battleType = TRAINER_BATTLE_TYPE_SINGLES,
     .party = sPairParty,
     .partySize = ARRAY_COUNT(sPairParty),
+};
+
+static const struct Trainer sLongTrainer =
+{
+    .trainerName = _("HIKER"),
+    .trainerClass = TRAINER_CLASS_HIKER,
+    .gender = TRAINER_GENDER_MALE,
+    .battleType = TRAINER_BATTLE_TYPE_SINGLES,
+    .party = sLeaderParty,
+    .partySize = ARRAY_COUNT(sLeaderParty),
 };
 
 static const struct Trainer sLeaderTrainer =
@@ -355,16 +366,19 @@ TEST("Cloud Coop pool trainer draws its second mon from the rest of its pool")
     RestoreLocal(&saved);
 }
 
-static void ExpectCoopPartyMatchesHalfTeam(const struct Trainer *trainer)
+/* A co-op party equals the vanilla one built with the same half-team rule
+ * (up to OT data, which CreateCoopTrainerParty takes from the trainer). */
+static void ExpectCoopPartyMatchesVanilla(const struct Trainer *trainer, bool32 halfTeam)
 {
     struct Pokemon *coop = AllocZeroed(PARTY_SIZE * sizeof(struct Pokemon));
     struct Pokemon *vanilla = AllocZeroed(PARTY_SIZE * sizeof(struct Pokemon));
-    u8 expected = trainer->partySize > PARTY_SIZE / 2 ? PARTY_SIZE / 2 : trainer->partySize;
+    u8 expected = halfTeam && trainer->partySize > PARTY_SIZE / 2 ? PARTY_SIZE / 2
+                                                                  : trainer->partySize;
     u32 i;
     u32 j;
 
     SeedRng(4242);
-    CreateNPCTrainerPartyFromTrainer(vanilla, trainer, TRUE, COOP_OPPONENT_FLAGS);
+    CreateNPCTrainerPartyFromTrainer(vanilla, trainer, halfTeam, COOP_OPPONENT_FLAGS);
     SeedRng(4242);
     CreateCoopTrainerParty(coop, trainer, COOP_OPPONENT_FLAGS, 0xDEADBEEF);
     EXPECT_EQ(CountMons(vanilla), expected);
@@ -390,9 +404,42 @@ TEST("Cloud Coop trainers with two or more mons keep their co-op party")
     struct LocalSaveFixture saved;
 
     SaveLocal(&saved);
-    ExpectCoopPartyMatchesHalfTeam(&sPairTrainer);
-    /* Gym leaders and longer parties keep the existing three-mon cap. */
-    ExpectCoopPartyMatchesHalfTeam(&sLeaderTrainer);
+    ExpectCoopPartyMatchesVanilla(&sPairTrainer, TRUE);
+    /* Longer parties keep the three-mon cap; gym leaders do not. */
+    ExpectCoopPartyMatchesVanilla(&sLongTrainer, TRUE);
+    ExpectCoopPartyMatchesVanilla(&sLeaderTrainer, FALSE);
+    RestoreLocal(&saved);
+}
+
+TEST("Cloud Coop gym leader fields its full team, byte-identical on both ROMs")
+{
+    struct Pokemon *member0 = AllocZeroed(PARTY_SIZE * sizeof(struct Pokemon));
+    struct Pokemon *member1 = AllocZeroed(PARTY_SIZE * sizeof(struct Pokemon));
+    u8 manifest0[COOP_BATTLE_MANIFEST_SIZE];
+    u8 manifest1[COOP_BATTLE_MANIFEST_SIZE];
+    struct LocalSaveFixture saved;
+    u8 otName[PLAYER_NAME_LENGTH + 1];
+
+    SaveLocal(&saved);
+    EXPECT_GT((u32)sLeaderTrainer.partySize, PARTY_SIZE / 2);
+    MakeManifest(manifest0, 0x30, 0x44, 0);
+    MakeManifest(manifest1, 0x30, 0x44, 1);
+    SetLocal(sNameAlice, MALE, MAP_RUSTBORO_CITY_GYM);
+    SeedRng(0x600D);
+    CreateCoopTrainerParty(member0, &sLeaderTrainer, COOP_OPPONENT_FLAGS,
+                           CoopBattleRuntime_DeriveOpponentSeed(manifest0, TRAINER_ROXANNE_1));
+    SetLocal(sNameBob, FEMALE, MAP_ROUTE104);
+    SeedRng(0x600D);
+    CreateCoopTrainerParty(member1, &sLeaderTrainer, COOP_OPPONENT_FLAGS,
+                           CoopBattleRuntime_DeriveOpponentSeed(manifest1, TRAINER_ROXANNE_1));
+    EXPECT_EQ(CountMons(member0), sLeaderTrainer.partySize);
+    EXPECT_EQ(memcmp(member0, member1, PARTY_SIZE * sizeof(struct Pokemon)), 0);
+    /* Every mon, not only the first three, carries the leader as OT. */
+    GetMonData(&member0[PARTY_SIZE / 2], MON_DATA_OT_NAME, otName);
+    EXPECT_EQ(otName[0], sLeaderTrainer.trainerName[0]);
+    EXPECT_EQ(GetMonData(&member0[PARTY_SIZE / 2], MON_DATA_SPECIES), SPECIES_ONIX);
+    Free(member1);
+    Free(member0);
     RestoreLocal(&saved);
 }
 

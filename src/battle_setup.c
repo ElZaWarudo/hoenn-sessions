@@ -482,9 +482,12 @@ static void CB2_EndCoopTrainerBattle(void)
 {
     bool8 completed = FALSE;
     bool8 wasScriptedTrainerBattle;
+    bool8 requester;
+    bool8 won;
     u8 rewardSlots[COOP_BATTLE_MULTI_PARTY_SIZE];
     u8 rewardSlotCount;
     u16 rewardTrainerId;
+    enum CoopTrainerRewardRole rewardRole;
 
     if (!sCoopBattleEntryPrepared)
     {
@@ -540,12 +543,15 @@ static void CB2_EndCoopTrainerBattle(void)
     sCoopBattleEntryActive = FALSE;
     sCoopBattleEntryPrepared = FALSE;
     wasScriptedTrainerBattle = CoopBattleConsent_OnTrainerBattleEnded(completed, gBattleOutcome);
+    /* Only the member whose parked trainer script asked for this battle is
+     * the requester; read it before CoopTrainerEncounter_OnBattleEnded. */
+    requester = CoopTrainerEncounter_IsRequesterBattle();
+    won = completed && gBattleOutcome == B_OUTCOME_WON && !wasScriptedTrainerBattle;
     /* Local rewards, once per battle and only for a completed win of an
      * ordinary trainer (Wally/Brock keep their scripted outcome path). The
      * party is already restored, so EXP lands on the real mons. */
-    (void)CoopTrainerRewards_Apply(completed && gBattleOutcome == B_OUTCOME_WON
-                                       && !wasScriptedTrainerBattle,
-                                   rewardTrainerId, rewardSlots, rewardSlotCount);
+    rewardRole = CoopTrainerRewards_Apply(won, rewardTrainerId, rewardSlots,
+                                          rewardSlotCount, requester);
     if (CoopTrainerEncounter_OnBattleEnded(completed))
     {
         /* An aborted encounter never resumes the parked trainer script:
@@ -566,6 +572,22 @@ static void CB2_EndCoopTrainerBattle(void)
     }
     if (completed && !IsPlayerDefeated(gBattleOutcome))
         DowngradeBadPoison();
+    if (requester && !won
+     && CoopTrainerRewards_GetHoennGym(rewardTrainerId) != COOP_HOENN_GYM_NONE)
+    {
+        /* A gym leader's post-battle script grants the badge without
+         * checking the outcome (vanilla whites out first). A co-op loss
+         * with local mons still standing releases the field instead. */
+        ScriptContext_SetupScript(EventScript_CoopTrainerEncounterRelease);
+        ScriptContext_Stop();
+    }
+    else if (rewardRole == COOP_TRAINER_REWARD_GYM_PARTNER)
+    {
+        /* The partner has no leader script of its own. Its grants are
+         * already applied; this only shows the badge and the TM. */
+        ScriptContext_SetupScript(CoopTrainerRewards_GetGymNoticeScript(rewardTrainerId));
+        ScriptContext_Stop();
+    }
     if (CoopTrainerRewards_HasPendingEvolutions())
         SetMainCallback2(CB2_CoopTrainerRewardEvolutions);
     else
@@ -653,11 +675,15 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
 
     /* Past the last failure point: consume the approach bookkeeping exactly
      * as the vanilla start does, so the resumed post-battle script sees the
-     * same state. A failed entry above leaves it for the vanilla fallback. */
-    sNoOfPossibleTrainerRetScripts = gNoOfApproachingTrainers;
-    gNoOfApproachingTrainers = 0;
-    sShouldCheckTrainerBScript = FALSE;
-    gWhichTrainerToFaceAfterBattle = 0;
+     * same state. A failed entry above leaves it for the vanilla fallback.
+     * The vanilla rematch start leaves it alone, and so does this. */
+    if (!IsRematchBattleMode(sCoopOriginalTrainerBattleParameter.params.mode))
+    {
+        sNoOfPossibleTrainerRetScripts = gNoOfApproachingTrainers;
+        gNoOfApproachingTrainers = 0;
+        sShouldCheckTrainerBScript = FALSE;
+        gWhichTrainerToFaceAfterBattle = 0;
+    }
 
     CoopTrainerRewards_Begin();
     sCoopBattleEntryActive = TRUE;
@@ -1768,7 +1794,20 @@ static void CB2_EndRematchBattle(void)
     }
 }
 
+/* The match-call rematch entry (special BattleSetup_StartRematchBattle).
+ * Like dotrainerbattle, an eligible encounter parks the rematch script here
+ * and the consent poll later starts the co-op or the vanilla rematch. */
 void BattleSetup_StartRematchBattle(void)
+{
+    if (CoopTrainerEncounter_TryBegin(TRAINER_BATTLE_PARAM.opponentA))
+    {
+        ScriptContext_Stop();
+        return;
+    }
+    BattleSetup_StartVanillaRematchBattle();
+}
+
+void BattleSetup_StartVanillaRematchBattle(void)
 {
     gBattleTypeFlags = BATTLE_TYPE_TRAINER;
     gMain.savedCallback = CB2_EndRematchBattle;
@@ -2337,6 +2376,74 @@ static void HandleRematchVarsOnBattleEnd(void)
 
     ClearTrainerWantRematchState(gRematchTable, TRAINER_BATTLE_PARAM.opponentA);
     SetBattledTrainersFlags();
+}
+
+bool8 IsRematchBattleMode(u8 mode)
+{
+#if FREE_MATCH_CALL == FALSE
+    return mode == TRAINER_BATTLE_REMATCH || mode == TRAINER_BATTLE_REMATCH_DOUBLE;
+#else
+    return FALSE;
+#endif //FREE_MATCH_CALL
+}
+
+/* A rematch entry is a gRematchTable column after the first that names a
+ * different trainer (the Elite Four rows repeat their own ID). */
+bool8 BattleSetup_GetRematchBaseTrainer(u16 trainerId, u16 *baseTrainerId)
+{
+    u32 i, j;
+
+    if (trainerId == TRAINER_NONE)
+        return FALSE;
+    for (i = 0; i < REMATCH_TABLE_ENTRIES; i++)
+    {
+        for (j = 1; j < REMATCHES_COUNT; j++)
+        {
+            if (gRematchTable[i].trainerIds[j] == 0)
+                break;
+            if (gRematchTable[i].trainerIds[j] == trainerId
+             && gRematchTable[i].trainerIds[0] != trainerId)
+            {
+                if (baseTrainerId != NULL)
+                    *baseTrainerId = gRematchTable[i].trainerIds[0];
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
+/* Runs fn with the vanilla end-of-battle view of the parameters (opponent A
+ * is this trainer, no opponent B), then puts the script's own back. */
+static void WithTrainerAsOpponentA(u16 trainerId, void (*fn)(void))
+{
+    TrainerBattleParameter saved = gTrainerBattleParameter;
+
+    TRAINER_BATTLE_PARAM.opponentA = trainerId;
+    TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;
+    fn();
+    gTrainerBattleParameter = saved;
+}
+
+/* CB2_EndRematchBattle's win branch without its callback and poison step. */
+static void ApplyRematchWinBookkeeping(void)
+{
+    RegisterTrainerInMatchCall();
+    SetBattledTrainersFlags();
+    if (I_VS_SEEKER_CHARGING != 0)
+        ClearRematchMovementByTrainerId();
+    ClearTrainerWantRematchState(gRematchTable, TRAINER_BATTLE_PARAM.opponentA);
+    SetBattledTrainersFlags();
+}
+
+void BattleSetup_ApplyCoopRematchWin(u16 trainerId)
+{
+    WithTrainerAsOpponentA(trainerId, ApplyRematchWinBookkeeping);
+}
+
+void BattleSetup_RegisterTrainerInMatchCall(u16 trainerId)
+{
+    WithTrainerAsOpponentA(trainerId, RegisterTrainerInMatchCall);
 }
 
 void ShouldTryGetTrainerScript(void)

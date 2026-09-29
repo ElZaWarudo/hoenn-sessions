@@ -20,6 +20,7 @@ use super::storage::{
     MAX_BATTLE_ACTION_BYTES, MAX_BATTLE_IDEMPOTENCY, MAX_BATTLE_IDEMPOTENCY_PER_MEMBER,
     MAX_BATTLE_RESERVATIONS, MAX_BATTLE_TURNS, Store,
 };
+use super::trainer_rules::{MemberStanding, TrainerRule, trainer_rule};
 use super::{AuthenticatedActor, Phase2Error};
 
 const OP_RESERVE: &str = "battle_reserve_v1";
@@ -59,9 +60,10 @@ impl BattleRewardMode {
     }
 }
 
-/// A member's part in a local-reward trainer battle. A partner who has
-/// already beaten the trainer joins as a `Helper`; the requester is always a
-/// `Participant`.
+/// A member's part in a local-reward trainer battle. The requester is always
+/// a `Participant`. A partner who has already beaten a first-battle trainer,
+/// has not beaten a rematch's first battle, or is not at a gym's story point
+/// joins as a `Helper` (see `trainer_rules`).
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum BattleMemberRole {
@@ -716,14 +718,14 @@ fn snapshot_for_party(
     Ok(snapshot.clone())
 }
 
-/// Returns the anchor and whether this member's save has already beaten the
-/// requested trainer (always `false` without a trainer).
+/// Returns the anchor and what this member's save says about the requested
+/// trainer (the default standing without a trainer).
 fn party_anchor(
     store: &Store,
     character_id: CharacterId,
     snapshot: &SnapshotRecord,
     trainer: Option<(&TrainerInstanceId, &TrainerEncounter)>,
-) -> Result<(PartyAnchor, bool), Phase2Error> {
+) -> Result<(PartyAnchor, MemberStanding), Phase2Error> {
     let sav = snapshot
         .files
         .iter()
@@ -750,7 +752,7 @@ fn party_anchor(
     if !save.coop().online_eligible() {
         return Err(Phase2Error::Conflict);
     }
-    let mut defeated = false;
+    let mut standing = MemberStanding::default();
     if let Some((trainer_id, encounter)) = trainer {
         if save
             .coop()
@@ -759,10 +761,23 @@ fn party_anchor(
         {
             return Err(Phase2Error::Conflict);
         }
-        defeated = save
+        standing.defeated = save
             .coop()
             .defeated_trainer(trainer_id)
             .map_err(|_| Phase2Error::Conflict)?;
+        match &encounter.rule {
+            TrainerRule::Ordinary => {}
+            TrainerRule::Rematch { base } => {
+                standing.base_defeated = save
+                    .coop()
+                    .defeated_trainer(base)
+                    .map_err(|_| Phase2Error::Conflict)?;
+            }
+            // Badges live in the SaveBlock1 flags of the uploaded save.
+            TrainerRule::Gym { .. } => {
+                standing.badges = save.hoenn_badges().ok_or(Phase2Error::Conflict)?;
+            }
+        }
     }
     Ok((
         PartyAnchor {
@@ -770,7 +785,7 @@ fn party_anchor(
             revision: snapshot.revision,
             digest: party_digest(&save)?,
         },
-        defeated,
+        standing,
     ))
 }
 
@@ -782,6 +797,7 @@ struct TrainerEncounter {
     map: Option<&'static str>,
     minimum_story_checkpoint: u32,
     reward_mode: BattleRewardMode,
+    rule: TrainerRule,
 }
 
 // Every trainer with a persisted ordinal in the identity catalog can become a
@@ -803,6 +819,7 @@ fn trainer_encounter(trainer_id: &TrainerInstanceId) -> Result<TrainerEncounter,
             map: Some("VICTORY_ROAD_1F"),
             minimum_story_checkpoint: 0,
             reward_mode: BattleRewardMode::Ledger,
+            rule: TrainerRule::Ordinary,
         });
     }
     Ok(TrainerEncounter {
@@ -810,6 +827,7 @@ fn trainer_encounter(trainer_id: &TrainerInstanceId) -> Result<TrainerEncounter,
         map: None,
         minimum_story_checkpoint: 0,
         reward_mode: BattleRewardMode::Local,
+        rule: trainer_rule(trainer_id),
     })
 }
 
@@ -1341,7 +1359,7 @@ pub(crate) fn reserve(
         ))
     })?;
     let trainer = request.trainer_id.as_ref().zip(encounter.as_ref());
-    let anchored: [(PartyAnchor, bool); 2] = expected_members
+    let anchored: [(PartyAnchor, MemberStanding); 2] = expected_members
         .into_iter()
         .zip(snapshots.iter())
         .map(|(member, snapshot)| party_anchor(store, member, snapshot, trainer))
@@ -1349,36 +1367,36 @@ pub(crate) fn reserve(
         .try_into()
         .map_err(|_| Phase2Error::Internal)?;
     let [
-        (first_anchor, first_defeated),
-        (second_anchor, second_defeated),
+        (first_anchor, first_standing),
+        (second_anchor, second_standing),
     ] = anchored;
-    let defeated = [first_defeated, second_defeated];
+    let standings = [first_standing, second_standing];
     let anchors = [first_anchor, second_anchor];
     let (reward_mode, member_roles) = match &encounter {
         None => (BattleRewardMode::Ledger, None),
         Some(encounter) if encounter.reward_mode == BattleRewardMode::Ledger => {
             // The progression ledger grants the trainer to both members, so
             // neither may have beaten it already.
-            if defeated.contains(&true) {
+            if standings.iter().any(|standing| standing.defeated) {
                 return Err(Phase2Error::Conflict);
             }
             (BattleRewardMode::Ledger, None)
         }
-        Some(_) => {
+        Some(encounter) => {
             let requester = expected_members
                 .iter()
                 .position(|member| *member == actor.character_id)
                 .ok_or(Phase2Error::Forbidden)?;
-            if defeated[requester] {
+            if !encounter.rule.requester_allowed(standings[requester]) {
                 return Err(Phase2Error::Conflict);
             }
             (
                 BattleRewardMode::Local,
-                Some(defeated.map(|beaten| {
-                    if beaten {
-                        BattleMemberRole::Helper
-                    } else {
+                Some(std::array::from_fn(|index| {
+                    if index == requester || encounter.rule.participates(standings[index]) {
                         BattleMemberRole::Participant
+                    } else {
+                        BattleMemberRole::Helper
                     }
                 })),
             )
@@ -2769,19 +2787,56 @@ mod tests {
         revision: u64,
         defeated_trainer: Option<&str>,
     ) -> String {
+        seed_finalized_progress(app, actor, revision, defeated_trainer.as_slice(), 0)
+    }
+
+    /// Sets one SaveBlock1 event flag in the selected (second) fixture slot.
+    fn write_save_block1_flag(bytes: &mut [u8], flag: usize, set: bool) {
+        let position = coop_save::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8;
+        let logical = 1 + position / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
+        let physical = selected_physical(bytes, logical);
+        let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+        let index = start + position % coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
+        if set {
+            bytes[index] |= 1 << (flag % 8);
+        } else {
+            bytes[index] &= !(1 << (flag % 8));
+        }
+        rewrite_sector_checksum(bytes, logical);
+    }
+
+    /// A finalized party save whose CSP1 records every trainer in
+    /// `defeated_trainers` and whose flags hold exactly the Hoenn `badges`.
+    fn seed_finalized_progress(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        revision: u64,
+        defeated_trainers: &[&str],
+        badges: u8,
+    ) -> String {
         let lease = app
             .store
             .inspect_state(|state| state.leases[&actor.character_id].contract)
             .expect("lease");
         let mut bytes = fixture_party_sav();
-        if defeated_trainer.is_some() || revision > 1 {
-            let trainer =
-                TrainerInstanceId::parse(defeated_trainer.unwrap_or("HOENN:TRAINER_WALLY_1"))
-                    .unwrap();
-            let ordinal = identity_catalog::trainer(&trainer)
-                .unwrap()
-                .ordinal
-                .unwrap();
+        for badge in 0..8 {
+            write_save_block1_flag(
+                &mut bytes,
+                coop_save::FLAG_BADGE01_GET + badge,
+                badges & (1 << badge) != 0,
+            );
+        }
+        if !defeated_trainers.is_empty() || revision > 1 {
+            let ordinals: Vec<u16> = defeated_trainers
+                .iter()
+                .map(|id| {
+                    let trainer = TrainerInstanceId::parse(id).unwrap();
+                    identity_catalog::trainer(&trainer)
+                        .unwrap()
+                        .ordinal
+                        .unwrap()
+                })
+                .collect();
             let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
             for logical in 0..coop_save::SECTORS_PER_SLOT {
                 let physical = (0..coop_save::SECTORS_PER_SLOT)
@@ -2805,7 +2860,7 @@ mod tests {
                 }
             }
             payload[28..32].copy_from_slice(&(revision as u32).to_le_bytes());
-            if defeated_trainer.is_some() {
+            for ordinal in &ordinals {
                 payload[68 + usize::from(ordinal / 8)] |= 1 << (ordinal % 8);
             }
             let crc = crc32fast::hash(&payload[..668]);
@@ -5748,6 +5803,114 @@ mod tests {
             .reserve_battle(b, group, fb, trainer_request(941, LOCAL_TRAINER))
             .expect("partner requests");
         assert_eq!(role_of(&view, a), BattleMemberRole::Helper);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+    }
+
+    const CALVIN_1: &str = "HOENN:TRAINER_CALVIN_1";
+    const CALVIN_2: &str = "HOENN:TRAINER_CALVIN_2";
+    const BRAWLY_1: &str = "HOENN:TRAINER_BRAWLY_1";
+
+    #[test]
+    fn rematch_requires_the_requester_to_have_beaten_the_first_battle() {
+        let (app, a, _, group, fa, _) = local_fixture();
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(1000, CALVIN_2)),
+            Err(Phase2Error::Conflict)
+        );
+        seed_finalized_party_defeating(&app, a, 2, Some(CALVIN_1));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1001, CALVIN_2))
+            .expect("rematch reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn rematch_already_won_at_this_stage_can_be_fought_again() {
+        let (app, a, _, group, fa, _) = local_fixture();
+        // The old rule rejected a requester who had beaten the trainer; a
+        // rematch at its last stage is exactly that.
+        seed_finalized_progress(&app, a, 2, &[CALVIN_1, CALVIN_2], 0);
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1010, CALVIN_2))
+            .expect("rematch at a beaten stage");
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn rematch_partner_role_follows_the_first_battle() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        seed_finalized_party_defeating(&app, a, 2, Some(CALVIN_1));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1020, CALVIN_2))
+            .expect("helper partner");
+        assert_eq!(role_of(&view, b), BattleMemberRole::Helper);
+
+        let (app, a, b, group, fa, _) = local_fixture();
+        seed_finalized_party_defeating(&app, a, 2, Some(CALVIN_1));
+        seed_finalized_party_defeating(&app, b, 2, Some(CALVIN_1));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1021, CALVIN_2))
+            .expect("participant partner");
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn gym_reservation_requires_the_requester_to_lack_the_badge() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(&app, a, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        place(&app, b, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        seed_finalized_progress(&app, a, 2, &[], 0b0000_0011);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(1030, BRAWLY_1)),
+            Err(Phase2Error::Conflict)
+        );
+        seed_finalized_progress(&app, a, 3, &[], 0b0000_0001);
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1031, BRAWLY_1))
+            .expect("gym reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn gym_partner_participates_only_at_the_same_story_point() {
+        for (partner_badges, expected) in [
+            (0b0000_0001, BattleMemberRole::Participant), // Brawly is next
+            (0b0000_0000, BattleMemberRole::Helper),      // behind: no Stone Badge
+            (0b0000_0011, BattleMemberRole::Helper),      // already has it
+            (0b0000_0101, BattleMemberRole::Helper),      // a later badge, not this one
+        ] {
+            let (app, a, b, group, fa, _) = local_fixture();
+            place(&app, a, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+            place(&app, b, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+            seed_finalized_progress(&app, a, 2, &[], 0b0000_0001);
+            seed_finalized_progress(&app, b, 2, &[], partner_badges);
+            let view = app
+                .reserve_battle(a, group, fa, trainer_request(1040, BRAWLY_1))
+                .expect("gym reserve");
+            assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+            assert_eq!(
+                role_of(&view, b),
+                expected,
+                "partner badges {partner_badges:#b}"
+            );
+        }
+    }
+
+    #[test]
+    fn gym_role_ignores_a_stale_leader_defeat_bit() {
+        // The badge, not the trainer bit, decides a gym: a partner whose
+        // save recorded the leader but not the badge still participates.
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(&app, a, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        place(&app, b, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        seed_finalized_progress(&app, a, 2, &[], 0b0000_0001);
+        seed_finalized_progress(&app, b, 2, &[BRAWLY_1], 0b0000_0001);
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1050, BRAWLY_1))
+            .expect("gym reserve");
         assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
     }
 

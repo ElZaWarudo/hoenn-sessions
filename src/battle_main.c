@@ -2108,6 +2108,7 @@ u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer 
 static void CanonicalizeCoopOpponentMon(struct Pokemon *mon, const struct Trainer *trainer)
 {
     u8 otName[PLAYER_NAME_LENGTH + 1];
+    u8 nickname[POKEMON_NAME_BUFFER_SIZE];
     u8 value;
     u32 i;
 
@@ -2119,6 +2120,16 @@ static void CanonicalizeCoopOpponentMon(struct Pokemon *mon, const struct Traine
     SetMonData(mon, MON_DATA_OT_GENDER, &value);
     value = MAPSEC_NONE;
     SetMonData(mon, MON_DATA_MET_LOCATION, &value);
+    /* CreateBoxMon copies the species name through an uninitialized stack
+     * buffer, so the nickname bytes after its terminator are whatever that
+     * ROM's stack held. Pad them with EOS (a custom nickname is kept). */
+    memset(nickname, EOS, sizeof(nickname));
+    GetMonData(mon, MON_DATA_NICKNAME, nickname);
+    for (i = 0; i < POKEMON_NAME_LENGTH && nickname[i] != EOS; i++)
+        ;
+    for (; i < sizeof(nickname); i++)
+        nickname[i] = EOS;
+    SetMonData(mon, MON_DATA_NICKNAME, nickname);
 }
 
 /* The second mon a single-mon trainer fields in a co-op battle: another
@@ -2150,7 +2161,11 @@ u8 CreateCoopTrainerParty(struct Pokemon *party, const struct Trainer *trainer, 
 {
     u32 firstMonIndex = 0xFFFFFFFF;
     u32 i;
-    u8 retVal = CreateNPCTrainerPartyInternal(party, trainer, TRUE, battleTypeFlags, &firstMonIndex);
+    /* Gym leaders keep their whole team; everyone else fields at most three
+     * against the two players' one to three each. Both ROMs read the same
+     * trainer data, so they agree on the size. */
+    bool32 halfTeam = trainer->trainerClass != TRAINER_CLASS_LEADER;
+    u8 retVal = CreateNPCTrainerPartyInternal(party, trainer, halfTeam, battleTypeFlags, &firstMonIndex);
 
     if (firstMonIndex == 0xFFFFFFFF)
         return retVal;

@@ -17,24 +17,162 @@
 #include "money.h"
 #include "overworld.h"
 #include "pokemon.h"
+#include "script.h"
 #include "window.h"
 #include "constants/battle.h"
+#include "constants/flags.h"
 #include "constants/hold_effects.h"
+#include "constants/items.h"
+#include "constants/opponents.h"
 #include "constants/trainers.h"
 
 _Static_assert(COOP_BATTLE_MULTI_PARTY_SIZE <= 3,
                "a faint record holds three staged-slot bits per field");
 
-/* 10 bytes of EWRAM: everything else is derived after the battle. */
+/* 11 bytes of EWRAM: everything else is derived after the battle. */
 struct CoopTrainerRewardState
 {
     u8 faints[PARTY_SIZE]; // per opponent party slot, see COOP_TRAINER_REWARD_*
     u8 sent[2];            // per opponent flank: local staged slots sent in
     bool8 armed;
     u8 money_multiplier;
+    u8 gym_notice;         // GYM_NOTICE_* after a GYM_PARTNER settlement
 };
 
+#define GYM_NOTICE_PENDING  0x80
+#define GYM_NOTICE_TM_GIVEN 0x40
+#define GYM_NOTICE_GYM_MASK 0x07
+
 static EWRAM_DATA struct CoopTrainerRewardState sRewards = {0};
+
+/* The partner's share of each Hoenn gym's post-battle script
+ * (data/maps/<Gym>/scripts.inc: <Leader>Defeated and Give<TM>). The grant
+ * script applies every flag, var, gym-trainer flag and special it runs; the
+ * TM and its received flag are given here; the notice script shows the
+ * badge message, fanfare and TM. See data/scripts/coop_gym_rewards.inc. */
+struct CoopHoennGym
+{
+    u16 leader;
+    u16 tm;
+    u16 tmFlag;
+    const u8 *grantScript;
+    const u8 *noticeScript;
+};
+
+extern const u8 CoopGym_EventScript_GrantRustboro[];
+extern const u8 CoopGym_EventScript_GrantDewford[];
+extern const u8 CoopGym_EventScript_GrantMauville[];
+extern const u8 CoopGym_EventScript_GrantLavaridge[];
+extern const u8 CoopGym_EventScript_GrantPetalburg[];
+extern const u8 CoopGym_EventScript_GrantFortree[];
+extern const u8 CoopGym_EventScript_GrantMossdeep[];
+extern const u8 CoopGym_EventScript_GrantSootopolis[];
+extern const u8 CoopGym_EventScript_NoticeRustboro[];
+extern const u8 CoopGym_EventScript_NoticeDewford[];
+extern const u8 CoopGym_EventScript_NoticeMauville[];
+extern const u8 CoopGym_EventScript_NoticeLavaridge[];
+extern const u8 CoopGym_EventScript_NoticePetalburg[];
+extern const u8 CoopGym_EventScript_NoticeFortree[];
+extern const u8 CoopGym_EventScript_NoticeMossdeep[];
+extern const u8 CoopGym_EventScript_NoticeSootopolis[];
+
+static const struct CoopHoennGym sHoennGyms[COOP_HOENN_GYM_COUNT] =
+{
+    {TRAINER_ROXANNE_1, ITEM_TM_ROCK_TOMB, FLAG_RECEIVED_TM_ROCK_TOMB,
+     CoopGym_EventScript_GrantRustboro, CoopGym_EventScript_NoticeRustboro},
+    {TRAINER_BRAWLY_1, ITEM_TM_BULK_UP, FLAG_RECEIVED_TM_BULK_UP,
+     CoopGym_EventScript_GrantDewford, CoopGym_EventScript_NoticeDewford},
+    {TRAINER_WATTSON_1, ITEM_TM_SHOCK_WAVE, FLAG_RECEIVED_TM_SHOCK_WAVE,
+     CoopGym_EventScript_GrantMauville, CoopGym_EventScript_NoticeMauville},
+    {TRAINER_FLANNERY_1, ITEM_TM_OVERHEAT, FLAG_RECEIVED_TM_OVERHEAT,
+     CoopGym_EventScript_GrantLavaridge, CoopGym_EventScript_NoticeLavaridge},
+    {TRAINER_NORMAN_1, ITEM_TM_FACADE, FLAG_RECEIVED_TM_FACADE,
+     CoopGym_EventScript_GrantPetalburg, CoopGym_EventScript_NoticePetalburg},
+    {TRAINER_WINONA_1, ITEM_TM_AERIAL_ACE, FLAG_RECEIVED_TM_AERIAL_ACE,
+     CoopGym_EventScript_GrantFortree, CoopGym_EventScript_NoticeFortree},
+    {TRAINER_TATE_AND_LIZA_1, ITEM_TM_CALM_MIND, FLAG_RECEIVED_TM_CALM_MIND,
+     CoopGym_EventScript_GrantMossdeep, CoopGym_EventScript_NoticeMossdeep},
+    {TRAINER_JUAN_1, ITEM_TM_WATER_PULSE, FLAG_RECEIVED_TM_WATER_PULSE,
+     CoopGym_EventScript_GrantSootopolis, CoopGym_EventScript_NoticeSootopolis},
+};
+
+_Static_assert(FLAG_BADGE08_GET - FLAG_BADGE01_GET + 1 == COOP_HOENN_GYM_COUNT,
+               "one badge flag per Hoenn gym, in gym order");
+
+u8 CoopTrainerRewards_GetHoennGym(u16 trainerId)
+{
+    u8 i;
+
+    if (trainerId == TRAINER_NONE)
+        return COOP_HOENN_GYM_NONE;
+    for (i = 0; i < COOP_HOENN_GYM_COUNT; i++)
+        if (sHoennGyms[i].leader == trainerId)
+            return i;
+    return COOP_HOENN_GYM_NONE;
+}
+
+bool8 CoopTrainerRewards_IsHoennGymLeader(u16 trainerId)
+{
+    u16 base;
+
+    if (CoopTrainerRewards_GetHoennGym(trainerId) != COOP_HOENN_GYM_NONE)
+        return TRUE;
+    return BattleSetup_GetRematchBaseTrainer(trainerId, &base)
+        && CoopTrainerRewards_GetHoennGym(base) != COOP_HOENN_GYM_NONE;
+}
+
+/* Exactly the badges before this gym: every earlier one, this one and no
+ * later one missing (the badge count equals the gym's index). */
+bool8 CoopTrainerRewards_IsGymPartnerEligible(u8 gym)
+{
+    u8 i;
+
+    if (gym >= COOP_HOENN_GYM_COUNT)
+        return FALSE;
+    for (i = 0; i < COOP_HOENN_GYM_COUNT; i++)
+        if (FlagGet(FLAG_BADGE01_GET + i) != (i < gym))
+            return FALSE;
+    return TRUE;
+}
+
+const u8 *CoopTrainerRewards_GetGymNoticeScript(u16 trainerId)
+{
+    u8 gym = CoopTrainerRewards_GetHoennGym(trainerId);
+
+    return gym == COOP_HOENN_GYM_NONE ? NULL : sHoennGyms[gym].noticeScript;
+}
+
+void CoopTrainerRewards_LoadGymNoticeItem(struct ScriptContext *ctx)
+{
+    u8 gym = sRewards.gym_notice & GYM_NOTICE_GYM_MASK;
+
+    gSpecialVar_0x8000 = sHoennGyms[gym].tm;
+    gSpecialVar_0x8001 = 1;
+    gSpecialVar_0x8007 = (sRewards.gym_notice & GYM_NOTICE_TM_GIVEN) != 0;
+    sRewards.gym_notice = 0;
+}
+
+/* Everything the leader's post-battle script gives the player, applied to
+ * the partner's save at once so an interrupted notice cannot lose any of it.
+ * Only presentation is left to the notice script. */
+static void GrantGymToPartner(u8 gym)
+{
+    const struct CoopHoennGym *entry = &sHoennGyms[gym];
+    bool8 tmGiven = FALSE;
+
+    RunScriptImmediately(entry->grantScript);
+    if (AddBagItem(entry->tm, 1))
+    {
+        FlagSet(entry->tmFlag);
+        tmGiven = TRUE;
+    }
+    sRewards.gym_notice = GYM_NOTICE_PENDING | (tmGiven ? GYM_NOTICE_TM_GIVEN : 0) | gym;
+}
+
+static void PayPrize(u16 trainerId, u8 moneyMultiplier)
+{
+    AddMoney(&gSaveBlock1Ptr->money, CoopTrainerRewards_GetPrizeMoney(trainerId, moneyMultiplier));
+}
 
 static u32 CountBits(u32 bits)
 {
@@ -266,10 +404,13 @@ static void ApplyOpponentExperience(struct Pokemon *opponent, u8 record,
 }
 
 enum CoopTrainerRewardRole CoopTrainerRewards_Apply(bool8 won, u16 trainerId,
-                                                    const u8 *stagedSlots, u8 stagedCount)
+                                                    const u8 *stagedSlots, u8 stagedCount,
+                                                    bool8 requester)
 {
     struct CoopTrainerRewardState state = sRewards;
     enum CoopTrainerRewardRole role;
+    u16 base;
+    u8 gym;
     u32 i;
 
     /* Disarm first: whatever happens below, this battle is settled. */
@@ -277,18 +418,56 @@ enum CoopTrainerRewardRole CoopTrainerRewards_Apply(bool8 won, u16 trainerId,
     if (!state.armed || !won || trainerId == TRAINER_NONE || trainerId >= TRAINERS_COUNT
      || stagedSlots == NULL || stagedCount == 0
      || stagedCount > COOP_BATTLE_MULTI_PARTY_SIZE
-     || !CoopTrainerEncounter_IsPhaseOneClass(GetTrainerClassFromId(trainerId)))
+     || !CoopTrainerEncounter_IsSupportedTrainer(trainerId))
         return COOP_TRAINER_REWARD_NONE;
 
-    if (HasTrainerBeenFought(trainerId))
+    gym = CoopTrainerRewards_GetHoennGym(trainerId);
+    if (gym != COOP_HOENN_GYM_NONE)
+    {
+        /* The requester reached the battle through the leader's unbeaten
+         * script and without the badge (the eligibility gate), so it is the
+         * participant; its resumed script gives the badge, TM and flags. */
+        if (requester || CoopTrainerRewards_IsGymPartnerEligible(gym))
+        {
+            role = requester ? COOP_TRAINER_REWARD_PARTICIPANT
+                             : COOP_TRAINER_REWARD_GYM_PARTNER;
+            PayPrize(trainerId, state.money_multiplier);
+            /* CB2_EndTrainerBattle's win branch for the leader. */
+            BattleSetup_RegisterTrainerInMatchCall(trainerId);
+            SetTrainerFlag(trainerId);
+            if (!requester)
+                GrantGymToPartner(gym);
+        }
+        else
+        {
+            role = COOP_TRAINER_REWARD_HELPER;
+        }
+    }
+    else if (BattleSetup_GetRematchBaseTrainer(trainerId, &base))
+    {
+        /* A rematch pays whoever has beaten the first battle, as vanilla
+         * pays every rematch win. Only the requester fought it through its
+         * own match-call state, so only its ROM records the rematch. */
+        if (HasTrainerBeenFought(base))
+        {
+            role = COOP_TRAINER_REWARD_PARTICIPANT;
+            PayPrize(trainerId, state.money_multiplier);
+            if (requester)
+                BattleSetup_ApplyCoopRematchWin(trainerId);
+        }
+        else
+        {
+            role = COOP_TRAINER_REWARD_HELPER;
+        }
+    }
+    else if (HasTrainerBeenFought(trainerId))
     {
         role = COOP_TRAINER_REWARD_HELPER;
     }
     else
     {
         role = COOP_TRAINER_REWARD_PARTICIPANT;
-        AddMoney(&gSaveBlock1Ptr->money,
-                 CoopTrainerRewards_GetPrizeMoney(trainerId, state.money_multiplier));
+        PayPrize(trainerId, state.money_multiplier);
         SetTrainerFlag(trainerId);
     }
 
