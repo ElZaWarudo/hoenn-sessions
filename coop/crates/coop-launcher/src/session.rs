@@ -667,6 +667,12 @@ pub trait CloudApi: AuthApi {
     ) -> crate::online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
         Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
     }
+    fn partner_status(
+        &self,
+        _token: coop_cloud::AccessToken,
+    ) -> crate::online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        Box::pin(async { Err(crate::online::OnlineError::Unavailable) })
+    }
     fn group_travel_create(
         &self,
         _token: coop_cloud::AccessToken,
@@ -1530,6 +1536,8 @@ pub struct SessionLifecycle {
     /// correlation explicit at the launcher boundary.
     save_generation: Option<u32>,
     revision_updates: Option<tokio::sync::watch::Sender<u64>>,
+    /// Host UI requests served while realtime runs (see `live_requests`).
+    live_requests: Option<tokio::sync::mpsc::Receiver<crate::live_requests::LiveRequest>>,
     /// Exact server-validated record from the most recent checkpoint. Story
     /// travel receipts must name this snapshot, never infer one from a head.
     last_finalized_snapshot: Option<SnapshotRecord>,
@@ -2094,6 +2102,7 @@ impl SessionLifecycle {
             checkpoint_resume_baseline: None,
             save_generation: None,
             revision_updates: None,
+            live_requests: None,
             last_finalized_snapshot: None,
         };
         lifecycle.auth.set_active_fence(lifecycle.lease.fence());
@@ -2753,6 +2762,16 @@ impl SessionLifecycle {
         receive
     }
 
+    /// Lets a host UI ask this session for partner status or to redeem a
+    /// pairing code while realtime runs, using the session's own token and
+    /// lease fence. Requests arriving outside a realtime run wait for one.
+    pub fn serve_live_requests(
+        &mut self,
+        requests: tokio::sync::mpsc::Receiver<crate::live_requests::LiveRequest>,
+    ) {
+        self.live_requests = Some(requests);
+    }
+
     /// Re-enters the Android lifecycle only after the old native core and
     /// sidecar have stopped and no authorized checkpoint remains unresolved.
     /// The previous realtime owner has already been joined by the run method.
@@ -2895,20 +2914,23 @@ impl SessionLifecycle {
         A: CloudApi + RealtimeApi,
         F: Future<Output = ()> + Send,
     {
+        let mut live = crate::live_requests::LiveRequestOwner::new(self.live_requests.take());
         let result = self
-            .run_until_shutdown_with_realtime_inner(api, children, shutdown)
+            .run_until_shutdown_with_realtime_inner(api, children, shutdown, &mut live)
             .await;
+        self.live_requests = live.into_receiver();
         if result.is_err() {
             let _ = children.stop_in_place().await;
         }
         result
     }
 
-    async fn run_until_shutdown_with_realtime_inner<A, F>(
+    async fn run_until_shutdown_with_realtime_inner<'a, A, F>(
         &mut self,
-        api: &A,
+        api: &'a A,
         children: &mut impl SessionSupervisor,
         shutdown: F,
+        live: &mut crate::live_requests::LiveRequestOwner<'a>,
     ) -> Result<(), SessionError>
     where
         A: CloudApi + RealtimeApi,
@@ -2939,6 +2961,7 @@ impl SessionLifecycle {
                     &mut invites,
                     &mut group_travel,
                     &mut battle,
+                    live,
                 )
                 .await
             {
@@ -2979,6 +3002,21 @@ impl SessionLifecycle {
         clippy::too_many_lines,
         reason = "each attempt retains explicit checkpoint and cleanup ownership"
     )]
+    fn start_live_request<'a, A: CloudApi>(
+        &self,
+        api: &'a A,
+        live: &mut crate::live_requests::LiveRequestOwner<'a>,
+        step: crate::live_requests::LiveStep,
+    ) {
+        let crate::live_requests::LiveStep::Request(request) = step else {
+            return;
+        };
+        match self.auth.access_token() {
+            Some(token) => live.start(api, token.clone(), self.lease.fence(), request),
+            None => crate::live_requests::reply_unavailable(request),
+        }
+    }
+
     async fn run_realtime_attempt<'a, A, F>(
         &mut self,
         api: &'a A,
@@ -2990,6 +3028,7 @@ impl SessionLifecycle {
         invites: &mut crate::online::InviteWatcher<'a>,
         group_travel: &mut crate::group_travel::GroupTravelOwner<'a>,
         battle: &mut crate::battle::BattleOwner<'a>,
+        live: &mut crate::live_requests::LiveRequestOwner<'a>,
     ) -> Result<(), SessionError>
     where
         A: CloudApi + RealtimeApi,
@@ -3040,6 +3079,7 @@ impl SessionLifecycle {
                     };
                 }
                 _ = heartbeat.tick() => self.heartbeat(api).await?,
+                step = live.next() => self.start_live_request(api, live, step),
                 travel = group_travel.next_event() => {
                     match travel {
                         crate::group_travel::GroupTravelOwnerEvent::Deliver(record) => {
@@ -3544,6 +3584,10 @@ impl SessionLifecycle {
                         Ok(None) => {}
                         Err(error) => result = Err(error),
                     }
+                    continue;
+                }
+                step = live.next() => {
+                    self.start_live_request(api, live, step);
                     continue;
                 }
                 travel = group_travel.next_event() => {
@@ -6078,6 +6122,27 @@ mod lifecycle_tests {
             })
         }
 
+        fn partner_status(
+            &self,
+            _token: coop_cloud::AccessToken,
+        ) -> crate::online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+            Box::pin(async {
+                Ok(coop_cloud::PartnerStatusResponse {
+                    api_version: coop_cloud::ApiVersion::V1,
+                    partner: None,
+                })
+            })
+        }
+
+        fn pairing_redeem(
+            &self,
+            _token: coop_cloud::AccessToken,
+            _request: coop_cloud::RedeemPairingCodeRequest,
+        ) -> crate::online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
+            // An expired or consumed code answers like the server's 404.
+            Box::pin(async { Err(crate::online::OnlineError::Stale) })
+        }
+
         fn online_snapshot(
             &self,
             _token: coop_cloud::AccessToken,
@@ -7775,6 +7840,72 @@ mod lifecycle_tests {
     }
 
     #[tokio::test]
+    async fn live_requests_are_served_by_a_running_realtime_session() {
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        let (live, requests) = crate::live_requests::live_request_channel();
+        session.serve_live_requests(requests);
+        let control_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let control_address = control_listener.local_addr().unwrap();
+        // The ROM never becomes presence-ready here, so the requests are
+        // served by the pre-ready loop of the realtime run.
+        let control_server = tokio::spawn(async move {
+            let (stream, _) = control_listener.accept().await.unwrap();
+            stream
+        });
+        let stream = tokio::net::TcpStream::connect(control_address)
+            .await
+            .unwrap();
+        let control = ControlChannel::from_stream_for_test(stream);
+        let _peer = control_server.await.unwrap();
+        let mut children = SupervisedChildren::for_test(
+            long_running_test_child(),
+            long_running_test_child(),
+            control,
+        );
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let host = tokio::spawn(async move {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            live.send(crate::live_requests::LiveRequest::PartnerStatus(reply))
+                .await
+                .unwrap();
+            let status = answer.await.unwrap();
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            live.send(crate::live_requests::LiveRequest::RedeemPairingCode {
+                code: coop_cloud::PairingCode::new("ABC-234").unwrap(),
+                reply,
+            })
+            .await
+            .unwrap();
+            let redeemed = answer.await.unwrap();
+            drop(shutdown_tx);
+            (status, redeemed)
+        });
+        let _ = timeout(
+            Duration::from_secs(5),
+            session.run_until_shutdown_with_realtime(cloud.as_ref(), &mut children, async {
+                let _ = shutdown_rx.await;
+            }),
+        )
+        .await
+        .expect("live requests do not stall the session");
+        let (status, redeemed) = timeout(Duration::from_secs(1), host)
+            .await
+            .expect("host received both replies")
+            .unwrap();
+        assert_eq!(
+            status,
+            Ok(coop_cloud::PartnerStatusResponse {
+                api_version: coop_cloud::ApiVersion::V1,
+                partner: None,
+            })
+        );
+        assert_eq!(
+            redeemed,
+            Err(crate::live_requests::LiveRequestError::Refused)
+        );
+    }
+
+    #[tokio::test]
     async fn realtime_activation_reset_disables_lifecycle_and_joins_everything() {
         let (_root, mut session, cloud) = bootstrap(false).await;
         let websocket_listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -8770,6 +8901,7 @@ mod lifecycle_tests {
                 &mut invites,
                 &mut group_travel,
                 &mut battle,
+                &mut crate::live_requests::LiveRequestOwner::new(None),
             ),
         )
         .await

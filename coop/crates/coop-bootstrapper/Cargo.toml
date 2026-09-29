@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+coop-cloud = { path = "../coop-cloud" }
 coop-launcher = { path = "../coop-launcher" }
 fs4 = "=1.1.0"
 thiserror.workspace = true

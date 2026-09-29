@@ -456,6 +456,7 @@ dependencies = [
 name = "coop-bootstrapper"
 version = "0.1.0"
 dependencies = [
+ "coop-cloud",
  "coop-launcher",
  "ed25519-dalek",
  "fs4",

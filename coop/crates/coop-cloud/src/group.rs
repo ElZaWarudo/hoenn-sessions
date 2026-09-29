@@ -493,6 +493,20 @@ impl PairingCode {
 
 const PAIRING_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/// Extracts a pairing code from a `hoenn-sessions://join/<code>` link or a
+/// bare code, ignoring surrounding space, letter case, and one trailing slash.
+#[must_use]
+pub fn pairing_code_from_join_text(text: &str) -> Option<PairingCode> {
+    let text = text.trim();
+    let prefix = GROUP_PAIRING_CODE_LINK_PREFIX;
+    let code = match text.get(..prefix.len()) {
+        Some(head) if head.eq_ignore_ascii_case(prefix) => &text[prefix.len()..],
+        _ => text,
+    };
+    let code = code.strip_suffix('/').unwrap_or(code);
+    PairingCode::new(code.to_ascii_uppercase()).ok()
+}
+
 impl Serialize for PairingCode {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1273,6 +1287,33 @@ mod tests {
         assert!(serde_json::from_value::<GroupTravelActionRequest>(value.clone()).is_ok());
         value["action"] = json!("applied");
         assert!(serde_json::from_value::<GroupTravelActionRequest>(value).is_err());
+    }
+
+    #[test]
+    fn join_text_accepts_links_and_bare_codes_only() {
+        let code = |text| pairing_code_from_join_text(text).map(|code| code.as_str().to_owned());
+        assert_eq!(
+            code("hoenn-sessions://join/ABC-234"),
+            Some("ABC-234".to_owned())
+        );
+        assert_eq!(
+            code(" HOENN-SESSIONS://JOIN/abc-234/ "),
+            Some("ABC-234".to_owned())
+        );
+        assert_eq!(code("abc-234"), Some("ABC-234".to_owned()));
+        for bad in [
+            "",
+            "hoenn-sessions://join/",
+            "hoenn-sessions://join/ABC-234/extra",
+            "hoenn-sessions://other/ABC-234",
+            "https://join/ABC-234",
+            "ABC-1I0",
+            "ABCD234",
+            "hoenn-sessions://join/ABC-234?x=1",
+            "h\u{e9}enn-sessions://join/ABC-234",
+        ] {
+            assert_eq!(code(bad), None, "{bad}");
+        }
     }
 
     #[test]

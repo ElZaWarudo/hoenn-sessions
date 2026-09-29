@@ -118,7 +118,21 @@ fn is_fixed_regular_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn launch(target: LaunchTarget, working_directory: &Path) -> Result<ExitStatus, LaunchError> {
+/// Records the code from a join link for the desktop app. Only a valid,
+/// normalized code is written, never the raw command-line text.
+pub fn record_join_link(roots: &InstallRoots, argument: &str) -> bool {
+    let Some(code) = coop_cloud::pairing_code_from_join_text(argument) else {
+        return false;
+    };
+    fs::create_dir_all(roots.state_root()).is_ok()
+        && fs::write(roots.join_inbox_path(), code.as_str()).is_ok()
+}
+
+fn launch(
+    target: LaunchTarget,
+    working_directory: &Path,
+    join_inbox: &Path,
+) -> Result<ExitStatus, LaunchError> {
     let path = target.path().to_path_buf();
     if !is_fixed_regular_file(&path) {
         return Err(LaunchError::InvalidExecutable(path));
@@ -133,13 +147,21 @@ fn launch(target: LaunchTarget, working_directory: &Path) -> Result<ExitStatus, 
     };
     Command::new(&path)
         .current_dir(working_directory)
+        .env("HOENN_SESSIONS_JOIN_INBOX", join_inbox)
         .status()
         .map_err(LaunchError::Spawn)
 }
 
 pub fn run() -> Result<i32, LaunchError> {
     let roots = InstallRoots::resolve()?;
-    let _instance = SingleInstanceGuard::acquire(&roots)?;
+    let joined = std::env::args()
+        .nth(1)
+        .is_some_and(|argument| record_join_link(&roots, &argument));
+    let _instance = match SingleInstanceGuard::acquire(&roots) {
+        // The running window watches the inbox and picks the code up.
+        Err(LaunchError::AlreadyRunning) if joined => return Ok(0),
+        other => other?,
+    };
     let trusted_key = config::compiled_trust_key().ok();
     let min_release_sequence = config::compiled_min_release_sequence();
     let now = SystemTime::now()
@@ -150,7 +172,7 @@ pub fn run() -> Result<i32, LaunchError> {
     let mut attempts = 0_u8;
     loop {
         let target = select_target(&roots, trusted_key.as_ref(), min_release_sequence, now);
-        let status = launch(target, roots.install_root())?;
+        let status = launch(target, roots.install_root(), &roots.join_inbox_path())?;
         let exit_code = status.code().unwrap_or(1);
         if exit_code == TRUSTED_RESELECTION_EXIT_CODE && attempts < MAX_RESELECTION_ATTEMPTS {
             attempts = attempts.saturating_add(1);

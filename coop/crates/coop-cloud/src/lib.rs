@@ -34,7 +34,7 @@ pub use group::{
     GroupTravelSceneReceiptRequest, GroupView, MAX_WORLD_REVISION, PairingCode, PartnerStatus,
     PartnerStatusResponse, RedeemPairingCodeRequest, RedeemPairingCodeResponse, RouteId,
     StoryTravelRecoveryAction, StoryTravelRecoveryActionRequest, StoryTravelRecoveryOutcome,
-    StoryTravelRecoveryResolutionView, StoryTravelRecoveryView,
+    StoryTravelRecoveryResolutionView, StoryTravelRecoveryView, pairing_code_from_join_text,
 };
 pub use ids::{
     BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,

@@ -214,6 +214,19 @@ impl ReqwestCloudApi {
             .await
         })
     }
+    pub(crate) fn partner_status_http(
+        &self,
+        token: AccessToken,
+    ) -> OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        Box::pin(async move {
+            let url = self.url("v1/group/partner").map_err(map_http_error)?;
+            self.send_online(
+                self.client.get(url).bearer_auth(token.expose_secret()),
+                4096,
+            )
+            .await
+        })
+    }
     async fn send_online<T: serde::de::DeserializeOwned>(
         &self,
         request: reqwest::RequestBuilder,

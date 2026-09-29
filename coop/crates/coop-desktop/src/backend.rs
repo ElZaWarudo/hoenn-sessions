@@ -18,6 +18,7 @@ use coop_launcher::{
     EpochStore, OsKeychain, RecoveryDiscovery, RecoveryMarker, RecoveryOutcome, RecoveryReconciler,
     RecoveryResult, RefreshTokenStore, ReleaseReadiness, SessionConfig, SessionError,
     SessionLifecycle, StartFailure, TrustedManifestKey, UpdateFailure,
+    live_requests::{LiveRequest, LiveRequestError, live_request_channel},
     process::{SupervisedChildren, staged_rom_marker_contents, staged_rom_marker_path},
     update::{GenerationStore, UpdateError},
 };
@@ -86,8 +87,22 @@ pub enum BackendEvent {
     SignOutFailed(coop_launcher::SignOutFailure),
     RecoveryReconciled(RecoveryResult),
     PartnerStatus(Result<coop_cloud::PartnerStatusResponse, ()>),
+    PairingRedeemed(Result<(), JoinFailure>),
     StoryRecoveryInspected(StoryRecoveryStatus),
     StoryRecoveryAbandoned(StoryRecoveryStatus),
+}
+
+/// Why a desktop join by pairing code did not form a group.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum JoinFailure {
+    /// The text is not a pairing code.
+    InvalidCode,
+    /// The game is not running, so no lease can redeem the code.
+    NotRunning,
+    /// The code is unknown, expired, used, or this character is already grouped.
+    Refused,
+    /// The service could not be reached; the code may still be valid.
+    Unavailable,
 }
 
 /// Deliberately safe desktop copy for a fenced story-travel recovery check.
@@ -122,6 +137,13 @@ impl BackendHandle {
     pub fn fetch_partner_status(&self) -> Result<(), BackendError> {
         self.commands
             .send(BackendCommand::FetchPartnerStatus)
+            .map_err(|_| BackendError::Closed)
+    }
+
+    /// Redeems a pairing code through the running game's session.
+    pub fn redeem_pairing_code(&self, code: String) -> Result<(), BackendError> {
+        self.commands
+            .send(BackendCommand::RedeemPairingCode(code))
             .map_err(|_| BackendError::Closed)
     }
 
@@ -211,15 +233,18 @@ pub fn spawn_backend(config: BackendConfig) -> Result<BackendHandle, BackendErro
 enum BackendCommand {
     Effect(Effect),
     FetchPartnerStatus,
+    RedeemPairingCode(String),
     InspectStoryRecovery,
     AbandonStoryRecovery,
-    RuntimeStarted,
+    RuntimeStarted(tokio_mpsc::Sender<LiveRequest>),
     RuntimeFinished(RuntimeCompletion),
     Shutdown(mpsc::Sender<()>),
 }
 
 struct RuntimeHandle {
     stop: Option<oneshot::Sender<()>>,
+    /// Requests into the running session; its token and lease stay there.
+    live: Option<tokio_mpsc::Sender<LiveRequest>>,
 }
 
 struct BackendActor {
@@ -249,6 +274,12 @@ enum RuntimeOutcome {
 }
 
 impl BackendActor {
+    fn live_sender(&self) -> Option<tokio_mpsc::Sender<LiveRequest>> {
+        self.runtime
+            .as_ref()
+            .and_then(|runtime| runtime.live.clone())
+    }
+
     async fn run(
         mut self,
         mut commands: tokio_mpsc::UnboundedReceiver<BackendCommand>,
@@ -260,12 +291,58 @@ impl BackendActor {
                     self.execute(effect, &events).await;
                 }
                 BackendCommand::FetchPartnerStatus => {
-                    let status = if let Some(auth) = self.auth.as_ref() {
-                        self.api.partner_status(auth).await.map_err(|_| ())
+                    if let Some(auth) = self.auth.as_ref() {
+                        let status = self.api.partner_status(auth).await.map_err(|_| ());
+                        let _ = events.send(BackendEvent::PartnerStatus(status));
+                    } else if let Some(live) = self.live_sender() {
+                        let (reply, answer) = oneshot::channel();
+                        let events = events.clone();
+                        tokio::spawn(async move {
+                            let status = match live.send(LiveRequest::PartnerStatus(reply)).await {
+                                Ok(()) => {
+                                    answer.await.map_err(|_| ()).and_then(|r| r.map_err(|_| ()))
+                                }
+                                Err(_) => Err(()),
+                            };
+                            let _ = events.send(BackendEvent::PartnerStatus(status));
+                        });
                     } else {
-                        Err(())
+                        let _ = events.send(BackendEvent::PartnerStatus(Err(())));
+                    }
+                }
+                BackendCommand::RedeemPairingCode(code) => {
+                    let Ok(code) = coop_cloud::PairingCode::new(code.trim().to_ascii_uppercase())
+                    else {
+                        let _ = events
+                            .send(BackendEvent::PairingRedeemed(Err(JoinFailure::InvalidCode)));
+                        continue;
                     };
-                    let _ = events.send(BackendEvent::PartnerStatus(status));
+                    let Some(live) = self.live_sender() else {
+                        let _ = events
+                            .send(BackendEvent::PairingRedeemed(Err(JoinFailure::NotRunning)));
+                        continue;
+                    };
+                    let (reply, answer) = oneshot::channel();
+                    let events = events.clone();
+                    tokio::spawn(async move {
+                        let result = match live
+                            .send(LiveRequest::RedeemPairingCode { code, reply })
+                            .await
+                        {
+                            Ok(()) => match answer.await {
+                                Ok(Ok(())) => Ok(()),
+                                Ok(Err(LiveRequestError::Refused)) => Err(JoinFailure::Refused),
+                                Ok(Err(LiveRequestError::Unavailable)) => {
+                                    Err(JoinFailure::Unavailable)
+                                }
+                                Ok(Err(LiveRequestError::NotRunning)) | Err(_) => {
+                                    Err(JoinFailure::NotRunning)
+                                }
+                            },
+                            Err(_) => Err(JoinFailure::NotRunning),
+                        };
+                        let _ = events.send(BackendEvent::PairingRedeemed(result));
+                    });
                 }
                 BackendCommand::InspectStoryRecovery => {
                     let status = self.story_recovery(false).await;
@@ -275,12 +352,11 @@ impl BackendActor {
                     let status = self.story_recovery(true).await;
                     let _ = events.send(BackendEvent::StoryRecoveryAbandoned(status));
                 }
-                BackendCommand::RuntimeStarted => {
-                    if self
-                        .runtime
-                        .as_ref()
-                        .is_some_and(|runtime| runtime.stop.is_some())
+                BackendCommand::RuntimeStarted(live) => {
+                    if let Some(runtime) = self.runtime.as_mut()
+                        && runtime.stop.is_some()
                     {
+                        runtime.live = Some(live);
                         let _ = events.send(BackendEvent::StartCompleted);
                     }
                 }
@@ -665,6 +741,7 @@ impl BackendActor {
         });
         self.runtime = Some(RuntimeHandle {
             stop: Some(stop_tx),
+            live: None,
         });
     }
 
@@ -1197,9 +1274,13 @@ async fn run_runtime(
         Ok(children) => children,
         Err(_) => return retain_auth(session, &api).await,
     };
-    let _ = commands.send(BackendCommand::RuntimeStarted);
+    let (live, live_requests) = live_request_channel();
+    session.serve_live_requests(live_requests);
+    let _ = commands.send(BackendCommand::RuntimeStarted(live));
+    // Realtime carries presence, Online, pairing, invitations, and group
+    // travel; the session keeps its own heartbeat and checkpoint duties.
     let lifecycle = session
-        .run_until_shutdown(&api, &mut children, async move {
+        .run_until_shutdown_with_realtime(&api, &mut children, async move {
             let _ = stop_rx.await;
         })
         .await;

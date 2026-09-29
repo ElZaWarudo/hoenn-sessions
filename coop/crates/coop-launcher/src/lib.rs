@@ -9,6 +9,7 @@ pub mod desktop;
 pub mod epoch;
 pub mod group_travel;
 pub mod keychain;
+pub mod live_requests;
 pub mod online;
 pub mod process;
 pub mod realtime;
@@ -543,6 +544,12 @@ impl CloudApi for ReqwestCloudApi {
         request: coop_cloud::RedeemPairingCodeRequest,
     ) -> online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
         self.pairing_redeem_http(token, request)
+    }
+    fn partner_status(
+        &self,
+        token: coop_cloud::AccessToken,
+    ) -> online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        self.partner_status_http(token)
     }
     fn group_travel_create(
         &self,
