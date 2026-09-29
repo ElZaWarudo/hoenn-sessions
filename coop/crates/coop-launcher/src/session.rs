@@ -492,7 +492,8 @@ where
                     | ControlEvent::ActionIntent(_)
                     | ControlEvent::TurnResultHash(_)
                     | ControlEvent::BattleFinished(_)
-                    | ControlEvent::CommitApplied(_))) => {
+                    | ControlEvent::CommitApplied(_)
+                    | ControlEvent::TradeCommitApplied(_))) => {
                     queue_pending_battle(pending_battle, event)?;
                 }
                 RawSupervisorEvent::Control(ready @ ControlEvent::CheckpointReady { .. }) => {
@@ -514,6 +515,16 @@ where
 
 /// HTTP or deterministic fake cloud adapter. Wire values are all coop-cloud DTOs.
 pub trait CloudApi: AuthApi {
+    /// `GET /v1/characters/{character_id}/ledger/open` under the lease fence.
+    /// `Ok(None)` means the character has no open outcome-ledger entry.
+    fn ledger_open(
+        &self,
+        _token: coop_cloud::AccessToken,
+        _character_id: CharacterId,
+        _fence: coop_cloud::LeaseFence,
+    ) -> crate::ledger::LedgerFuture<'_, Option<crate::ledger::LedgerEntryView>> {
+        Box::pin(async { Err(crate::ledger::LedgerError::Unavailable) })
+    }
     fn story_travel_recovery(
         &self,
         _token: coop_cloud::AccessToken,
@@ -1166,6 +1177,42 @@ impl SessionWorkspace {
         Ok(path)
     }
 
+    /// Replaces `pending_commits.json`, the only fixed file the launcher
+    /// rewrites during a session. No emulator, sidecar, or bridge process
+    /// reads it; the launcher reads it only from the same task that writes
+    /// it, so the Windows replace-by-rename (`MoveFileExW` with
+    /// `MOVEFILE_REPLACE_EXISTING`) has no concurrent reader to race.
+    fn replace_pending_commits(&self, bytes: &[u8]) -> Result<(), SessionError> {
+        const NAME: &str = "pending_commits.json";
+        if bytes.len() > MAX_SESSION_FILE_BYTES {
+            return Err(SessionError::Package);
+        }
+        let path = fixed_path(self.path(), NAME)?;
+        reject_symlink_ancestors(&path).map_err(SessionError::Filesystem)?;
+        let temporary = self
+            .path()
+            .join(format!(".{NAME}.{}.tmp", uuid::Uuid::new_v4().simple()));
+        reject_symlink(&path)?;
+        reject_symlink(&temporary)?;
+        let result = (|| {
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temporary)
+                .map_err(SessionError::Filesystem)?;
+            file.write_all(bytes).map_err(SessionError::Filesystem)?;
+            file.sync_all().map_err(SessionError::Filesystem)?;
+            drop(file);
+            reject_symlink_ancestors(&path).map_err(SessionError::Filesystem)?;
+            std::fs::rename(&temporary, &path).map_err(SessionError::Filesystem)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result?;
+        sync_workspace_directory(self.path())
+    }
+
     fn read_fixed(&self, name: &str) -> Result<Vec<u8>, SessionError> {
         let path = fixed_path(self.path(), name)?;
         let metadata = std::fs::symlink_metadata(&path).map_err(SessionError::Filesystem)?;
@@ -1523,6 +1570,9 @@ pub struct SessionLifecycle {
     /// A ROM commit acknowledgement is carried into the next snapshot
     /// finalize. It remains set until the server response echoes the same ID.
     pending_applied_commit: Option<CommitId>,
+    /// The open outcome-ledger trade this session delivers to the ROM. Its
+    /// commit ID is mirrored into `pending_commits.json` until declared.
+    ledger: crate::ledger::LedgerOwner,
     #[cfg(test)]
     realtime_mint_state_probe: Option<Arc<tokio::sync::Notify>>,
     #[cfg(test)]
@@ -2093,6 +2143,7 @@ impl SessionLifecycle {
             pending_progress: VecDeque::new(),
             pending_battle: VecDeque::new(),
             pending_applied_commit: None,
+            ledger: crate::ledger::LedgerOwner::default(),
             #[cfg(test)]
             realtime_mint_state_probe: None,
             #[cfg(test)]
@@ -2112,6 +2163,12 @@ impl SessionLifecycle {
             lifecycle.restore_or_bootstrap(api).await
         }
         .await;
+        // Re-poll the outcome ledger on every start: an entry a previous
+        // launcher delivered but never saw declared is delivered again once
+        // the ROM is ready. Revision zero cannot have a ledger entry.
+        if !lifecycle.revision.is_initial() {
+            lifecycle.ledger.request_poll();
+        }
         if let Err(error) = setup {
             // No child process has started. A pending story decision needs
             // the saved sign-in; other setup failures keep the existing
@@ -2180,6 +2237,129 @@ impl SessionLifecycle {
         }
         if self.authenticated_story_recovery(api).await?.is_some() {
             return Err(SessionError::StoryTravelRecoveryPending);
+        }
+        Ok(())
+    }
+
+    /// Polls the open outcome-ledger entry when a poll is due. Transient,
+    /// stale-fence, and malformed responses back off and retry instead of
+    /// interrupting gameplay; only a failed refresh is fatal.
+    async fn poll_ledger_if_due<A: CloudApi>(&mut self, api: &A) -> Result<(), SessionError> {
+        use crate::ledger::LedgerError;
+        if self.revision.is_initial() {
+            self.ledger.cancel_poll();
+            return Ok(());
+        }
+        if !self.ledger.poll_ready(tokio::time::Instant::now()) {
+            return Ok(());
+        }
+        self.refresh_if_needed(api).await?;
+        let character_id = self.lease.character_id;
+        let token = self
+            .auth
+            .access_token()
+            .ok_or(SessionError::Unauthorized)?
+            .clone();
+        let mut result = api
+            .ledger_open(token, character_id, self.lease.fence())
+            .await;
+        if matches!(result, Err(LedgerError::Unauthorized)) {
+            self.refresh_required(api).await?;
+            let token = self
+                .auth
+                .access_token()
+                .ok_or(SessionError::Unauthorized)?
+                .clone();
+            result = api
+                .ledger_open(token, character_id, self.lease.fence())
+                .await;
+        }
+        match result.and_then(|view| self.ledger.accept(view.as_ref(), character_id)) {
+            Ok(()) => self.sync_pending_commits_file(),
+            Err(LedgerError::Unauthorized) => Err(SessionError::Unauthorized),
+            Err(LedgerError::Unavailable | LedgerError::Stale | LedgerError::InvalidResponse) => {
+                self.ledger.poll_failed(tokio::time::Instant::now());
+                Ok(())
+            }
+        }
+    }
+
+    /// Mirrors the tracked trade commit into `pending_commits.json`. Nothing
+    /// is rewritten before the first successful poll, so a restored mirror
+    /// survives until the server confirms or contradicts it.
+    fn sync_pending_commits_file(&mut self) -> Result<(), SessionError> {
+        if !self.ledger.synced() {
+            return Ok(());
+        }
+        let desired = crate::ledger::encode_pending_commits(self.ledger.tracked_commit());
+        let current = match self.workspace.read_fixed("pending_commits.json") {
+            Ok(bytes) => Some(bytes),
+            Err(SessionError::Filesystem(error)) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        if current.as_deref() != Some(desired.as_slice()) {
+            self.workspace.replace_pending_commits(&desired)?;
+        }
+        Ok(())
+    }
+
+    /// The next `TradeCommit` for this control generation, if the tracked
+    /// trade has not been delivered to it or acknowledged yet.
+    fn take_ledger_delivery(&mut self, generation: u32) -> Option<ControlCommand> {
+        self.ledger
+            .take_delivery(generation)
+            .map(|record| ControlCommand::TradeCommit {
+                session_epoch: self.lease.session_epoch.value(),
+                record,
+            })
+    }
+
+    /// Records a ROM acknowledgement so the next finalize declares it. A
+    /// different commit already waiting for declaration is a protocol
+    /// violation: the server keeps at most one open entry per character.
+    fn record_applied_commit(&mut self, commit_id: CommitId) -> Result<(), SessionError> {
+        if self
+            .pending_applied_commit
+            .is_some_and(|pending| pending != commit_id)
+        {
+            return Err(SessionError::Realtime);
+        }
+        self.pending_applied_commit = Some(commit_id);
+        self.ledger.request_poll();
+        Ok(())
+    }
+
+    /// Handles the 43-byte `CommitApplied` for a delivered `BattleCommit`
+    /// after the battle owner accepted it.
+    fn accept_battle_commit_applied(
+        &mut self,
+        record: coop_protocol::CommitAppliedRecord,
+    ) -> Result<(), SessionError> {
+        let commit_id = CommitId::new(uuid::Uuid::from_bytes(record.commit_id.0))
+            .map_err(|_| SessionError::Realtime)?;
+        self.record_applied_commit(commit_id)
+    }
+
+    /// Handles the 28-byte `CommitApplied` for a delivered `TradeCommit`.
+    fn accept_trade_commit_applied(
+        &mut self,
+        record: coop_protocol::TradeCommitAppliedRecord,
+    ) -> Result<(), SessionError> {
+        let commit_id = self
+            .ledger
+            .acknowledge(record)
+            .ok_or(SessionError::Realtime)?;
+        self.record_applied_commit(commit_id)
+    }
+
+    /// Clears a declared commit once the finalized record echoes it.
+    fn commit_declared(&mut self, record: &SnapshotRecord) -> Result<(), SessionError> {
+        if self.pending_applied_commit == record.last_applied_commit {
+            self.pending_applied_commit = None;
+        }
+        if let Some(commit_id) = record.last_applied_commit {
+            self.ledger.finalized(commit_id);
+            self.sync_pending_commits_file()?;
         }
         Ok(())
     }
@@ -3140,10 +3320,10 @@ impl SessionLifecycle {
                             if !battle.mark_commit_acknowledged(fence, generation, record) {
                                 return Err(SessionError::Realtime);
                             }
-                            self.pending_applied_commit = Some(
-                                CommitId::new(uuid::Uuid::from_bytes(record.commit_id.0))
-                                    .map_err(|_| SessionError::Realtime)?,
-                            );
+                            self.accept_battle_commit_applied(record)?;
+                        }
+                        RawSupervisorEvent::Control(ControlEvent::TradeCommitApplied(record)) => {
+                            self.accept_trade_commit_applied(record)?;
                         }
                         RawSupervisorEvent::Control(event @ (ControlEvent::PartySnapshot(_)
                             | ControlEvent::BattleReady(_)
@@ -3455,10 +3635,10 @@ impl SessionLifecycle {
                         {
                             return Err(SessionError::Realtime);
                         }
-                        self.pending_applied_commit = Some(
-                            CommitId::new(uuid::Uuid::from_bytes(record.commit_id.0))
-                                .map_err(|_| SessionError::Realtime)?,
-                        );
+                        self.accept_battle_commit_applied(record)?;
+                    }
+                    ControlEvent::TradeCommitApplied(record) => {
+                        self.accept_trade_commit_applied(record)?;
                     }
                     event @ (ControlEvent::PartySnapshot(_)
                     | ControlEvent::BattleReady(_)
@@ -3479,6 +3659,12 @@ impl SessionLifecycle {
                     }
                     _ => return Err(SessionError::Realtime),
                 }
+            }
+            // The ROM is ready here. Queued acknowledgements were applied
+            // above, so a poll cannot resurrect an acknowledged trade.
+            self.poll_ledger_if_due(api).await?;
+            if let Some(command) = self.take_ledger_delivery(travel_generation) {
+                children.control().send(&command).await?;
             }
             battle.prepare(
                 api,
@@ -3726,11 +3912,15 @@ impl SessionLifecycle {
                                 record,
                             ) {
                                 result = Err(SessionError::Realtime);
-                            } else {
-                                self.pending_applied_commit = Some(
-                                    CommitId::new(uuid::Uuid::from_bytes(record.commit_id.0))
-                                        .map_err(|_| SessionError::Realtime)?,
-                                );
+                            } else if let Err(error) = self.accept_battle_commit_applied(record) {
+                                result = Err(error);
+                            }
+                        }
+                        Ok(RawSupervisorEvent::Control(ControlEvent::TradeCommitApplied(
+                            record,
+                        ))) => {
+                            if let Err(error) = self.accept_trade_commit_applied(record) {
+                                result = Err(error);
                             }
                         }
                         Ok(RawSupervisorEvent::Control(
@@ -4573,7 +4763,8 @@ impl SessionLifecycle {
                     | ControlEvent::ActionIntent(_)
                     | ControlEvent::TurnResultHash(_)
                     | ControlEvent::BattleFinished(_)
-                    | ControlEvent::CommitApplied(_)),
+                    | ControlEvent::CommitApplied(_)
+                    | ControlEvent::TradeCommitApplied(_)),
                 )) => {
                     queue_pending_battle(&mut self.pending_battle, event)?;
                     priority = RealtimeSource::Realtime;
@@ -4792,7 +4983,8 @@ impl SessionLifecycle {
             | ControlEvent::ActionIntent(_)
             | ControlEvent::TurnResultHash(_)
             | ControlEvent::BattleFinished(_)
-            | ControlEvent::CommitApplied(_)) => queue_pending_battle(pending_battle, event),
+            | ControlEvent::CommitApplied(_)
+            | ControlEvent::TradeCommitApplied(_)) => queue_pending_battle(pending_battle, event),
             ControlEvent::RomPresenceReset
             | ControlEvent::OnlineRequest(_)
             | ControlEvent::PairingRequest(_)
@@ -5169,9 +5361,7 @@ impl SessionLifecycle {
         }
         self.auth.set_active_fence(self.lease.fence());
         self.workspace.discard_recovery_shadow();
-        if self.pending_applied_commit == record.last_applied_commit {
-            self.pending_applied_commit = None;
-        }
+        self.commit_declared(&record)?;
         self.last_finalized_snapshot = Some(record.clone());
         Ok(record.revision)
     }
@@ -5309,9 +5499,7 @@ impl SessionLifecycle {
             updates.send_replace(record.revision.value());
         }
         self.auth.set_active_fence(self.lease.fence());
-        if self.pending_applied_commit == record.last_applied_commit {
-            self.pending_applied_commit = None;
-        }
+        self.commit_declared(&record)?;
         self.last_finalized_snapshot = Some(record.clone());
         Ok(record.revision)
     }
@@ -5921,6 +6109,11 @@ mod lifecycle_tests {
         story_recovery_actions: Mutex<Vec<coop_cloud::StoryTravelRecoveryAction>>,
         story_recovery_unauthorized_remaining: Mutex<usize>,
         story_recovery_action_unauthorized_remaining: Mutex<usize>,
+        ledger_responses: Mutex<
+            VecDeque<Result<Option<crate::ledger::LedgerEntryView>, crate::ledger::LedgerError>>,
+        >,
+        ledger_requests: Mutex<Vec<(CharacterId, coop_cloud::LeaseFence)>>,
+        finalize_declarations: Mutex<Vec<Option<coop_cloud::CommitId>>>,
     }
 
     impl TestCloud {
@@ -5967,6 +6160,9 @@ mod lifecycle_tests {
                 story_recovery_actions: Mutex::new(Vec::new()),
                 story_recovery_unauthorized_remaining: Mutex::new(0),
                 story_recovery_action_unauthorized_remaining: Mutex::new(0),
+                ledger_responses: Mutex::new(VecDeque::new()),
+                ledger_requests: Mutex::new(Vec::new()),
+                finalize_declarations: Mutex::new(Vec::new()),
             }
         }
 
@@ -6060,6 +6256,24 @@ mod lifecycle_tests {
     }
 
     impl CloudApi for TestCloud {
+        fn ledger_open(
+            &self,
+            _token: coop_cloud::AccessToken,
+            character_id: CharacterId,
+            fence: coop_cloud::LeaseFence,
+        ) -> crate::ledger::LedgerFuture<'_, Option<crate::ledger::LedgerEntryView>> {
+            self.ledger_requests
+                .lock()
+                .unwrap()
+                .push((character_id, fence));
+            let response = self
+                .ledger_responses
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(None));
+            Box::pin(async move { response })
+        }
         fn story_travel_recovery(
             &self,
             _token: coop_cloud::AccessToken,
@@ -6334,6 +6548,10 @@ mod lifecycle_tests {
             request: SnapshotFinalizeRequest,
         ) -> CloudFuture<'a, coop_cloud::SnapshotRecord> {
             *self.finalizes.lock().unwrap() += 1;
+            self.finalize_declarations
+                .lock()
+                .unwrap()
+                .push(request.last_applied_commit);
             self.finalize_started.notify_one();
             let delay = *self.finalize_delay.lock().unwrap();
             let updates_heartbeat = *self.finalize_updates_heartbeat.lock().unwrap();
@@ -6836,6 +7054,7 @@ mod lifecycle_tests {
                 | coop_sidecar::control::ControlCommand::BattleConsentOutcome { .. }
                 | coop_sidecar::control::ControlCommand::BattleManifest { .. }
                 | coop_sidecar::control::ControlCommand::BattleCommit { .. }
+                | coop_sidecar::control::ControlCommand::TradeCommit { .. }
                 | coop_sidecar::control::ControlCommand::BattleStart { .. }
                 | coop_sidecar::control::ControlCommand::PeerPartyChunk { .. }
                 | coop_sidecar::control::ControlCommand::TurnBundle { .. }
@@ -7086,6 +7305,228 @@ mod lifecycle_tests {
         );
         assert!(session.checkpoint_key.is_none());
         second_server.await.unwrap();
+    }
+
+    fn pending_file(session: &SessionLifecycle) -> Vec<u8> {
+        session
+            .workspace
+            .read_fixed("pending_commits.json")
+            .unwrap()
+    }
+
+    fn ledger_commit(value: u128) -> coop_cloud::CommitId {
+        coop_cloud::CommitId::new(Uuid::from_u128(value)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn trade_ledger_entry_is_delivered_acknowledged_and_declared_by_the_next_finalize() {
+        use crate::ledger::tests::{incoming_raw, trade_view};
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session
+            .workspace
+            .write_atomic("character.sav", &valid_save(1))
+            .unwrap();
+        let (mut control, first_server) = control_pair_with_generation(1, 7, 1).await;
+        let ready = ControlEvent::CheckpointReady {
+            session_epoch: 1,
+            ready_sequence: 7,
+        };
+        assert_eq!(
+            session
+                .checkpoint(cloud.as_ref(), &mut control, ready.clone())
+                .await
+                .unwrap(),
+            Revision::new(1)
+        );
+        first_server.await.unwrap();
+
+        let view = trade_view(0xc0);
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(view.clone())));
+        session.ledger.request_poll();
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert_eq!(
+            cloud.ledger_requests.lock().unwrap().as_slice(),
+            &[(session.lease.character_id, session.lease.fence())]
+        );
+        assert_eq!(
+            pending_file(&session),
+            b"[\"00000000-0000-0000-0000-0000000000c0\"]"
+        );
+
+        let Some(ControlCommand::TradeCommit {
+            session_epoch,
+            record,
+        }) = session.take_ledger_delivery(1)
+        else {
+            panic!("an open trade entry must become a TradeCommit");
+        };
+        assert_eq!(session_epoch, 1);
+        let mut expected = Vec::new();
+        expected.extend_from_slice(Uuid::from_u128(0xc0).as_bytes());
+        expected.extend_from_slice(&[3, 0, 0, 0]);
+        expected.extend_from_slice(&0xDEAD_BEEF_u32.to_le_bytes());
+        expected.extend_from_slice(&0x0102_0304_u32.to_le_bytes());
+        expected.extend_from_slice(&incoming_raw());
+        assert_eq!(record.encode().unwrap(), expected);
+        assert!(session.take_ledger_delivery(1).is_none());
+
+        session
+            .accept_trade_commit_applied(record.applied())
+            .unwrap();
+        assert_eq!(session.pending_applied_commit, Some(ledger_commit(0xc0)));
+        // The poll that follows the acknowledgement does not redeliver it.
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(view)));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(2).is_none());
+
+        std::fs::remove_file(session.workspace.path().join("character.sav")).unwrap();
+        session
+            .workspace
+            .write_atomic("character.sav", &valid_save(2))
+            .unwrap();
+        cloud.set_heartbeat_revision(Revision::new(1));
+        let (mut control, second_server) = control_pair_with_generation(1, 7, 2).await;
+        assert_eq!(
+            session
+                .checkpoint(cloud.as_ref(), &mut control, ready)
+                .await
+                .unwrap(),
+            Revision::new(2)
+        );
+        second_server.await.unwrap();
+        assert_eq!(
+            cloud.finalize_declarations.lock().unwrap().as_slice(),
+            &[None, Some(ledger_commit(0xc0))]
+        );
+        let uploads = cloud.uploads.lock().unwrap();
+        let pending_uploads: Vec<&[u8]> = uploads
+            .iter()
+            .filter(|(artifact, _)| *artifact == ArtifactIdentity::PendingCommits)
+            .map(|(_, bytes)| bytes.as_slice())
+            .collect();
+        assert_eq!(
+            pending_uploads,
+            [
+                b"[]".as_slice(),
+                b"[\"00000000-0000-0000-0000-0000000000c0\"]".as_slice()
+            ]
+        );
+        drop(uploads);
+        assert_eq!(session.pending_applied_commit, None);
+        assert_eq!(pending_file(&session), b"[]");
+        assert!(session.ledger.poll_ready(tokio::time::Instant::now()));
+    }
+
+    #[tokio::test]
+    async fn restart_redelivers_the_open_trade_named_by_pending_commits() {
+        use crate::ledger::{LedgerError, tests::trade_view};
+        let mirror = b"[\"00000000-0000-0000-0000-0000000000c0\"]";
+
+        // Restored package names the in-flight trade and it is still open.
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(1);
+        session.workspace.replace_pending_commits(mirror).unwrap();
+        session.ledger.request_poll();
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Err(LedgerError::Unavailable));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        // An outage keeps the mirror and backs off instead of failing.
+        assert_eq!(pending_file(&session), mirror);
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert!(!session.ledger.poll_ready(tokio::time::Instant::now()));
+        session.ledger.request_poll();
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(trade_view(0xc0))));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        let Some(ControlCommand::TradeCommit { record, .. }) = session.take_ledger_delivery(1)
+        else {
+            panic!("the open entry must be redelivered after a restart");
+        };
+        assert_eq!(Some(record), trade_view(0xc0).trade_commit());
+        assert_eq!(pending_file(&session), mirror);
+        // A new control generation (ROM reboot) gets it once more.
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert!(session.take_ledger_delivery(2).is_some());
+
+        // The mirrored commit was declared before the restart: clear it.
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(1);
+        session.workspace.replace_pending_commits(mirror).unwrap();
+        session.ledger.request_poll();
+        cloud.ledger_responses.lock().unwrap().push_back(Ok(None));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert_eq!(pending_file(&session), b"[]");
+
+        // Revision zero never polls.
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.ledger.request_poll();
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(cloud.ledger_requests.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn wally_trainer_win_stays_on_the_battle_commit_path() {
+        use crate::ledger::tests::{trade_view, wally_view};
+        let (_root, mut session, cloud) = bootstrap(false).await;
+        session.revision = Revision::new(1);
+        session.ledger.request_poll();
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(wally_view(0xc1))));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(1).is_none());
+        assert_eq!(pending_file(&session), b"[]");
+
+        // The BattleCommit acknowledgement declares the Wally commit and
+        // re-polls; the same TRAINER_WIN entry is still not a trade.
+        let battle_ack = coop_protocol::CommitAppliedRecord {
+            battle_id: coop_protocol::BattleId(*Uuid::from_u128(0xba77).as_bytes()),
+            commit_id: coop_protocol::BattleId(*Uuid::from_u128(0xc1).as_bytes()),
+            trainer_region: coop_protocol::RegionId::Hoenn,
+            trainer_ordinal: 518,
+            source_revision: 1,
+        };
+        session.accept_battle_commit_applied(battle_ack).unwrap();
+        assert_eq!(session.pending_applied_commit, Some(ledger_commit(0xc1)));
+        assert!(session.ledger.poll_ready(tokio::time::Instant::now()));
+        cloud
+            .ledger_responses
+            .lock()
+            .unwrap()
+            .push_back(Ok(Some(wally_view(0xc1))));
+        session.poll_ledger_if_due(cloud.as_ref()).await.unwrap();
+        assert!(session.take_ledger_delivery(2).is_none());
+        assert_eq!(pending_file(&session), b"[]");
+
+        // No trade was delivered, so a trade acknowledgement is a violation,
+        // and a second outcome cannot displace the undeclared one.
+        let trade = trade_view(0xc0).trade_commit().unwrap();
+        assert!(matches!(
+            session.accept_trade_commit_applied(trade.applied()),
+            Err(SessionError::Realtime)
+        ));
+        assert!(matches!(
+            session.record_applied_commit(ledger_commit(0xc0)),
+            Err(SessionError::Realtime)
+        ));
+        assert_eq!(session.pending_applied_commit, Some(ledger_commit(0xc1)));
     }
 
     #[tokio::test]

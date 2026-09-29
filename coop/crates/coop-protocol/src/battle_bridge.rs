@@ -977,6 +977,191 @@ impl AbortBattleRecord {
     }
 }
 
+/// A server-issued trade outcome (an open `TRADE` ledger entry) delivered to
+/// the ROM as bridge message `TradeCommit` (0x0119, sidecar to ROM).
+///
+/// Wire layout, exactly [`TradeCommitRecord::WIRE_SIZE`] = 128 bytes, i.e. the
+/// whole bridge payload; every multi-byte integer is little endian:
+///
+/// | offset | size | field                                                   |
+/// |-------:|-----:|---------------------------------------------------------|
+/// |      0 |   16 | `commit_id`, ledger commit UUID octets in network order |
+/// |     16 |    1 | `slot`, zero-based party slot `0..=5` to overwrite      |
+/// |     17 |    3 | reserved, must be zero (keeps the u32 fields aligned)   |
+/// |     20 |    4 | `outgoing_personality` of the Pokémon leaving `slot`    |
+/// |     24 |    4 | `outgoing_ot_id` of the Pokémon leaving `slot`          |
+/// |     28 |  100 | `incoming_record`, the exact 100-byte party `struct Pokemon` |
+///
+/// The first 28 bytes are the [`TradeCommitAppliedRecord`] header the ROM
+/// echoes back once `slot` holds `incoming_record`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TradeCommitRecord {
+    pub commit_id: BattleId,
+    pub slot: u8,
+    pub outgoing_personality: u32,
+    pub outgoing_ot_id: u32,
+    #[serde(with = "mon_hex_array")]
+    pub incoming_record: [u8; BATTLE_PARTY_MON_SIZE],
+}
+
+/// ROM acknowledgement for an applied [`TradeCommitRecord`].
+///
+/// It travels as the existing `CommitApplied` (0x000B) bridge message and is
+/// distinguished from the 43-byte battle acknowledgement by its length:
+/// exactly [`TradeCommitAppliedRecord::WIRE_SIZE`] = 28 bytes, byte-identical
+/// to offsets `0..28` of the delivered `TradeCommit` payload (commit UUID,
+/// slot, three zero bytes, outgoing personality, outgoing OT ID).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TradeCommitAppliedRecord {
+    pub commit_id: BattleId,
+    pub slot: u8,
+    pub outgoing_personality: u32,
+    pub outgoing_ot_id: u32,
+}
+
+mod mon_hex_array {
+    use super::{BATTLE_PARTY_MON_SIZE, hex_digit, hex_encode};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &[u8; BATTLE_PARTY_MON_SIZE],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&hex_encode(value))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[u8; BATTLE_PARTY_MON_SIZE], D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text.len() != BATTLE_PARTY_MON_SIZE * 2 {
+            return Err(serde::de::Error::custom("invalid party mon length"));
+        }
+        let mut result = [0; BATTLE_PARTY_MON_SIZE];
+        for (slot, pair) in result.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+            let upper = hex_digit(pair[0])
+                .ok_or_else(|| serde::de::Error::custom("invalid party mon hex"))?;
+            let lower = hex_digit(pair[1])
+                .ok_or_else(|| serde::de::Error::custom("invalid party mon hex"))?;
+            *slot = (upper << 4) | lower;
+        }
+        Ok(result)
+    }
+}
+
+const TRADE_COMMIT_HEADER_SIZE: usize = 28;
+
+fn encode_trade_header(
+    commit_id: BattleId,
+    slot: u8,
+    outgoing_personality: u32,
+    outgoing_ot_id: u32,
+) -> Result<Vec<u8>, BattleBridgeError> {
+    check_battle_id(commit_id)?;
+    if slot >= 6 {
+        return Err(BattleBridgeError::Value);
+    }
+    let mut bytes = Vec::with_capacity(TradeCommitRecord::WIRE_SIZE);
+    bytes.extend_from_slice(&commit_id.0);
+    bytes.extend_from_slice(&[slot, 0, 0, 0]);
+    bytes.extend_from_slice(&outgoing_personality.to_le_bytes());
+    bytes.extend_from_slice(&outgoing_ot_id.to_le_bytes());
+    Ok(bytes)
+}
+
+fn decode_trade_header(bytes: &[u8]) -> Result<(BattleId, u8, u32, u32), BattleBridgeError> {
+    if bytes[17..20] != [0, 0, 0] {
+        return Err(BattleBridgeError::Value);
+    }
+    let commit_id = id(bytes);
+    let slot = bytes[16];
+    check_battle_id(commit_id)?;
+    if slot >= 6 {
+        return Err(BattleBridgeError::Value);
+    }
+    Ok((
+        commit_id,
+        slot,
+        u32::from_le_bytes(bytes[20..24].try_into().expect("checked length")),
+        u32::from_le_bytes(bytes[24..28].try_into().expect("checked length")),
+    ))
+}
+
+impl TradeCommitRecord {
+    pub const WIRE_SIZE: usize = TRADE_COMMIT_HEADER_SIZE + BATTLE_PARTY_MON_SIZE;
+
+    pub fn encode(&self) -> Result<Vec<u8>, BattleBridgeError> {
+        if self.incoming_record == [0; BATTLE_PARTY_MON_SIZE] {
+            return Err(BattleBridgeError::Value);
+        }
+        let mut bytes = encode_trade_header(
+            self.commit_id,
+            self.slot,
+            self.outgoing_personality,
+            self.outgoing_ot_id,
+        )?;
+        bytes.extend_from_slice(&self.incoming_record);
+        Ok(bytes)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
+        if bytes.len() != Self::WIRE_SIZE {
+            return Err(BattleBridgeError::Length);
+        }
+        let (commit_id, slot, outgoing_personality, outgoing_ot_id) = decode_trade_header(bytes)?;
+        let result = Self {
+            commit_id,
+            slot,
+            outgoing_personality,
+            outgoing_ot_id,
+            incoming_record: bytes[TRADE_COMMIT_HEADER_SIZE..]
+                .try_into()
+                .expect("checked length"),
+        };
+        result.encode()?;
+        Ok(result)
+    }
+
+    /// The acknowledgement the ROM must return for this exact commit.
+    #[must_use]
+    pub const fn applied(&self) -> TradeCommitAppliedRecord {
+        TradeCommitAppliedRecord {
+            commit_id: self.commit_id,
+            slot: self.slot,
+            outgoing_personality: self.outgoing_personality,
+            outgoing_ot_id: self.outgoing_ot_id,
+        }
+    }
+}
+
+impl TradeCommitAppliedRecord {
+    pub const WIRE_SIZE: usize = TRADE_COMMIT_HEADER_SIZE;
+
+    pub fn encode(&self) -> Result<Vec<u8>, BattleBridgeError> {
+        encode_trade_header(
+            self.commit_id,
+            self.slot,
+            self.outgoing_personality,
+            self.outgoing_ot_id,
+        )
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
+        if bytes.len() != Self::WIRE_SIZE {
+            return Err(BattleBridgeError::Length);
+        }
+        let (commit_id, slot, outgoing_personality, outgoing_ot_id) = decode_trade_header(bytes)?;
+        Ok(Self {
+            commit_id,
+            slot,
+            outgoing_personality,
+            outgoing_ot_id,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

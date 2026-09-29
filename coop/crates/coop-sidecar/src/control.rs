@@ -18,8 +18,8 @@ use coop_protocol::{
     GroupTravelClientRecord, GroupTravelServerRecord, LocalCompanionV1, LocalPresenceStateV1,
     LocalSignalV1, PartySnapshotChunk, PauseForReconnectRecord, PresenceInteractionV1,
     RemoteCompanionV1, RemoteInteractionV1, RemotePlayerDespawnV1, RemotePlayerSpawnV1,
-    RemotePlayerUpdateV1, RemoteSignalV1, TrainerBattleReserveRecord, TurnBundleRecord,
-    TurnResultHash,
+    RemotePlayerUpdateV1, RemoteSignalV1, TradeCommitAppliedRecord, TradeCommitRecord,
+    TrainerBattleReserveRecord, TurnBundleRecord, TurnResultHash,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -215,6 +215,13 @@ pub enum ControlCommand {
         session_epoch: u32,
         record: BattleCommitRecord,
     },
+    /// Delivers an open `TRADE` ledger entry to the ROM as bridge message
+    /// `TradeCommit` (0x0119). The ROM answers with
+    /// [`ControlEvent::TradeCommitApplied`].
+    TradeCommit {
+        session_epoch: u32,
+        record: TradeCommitRecord,
+    },
     BattleStart {
         session_epoch: u32,
         record: BattleStartRecord,
@@ -380,6 +387,9 @@ pub enum ControlEvent {
     BattleAbortRequest(AbortBattleRecord),
     BattleFinished(BattleFinishedRecord),
     CommitApplied(CommitAppliedRecord),
+    /// The ROM applied a [`ControlCommand::TradeCommit`]; decoded from a
+    /// 28-byte `CommitApplied` (0x000B) bridge payload.
+    TradeCommitApplied(TradeCommitAppliedRecord),
 }
 
 // Serde accepts unknown fields on an internally tagged unit variant even when
@@ -442,6 +452,7 @@ enum ControlEventWire {
     BattleAbortRequest(AbortBattleRecord),
     BattleFinished(BattleFinishedRecord),
     CommitApplied(CommitAppliedRecord),
+    TradeCommitApplied(TradeCommitAppliedRecord),
 }
 
 impl<'de> Deserialize<'de> for ControlEvent {
@@ -511,6 +522,7 @@ impl<'de> Deserialize<'de> for ControlEvent {
             ControlEventWire::BattleAbortRequest(value) => Self::BattleAbortRequest(value),
             ControlEventWire::BattleFinished(value) => Self::BattleFinished(value),
             ControlEventWire::CommitApplied(value) => Self::CommitApplied(value),
+            ControlEventWire::TradeCommitApplied(value) => Self::TradeCommitApplied(value),
         })
     }
 }
@@ -1164,6 +1176,40 @@ mod tests {
         assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
         assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
         let extra = json.replace("\"source_revision\":9", "\"source_revision\":9,\"extra\":1");
+        assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
+    }
+
+    #[test]
+    fn trade_commit_control_records_are_typed_strict_and_bounded() {
+        let record = coop_protocol::TradeCommitRecord {
+            commit_id: coop_protocol::BattleId([0xCD; 16]),
+            slot: 5,
+            outgoing_personality: u32::MAX,
+            outgoing_ot_id: u32::MAX,
+            incoming_record: [0xFF; 100],
+        };
+        let command = ControlCommand::TradeCommit {
+            session_epoch: u32::MAX,
+            record,
+        };
+        let json = serde_json::to_string(&command).unwrap();
+        assert!(json.starts_with("{\"type\":\"trade_commit\""));
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(
+            serde_json::from_str::<ControlCommand>(&json).unwrap(),
+            command
+        );
+        let extra = json.replace("\"slot\":5", "\"slot\":5,\"extra\":1");
+        assert!(serde_json::from_str::<ControlCommand>(&extra).is_err());
+        let short = json.replace(&"ff".repeat(100), &"ff".repeat(99));
+        assert!(serde_json::from_str::<ControlCommand>(&short).is_err());
+
+        let event = ControlEvent::TradeCommitApplied(record.applied());
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.starts_with("{\"type\":\"trade_commit_applied\""));
+        assert!(json.len() + 1 <= MAX_CONTROL_LINE_BYTES);
+        assert_eq!(serde_json::from_str::<ControlEvent>(&json).unwrap(), event);
+        let extra = json.replace("\"slot\":5", "\"slot\":5,\"extra\":1");
         assert!(serde_json::from_str::<ControlEvent>(&extra).is_err());
     }
 

@@ -2447,6 +2447,7 @@ async fn run_control_reader(
             | ControlEvent::TurnResultHash(_)
             | ControlEvent::BattleFinished(_)
             | ControlEvent::CommitApplied(_)
+            | ControlEvent::TradeCommitApplied(_)
             | ControlEvent::CommandResult { .. } => {
                 let sent = tokio::select! {
                     biased;
@@ -3796,6 +3797,7 @@ impl SupervisedChildren {
                 | ControlEvent::TurnResultHash(_)
                 | ControlEvent::BattleFinished(_)
                 | ControlEvent::CommitApplied(_)
+                | ControlEvent::TradeCommitApplied(_)
                 | ControlEvent::RomPresenceReset => return false,
             }
         }

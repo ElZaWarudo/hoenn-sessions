@@ -65,6 +65,10 @@ pub enum MessageType {
     BattleReserveRejected = 0x0116,
     BattleStart = 0x0117,
     GroupEnded = 0x0118,
+    /// A server-issued trade outcome. The payload is exactly the 128-byte
+    /// `coop_protocol::TradeCommitRecord` layout; the ROM acknowledges it with
+    /// a 28-byte `CommitApplied` (`coop_protocol::TradeCommitAppliedRecord`).
+    TradeCommit = 0x0119,
 }
 
 impl MessageType {
@@ -114,9 +118,10 @@ impl MessageType {
             Self::PairingStatus => Direction::SidecarToRom,
             Self::PeerPartyChunk => Direction::SidecarToRom,
             Self::BattleConsentOutcome => Direction::SidecarToRom,
-            Self::BattleReserveRejected | Self::BattleStart | Self::GroupEnded => {
-                Direction::SidecarToRom
-            }
+            Self::BattleReserveRejected
+            | Self::BattleStart
+            | Self::GroupEnded
+            | Self::TradeCommit => Direction::SidecarToRom,
         }
     }
 }
@@ -172,6 +177,7 @@ impl TryFrom<u16> for MessageType {
             0x0116 => Self::BattleReserveRejected,
             0x0117 => Self::BattleStart,
             0x0118 => Self::GroupEnded,
+            0x0119 => Self::TradeCommit,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -591,6 +597,102 @@ mod tests {
                 .payload(),
             payload
         );
+    }
+
+    fn trade_commit_fixture() -> coop_protocol::TradeCommitRecord {
+        let mut incoming_record = [0_u8; 100];
+        for (index, byte) in incoming_record.iter_mut().enumerate() {
+            *byte = u8::try_from(index).unwrap() ^ 0x5A;
+        }
+        coop_protocol::TradeCommitRecord {
+            commit_id: coop_protocol::BattleId(
+                *b"\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10",
+            ),
+            slot: 4,
+            outgoing_personality: 0xDEAD_BEEF,
+            outgoing_ot_id: 0x0102_0304,
+            incoming_record,
+        }
+    }
+
+    #[test]
+    fn trade_commit_fills_the_payload_with_the_documented_layout() {
+        let record = trade_commit_fixture();
+        let payload = record.encode().unwrap();
+        assert_eq!(payload.len(), BRIDGE_PAYLOAD_SIZE);
+        assert_eq!(coop_protocol::TradeCommitRecord::WIRE_SIZE, 128);
+        assert_eq!(&payload[0..16], &record.commit_id.0);
+        assert_eq!(payload[16], 4);
+        assert_eq!(&payload[17..20], &[0, 0, 0]);
+        assert_eq!(&payload[20..24], &[0xEF, 0xBE, 0xAD, 0xDE]);
+        assert_eq!(&payload[24..28], &[0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(&payload[28..128], &record.incoming_record);
+
+        let frame = BridgeFrame::new(MessageType::TradeCommit, 11, 9, &payload).unwrap();
+        let bytes = frame.encode();
+        assert_eq!(&bytes[0..2], &0x0119_u16.to_le_bytes());
+        assert_eq!(&bytes[2..4], &128_u16.to_le_bytes());
+        assert_eq!(frame.direction(), Direction::SidecarToRom);
+        assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
+        let decoded = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(
+            coop_protocol::TradeCommitRecord::decode(decoded.payload()),
+            Ok(record)
+        );
+        assert_eq!(MessageType::try_from(0x0119), Ok(MessageType::TradeCommit));
+    }
+
+    #[test]
+    fn trade_commit_rejects_invalid_records() {
+        use coop_protocol::{BattleBridgeError, TradeCommitRecord};
+        let record = trade_commit_fixture();
+        let payload = record.encode().unwrap();
+        for (offset, value) in [(16, 6_u8), (17, 1), (19, 1)] {
+            let mut bad = payload.clone();
+            bad[offset] = value;
+            assert_eq!(
+                TradeCommitRecord::decode(&bad),
+                Err(BattleBridgeError::Value)
+            );
+        }
+        let mut zero_id = payload.clone();
+        zero_id[0..16].fill(0);
+        assert_eq!(
+            TradeCommitRecord::decode(&zero_id),
+            Err(BattleBridgeError::Value)
+        );
+        let mut empty_mon = payload.clone();
+        empty_mon[28..].fill(0);
+        assert_eq!(
+            TradeCommitRecord::decode(&empty_mon),
+            Err(BattleBridgeError::Value)
+        );
+        assert_eq!(
+            TradeCommitRecord::decode(&payload[..127]),
+            Err(BattleBridgeError::Length)
+        );
+        let json = serde_json::to_value(record).unwrap();
+        assert_eq!(json["incoming_record"].as_str().unwrap().len(), 200);
+        assert_eq!(
+            serde_json::from_value::<TradeCommitRecord>(json).unwrap(),
+            record
+        );
+    }
+
+    #[test]
+    fn trade_commit_ack_is_the_28_byte_header_on_commit_applied() {
+        use coop_protocol::{BattleCommitRecord, TradeCommitAppliedRecord};
+        let record = trade_commit_fixture();
+        let ack = record.applied();
+        let payload = ack.encode().unwrap();
+        assert_eq!(payload.len(), TradeCommitAppliedRecord::WIRE_SIZE);
+        assert_eq!(payload.len(), 28);
+        assert_eq!(payload, record.encode().unwrap()[..28]);
+        assert_ne!(payload.len(), BattleCommitRecord::WIRE_SIZE);
+        let frame = BridgeFrame::new(MessageType::CommitApplied, 5, 9, &payload).unwrap();
+        let decoded = BridgeFrame::decode_for(&frame.encode(), Direction::RomToSidecar).unwrap();
+        assert_eq!(TradeCommitAppliedRecord::decode(decoded.payload()), Ok(ack));
+        assert!(BattleCommitRecord::decode(decoded.payload()).is_err());
     }
 
     #[test]

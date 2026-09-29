@@ -10,7 +10,7 @@ final class BridgeFrame {
     static final int BRIDGE_ABI=1;
     static final int PROTOCOL_VERSION=2;
     static final int LAST_OUTBOUND_TYPE=0x15;
-    static final int LAST_INBOUND_TYPE=0x118;
+    static final int LAST_INBOUND_TYPE=0x119;
     final int type;
     final long sequence, epoch;
     final byte[] payload;

@@ -9,6 +9,7 @@ pub mod desktop;
 pub mod epoch;
 pub mod group_travel;
 pub mod keychain;
+pub mod ledger;
 pub mod live_requests;
 pub mod online;
 pub mod process;
@@ -350,6 +351,14 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn ledger_open(
+        &self,
+        token: coop_cloud::AccessToken,
+        character_id: CharacterId,
+        fence: coop_cloud::LeaseFence,
+    ) -> ledger::LedgerFuture<'_, Option<ledger::LedgerEntryView>> {
+        self.ledger_open_http(token, character_id, fence)
+    }
     fn story_travel_recovery(
         &self,
         token: coop_cloud::AccessToken,

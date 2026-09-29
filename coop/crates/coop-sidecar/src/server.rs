@@ -15,7 +15,7 @@ use std::{
 use coop_protocol::{
     ActionIntent, BattleFinishedRecord, BattleJoinResponseRecord, BattleReadyRecord,
     CommitAppliedRecord, LocalCompanionV1, LocalPresenceStateV1, LocalSignalV1, PartySnapshotChunk,
-    PresenceInteractionV1, TrainerBattleReserveRecord, TurnResultHash,
+    PresenceInteractionV1, TradeCommitAppliedRecord, TrainerBattleReserveRecord, TurnResultHash,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -3827,6 +3827,13 @@ impl LocalSidecar {
                 session_epoch,
                 record,
             } => (session_epoch, MessageType::BattleCommit, record.encode()),
+            // Trade outcomes ride the same ordered, ready-and-epoch gated lane
+            // as battle commits: deferred until ROM readiness, dropped when
+            // stale, never sent while a checkpoint is quiescing.
+            ControlCommand::TradeCommit {
+                session_epoch,
+                record,
+            } => (session_epoch, MessageType::TradeCommit, record.encode()),
             ControlCommand::BattleStart {
                 session_epoch,
                 record,
@@ -4165,6 +4172,17 @@ impl LocalSidecar {
                             SidecarError::ProtocolViolation("invalid battle finished event")
                         })?,
                     ),
+                    // A 28-byte acknowledgement is a trade commit; the 43-byte
+                    // one is a battle commit. Any other length is rejected.
+                    MessageType::CommitApplied
+                        if frame.payload().len() == TradeCommitAppliedRecord::WIRE_SIZE =>
+                    {
+                        ControlEvent::TradeCommitApplied(
+                            TradeCommitAppliedRecord::decode(frame.payload()).map_err(|_| {
+                                SidecarError::ProtocolViolation("invalid commit applied event")
+                            })?,
+                        )
+                    }
                     MessageType::CommitApplied => ControlEvent::CommitApplied(
                         CommitAppliedRecord::decode(frame.payload()).map_err(|_| {
                             SidecarError::ProtocolViolation("invalid commit applied event")
@@ -5255,6 +5273,7 @@ fn command_parts(
         | ControlCommand::GroupTravel { .. }
         | ControlCommand::BattleManifest { .. }
         | ControlCommand::BattleCommit { .. }
+        | ControlCommand::TradeCommit { .. }
         | ControlCommand::BattleStart { .. }
         | ControlCommand::PeerPartyChunk { .. }
         | ControlCommand::BattleJoinOffer { .. }
@@ -5289,6 +5308,7 @@ fn command_epoch(command: &ControlCommand) -> u32 {
         | ControlCommand::GroupTravel { .. }
         | ControlCommand::BattleManifest { .. }
         | ControlCommand::BattleCommit { .. }
+        | ControlCommand::TradeCommit { .. }
         | ControlCommand::BattleStart { .. }
         | ControlCommand::PeerPartyChunk { .. }
         | ControlCommand::BattleJoinOffer { .. }
@@ -5321,6 +5341,7 @@ fn is_battle_command(command: &ControlCommand) -> bool {
         command,
         ControlCommand::BattleManifest { .. }
             | ControlCommand::BattleCommit { .. }
+            | ControlCommand::TradeCommit { .. }
             | ControlCommand::BattleStart { .. }
             | ControlCommand::PeerPartyChunk { .. }
             | ControlCommand::BattleJoinOffer { .. }
@@ -5343,6 +5364,7 @@ fn group_travel_command_waits_for_ready(
         ControlCommand::GroupTravel { session_epoch: command_epoch, .. }
         | ControlCommand::BattleManifest { session_epoch: command_epoch, .. }
         | ControlCommand::BattleCommit { session_epoch: command_epoch, .. }
+        | ControlCommand::TradeCommit { session_epoch: command_epoch, .. }
         | ControlCommand::BattleStart { session_epoch: command_epoch, .. }
         | ControlCommand::PeerPartyChunk { session_epoch: command_epoch, .. }
         | ControlCommand::BattleJoinOffer { session_epoch: command_epoch, .. }
@@ -5388,6 +5410,7 @@ fn deferred_command_waits_for_bridge_state(
         | ControlCommand::GroupTravel { .. }
         | ControlCommand::BattleManifest { .. }
         | ControlCommand::BattleCommit { .. }
+        | ControlCommand::TradeCommit { .. }
         | ControlCommand::BattleStart { .. }
         | ControlCommand::PeerPartyChunk { .. }
         | ControlCommand::BattleJoinOffer { .. }
@@ -10954,6 +10977,149 @@ mod tests {
                 true,
                 vec![0; coop_protocol::BattleCommitRecord::WIRE_SIZE - 1],
             ),
+        ] {
+            let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+                .await
+                .unwrap();
+            let mut session = ActiveSessionState {
+                checkpoint_state: CheckpointState::Idle,
+                expired_checkpoint: None,
+                acknowledged_rom_ready: ready,
+                rearm_after_reboot: false,
+            };
+            let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+            let (mut control, mut control_peer) = control_writer_pair().await;
+            let frame = BridgeFrame::new(MessageType::CommitApplied, 2, epoch, &candidate).unwrap();
+            assert!(
+                sidecar
+                    .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(sidecar.sequence_state.last_session_rom, 0);
+            assert!(
+                timeout(Duration::from_millis(50), read_event(&mut control_peer))
+                    .await
+                    .is_err()
+            );
+        }
+    }
+
+    fn trade_commit_record() -> coop_protocol::TradeCommitRecord {
+        coop_protocol::TradeCommitRecord {
+            commit_id: coop_protocol::BattleId([9; 16]),
+            slot: 2,
+            outgoing_personality: 0x1122_3344,
+            outgoing_ot_id: 0x5566_7788,
+            incoming_record: [0xA5; 100],
+        }
+    }
+
+    #[tokio::test]
+    async fn trade_commit_forwards_only_to_a_ready_rom_in_the_current_epoch() {
+        let record = trade_commit_record();
+        let command = |session_epoch| ControlCommand::TradeCommit {
+            session_epoch,
+            record,
+        };
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: false,
+            rearm_after_reboot: false,
+        };
+        // Unready ROM: the active loop defers it, and a direct send is a no-op.
+        assert!(is_battle_command(&command(TEST_SESSION_EPOCH)));
+        assert!(group_travel_command_waits_for_ready(
+            &command(TEST_SESSION_EPOCH),
+            &session,
+            TEST_SESSION_EPOCH,
+            false
+        ));
+        sidecar
+            .handle_battle_command(command(TEST_SESSION_EPOCH), &mut bridge, &session)
+            .await
+            .unwrap();
+        let mut bytes = [0; BRIDGE_FRAME_SIZE];
+        assert!(
+            timeout(
+                Duration::from_millis(50),
+                bridge_peer.read_exact(&mut bytes)
+            )
+            .await
+            .is_err()
+        );
+
+        // Stale epoch on a ready ROM: dropped, never deferred.
+        session.acknowledged_rom_ready = true;
+        assert!(!group_travel_command_waits_for_ready(
+            &command(TEST_SESSION_EPOCH - 1),
+            &session,
+            TEST_SESSION_EPOCH,
+            false
+        ));
+        sidecar
+            .handle_battle_command(command(TEST_SESSION_EPOCH - 1), &mut bridge, &session)
+            .await
+            .unwrap();
+        assert!(
+            timeout(
+                Duration::from_millis(50),
+                bridge_peer.read_exact(&mut bytes)
+            )
+            .await
+            .is_err()
+        );
+
+        // Ready ROM, current epoch: exactly one 128-byte TradeCommit frame.
+        sidecar
+            .handle_battle_command(command(TEST_SESSION_EPOCH), &mut bridge, &session)
+            .await
+            .unwrap();
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::TradeCommit);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        assert_eq!(frame.payload(), record.encode().unwrap().as_slice());
+        assert_eq!(frame.payload().len(), 128);
+    }
+
+    #[tokio::test]
+    async fn trade_commit_ack_is_forwarded_as_a_trade_control_event() {
+        let ack = trade_commit_record().applied();
+        let payload = ack.encode().unwrap();
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let (mut bridge, _bridge_peer) = bridge_writer_pair().await;
+        let (mut control, mut control_peer) = control_writer_pair().await;
+        let frame =
+            BridgeFrame::new(MessageType::CommitApplied, 2, TEST_SESSION_EPOCH, &payload).unwrap();
+        sidecar
+            .handle_bridge_frame(frame, &mut bridge, &mut control, &mut session)
+            .await
+            .unwrap();
+        assert_eq!(
+            read_event(&mut control_peer).await,
+            ControlEvent::TradeCommitApplied(ack)
+        );
+
+        let mut bad_slot = payload.clone();
+        bad_slot[16] = 6;
+        for (epoch, ready, candidate) in [
+            (TEST_SESSION_EPOCH + 1, true, payload.clone()),
+            (TEST_SESSION_EPOCH, false, payload.clone()),
+            (TEST_SESSION_EPOCH, true, bad_slot),
         ] {
             let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
                 .await
