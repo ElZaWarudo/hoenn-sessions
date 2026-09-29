@@ -173,6 +173,12 @@ bool8 CoopBattleRuntime_PollPeerAction(struct CoopBattleAction *action);
 bool8 CoopBattleRuntime_ConfirmPeerAutomaticAction(u8 expected_kind);
 /* Latch a local unsupported/desynced decision until battle cleanup disarms. */
 void CoopBattleRuntime_FailEngine(void);
+/* Seed for the random choices in a co-op opponent party that the trainer
+ * data leaves open (the second mon of a single-mon trainer). It hashes only
+ * the battle ID [0, 16), the battle seed [18, 50) and the trainer ID: bytes
+ * that are identical on both ROMs, unlike the turn or member-slot bytes. */
+u32 CoopBattleRuntime_DeriveOpponentSeed(const u8 *manifest, u16 trainer_id);
+bool8 CoopBattleRuntime_GetOpponentSeed(u16 trainer_id, u32 *seed);
 bool8 CoopBattleRuntime_IsEngineTurnReady(void);
 void CoopBattleRuntime_FinishEngineTurn(void);
 bool8 CoopBattleRuntime_TakeTurnBundle(struct CoopBattleTurnBundle *bundle);

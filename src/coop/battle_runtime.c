@@ -791,6 +791,37 @@ bool8 CoopBattleRuntime_HasManifest(void)
     return sBattleRuntime.manifest_valid;
 }
 
+u32 CoopBattleRuntime_DeriveOpponentSeed(const u8 *manifest, u16 trainer_id)
+{
+    static const u8 tag[] = {'C', 'O', 'O', 'P', '-', 'O', 'P', 'P'};
+    u32 hash = 2166136261u;
+    u8 i;
+
+    for (i = 0; i < sizeof(tag); i++)
+        hash = (hash ^ tag[i]) * 16777619u;
+    for (i = 0; i < COOP_BATTLE_ID_SIZE; i++)
+        hash = (hash ^ manifest[i]) * 16777619u;
+    for (i = 18; i < 50; i++)
+        hash = (hash ^ manifest[i]) * 16777619u;
+    hash = (hash ^ (trainer_id & 0xFF)) * 16777619u;
+    hash = (hash ^ (trainer_id >> 8)) * 16777619u;
+    /* FNV-1a leaves its low bits weakly mixed; finish with fmix32. */
+    hash ^= hash >> 16;
+    hash *= 0x85EBCA6Bu;
+    hash ^= hash >> 13;
+    hash *= 0xC2B2AE35u;
+    hash ^= hash >> 16;
+    return hash;
+}
+
+bool8 CoopBattleRuntime_GetOpponentSeed(u16 trainer_id, u32 *seed)
+{
+    if (!sBattleRuntime.manifest_valid || seed == NULL)
+        return FALSE;
+    *seed = CoopBattleRuntime_DeriveOpponentSeed(sBattleRuntime.manifest, trainer_id);
+    return TRUE;
+}
+
 bool8 CoopBattleRuntime_GetManifest(u8 *payload, u16 capacity)
 {
     if (!sBattleRuntime.manifest_valid || payload == NULL

@@ -109,6 +109,12 @@ enum Type GetDynamicMoveType(struct Pokemon *mon, enum Move move, enum BattlerId
 void SetTypeBeforeUsingMove(enum Move move, enum BattlerId battler);
 bool32 IsWildMonSmart(void);
 u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer *trainer, bool32 firstTrainer, u32 battleTypeFlags);
+/* The co-op opponent party: the half-team party, plus a second mon at the
+ * same level when the trainer has exactly one (a pool member, else the same
+ * entry with its own personality), with OT data taken from the trainer. The
+ * second mon depends only on trainer and seed, and leaves the battle RNG
+ * exactly as it found it. */
+u8 CreateCoopTrainerParty(struct Pokemon *party, const struct Trainer *trainer, u32 battleTypeFlags, u32 seed);
 void ModifyPersonalityForNature(u32 *personality, u32 newNature);
 u32 GeneratePersonalityForGender(u32 gender, enum Species species);
 void CustomTrainerPartyAssignMoves(struct Pokemon *mon, const struct TrainerMon *partyEntry);
