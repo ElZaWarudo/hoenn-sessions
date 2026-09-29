@@ -5,6 +5,7 @@
 #include "window.h"
 #include "menu.h"
 #include "text.h"
+#include "string_util.h"
 #include "coop/online.h"
 #include "coop/net_bridge.h"
 #include "coop/save.h"
@@ -293,4 +294,172 @@ TEST("Cloud Coop grouped Online opens partner location from a catalogued map")
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     EXPECT(!CoopOnline_TestInput(B_BUTTON));
     EXPECT(!CoopOnline_TestIsLocationPage());
+}
+
+bool8 CoopOnline_TestIsLastPartnerPage(void);
+bool8 CoopOnline_TestIsPairingPage(void);
+const u8 *CoopOnline_TestResultText(void);
+const u8 *CoopOnline_TestLastPartnerName(void);
+
+static void ReplyStatus(const struct CoopBridgeMessage *request, u8 result, u8 flags, const char *partner)
+{
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+    struct CoopBridgeMessage message;
+    memcpy(payload, request->payload, 4);
+    payload[4] = result;
+    payload[5] = flags;
+    if (flags & COOP_ONLINE_GROUPED) memcpy(payload + 80, "may", 3);
+    if (partner != NULL) memcpy(payload + 112, partner, strlen(partner));
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 ++sHostSequence, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    CoopOnline_TestPoll();
+}
+
+static void ExpectResultText(const u8 *expected)
+{
+    EXPECT_EQ(StringCompare(CoopOnline_TestResultText(), expected), 0);
+}
+
+static struct CoopBridgeMessage OpenLastPartnerPage(void)
+{
+    struct CoopBridgeMessage ready;
+    u8 i;
+    InitOnlineMenu();
+    ready = MenuRequest();
+    ReplyStatus(&ready, COOP_ONLINE_READY, COOP_ONLINE_HAS_LAST_PARTNER, "brendan_77");
+    for (i = 0; i < 3; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopOnline_TestIsLastPartnerPage());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    return ready;
+}
+
+static struct CoopBridgeMessage InviteLastPartner(const struct CoopBridgeMessage *ready)
+{
+    struct CoopBridgeMessage action;
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    action = MenuRequest();
+    EXPECT_EQ(action.length, COOP_ONLINE_REQUEST_SIZE);
+    EXPECT(memcmp(action.payload, ready->payload, 4) != 0);
+    EXPECT(memcmp(action.payload + 4, ready->payload, 4) == 0);
+    EXPECT_EQ(action.payload[8], COOP_ONLINE_INVITE_LAST_PARTNER);
+    EXPECT_EQ(action.payload[9], 0);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT(CoopOnline_TestPending());
+    ExpectResultText(COMPOUND_STRING("Sending..."));
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    return action;
+}
+
+TEST("Cloud Coop ungrouped Online offers Last partner and shows the partner name")
+{
+    struct CoopBridgeMessage ready;
+    const u8 *name;
+    u8 i;
+    InitOnlineMenu();
+    ready = MenuRequest();
+    ReplyStatus(&ready, COOP_ONLINE_READY, COOP_ONLINE_HAS_LAST_PARTNER, "brendan_77");
+    // Seven entries: Back sits at index 6 once Last partner is offered.
+    for (i = 0; i < 6; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(CoopOnline_TestInput(A_BUTTON));
+    for (i = 0; i < 3; i++) CoopOnline_TestInput(DPAD_UP);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopOnline_TestIsLastPartnerPage());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    name = CoopOnline_TestLastPartnerName();
+    EXPECT(name != NULL);
+    EXPECT_EQ(memcmp(name, "brendan_77", 11), 0);
+    ExpectResultText(COMPOUND_STRING("Choose an option."));
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Back returns to ONLINE.
+    EXPECT(!CoopOnline_TestIsLastPartnerPage());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop Invite last partner sends one request and reports success")
+{
+    struct CoopBridgeMessage ready = OpenLastPartnerPage();
+    struct CoopBridgeMessage action = InviteLastPartner(&ready);
+    ReplyStatus(&action, COOP_ONLINE_SUCCESS, COOP_ONLINE_HAS_LAST_PARTNER, "brendan_77");
+    EXPECT(!CoopOnline_TestPending());
+    EXPECT_EQ(CoopOnline_TestResult(), COOP_ONLINE_SUCCESS);
+    ExpectResultText(COMPOUND_STRING("Invitation sent."));
+    EXPECT(CoopOnline_TestIsLastPartnerPage());
+}
+
+TEST("Cloud Coop Invite last partner reports failure and blocks a resend")
+{
+    struct CoopBridgeMessage ready = OpenLastPartnerPage();
+    struct CoopBridgeMessage action = InviteLastPartner(&ready);
+    ReplyStatus(&action, COOP_ONLINE_FAILED, 0, NULL);
+    EXPECT(!CoopOnline_TestPending());
+    EXPECT_EQ(CoopOnline_TestResult(), COOP_ONLINE_FAILED);
+    ExpectResultText(COMPOUND_STRING("Could not finish. Refresh."));
+    EXPECT(CoopOnline_TestLastPartnerName() == NULL);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop Invite last partner reports unavailable on bridge result and timeout")
+{
+    struct CoopBridgeMessage ready = OpenLastPartnerPage();
+    struct CoopBridgeMessage action = InviteLastPartner(&ready);
+    u32 i;
+    ReplyStatus(&action, COOP_ONLINE_UNAVAILABLE, 0, NULL);
+    EXPECT(!CoopOnline_TestPending());
+    ExpectResultText(COMPOUND_STRING("Unavailable. Try Refresh."));
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    ready = OpenLastPartnerPage();
+    action = InviteLastPartner(&ready);
+    for (i = 0; i < 300; i++) CoopOnline_TestPoll();
+    EXPECT(!CoopOnline_TestPending());
+    EXPECT_EQ(CoopOnline_TestResult(), COOP_ONLINE_UNAVAILABLE);
+    ExpectResultText(COMPOUND_STRING("Unavailable. Try Refresh."));
+    ReplyStatus(&action, COOP_ONLINE_SUCCESS, COOP_ONLINE_HAS_LAST_PARTNER, "brendan_77");
+    ExpectResultText(COMPOUND_STRING("Unavailable. Try Refresh."));
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop Online omits Last partner without the last-partner flag")
+{
+    struct CoopBridgeMessage ready;
+    u8 i;
+    InitOnlineMenu();
+    ready = MenuRequest();
+    ReplyStatus(&ready, COOP_ONLINE_READY, 0, NULL);
+    // Six entries: Back sits at index 5.
+    for (i = 0; i < 5; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(CoopOnline_TestInput(A_BUTTON));
+    CoopOnline_TestInput(DPAD_UP);
+    CoopOnline_TestInput(DPAD_UP);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopOnline_TestIsPairingPage());
+    EXPECT(!CoopOnline_TestIsLastPartnerPage());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+}
+
+TEST("Cloud Coop grouped Online omits Last partner even with the flag")
+{
+    struct CoopBridgeMessage ready;
+    u8 i;
+    InitOnlineMenu();
+    ready = MenuRequest();
+    ReplyStatus(&ready, COOP_ONLINE_READY, COOP_ONLINE_GROUPED | COOP_ONLINE_HAS_LAST_PARTNER, "brendan_77");
+    for (i = 0; i < 3; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopOnline_TestIsLocationPage());
+    EXPECT(!CoopOnline_TestIsLastPartnerPage());
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    EXPECT(!CoopOnline_TestInput(B_BUTTON));
+    for (i = 0; i < 4; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Index 4 is Leave group, not Pair by code.
+    ready = MenuRequest();
+    EXPECT_EQ(ready.payload[8], COOP_ONLINE_LEAVE);
+    EXPECT(!CoopOnline_TestIsPairingPage());
 }

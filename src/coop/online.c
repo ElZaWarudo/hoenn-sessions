@@ -621,4 +621,13 @@ void CoopOnline_TestPoll(void) { Poll(); }
 bool8 CoopOnline_TestPending(void) { return sPending; }
 u8 CoopOnline_TestResult(void) { return sStatus.result; }
 bool8 CoopOnline_TestIsLocationPage(void) { return sPage == ONLINE_LOCATION; }
+bool8 CoopOnline_TestIsLastPartnerPage(void) { return sPage == ONLINE_LAST_PARTNER; }
+bool8 CoopOnline_TestIsPairingPage(void) { return sPage == ONLINE_PAIRING; }
+const u8 *CoopOnline_TestResultText(void) { return ResultText(); }
+// Mirrors Draw's ONLINE_LAST_PARTNER body: the name printed, or NULL for "Status not available."
+const u8 *CoopOnline_TestLastPartnerName(void)
+{
+    bool8 known = sStatus.request_id != 0 && (sStatus.result == COOP_ONLINE_READY || sStatus.result == COOP_ONLINE_SUCCESS);
+    return sPage == ONLINE_LAST_PARTNER && known && (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER) ? sStatus.last_partner_name : NULL;
+}
 #endif
