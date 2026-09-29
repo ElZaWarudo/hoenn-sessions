@@ -146,6 +146,28 @@ impl ValidatedSave {
     }
 }
 
+/// Decodes one standalone 100-byte party record exactly as a saved party
+/// slot is decoded: checksum-verified decryption, species presence, and the
+/// egg flags. The bytes are never rewritten.
+///
+/// # Errors
+///
+/// Returns [`PokemonError::Checksum`] or [`PokemonError::MissingSpecies`] for
+/// a nonempty record that is not structurally valid.
+pub fn decode_party_record(
+    raw: [u8; PARTY_POKEMON_SIZE],
+) -> Result<PokemonSlot<PARTY_POKEMON_SIZE>, PokemonError> {
+    decode_record(raw)
+}
+
+/// Current HP of a decoded party record (`struct Pokemon.hp`, offset 86).
+#[must_use]
+pub fn party_record_hp(raw: &[u8; PARTY_POKEMON_SIZE]) -> u16 {
+    u16::from_le_bytes([raw[PARTY_HP_OFFSET], raw[PARTY_HP_OFFSET + 1]])
+}
+
+const PARTY_HP_OFFSET: usize = 86;
+
 fn decode_record<const N: usize>(raw: [u8; N]) -> Result<PokemonSlot<N>, PokemonError> {
     // ZeroMonData clears the boxed portion and sets party mail to MAIL_NONE
     // (0xff). An unused party slot is therefore not necessarily all zero.

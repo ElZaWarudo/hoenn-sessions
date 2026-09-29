@@ -9,7 +9,10 @@ use std::array;
 
 mod pokemon;
 mod trade;
-pub use pokemon::{BoxPokemon, PartyPokemon, PokemonError, PokemonIdentity, PokemonSlot};
+pub use pokemon::{
+    BoxPokemon, PARTY_POKEMON_SIZE, PartyPokemon, PokemonError, PokemonIdentity, PokemonSlot,
+    decode_party_record, party_record_hp,
+};
 pub use trade::{TradeError, trade_party_pokemon};
 
 use coop_protocol::{
