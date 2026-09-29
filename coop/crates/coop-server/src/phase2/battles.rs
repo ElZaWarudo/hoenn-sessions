@@ -473,6 +473,7 @@ fn prune_locked(state: &mut super::storage::State, now: u64) {
 
     let mut release_members = Vec::new();
     let mut remove_reservations = Vec::new();
+    let mut void_battles = Vec::new();
     for (battle_id, record) in &mut state.battle_reservations {
         let group_active = state
             .groups
@@ -495,6 +496,9 @@ fn prune_locked(state: &mut super::storage::State, now: u64) {
                 | BattleReservationStatus::CommitPending
         ) && (!group_active || record.expires_at <= now)
         {
+            if record.view.status == BattleReservationStatus::CommitPending {
+                void_battles.push(*battle_id);
+            }
             record.view.status = BattleReservationStatus::Expired;
             release_members.extend(record.view.member_character_ids);
             record.retain_until = add_ms(now, BATTLE_IDEMPOTENCY_TTL_MS).unwrap_or(u64::MAX);
@@ -504,6 +508,9 @@ fn prune_locked(state: &mut super::storage::State, now: u64) {
     }
     for battle_id in remove_reservations {
         state.battle_reservations.remove(&battle_id);
+    }
+    for battle_id in void_battles {
+        super::ledger::void_battle_entries(state, battle_id);
     }
     let live_ids: HashSet<_> = state
         .battle_reservations
@@ -595,7 +602,7 @@ fn records_digest(records: &[[u8; 100]]) -> String {
     hex_string(&hash.finalize())
 }
 
-fn parse_hex_record(text: &str) -> Option<[u8; 100]> {
+pub(super) fn parse_hex_record(text: &str) -> Option<[u8; 100]> {
     fn nibble(byte: u8) -> Option<u8> {
         match byte {
             b'0'..=b'9' => Some(byte - b'0'),
@@ -933,6 +940,7 @@ fn issue_commit_grants(
             used_ids.extend(grants.iter().map(|grant| grant.grant_id));
         }
     }
+    used_ids.extend(state.ledger_entries.keys().copied());
 
     let mut grants = Vec::with_capacity(2);
     for (index, member) in record.view.member_character_ids.iter().enumerate() {
@@ -1018,6 +1026,10 @@ pub(crate) fn retrieve_commit_grant(
             || grant.source_snapshot_id != anchor.snapshot_id
             || grant.source_revision != anchor.revision
             || grant.source_party_digest != anchor.digest
+            || state
+                .ledger_entries
+                .get(&grant.grant_id)
+                .is_some_and(|entry| !entry.status.is_open())
         {
             return Err(Phase2Error::Conflict);
         }
@@ -1238,6 +1250,7 @@ pub(crate) fn apply_commit_grant(
     {
         return Err(Phase2Error::Conflict);
     }
+    super::ledger::check_declarable(state, actor.character_id, commit_id)?;
     let retain_until = add_ms(now, BATTLE_IDEMPOTENCY_TTL_MS)?;
     let members = record.view.member_character_ids;
     let complete = {
@@ -1253,10 +1266,21 @@ pub(crate) fn apply_commit_grant(
         }
         complete
     };
+    super::ledger::mark_applied(state, commit_id, request.snapshot_id);
     if complete {
         release_battle_locks(state, battle_id, members);
     }
     Ok(true)
+}
+
+/// Whether a battle's commit grants can still be applied.
+pub(crate) fn grant_is_live(state: &super::storage::State, battle_id: Uuid, now: u64) -> bool {
+    state
+        .battle_reservations
+        .get(&battle_id)
+        .is_some_and(|record| {
+            record.view.status == BattleReservationStatus::CommitPending && record.expires_at > now
+        })
 }
 
 pub(crate) fn reserve(
@@ -1408,6 +1432,16 @@ pub(crate) fn reserve(
         if members
             .iter()
             .any(|member| state.active_battle_by_member.contains_key(member))
+        {
+            return Err(Phase2Error::Conflict);
+        }
+        // A Ledger-mode win issues one ledger entry per member, and a member
+        // may hold only one open entry.
+        if request.kind == BattleReservationKind::CooperativeTrainer
+            && reward_mode == BattleRewardMode::Ledger
+            && members
+                .iter()
+                .any(|member| super::ledger::has_open_entry(state, *member))
         {
             return Err(Phase2Error::Conflict);
         }
@@ -1582,6 +1616,7 @@ fn action(
         };
         check_idempotency_capacity(state, actor.character_id)?;
         let retain_until = add_ms(now, BATTLE_IDEMPOTENCY_TTL_MS)?;
+        let commit_pending = record.view.status == BattleReservationStatus::CommitPending;
         let mut view = record.view;
         view.status = next_status;
         let expires_at = if next_status == BattleReservationStatus::Accepted {
@@ -1591,6 +1626,9 @@ fn action(
         } else {
             record.expires_at
         };
+        if commit_pending {
+            super::ledger::void_battle_entries(state, battle_id);
+        }
         if !matches!(
             next_status,
             BattleReservationStatus::Pending | BattleReservationStatus::Accepted
@@ -2134,7 +2172,7 @@ pub(crate) fn ready(
     )
 }
 
-fn hex_string(bytes: &[u8]) -> String {
+pub(super) fn hex_string(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -2460,7 +2498,8 @@ pub(crate) fn finish(
         if record.view.status == BattleReservationStatus::CommitPending
             && record.commit_grants.is_none()
         {
-            record.commit_grants = Some(issue_commit_grants(store, state, &record)?);
+            let grants = issue_commit_grants(store, state, &record)?;
+            record.commit_grants = Some(super::ledger::issue_battle_grants(state, grants, now)?);
         }
 
         if diverged {
@@ -5939,5 +5978,165 @@ mod tests {
         assert_eq!(legacy.view.reward_mode, BattleRewardMode::Ledger);
         assert_eq!(legacy.view.member_roles, None);
         assert_eq!(legacy.staged_parties, [None, None]);
+    }
+
+    #[test]
+    fn wally_grants_are_ledger_entries_served_applied_and_voided() {
+        use super::super::ledger::{ExpectedDelta, LedgerOrigin, LedgerStatus, TrainerStoryPolicy};
+        let (app, a, b, group, fa, fb, reservation, grants) = pending_wally();
+        let entries = app
+            .store
+            .inspect_state(|state| {
+                grants.clone().map(|grant| {
+                    (
+                        state.ledger_entries[&grant.grant_id].clone(),
+                        state
+                            .ledger_open_by_character
+                            .get(&grant.character_id)
+                            .copied(),
+                    )
+                })
+            })
+            .expect("ledger");
+        for ((entry, open), grant) in entries.iter().zip(&grants) {
+            assert_eq!(*open, Some(grant.grant_id));
+            assert_eq!(entry.character_id, grant.character_id);
+            assert_eq!(
+                entry.origin,
+                LedgerOrigin::Battle {
+                    battle_id: reservation.battle_id
+                }
+            );
+            assert_eq!(entry.base_snapshot_id, grant.source_snapshot_id);
+            assert_eq!(entry.status, LedgerStatus::Issued);
+            let ExpectedDelta::TrainerWin {
+                trainer_id, story, ..
+            } = &entry.expected
+            else {
+                panic!("trainer delta");
+            };
+            assert_eq!(*trainer_id, grant.trainer_id);
+            assert_eq!(*story, TrainerStoryPolicy::WallyVictoryRoad);
+        }
+
+        // The ledger route serves the same capability the grant route does.
+        let view = super::super::ledger::open_for_character(&app.store, a, a.character_id, fa)
+            .expect("open wally entry");
+        assert_eq!(view.commit_id, grants[0].grant_id);
+        assert_eq!(view.status, LedgerStatus::Delivered);
+        assert_eq!(
+            retrieve_commit_grant(&app.store, a, group, reservation.battle_id, fa),
+            Ok(grants[0].clone())
+        );
+
+        let source = validated_fixture_save(&fixture_party_sav(), 1);
+        let incoming = validated_fixture_save(&wally_story_save(true, true), 2);
+        let request_a = finalize_request_for_grant(&app, a, grants[0].grant_id, 1_100);
+        assert_eq!(
+            app.store.write_transaction(|state| {
+                super::super::ledger::apply_on_finalize(
+                    state,
+                    a,
+                    &request_a,
+                    &source,
+                    &incoming,
+                    app.store.now(),
+                )
+            }),
+            Ok(true)
+        );
+        let applied = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.ledger_entries[&grants[0].grant_id].clone(),
+                    state.ledger_open_by_character.contains_key(&a.character_id),
+                )
+            })
+            .expect("applied");
+        assert_eq!(applied.0.status, LedgerStatus::Applied);
+        assert_eq!(applied.0.applied_snapshot_id, Some(request_a.snapshot_id));
+        assert!(!applied.1);
+        assert_eq!(
+            super::super::ledger::open_for_character(&app.store, a, a.character_id, fa),
+            Err(Phase2Error::NotFound)
+        );
+
+        // The unapplied member's entry is voided when the reservation ends.
+        app.store
+            .write_transaction(|state| {
+                state
+                    .battle_reservations
+                    .get_mut(&reservation.battle_id)
+                    .expect("reservation")
+                    .expires_at = 0;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("expire reservation");
+        assert_eq!(
+            super::super::ledger::open_for_character(&app.store, b, b.character_id, fb),
+            Err(Phase2Error::NotFound)
+        );
+        prune_expired(&app.store).expect("prune");
+        let voided = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.ledger_entries[&grants[1].grant_id].status,
+                    state.ledger_open_by_character.contains_key(&b.character_id),
+                )
+            })
+            .expect("voided");
+        assert_eq!(voided, (LedgerStatus::Voided, false));
+    }
+
+    #[test]
+    fn ledger_mode_reservation_is_refused_while_a_member_has_an_open_entry() {
+        let (app, a, b, group, fa, _) = fixture();
+        app.store
+            .write_transaction(|state| {
+                let commit_id = CommitId::new(Uuid::from_u128(0x1ed9)).expect("commit id");
+                let snapshot_id = state.characters[&b.character_id]
+                    .active_snapshot
+                    .expect("snapshot");
+                super::super::ledger::issue(
+                    state,
+                    vec![super::super::ledger::LedgerEntry {
+                        commit_id,
+                        character_id: b.character_id,
+                        origin: super::super::ledger::LedgerOrigin::Trade {
+                            offer_id: coop_cloud::TradeOfferId::new(Uuid::from_u128(0x1eda))
+                                .expect("offer"),
+                        },
+                        base_snapshot_id: snapshot_id,
+                        base_revision: Revision::new(1),
+                        expected: super::super::ledger::ExpectedDelta::Trade {
+                            slot: coop_cloud::PartyPosition::new(0).expect("slot"),
+                            outgoing: super::super::ledger::PokemonKey {
+                                personality: 0,
+                                ot_id: 0,
+                            },
+                            incoming_raw: fixture_party_sav_record(),
+                            incoming_key: super::super::ledger::PokemonKey {
+                                personality: 0,
+                                ot_id: 0,
+                            },
+                        },
+                        status: super::super::ledger::LedgerStatus::Issued,
+                        issued_at: 0,
+                        applied_snapshot_id: None,
+                    }],
+                )
+            })
+            .expect("open entry");
+        assert_eq!(
+            app.reserve_battle(
+                a,
+                group,
+                fa,
+                trainer_request(1_200, "HOENN:TRAINER_WALLY_1")
+            ),
+            Err(Phase2Error::Conflict)
+        );
     }
 }

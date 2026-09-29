@@ -1168,6 +1168,13 @@ pub struct State {
     #[serde(default)]
     pub(crate) battle_idempotency:
         HashMap<(CharacterId, IdempotencyKey), super::battles::BattleIdempotencyRecord>,
+    /// Level 1 outcome ledger. Missing on states persisted before the ledger
+    /// existed, which simply have no entries.
+    #[serde(default)]
+    pub(crate) ledger_entries: HashMap<CommitId, super::ledger::LedgerEntry>,
+    /// At most one open (`Issued` or `Delivered`) entry per character.
+    #[serde(default)]
+    pub(crate) ledger_open_by_character: HashMap<CharacterId, CommitId>,
 }
 
 /// Feed history is useful only for active groups. Remove it as soon as a

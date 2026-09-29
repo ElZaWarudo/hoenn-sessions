@@ -1,16 +1,18 @@
 //! Server-owned paired trade staging and publication primitives.
 //!
-//! Consent offers have HTTP routes, while staging and publication remain
-//! internal until clients can coordinate a fenced save handoff. Source objects
-//! are verified and transformed outside the repository transaction; both
-//! character heads are then published together in one transition.
+//! Consent offers have HTTP routes. Level 1 applies trades in the ROM via
+//! the outcome ledger: the second consent issues one ledger entry per member
+//! carrying the partner's exact slot record, and each member declares it in
+//! its next finalized snapshot. The staging and publication primitives below
+//! are unused by that flow and stay disabled.
 
 #![allow(dead_code)]
 
 use coop_cloud::{
-    ApiVersion, ArtifactIdentity, CharacterId, GroupId, IdempotencyKey, LeaseContract, LeaseFence,
-    Revision, Sha256Digest, SnapshotFence, SnapshotFile, SnapshotId, SnapshotRecord, TradeDecision,
-    TradeDecisionRequest, TradeOfferId, TradeOfferRequest, TradeOfferStatus, TradeOfferView,
+    ApiVersion, ArtifactIdentity, CharacterId, CommitId, GroupId, IdempotencyKey, LeaseContract,
+    LeaseFence, Revision, Sha256Digest, SnapshotFence, SnapshotFile, SnapshotId, SnapshotRecord,
+    TradeDecision, TradeDecisionRequest, TradeOfferId, TradeOfferRequest, TradeOfferStatus,
+    TradeOfferView,
 };
 use sha2::{Digest, Sha256};
 
@@ -1124,10 +1126,55 @@ pub(crate) fn get_offer(
     })
 }
 
+/// Reads both members' anchored slot records for a pending offer. Object
+/// reads stay outside the repository transaction; the caller rechecks that
+/// the anchored heads are still current before issuing ledger entries.
+fn accepted_trade_sides(
+    store: &Store,
+    offer_id: TradeOfferId,
+) -> Result<[super::ledger::TradeSide; 2], Phase2Error> {
+    let (record, snapshots) = store.read_transaction(|state| {
+        let record = state
+            .trade_offers
+            .get(&offer_id)
+            .cloned()
+            .ok_or(Phase2Error::NotFound)?;
+        let snapshots = record
+            .view
+            .snapshots
+            .map(|snapshot_id| state.snapshots.get(&snapshot_id).cloned());
+        Ok::<_, Phase2Error>((record, snapshots))
+    })?;
+    let mut sides = Vec::with_capacity(2);
+    for (index, snapshot) in snapshots.into_iter().enumerate() {
+        let snapshot = snapshot.ok_or(Phase2Error::Conflict)?;
+        if snapshot.character_id != record.view.members[index]
+            || snapshot.revision != record.view.revisions[index]
+        {
+            return Err(Phase2Error::Conflict);
+        }
+        let verified = verify_source(
+            store,
+            &snapshot,
+            record.fences[index],
+            record.view.slots[index],
+        )?;
+        sides.push(super::ledger::trade_side(
+            &verified.save,
+            snapshot.snapshot_id,
+            snapshot.revision,
+            record.view.slots[index],
+        )?);
+    }
+    sides.try_into().map_err(|_| Phase2Error::Internal)
+}
+
 /// Records one consent decision. Reject is terminal for either member under
 /// the caller's own fence. Accept additionally requires the exact live group,
 /// both live leases, unchanged anchored heads, and the exact reciprocal
-/// slots; the initiator can never accept their own offer.
+/// slots; the initiator can never accept their own offer. The accepting
+/// decision atomically issues one Trade ledger entry per member and is
+/// refused with `Conflict` while either member has an open entry.
 pub(crate) fn decide_offer(
     store: &Store,
     actor: AuthenticatedActor,
@@ -1142,6 +1189,16 @@ pub(crate) fn decide_offer(
         return Err(Phase2Error::NotFound);
     }
     let fingerprint = offer_fingerprint(OP_TRADE_DECIDE, &(group_id, request))?;
+    // Read failures are deferred: a replay or an earlier refusal must keep
+    // its own result, and an accept without both slot records fails closed.
+    let (trade_sides, commit_candidates) = if request.decision == TradeDecision::Accept {
+        let candidates: Vec<CommitId> = (0..MAX_TRADE_OFFER_ID_CANDIDATES)
+            .map(|_| CommitId::new(store.random_uuid()?).map_err(|_| Phase2Error::Internal))
+            .collect::<Result<_, _>>()?;
+        (accepted_trade_sides(store, offer_id).ok(), candidates)
+    } else {
+        (None, Vec::new())
+    };
     let now = store.now();
     store.write_transaction(|state| {
         super::group_travel::authenticate_caller(state, actor, actor.character_id)?;
@@ -1241,6 +1298,30 @@ pub(crate) fn decide_offer(
                     return Err(Phase2Error::Conflict);
                 }
                 ensure_trade_offer_receipt_slot(state, actor.character_id)?;
+                let sides = trade_sides.ok_or(Phase2Error::Conflict)?;
+                if (0..2).any(|index| {
+                    sides[index].snapshot_id != record.view.snapshots[index]
+                        || sides[index].revision != record.view.revisions[index]
+                        || sides[index].slot != record.view.slots[index]
+                }) {
+                    return Err(Phase2Error::Conflict);
+                }
+                let mut fresh = commit_candidates
+                    .iter()
+                    .copied()
+                    .filter(|candidate| !super::ledger::commit_id_in_use(state, *candidate));
+                let first = fresh.next().ok_or(Phase2Error::Internal)?;
+                let second = fresh
+                    .find(|candidate| *candidate != first)
+                    .ok_or(Phase2Error::Internal)?;
+                super::ledger::issue_trade(
+                    state,
+                    offer_id,
+                    record.view.members,
+                    sides,
+                    [first, second],
+                    now,
+                )?;
                 let mut view = record.view.clone();
                 view.status = TradeOfferStatus::Accepted;
                 let expires_at = now
@@ -1407,8 +1488,16 @@ mod tests {
         snapshot_id: SnapshotId,
         revision: Revision,
     ) -> SnapshotRecord {
-        let sav =
-            SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &trade_test_sav()).unwrap();
+        snapshot_for_sav(character, snapshot_id, revision, &trade_test_sav())
+    }
+
+    fn snapshot_for_sav(
+        character: CharacterId,
+        snapshot_id: SnapshotId,
+        revision: Revision,
+        sav_bytes: &[u8],
+    ) -> SnapshotRecord {
+        let sav = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, sav_bytes).unwrap();
         let pending = SnapshotFile::from_bytes(ArtifactIdentity::PendingCommits, b"[]").unwrap();
         SnapshotRecord::new(
             snapshot_id,
@@ -1989,7 +2078,12 @@ mod tests {
                         .insert((member, revision), snapshots[index]);
                     next.snapshots.insert(
                         snapshots[index],
-                        snapshot(member, snapshots[index], revision),
+                        snapshot_for_sav(
+                            member,
+                            snapshots[index],
+                            revision,
+                            &consent_member_sav(index),
+                        ),
                     );
                     next.active_group_by_member.insert(member, group_id);
                     next.characters.insert(
@@ -2031,6 +2125,18 @@ mod tests {
                 Ok::<(), Phase2Error>(())
             })
             .unwrap();
+        // Accepting reads both anchored heads to issue the trade ledger.
+        for (index, member) in members.into_iter().enumerate() {
+            for (artifact, bytes) in [
+                (ArtifactIdentity::CharacterSav, consent_member_sav(index)),
+                (ArtifactIdentity::PendingCommits, b"[]".to_vec()),
+            ] {
+                store
+                    .objects
+                    .put(Store::object_key(member, snapshots[index], artifact), bytes)
+                    .unwrap();
+            }
+        }
         let actors = std::array::from_fn(|index| super::super::AuthenticatedActor {
             user_id: id(70 + index as u128, UserId::new),
             character_id: members[index],
@@ -2045,6 +2151,19 @@ mod tests {
             snapshots,
             revision,
         }
+    }
+
+    /// Member `index` holds two distinct Pokémon in party slots 0 and 1.
+    fn consent_member_party(index: usize) -> [[u8; 100]; 2] {
+        let base = 24 * (1 + 2 * index as u32);
+        [
+            super::super::tests::test_party_record(base, 1 + 2 * index as u16),
+            super::super::tests::test_party_record(base + 24, 2 + 2 * index as u16),
+        ]
+    }
+
+    fn consent_member_sav(index: usize) -> Vec<u8> {
+        super::super::tests::party_character_sav(2, &consent_member_party(index))
     }
 
     fn consent_offer_request(
@@ -2611,6 +2730,398 @@ mod tests {
             .unwrap()
             .status,
             TradeOfferStatus::Expired
+        );
+    }
+
+    fn accept_fixture_offer(fixture: &ConsentFixture, create_key: u128) -> TradeOfferView {
+        let pending = create_offer(
+            &fixture.store,
+            fixture.actors[0],
+            fixture.group_id,
+            &consent_offer_request(fixture, 0, create_key),
+        )
+        .unwrap();
+        let partner_index = canonical_index(&pending, fixture.members[1]);
+        decide_offer(
+            &fixture.store,
+            fixture.actors[1],
+            fixture.group_id,
+            pending.offer_id,
+            &consent_decision_request(
+                fixture,
+                1,
+                pending.offer_id,
+                pending.slots[partner_index].index() as u8,
+                pending.slots[1 - partner_index].index() as u8,
+                coop_cloud::TradeDecision::Accept,
+                create_key + 1,
+            ),
+        )
+        .unwrap()
+    }
+
+    fn ledger_state<T>(fixture: &ConsentFixture, read: impl FnOnce(&State) -> T) -> T {
+        fixture.store.inspect_state(read).unwrap()
+    }
+
+    fn open_trade_entry(
+        fixture: &ConsentFixture,
+        member: usize,
+    ) -> super::super::ledger::LedgerEntry {
+        ledger_state(fixture, |state| {
+            super::super::ledger::open_entry(state, fixture.members[member])
+                .cloned()
+                .expect("open trade entry")
+        })
+    }
+
+    /// The fixture member (not canonical) index of a character.
+    fn fixture_index(fixture: &ConsentFixture, member: CharacterId) -> usize {
+        fixture
+            .members
+            .iter()
+            .position(|candidate| *candidate == member)
+            .expect("fixture member")
+    }
+
+    #[test]
+    fn accept_issues_both_trade_ledger_entries_with_exact_partner_records() {
+        let fixture = consent_fixture();
+        let accepted = accept_fixture_offer(&fixture, 100);
+        assert_eq!(accepted.status, TradeOfferStatus::Accepted);
+        assert_eq!(
+            ledger_state(&fixture, |state| state.ledger_entries.len()),
+            2
+        );
+        for member in 0..2 {
+            let index = canonical_index(&accepted, fixture.members[member]);
+            let partner = fixture_index(&fixture, accepted.members[1 - index]);
+            let entry = open_trade_entry(&fixture, member);
+            assert_eq!(entry.character_id, fixture.members[member]);
+            assert_eq!(
+                entry.origin,
+                super::super::ledger::LedgerOrigin::Trade {
+                    offer_id: accepted.offer_id
+                }
+            );
+            assert_eq!(entry.status, super::super::ledger::LedgerStatus::Issued);
+            assert_eq!(entry.base_snapshot_id, accepted.snapshots[index]);
+            assert_eq!(entry.base_revision, accepted.revisions[index]);
+            let expected_incoming =
+                consent_member_party(partner)[accepted.slots[1 - index].index()];
+            let expected_outgoing = consent_member_party(member)[accepted.slots[index].index()];
+            let super::super::ledger::ExpectedDelta::Trade {
+                slot,
+                outgoing,
+                incoming_raw,
+                incoming_key,
+            } = entry.expected
+            else {
+                panic!("trade delta");
+            };
+            assert_eq!(slot, accepted.slots[index]);
+            assert_eq!(incoming_raw, expected_incoming);
+            assert_eq!(
+                outgoing.personality,
+                u32::from_le_bytes(expected_outgoing[0..4].try_into().unwrap())
+            );
+            assert_eq!(
+                incoming_key.personality,
+                u32::from_le_bytes(expected_incoming[0..4].try_into().unwrap())
+            );
+        }
+
+        // Issuance is idempotent per (origin, character): a replayed decision
+        // and a direct reissue both return the existing entries.
+        let partner_index = canonical_index(&accepted, fixture.members[1]);
+        let replay = decide_offer(
+            &fixture.store,
+            fixture.actors[1],
+            fixture.group_id,
+            accepted.offer_id,
+            &consent_decision_request(
+                &fixture,
+                1,
+                accepted.offer_id,
+                accepted.slots[partner_index].index() as u8,
+                accepted.slots[1 - partner_index].index() as u8,
+                coop_cloud::TradeDecision::Accept,
+                101,
+            ),
+        )
+        .unwrap();
+        assert_eq!(replay, accepted);
+        let existing = accepted
+            .members
+            .map(|member| open_trade_entry(&fixture, fixture_index(&fixture, member)).commit_id);
+        let sides = accepted_trade_sides(&fixture.store, accepted.offer_id).unwrap();
+        let reissued = fixture
+            .store
+            .write_transaction(|state| {
+                super::super::ledger::issue_trade(
+                    state,
+                    accepted.offer_id,
+                    accepted.members,
+                    sides,
+                    [id(900, CommitId::new), id(901, CommitId::new)],
+                    1,
+                )
+            })
+            .unwrap();
+        assert_eq!(reissued, existing);
+        assert_eq!(
+            ledger_state(&fixture, |state| state.ledger_entries.len()),
+            2
+        );
+    }
+
+    #[test]
+    fn second_trade_accept_is_refused_while_a_ledger_entry_is_open() {
+        let fixture = consent_fixture();
+        let first = accept_fixture_offer(&fixture, 100);
+        fixture.clock.advance(TRADE_ACCEPTED_TTL_MS + 1);
+        let pending = create_offer(
+            &fixture.store,
+            fixture.actors[0],
+            fixture.group_id,
+            &consent_offer_request(&fixture, 0, 200),
+        )
+        .unwrap();
+        assert_ne!(pending.offer_id, first.offer_id);
+        let partner_index = canonical_index(&pending, fixture.members[1]);
+        assert_eq!(
+            decide_offer(
+                &fixture.store,
+                fixture.actors[1],
+                fixture.group_id,
+                pending.offer_id,
+                &consent_decision_request(
+                    &fixture,
+                    1,
+                    pending.offer_id,
+                    pending.slots[partner_index].index() as u8,
+                    pending.slots[1 - partner_index].index() as u8,
+                    coop_cloud::TradeDecision::Accept,
+                    201,
+                ),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            ledger_state(&fixture, |state| (
+                state.ledger_entries.len(),
+                state.trade_offers[&pending.offer_id].view.status
+            )),
+            (2, TradeOfferStatus::Pending)
+        );
+    }
+
+    #[test]
+    fn open_ledger_entry_is_fenced_owner_only_and_marks_delivery() {
+        let fixture = consent_fixture();
+        assert_eq!(
+            super::super::ledger::open_for_character(
+                &fixture.store,
+                fixture.actors[0],
+                fixture.members[0],
+                fixture.fences[0],
+            ),
+            Err(Phase2Error::NotFound)
+        );
+        accept_fixture_offer(&fixture, 100);
+        let stale = LeaseFence::new(
+            id(99, SessionId::new),
+            fixture.members[0],
+            fixture.revision,
+            SessionEpoch::new(2).unwrap(),
+            id(20, ClientInstanceId::new),
+        );
+        assert_eq!(
+            super::super::ledger::open_for_character(
+                &fixture.store,
+                fixture.actors[0],
+                fixture.members[0],
+                stale,
+            ),
+            Err(Phase2Error::Authentication)
+        );
+        assert_eq!(
+            super::super::ledger::open_for_character(
+                &fixture.store,
+                fixture.actors[1],
+                fixture.members[0],
+                fixture.fences[0],
+            ),
+            Err(Phase2Error::Authentication)
+        );
+        assert_eq!(
+            open_trade_entry(&fixture, 0).status,
+            super::super::ledger::LedgerStatus::Issued
+        );
+        let view = super::super::ledger::open_for_character(
+            &fixture.store,
+            fixture.actors[0],
+            fixture.members[0],
+            fixture.fences[0],
+        )
+        .unwrap();
+        let entry = open_trade_entry(&fixture, 0);
+        assert_eq!(view.commit_id, entry.commit_id);
+        assert_eq!(view.status, super::super::ledger::LedgerStatus::Delivered);
+        assert_eq!(entry.status, super::super::ledger::LedgerStatus::Delivered);
+        let super::super::ledger::ExpectedDelta::Trade { incoming_raw, .. } = &entry.expected
+        else {
+            panic!("trade delta");
+        };
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(json["origin"]["kind"], "TRADE");
+        assert_eq!(json["expected"]["kind"], "TRADE");
+        assert_eq!(
+            json["expected"]["incoming_raw"],
+            super::super::battles::hex_string(incoming_raw)
+        );
+        let decoded: super::super::ledger::LedgerEntryView = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, view);
+    }
+
+    fn ledger_finalize_request(
+        fixture: &ConsentFixture,
+        member: usize,
+        commit: Option<CommitId>,
+        number: u128,
+    ) -> coop_cloud::SnapshotFinalizeRequest {
+        let snapshot = ledger_state(fixture, |state| {
+            state.snapshots[&fixture.snapshots[member]].clone()
+        });
+        let fence = fixture.fences[member];
+        coop_cloud::SnapshotFinalizeRequest::new(
+            id(number, SnapshotId::new),
+            coop_cloud::SnapshotFinalizeFence::new(
+                fence.session_id,
+                fixture.members[member],
+                fixture.revision,
+                fence.session_epoch,
+                fence.client_instance_id,
+                id(number, coop_cloud::IdempotencyKey::new),
+            ),
+            snapshot.files.clone(),
+            snapshot.pending_commits_sha256,
+            commit,
+        )
+        .unwrap()
+    }
+
+    fn apply_ledger(
+        fixture: &ConsentFixture,
+        member: usize,
+        request: &coop_cloud::SnapshotFinalizeRequest,
+        incoming: &[[u8; 100]],
+    ) -> Result<bool, Phase2Error> {
+        let source = validate_character_sav(&consent_member_sav(member), Revision::new(2)).unwrap();
+        let incoming = validate_character_sav(
+            &super::super::tests::party_character_sav(3, incoming),
+            Revision::new(3),
+        )
+        .unwrap();
+        fixture.store.write_transaction(|state| {
+            super::super::ledger::apply_on_finalize(
+                state,
+                fixture.actors[member],
+                request,
+                &source,
+                &incoming,
+                1,
+            )
+        })
+    }
+
+    #[test]
+    fn finalize_applies_only_the_exact_declared_trade() {
+        let fixture = consent_fixture();
+        let accepted = accept_fixture_offer(&fixture, 100);
+        let member = 0;
+        let entry = open_trade_entry(&fixture, member);
+        let super::super::ledger::ExpectedDelta::Trade {
+            slot, incoming_raw, ..
+        } = entry.expected
+        else {
+            panic!("trade delta");
+        };
+        let own = consent_member_party(member);
+        let mut applied_party = own;
+        applied_party[slot.index()] = incoming_raw;
+        let declared = ledger_finalize_request(&fixture, member, Some(entry.commit_id), 300);
+        let undeclared = ledger_finalize_request(&fixture, member, None, 301);
+
+        // A pre-apply save without the incoming Pokémon is ordinary progress.
+        assert_eq!(apply_ledger(&fixture, member, &undeclared, &own), Ok(false));
+        // The incoming Pokémon in its slot without a declaration is refused.
+        assert_eq!(
+            apply_ledger(&fixture, member, &undeclared, &applied_party),
+            Err(Phase2Error::Forbidden)
+        );
+        // Wrong bytes in the slot.
+        let mut wrong = applied_party;
+        wrong[slot.index()] = super::super::tests::test_party_record(24 * 40, 9);
+        assert_eq!(
+            apply_ledger(&fixture, member, &declared, &wrong),
+            Err(Phase2Error::Conflict)
+        );
+        // The outgoing Pokémon still stored elsewhere.
+        let duplicated = [applied_party[0], applied_party[1], own[slot.index()]];
+        assert_eq!(
+            apply_ledger(&fixture, member, &declared, &duplicated),
+            Err(Phase2Error::Conflict)
+        );
+        // The partner cannot declare this member's entry.
+        assert_eq!(
+            apply_ledger(
+                &fixture,
+                1,
+                &ledger_finalize_request(&fixture, 1, Some(entry.commit_id), 302),
+                &consent_member_party(1),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            open_trade_entry(&fixture, member).status,
+            super::super::ledger::LedgerStatus::Issued
+        );
+
+        assert_eq!(
+            apply_ledger(&fixture, member, &declared, &applied_party),
+            Ok(true)
+        );
+        let (applied, open) = ledger_state(&fixture, |state| {
+            (
+                state.ledger_entries[&entry.commit_id].clone(),
+                state
+                    .ledger_open_by_character
+                    .get(&fixture.members[member])
+                    .copied(),
+            )
+        });
+        assert_eq!(applied.status, super::super::ledger::LedgerStatus::Applied);
+        assert_eq!(applied.applied_snapshot_id, Some(declared.snapshot_id));
+        assert_eq!(open, None);
+
+        // An applied entry is never applied again by another snapshot, and
+        // it no longer blocks undeclared saves that contain its evidence.
+        let redeclared = ledger_finalize_request(&fixture, member, Some(entry.commit_id), 303);
+        assert_eq!(
+            apply_ledger(&fixture, member, &redeclared, &applied_party),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            apply_ledger(&fixture, member, &undeclared, &applied_party),
+            Ok(false)
+        );
+        // The partner's entry stays open and independent.
+        assert_eq!(
+            open_trade_entry(&fixture, 1).origin,
+            super::super::ledger::LedgerOrigin::Trade {
+                offer_id: accepted.offer_id
+            }
         );
     }
 }

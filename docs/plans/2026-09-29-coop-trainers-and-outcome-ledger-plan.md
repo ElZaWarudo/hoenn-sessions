@@ -84,3 +84,11 @@ auto-checkpoint, manifest (4 d); end-to-end fault tests (3 d).
 
 Already fixed while planning: SaveBlock1 vars were read at the stale 0x139C
 offset (real 0x13FC); see `include/coop/save_layout.h`.
+
+Follow-ups recorded while implementing B2/B3:
+- Prune Applied/Voided ledger entries after a retention window (keep an id
+  tombstone); issuance and lookup currently scan all entries.
+- The ROM trade apply must checkpoint before any trade evolution: finalize
+  requires the traded slot to hold exactly the server's record.
+- Wally entries are voided when their CommitPending reservation expires or is
+  cancelled, so a lapsed Wally battle cannot block trades forever.

@@ -84,6 +84,7 @@ pub mod auth;
 mod battles;
 mod firebase;
 pub(crate) mod group_travel;
+pub(crate) mod ledger;
 mod online;
 mod pairing;
 mod partner;
@@ -441,6 +442,10 @@ impl Phase2App {
                     .route(
                         "/v1/characters/{character_id}/story-travel-recovery",
                         get(discover_story_travel_recovery),
+                    )
+                    .route(
+                        "/v1/characters/{character_id}/ledger/open",
+                        get(get_open_ledger_entry),
                     )
                     .route(
                         "/v1/characters/{character_id}/story-travel-recovery/{proposal_id}/actions",
@@ -1083,6 +1088,22 @@ impl Phase2App {
     ) -> Result<battles::BattleCommitGrant, Phase2Error> {
         let _gate = self.store.lock_runtime_transition_gate();
         battles::retrieve_commit_grant(&self.store, actor, group_id, battle_id, fence)
+    }
+
+    /// Returns the caller's open outcome-ledger entry under its exact lease
+    /// fence and records it as delivered.
+    ///
+    /// # Errors
+    ///
+    /// Returns an authentication, not-found (no open entry), or storage error.
+    pub fn open_ledger_entry(
+        &self,
+        actor: AuthenticatedActor,
+        character_id: CharacterId,
+        fence: coop_cloud::LeaseFence,
+    ) -> Result<ledger::LedgerEntryView, Phase2Error> {
+        let _gate = self.store.lock_runtime_transition_gate();
+        ledger::open_for_character(&self.store, actor, character_id, fence)
     }
 
     /// Creates one pending two-party trade offer anchoring both snapshot
@@ -1956,6 +1977,23 @@ async fn discover_story_travel_recovery(
     Ok(Json(app.discover_story_travel_recovery(actor, fence)?))
 }
 
+async fn get_open_ledger_entry(
+    State(app): State<Phase2App>,
+    headers: axum::http::HeaderMap,
+    Path(path): Path<CharacterPath>,
+) -> Result<Json<ledger::LedgerEntryView>, Phase2Error> {
+    let actor = actor(&headers, &app)?;
+    let fence = auth::fence_from_headers(&headers, path.character_id, &app)?;
+    if actor.character_id != path.character_id {
+        return Err(Phase2Error::NotFound);
+    }
+    Ok(Json(app.open_ledger_entry(
+        actor,
+        path.character_id,
+        fence,
+    )?))
+}
+
 async fn resolve_story_travel_recovery(
     State(app): State<Phase2App>,
     headers: axum::http::HeaderMap,
@@ -2218,6 +2256,45 @@ mod tests {
 
     fn valid_character_sav_generation(with_rtc: bool, generation: u32) -> Vec<u8> {
         character_sav_with_generation(with_rtc, generation, 0)
+    }
+
+    /// A checksum-valid party record. Its OT ID equals `personality`, so the
+    /// substructs are stored unencrypted; a multiple of 24 keeps the growth
+    /// substruct (and its species word) first.
+    pub(super) fn test_party_record(personality: u32, species: u16) -> [u8; 100] {
+        assert_eq!(personality % 24, 0, "fixture substruct order");
+        let mut mon = [0_u8; 100];
+        mon[0..4].copy_from_slice(&personality.to_le_bytes());
+        mon[4..8].copy_from_slice(&personality.to_le_bytes());
+        mon[19] = 2; // hasSpecies
+        mon[28..30].copy_from_slice(&species.to_le_bytes()); // checksum
+        mon[32..34].copy_from_slice(&species.to_le_bytes());
+        mon
+    }
+
+    /// A valid character save of `generation` whose selected slot holds
+    /// exactly `records` as its party and empty PC boxes.
+    pub(super) fn party_character_sav(generation: u32, records: &[[u8; 100]]) -> Vec<u8> {
+        let mut bytes = valid_character_sav_generation(false, generation);
+        for physical in 0..coop_save::SECTORS_PER_SLOT {
+            let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+            let logical = usize::from(read_u16(&bytes, start + TEST_SECTOR_ID_OFFSET));
+            let size = coop_save::LOGICAL_SECTOR_DATA_SIZES[logical];
+            match logical {
+                1 => {
+                    bytes[start + 0x234] = u8::try_from(records.len()).expect("party size");
+                    for (index, record) in records.iter().enumerate() {
+                        let offset = start + 0x238 + index * record.len();
+                        bytes[offset..offset + record.len()].copy_from_slice(record);
+                    }
+                }
+                6..=14 => bytes[start..start + size].fill(0),
+                _ => continue,
+            }
+            let checksum = coop_save::sector_checksum(&bytes[start..start + size]);
+            write_u16(&mut bytes, start + TEST_SECTOR_CHECKSUM_OFFSET, checksum);
+        }
+        bytes
     }
 
     fn mutate_selected_coop_byte(bytes: &mut [u8], payload_offset: usize) {
@@ -5447,5 +5524,164 @@ mod tests {
         assert!(migration.contains("snapshot artifact identity cannot be changed"));
         assert!(migration.contains("NEW.object_key IS DISTINCT FROM expected_key"));
         assert!(migration.contains("characters/%s/snapshots/%s/%s"));
+    }
+
+    fn finalize_party_revision(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        client: ClientInstanceId,
+        sav: &[u8],
+        commit: Option<coop_cloud::CommitId>,
+    ) -> (
+        SnapshotFinalizeRequest,
+        Result<coop_cloud::SnapshotRecord, Phase2Error>,
+    ) {
+        let lease = app
+            .store
+            .inspect_state(|state| state.leases[&actor.character_id].contract)
+            .expect("active lease");
+        let (request, sav_file, pending) = snapshot_request_for_sav(lease, actor, client, sav);
+        let prepared = app.prepare(actor, request).expect("prepare");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::CharacterSav),
+            sav.to_vec(),
+        )
+        .expect("SAV upload");
+        app.upload(
+            &upload_ticket(&prepared, ArtifactIdentity::PendingCommits),
+            b"{}".to_vec(),
+        )
+        .expect("pending upload");
+        let finalize = SnapshotFinalizeRequest::new(
+            prepared.snapshot_id,
+            SnapshotFinalizeFence::new(
+                lease.session_id,
+                actor.character_id,
+                lease.current_revision,
+                lease.session_epoch,
+                client,
+                id(IdempotencyKey::new),
+            ),
+            vec![sav_file, pending.clone()],
+            pending.sha256,
+            commit,
+        )
+        .expect("finalize request");
+        let result = app.finalize(actor, finalize.clone());
+        (finalize, result)
+    }
+
+    #[test]
+    fn finalize_applies_a_declared_trade_entry_once_and_replays_its_record() {
+        let (app, _) = deterministic_app();
+        let (actor, _, client) = account_and_lease(&app);
+        let outgoing = test_party_record(24, 1);
+        let kept = test_party_record(48, 2);
+        let incoming = test_party_record(72, 3);
+        finalize_party_revision(
+            &app,
+            actor,
+            client,
+            &party_character_sav(1, &[outgoing, kept]),
+            None,
+        )
+        .1
+        .expect("first revision");
+        let commit_id = coop_cloud::CommitId::new(Uuid::from_u128(0x1ed1)).expect("commit id");
+        app.store
+            .write_transaction(|state| {
+                let base_snapshot_id = state.characters[&actor.character_id]
+                    .active_snapshot
+                    .expect("head");
+                ledger::issue(
+                    state,
+                    vec![ledger::LedgerEntry {
+                        commit_id,
+                        character_id: actor.character_id,
+                        origin: ledger::LedgerOrigin::Trade {
+                            offer_id: coop_cloud::TradeOfferId::new(Uuid::from_u128(0x1ed2))
+                                .expect("offer id"),
+                        },
+                        base_snapshot_id,
+                        base_revision: Revision::new(1),
+                        expected: ledger::ExpectedDelta::Trade {
+                            slot: coop_cloud::PartyPosition::new(0).expect("slot"),
+                            outgoing: ledger::PokemonKey {
+                                personality: 24,
+                                ot_id: 24,
+                            },
+                            incoming_raw: incoming,
+                            incoming_key: ledger::PokemonKey {
+                                personality: 72,
+                                ot_id: 72,
+                            },
+                        },
+                        status: ledger::LedgerStatus::Issued,
+                        issued_at: 0,
+                        applied_snapshot_id: None,
+                    }],
+                )
+            })
+            .expect("issue entry");
+
+        // An undeclared save that already holds the incoming Pokémon fails.
+        assert_eq!(
+            finalize_party_revision(
+                &app,
+                actor,
+                client,
+                &party_character_sav(2, &[incoming, kept]),
+                None,
+            )
+            .1,
+            Err(Phase2Error::Forbidden)
+        );
+        let (declared, applied) = finalize_party_revision(
+            &app,
+            actor,
+            client,
+            &party_character_sav(2, &[incoming, kept]),
+            Some(commit_id),
+        );
+        let applied = applied.expect("declared trade applies");
+        assert_eq!(applied.last_applied_commit, Some(commit_id));
+        let entry = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.ledger_entries[&commit_id].clone(),
+                    state
+                        .ledger_open_by_character
+                        .get(&actor.character_id)
+                        .copied(),
+                )
+            })
+            .expect("ledger");
+        assert_eq!(entry.0.status, ledger::LedgerStatus::Applied);
+        assert_eq!(entry.0.applied_snapshot_id, Some(applied.snapshot_id));
+        assert_eq!(entry.1, None);
+        // The exact retry returns the stored record before any ledger check.
+        assert_eq!(app.finalize(actor, declared), Ok(applied));
+        // Another snapshot cannot declare the applied entry again.
+        assert_eq!(
+            finalize_party_revision(
+                &app,
+                actor,
+                client,
+                &party_character_sav(3, &[incoming, kept]),
+                Some(commit_id),
+            )
+            .1,
+            Err(Phase2Error::Conflict)
+        );
+        finalize_party_revision(
+            &app,
+            actor,
+            client,
+            &party_character_sav(3, &[incoming, kept]),
+            None,
+        )
+        .1
+        .expect("later ordinary save");
     }
 }
