@@ -389,7 +389,7 @@ fn compatibility() -> BuildCompatibility {
             "size": 9244,
             "magic": 1_347_111_759,
             "abi_version": 1,
-            "game_protocol_version": 2,
+            "game_protocol_version": 3,
             "byte_order": "little",
             "checksum": {"algorithm": "CRC-32/IEEE", "covered_bytes": [0, 139], "stored_offset": 140},
             "offsets": {"magic": 0, "abi_version": 4, "game_protocol_version": 6, "game_build_id": 8, "status_flags": 12, "last_sidecar_heartbeat": 16, "game_to_network": 20, "network_to_game": 4632},

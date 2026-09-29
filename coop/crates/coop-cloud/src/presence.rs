@@ -287,7 +287,8 @@ mod tests {
             Some(&json!(ProtocolVersion::new(1).unwrap().value()))
         );
         assert!(BridgeAbiVersion::new(2).is_err());
-        assert!(ProtocolVersion::new(3).is_err());
+        assert!(ProtocolVersion::new(3).is_ok());
+        assert!(ProtocolVersion::new(4).is_err());
     }
 
     #[test]

@@ -8,7 +8,7 @@ import java.util.zip.CRC32;
 final class BridgeFrame {
     /** Must equal coop-sidecar's codec; a Rust test reads these four lines. */
     static final int BRIDGE_ABI=1;
-    static final int PROTOCOL_VERSION=2;
+    static final int PROTOCOL_VERSION=3;
     static final int LAST_OUTBOUND_TYPE=0x15;
     static final int LAST_INBOUND_TYPE=0x119;
     final int type;

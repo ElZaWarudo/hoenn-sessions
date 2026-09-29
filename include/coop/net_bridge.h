@@ -12,7 +12,7 @@
 
 #define COOP_NET_BRIDGE_MAGIC 0x504B434Fu
 #define COOP_NET_BRIDGE_ABI_VERSION 1
-#define COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION 2
+#define COOP_NET_BRIDGE_GAME_PROTOCOL_VERSION 3
 #define COOP_NET_BRIDGE_GAME_BUILD_ID 0x00010000u
 #define COOP_NET_BRIDGE_PAYLOAD_SIZE 128
 #define COOP_NET_BRIDGE_QUEUE_CAPACITY 32
@@ -68,6 +68,7 @@ enum CoopBridgeMessageType
     COOP_BRIDGE_MESSAGE_BATTLE_RESERVE_REJECTED = 0x0116,
     COOP_BRIDGE_MESSAGE_BATTLE_START = 0x0117,
     COOP_BRIDGE_MESSAGE_GROUP_ENDED = 0x0118,
+    COOP_BRIDGE_MESSAGE_TRADE_COMMIT = 0x0119,
 };
 
 enum CoopBridgeStatus
@@ -208,6 +209,8 @@ bool8 CoopNetBridge_TakeProgressNotice(u8 *kind, u8 *region, u16 *subject_id);
 bool8 CoopNetBridge_IsGrouped(void);
 bool8 CoopNetBridge_IsOrMayBeGrouped(void);
 bool8 CoopNetBridge_CanSendBattle(void);
+/* Cloud epoch accepted, session ready and sidecar heartbeat fresh. */
+bool8 CoopNetBridge_IsSessionActive(void);
 enum CoopCheckpointState CoopNetBridge_GetCheckpointState(void);
 bool8 CoopNetBridge_IsCloudMode(void);
 bool8 CoopNetBridge_IsRecoveryRequired(void);

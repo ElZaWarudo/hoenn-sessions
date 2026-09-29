@@ -174,6 +174,9 @@ assert(protocol.is_inbound(protocol.types.REMOTE_COMPANION))
 assert(protocol.is_inbound(protocol.types.REMOTE_SOCIAL_SIGNAL))
 assert(protocol.is_inbound(protocol.types.BATTLE_RESERVE_REJECTED))
 assert(protocol.is_inbound(protocol.types.BATTLE_START))
+assert(protocol.is_inbound(protocol.types.GROUP_ENDED))
+assert(protocol.is_inbound(protocol.types.TRADE_COMMIT))
+assert(not protocol.is_inbound(0x011A))
 assert(not protocol.is_outbound(protocol.types.BATTLE_RESERVE_REJECTED))
 local reserve_rejected = assert(protocol.encode({
   type = protocol.types.BATTLE_RESERVE_REJECTED, sequence = 4,

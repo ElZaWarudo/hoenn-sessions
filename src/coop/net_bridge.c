@@ -7,6 +7,7 @@
 #include "coop/presence_runtime.h"
 #include "coop/progress.h"
 #include "coop/save.h"
+#include "coop/trade_runtime.h"
 #include "johto/bug_contest.h"
 #include "constants/map_groups.h"
 #include "../data/map_group_count.h"
@@ -88,7 +89,7 @@ static bool8 IsOutboundMessageType(u16 type)
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_GROUP_ENDED;
+        && type <= COOP_BRIDGE_MESSAGE_TRADE_COMMIT;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -811,6 +812,11 @@ bool8 CoopNetBridge_IsOrMayBeGrouped(void)
         || CoopNetBridge_IsGrouped();
 }
 
+bool8 CoopNetBridge_IsSessionActive(void)
+{
+    return IsCloudSessionActive();
+}
+
 bool8 CoopNetBridge_CanSendBattle(void)
 {
     return IsCloudSessionActive()
@@ -1085,6 +1091,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
              * but reset every presence and interaction generation first. */
             PreserveQueuedSaveDataUpdatedBeforeQueueReset();
             PreserveQueuedProgressObservationsBeforeQueueReset();
+            CoopTradeRuntime_PreserveOutbound();
             CoopBattleRuntime_PreserveOutbound();
             CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
@@ -1135,6 +1142,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
          * message before publishing any state for the replacement session. */
         PreserveQueuedSaveDataUpdatedBeforeQueueReset();
         PreserveQueuedProgressObservationsBeforeQueueReset();
+        CoopTradeRuntime_PreserveOutbound();
         CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
         CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
         sCoopNetRuntime.session_epoch = message->session_epoch;
@@ -1559,6 +1567,24 @@ invalid_pairing_status:
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_TRADE_COMMIT)
+    {
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        /* The record fills the whole payload, so there is no padding. A
+         * malformed commit is neither applied nor acknowledged. */
+        if (CoopTradeRuntime_ReceiveCommit(message->payload, message->length)
+            == COOP_TRADE_INBOUND_MALFORMED)
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        return FALSE;
+    }
+
     /* Later milestones add handlers for the remaining documented inbound
      * messages. Until then, do not advance the receive sequence for one. */
     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
@@ -1584,6 +1610,7 @@ static void ObserveSidecarHeartbeat(void)
         {
             PreserveQueuedSaveDataUpdatedBeforeQueueReset();
             PreserveQueuedProgressObservationsBeforeQueueReset();
+            CoopTradeRuntime_PreserveOutbound();
             CoopBattleRuntime_PreserveOutbound();
             CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
@@ -1617,6 +1644,7 @@ void CoopNetBridge_Init(void)
     CoopGroupTravel_Init();
     CoopBattleConsent_Init();
     CoopBattleRuntime_Init();
+    CoopTradeRuntime_Init();
 
     TryAnnounceRomReady();
 }
@@ -1670,6 +1698,9 @@ void CoopNetBridge_Poll(void)
     }
 
     CoopOnline_PollInviteNotice();
+    /* Runs before the checkpoint early returns below: it owns the trade
+     * checkpoint it requests and must observe the grant. */
+    CoopTradeRuntime_Poll();
 
     if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY) == 0)
         return;

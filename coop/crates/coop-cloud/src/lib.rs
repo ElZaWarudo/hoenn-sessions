@@ -314,7 +314,8 @@ mod tests {
         assert!(SessionEpoch::new(0).is_err());
         assert!(serde_json::from_str::<ApiVersion>("2").is_err());
         assert!(BridgeAbiVersion::new(2).is_err());
-        assert!(ProtocolVersion::new(3).is_err());
+        assert!(ProtocolVersion::new(3).is_ok());
+        assert!(ProtocolVersion::new(4).is_err());
     }
 
     #[test]
@@ -943,7 +944,7 @@ mod tests {
             assert!(serde_json::from_value::<ApiVersion>(json!(value)).is_err());
             assert!(serde_json::from_value::<BridgeAbiVersion>(json!(value)).is_err());
         }
-        for value in [0, 3] {
+        for value in [0, 4] {
             assert!(serde_json::from_value::<ProtocolVersion>(json!(value)).is_err());
         }
         assert!(serde_json::from_value::<Username>(json!("A".repeat(33))).is_err());

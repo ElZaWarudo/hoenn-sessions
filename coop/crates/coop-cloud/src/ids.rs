@@ -638,15 +638,16 @@ pub struct ProtocolVersion(u16);
 impl ProtocolVersion {
     /// Creates a known co-op game protocol version.
     ///
-    /// Version 2 is the current ROM bridge protocol; version 1 stays readable
-    /// so identities persisted before the bump still deserialize and then fail
-    /// the exact runtime-identity comparison instead of the decoder.
+    /// Version 3 is the current ROM bridge protocol (it adds `TradeCommit`);
+    /// versions 1 and 2 stay readable so identities persisted before a bump
+    /// still deserialize and then fail the exact runtime-identity comparison
+    /// instead of the decoder.
     ///
     /// # Errors
     ///
-    /// Returns an error for any version other than 1 or 2.
+    /// Returns an error for any version other than 1, 2 or 3.
     pub fn new(value: u16) -> Result<Self, IdError> {
-        if matches!(value, 1 | 2) {
+        if matches!(value, 1..=3) {
             Ok(Self(value))
         } else {
             Err(IdError::UnsupportedVersion(value))

@@ -2,7 +2,7 @@ use crc32fast::Hasher;
 use thiserror::Error;
 
 pub const BRIDGE_ABI_VERSION: u16 = 1;
-pub const GAME_PROTOCOL_VERSION: u16 = 2;
+pub const GAME_PROTOCOL_VERSION: u16 = 3;
 pub const BRIDGE_PAYLOAD_SIZE: usize = 128;
 pub const BRIDGE_FRAME_SIZE: usize = 144;
 const CHECKSUM_OFFSET: usize = 140;
