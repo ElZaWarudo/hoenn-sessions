@@ -307,6 +307,21 @@ static bool8 TakeOutbound(u16 type, struct CoopBridgeMessage *out)
     return found;
 }
 
+/* VBlank advances gMain.vblankCounter1 at any instruction. Deadline tests
+ * mask interrupts so the counter moves only when the test sets it. */
+static u16 FreezeFrameCounter(void)
+{
+    u16 ime = REG_IME;
+
+    REG_IME = 0;
+    return ime;
+}
+
+static void ThawFrameCounter(u16 ime)
+{
+    REG_IME = ime;
+}
+
 /* The deferred vanilla start ran with the parameters the script left. */
 static void ExpectVanillaStarted(const TrainerBattleParameter *before)
 {
@@ -501,9 +516,11 @@ TEST("Cloud Coop trainer encounter falls back and cancels when the offer runs ou
     TrainerBattleParameter before;
     u32 start;
     u32 nonce;
+    u16 ime;
 
     BeginEncounterFixture();
     before = gTrainerBattleParameter;
+    ime = FreezeFrameCounter();
     start = gMain.vblankCounter1;
     nonce = BeginParkedEncounter();
     DeliverRequesterOffer(22, nonce);
@@ -512,6 +529,7 @@ TEST("Cloud Coop trainer encounter falls back and cancels when the offer runs ou
     EXPECT(CoopTrainerEncounter_TestIsPending());
     gMain.vblankCounter1 = start + COOP_TRAINER_ENCOUNTER_WAIT_FRAMES;
     CoopBattleConsent_Poll();
+    ThawFrameCounter(ime);
     ExpectVanillaStarted(&before);
     EXPECT(TakeOutbound(COOP_BRIDGE_MESSAGE_BATTLE_ABORT_REQUEST, &message));
     EXPECT_EQ(message.payload[0], 22);
@@ -525,10 +543,12 @@ TEST("Cloud Coop trainer encounter falls back and cancels when the offer runs ou
     /* An offer that arrives after the requester gave up is cancelled too. */
     BeginEncounterFixture();
     before = gTrainerBattleParameter;
+    ime = FreezeFrameCounter();
     start = gMain.vblankCounter1;
     nonce = BeginParkedEncounter();
     gMain.vblankCounter1 = start + COOP_TRAINER_ENCOUNTER_WAIT_FRAMES;
     CoopBattleConsent_Poll();
+    ThawFrameCounter(ime);
     ExpectVanillaStarted(&before);
     DeliverRequesterOffer(23, nonce);
     EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR));
@@ -710,6 +730,7 @@ TEST("Cloud Coop trainer encounter partner prompt declines itself after ten seco
     struct CoopBridgeMessage message;
     u8 offer[COOP_BATTLE_JOIN_OFFER_SIZE] = {0};
     u32 start;
+    u16 ime;
 
     BeginEncounterFixture();
     /* The partner stands in the free overworld. */
@@ -718,6 +739,7 @@ TEST("Cloud Coop trainer encounter partner prompt declines itself after ten seco
     offer[0] = 41;
     offer[16] = COOP_BATTLE_KIND_COOPERATIVE_TRAINER;
     offer[17] = 1; // Responding partner.
+    ime = FreezeFrameCounter();
     start = gMain.vblankCounter1;
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CoopBattleConsent_Poll();
@@ -731,6 +753,7 @@ TEST("Cloud Coop trainer encounter partner prompt declines itself after ten seco
 
     gMain.vblankCounter1 = start + COOP_TRAINER_ENCOUNTER_OFFER_FRAMES;
     CoopBattleConsent_Poll();
+    ThawFrameCounter(ime);
     EXPECT(!ArePlayerFieldControlsLocked());
     EXPECT(TakeOutbound(COOP_BRIDGE_MESSAGE_BATTLE_JOIN_RESPONSE, &message));
     EXPECT_EQ(message.payload[0], 41);
