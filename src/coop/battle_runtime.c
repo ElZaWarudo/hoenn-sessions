@@ -2,6 +2,8 @@
 #include "coop/battle_runtime.h"
 #include "coop/battle_consent.h"
 #include "coop/net_bridge.h"
+#include "coop/identity.h"
+#include "coop/region.h"
 #include "battle.h"
 #include "random.h"
 #include "pokemon.h"
@@ -76,6 +78,10 @@ struct CoopBattleRuntime
 
 static EWRAM_DATA struct CoopBattleRuntime sBattleRuntime = {0};
 
+/* The staged counts occupy former padding; the EWRAM plan must not grow. */
+_Static_assert(offsetof(struct CoopBattleStartupPlan, original_local) == 32,
+               "co-op startup plan counts must fit in existing padding");
+
 static void ClearTerminalCommit(void);
 
 static bool8 IsValidId(const u8 *id)
@@ -98,6 +104,14 @@ static u16 ReadManifestTrainerOrdinal(const u8 *payload)
         | ((u16)payload[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET + 1] << 8);
 }
 
+/* Any trainer identity in the ROM registry that maps back to a legacy trainer
+ * ID is battleable. Unknown ordinals and identities without a legacy ID stay
+ * rejected wherever the former Wally/Brock allowlist rejected them. */
+static bool8 IsCatalogTrainer(u8 region, u16 ordinal)
+{
+    return CoopIdentity_ResolveTrainerLegacyId(region, ordinal, NULL);
+}
+
 static bool8 IsValidManifestIdentity(const u8 *payload)
 {
     u8 kind = payload[COOP_BATTLE_MANIFEST_KIND_OFFSET];
@@ -111,10 +125,7 @@ static bool8 IsValidManifestIdentity(const u8 *payload)
         return region == COOP_REGION_UNSPECIFIED && ordinal == 0;
     if (kind != COOP_BATTLE_MANIFEST_KIND_TRAINER)
         return FALSE;
-    return (region == COOP_REGION_HOENN
-         && ordinal == COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL)
-        || (region == COOP_REGION_KANTO
-         && ordinal == COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL);
+    return IsCatalogTrainer(region, ordinal);
 }
 
 static bool8 IsCurrentBattle(const u8 *payload)
@@ -265,14 +276,6 @@ static u64 ReadCommitRevision(const u8 *payload)
     return revision;
 }
 
-static bool8 IsValidCommitTrainer(u8 region, u16 ordinal)
-{
-    return (region == COOP_REGION_HOENN
-         && ordinal == COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL)
-        || (region == COOP_REGION_KANTO
-         && ordinal == COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL);
-}
-
 static void ClearTerminalCommit(void)
 {
     memset(sBattleRuntime.terminal_battle_id, 0,
@@ -298,8 +301,8 @@ static void RetainTerminalIdentity(void)
     sBattleRuntime.terminal_trainer_ordinal = ReadManifestTrainerOrdinal(sBattleRuntime.manifest);
     sBattleRuntime.terminal_identity_valid =
         IsValidId(sBattleRuntime.terminal_battle_id)
-        && IsValidCommitTrainer(sBattleRuntime.terminal_trainer_region,
-                                sBattleRuntime.terminal_trainer_ordinal);
+        && IsCatalogTrainer(sBattleRuntime.terminal_trainer_region,
+                            sBattleRuntime.terminal_trainer_ordinal);
 }
 
 void CoopBattleRuntime_OnTransportLost(void)
@@ -548,37 +551,58 @@ bool8 CoopBattleRuntime_PreparePartnerParty(const u8 *battle_id,
     u8 i;
 
     if (battle_id == NULL || local_party == NULL || prepared == NULL
-     || local_count < COOP_BATTLE_MULTI_PARTY_SIZE || local_count > PARTY_SIZE
+     || local_count == 0 || local_count > PARTY_SIZE
      || sizeof(struct Pokemon) != COOP_BATTLE_PARTY_MON_SIZE
      || !sBattleRuntime.session_ready || !sBattleRuntime.manifest_valid
      || memcmp(battle_id, sBattleRuntime.manifest, COOP_BATTLE_ID_SIZE) != 0
-     || sBattleRuntime.peer_party_count < COOP_BATTLE_MULTI_PARTY_SIZE
+     || sBattleRuntime.peer_party_count == 0
      || sBattleRuntime.peer_party_count > PARTY_SIZE
      || sBattleRuntime.next_peer_party_slot != sBattleRuntime.peer_party_count)
         return FALSE;
 
-    /* Select the first three usable mons in their original snapshot order.
-     * Every source slot remains available for later battle restoration. */
-    for (i = 0; i < sBattleRuntime.peer_party_count; i++)
-        if (IsUsableBattleMon(sBattleRuntime.peer_party[i])
-         && selected_peer < COOP_BATTLE_MULTI_PARTY_SIZE)
+    /* Select up to the first three usable mons in their original snapshot
+     * order. Both ROMs run this same selection over byte-identical records
+     * (the peer snapshot is digest-checked against the manifest), so each
+     * member's staged side and its size agree on both ROMs. Every source slot
+     * remains available for later battle restoration. */
+    for (i = 0; i < sBattleRuntime.peer_party_count
+              && selected_peer < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+        if (IsUsableBattleMon(sBattleRuntime.peer_party[i]))
             peer_slots[selected_peer++] = i;
-    if (selected_peer != COOP_BATTLE_MULTI_PARTY_SIZE)
+    if (selected_peer == 0)
         return FALSE;
 
     for (i = 0; i < local_count && selected_local < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
         if (IsUsableBattleMon(&local_party[i]))
             local_slots[selected_local++] = i;
-    if (selected_local != COOP_BATTLE_MULTI_PARTY_SIZE)
+    if (selected_local == 0)
         return FALSE;
 
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
     {
-        prepared->local_slots[i] = local_slots[i];
-        prepared->peer_slots[i] = peer_slots[i];
-        memcpy(&prepared->local[i], &local_party[local_slots[i]], sizeof(struct Pokemon));
-        memcpy(&prepared->peer[i], sBattleRuntime.peer_party[peer_slots[i]], sizeof(struct Pokemon));
+        if (i < selected_local)
+        {
+            prepared->local_slots[i] = local_slots[i];
+            memcpy(&prepared->local[i], &local_party[local_slots[i]], sizeof(struct Pokemon));
+        }
+        else
+        {
+            prepared->local_slots[i] = COOP_BATTLE_UNUSED_SLOT;
+            ZeroMonData(&prepared->local[i]);
+        }
+        if (i < selected_peer)
+        {
+            prepared->peer_slots[i] = peer_slots[i];
+            memcpy(&prepared->peer[i], sBattleRuntime.peer_party[peer_slots[i]], sizeof(struct Pokemon));
+        }
+        else
+        {
+            prepared->peer_slots[i] = COOP_BATTLE_UNUSED_SLOT;
+            ZeroMonData(&prepared->peer[i]);
+        }
     }
+    prepared->local_count = selected_local;
+    prepared->peer_count = selected_peer;
     return TRUE;
 }
 
@@ -590,6 +614,7 @@ bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
     struct CoopBattlePreparedParty prepared;
     struct CoopBattleManifestIdentity identity;
     u8 local_digest[COOP_BATTLE_DIGEST_SIZE];
+    enum CoopRegion active_region;
     u16 opponent_trainer_id;
     u8 i;
 
@@ -603,13 +628,16 @@ bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
                &sBattleRuntime.manifest[50 + identity.local_member_slot * COOP_BATTLE_DIGEST_SIZE],
                sizeof(local_digest)) != 0)
         return FALSE;
-    if (identity.trainer_region == COOP_REGION_HOENN
-     && identity.trainer_ordinal == COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL)
-        opponent_trainer_id = TRAINER_WALLY_VR_1;
-    else if (identity.trainer_region == COOP_REGION_KANTO
-          && identity.trainer_ordinal == COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL)
-        opponent_trainer_id = TRAINER_LEADER_BROCK;
-    else
+    /* The responder resolves the opponent from the attested identity, and
+     * only while standing in that identity's region: an ordinal is never
+     * interpreted against another region's trainer table. */
+    if (!CoopRegion_TryGetActive(&active_region)
+     || active_region != identity.trainer_region
+     || !CoopIdentity_ResolveTrainerLegacyId(identity.trainer_region,
+                                             identity.trainer_ordinal,
+                                             &opponent_trainer_id)
+     || opponent_trainer_id == TRAINER_NONE
+     || opponent_trainer_id >= TRAINERS_COUNT)
         return FALSE;
     if (!CoopBattleRuntime_PreparePartnerParty(battle_id, local_party,
                                                local_count, &prepared))
@@ -624,6 +652,8 @@ bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
     plan->opponent_trainer_id = opponent_trainer_id;
     memset(plan->original_local, 0, sizeof(plan->original_local));
     memcpy(plan->original_local, local_party, local_count * sizeof(struct Pokemon));
+    plan->staged_local_count = prepared.local_count;
+    plan->staged_peer_count = prepared.peer_count;
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
     {
         plan->local_slots[i] = prepared.local_slots[i];
@@ -645,15 +675,17 @@ bool8 CoopBattleRuntime_RestoreLocalParty(const struct CoopBattleStartupPlan *pl
     if (plan == NULL || battle_id == NULL || battled_local == NULL
      || restored_local == NULL
      || !IsValidId(plan->battle_id)
-     || memcmp(plan->battle_id, battle_id, COOP_BATTLE_ID_SIZE) != 0)
+     || memcmp(plan->battle_id, battle_id, COOP_BATTLE_ID_SIZE) != 0
+     || plan->staged_local_count == 0
+     || plan->staged_local_count > COOP_BATTLE_MULTI_PARTY_SIZE)
         return FALSE;
-    for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+    for (i = 0; i < plan->staged_local_count; i++)
         if (plan->local_slots[i] >= PARTY_SIZE)
             return FALSE;
 
-    memcpy(fought, battled_local, sizeof(fought));
+    memcpy(fought, battled_local, plan->staged_local_count * sizeof(struct Pokemon));
     memmove(restored_local, plan->original_local, sizeof(plan->original_local));
-    for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+    for (i = 0; i < plan->staged_local_count; i++)
         memcpy(&restored_local[plan->local_slots[i]], &fought[i],
                sizeof(struct Pokemon));
     return TRUE;
@@ -804,9 +836,9 @@ enum CoopBattleInboundResult CoopBattleRuntime_ReceiveBattleCommit(const u8 *pay
     if (payload == NULL || length != COOP_BATTLE_COMMIT_SIZE
      || !IsValidId(payload + COOP_BATTLE_COMMIT_BATTLE_ID_OFFSET)
      || !IsNonzeroBytes(payload + COOP_BATTLE_COMMIT_ID_OFFSET, COOP_BATTLE_ID_SIZE)
-     || !IsValidCommitTrainer(payload[COOP_BATTLE_COMMIT_REGION_OFFSET],
-                              payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET]
-                              | ((u16)payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET + 1] << 8))
+     || !IsCatalogTrainer(payload[COOP_BATTLE_COMMIT_REGION_OFFSET],
+                          payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET]
+                          | ((u16)payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET + 1] << 8))
      || !IsNonzeroBytes(payload + COOP_BATTLE_COMMIT_SOURCE_REVISION_OFFSET, 8))
         return COOP_BATTLE_INBOUND_MALFORMED;
 
@@ -965,7 +997,7 @@ bool8 CoopBattleRuntime_ArmEngine(const u8 *battle_id)
      || !IsCurrentBattle(battle_id) || sBattleRuntime.engine_active
      || sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] != COOP_BATTLE_MANIFEST_KIND_TRAINER
      || sBattleRuntime.latest_turn != 0
-     || sBattleRuntime.peer_party_count < COOP_BATTLE_MULTI_PARTY_SIZE
+     || sBattleRuntime.peer_party_count == 0
      || sBattleRuntime.next_peer_party_slot != sBattleRuntime.peer_party_count)
         return FALSE;
     sBattleRuntime.engine_active = TRUE;

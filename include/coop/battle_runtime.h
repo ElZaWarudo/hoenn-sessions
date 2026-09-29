@@ -5,7 +5,10 @@
 #include "coop/battle_protocol.h"
 #include "pokemon.h"
 
+/* Each member stages one to three usable mons, never more. */
 #define COOP_BATTLE_MULTI_PARTY_SIZE 3
+/* Slot index recorded for a staged entry beyond the member's staged count. */
+#define COOP_BATTLE_UNUSED_SLOT 0xFF
 #define COOP_BATTLE_ACTION_SIZE 4
 #define COOP_BATTLE_DIGEST_VERSION 1
 // Requests server cancellation for the currently tracked battle. The ROM waits
@@ -32,13 +35,17 @@ struct CoopBattleAction
 };
 
 /* An inert staging result. Battle setup must own any later party swap and
- * restoration; preparing this value never changes the saved player party. */
+ * restoration; preparing this value never changes the saved player party.
+ * Entries at and beyond local_count/peer_count are zeroed mons whose slot
+ * index is COOP_BATTLE_UNUSED_SLOT. */
 struct CoopBattlePreparedParty
 {
     struct Pokemon local[COOP_BATTLE_MULTI_PARTY_SIZE];
     struct Pokemon peer[COOP_BATTLE_MULTI_PARTY_SIZE];
     u8 local_slots[COOP_BATTLE_MULTI_PARTY_SIZE];
     u8 peer_slots[COOP_BATTLE_MULTI_PARTY_SIZE];
+    u8 local_count;
+    u8 peer_count;
 };
 
 /* Prepared, side-effect-free inputs for a future non-link multi battle.
@@ -53,6 +60,10 @@ struct CoopBattleStartupPlan
     u16 opponent_trainer_id;
     u8 local_slots[COOP_BATTLE_MULTI_PARTY_SIZE];
     u8 peer_slots[COOP_BATTLE_MULTI_PARTY_SIZE];
+    /* 1..COOP_BATTLE_MULTI_PARTY_SIZE; these fill existing alignment padding
+     * before original_local, so the EWRAM plan does not grow. */
+    u8 staged_local_count;
+    u8 staged_peer_count;
     struct Pokemon original_local[PARTY_SIZE];
     struct Pokemon staged_local[COOP_BATTLE_MULTI_PARTY_SIZE];
     struct Pokemon staged_peer[COOP_BATTLE_MULTI_PARTY_SIZE];
@@ -95,8 +106,9 @@ enum CoopBattleInboundResult CoopBattleRuntime_ReceivePeerPartyChunk(const u8 *p
 /* Returns a copy only after every chunk has arrived for the current manifest. */
 bool8 CoopBattleRuntime_CopyPeerParty(u8 *battle_id, u8 *count, u8 *mons, u16 capacity);
 /* Requires the exact current manifest, a complete 1..6-record peer snapshot,
- * and at least three usable mons on each side. On failure, prepared is left
- * unchanged. */
+ * and at least one usable (non-egg, HP > 0) mon on each side. Stages the
+ * first one to three usable mons per side in party order. On failure,
+ * prepared is left unchanged. */
 bool8 CoopBattleRuntime_PreparePartnerParty(const u8 *battle_id,
                                            const struct Pokemon *local_party,
                                            u8 local_count,
@@ -104,14 +116,17 @@ bool8 CoopBattleRuntime_PreparePartnerParty(const u8 *battle_id,
 /* Hash the exact ordered party records used by the launcher snapshot commit. */
 bool8 CoopBattleRuntime_ComputePartyDigest(const struct Pokemon *party,
                                            u8 count, u8 *digest, u16 capacity);
-/* Only the two catalogued trainer encounters are accepted. All identity
- * fields come from the current validated manifest. No live state changes. */
+/* Any trainer identity that resolves through the ROM identity registry in the
+ * active region is accepted; the opponent is its legacy trainer ID. All
+ * identity fields come from the current validated manifest. No live state
+ * changes. */
 bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
                                         const struct Pokemon *local_party,
                                         u8 local_count,
                                         struct CoopBattleStartupPlan *plan);
-/* Restore the full pre-battle player party, overlaying the three selected
- * local mons' battle results at their original slots. Does not save. */
+/* Restore the full pre-battle player party, overlaying the staged local
+ * mons' battle results (staged_local_count of them) at their original
+ * slots. Does not save. */
 bool8 CoopBattleRuntime_RestoreLocalParty(const struct CoopBattleStartupPlan *plan,
                                          const u8 *battle_id,
                                          const struct Pokemon *battled_local,

@@ -2,10 +2,20 @@
 #include "coop/battle_runtime.h"
 #include "coop/net_bridge.h"
 #include "coop/generated_regional_identities.h"
+#include "coop/identity.h"
+#include "coop/region.h"
 #include "constants/battle.h"
 #include "constants/opponents.h"
+#include "constants/region_map_sections.h"
+#include "fieldmap.h"
 #include "pokemon.h"
 #include "test/test.h"
+
+static void SetActiveRegion(u8 engineRegion, u32 sectionId)
+{
+    gMapHeader.engineRegion = engineRegion;
+    gMapHeader.regionMapSectionId = sectionId;
+}
 
 TEST("Cloud Coop action codec keeps member targets canonical and rejects invalid actions")
 {
@@ -304,58 +314,142 @@ TEST("Cloud Coop partner party preparation requires the complete current battle"
     EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
 }
 
-TEST("Cloud Coop partner party preparation needs three usable mons on each side")
+static void CreateEggTestMon(struct Pokemon *mon, u32 personality)
 {
-    struct Pokemon local[PARTY_SIZE] = {0};
-    struct Pokemon peer;
-    struct CoopBattlePreparedParty prepared;
-    struct CoopBattlePreparedParty untouched;
-    u8 id[COOP_BATTLE_ID_SIZE] = {9};
+    bool8 is_egg = TRUE;
+
+    CreateUsableTestMon(mon, SPECIES_TORCHIC, 5, personality, OTID_STRUCT_PRESET(1));
+    SetMonData(mon, MON_DATA_IS_EGG, &is_egg);
+}
+
+static void CreateFaintedTestMon(struct Pokemon *mon, u32 personality)
+{
+    u16 no_hp = 0;
+
+    CreateUsableTestMon(mon, SPECIES_MUDKIP, 5, personality, OTID_STRUCT_PRESET(1));
+    SetMonData(mon, MON_DATA_HP, &no_hp);
+}
+
+/* Slot 0 is an egg and slot 1 is fainted; `usable` usable mons follow. */
+static u8 BuildSkippedPrefixParty(struct Pokemon *party, u8 usable, enum Species species)
+{
     u8 i;
 
-    CreateUsableTestMon(&peer, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
-    memset(&prepared, 0xA5, sizeof(prepared));
-    untouched = prepared;
-    CoopBattleRuntime_Init();
-    CoopBattleRuntime_OnSessionReady(19);
-    ReceiveManifest(9);
-    for (i = 0; i < 3; i++)
-        EXPECT_EQ(ReceivePeerMon(9, i, 3, &peer), COOP_BATTLE_INBOUND_ACCEPTED);
-    for (i = 0; i < 3; i++)
+    memset(party, 0, PARTY_SIZE * sizeof(struct Pokemon));
+    CreateEggTestMon(&party[0], 90);
+    CreateFaintedTestMon(&party[1], 91);
+    for (i = 0; i < usable; i++)
+        CreateUsableTestMon(&party[2 + i], species, 5, 100 + i, OTID_STRUCT_PRESET(1));
+    return 2 + usable;
+}
+
+TEST("Cloud Coop partner party preparation stages one to three usable mons per side")
+{
+    static EWRAM_DATA struct Pokemon local[PARTY_SIZE];
+    static EWRAM_DATA struct Pokemon peer[PARTY_SIZE];
+    struct CoopBattlePreparedParty prepared;
+    u8 id[COOP_BATTLE_ID_SIZE] = {9};
+    u8 local_usable;
+    u8 peer_usable;
+    u8 local_count;
+    u8 peer_count;
+    u8 i;
+
+    for (local_usable = 1; local_usable <= COOP_BATTLE_MULTI_PARTY_SIZE; local_usable++)
     {
-        EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
-        EXPECT_EQ(memcmp(&prepared, &untouched, sizeof(prepared)), 0);
-        CreateUsableTestMon(&local[i * 2], SPECIES_CHARMANDER, 5, i + 1, OTID_STRUCT_PRESET(1));
+        for (peer_usable = 1; peer_usable <= COOP_BATTLE_MULTI_PARTY_SIZE; peer_usable++)
+        {
+            local_count = BuildSkippedPrefixParty(local, local_usable, SPECIES_CHARMANDER);
+            peer_count = BuildSkippedPrefixParty(peer, peer_usable, SPECIES_BULBASAUR);
+            id[0] = 40 + local_usable * 4 + peer_usable;
+            CoopBattleRuntime_Init();
+            CoopBattleRuntime_OnSessionReady(id[0]);
+            ReceiveManifest(id[0]);
+            for (i = 0; i < peer_count; i++)
+                EXPECT_EQ(ReceivePeerMon(id[0], i, peer_count, &peer[i]),
+                          COOP_BATTLE_INBOUND_ACCEPTED);
+            memset(&prepared, 0xA5, sizeof(prepared));
+            EXPECT(CoopBattleRuntime_PreparePartnerParty(id, local, local_count, &prepared));
+            EXPECT_EQ(prepared.local_count, local_usable);
+            EXPECT_EQ(prepared.peer_count, peer_usable);
+            for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+            {
+                if (i < local_usable)
+                {
+                    /* The egg (slot 0) and fainted mon (slot 1) are skipped. */
+                    EXPECT_EQ(prepared.local_slots[i], 2 + i);
+                    EXPECT_EQ(memcmp(&prepared.local[i], &local[2 + i], sizeof(local[0])), 0);
+                }
+                else
+                {
+                    EXPECT_EQ(prepared.local_slots[i], COOP_BATTLE_UNUSED_SLOT);
+                    EXPECT_EQ(GetMonData(&prepared.local[i], MON_DATA_SPECIES), SPECIES_NONE);
+                }
+                if (i < peer_usable)
+                {
+                    EXPECT_EQ(prepared.peer_slots[i], 2 + i);
+                    EXPECT_EQ(memcmp(&prepared.peer[i], &peer[2 + i], sizeof(peer[0])), 0);
+                }
+                else
+                {
+                    EXPECT_EQ(prepared.peer_slots[i], COOP_BATTLE_UNUSED_SLOT);
+                    EXPECT_EQ(GetMonData(&prepared.peer[i], MON_DATA_SPECIES), SPECIES_NONE);
+                }
+            }
+        }
     }
-    EXPECT(CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
-    EXPECT_EQ(prepared.local_slots[0], 0);
-    EXPECT_EQ(prepared.local_slots[1], 2);
+    /* More than three usable mons still stages exactly three. */
+    local_count = BuildSkippedPrefixParty(local, 4, SPECIES_CHARMANDER);
+    EXPECT(CoopBattleRuntime_PreparePartnerParty(id, local, local_count, &prepared));
+    EXPECT_EQ(prepared.local_count, COOP_BATTLE_MULTI_PARTY_SIZE);
     EXPECT_EQ(prepared.local_slots[2], 4);
-    EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, 2, &prepared));
     EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE + 1, &prepared));
     EXPECT(!CoopBattleRuntime_PreparePartnerParty(NULL, local, PARTY_SIZE, &prepared));
 }
 
-TEST("Cloud Coop partner party preparation refuses fainted peer records")
+TEST("Cloud Coop partner party preparation rejects a side with no usable mon")
 {
-    struct Pokemon local[PARTY_SIZE] = {0};
-    struct Pokemon peer;
+    static EWRAM_DATA struct Pokemon local[PARTY_SIZE];
+    static EWRAM_DATA struct Pokemon peer[PARTY_SIZE];
     struct CoopBattlePreparedParty prepared;
+    struct CoopBattlePreparedParty untouched;
     u8 id[COOP_BATTLE_ID_SIZE] = {10};
+    u8 local_count;
+    u8 peer_count;
     u8 i;
-    u16 no_hp = 0;
 
-    CreateUsableTestMon(&peer, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
-    for (i = 0; i < 3; i++)
-        CreateUsableTestMon(&local[i], SPECIES_CHARMANDER, 5, i + 1, OTID_STRUCT_PRESET(1));
+    memset(&prepared, 0xA5, sizeof(prepared));
+    untouched = prepared;
+
+    /* Peer has only an egg and a fainted mon. */
+    local_count = BuildSkippedPrefixParty(local, 1, SPECIES_CHARMANDER);
+    peer_count = BuildSkippedPrefixParty(peer, 0, SPECIES_BULBASAUR);
     CoopBattleRuntime_Init();
     CoopBattleRuntime_OnSessionReady(20);
     ReceiveManifest(10);
-    EXPECT_EQ(ReceivePeerMon(10, 0, 3, &peer), COOP_BATTLE_INBOUND_ACCEPTED);
-    SetMonData(&peer, MON_DATA_HP, &no_hp);
-    EXPECT_EQ(ReceivePeerMon(10, 1, 3, &peer), COOP_BATTLE_INBOUND_ACCEPTED);
-    EXPECT_EQ(ReceivePeerMon(10, 2, 3, &peer), COOP_BATTLE_INBOUND_ACCEPTED);
-    EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
+    for (i = 0; i < peer_count; i++)
+        EXPECT_EQ(ReceivePeerMon(10, i, peer_count, &peer[i]), COOP_BATTLE_INBOUND_ACCEPTED);
+    EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, local_count, &prepared));
+    EXPECT_EQ(memcmp(&prepared, &untouched, sizeof(prepared)), 0);
+
+    /* Local has only an egg and a fainted mon. */
+    id[0] = 11;
+    local_count = BuildSkippedPrefixParty(local, 0, SPECIES_CHARMANDER);
+    peer_count = BuildSkippedPrefixParty(peer, 1, SPECIES_BULBASAUR);
+    CoopBattleRuntime_Init();
+    CoopBattleRuntime_OnSessionReady(21);
+    ReceiveManifest(11);
+    for (i = 0; i < peer_count; i++)
+        EXPECT_EQ(ReceivePeerMon(11, i, peer_count, &peer[i]), COOP_BATTLE_INBOUND_ACCEPTED);
+    EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, local_count, &prepared));
+    EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, 0, &prepared));
+    EXPECT_EQ(memcmp(&prepared, &untouched, sizeof(prepared)), 0);
+    /* A usable mon beyond the declared local count is not considered. */
+    CreateUsableTestMon(&local[local_count], SPECIES_CHARMANDER, 5, 7, OTID_STRUCT_PRESET(1));
+    EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, local_count, &prepared));
+    EXPECT(CoopBattleRuntime_PreparePartnerParty(id, local, local_count + 1, &prepared));
+    EXPECT_EQ(prepared.local_count, 1);
+    EXPECT_EQ(prepared.local_slots[0], local_count);
 }
 
 TEST("Cloud Coop partner party preparation selects usable slots from full peer parties")
@@ -363,7 +457,6 @@ TEST("Cloud Coop partner party preparation selects usable slots from full peer p
     struct Pokemon local[PARTY_SIZE] = {0};
     struct Pokemon peer;
     struct CoopBattlePreparedParty prepared;
-    struct CoopBattlePreparedParty untouched;
     u8 id[COOP_BATTLE_ID_SIZE] = {0};
     u8 count;
     u8 slot;
@@ -372,7 +465,6 @@ TEST("Cloud Coop partner party preparation selects usable slots from full peer p
     for (slot = 0; slot < 3; slot++)
         CreateUsableTestMon(&local[slot], SPECIES_CHARMANDER, 5, slot + 1, OTID_STRUCT_PRESET(1));
     memset(&prepared, 0xA5, sizeof(prepared));
-    untouched = prepared;
     for (count = 1; count <= PARTY_SIZE; count++)
     {
         id[0] = count + 20;
@@ -387,13 +479,20 @@ TEST("Cloud Coop partner party preparation selects usable slots from full peer p
             EXPECT_EQ(ReceivePeerMon(id[0], slot, count, &peer),
                       COOP_BATTLE_INBOUND_ACCEPTED);
         }
+        EXPECT(CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
+        EXPECT_EQ(prepared.local_count, 3);
         if (count < 4)
         {
-            EXPECT(!CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
-            EXPECT_EQ(memcmp(&prepared, &untouched, sizeof(prepared)), 0);
+            /* Slot 1 is fainted: counts 1-2 stage slot 0; count 3 adds slot 2. */
+            EXPECT_EQ(prepared.peer_count, count < 3 ? 1 : 2);
+            EXPECT_EQ(prepared.peer_slots[0], 0);
+            if (count == 3)
+                EXPECT_EQ(prepared.peer_slots[1], 2);
+            EXPECT_EQ(prepared.peer_slots[prepared.peer_count], COOP_BATTLE_UNUSED_SLOT);
+            memset(&prepared, 0xA5, sizeof(prepared));
             continue;
         }
-        EXPECT(CoopBattleRuntime_PreparePartnerParty(id, local, PARTY_SIZE, &prepared));
+        EXPECT_EQ(prepared.peer_count, 3);
         EXPECT_EQ(prepared.peer_slots[0], 0);
         EXPECT_EQ(prepared.peer_slots[1], 2);
         EXPECT_EQ(prepared.peer_slots[2], 3);
@@ -421,6 +520,7 @@ TEST("Cloud Coop startup plan maps members and restores sparse player party")
     memset(local, 0, sizeof(local));
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
         CreateUsableTestMon(&local[i * 2], SPECIES_CHARMANDER, 5, i + 1, OTID_STRUCT_PRESET(1));
+    SetActiveRegion(COOP_MAP_ENGINE_REGION_HOENN, MAPSEC_LITTLEROOT_TOWN);
     CoopBattleRuntime_Init();
     CoopBattleRuntime_OnSessionReady(33);
     ReceiveTrainerManifest(33, COOP_REGION_HOENN,
@@ -452,6 +552,8 @@ TEST("Cloud Coop startup plan maps members and restores sparse player party")
     EXPECT_EQ(plan.member_party_trainers[0], B_TRAINER_2);
     EXPECT_EQ(plan.member_party_trainers[1], B_TRAINER_0);
     EXPECT_EQ(plan.opponent_trainer_id, TRAINER_WALLY_VR_1);
+    EXPECT_EQ(plan.staged_local_count, COOP_BATTLE_MULTI_PARTY_SIZE);
+    EXPECT_EQ(plan.staged_peer_count, COOP_BATTLE_MULTI_PARTY_SIZE);
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
     {
         EXPECT_EQ(plan.local_slots[i], i * 2);
@@ -546,6 +648,7 @@ TEST("Cloud Coop startup plan accepts catalogued Kanto Brock")
     u8 id[COOP_BATTLE_ID_SIZE] = {35};
     u8 i;
 
+    SetActiveRegion(COOP_MAP_ENGINE_REGION_KANTO, MAPSEC_PALLET_TOWN);
     CoopBattleRuntime_Init();
     CoopBattleRuntime_OnSessionReady(35);
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
@@ -564,4 +667,139 @@ TEST("Cloud Coop startup plan accepts catalogued Kanto Brock")
     EXPECT_EQ(plan.local_member_slot, 0);
     EXPECT_EQ(plan.member_party_trainers[0], B_TRAINER_0);
     EXPECT_EQ(plan.member_party_trainers[1], B_TRAINER_2);
+}
+
+TEST("Cloud Coop startup plan accepts a catalogued non-Wally trainer with sparse sides")
+{
+    static EWRAM_DATA struct Pokemon local[PARTY_SIZE];
+    static EWRAM_DATA struct Pokemon peer[PARTY_SIZE];
+    static EWRAM_DATA struct Pokemon fought[COOP_BATTLE_MULTI_PARTY_SIZE];
+    static EWRAM_DATA struct Pokemon restored[PARTY_SIZE];
+    static EWRAM_DATA struct CoopBattleStartupPlan plan;
+    static EWRAM_DATA struct CoopBattleStartupPlan untouched;
+    u8 id[COOP_BATTLE_ID_SIZE] = {36};
+    u8 local_count;
+    u8 peer_count;
+    u8 i;
+    u16 hp = 1;
+
+    local_count = BuildSkippedPrefixParty(local, 1, SPECIES_CHARMANDER);
+    peer_count = BuildSkippedPrefixParty(peer, 2, SPECIES_BULBASAUR);
+    SetActiveRegion(COOP_MAP_ENGINE_REGION_HOENN, MAPSEC_ROUTE_102);
+    CoopBattleRuntime_Init();
+    CoopBattleRuntime_OnSessionReady(36);
+    ReceiveTrainerManifest(36, COOP_REGION_HOENN,
+                           COOP_TRAINER_HOENN_TRAINER_CALVIN_1_ORDINAL, 0,
+                           local, local_count);
+    for (i = 0; i < peer_count; i++)
+        EXPECT_EQ(ReceivePeerMon(36, i, peer_count, &peer[i]), COOP_BATTLE_INBOUND_ACCEPTED);
+
+    /* The ordinal is only interpreted in the region the player stands in. */
+    memset(&plan, 0xA5, sizeof(plan));
+    untouched = plan;
+    SetActiveRegion(COOP_MAP_ENGINE_REGION_KANTO, MAPSEC_PALLET_TOWN);
+    EXPECT(!CoopBattleRuntime_MakeStartupPlan(id, local, local_count, &plan));
+    EXPECT_EQ(memcmp(&plan, &untouched, sizeof(plan)), 0);
+    SetActiveRegion(COOP_MAP_ENGINE_REGION_HOENN, MAPSEC_ROUTE_102);
+
+    EXPECT(CoopBattleRuntime_MakeStartupPlan(id, local, local_count, &plan));
+    EXPECT_EQ(plan.opponent_trainer_id, TRAINER_CALVIN_1);
+    EXPECT_EQ(plan.local_member_slot, 0);
+    EXPECT_EQ(plan.staged_local_count, 1);
+    EXPECT_EQ(plan.staged_peer_count, 2);
+    EXPECT_EQ(plan.local_slots[0], 2);
+    EXPECT_EQ(plan.local_slots[1], COOP_BATTLE_UNUSED_SLOT);
+    EXPECT_EQ(plan.local_slots[2], COOP_BATTLE_UNUSED_SLOT);
+    EXPECT_EQ(plan.peer_slots[0], 2);
+    EXPECT_EQ(plan.peer_slots[1], 3);
+    EXPECT_EQ(plan.peer_slots[2], COOP_BATTLE_UNUSED_SLOT);
+    EXPECT_EQ(memcmp(&plan.staged_local[0], &local[2], sizeof(local[0])), 0);
+    EXPECT_EQ(memcmp(&plan.staged_peer[0], &peer[2], sizeof(peer[0])), 0);
+    EXPECT_EQ(memcmp(&plan.staged_peer[1], &peer[3], sizeof(peer[0])), 0);
+    EXPECT_EQ(GetMonData(&plan.staged_local[1], MON_DATA_SPECIES), SPECIES_NONE);
+    EXPECT_EQ(GetMonData(&plan.staged_peer[2], MON_DATA_SPECIES), SPECIES_NONE);
+
+    /* Only the one staged local mon is written back; egg and fainted
+     * records keep their original bytes. */
+    memcpy(fought, plan.staged_local, sizeof(fought));
+    SetMonData(&fought[0], MON_DATA_HP, &hp);
+    memset(restored, 0xA5, sizeof(restored));
+    EXPECT(CoopBattleRuntime_RestoreLocalParty(&plan, id, fought, restored));
+    EXPECT_EQ(GetMonData(&restored[2], MON_DATA_HP), hp);
+    EXPECT_EQ(memcmp(&restored[0], &local[0], sizeof(local[0])), 0);
+    EXPECT_EQ(memcmp(&restored[1], &local[1], sizeof(local[0])), 0);
+    for (i = 3; i < PARTY_SIZE; i++)
+        EXPECT_EQ(memcmp(&restored[i], &local[i], sizeof(local[0])), 0);
+    plan.staged_local_count = 0;
+    EXPECT(!CoopBattleRuntime_RestoreLocalParty(&plan, id, fought, restored));
+    plan.staged_local_count = COOP_BATTLE_MULTI_PARTY_SIZE + 1;
+    EXPECT(!CoopBattleRuntime_RestoreLocalParty(&plan, id, fought, restored));
+
+    EXPECT(CoopBattleRuntime_ArmEngine(id));
+    EXPECT(CoopBattleRuntime_IsEngineActive());
+    CoopBattleRuntime_DisarmEngine();
+}
+
+static enum CoopBattleInboundResult ReceiveTrainerIdentity(u8 id, u8 region, u16 ordinal)
+{
+    u8 manifest[COOP_BATTLE_MANIFEST_SIZE] = {0};
+
+    manifest[0] = id;
+    manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_MANIFEST_KIND_TRAINER;
+    manifest[COOP_BATTLE_MANIFEST_REGION_OFFSET] = region;
+    manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET] = (u8)ordinal;
+    manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET + 1] = ordinal >> 8;
+    return CoopBattleRuntime_ReceiveManifest(manifest, sizeof(manifest));
+}
+
+static enum CoopBattleInboundResult ReceiveTrainerCommit(u8 region, u16 ordinal)
+{
+    u8 commit[COOP_BATTLE_COMMIT_SIZE] = {0};
+
+    commit[COOP_BATTLE_COMMIT_BATTLE_ID_OFFSET] = 37;
+    commit[COOP_BATTLE_COMMIT_ID_OFFSET] = 1;
+    commit[COOP_BATTLE_COMMIT_REGION_OFFSET] = region;
+    commit[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET] = (u8)ordinal;
+    commit[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET + 1] = ordinal >> 8;
+    commit[COOP_BATTLE_COMMIT_SOURCE_REVISION_OFFSET] = 1;
+    return CoopBattleRuntime_ReceiveBattleCommit(commit, sizeof(commit));
+}
+
+TEST("Cloud Coop trainer manifest and commit reject unknown trainer ordinals")
+{
+    CoopBattleRuntime_Init();
+    CoopBattleRuntime_OnSessionReady(37);
+    /* Brock's ordinal is Kanto-only; Kanto has no ordinal 0. */
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_HOENN,
+                                     COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_KANTO, 0),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    /* A registry identity without a legacy trainer ID cannot be fought. */
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_JOHTO,
+                                     COOP_TRAINER_IDENTITY_COUNT - 1),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_HOENN, COOP_TRAINER_IDENTITY_COUNT),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_HOENN, 0xFFFF),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_UNSPECIFIED, 0),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_COUNT, 0),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT(!CoopBattleRuntime_HasManifest());
+
+    EXPECT_EQ(ReceiveTrainerCommit(COOP_REGION_HOENN,
+                                   COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL),
+              COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(ReceiveTrainerCommit(COOP_REGION_KANTO, 0), COOP_BATTLE_INBOUND_MALFORMED);
+    /* A catalogued trainer is well formed; with no terminal battle it is stale. */
+    EXPECT_EQ(ReceiveTrainerCommit(COOP_REGION_HOENN,
+                                   COOP_TRAINER_HOENN_TRAINER_ROXANNE_1_ORDINAL),
+              COOP_BATTLE_INBOUND_IGNORED);
+
+    EXPECT_EQ(ReceiveTrainerIdentity(37, COOP_REGION_HOENN,
+                                     COOP_TRAINER_HOENN_TRAINER_ROXANNE_1_ORDINAL),
+              COOP_BATTLE_INBOUND_ACCEPTED);
+    EXPECT(CoopBattleRuntime_HasManifest());
 }

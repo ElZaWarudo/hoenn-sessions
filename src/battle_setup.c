@@ -595,16 +595,23 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
         return FALSE;
     }
 
-    memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.staged_local,
-           sizeof(sCoopBattlePlan.staged_local));
-    for (i = COOP_BATTLE_MULTI_PARTY_SIZE; i < PARTY_SIZE; i++)
-        ZeroMonData(&gParties[B_TRAINER_0][i]);
-    memcpy(gParties[B_TRAINER_2], sCoopBattlePlan.staged_peer,
-           sizeof(sCoopBattlePlan.staged_peer));
-    for (i = COOP_BATTLE_MULTI_PARTY_SIZE; i < PARTY_SIZE; i++)
-        ZeroMonData(&gParties[B_TRAINER_2][i]);
-    gPartiesCount[B_TRAINER_0] = COOP_BATTLE_MULTI_PARTY_SIZE;
-    gPartiesCount[B_TRAINER_2] = COOP_BATTLE_MULTI_PARTY_SIZE;
+    /* Each side holds its one to three staged mons in slots 0.. and empty
+     * records after them. Both ROMs derive the same counts from the same
+     * digest-checked records, so the per-turn digest (which hashes every
+     * slot and gPartiesCount) stays identical. */
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (i < sCoopBattlePlan.staged_local_count)
+            gParties[B_TRAINER_0][i] = sCoopBattlePlan.staged_local[i];
+        else
+            ZeroMonData(&gParties[B_TRAINER_0][i]);
+        if (i < sCoopBattlePlan.staged_peer_count)
+            gParties[B_TRAINER_2][i] = sCoopBattlePlan.staged_peer[i];
+        else
+            ZeroMonData(&gParties[B_TRAINER_2][i]);
+    }
+    gPartiesCount[B_TRAINER_0] = sCoopBattlePlan.staged_local_count;
+    gPartiesCount[B_TRAINER_2] = sCoopBattlePlan.staged_peer_count;
 
     TRAINER_BATTLE_PARAM.opponentA = sCoopBattlePlan.opponent_trainer_id;
     TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;

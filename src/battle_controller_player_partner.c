@@ -361,6 +361,13 @@ static void PlayerPartnerHandleChoosePokemon(enum BattlerId battler)
         if (!CoopBattleRuntime_PollPeerAction(&action)
          || action.kind != COOP_BATTLE_ACTION_SWITCH)
             return;
+        /* A side may hold fewer than three staged mons; never switch into
+         * one of its empty records. */
+        if (GetMonData(&gParties[B_TRAINER_2][action.index], MON_DATA_SPECIES) == SPECIES_NONE)
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
         BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE,
                                                action.index, NULL);
         BtlController_Complete(battler);

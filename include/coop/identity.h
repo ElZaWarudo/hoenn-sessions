@@ -20,6 +20,12 @@ enum CoopIdentityAccessResult
 bool8 CoopIdentity_ResolveTrainerOrdinal(enum CoopRegion region,
                                          u16 legacy_trainer_id,
                                          u16 *ordinal);
+/* Reverse of CoopIdentity_ResolveTrainerOrdinal over the same ROM registry.
+ * Fails for an unknown region/ordinal pair and for identities that have no
+ * legacy trainer ID (for example Johto placeholders). legacy_id may be NULL. */
+bool8 CoopIdentity_ResolveTrainerLegacyId(enum CoopRegion region,
+                                          u16 ordinal,
+                                          u16 *legacy_id);
 enum CoopIdentityAccessResult CoopIdentity_GetTrainerDefeated(u16 legacy_trainer_id,
                                                                bool8 *defeated);
 enum CoopIdentityAccessResult CoopIdentity_SetTrainerDefeated(u16 legacy_trainer_id,
