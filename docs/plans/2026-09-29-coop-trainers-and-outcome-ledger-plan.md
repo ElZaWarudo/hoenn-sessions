@@ -218,3 +218,18 @@ Follow-ups recorded while implementing A9:
 - A requester loss in a scripted scene (a coord-triggered rival) leaves the
   approaching object where it stopped; re-stepping on the trigger replays
   the approach from there until the map reloads.
+
+## C. Friendly battles (4.6), decided 2026-09-29
+
+- Singles and doubles, on the existing lockstep engine: each ROM stages the
+  peer's party as the opponent and takes the peer's actions instead of AI;
+  positions are mirrored so each player sees their own side at the bottom.
+- The challenger picks "levels as is" or "scale all to 50" per challenge;
+  the other player sees it before accepting (scaling uses a temporary copy
+  like the badge level cap).
+- The challenge sets a count of 1-6; each player picks that many Pokemon
+  when accepting.
+- No EXP, money or flags; parties are restored exactly.
+- Fix first: an accepted friendly offer leaves CONSENT_ACCEPTED with no
+  local deadline.
+- Order: after the in-game trade UI.
