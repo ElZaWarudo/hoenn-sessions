@@ -10,8 +10,8 @@ use std::array;
 mod pokemon;
 mod trade;
 pub use pokemon::{
-    BoxPokemon, PARTY_POKEMON_SIZE, PartyPokemon, PokemonError, PokemonIdentity, PokemonSlot,
-    decode_party_record, party_record_hp,
+    BoxPokemon, PARTY_POKEMON_SIZE, PartyPokemon, PokemonError, PokemonIdentity, PokemonLocation,
+    PokemonSlot, decode_party_record, party_record_hp,
 };
 pub use trade::{TradeError, trade_party_pokemon};
 
@@ -445,6 +445,34 @@ impl ValidatedSave {
     #[must_use]
     pub fn save_block1_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
         self.logical_range(1, SAVE_BLOCK1_SIZE, offset, length)
+    }
+
+    /// Reads a bounded logical range of selected-slot `SaveBlock2` bytes.
+    #[must_use]
+    pub fn save_block2_range(&self, offset: usize, length: usize) -> Option<Vec<u8>> {
+        self.logical_range(0, LOGICAL_SECTOR_DATA_SIZES[0], offset, length)
+    }
+
+    /// Money, decoded with the `SaveBlock2` encryption key exactly as
+    /// `GetMoney` does.
+    #[must_use]
+    pub fn money(&self) -> Option<u32> {
+        let stored = self.save_block1_range(SAVE_BLOCK1_MONEY_OFFSET, 4)?;
+        let key = self.save_block2_range(SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET, 4)?;
+        Some(u32::from_le_bytes(stored.try_into().ok()?) ^ u32::from_le_bytes(key.try_into().ok()?))
+    }
+
+    /// Whether the game's own "trainer defeated" flag is set for a vanilla
+    /// trainer ID (`TRAINER_FLAGS_START + id`). `None` for an ID outside the
+    /// trainer flag range.
+    #[must_use]
+    pub fn trainer_flag(&self, trainer_id: u16) -> Option<bool> {
+        let flag = TRAINER_FLAGS_START.checked_add(usize::from(trainer_id))?;
+        if flag > TRAINER_FLAGS_END || flag / 8 >= SAVE_BLOCK1_FLAG_BYTES {
+            return None;
+        }
+        let byte = self.save_block1_range(SAVE_BLOCK1_FLAGS_OFFSET + flag / 8, 1)?[0];
+        Some(byte & (1 << (flag % 8)) != 0)
     }
 
     /// Reads the selected slot's bounded first-voyage evidence.

@@ -19,6 +19,10 @@ fn stock_mgba_first_save_matches_linked_rom_sector_checksums() {
     assert_eq!(save.coop().save_generation, 1);
     assert!(save.coop().online_eligible());
     assert!(save.rtc_trailer().is_some());
+    // A new game starts with 3000; this pins the money and key offsets to a
+    // genuine save rather than to the validator's own synthetic layout.
+    assert_eq!(save.money(), Some(3000));
+    assert_eq!(save.party_count(), Ok(0));
 }
 
 #[test]
@@ -1320,4 +1324,74 @@ fn checksum_ignores_partial_words_and_uses_end_around_fold() {
     assert_eq!(sector_checksum(&[1, 2, 3]), 0);
     assert_eq!(sector_checksum(&[0xff; 4]), 0xfffe);
     assert_eq!(sector_checksum(&[0xff; 8]), 0xfffd);
+}
+
+#[test]
+fn reads_money_trainer_flags_experience_and_locates_pokemon() {
+    let mut bytes = valid_image(20, 21);
+    // Money is stored XOR the SaveBlock2 encryption key, as GetMoney reads it.
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        0,
+        crate::SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET,
+        &0x5a5a_1234_u32.to_le_bytes(),
+    );
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        1,
+        crate::SAVE_BLOCK1_MONEY_OFFSET,
+        &(3000_u32 ^ 0x5a5a_1234).to_le_bytes(),
+    );
+    // Trainer 0x2A is flag TRAINER_FLAGS_START + 0x2A.
+    let flag = crate::TRAINER_FLAGS_START + 0x2a;
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        1,
+        crate::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8,
+        &[1 << (flag % 8)],
+    );
+    let box_raw = golden_box_pokemon();
+    let mut party_raw = [0_u8; 100];
+    party_raw[..80].copy_from_slice(&box_raw);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &party_raw);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[1]);
+    // Empty PC slots are zeroed in real saves; clear the synthetic filler.
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        6,
+        4,
+        &vec![0; crate::pokemon::BOX_COUNT * crate::pokemon::BOX_SIZE * 80],
+    );
+    write_logical_range(&mut bytes, SaveSlot::Second, 6, 4 + 49 * 80, &box_raw);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.selected_slot(), SaveSlot::Second);
+
+    assert_eq!(save.money(), Some(3000));
+    assert_eq!(save.trainer_flag(0x2a), Some(true));
+    assert_eq!(save.trainer_flag(0x2b), Some(false));
+    let past_end =
+        u16::try_from(crate::TRAINER_FLAGS_END - crate::TRAINER_FLAGS_START + 1).unwrap();
+    assert_eq!(save.trainer_flag(past_end), None);
+
+    let PokemonSlot::Occupied(party) = save.party_pokemon(0).unwrap() else {
+        panic!("party record must be occupied")
+    };
+    // The ROM's golden vector asserts MON_DATA_EXP == 12345.
+    assert_eq!(party.identity.experience(), 12_345);
+    assert_eq!(
+        save.locate_pokemon(party.identity.personality, party.identity.ot_id)
+            .unwrap(),
+        vec![
+            crate::PokemonLocation::Party(0),
+            crate::PokemonLocation::Pc {
+                box_index: 1,
+                position: 19
+            }
+        ]
+    );
+    assert!(save.locate_pokemon(1, 2).unwrap().is_empty());
 }
