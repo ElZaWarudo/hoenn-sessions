@@ -92,3 +92,19 @@ Follow-ups recorded while implementing B2/B3:
   requires the traded slot to hold exactly the server's record.
 - Wally entries are voided when their CommitPending reservation expires or is
   cancelled, so a lapsed Wally battle cannot block trades forever.
+
+Follow-ups recorded while implementing A4-A5 and B5-B6:
+- A trade commit names a party slot. If the player reorders the party
+  before it applies, the ROM rejects it and the open entry blocks that
+  character's ledger. Either apply by personality/OT ID anywhere in the
+  party, or let the server void an entry the ROM reports as rejected.
+- The ROM refuses trade records that carry mail; the server should not
+  issue a trade for a Pokémon holding mail.
+- Helper/participant can disagree between server (last cloud save) and
+  ROM (live trainer flag); money follows the ROM until the ledger covers
+  battles.
+- Co-op EXP learns new moves only into free slots (no replace prompt),
+  applies EXP in opponent-slot order, and skips Pay Day, battle-special
+  evolutions and match-call registration.
+- The badge level cap is skipped in co-op battles (it projected only the
+  local copy of the party).
