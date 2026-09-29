@@ -88,6 +88,9 @@ static void CB2_EndCoopTrainerBattle(void);
 static void RollbackCoopBattleEntry(void);
 static bool32 IsPlayerDefeated(u32 battleOutcome);
 static void DowngradeBadPoison(void);
+
+extern const u8 EventScript_CoopTrainerEncounterRelease[];
+
 #if FREE_MATCH_CALL == FALSE
 static u16 GetRematchTrainerId(u16 trainerId);
 #endif //FREE_MATCH_CALL
@@ -528,6 +531,16 @@ static void CB2_EndCoopTrainerBattle(void)
     sCoopBattleEntryActive = FALSE;
     sCoopBattleEntryPrepared = FALSE;
     wasScriptedTrainerBattle = CoopBattleConsent_OnTrainerBattleEnded(completed, gBattleOutcome);
+    if (CoopTrainerEncounter_OnBattleEnded(completed))
+    {
+        /* An aborted encounter never resumes the parked trainer script:
+         * its post-battle path assumes a win and no flag was set. Release
+         * the field instead so the trainer can be fought again. */
+        ScriptContext_SetupScript(EventScript_CoopTrainerEncounterRelease);
+        ScriptContext_Stop();
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        return;
+    }
     if (completed && IsPlayerDefeated(gBattleOutcome)
      && NoAliveMonsForPlayer() && !FlagGet(B_FLAG_NO_WHITEOUT))
     {
@@ -619,6 +632,14 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
     gBattleTypeFlags = BATTLE_TYPE_MULTI | BATTLE_TYPE_INGAME_PARTNER
         | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TRAINER;
     gMain.savedCallback = CB2_EndCoopTrainerBattle;
+
+    /* Past the last failure point: consume the approach bookkeeping exactly
+     * as the vanilla start does, so the resumed post-battle script sees the
+     * same state. A failed entry above leaves it for the vanilla fallback. */
+    sNoOfPossibleTrainerRetScripts = gNoOfApproachingTrainers;
+    gNoOfApproachingTrainers = 0;
+    sShouldCheckTrainerBScript = FALSE;
+    gWhichTrainerToFaceAfterBattle = 0;
 
     sCoopBattleEntryActive = TRUE;
     LockPlayerFieldControls();
@@ -1497,7 +1518,21 @@ void ToggleTrainerFlag(u16 trainerId)
     }
 }
 
+/* The single co-op hook for every dotrainerbattle. An eligible encounter
+ * sends a trainer reservation and parks the script right here; the consent
+ * poll later starts the co-op battle or the unchanged vanilla one. Nothing
+ * below this call has run yet, so a fallback sees the original parameters. */
 void BattleSetup_StartTrainerBattle(void)
+{
+    if (CoopTrainerEncounter_TryBegin(TRAINER_BATTLE_PARAM.opponentA))
+    {
+        ScriptContext_Stop();
+        return;
+    }
+    BattleSetup_StartVanillaTrainerBattle();
+}
+
+void BattleSetup_StartVanillaTrainerBattle(void)
 {
     if (gNoOfApproachingTrainers == 2)
     {

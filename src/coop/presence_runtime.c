@@ -2522,6 +2522,38 @@ enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void)
     return COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK;
 }
 
+/* Reads only the reducer, never the renderer: a trainer script locks field
+ * controls and retires the partner sprite, but the partner is still there.
+ * The same freshness and projection rules as TryInteract apply, so a stale,
+ * hidden, unconnected or off-view partner is never "nearby". */
+bool8 CoopPresenceRuntime_IsPartnerNearby(u8 maxTiles)
+{
+    const struct CoopPresenceRemote *remote;
+    s16 map_x;
+    s16 map_y;
+    s32 dx;
+    s32 dy;
+
+    if (!sCoopPresenceRuntime.initialized || !sCoopPresenceRuntime.transport_ready
+     || gSaveBlock1Ptr == NULL
+     || !CoopPresenceReducer_IsVisible(&sCoopPresenceRuntime.reducer)
+     || sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.last_lifecycle_frame
+        >= COOP_PRESENCE_RUNTIME_STALE_FRAMES)
+        return FALSE;
+    remote = CoopPresenceReducer_GetRemote(&sCoopPresenceRuntime.reducer);
+    if (remote == NULL
+     || !RemoteMapIsLocalOrConnected(&remote->state.pose.location)
+     || !RemoteCoordinatesValid(remote, &map_x, &map_y))
+        return FALSE;
+    dx = (s32)map_x - ((s32)gSaveBlock1Ptr->pos.x + MAP_OFFSET);
+    dy = (s32)map_y - ((s32)gSaveBlock1Ptr->pos.y + MAP_OFFSET);
+    if (dx < 0)
+        dx = -dx;
+    if (dy < 0)
+        dy = -dy;
+    return dx <= maxTiles && dy <= maxTiles;
+}
+
 const struct CoopPresenceReducer *CoopPresenceRuntime_GetReducer(void)
 {
     return &sCoopPresenceRuntime.reducer;

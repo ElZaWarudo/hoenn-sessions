@@ -83,10 +83,16 @@ bool8 HasTrainerBeenFought(u16 trainerId);
 void SetTrainerFlag(u16 trainerId);
 void ClearTrainerFlag(u16 trainerId);
 void ToggleTrainerFlag(u16 trainerId);
+/* dotrainerbattle entry. An eligible co-op encounter parks the trainer script
+ * here (context stopped, controls locked) until CoopBattleConsent_Poll starts
+ * either the co-op battle or BattleSetup_StartVanillaTrainerBattle. */
 void BattleSetup_StartTrainerBattle(void);
-/* Starts the dormant, server-authorized co-op trainer battle path. The caller
- * must have a validated trainer manifest and a complete peer party snapshot;
- * no menu or field interaction invokes this entry yet. */
+/* The unmodified single-player trainer battle start. It reads the trainer
+ * parameters and approaching-trainer count left by the script, so a deferred
+ * call behaves exactly like the original dotrainerbattle. */
+void BattleSetup_StartVanillaTrainerBattle(void);
+/* Starts the server-authorized co-op trainer battle path. The caller must
+ * have a validated trainer manifest and a complete peer party snapshot. */
 bool8 BattleSetup_StartCoopTrainerBattle(void);
 void BattleSetup_StartRematchBattle(void);
 void ShowTrainerIntroSpeech(void);

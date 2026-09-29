@@ -40,4 +40,40 @@ void Special_CoopBattleConsentGetBrockResult(void);
 bool8 CoopBattleConsent_OnTrainerBattleEnded(bool8 completed, u8 battle_outcome);
 void CoopBattleConsent_OnTrainerWhiteout(void);
 
+/* Trainer encounters (phase 1: ordinary route trainers).
+ *
+ * dotrainerbattle asks CoopTrainerEncounter_TryBegin first. When it returns
+ * TRUE a trainer reservation is on the wire and the trainer script stays
+ * parked right after dotrainerbattle. CoopBattleConsent_Poll then starts the
+ * co-op battle once the server releases it, or starts the vanilla battle with
+ * the untouched trainer parameters on decline, offer expiry, reservation
+ * rejection, transport loss, a start timeout or a failed co-op start. */
+#define COOP_TRAINER_ENCOUNTER_PARTNER_TILES 12
+/* The partner's Yes/No prompt declines itself after this long. */
+#define COOP_TRAINER_ENCOUNTER_OFFER_FRAMES (10 * 60)
+/* The requester waits for the partner's answer this long (offer window plus
+ * relay margin) before falling back to the vanilla battle. */
+#define COOP_TRAINER_ENCOUNTER_WAIT_FRAMES (12 * 60)
+/* After acceptance, the snapshot/ready/start exchange must finish in time. */
+#define COOP_TRAINER_ENCOUNTER_START_FRAMES (20 * 60)
+/* An aborted co-op battle makes the next sighting of the same trainer, within
+ * this window, a vanilla battle so the encounter cannot loop. */
+#define COOP_TRAINER_ENCOUNTER_COOLDOWN_FRAMES (60 * 60)
+
+/* Phase 1 trainer classes: everything except gym leaders, Elite Four,
+ * champions, rivals, villain admins/leaders/bosses and frontier brains. */
+bool8 CoopTrainerEncounter_IsPhaseOneClass(u8 trainerClass);
+bool8 CoopTrainerEncounter_IsEligible(u16 trainerId);
+bool8 CoopTrainerEncounter_TryBegin(u16 trainerId);
+/* Called when a co-op trainer battle returns to the field. Returns TRUE when
+ * the battle was an encounter that did not complete: the trainer stays
+ * unbeaten, a one-shot cooldown is recorded and the caller must replace the
+ * parked trainer script with the release script. */
+bool8 CoopTrainerEncounter_OnBattleEnded(bool8 completed);
+#if TESTING
+/* -1 uses the live presence runtime; 0/1 force the partner-nearby check. */
+void CoopTrainerEncounter_TestSetPartnerNearby(s8 nearby);
+bool8 CoopTrainerEncounter_TestIsPending(void);
+#endif
+
 #endif

@@ -51,6 +51,10 @@ void CoopPresenceRuntime_Update(void);
 void CoopPresenceRuntime_OnWarpCommit(void);
 
 enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void);
+/* TRUE when the partner is visible, fresh, on this or an edge-connected map,
+ * projects inside the local view window and lies within maxTiles
+ * (Chebyshev distance) of the local player. Independent of field locks. */
+bool8 CoopPresenceRuntime_IsPartnerNearby(u8 maxTiles);
 /* L (raw) sends a position ping; L + a direction sends a chosen emote.
  * Both are rate-limited and no-ops while hidden. */
 bool8 CoopPresenceRuntime_TryPing(void);

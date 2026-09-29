@@ -458,7 +458,7 @@ TEST("Cloud Coop battle offer survives the paused Yes No prompt")
     CoopBattleConsent_Poll();
     EXPECT(ArePlayerFieldControlsLocked());
     ScriptContext_Stop();
-    gMain.vblankCounter1 += 30 * 60 + 1;
+    gMain.vblankCounter1 += COOP_TRAINER_ENCOUNTER_OFFER_FRAMES; // Trainer offers decline at 10 s.
     CoopBattleConsent_Poll();
     EXPECT(!ArePlayerFieldControlsLocked());
     gSpecialVar_0x8004 = 1;

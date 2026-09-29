@@ -2174,6 +2174,12 @@ EventScript_CoopBattleConsentRespond::
 	special Special_CoopBattleConsentRespond
 	end
 
+@ Replaces the parked trainer script after an aborted co-op trainer battle:
+@ no flag was set, so the trainer stays fightable.
+EventScript_CoopTrainerEncounterRelease::
+	releaseall
+	end
+
 Text_CoopBattleConsentCoop:
 	.string "Battle alongside your partner?$"
 

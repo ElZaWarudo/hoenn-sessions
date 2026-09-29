@@ -5,10 +5,14 @@
 #include "battle_setup.h"
 #include "coop/identity.h"
 #include "coop/net_bridge.h"
+#include "coop/presence_runtime.h"
 #include "coop/region.h"
+#include "battle_pyramid.h"
+#include "data.h"
 #include "event_data.h"
 #include "event_object_lock.h"
 #include "field_message_box.h"
+#include "follower_npc.h"
 #include "main.h"
 #include "overworld.h"
 #include "palette.h"
@@ -16,7 +20,11 @@
 #include "random.h"
 #include "script.h"
 #include "script_menu.h"
+#include "trainer_hill.h"
+#include "trainer_see.h"
 #include "constants/battle.h"
+#include "constants/battle_pyramid.h"
+#include "constants/battle_setup.h"
 #include "constants/trainers.h"
 #include "constants/vars.h"
 
@@ -53,6 +61,16 @@ enum BrockRequestState
     BROCK_REQUEST_COMMIT_PENDING,
 };
 
+/* A parked dotrainerbattle waiting for the co-op decision. */
+enum TrainerEncounterState
+{
+    ENCOUNTER_NONE,
+    ENCOUNTER_WAITING,        // reservation out, partner has not accepted
+    ENCOUNTER_ACCEPTED,       // accepted; snapshot/ready/start in progress
+    ENCOUNTER_IN_BATTLE,      // co-op battle running
+    ENCOUNTER_RESUME_VANILLA, // fall back once the parked script is safe
+};
+
 struct ConsentRuntime
 {
     u8 battle_id[COOP_BATTLE_ID_SIZE];
@@ -73,16 +91,27 @@ struct ConsentRuntime
     bool8 rejection_notice_pending;
     bool8 rejection_notice_visible;
     bool8 startup_attempted;
+    /* The encounter fields fill the padding after startup_attempted; only
+     * the cooldown deadline grows the struct (4 bytes). */
+    u8 encounter_state;
+    u16 cooldown_trainer_id;
     u32 rejection_notice_deadline;
     u8 wally_request_state;
     u8 brock_request_state;
     u16 wally_approach_side;
+    u32 cooldown_deadline;
 };
 
 static EWRAM_DATA struct ConsentRuntime sConsent = {0};
 static void ClearState(void);
 extern const u8 EventScript_CoopBattleConsentOffer[];
 static const u8 sReserveRejectedText[] = _("Battle request interrupted.\nTry again.");
+static const u8 sWaitingForPartnerText[] = _("Waiting for partner…");
+
+#if TESTING
+/* 0 = live presence, 1 = forced far, 2 = forced near. */
+static u8 sTestPartnerNearby;
+#endif
 
 static void FailPendingTrainerCommit(void)
 {
@@ -118,7 +147,8 @@ static bool8 IsSafeOverworld(void)
 static bool8 IsSafeTrainerRequestOverworld(void)
 {
     return (sConsent.wally_request_state == WALLY_REQUEST_PENDING
-         || sConsent.brock_request_state == BROCK_REQUEST_PENDING)
+         || sConsent.brock_request_state == BROCK_REQUEST_PENDING
+         || sConsent.encounter_state == ENCOUNTER_ACCEPTED)
         && gMain.callback1 == CB1_Overworld && gMain.callback2 == CB2_Overworld
         && !gPaletteFade.active && ArePlayerFieldControlsLocked()
         && !ScriptContext_IsEnabled();
@@ -207,6 +237,129 @@ static bool8 SendDecision(void)
     return TRUE;
 }
 
+/* An unanswered responder offer declines itself: the server resolves the
+ * requester at once instead of holding the reservation to its own expiry.
+ * A full queue leaves the server's expiry as the fallback. */
+static void ExpireResponderOffer(void)
+{
+    u8 payload[COOP_BATTLE_JOIN_RESPONSE_SIZE];
+    bool8 unanswered = sConsent.state == CONSENT_OFFER_DEFERRED
+        || sConsent.state == CONSENT_OFFER_READY;
+
+    memcpy(payload, sConsent.battle_id, COOP_BATTLE_ID_SIZE);
+    payload[COOP_BATTLE_ID_SIZE] = FALSE;
+    CancelResponderOffer();
+    if (!unanswered || !IsValidId(payload) || !sConsent.session_ready
+     || !CoopNetBridge_CanSendBattle() || CoopBattleRuntime_HasPendingOutboundReplay()
+     || !CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_BATTLE_JOIN_RESPONSE,
+                                             payload, sizeof(payload)))
+        return;
+    memcpy(sConsent.declined_battle_id, payload, COOP_BATTLE_ID_SIZE);
+    sConsent.declined_deadline_frame = gMain.vblankCounter1 + 30 * 60;
+}
+
+static bool8 IsEncounterRequestActive(void)
+{
+    return (sConsent.encounter_state == ENCOUNTER_WAITING
+         || sConsent.encounter_state == ENCOUNTER_ACCEPTED)
+        && sConsent.kind == COOP_BATTLE_KIND_COOPERATIVE_TRAINER
+        && (sConsent.state == CONSENT_REQUESTING
+         || sConsent.state == CONSENT_WAITING
+         || sConsent.state == CONSENT_ACCEPTED);
+}
+
+/* An abandoned request keeps its nonce while the consent is idle so a late
+ * offer, outcome or rejection for it is absorbed instead of being reported
+ * as a protocol error. A new request or session replaces it. */
+static bool8 IsAbandonedRequest(u32 request_nonce)
+{
+    return sConsent.state == CONSENT_IDLE && sConsent.request_nonce != 0
+        && request_nonce == sConsent.request_nonce;
+}
+
+/* Cancels a reservation this ROM no longer waits for. Before a manifest the
+ * launcher still tracks the reservation by its ID. */
+static void SendRequesterCancel(const u8 *battle_id)
+{
+    u8 payload[COOP_BATTLE_MANIFEST_SIZE];
+
+    if (!IsValidId(battle_id) || !sConsent.session_ready
+     || !CoopNetBridge_CanSendBattle())
+        return;
+    if (CoopBattleRuntime_GetManifest(payload, sizeof(payload))
+     && memcmp(payload, battle_id, COOP_BATTLE_ID_SIZE) == 0)
+    {
+        (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_CANCELED);
+        return;
+    }
+    memcpy(payload, battle_id, COOP_BATTLE_ID_SIZE);
+    payload[COOP_BATTLE_ID_SIZE] = COOP_BATTLE_ABORT_CANCELED;
+    (void)CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_BATTLE_ABORT_REQUEST,
+                                             payload, COOP_BATTLE_ABORT_REQUEST_SIZE);
+}
+
+/* Drops this ROM's side of an encounter and schedules the vanilla battle.
+ * A crossing partner offer (responder states) is left alone: it expires on
+ * its own and never blocks the parked trainer script. */
+static void FallBackEncounter(bool8 cancel)
+{
+    if (IsEncounterRequestActive()
+     || (sConsent.state == CONSENT_OUTCOME_READY
+      && sConsent.kind == COOP_BATTLE_KIND_COOPERATIVE_TRAINER))
+    {
+        u32 nonce = sConsent.request_nonce;
+
+        if (cancel)
+            SendRequesterCancel(sConsent.battle_id);
+        ClearState();
+        sConsent.request_nonce = nonce;
+    }
+    if (sConsent.outcome == COOP_BATTLE_CONSENT_ACCEPTED)
+        ClearOutcome();
+    sConsent.rejection_notice_pending = FALSE;
+    sConsent.encounter_state = ENCOUNTER_RESUME_VANILLA;
+}
+
+/* The trainer script is parked after dotrainerbattle: controls locked, the
+ * script context stopped and the field running. */
+static bool8 IsParkedEncounterOverworld(void)
+{
+    return gMain.callback1 == CB1_Overworld && gMain.callback2 == CB2_Overworld
+        && !gPaletteFade.active && ArePlayerFieldControlsLocked()
+        && !ScriptContext_IsEnabled();
+}
+
+static void PollTrainerEncounter(void)
+{
+    if (sConsent.encounter_state == ENCOUNTER_WAITING
+     || sConsent.encounter_state == ENCOUNTER_ACCEPTED)
+    {
+        if (!IsEncounterRequestActive() || !sConsent.session_ready)
+        {
+            /* Declined, expired, rejected, aborted, superseded or offline. */
+            FallBackEncounter(FALSE);
+        }
+        else if ((s32)(sConsent.deadline_frame - gMain.vblankCounter1) <= 0)
+        {
+            FallBackEncounter(TRUE);
+        }
+        else if (sConsent.encounter_state == ENCOUNTER_WAITING
+              && sConsent.state == CONSENT_ACCEPTED)
+        {
+            sConsent.encounter_state = ENCOUNTER_ACCEPTED;
+            sConsent.deadline_frame = gMain.vblankCounter1
+                + COOP_TRAINER_ENCOUNTER_START_FRAMES;
+        }
+    }
+    if (sConsent.encounter_state == ENCOUNTER_RESUME_VANILLA
+     && IsParkedEncounterOverworld())
+    {
+        sConsent.encounter_state = ENCOUNTER_NONE;
+        HideFieldMessageBox();
+        BattleSetup_StartVanillaTrainerBattle();
+    }
+}
+
 void CoopBattleConsent_Init(void)
 {
     memset(&sConsent, 0, sizeof(sConsent));
@@ -256,6 +409,9 @@ void CoopBattleConsent_OnSessionReady(void)
 void CoopBattleConsent_OnTransportLost(void)
 {
     sConsent.session_ready = FALSE;
+    if (sConsent.encounter_state == ENCOUNTER_WAITING
+     || sConsent.encounter_state == ENCOUNTER_ACCEPTED)
+        FallBackEncounter(FALSE);
     if (sConsent.state == CONSENT_OFFER_READY)
         CancelResponderOffer();
     if (sConsent.wally_request_state == WALLY_REQUEST_PENDING
@@ -337,12 +493,16 @@ bool8 CoopBattleConsent_ReceiveReserveRejected(const u8 *payload, u16 length)
         return FALSE;
     request_nonce = payload[0] | ((u32)payload[1] << 8)
         | ((u32)payload[2] << 16) | ((u32)payload[3] << 24);
+    if (request_nonce != 0 && IsAbandonedRequest(request_nonce))
+        return TRUE;
     if (request_nonce == 0 || !sConsent.session_ready
      || sConsent.state != CONSENT_REQUESTING
      || request_nonce != sConsent.request_nonce)
         return FALSE;
     ClearState();
-    sConsent.rejection_notice_pending = TRUE;
+    /* A trainer encounter falls back to its vanilla battle silently. */
+    if (sConsent.encounter_state == ENCOUNTER_NONE)
+        sConsent.rejection_notice_pending = TRUE;
     return TRUE;
 }
 
@@ -367,6 +527,12 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
         return FALSE;
     if (role == 0)
     {
+        if (IsAbandonedRequest(request_nonce))
+        {
+            /* The requester stopped waiting; release the partner now. */
+            SendRequesterCancel(payload);
+            return TRUE;
+        }
         if (sConsent.state == CONSENT_WAITING
          && memcmp(sConsent.battle_id, payload, COOP_BATTLE_ID_SIZE) == 0
          && sConsent.kind == kind && sConsent.request_nonce == request_nonce)
@@ -376,6 +542,9 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
             return FALSE;
         memcpy(sConsent.battle_id, payload, COOP_BATTLE_ID_SIZE);
         sConsent.state = CONSENT_WAITING;
+        /* A parked trainer encounter keeps the deadline it started with. */
+        if (sConsent.encounter_state != ENCOUNTER_NONE)
+            return TRUE;
     }
     else
     {
@@ -394,6 +563,15 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
         memcpy(sConsent.battle_id, payload, COOP_BATTLE_ID_SIZE);
         sConsent.kind = kind;
         sConsent.state = CONSENT_OFFER_DEFERRED;
+        sConsent.request_nonce = 0;
+        /* A trainer encounter is waiting in front of the requester's
+         * trainer, so its prompt is short; friendly battles keep 30 s. */
+        if (kind == COOP_BATTLE_KIND_COOPERATIVE_TRAINER)
+        {
+            sConsent.deadline_frame = gMain.vblankCounter1
+                + COOP_TRAINER_ENCOUNTER_OFFER_FRAMES;
+            return TRUE;
+        }
     }
     sConsent.deadline_frame = gMain.vblankCounter1 + 30 * 60;
     return TRUE;
@@ -423,6 +601,12 @@ bool8 CoopBattleConsent_ReceiveOutcome(const u8 *payload, u16 length)
         return memcmp(sConsent.outcome_battle_id, payload, COOP_BATTLE_ID_SIZE) == 0
             && sConsent.outcome_request_nonce == request_nonce
             && sConsent.outcome == outcome;
+    }
+    if (IsAbandonedRequest(request_nonce))
+    {
+        if (outcome == COOP_BATTLE_CONSENT_ACCEPTED)
+            SendRequesterCancel(payload);
+        return TRUE;
     }
     if (!sConsent.session_ready
      || (sConsent.state != CONSENT_WAITING && sConsent.state != CONSENT_ACCEPTED)
@@ -552,6 +736,7 @@ void CoopBattleConsent_Poll(void)
         sConsent.state = CONSENT_OUTCOME_READY;
     }
     ResumeTrainerScriptIfReady();
+    PollTrainerEncounter();
     if (sConsent.state == CONSENT_IDLE || sConsent.state == CONSENT_OUTCOME_READY)
         return;
     if (!sConsent.session_ready)
@@ -561,7 +746,7 @@ void CoopBattleConsent_Poll(void)
     if (sConsent.state != CONSENT_ACCEPTED
      && (s32)(sConsent.deadline_frame - gMain.vblankCounter1) <= 0)
     {
-        CancelResponderOffer();
+        ExpireResponderOffer();
         ResumeTrainerScriptIfReady();
         return;
     }
@@ -587,15 +772,26 @@ void CoopBattleConsent_Poll(void)
         if (CoopBattleRuntime_IsStartReleased() && !sConsent.startup_attempted)
         {
             sConsent.startup_attempted = TRUE;
+            if (sConsent.encounter_state == ENCOUNTER_ACCEPTED)
+                HideFieldMessageBox();
             if (BattleSetup_StartCoopTrainerBattle())
             {
                 if (sConsent.wally_request_state == WALLY_REQUEST_PENDING)
                     sConsent.wally_request_state = WALLY_REQUEST_IN_BATTLE;
                 if (sConsent.brock_request_state == BROCK_REQUEST_PENDING)
                     sConsent.brock_request_state = BROCK_REQUEST_IN_BATTLE;
+                if (sConsent.encounter_state == ENCOUNTER_ACCEPTED)
+                    sConsent.encounter_state = ENCOUNTER_IN_BATTLE;
             }
             else
+            {
                 (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_UNAVAILABLE);
+                if (sConsent.encounter_state == ENCOUNTER_ACCEPTED)
+                {
+                    FallBackEncounter(FALSE);
+                    PollTrainerEncounter();
+                }
+            }
         }
     }
 }
@@ -711,3 +907,149 @@ void CoopBattleConsent_OnTrainerWhiteout(void)
     if (sConsent.brock_request_state == BROCK_REQUEST_LOST)
         sConsent.brock_request_state = BROCK_REQUEST_NONE;
 }
+
+/* Phase 1 covers ordinary route trainers. Gym leaders, the Elite Four and
+ * champions, rivals (including Wally), villain admins and bosses, frontier
+ * brains and other story classes keep the vanilla battle until their own
+ * reward and story rules exist. Team grunts stay eligible: their story
+ * battles use continue-script modes, which are excluded separately. */
+bool8 CoopTrainerEncounter_IsPhaseOneClass(u8 trainerClass)
+{
+    switch (trainerClass)
+    {
+    case TRAINER_CLASS_AQUA_ADMIN:
+    case TRAINER_CLASS_AQUA_LEADER:
+    case TRAINER_CLASS_MAGMA_ADMIN:
+    case TRAINER_CLASS_MAGMA_LEADER:
+    case TRAINER_CLASS_ELITE_FOUR:
+    case TRAINER_CLASS_LEADER:
+    case TRAINER_CLASS_CHAMPION:
+    case TRAINER_CLASS_RIVAL:
+    case TRAINER_CLASS_SALON_MAIDEN:
+    case TRAINER_CLASS_DOME_ACE:
+    case TRAINER_CLASS_PALACE_MAVEN:
+    case TRAINER_CLASS_ARENA_TYCOON:
+    case TRAINER_CLASS_FACTORY_HEAD:
+    case TRAINER_CLASS_PIKE_QUEEN:
+    case TRAINER_CLASS_PYRAMID_KING:
+    case TRAINER_CLASS_RS_PROTAG:
+    case TRAINER_CLASS_RIVAL_EARLY_FRLG:
+    case TRAINER_CLASS_RIVAL_LATE_FRLG:
+    case TRAINER_CLASS_BOSS_FRLG:
+    case TRAINER_CLASS_LEADER_FRLG:
+    case TRAINER_CLASS_ELITE_FOUR_FRLG:
+    case TRAINER_CLASS_CHAMPION_FRLG:
+    case TRAINER_CLASS_PKMN_PROF_FRLG:
+    case TRAINER_CLASS_PLAYER_FRLG:
+    case TRAINER_CLASS_ROCKET_ADMIN:
+        return FALSE;
+    default:
+        return TRUE;
+    }
+}
+
+static bool8 IsCooldownTrainer(u16 trainerId)
+{
+    return sConsent.cooldown_trainer_id != TRAINER_NONE
+        && sConsent.cooldown_trainer_id == trainerId
+        && (s32)(sConsent.cooldown_deadline - gMain.vblankCounter1) > 0;
+}
+
+static bool8 IsPartnerNearby(void)
+{
+#if TESTING
+    if (sTestPartnerNearby != 0)
+        return sTestPartnerNearby == 2;
+#endif
+    return CoopPresenceRuntime_IsPartnerNearby(COOP_TRAINER_ENCOUNTER_PARTNER_TILES);
+}
+
+/* Every condition is required; any failure keeps the vanilla battle. */
+bool8 CoopTrainerEncounter_IsEligible(u16 trainerId)
+{
+    enum CoopRegion region;
+    u16 ordinal;
+
+    switch (GetTrainerBattleMode())
+    {
+    case TRAINER_BATTLE_SINGLE:
+    case TRAINER_BATTLE_SINGLE_NO_INTRO_TEXT:
+    case TRAINER_BATTLE_DOUBLE:
+        break;
+    default:
+        /* Early rival, two trainers without intro, continue-script (story),
+         * rematch, pyramid and hill modes stay vanilla in phase 1. */
+        return FALSE;
+    }
+    if (trainerId == TRAINER_NONE || trainerId == TRAINER_SECRET_BASE
+     || trainerId != TRAINER_BATTLE_PARAM.opponentA
+     || gNoOfApproachingTrainers == 2
+     || CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE
+     || InTrainerHillChallenge()
+     || FollowerNPCIsBattlePartner()
+     || (B_FLAG_SKY_BATTLE != 0 && FlagGet(B_FLAG_SKY_BATTLE))
+     || IsCooldownTrainer(trainerId))
+        return FALSE;
+    if (!CoopNetBridge_IsGrouped()
+     || sConsent.state != CONSENT_IDLE || !sConsent.session_ready
+     || sConsent.encounter_state != ENCOUNTER_NONE
+     || sConsent.wally_request_state != WALLY_REQUEST_NONE
+     || sConsent.brock_request_state != BROCK_REQUEST_NONE
+     || !CoopNetBridge_CanSendBattle()
+     || CoopBattleRuntime_HasPendingOutboundReplay()
+     || CoopBattleRuntime_IsEngineActive())
+        return FALSE;
+    if (!CoopRegion_TryGetActive(&region)
+     || !CoopIdentity_ResolveTrainerOrdinal(region, trainerId, &ordinal)
+     || !CoopTrainerEncounter_IsPhaseOneClass(GetTrainerClassFromId(trainerId)))
+        return FALSE;
+    return IsPartnerNearby();
+}
+
+bool8 CoopTrainerEncounter_TryBegin(u16 trainerId)
+{
+    if (IsCooldownTrainer(trainerId))
+    {
+        /* One-shot: this sighting is vanilla, the next may be co-op. */
+        sConsent.cooldown_trainer_id = TRAINER_NONE;
+        sConsent.cooldown_deadline = 0;
+        return FALSE;
+    }
+    if (!CoopTrainerEncounter_IsEligible(trainerId)
+     || !CoopBattleConsent_BeginTrainer(trainerId))
+        return FALSE;
+    sConsent.encounter_state = ENCOUNTER_WAITING;
+    sConsent.deadline_frame = gMain.vblankCounter1 + COOP_TRAINER_ENCOUNTER_WAIT_FRAMES;
+    /* The trainer's intro box is still open; replace it for the wait. */
+    HideFieldMessageBox();
+    (void)ShowFieldMessage(sWaitingForPartnerText);
+    return TRUE;
+}
+
+bool8 CoopTrainerEncounter_OnBattleEnded(bool8 completed)
+{
+    if (sConsent.encounter_state != ENCOUNTER_IN_BATTLE)
+        return FALSE;
+    sConsent.encounter_state = ENCOUNTER_NONE;
+    ClearState();
+    if (sConsent.outcome == COOP_BATTLE_CONSENT_ACCEPTED)
+        ClearOutcome();
+    if (completed)
+        return FALSE;
+    sConsent.cooldown_trainer_id = TRAINER_BATTLE_PARAM.opponentA;
+    sConsent.cooldown_deadline = gMain.vblankCounter1
+        + COOP_TRAINER_ENCOUNTER_COOLDOWN_FRAMES;
+    return TRUE;
+}
+
+#if TESTING
+void CoopTrainerEncounter_TestSetPartnerNearby(s8 nearby)
+{
+    sTestPartnerNearby = nearby < 0 ? 0 : (nearby ? 2 : 1);
+}
+
+bool8 CoopTrainerEncounter_TestIsPending(void)
+{
+    return sConsent.encounter_state != ENCOUNTER_NONE;
+}
+#endif

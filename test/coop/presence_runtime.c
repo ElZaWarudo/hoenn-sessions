@@ -1,4 +1,6 @@
 #include "global.h"
+#include "battle_setup.h"
+#include "coop/battle_consent.h"
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "coop/region.h"
@@ -26,8 +28,11 @@
 #include "sprite.h"
 #include "string_util.h"
 #include "text.h"
+#include "trainer_see.h"
 #include "window.h"
+#include "constants/battle_setup.h"
 #include "constants/maps.h"
+#include "constants/opponents.h"
 #include "constants/field_effects.h"
 #include "constants/flags.h"
 #include "constants/map_types.h"
@@ -1916,6 +1921,138 @@ TEST("Cloud Coop unconnected and dive-linked partner maps stay hidden")
     EXPECT(!CoopPresenceReducer_IsActive(CoopPresenceRuntime_GetReducer()));
     EXPECT_EQ(FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID), OBJECT_EVENTS_COUNT);
 
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner nearby needs a fresh visible partner within range")
+{
+    u32 frame;
+
+    BeginPartnerFixture();
+    /* The player stands on local tile (4, 5). */
+    gSaveBlock1Ptr->pos.x = 4;
+    gSaveBlock1Ptr->pos.y = 5;
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    QueueRuntimeSpawnAt(71, 1, RUNTIME_LOCAL_MAP, 9, 7);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    /* Chebyshev distance: five columns, two rows. */
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(5));
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(4));
+
+    /* A trainer script locks the field and retires the partner sprite; the
+     * reducer still knows where the partner stands. */
+    LockPlayerFieldControls();
+    CoopPresenceRuntime_Update();
+    EXPECT_EQ(FindRuntimeObject(COOP_PRESENCE_RUNTIME_OBJECT_LOCAL_ID), OBJECT_EVENTS_COUNT);
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    UnlockPlayerFieldControls();
+
+    /* Fifteen columns away is outside the projected view window. */
+    QueueRuntimeUpdateAt(71, 2, RUNTIME_LOCAL_MAP, 19, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceReducer_IsVisible(CoopPresenceRuntime_GetReducer()));
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+
+    /* A partner that stops reporting goes stale. */
+    QueueRuntimeUpdateAt(71, 3, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    for (frame = 0; frame < COOP_PRESENCE_RUNTIME_STALE_FRAMES - 1; frame++)
+        CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+
+    /* Transport loss drops the partner at once. */
+    QueueRuntimeUpdateAt(71, 4, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    CoopPresenceRuntime_TransportLost();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop partner nearby spans edge connections but not unconnected maps")
+{
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    gSaveBlock1Ptr->pos.x = MAP_OFFSET + 4;
+    gSaveBlock1Ptr->pos.y = MAP_OFFSET + 5;
+    /* East map tile (0, 5) projects nine columns east, one row south. */
+    QueueRuntimeSpawnAt(73, 1, RUNTIME_EAST_MAP, 0, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(12));
+    EXPECT(CoopPresenceRuntime_IsPartnerNearby(9));
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(8));
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+
+    BeginPartnerFixture();
+    InstallRuntimeEdgeConnections();
+    QueueRuntimeSpawnAt(74, 1, RUNTIME_UNCONNECTED_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    QueueRuntimeSpawnAt(74, 2, RUNTIME_DIVE_MAP, 4, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopPresenceRuntime_IsPartnerNearby(12));
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+}
+
+TEST("Cloud Coop trainer encounter eligibility follows live partner presence")
+{
+    struct CoopBridgeMessage message;
+    u8 grouped[2] = {1, 0};
+    TrainerBattleParameter savedParams = gTrainerBattleParameter;
+    u8 savedApproaching = gNoOfApproachingTrainers;
+    u32 frame;
+
+    BeginRuntimeFixture(&sRuntimeFixtureBackup);
+    CoopSave_InitializeCurrent();
+    CoopNetBridge_Init();
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                  1, 17, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                  2, 17, grouped, sizeof(grouped)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+    EXPECT(CoopNetBridge_IsGrouped());
+    gSaveBlock1Ptr->pos.x = 4;
+    gSaveBlock1Ptr->pos.y = 5;
+    InitTrainerBattleParameter();
+    TRAINER_BATTLE_PARAM.mode = TRAINER_BATTLE_SINGLE;
+    TRAINER_BATTLE_PARAM.opponentA = TRAINER_CALVIN_1;
+    gNoOfApproachingTrainers = 1;
+
+    /* No partner in the area yet. */
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    QueueRuntimeSpawnAt(72, 1, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    /* Partner too far. */
+    QueueRuntimeUpdateAt(72, 2, RUNTIME_LOCAL_MAP, 19, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    /* Partner back, then stale. */
+    QueueRuntimeUpdateAt(72, 3, RUNTIME_LOCAL_MAP, 6, 5);
+    CoopPresenceRuntime_Update();
+    EXPECT(CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    for (frame = 0; frame < COOP_PRESENCE_RUNTIME_STALE_FRAMES; frame++)
+        CoopPresenceRuntime_AdvanceFrame();
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+    /* Partner on a map with no edge connection to this one. */
+    QueueRuntimeUpdateAt(72, 4, RUNTIME_UNCONNECTED_MAP, 4, 0);
+    CoopPresenceRuntime_Update();
+    EXPECT(!CoopTrainerEncounter_IsEligible(TRAINER_CALVIN_1));
+
+    gTrainerBattleParameter = savedParams;
+    gNoOfApproachingTrainers = savedApproaching;
     EndRuntimeFixture(&sRuntimeFixtureBackup);
 }
 
