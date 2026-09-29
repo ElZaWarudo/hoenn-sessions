@@ -18,6 +18,11 @@
 /*
  * Applies a server-issued trade (TradeCommit) to the running ROM.
  *
+ * Slot: the commit names the party slot the trade was offered from, but the
+ * player may reorder the party before the commit applies. The record replaces
+ * whichever party slot holds the outgoing personality and OT ID (the named
+ * slot first); finalize accepts the record in any party slot.
+ *
  * Delivery: the launcher sends a tracked trade once per control generation,
  * so the ROM keeps one validated commit pending until the field is safe
  * instead of dropping it. A newer commit replaces an unapplied one.
@@ -132,18 +137,32 @@ static bool8 IsSafeToApply(void)
         && !sTradeRuntime.ack_queued;
 }
 
-static bool8 PartyHoldsOutgoing(u32 personality, u32 otId)
+static bool8 SlotHoldsOutgoing(u8 slot, u32 personality, u32 otId)
+{
+    return slot < gPlayerPartyCount && slot < PARTY_SIZE
+        && gPlayerParty[slot].box.personality == personality
+        && gPlayerParty[slot].box.otId == otId
+        && GetMonData(&gPlayerParty[slot], MON_DATA_SANITY_HAS_SPECIES);
+}
+
+/* The commit's slot is only a hint: the player may have reordered the party
+ * since the trade was accepted. Returns PARTY_SIZE when no slot holds the
+ * outgoing personality and OT ID. */
+static u8 FindOutgoingSlot(u8 hint, u32 personality, u32 otId)
 {
     u8 i;
 
-    for (i = 0; i < gPlayerPartyCount && i < PARTY_SIZE; i++)
-    {
-        if (gPlayerParty[i].box.personality == personality
-         && gPlayerParty[i].box.otId == otId
-         && GetMonData(&gPlayerParty[i], MON_DATA_SANITY_HAS_SPECIES))
-            return TRUE;
-    }
-    return FALSE;
+    if (SlotHoldsOutgoing(hint, personality, otId))
+        return hint;
+    for (i = 0; i < PARTY_SIZE; i++)
+        if (SlotHoldsOutgoing(i, personality, otId))
+            return i;
+    return PARTY_SIZE;
+}
+
+static bool8 PartyHoldsOutgoing(u32 personality, u32 otId)
+{
+    return FindOutgoingSlot(0, personality, otId) < PARTY_SIZE;
 }
 
 static bool8 PartyHoldsRecord(const u8 *record)
@@ -179,18 +198,16 @@ static void TryApplyPending(void)
 {
     const u8 *payload = sTradeRuntime.pending;
     const u8 *record = payload + COOP_TRADE_COMMIT_RECORD_OFFSET;
-    u8 slot = payload[COOP_TRADE_COMMIT_SLOT_OFFSET];
     u32 personality = ReadU32(payload + COOP_TRADE_COMMIT_OUTGOING_PERSONALITY_OFFSET);
     u32 otId = ReadU32(payload + COOP_TRADE_COMMIT_OUTGOING_OT_ID_OFFSET);
     struct Pokemon *mon;
+    u8 slot;
 
     if (!IsSafeToApply())
         return;
 
-    if (slot >= gPlayerPartyCount
-     || gPlayerParty[slot].box.personality != personality
-     || gPlayerParty[slot].box.otId != otId
-     || !GetMonData(&gPlayerParty[slot], MON_DATA_SANITY_HAS_SPECIES))
+    slot = FindOutgoingSlot(payload[COOP_TRADE_COMMIT_SLOT_OFFSET], personality, otId);
+    if (slot >= PARTY_SIZE)
     {
         /* A save that already contains this trade (ROM reboot before the
          * launcher saw the acknowledgement) is acknowledged again. */

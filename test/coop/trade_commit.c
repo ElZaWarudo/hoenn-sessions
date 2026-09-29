@@ -241,13 +241,67 @@ TEST("Cloud Coop trade commit for a different outgoing Pokemon is dropped unackn
     EXPECT_EQ(CoopTradeRuntime_TestGetRejectedCount(), 1);
     EXPECT(!ArePlayerFieldControlsLocked());
 
-    /* A slot past the party end fails the same way. */
+    /* The slot hint does not rescue a Pokemon that left the party. */
     BuildCommit(payload, 0xD0);
+    payload[COOP_TRADE_COMMIT_OUTGOING_PERSONALITY_OFFSET] ^= 1;
     payload[COOP_TRADE_COMMIT_SLOT_OFFSET] = 4;
     DeliverInbound(COOP_BRIDGE_MESSAGE_TRADE_COMMIT, 3, payload, sizeof(payload));
     EXPECT(!PopNonPlayerState(&message));
     EXPECT_EQ(memcmp(gPlayerParty, before, sizeof(before)), 0);
     EXPECT_EQ(CoopTradeRuntime_TestGetRejectedCount(), 2);
+    LeaveSafeField(&context);
+}
+
+TEST("Cloud Coop trade commit follows the outgoing Pokemon after a party reorder")
+{
+    struct TradeTestContext context;
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_TRADE_COMMIT_SIZE];
+    struct Pokemon kept;
+    struct Pokemon applied[2];
+
+    EstablishSession();
+    EnterSafeField(&context);
+    CoopTradeRuntime_TestSetSaveDryRun(TRUE);
+    SetUpParty();
+    /* The trade was offered from slot 1; the player then swapped slots. */
+    kept = gPlayerParty[0];
+    gPlayerParty[0] = gPlayerParty[1];
+    gPlayerParty[1] = kept;
+    BuildCommit(payload, 0xC0);
+    EXPECT_EQ(payload[COOP_TRADE_COMMIT_SLOT_OFFSET], 1);
+
+    DeliverInbound(COOP_BRIDGE_MESSAGE_TRADE_COMMIT, 2, payload, sizeof(payload));
+    EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR));
+    EXPECT(SlotHoldsRecord(0, payload));
+    EXPECT_EQ(memcmp(&gPlayerParty[1], &kept, sizeof(kept)), 0);
+    EXPECT_EQ(gPlayerPartyCount, 2);
+    EXPECT_EQ(CoopTradeRuntime_TestGetRejectedCount(), 0);
+
+    /* The acknowledgement still echoes the original header, slot hint
+     * included, so the launcher matches it to the tracked commit. */
+    ExpectAck(payload, &message);
+    EXPECT_EQ(message.payload[COOP_TRADE_COMMIT_SLOT_OFFSET], 1);
+    CompleteTradeCheckpoint(message.sequence, 3);
+    memcpy(applied, gPlayerParty, sizeof(applied));
+
+    /* After a reboot the reordered save is recognized as already traded. */
+    EstablishSession();
+    DeliverInbound(COOP_BRIDGE_MESSAGE_TRADE_COMMIT, 2, payload, sizeof(payload));
+    ExpectAck(payload, &message);
+    EXPECT_EQ(memcmp(gPlayerParty, applied, sizeof(applied)), 0);
+    EXPECT_EQ(CoopTradeRuntime_TestGetRejectedCount(), 0);
+    CompleteTradeCheckpoint(message.sequence, 3);
+
+    /* A slot hint past the party end still finds the outgoing Pokemon. */
+    EstablishSession();
+    SetUpParty();
+    BuildCommit(payload, 0xE0);
+    payload[COOP_TRADE_COMMIT_SLOT_OFFSET] = 5;
+    DeliverInbound(COOP_BRIDGE_MESSAGE_TRADE_COMMIT, 2, payload, sizeof(payload));
+    EXPECT(SlotHoldsRecord(1, payload));
+    ExpectAck(payload, &message);
+    CompleteTradeCheckpoint(message.sequence, 3);
     LeaveSafeField(&context);
 }
 

@@ -13,7 +13,7 @@ pub use pokemon::{
     BoxPokemon, PARTY_POKEMON_SIZE, PartyPokemon, PokemonError, PokemonIdentity, PokemonLocation,
     PokemonSlot, decode_party_record, party_record_hp,
 };
-pub use trade::{TradeError, trade_party_pokemon};
+pub use trade::{TradeError, party_record_holds_mail, trade_party_pokemon};
 
 use coop_protocol::{
     IdentityKind, ProtocolError, RegionId, TrainerInstanceId,

@@ -142,6 +142,10 @@ pub enum Phase2Error {
     PayloadTooLarge,
     #[error("service is busy")]
     Busy,
+    /// A trade was refused because an offered Pokémon holds mail. Mail lives
+    /// in the sender's save, so the ROM cannot apply such a record.
+    #[error("an offered Pokémon holds mail")]
+    TradePokemonHoldsMail,
     #[error("internal service error")]
     Internal,
 }
@@ -164,7 +168,7 @@ impl IntoResponse for Phase2Error {
             Self::Busy => StatusCode::SERVICE_UNAVAILABLE,
             Self::Authentication | Self::Expired => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
-            Self::Conflict => StatusCode::CONFLICT,
+            Self::Conflict | Self::TradePokemonHoldsMail => StatusCode::CONFLICT,
             Self::Forbidden => StatusCode::FORBIDDEN,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -189,6 +193,7 @@ impl Phase2Error {
             Self::Expired => "expired",
             Self::PayloadTooLarge => "payload_too_large",
             Self::Busy => "service_busy",
+            Self::TradePokemonHoldsMail => "trade_pokemon_holds_mail",
             Self::Internal => "internal_error",
         }
     }
@@ -2269,6 +2274,7 @@ mod tests {
         mon[19] = 2; // hasSpecies
         mon[28..30].copy_from_slice(&species.to_le_bytes()); // checksum
         mon[32..34].copy_from_slice(&species.to_le_bytes());
+        mon[85] = 0xff; // MAIL_NONE, as ZeroMonData leaves it
         mon
     }
 

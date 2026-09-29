@@ -793,6 +793,14 @@ fn trade_rejects_empty_corrupt_and_mail_without_mutating_inputs() {
         trade_party_pokemon(&mail, 0, &right, 0),
         Err(TradeError::Mail { .. })
     ));
+    let PokemonSlot::Occupied(with_mail) = mail.party_pokemon(0).unwrap() else {
+        panic!("mail fixture slot is occupied");
+    };
+    let PokemonSlot::Occupied(without_mail) = left.party_pokemon(0).unwrap() else {
+        panic!("fixture slot is occupied");
+    };
+    assert!(crate::party_record_holds_mail(&with_mail));
+    assert!(!crate::party_record_holds_mail(&without_mail));
     assert_eq!(left.raw_bytes(), original);
     assert_eq!(right.rtc_trailer(), Some(&[9; RTC_TRAILER_SIZE]));
 }

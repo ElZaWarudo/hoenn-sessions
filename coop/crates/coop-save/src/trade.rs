@@ -1,6 +1,6 @@
 //! Offline, byte preserving one-for-one party record exchange.
 
-use crate::pokemon::{PARTY_POKEMON_SIZE, PARTY_SIZE};
+use crate::pokemon::{PARTY_POKEMON_SIZE, PARTY_SIZE, PartyPokemon};
 use thiserror::Error;
 
 use crate::{
@@ -106,12 +106,19 @@ fn offered_record(
     let PokemonSlot::Occupied(record) = slot else {
         return Err(TradeError::Empty { side, index });
     };
-    if record.raw[PARTY_MAIL_OFFSET] != MAIL_NONE
-        || (FIRST_MAIL_ITEM..=LAST_MAIL_ITEM).contains(&record.identity.held_item)
-    {
+    if party_record_holds_mail(&record) {
         return Err(TradeError::Mail { side, index });
     }
     Ok(record.raw)
+}
+
+/// Whether a party record holds a mail item or references a mail entry. Mail
+/// lives in the sender's SaveBlock1 mail table, so such a record cannot move
+/// to another save byte for byte; the ROM refuses it in a trade commit.
+#[must_use]
+pub fn party_record_holds_mail(record: &PartyPokemon) -> bool {
+    record.raw[PARTY_MAIL_OFFSET] != MAIL_NONE
+        || (FIRST_MAIL_ITEM..=LAST_MAIL_ITEM).contains(&record.identity.held_item)
 }
 
 fn next_image(

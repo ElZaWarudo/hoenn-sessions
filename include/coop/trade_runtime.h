@@ -6,7 +6,8 @@
 /* TradeCommit (0x0119, sidecar to ROM). The payload is exactly 128 bytes,
  * little endian, and mirrors coop_protocol::TradeCommitRecord:
  *   0  16  commit_id (ledger UUID octets, nonzero)
- *  16   1  slot (party slot 0..5 to overwrite)
+ *  16   1  slot (party slot 0..5 the trade was offered from; a hint: the
+ *          ROM replaces whichever slot holds the outgoing Pokemon)
  *  17   3  reserved, zero
  *  20   4  outgoing_personality
  *  24   4  outgoing_ot_id

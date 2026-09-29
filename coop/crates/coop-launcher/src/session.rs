@@ -6036,6 +6036,9 @@ mod lifecycle_tests {
     };
     use coop_sidecar::control::{CommandStatus, ControlCommand, ControlEvent};
 
+    /// Level 1 ledger end to end against the real coop-server (B7).
+    mod ledger_e2e;
+
     #[derive(Default)]
     struct TestKeychain {
         token: Mutex<Option<RefreshToken>>,

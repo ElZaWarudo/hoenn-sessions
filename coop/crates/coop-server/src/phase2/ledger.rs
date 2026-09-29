@@ -75,9 +75,11 @@ pub enum TrainerStoryPolicy {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ExpectedDelta {
-    /// `slot` must hold exactly `incoming_raw` (lowercase hex on the wire,
-    /// the same encoding as battle peer-party records) and `outgoing` must no
-    /// longer be anywhere in party or PC boxes.
+    /// Some active party slot must hold exactly `incoming_raw` (lowercase hex
+    /// on the wire, the same encoding as battle peer-party records) and
+    /// `outgoing` must no longer be anywhere in party or PC boxes. `slot` is
+    /// the party slot the trade was offered from; it is a hint for the ROM,
+    /// which applies the record wherever the outgoing Pokémon now is.
     Trade {
         slot: PartyPosition,
         outgoing: PokemonKey,
@@ -328,6 +330,12 @@ pub(crate) struct TradeSide {
 }
 
 /// Reads the occupied slot record of one member's anchored save.
+///
+/// # Errors
+///
+/// `TradePokemonHoldsMail` when the record holds mail (the ROM refuses such a
+/// TradeCommit, so the entry could never be applied); `Conflict` for an
+/// empty, out-of-party or unreadable slot.
 pub(crate) fn trade_side(
     save: &coop_save::ValidatedSave,
     snapshot_id: SnapshotId,
@@ -341,6 +349,9 @@ pub(crate) fn trade_side(
         .party_pokemon(slot.index())
         .map_err(|_| Phase2Error::Conflict)?
     {
+        PokemonSlot::Occupied(record) if coop_save::party_record_holds_mail(&record) => {
+            Err(Phase2Error::TradePokemonHoldsMail)
+        }
         PokemonSlot::Occupied(record) => Ok(TradeSide {
             snapshot_id,
             revision,
@@ -388,20 +399,25 @@ pub(crate) fn issue_trade(
     Ok([ids[0], ids[1]])
 }
 
-fn trade_slot_key(
+/// Whether any active party slot holds exactly `raw`. The entry's slot is
+/// only where the trade was offered from: the player may reorder the party
+/// before the ROM applies the commit, and the ROM then writes the record into
+/// whichever slot holds the outgoing Pokémon.
+fn party_holds_record(
     save: &coop_save::ValidatedSave,
-    slot: PartyPosition,
-) -> Result<Option<([u8; 100], PokemonKey)>, Phase2Error> {
-    if slot.index() >= usize::from(save.party_count().map_err(|_| Phase2Error::Conflict)?) {
-        return Ok(None);
+    raw: &[u8; 100],
+) -> Result<bool, Phase2Error> {
+    let count = usize::from(save.party_count().map_err(|_| Phase2Error::Conflict)?);
+    for index in 0..count {
+        if let PokemonSlot::Occupied(record) = save
+            .party_pokemon(index)
+            .map_err(|_| Phase2Error::Conflict)?
+            && record.raw == *raw
+        {
+            return Ok(true);
+        }
     }
-    match save
-        .party_pokemon(slot.index())
-        .map_err(|_| Phase2Error::Conflict)?
-    {
-        PokemonSlot::Occupied(record) => Ok(Some((record.raw, PokemonKey::of(&record.identity)))),
-        PokemonSlot::Empty { .. } => Ok(None),
-    }
+    Ok(false)
 }
 
 fn holds(save: &coop_save::ValidatedSave, key: PokemonKey) -> Result<bool, Phase2Error> {
@@ -421,7 +437,10 @@ fn holds(save: &coop_save::ValidatedSave, key: PokemonKey) -> Result<bool, Phase
 ///
 /// `Conflict` for a declared entry whose delta does not match exactly or that
 /// is not the character's open entry; `Forbidden` for an undeclared outcome
-/// whose evidence is already present, or an unknown commit ID.
+/// whose evidence is already present, or an unknown commit ID. A trade's
+/// evidence is the incoming Pokémon (by personality and OT ID) anywhere in
+/// party or boxes; a declared trade needs its exact record in any party slot
+/// and the outgoing Pokémon gone from party and boxes.
 pub(crate) fn apply_on_finalize(
     state: &mut State,
     actor: AuthenticatedActor,
@@ -435,11 +454,10 @@ pub(crate) fn apply_on_finalize(
         Some(commit_id) => match check_declarable(state, actor.character_id, commit_id)? {
             Some(entry) => match &entry.expected {
                 ExpectedDelta::Trade {
-                    slot,
                     outgoing,
                     incoming_raw,
                     ..
-                } => Some((commit_id, *slot, *outgoing, *incoming_raw)),
+                } => Some((commit_id, *outgoing, *incoming_raw)),
                 // The Wally validator checks and marks the ledger entry.
                 ExpectedDelta::TrainerWin { .. } => None,
             },
@@ -447,7 +465,7 @@ pub(crate) fn apply_on_finalize(
         },
         None => None,
     };
-    let Some((commit_id, slot, outgoing, incoming_raw)) = trade else {
+    let Some((commit_id, outgoing, incoming_raw)) = trade else {
         let applied = super::battles::apply_commit_grant(
             state,
             actor,
@@ -458,10 +476,8 @@ pub(crate) fn apply_on_finalize(
         )?;
         if declared.is_none()
             && let Some(entry) = open_entry(state, actor.character_id)
-            && let ExpectedDelta::Trade {
-                slot, incoming_key, ..
-            } = &entry.expected
-            && trade_slot_key(incoming_save, *slot)?.is_some_and(|(_, key)| key == *incoming_key)
+            && let ExpectedDelta::Trade { incoming_key, .. } = &entry.expected
+            && holds(incoming_save, *incoming_key)?
         {
             return Err(Phase2Error::Forbidden);
         }
@@ -477,9 +493,8 @@ pub(crate) fn apply_on_finalize(
     if !holds(source_save, outgoing)? || holds(incoming_save, outgoing)? {
         return Err(Phase2Error::Conflict);
     }
-    match trade_slot_key(incoming_save, slot)? {
-        Some((raw, _)) if raw == incoming_raw => {}
-        _ => return Err(Phase2Error::Conflict),
+    if !party_holds_record(incoming_save, &incoming_raw)? {
+        return Err(Phase2Error::Conflict);
     }
     mark_applied(state, commit_id, request.snapshot_id);
     Ok(true)

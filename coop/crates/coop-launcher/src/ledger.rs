@@ -12,9 +12,10 @@
 //! same outcome through two bridge paths.
 //!
 //! The server's open entry is the only authority. The launcher re-polls it on
-//! every session start and after every commit acknowledgement or declaring
-//! finalize, so an entry delivered by a crashed launcher is simply delivered
-//! again. `pending_commits.json` mirrors the tracked (delivered but not yet
+//! every session start, after every commit acknowledgement or declaring
+//! finalize, and every [`IDLE_POLL_INTERVAL`] while no trade is tracked (a
+//! partner can accept a trade mid-session), so an entry delivered by a
+//! crashed launcher is simply delivered again. `pending_commits.json` mirrors the tracked (delivered but not yet
 //! declared) trade commit as `[]` or `["<commit uuid>"]`, so a snapshot taken
 //! between delivery and declaration records which outcome was in flight.
 
@@ -37,6 +38,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// Delay before a failed poll is retried. The session loop wakes at least
 /// once per heartbeat, so the effective retry interval is bounded by both.
 pub(crate) const POLL_RETRY_DELAY: Duration = Duration::from_secs(5);
+/// Delay between polls while no trade is tracked. A trade the partner
+/// accepts mid-session is issued on the server only; this poll is how the
+/// launcher learns about it without a restart or an unrelated ack.
+pub(crate) const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// What produced a ledger entry.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -362,6 +367,10 @@ impl LedgerOwner {
             if !self.trade.is_some_and(|trade| trade.acknowledged) {
                 self.trade = None;
             }
+            if self.trade.is_none() {
+                self.poll_due = true;
+                self.retry_at = Some(tokio::time::Instant::now() + IDLE_POLL_INTERVAL);
+            }
             return Ok(());
         };
         let commit_id = view.expect("a trade record implies a view").commit_id;
@@ -583,6 +592,23 @@ pub(crate) mod tests {
             owner.accept(Some(&applied), character()),
             Err(LedgerError::InvalidResponse)
         );
+    }
+
+    #[test]
+    fn owner_keeps_polling_while_idle_so_mid_session_trades_arrive() {
+        let mut owner = LedgerOwner::default();
+        owner.request_poll();
+        owner.accept(None, character()).unwrap();
+        let later = || tokio::time::Instant::now() + IDLE_POLL_INTERVAL + Duration::from_secs(1);
+        assert!(!owner.poll_ready(tokio::time::Instant::now()));
+        assert!(owner.poll_ready(later()));
+        // A trainer win (delivered on the battle path) keeps the idle poll.
+        owner.accept(Some(&wally_view(0xc1)), character()).unwrap();
+        assert!(!owner.poll_ready(tokio::time::Instant::now()));
+        assert!(owner.poll_ready(later()));
+        // A tracked trade is delivered per generation instead of re-polled.
+        owner.accept(Some(&trade_view(0xc0)), character()).unwrap();
+        assert!(!owner.poll_ready(later()));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 schema_version: 1
-updated_at: "2026-09-03T21:09:41Z"
+updated_at: "2026-09-29T18:00:00Z"
 blockers:
   - id: BLK-ARM-TOOLCHAIN
     jira_issue_key: null
@@ -134,7 +134,7 @@ blockers:
     wave: phase7-progress-and-rematches
     type: product-integrity
     risk: high
-    description: CSP1 and snapshot validation prove structure, registry membership, lineage, and generation continuity, but an assigned trainer, gym, Fly-point, event, badge, or story change is not yet tied to a server-authorized gameplay commit.
+    description: CSP1 and snapshot validation prove structure, registry membership, lineage, and generation continuity. Multiplayer trades and the Wally co-op battle are now tied to server ledger entries checked at finalize (Level 1), but other co-op trainer battles and all solo trainer, gym, Fly-point, event, badge, or story changes are not tied to a server-authorized gameplay commit.
     decision_required: Implement the server gameplay commit ledger and ROM application/acknowledgement flow for progression additions, idempotency, and recovery.
     impact_if_ignored: A structurally valid snapshot can carry progression that the save service cannot independently prove was earned, so the current snapshot path is not an anti-cheat authority.
     affected_units: [phase2-server-auth-save, distribution]
@@ -142,8 +142,8 @@ blockers:
     suggested_owner: gameplay systems lead
     detected_at: "2026-09-02T00:36:41Z"
     status: open
-    evidence: The save-hardening contract explicitly limits authorization to container, registry, lineage, and generation continuity; the original product README assigns gameplay commits to a later phase.
-    next_action: Define the canonical progression delta and commit provenance before claiming authoritative trainer, badge, gym, Fly, event, or story advancement.
+    evidence: "Level 1 of the outcome ledger (multiplayer outcomes only; solo progress stays trusted by decision on 2026-09-29) is implemented and unit/integration tested, but NOT verified end to end with two real players on real ROMs. Implemented: server ledger entries (one open entry per character, idempotent issuance, persisted, GET ledger/open under the lease fence); trade issuance at the second consent, refused for a Pokemon holding mail; finalize validation (a declared entry must match exactly, the incoming 100-byte record in any party slot and the outgoing Pokemon gone from party and boxes; undeclared evidence rejected; a pre-apply save accepted; replays return the stored record); Wally commit grants as ledger entries, voided when the reservation expires or is cancelled; launcher delivery of TradeCommit (0x0119) with redelivery per control generation, an idle ledger poll, and declaration in the next finalize; ROM trade apply by outgoing personality and OT ID with a post-trade checkpoint (game protocol 3). Tests: ROM test/coop/trade_commit.c; coop-server phase2 ledger/trade/battle tests; coop-launcher ledger unit tests and session/lifecycle_tests/ledger_e2e.rs (real coop-server over HTTP, real SessionLifecycle, fake sidecar control and fake ROM)."
+    next_action: "Remaining: (1) a live two-player trade and Wally battle on real ROMs and mGBA; (2) co-op trainer battles in ledger mode (today every trainer win except Wally uses local rewards, so trainer flags, badges, money and story flags from co-op battles are not ledger-verified); (3) prune Applied/Voided entries after a retention window with an ID tombstone; (4) a launcher or client trade UI (no client calls the trade-offer routes yet); (5) keep the ledger scope decision explicit: solo trainer, gym, Fly, event and story progress is not server-authorized."
     resolution:
       decided_at: null
       decided_by: null

@@ -986,14 +986,20 @@ impl AbortBattleRecord {
 /// | offset | size | field                                                   |
 /// |-------:|-----:|---------------------------------------------------------|
 /// |      0 |   16 | `commit_id`, ledger commit UUID octets in network order |
-/// |     16 |    1 | `slot`, zero-based party slot `0..=5` to overwrite      |
+/// |     16 |    1 | `slot`, zero-based party slot `0..=5` (a hint, below)   |
 /// |     17 |    3 | reserved, must be zero (keeps the u32 fields aligned)   |
-/// |     20 |    4 | `outgoing_personality` of the Pokémon leaving `slot`    |
-/// |     24 |    4 | `outgoing_ot_id` of the Pokémon leaving `slot`          |
+/// |     20 |    4 | `outgoing_personality` of the Pokémon leaving the party |
+/// |     24 |    4 | `outgoing_ot_id` of the Pokémon leaving the party       |
 /// |     28 |  100 | `incoming_record`, the exact 100-byte party `struct Pokemon` |
 ///
+/// `slot` is the party slot the trade was offered from. The player may reorder
+/// the party before the commit applies, so the ROM overwrites whichever party
+/// slot holds the outgoing personality and OT ID (trying `slot` first), and
+/// the server accepts `incoming_record` in any party slot at finalize.
+///
 /// The first 28 bytes are the [`TradeCommitAppliedRecord`] header the ROM
-/// echoes back once `slot` holds `incoming_record`.
+/// echoes back, unchanged (including `slot`), once the party holds
+/// `incoming_record`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TradeCommitRecord {

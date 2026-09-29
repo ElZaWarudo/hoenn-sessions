@@ -1174,7 +1174,8 @@ fn accepted_trade_sides(
 /// both live leases, unchanged anchored heads, and the exact reciprocal
 /// slots; the initiator can never accept their own offer. The accepting
 /// decision atomically issues one Trade ledger entry per member and is
-/// refused with `Conflict` while either member has an open entry.
+/// refused with `Conflict` while either member has an open entry, and with
+/// `TradePokemonHoldsMail` when either offered Pokémon holds mail.
 pub(crate) fn decide_offer(
     store: &Store,
     actor: AuthenticatedActor,
@@ -1195,7 +1196,7 @@ pub(crate) fn decide_offer(
         let candidates: Vec<CommitId> = (0..MAX_TRADE_OFFER_ID_CANDIDATES)
             .map(|_| CommitId::new(store.random_uuid()?).map_err(|_| Phase2Error::Internal))
             .collect::<Result<_, _>>()?;
-        (accepted_trade_sides(store, offer_id).ok(), candidates)
+        (Some(accepted_trade_sides(store, offer_id)), candidates)
     } else {
         (None, Vec::new())
     };
@@ -1298,7 +1299,15 @@ pub(crate) fn decide_offer(
                     return Err(Phase2Error::Conflict);
                 }
                 ensure_trade_offer_receipt_slot(state, actor.character_id)?;
-                let sides = trade_sides.ok_or(Phase2Error::Conflict)?;
+                // Mail is named explicitly: the ROM refuses a record that
+                // carries mail, so an issued entry could never be applied.
+                let sides = match &trade_sides {
+                    Some(Ok(sides)) => *sides,
+                    Some(Err(Phase2Error::TradePokemonHoldsMail)) => {
+                        return Err(Phase2Error::TradePokemonHoldsMail);
+                    }
+                    _ => return Err(Phase2Error::Conflict),
+                };
                 if (0..2).any(|index| {
                     sides[index].snapshot_id != record.view.snapshots[index]
                         || sides[index].revision != record.view.revisions[index]
@@ -2018,6 +2027,10 @@ mod tests {
     }
 
     fn consent_fixture() -> ConsentFixture {
+        consent_fixture_with_saves(consent_member_sav)
+    }
+
+    fn consent_fixture_with_saves(member_sav: fn(usize) -> Vec<u8>) -> ConsentFixture {
         use super::super::storage::{FixedClock, FixedEntropy, UserRecord};
         let clock = Arc::new(FixedClock::new(1_000_000));
         let config = Phase2Config::local(
@@ -2078,12 +2091,7 @@ mod tests {
                         .insert((member, revision), snapshots[index]);
                     next.snapshots.insert(
                         snapshots[index],
-                        snapshot_for_sav(
-                            member,
-                            snapshots[index],
-                            revision,
-                            &consent_member_sav(index),
-                        ),
+                        snapshot_for_sav(member, snapshots[index], revision, &member_sav(index)),
                     );
                     next.active_group_by_member.insert(member, group_id);
                     next.characters.insert(
@@ -2128,7 +2136,7 @@ mod tests {
         // Accepting reads both anchored heads to issue the trade ledger.
         for (index, member) in members.into_iter().enumerate() {
             for (artifact, bytes) in [
-                (ArtifactIdentity::CharacterSav, consent_member_sav(index)),
+                (ArtifactIdentity::CharacterSav, member_sav(index)),
                 (ArtifactIdentity::PendingCommits, b"[]".to_vec()),
             ] {
                 store
@@ -3122,6 +3130,138 @@ mod tests {
             super::super::ledger::LedgerOrigin::Trade {
                 offer_id: accepted.offer_id
             }
+        );
+    }
+
+    #[test]
+    fn finalize_accepts_the_incoming_record_in_any_party_slot() {
+        let fixture = consent_fixture();
+        accept_fixture_offer(&fixture, 100);
+        let member = 0;
+        let entry = open_trade_entry(&fixture, member);
+        let super::super::ledger::ExpectedDelta::Trade {
+            slot, incoming_raw, ..
+        } = entry.expected
+        else {
+            panic!("trade delta");
+        };
+        let own = consent_member_party(member);
+        let kept = own[1 - slot.index()];
+        // The player moved the outgoing Pokémon before the ROM applied the
+        // commit, so the record landed in the other slot.
+        let mut reordered = [kept; 2];
+        reordered[1 - slot.index()] = incoming_raw;
+        assert_ne!(reordered[slot.index()], incoming_raw);
+        let declared = ledger_finalize_request(&fixture, member, Some(entry.commit_id), 400);
+        let undeclared = ledger_finalize_request(&fixture, member, None, 401);
+
+        // Evidence in another slot still blocks an undeclared save.
+        assert_eq!(
+            apply_ledger(&fixture, member, &undeclared, &reordered),
+            Err(Phase2Error::Forbidden)
+        );
+        // The outgoing Pokémon gone but the incoming record nowhere.
+        assert_eq!(
+            apply_ledger(&fixture, member, &declared, &[kept]),
+            Err(Phase2Error::Conflict)
+        );
+        // The incoming Pokémon present with different bytes (for example
+        // after a trade evolution) is not the exact record.
+        let mut altered = reordered;
+        altered[1 - slot.index()][86] ^= 1;
+        assert_eq!(
+            apply_ledger(&fixture, member, &declared, &altered),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(
+            open_trade_entry(&fixture, member).status,
+            super::super::ledger::LedgerStatus::Issued
+        );
+
+        assert_eq!(
+            apply_ledger(&fixture, member, &declared, &reordered),
+            Ok(true)
+        );
+        assert_eq!(
+            ledger_state(&fixture, |state| state.ledger_entries[&entry.commit_id]
+                .status),
+            super::super::ledger::LedgerStatus::Applied
+        );
+    }
+
+    /// Member 0 offers slot 0; that record carries a mail index.
+    fn consent_member_sav_offering_mail(index: usize) -> Vec<u8> {
+        let mut party = consent_member_party(index);
+        if index == 0 {
+            party[0][85] = 0;
+        }
+        super::super::tests::party_character_sav(2, &party)
+    }
+
+    /// Member 0 holds mail only on slot 1, which is not offered.
+    fn consent_member_sav_unoffered_mail(index: usize) -> Vec<u8> {
+        let mut party = consent_member_party(index);
+        if index == 0 {
+            party[1][85] = 0;
+        }
+        super::super::tests::party_character_sav(2, &party)
+    }
+
+    #[test]
+    fn accept_refuses_to_issue_a_trade_for_a_pokemon_holding_mail() {
+        let fixture = consent_fixture_with_saves(consent_member_sav_offering_mail);
+        let pending = create_offer(
+            &fixture.store,
+            fixture.actors[0],
+            fixture.group_id,
+            &consent_offer_request(&fixture, 0, 100),
+        )
+        .unwrap();
+        let partner_index = canonical_index(&pending, fixture.members[1]);
+        let request = consent_decision_request(
+            &fixture,
+            1,
+            pending.offer_id,
+            pending.slots[partner_index].index() as u8,
+            pending.slots[1 - partner_index].index() as u8,
+            coop_cloud::TradeDecision::Accept,
+            101,
+        );
+        assert_eq!(
+            decide_offer(
+                &fixture.store,
+                fixture.actors[1],
+                fixture.group_id,
+                pending.offer_id,
+                &request,
+            ),
+            Err(Phase2Error::TradePokemonHoldsMail)
+        );
+        assert_eq!(
+            ledger_state(&fixture, |state| (
+                state.ledger_entries.len(),
+                state.trade_offers[&pending.offer_id].view.status
+            )),
+            (0, TradeOfferStatus::Pending)
+        );
+        // The refusal has a stable public code.
+        assert_eq!(
+            Phase2Error::TradePokemonHoldsMail.to_string(),
+            "an offered Pokémon holds mail"
+        );
+        let response =
+            axum::response::IntoResponse::into_response(Phase2Error::TradePokemonHoldsMail);
+        assert_eq!(response.status(), axum::http::StatusCode::CONFLICT);
+
+        // Mail on a Pokémon that is not offered does not block the trade.
+        let fixture = consent_fixture_with_saves(consent_member_sav_unoffered_mail);
+        assert_eq!(
+            accept_fixture_offer(&fixture, 100).status,
+            TradeOfferStatus::Accepted
+        );
+        assert_eq!(
+            ledger_state(&fixture, |state| state.ledger_entries.len()),
+            2
         );
     }
 }
