@@ -1741,17 +1741,27 @@ static const struct WindowTemplate sPartnerInteractionWindow = {
 };
 
 static const u8 sPartnerInteractionTitle[] = _("Nearby player");
-static const u8 sPartnerInteractionWave[] = _("Greet");
+static const u8 sPartnerInteractionWave[] = _("Wave");
 static const u8 sPartnerInteractionTrade[] = _("Trade");
 static const u8 sPartnerInteractionBattle[] = _("Battle");
 static const u8 sPartnerInteractionTravel[] = _("Travel together");
 static const u8 sPartnerInteractionCheck[] = _("Check Pokemon");
 static const u8 sPartnerInteractionUnavailable[] = _("That option is not available yet.");
 static const u8 sPartnerInteractionTravelHint[] = _("Use FLY or a travel gate together.");
-static const u8 sPartnerInteractionWaved[] = _("You greeted them.");
+static const u8 sPartnerInteractionWaved[] = _("You waved at them.");
 static const u8 sPartnerInteractionSent[] = _("Calling nearby player.");
 static const u8 sPartnerInteractionLeadPrefix[] = _("Partner's lead: ");
 static const u8 sPartnerInteractionNoLead[] = _("Partner's lead is unknown.");
+
+enum
+{
+    PARTNER_INTERACTION_WAVE,
+    PARTNER_INTERACTION_TRADE,
+    PARTNER_INTERACTION_BATTLE,
+    PARTNER_INTERACTION_TRAVEL,
+    PARTNER_INTERACTION_CHECK,
+    PARTNER_INTERACTION_COUNT,
+};
 
 static void DrawPartnerInteractionMenu(void)
 {
@@ -1790,27 +1800,16 @@ static bool8 CanChoosePartnerFlyDestination(void)
     return FALSE;
 }
 
-static void Task_PartnerInteractionMenu(u8 taskId)
+static void RunPartnerInteraction(s8 selection)
 {
-    s8 selection = Menu_ProcessInputNoWrap();
-
-    if (selection == MENU_NOTHING_CHOSEN)
-        return;
-    if (selection == MENU_B_PRESSED || selection < 0
-     || selection >= 5)
-    {
-        ClosePartnerInteractionMenu();
-        return;
-    }
-    ClosePartnerInteractionMenu();
-    if (selection == 0)
+    if (selection == PARTNER_INTERACTION_WAVE)
     {
         if (CoopPresenceRuntime_TryEmote(COOP_PRESENCE_EMOTE_HEART))
             (void)ShowFieldAutoScrollMessage(sPartnerInteractionWaved);
         else
             (void)ShowFieldAutoScrollMessage(sPartnerInteractionUnavailable);
     }
-    else if (selection == 4)
+    else if (selection == PARTNER_INTERACTION_CHECK)
     {
         u16 species = sCoopPresenceRuntime.remote_companion_species;
 
@@ -1825,7 +1824,7 @@ static void Task_PartnerInteractionMenu(u8 taskId)
         else
             (void)ShowFieldAutoScrollMessage(sPartnerInteractionNoLead);
     }
-    else if (selection == 3)
+    else if (selection == PARTNER_INTERACTION_TRAVEL)
     {
         if (CanChoosePartnerFlyDestination())
             CoopRegionMap_OpenPartnerFlyMap();
@@ -1834,11 +1833,45 @@ static void Task_PartnerInteractionMenu(u8 taskId)
     }
     else
     {
-        /* Trade and battle need their own consent and gameplay
-         * protocols. Keep the menu honest until those protocols are ready. */
+        /* Trade needs the gameplay ledger, and a partner-versus-partner
+         * battle needs an opponent-side lockstep engine. Keep the menu
+         * honest until those are ready. */
         (void)ShowFieldAutoScrollMessage(sPartnerInteractionUnavailable);
     }
 }
+
+static void Task_PartnerInteractionMenu(u8 taskId)
+{
+    s8 selection = Menu_ProcessInputNoWrap();
+
+    if (selection == MENU_NOTHING_CHOSEN)
+        return;
+    ClosePartnerInteractionMenu();
+    if (selection == MENU_B_PRESSED || selection < 0
+     || selection >= PARTNER_INTERACTION_COUNT)
+        return;
+    RunPartnerInteraction(selection);
+}
+
+#if TESTING
+u8 CoopPresenceRuntime_TestInteractionMenuTask(void)
+{
+    return sCoopPresenceRuntime.interaction_menu_task;
+}
+
+/* Choose a menu entry exactly as the menu task does after input. */
+bool8 CoopPresenceRuntime_TestChooseInteraction(s8 selection)
+{
+    if (sCoopPresenceRuntime.interaction_menu_task == TASK_NONE)
+        return FALSE;
+    ClosePartnerInteractionMenu();
+    if (selection == MENU_B_PRESSED || selection < 0
+     || selection >= PARTNER_INTERACTION_COUNT)
+        return TRUE;
+    RunPartnerInteraction(selection);
+    return TRUE;
+}
+#endif
 
 static void OpenPartnerInteractionMenu(void)
 {
@@ -1867,7 +1900,8 @@ static void OpenPartnerInteractionMenu(void)
     sCoopPresenceRuntime.interaction_menu_controls_locked = TRUE;
     DrawStdWindowFrame(sCoopPresenceRuntime.interaction_menu_window, FALSE);
     DrawPartnerInteractionMenu();
-    InitMenuInUpperLeftCornerNormal(sCoopPresenceRuntime.interaction_menu_window, 5, 0);
+    InitMenuInUpperLeftCornerNormal(sCoopPresenceRuntime.interaction_menu_window,
+                                    PARTNER_INTERACTION_COUNT, 0);
 }
 
 static void ClosePartnerInteractionMenu(void)

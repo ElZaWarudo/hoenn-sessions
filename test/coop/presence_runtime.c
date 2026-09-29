@@ -64,6 +64,8 @@ _Static_assert(COOP_PRESENCE_INTERACTION_SIZE == 20,
 extern void CoopPresenceRuntime_RetireRemoteObjectOnReturnToField(u8 objectEventId);
 extern bool8 CoopPresenceRuntime_TestTrySetupDiveDownScript(void);
 extern u8 CoopPresenceRuntime_TestNameWindow(void);
+extern u8 CoopPresenceRuntime_TestInteractionMenuTask(void);
+extern bool8 CoopPresenceRuntime_TestChooseInteraction(s8 selection);
 
 static struct CoopPresenceSpawn RuntimeSpawn(u64 handle, u32 sequence)
 {
@@ -2012,4 +2014,175 @@ TEST("Cloud Coop companion publishes the lead's form")
 
     EndRuntimeFixture(&sRuntimeFixtureBackup);
     memcpy(gPlayerParty, sRuntimeTestPartyBackup, sizeof(sRuntimeTestPartyBackup));
+}
+
+enum
+{
+    RUNTIME_MENU_WAVE,
+    RUNTIME_MENU_TRADE,
+    RUNTIME_MENU_BATTLE,
+    RUNTIME_MENU_TRAVEL,
+    RUNTIME_MENU_CHECK,
+};
+
+static bool8 sMenuFixtureScriptWasEnabled;
+
+static void BeginPartnerMenuFixture(u64 handle)
+{
+    struct CoopBridgeMessage message;
+
+    sMenuFixtureScriptWasEnabled = ScriptContext_IsEnabled();
+    BeginPartnerFixture();
+    /* The menu and its notices wait for the runner's script to yield. */
+    if (sMenuFixtureScriptWasEnabled)
+        ScriptContext_Stop();
+    InitStandardTextBoxWindows();
+    InitFieldMessageBox();
+    SpawnHeldFixtureRemote(handle, 1, 1);
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+}
+
+static void EndPartnerMenuFixture(void)
+{
+    HideFieldMessageBox();
+    StopFieldMessage();
+    DeactivateAllTextPrinters();
+    if (sMenuFixtureScriptWasEnabled)
+        ScriptContext_Enable();
+    EndRuntimeFixture(&sRuntimeFixtureBackup);
+    FreeAllWindowBuffers();
+}
+
+static void OpenPartnerMenuFromInteraction(u64 handle, u32 sequence)
+{
+    struct CoopBridgeMessage message;
+
+    EXPECT_EQ(CoopPresenceRuntime_TestInteractionMenuTask(), TASK_NONE);
+    QueueRuntimeInteraction(handle, sequence);
+    CoopPresenceRuntime_Update();
+    EXPECT_NE(CoopPresenceRuntime_TestInteractionMenuTask(), TASK_NONE);
+    EXPECT(ArePlayerFieldControlsLocked());
+    /* Only the chosen entry's own frames are asserted afterwards. */
+    while (CoopNetBridge_DequeueGameToNetwork(&message))
+        ;
+}
+
+static void ChoosePartnerMenuEntry(s8 selection)
+{
+    EXPECT(CoopPresenceRuntime_TestChooseInteraction(selection));
+    EXPECT_EQ(CoopPresenceRuntime_TestInteractionMenuTask(), TASK_NONE);
+    EXPECT(!ArePlayerFieldControlsLocked());
+}
+
+TEST("Cloud Coop forwarded partner interaction opens the partner menu")
+{
+    BeginPartnerMenuFixture(70);
+
+    /* The partner pressed A on this player: the forwarded interaction opens
+     * the menu on the next overworld update and locks field input. */
+    OpenPartnerMenuFromInteraction(70, 1);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+
+    /* B closes the menu without an action or a notice. */
+    ChoosePartnerMenuEntry(MENU_B_PRESSED);
+    EXPECT_EQ(GetFieldMessageBoxMode(), FIELD_MESSAGE_BOX_HIDDEN);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    /* A later forwarded interaction opens it again. */
+    OpenPartnerMenuFromInteraction(70, 2);
+    ChoosePartnerMenuEntry(MENU_B_PRESSED);
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Wave sends the heart emote")
+{
+    struct CoopBridgeMessage message;
+    struct CoopPresenceLocalSignal signal;
+    bool8 before[MAX_SPRITES];
+    u8 spriteId;
+
+    BeginPartnerMenuFixture(71);
+    OpenPartnerMenuFromInteraction(71, 1);
+    SnapshotRuntimeSprites(before);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_WAVE);
+
+    EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
+    EXPECT_EQ(message.type, COOP_BRIDGE_MESSAGE_SOCIAL_SIGNAL);
+    EXPECT(CoopPresence_DecodeLocalSignal(message.payload, message.length, &signal));
+    EXPECT_EQ(signal.kind, COOP_PRESENCE_SIGNAL_EMOTE);
+    EXPECT_EQ(signal.emote, COOP_PRESENCE_EMOTE_HEART);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    spriteId = FindNewRuntimeSprite(before);
+    EXPECT_NE(spriteId, MAX_SPRITES);
+    EXPECT_EQ(gSprites[spriteId].animNum, FOLLOWER_EMOTION_LOVE);
+    DestroyNewRuntimeSprites(before);
+    ExpectRuntimeNotice(COMPOUND_STRING("You waved at them."));
+
+    /* Inside the signal cooldown the wave is refused honestly. */
+    OpenPartnerMenuFromInteraction(71, 2);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_WAVE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("That option is not available yet."));
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Travel together explains shared travel without Fly")
+{
+    MainCallback callback2;
+
+    BeginPartnerMenuFixture(72);
+    EXPECT(!CoopNetBridge_IsGrouped());
+    OpenPartnerMenuFromInteraction(72, 1);
+    callback2 = gMain.callback2;
+    ChoosePartnerMenuEntry(RUNTIME_MENU_TRAVEL);
+    /* Without a group and a Fly user the partner fly map stays closed. */
+    EXPECT(gMain.callback2 == callback2);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("Use FLY or a travel gate together."));
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Check Pokemon names the partner's lead")
+{
+    u8 expected[64];
+
+    BeginPartnerMenuFixture(73);
+    OpenPartnerMenuFromInteraction(73, 1);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_CHECK);
+    ExpectRuntimeNotice(COMPOUND_STRING("Partner's lead is unknown."));
+
+    QueueRuntimeCompanion(73, 1, SPECIES_VULPIX, 0, 0);
+    CoopPresenceRuntime_Update();
+    OpenPartnerMenuFromInteraction(73, 2);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_CHECK);
+    StringCopy(expected, COMPOUND_STRING("Partner's lead: "));
+    StringAppend(expected, GetSpeciesName(SPECIES_VULPIX));
+    StringAppend(expected, COMPOUND_STRING("."));
+    ExpectRuntimeNotice(expected);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+
+    EndPartnerMenuFixture();
+}
+
+TEST("Cloud Coop partner menu Battle and Trade stay unavailable placeholders")
+{
+    BeginPartnerMenuFixture(74);
+
+    /* Neither entry may reserve a battle or start a trade until the
+     * partner-versus-partner engine and the gameplay ledger exist. */
+    OpenPartnerMenuFromInteraction(74, 1);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_BATTLE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("That option is not available yet."));
+
+    OpenPartnerMenuFromInteraction(74, 2);
+    ChoosePartnerMenuEntry(RUNTIME_MENU_TRADE);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    ExpectRuntimeNotice(COMPOUND_STRING("That option is not available yet."));
+
+    EndPartnerMenuFixture();
 }
