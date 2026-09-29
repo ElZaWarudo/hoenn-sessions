@@ -6662,7 +6662,10 @@ mod tests {
         // SaveBlock1 scene facts change; seal each affected flash sector.
         for (offset, data) in [
             (0x04_usize, &[0_u8, 11][..]),
-            (0x14b8, &[0, 0][..]),
+            (
+                coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x408e - 0x4000),
+                &[0, 0][..],
+            ),
             (0x1270 + 0x26, &[0x04][..]),
             (0x1270 + 0x5c, &[0x40][..]),
         ] {

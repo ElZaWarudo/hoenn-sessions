@@ -45,10 +45,20 @@ pub const PC_STORAGE_CAPACITY: usize = 34_144;
 // parameterized by the destination map because the Dewford map number still
 // needs emulator verification.
 const SAVE_BLOCK1_LOCATION_OFFSET: usize = 0x04;
-const SAVE_BLOCK1_FLAGS_OFFSET: usize = 0x1270;
-const SAVE_BLOCK1_VARS_OFFSET: usize = 0x139c;
+/// SaveBlock1 layout of this ROM build; mirrored by `include/coop/save_layout.h`,
+/// which the ROM asserts against its structs (see `layout_tests`).
+pub const SAVE_BLOCK1_MONEY_OFFSET: usize = 0x490;
+pub const SAVE_BLOCK1_FLAGS_OFFSET: usize = 0x1270;
+pub const SAVE_BLOCK1_FLAG_BYTES: usize = 0x18b;
+pub const SAVE_BLOCK1_VARS_OFFSET: usize = 0x13fc;
+pub const SAVE_BLOCK1_VAR_COUNT: usize = 0x18c;
+pub const SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET: usize = 0xb4;
+pub const TRAINER_FLAGS_START: usize = 0x500;
+pub const TRAINER_FLAGS_END: usize = 0xb55;
+const VAR_BOARD_BRINEY_BOAT_STATE: usize = 0x408e;
 const SAVE_BLOCK1_BILL_EVIDENCE_END: usize = SAVE_BLOCK1_VARS_OFFSET + 2 * (0x18a + 1);
-const SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET: usize = 0x14b8;
+const SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET: usize =
+    SAVE_BLOCK1_VARS_OFFSET + 2 * (VAR_BOARD_BRINEY_BOAT_STATE - 0x4000);
 const SAVE_BLOCK1_EVIDENCE_END: usize =
     SAVE_BLOCK1_BOARD_BRINEY_BOAT_STATE_OFFSET + std::mem::size_of::<u16>();
 const FLAG_NORMAN_MATCH_CALL_BYTE_OFFSET: usize = SAVE_BLOCK1_FLAGS_OFFSET + 0x26;
@@ -1250,3 +1260,57 @@ fn read_array<const LENGTH: usize>(bytes: &[u8], offset: usize) -> [u8; LENGTH] 
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod layout_tests {
+    fn header_value(header: &str, name: &str) -> usize {
+        let line = header
+            .lines()
+            .find(|line| line.starts_with(&format!("#define {name} ")))
+            .unwrap_or_else(|| panic!("save_layout.h lacks {name}"));
+        let value = line.rsplit(' ').next().expect("value");
+        usize::from_str_radix(value.trim_start_matches("0x"), 16).expect("hex value")
+    }
+
+    #[test]
+    fn server_offsets_match_the_rom_asserted_layout() {
+        let header = include_str!("../../../../include/coop/save_layout.h");
+        for (name, value) in [
+            (
+                "COOP_SAVE_LAYOUT_SB1_MONEY",
+                super::SAVE_BLOCK1_MONEY_OFFSET,
+            ),
+            (
+                "COOP_SAVE_LAYOUT_SB1_FLAGS",
+                super::SAVE_BLOCK1_FLAGS_OFFSET,
+            ),
+            (
+                "COOP_SAVE_LAYOUT_SB1_FLAG_BYTES",
+                super::SAVE_BLOCK1_FLAG_BYTES,
+            ),
+            ("COOP_SAVE_LAYOUT_SB1_VARS", super::SAVE_BLOCK1_VARS_OFFSET),
+            (
+                "COOP_SAVE_LAYOUT_SB1_VAR_COUNT",
+                super::SAVE_BLOCK1_VAR_COUNT,
+            ),
+            (
+                "COOP_SAVE_LAYOUT_SB2_ENCRYPTION_KEY",
+                super::SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET,
+            ),
+            (
+                "COOP_SAVE_LAYOUT_TRAINER_FLAGS_START",
+                super::TRAINER_FLAGS_START,
+            ),
+            (
+                "COOP_SAVE_LAYOUT_TRAINER_FLAGS_END",
+                super::TRAINER_FLAGS_END,
+            ),
+        ] {
+            assert_eq!(header_value(header, name), value, "{name}");
+        }
+        assert!(
+            super::SAVE_BLOCK1_FLAGS_OFFSET + super::SAVE_BLOCK1_FLAG_BYTES
+                <= super::SAVE_BLOCK1_VARS_OFFSET
+        );
+    }
+}

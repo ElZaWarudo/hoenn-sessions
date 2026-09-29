@@ -891,10 +891,10 @@ fn validate_wally_story_delta(
     source: &coop_save::ValidatedSave,
     incoming: &coop_save::ValidatedSave,
 ) -> Result<(), Phase2Error> {
-    const FLAGS_OFFSET: usize = 0x1270;
-    const FLAG_BYTES: usize = 0x960 / 8;
-    const VARS_OFFSET: usize = 0x139c;
-    const VAR_COUNT: usize = 0x418b - 0x4000 + 1;
+    const FLAGS_OFFSET: usize = coop_save::SAVE_BLOCK1_FLAGS_OFFSET;
+    const FLAG_BYTES: usize = coop_save::SAVE_BLOCK1_FLAG_BYTES;
+    const VARS_OFFSET: usize = coop_save::SAVE_BLOCK1_VARS_OFFSET;
+    const VAR_COUNT: usize = coop_save::SAVE_BLOCK1_VAR_COUNT;
     let before_flags = source
         .save_block1_range(FLAGS_OFFSET, FLAG_BYTES)
         .ok_or(Phase2Error::Conflict)?;
@@ -2311,7 +2311,7 @@ mod tests {
                 }
                 rewrite_sector_checksum(&mut bytes, logical);
             }
-            let offset = 0x139c + 2 * (0x40c3 - 0x4000);
+            let offset = coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x40c3 - 0x4000);
             let logical = 1 + offset / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
             let physical = selected_physical(&bytes, logical);
             let position = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE
@@ -4993,7 +4993,7 @@ mod tests {
             Err(Phase2Error::Conflict)
         );
         let mut forged_bytes = wally_story_save(true, true);
-        let offset = 0x139c + 2 * (0x4020 - 0x4000);
+        let offset = coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x4020 - 0x4000);
         let logical = 1 + offset / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
         let physical = selected_physical(&forged_bytes, logical);
         let position = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE

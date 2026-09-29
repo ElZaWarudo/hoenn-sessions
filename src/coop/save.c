@@ -1,8 +1,19 @@
 #include "global.h"
 #include "coop/progress.h"
 #include "coop/save.h"
+#include "coop/save_layout.h"
+#include "constants/flags.h"
 #include "load_save.h"
 #include "save.h"
+
+STATIC_ASSERT(offsetof(struct SaveBlock1, money) == COOP_SAVE_LAYOUT_SB1_MONEY, CoopSaveLayoutMoney);
+STATIC_ASSERT(offsetof(struct SaveBlock1, flags) == COOP_SAVE_LAYOUT_SB1_FLAGS, CoopSaveLayoutFlags);
+STATIC_ASSERT(offsetof(struct SaveBlock1, vars) == COOP_SAVE_LAYOUT_SB1_VARS, CoopSaveLayoutVars);
+STATIC_ASSERT(sizeof(((struct SaveBlock1 *)0)->flags) == COOP_SAVE_LAYOUT_SB1_FLAG_BYTES, CoopSaveLayoutFlagBytes);
+STATIC_ASSERT(VARS_COUNT == COOP_SAVE_LAYOUT_SB1_VAR_COUNT, CoopSaveLayoutVarCount);
+STATIC_ASSERT(offsetof(struct SaveBlock2, encryptionKey) == COOP_SAVE_LAYOUT_SB2_ENCRYPTION_KEY, CoopSaveLayoutKey);
+STATIC_ASSERT(TRAINER_FLAGS_START == COOP_SAVE_LAYOUT_TRAINER_FLAGS_START, CoopSaveLayoutTrainerStart);
+STATIC_ASSERT(TRAINER_FLAGS_END == COOP_SAVE_LAYOUT_TRAINER_FLAGS_END, CoopSaveLayoutTrainerEnd);
 
 #define COOP_SAVE_CRC_INITIAL 0xFFFFFFFFu
 #define COOP_SAVE_CRC_POLYNOMIAL 0xEDB88320u
