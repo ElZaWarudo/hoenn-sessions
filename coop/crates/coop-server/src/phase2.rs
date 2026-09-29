@@ -807,25 +807,6 @@ impl Phase2App {
         group_travel::inspect_group(&self.store, actor, group_id, fence)
     }
 
-    /// Moves both members through one server-owned route atomically.
-    ///
-    /// # Errors
-    ///
-    /// Returns an authentication, policy, conflict, capacity, or storage error.
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "public operation consumes the request at the service boundary"
-    )]
-    pub fn travel_group(
-        &self,
-        actor: AuthenticatedActor,
-        group_id: coop_cloud::GroupId,
-        request: coop_cloud::GroupTravelRequest,
-    ) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
-        let _gate = self.store.lock_runtime_transition_gate();
-        group_travel::travel(&self.store, actor, group_id, &request)
-    }
-
     /// Creates a pending two-member travel proposal from the current group state.
     ///
     /// # Errors

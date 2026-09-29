@@ -7060,6 +7060,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn group_invite_is_forwarded_to_a_ready_rom_as_a_padded_name() {
+        let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
+            .await
+            .unwrap();
+        let (mut bridge, mut bridge_peer) = bridge_writer_pair().await;
+        let (mut control, _control_peer) = control_writer_pair().await;
+        let mut deferred = VecDeque::new();
+        let mut session = ActiveSessionState {
+            checkpoint_state: CheckpointState::Idle,
+            expired_checkpoint: None,
+            acknowledged_rom_ready: true,
+            rearm_after_reboot: false,
+        };
+        let invite = |session_epoch, username: &str| {
+            Some(Ok(ControlCommand::GroupInviteReceived {
+                session_epoch,
+                username: username.to_owned(),
+            }))
+        };
+        sidecar
+            .handle_active_control_event(
+                invite(TEST_SESSION_EPOCH, "misty"),
+                &mut bridge,
+                &mut control,
+                &mut deferred,
+                &mut session,
+            )
+            .await
+            .unwrap();
+        let mut bytes = [0_u8; BRIDGE_FRAME_SIZE];
+        bridge_peer.read_exact(&mut bytes).await.unwrap();
+        let frame = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(frame.message_type(), MessageType::GroupInviteReceived);
+        assert_eq!(frame.session_epoch(), TEST_SESSION_EPOCH);
+        let mut expected = [0_u8; 32];
+        expected[..5].copy_from_slice(b"misty");
+        assert_eq!(frame.payload(), &expected);
+
+        // A stale epoch or a ROM that has not acknowledged readiness gets nothing.
+        sidecar
+            .handle_active_control_event(
+                invite(TEST_SESSION_EPOCH + 1, "misty"),
+                &mut bridge,
+                &mut control,
+                &mut deferred,
+                &mut session,
+            )
+            .await
+            .unwrap();
+        session.acknowledged_rom_ready = false;
+        sidecar
+            .handle_active_control_event(
+                invite(TEST_SESSION_EPOCH, "misty"),
+                &mut bridge,
+                &mut control,
+                &mut deferred,
+                &mut session,
+            )
+            .await
+            .unwrap();
+        assert_no_bridge_data(&mut bridge_peer).await;
+
+        // A name the ROM cannot render is a launcher protocol violation.
+        session.acknowledged_rom_ready = true;
+        for bad in ["m\u{e9}", &"a".repeat(33)] {
+            assert!(matches!(
+                sidecar
+                    .handle_active_control_event(
+                        invite(TEST_SESSION_EPOCH, bad),
+                        &mut bridge,
+                        &mut control,
+                        &mut deferred,
+                        &mut session,
+                    )
+                    .await,
+                Err(SidecarError::ProtocolViolation(_))
+            ));
+        }
+        assert_no_bridge_data(&mut bridge_peer).await;
+    }
+
+    #[tokio::test]
     async fn startup_group_travel_replay_is_retained_until_rom_ready() {
         let mut sidecar = LocalSidecar::bind_with_epoch(TEST_SESSION_EPOCH)
             .await

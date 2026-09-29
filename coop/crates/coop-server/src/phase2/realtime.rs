@@ -2498,6 +2498,94 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn rejected_interaction_replies_over_the_socket_and_keeps_it_open() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message as ClientMessage;
+
+        let (app, headers, request) = ticket_fixture();
+        let minted = mint_ticket(&app, &headers, &request).unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = app.router();
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(listener, router).await;
+        });
+        let mut websocket =
+            tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+                format!("ws://{address}/v1/realtime"),
+            )
+            .unwrap();
+        websocket.headers_mut().insert(
+            "authorization",
+            format!("Bearer {}", minted.ticket().expose_secret())
+                .parse()
+                .unwrap(),
+        );
+        let (mut socket, _) = tokio_tungstenite::connect_async(websocket).await.unwrap();
+        let send = |frame: ClientRealtimeFrameV1| {
+            ClientMessage::Text(
+                String::from_utf8(coop_cloud::encode_client_realtime_frame(&frame).unwrap())
+                    .unwrap()
+                    .into(),
+            )
+        };
+        socket
+            .send(send(ClientRealtimeFrameV1::player_state(local_state(
+                1, 1, 1,
+            ))))
+            .await
+            .unwrap();
+
+        // No partner owns this handle, so validation fails softly.
+        let absent = coop_protocol::PresenceHandle::new(0x0123_4567_89ab_cdef).unwrap();
+        let interaction = || {
+            ClientRealtimeFrameV1::interact_remote_player(
+                coop_protocol::PresenceInteractionV1::new(absent, 1, 1, 1, 2).unwrap(),
+            )
+        };
+        let expected =
+            ServerRealtimeFrameV1::interaction_rejected(coop_cloud::InteractionRejectedV1::new(
+                absent,
+                coop_cloud::InteractionRejectReason::TargetUnavailable,
+            ));
+        for (round, state) in [(0_u32, None), (1, Some(local_state(2, 1, 2)))] {
+            if let Some(state) = state {
+                // The session is still live: it accepts ordinary state updates.
+                socket
+                    .send(send(ClientRealtimeFrameV1::player_state(state)))
+                    .await
+                    .unwrap();
+            }
+            socket.send(send(interaction())).await.unwrap();
+            let rejected = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    match socket.next().await {
+                        Some(Ok(ClientMessage::Text(text))) => {
+                            let frame =
+                                coop_cloud::decode_server_realtime_frame(text.as_bytes()).unwrap();
+                            if frame == expected {
+                                return frame;
+                            }
+                        }
+                        Some(Ok(ClientMessage::Close(close))) => {
+                            panic!("round {round}: socket closed after soft rejection: {close:?}")
+                        }
+                        Some(Ok(_)) => {}
+                        other => panic!("round {round}: socket ended: {other:?}"),
+                    }
+                }
+            })
+            .await
+            .expect("interaction reply");
+            assert_eq!(rejected, expected);
+        }
+        socket.close(None).await.unwrap();
+        server.abort();
+    }
+
     #[test]
     fn idle_backstop_bounds_silent_sockets() {
         let now = Instant::now();

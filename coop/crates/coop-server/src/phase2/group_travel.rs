@@ -1527,17 +1527,6 @@ pub(crate) fn inspect_group(
     })
 }
 
-/// The former direct travel operation is intentionally denied for every caller.
-/// Group movement is committed only by accepting a live consent proposal.
-pub(crate) fn travel(
-    _store: &Store,
-    _actor: AuthenticatedActor,
-    _group_id: GroupId,
-    _request: &coop_cloud::GroupTravelRequest,
-) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
-    Err(Phase2Error::Forbidden)
-}
-
 fn proposal_candidates(store: &Store) -> Result<Vec<GroupTravelProposalId>, Phase2Error> {
     (0..MAX_ID_CANDIDATES)
         .map(|_| {
@@ -3507,7 +3496,6 @@ mod tests {
         }
     }
     use coop_cloud::CharacterCloudState;
-    use coop_cloud::GroupTravelRequest;
     use coop_cloud::{
         AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, IdempotencyKey,
         InvitationCode, OnlineAction, OnlineActionRequest, OnlineActionResponse,
@@ -5108,17 +5096,6 @@ mod tests {
             .expect("proposal");
         assert_eq!(proposal.status, GroupTravelProposalStatus::Pending);
 
-        let legacy = GroupTravelRequest::new(
-            first_lease.fence(),
-            "HOENN:SLATEPORT_SEVII_FERRY",
-            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
-        )
-        .expect("travel request");
-        assert_eq!(
-            travel(&app.store, first, group_id, &legacy),
-            Err(Phase2Error::Forbidden)
-        );
-
         let decline = GroupTravelActionRequest::new(
             second_lease.fence(),
             GroupTravelAction::Decline,
@@ -5128,10 +5105,6 @@ mod tests {
             act_on_travel_proposal(&app.store, second, group_id, proposal.proposal_id, &decline)
                 .expect("decline");
         assert_eq!(declined.status, GroupTravelProposalStatus::Declined);
-        assert_eq!(
-            travel(&app.store, first, group_id, &legacy),
-            Err(Phase2Error::Forbidden)
-        );
     }
 
     #[test]
@@ -5483,15 +5456,16 @@ mod tests {
             inspect_group(&app.store, first_actor, group_id, first_lease.fence()),
             Err(Phase2Error::Authentication)
         );
-        let travel_request = GroupTravelRequest::new(
+        let proposal_request = GroupTravelProposalRequest::new_with_departure(
             first_lease.fence(),
-            "HOENN:SLATEPORT_SEVII_FERRY",
+            "HOENN:FLY_LITTLEROOT",
+            GroupTravelDeparture::Fly,
             IdempotencyKey::new(Uuid::new_v4()).expect("key"),
         )
-        .expect("travel request");
+        .expect("proposal request");
         assert_eq!(
-            travel(&app.store, first_actor, group_id, &travel_request),
-            Err(Phase2Error::Forbidden)
+            create_travel_proposal(&app.store, first_actor, group_id, &proposal_request),
+            Err(Phase2Error::Authentication)
         );
 
         app.store
@@ -5900,16 +5874,14 @@ mod tests {
             })
             .expect("state");
         fail_writes.store(true, Ordering::Release);
-        let request = GroupTravelRequest::new(
+        let request = GroupTravelProposalRequest::new_with_departure(
             first_lease.fence(),
-            "HOENN:SLATEPORT_SEVII_FERRY",
+            "HOENN:FLY_LITTLEROOT",
+            GroupTravelDeparture::Fly,
             IdempotencyKey::new(Uuid::new_v4()).expect("key"),
         )
-        .expect("travel");
-        assert_eq!(
-            app.travel_group(first_actor, group_id, request),
-            Err(Phase2Error::Forbidden)
-        );
+        .expect("proposal request");
+        assert!(create_travel_proposal(&app.store, first_actor, group_id, &request).is_err());
         let after = app
             .store
             .inspect_state(|state| {
