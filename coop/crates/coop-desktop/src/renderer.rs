@@ -16,7 +16,7 @@ use coop_launcher::{
 };
 use eframe::egui::{self, Align, Color32, Layout, RichText, TextEdit};
 
-use crate::backend::{BackendEvent, BackendHandle, StoryRecoveryStatus};
+use crate::backend::{BackendEvent, BackendHandle, JoinFailure, StoryRecoveryStatus};
 
 pub struct DesktopApp {
     controller: Controller,
@@ -37,6 +37,12 @@ pub struct DesktopApp {
     story_recovery_status: Option<StoryRecoveryStatus>,
     story_recovery_busy: bool,
     confirm_story_abandon: bool,
+    join_code: String,
+    join_busy: bool,
+    join_message: Option<&'static str>,
+    /// File the bootstrapper writes when a `hoenn-sessions://join/` link opens.
+    join_inbox: Option<std::path::PathBuf>,
+    last_inbox_check: Option<Instant>,
 }
 
 impl DesktopApp {
@@ -64,6 +70,44 @@ impl DesktopApp {
             story_recovery_status: None,
             story_recovery_busy: false,
             confirm_story_abandon: false,
+            join_code: String::new(),
+            join_busy: false,
+            join_message: None,
+            join_inbox: None,
+            last_inbox_check: None,
+        }
+    }
+
+    /// Watches the file a join link hands over through the bootstrapper.
+    pub fn set_join_inbox(&mut self, inbox: std::path::PathBuf) {
+        self.join_inbox = Some(inbox);
+    }
+
+    /// Pre-fills the join box; the player still presses Join to redeem.
+    pub fn prefill_join(&mut self, text: &str) -> bool {
+        match coop_cloud::pairing_code_from_join_text(text) {
+            Some(code) => {
+                self.join_code = code.as_str().to_owned();
+                self.join_message = Some("Join link received. Press Join to team up.");
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn check_join_inbox(&mut self) {
+        if self
+            .last_inbox_check
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(1))
+        {
+            return;
+        }
+        self.last_inbox_check = Some(Instant::now());
+        let Some(inbox) = self.join_inbox.clone() else {
+            return;
+        };
+        if let Some(text) = take_join_inbox(&inbox) {
+            let _ = self.prefill_join(&text);
         }
     }
 
@@ -137,6 +181,15 @@ impl DesktopApp {
                             self.partner_error = false;
                         }
                         Err(()) => self.partner_error = true,
+                    }
+                    continue;
+                }
+                BackendEvent::PairingRedeemed(result) => {
+                    self.join_busy = false;
+                    self.join_message = Some(join_result_copy(result));
+                    if result.is_ok() {
+                        self.join_code.clear();
+                        self.last_partner_refresh = None;
                     }
                     continue;
                 }
@@ -326,7 +379,7 @@ impl DesktopApp {
         }
     }
 
-    fn draw_partner(&self, ui: &mut egui::Ui) {
+    fn draw_partner(&mut self, ui: &mut egui::Ui) {
         ui.add_space(16.0);
         ui.separator();
         ui.heading("Partner");
@@ -376,10 +429,63 @@ impl DesktopApp {
         }
         if self.partner_error {
             ui.label("Partner status is unavailable. Retrying…");
-        } else if self.runtime_active {
-            ui.label("Status updates after play ends");
+        }
+        self.draw_join(ui);
+    }
+
+    fn draw_join(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(8.0);
+        ui.label("Join a partner by code");
+        ui.horizontal(|ui| {
+            ui.add(
+                TextEdit::singleline(&mut self.join_code)
+                    .hint_text("ABC-234")
+                    .char_limit(7)
+                    .desired_width(96.0),
+            );
+            let ready = self.runtime_active && !self.join_busy && !self.join_code.is_empty();
+            if ui.add_enabled(ready, egui::Button::new("Join")).clicked() {
+                if self
+                    .backend
+                    .redeem_pairing_code(self.join_code.clone())
+                    .is_ok()
+                {
+                    self.join_busy = true;
+                    self.join_message = Some("Joining…");
+                } else {
+                    self.join_message = Some(join_result_copy(Err(JoinFailure::Unavailable)));
+                }
+            }
+        });
+        if !self.runtime_active {
+            ui.label("Press Play first; you both stay where you are when the group forms.");
+        }
+        if let Some(message) = self.join_message {
+            ui.label(message);
         }
     }
+}
+
+fn join_result_copy(result: Result<(), JoinFailure>) -> &'static str {
+    match result {
+        Ok(()) => "Grouped with your partner. You both stay on your own maps.",
+        Err(JoinFailure::InvalidCode) => "That is not a pairing code. Codes look like ABC-234.",
+        Err(JoinFailure::NotRunning) => "Press Play first, then join with the code.",
+        Err(JoinFailure::Refused) => {
+            "That code is expired, already used, or you are already in a group."
+        }
+        Err(JoinFailure::Unavailable) => "The service is unavailable. Try the code again shortly.",
+    }
+}
+
+/// Reads and removes a small join-link handoff file written by the bootstrapper.
+fn take_join_inbox(inbox: &std::path::Path) -> Option<String> {
+    let bytes = std::fs::read(inbox).ok()?;
+    let _ = std::fs::remove_file(inbox);
+    if bytes.len() > 128 {
+        return None;
+    }
+    String::from_utf8(bytes).ok()
 }
 
 fn last_seen_label(timestamp: Option<coop_cloud::UnixTimestampMillis>) -> String {
@@ -426,7 +532,23 @@ fn last_seen_label_at(
 
 #[cfg(test)]
 mod partner_tests {
-    use super::last_seen_label_at;
+    use super::{last_seen_label_at, take_join_inbox};
+
+    #[test]
+    fn join_inbox_is_consumed_once_and_bounded() {
+        let directory = tempfile::tempdir().unwrap();
+        let inbox = directory.path().join("join-link.txt");
+        assert_eq!(take_join_inbox(&inbox), None);
+        std::fs::write(&inbox, "hoenn-sessions://join/ABC-234").unwrap();
+        assert_eq!(
+            take_join_inbox(&inbox).as_deref(),
+            Some("hoenn-sessions://join/ABC-234")
+        );
+        assert!(!inbox.exists());
+        std::fs::write(&inbox, vec![b'A'; 129]).unwrap();
+        assert_eq!(take_join_inbox(&inbox), None);
+        assert!(!inbox.exists());
+    }
     use coop_cloud::UnixTimestampMillis;
 
     #[test]
@@ -473,8 +595,8 @@ impl eframe::App for DesktopApp {
             }
         }
         self.apply_events(context);
+        self.check_join_inbox();
         if self.authenticated
-            && !self.runtime_active
             && self
                 .last_partner_refresh
                 .is_none_or(|at| at.elapsed() >= Duration::from_secs(30))

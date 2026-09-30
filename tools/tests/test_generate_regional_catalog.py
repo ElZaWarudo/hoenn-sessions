@@ -3,6 +3,7 @@
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -44,6 +45,58 @@ class RegionalCatalogTests(unittest.TestCase):
                     catalog.protocol_region(
                         "REGION_JOHTO", section, sections, sevii, special_area
                     )
+
+    def test_catalog_carries_layout_bounds_and_vanilla_escape_endpoints(self):
+        records = catalog._build_catalog_records()
+        targets, ranges = catalog.build_escape_targets(records)
+        granite = next(record for record in records if record.map_key == "GRANITE_CAVE_1F")
+
+        self.assertEqual((granite.width, granite.height), (42, 15))
+        self.assertTrue(granite.allow_escaping)
+        start, length = ranges[granite.map_key]
+        self.assertIn((0, 21, 48, 17), targets[start : start + length])
+
+        littleroot = next(record for record in records if record.map_key == "LITTLEROOT_TOWN")
+        self.assertEqual((littleroot.width, littleroot.height), (20, 20))
+        self.assertFalse(littleroot.allow_escaping)
+        self.assertEqual(ranges[littleroot.map_key][1], 0)
+
+    def test_escape_endpoints_follow_scripts_and_indoor_chains(self):
+        records = catalog._build_catalog_records()
+        targets, ranges = catalog.build_escape_targets(records)
+        by_coordinates = {(record.group, record.number): record for record in records}
+
+        def endpoints(map_key):
+            start, length = ranges[map_key]
+            return {
+                (by_coordinates[(group, number)].map_key, x, y)
+                for group, number, x, y in targets[start : start + length]
+            }
+
+        # Deeper floors inherit the entrance endpoint set by UpdateEscapeWarp.
+        self.assertEqual(endpoints("GRANITE_CAVE_B2F"), {("ROUTE106", 48, 17)})
+        # A map-local setescapewarp supplies the endpoint for outdoor-typed maps.
+        self.assertEqual(
+            endpoints("SIX_ISLAND_PATTERN_BUSH"),
+            {("SIX_ISLAND_GREEN_PATH", 45, 10), ("SIX_ISLAND_GREEN_PATH", 64, 10)},
+        )
+        self.assertIn(("SOOTOPOLIS_CITY", 31, 17), endpoints("CAVE_OF_ORIGIN_B1F"))
+        # The shared abnormal-weather script seeds the Marine Cave dive entry.
+        self.assertIn(("ROUTE105", 11, 29), endpoints("MARINE_CAVE_END"))
+        # Every endpoint lies inside its target layout.
+        for group, number, x, y in targets:
+            target = by_coordinates[(group, number)]
+            self.assertLess(x, target.width)
+            self.assertLess(y, target.height)
+
+    def test_setescapewarp_parser_rejects_warp_id_form(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "scripts.inc"
+            path.write_text("Label::\n\tsetescapewarp MAP_ROUTE101, 255, 3, 4\n", encoding="utf-8")
+            self.assertEqual(catalog.parse_setescapewarps(path), [("MAP_ROUTE101", 3, 4)])
+            path.write_text("Label::\n\tsetescapewarp MAP_ROUTE101, 2, 3, 4\n", encoding="utf-8")
+            with self.assertRaises(catalog.CatalogError):
+                catalog.parse_setescapewarps(path)
 
 
 if __name__ == "__main__":

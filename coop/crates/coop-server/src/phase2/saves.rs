@@ -1617,7 +1617,7 @@ pub(crate) fn finalize(
         )
         .map_err(|_| Phase2Error::Internal)?;
         if let Some(source_save) = source_save.as_ref() {
-            super::battles::apply_commit_grant(
+            super::ledger::apply_on_finalize(
                 state,
                 actor,
                 request,

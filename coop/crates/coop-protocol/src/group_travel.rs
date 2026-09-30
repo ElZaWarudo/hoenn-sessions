@@ -178,9 +178,18 @@ pub enum GroupTravelRoute {
     SeagallopBillOneCinnabar = 161,
     CableCarRoute112MtChimney = 162,
     CableCarMtChimneyRoute112 = 163,
+    /// Consent-gated Dig to the exact map/coordinate reported by the ROM.
+    Dig = 164,
+    /// Consent-gated Escape Rope to the exact map/coordinate reported by the ROM.
+    EscapeRope = 165,
 }
 
 impl GroupTravelRoute {
+    #[must_use]
+    pub const fn is_dynamic(self) -> bool {
+        matches!(self, Self::Dig | Self::EscapeRope)
+    }
+
     #[must_use]
     pub const fn era(self) -> GroupTravelEra {
         match self {
@@ -307,6 +316,7 @@ impl GroupTravelRoute {
             Self::CableCarRoute112MtChimney | Self::CableCarMtChimneyRoute112 => {
                 GroupTravelEra::Hoenn
             }
+            Self::Dig | Self::EscapeRope => GroupTravelEra::Hoenn,
             Self::FlyJohtoNewbark
             | Self::FlyJohtoCherrygrove
             | Self::FlyJohtoViolet
@@ -525,6 +535,7 @@ impl GroupTravelRoute {
             Self::FlyHoennEverGrandeCenter => GroupTravelDestination::HoennEverGrandeCenter,
             Self::FlyHoennEverGrandeLeague => GroupTravelDestination::HoennEverGrandeLeague,
             Self::FlyHoennBattleFrontier => GroupTravelDestination::HoennBattleFrontier,
+            Self::Dig | Self::EscapeRope => GroupTravelDestination::Dynamic,
         }
     }
 
@@ -692,6 +703,8 @@ impl GroupTravelRoute {
             161 => Ok(Self::SeagallopBillOneCinnabar),
             162 => Ok(Self::CableCarRoute112MtChimney),
             163 => Ok(Self::CableCarMtChimneyRoute112),
+            164 => Ok(Self::Dig),
+            165 => Ok(Self::EscapeRope),
             value => Err(GroupTravelCodecError::InvalidRoute(value)),
         }
     }
@@ -712,6 +725,9 @@ pub enum GroupTravelDeparture {
     Gate = 4,
     Fly = 5,
     CableCar = 6,
+    Teleport = 7,
+    Dig = 8,
+    EscapeRope = 9,
 }
 
 impl GroupTravelDeparture {
@@ -723,6 +739,9 @@ impl GroupTravelDeparture {
             4 => Ok(Self::Gate),
             5 => Ok(Self::Fly),
             6 => Ok(Self::CableCar),
+            7 => Ok(Self::Teleport),
+            8 => Ok(Self::Dig),
+            9 => Ok(Self::EscapeRope),
             value => Err(GroupTravelCodecError::InvalidDeparture(value)),
         }
     }
@@ -846,11 +865,16 @@ impl GroupTravelDeparture {
                     | GroupTravelRoute::ReturnGateLater
             ),
             Self::Fly => route.is_fly(),
+            Self::Teleport => {
+                route.is_fly() && (route as u8) > (GroupTravelRoute::FlyLittleroot as u8)
+            }
             Self::CableCar => matches!(
                 route,
                 GroupTravelRoute::CableCarRoute112MtChimney
                     | GroupTravelRoute::CableCarMtChimneyRoute112
             ),
+            Self::Dig => matches!(route, GroupTravelRoute::Dig),
+            Self::EscapeRope => matches!(route, GroupTravelRoute::EscapeRope),
         }
     }
 }
@@ -972,6 +996,8 @@ pub enum GroupTravelDestination {
     BillCinnabar = 96,
     MtChimneyCableCarStation = 97,
     Route112CableCarStation = 98,
+    /// Dynamic routes carry their map identity in the endpoint extension.
+    Dynamic = 99,
 }
 
 impl GroupTravelDestination {
@@ -1066,6 +1092,7 @@ impl GroupTravelDestination {
             96 => Ok(Self::BillCinnabar),
             97 => Ok(Self::MtChimneyCableCarStation),
             98 => Ok(Self::Route112CableCarStation),
+            99 => Ok(Self::Dynamic),
             value => Err(GroupTravelCodecError::InvalidDestination(value)),
         }
     }
@@ -1142,6 +1169,56 @@ pub enum GroupTravelServerKind {
     SceneReady = 7,
 }
 
+/// The exact dynamic travel endpoint carried by Dig and Escape Rope records.
+///
+/// The ROM bridge deliberately uses one-byte map coordinates and signed
+/// one-byte player coordinates.  Source coordinates identify the map the two
+/// players are currently on; target coordinates are immutable proposal data.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupTravelEndpoint {
+    pub source_map_group: u8,
+    pub source_map_number: u8,
+    pub target_map_group: u8,
+    pub target_map_number: u8,
+    pub target_x: i8,
+    pub target_y: i8,
+}
+
+impl GroupTravelEndpoint {
+    #[must_use]
+    pub const fn new(
+        source_map_group: u8,
+        source_map_number: u8,
+        target_map_group: u8,
+        target_map_number: u8,
+        target_x: i8,
+        target_y: i8,
+    ) -> Self {
+        Self {
+            source_map_group,
+            source_map_number,
+            target_map_group,
+            target_map_number,
+            target_x,
+            target_y,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_zero(self) -> bool {
+        self.source_map_group == 0
+            && self.source_map_number == 0
+            && self.target_map_group == 0
+            && self.target_map_number == 0
+            && self.target_x == 0
+            && self.target_y == 0
+    }
+}
+
+/// Compatibility alias for callers that name the extension explicitly.
+pub type DynamicTravelEndpoint = GroupTravelEndpoint;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupTravelClientRecord {
@@ -1152,6 +1229,9 @@ pub struct GroupTravelClientRecord {
     pub proposal_id: [u8; 16],
     pub result: GroupTravelResult,
     pub reason: GroupTravelReason,
+    /// Present only for Dig and Escape Rope routes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1166,6 +1246,9 @@ pub struct GroupTravelServerRecord {
     pub reason: GroupTravelReason,
     /// Server-derived whole seconds remaining for a pending vote (byte 28).
     pub remaining_seconds: u8,
+    /// Present only for Dig and Escape Rope routes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
 }
 
 #[derive(Debug, Error, Eq, PartialEq)]
@@ -1194,6 +1277,8 @@ pub enum GroupTravelCodecError {
     InvalidProposalId,
     #[error("route, era, and destination disagree")]
     RouteMismatch,
+    #[error("dynamic route endpoint is missing or static route endpoint is present")]
+    EndpointMismatch,
     #[error("result or reason is invalid for this phase")]
     InvalidOutcome,
     #[error("reserved group-travel byte {0} must be zero")]
@@ -1207,26 +1292,41 @@ type DecodedCommon = (
     [u8; 16],
     GroupTravelResult,
     GroupTravelReason,
+    Option<GroupTravelEndpoint>,
 );
 
 fn decode_common(bytes: &[u8]) -> Result<DecodedCommon, GroupTravelCodecError> {
     if bytes.len() != GROUP_TRAVEL_RECORD_SIZE {
         return Err(GroupTravelCodecError::InvalidLength(bytes.len()));
     }
-    for index in [7_usize, 29, 30, 31] {
-        if bytes[index] != 0 {
-            return Err(GroupTravelCodecError::NonZeroPadding(index));
-        }
-    }
     let route = GroupTravelRoute::from_wire(bytes[1])?;
+    let endpoint = if matches!(route, GroupTravelRoute::Dig | GroupTravelRoute::EscapeRope) {
+        Some(GroupTravelEndpoint::new(
+            bytes[2],
+            bytes[3],
+            bytes[7],
+            bytes[29],
+            bytes[30] as i8,
+            bytes[31] as i8,
+        ))
+    } else {
+        for index in [7_usize, 29, 30, 31] {
+            if bytes[index] != 0 {
+                return Err(GroupTravelCodecError::NonZeroPadding(index));
+            }
+        }
+        None
+    };
     let departure = GroupTravelDeparture::from_wire(bytes[6])?;
     if !departure.matches_route(route) {
         return Err(GroupTravelCodecError::RouteMismatch);
     }
-    let era = GroupTravelEra::from_wire(bytes[2])?;
-    let destination = GroupTravelDestination::from_wire(bytes[3])?;
-    if era != route.era() || destination != route.destination() {
-        return Err(GroupTravelCodecError::RouteMismatch);
+    if endpoint.is_none() {
+        let era = GroupTravelEra::from_wire(bytes[2])?;
+        let destination = GroupTravelDestination::from_wire(bytes[3])?;
+        if era != route.era() || destination != route.destination() {
+            return Err(GroupTravelCodecError::RouteMismatch);
+        }
     }
     let request_id = u32::from_le_bytes(bytes[8..12].try_into().expect("fixed range"));
     if request_id == 0 {
@@ -1240,6 +1340,7 @@ fn decode_common(bytes: &[u8]) -> Result<DecodedCommon, GroupTravelCodecError> {
         proposal_id,
         GroupTravelResult::from_wire(bytes[4])?,
         GroupTravelReason::from_wire(bytes[5])?,
+        endpoint,
     ))
 }
 
@@ -1251,13 +1352,23 @@ fn encode_common(
     proposal_id: [u8; 16],
     result: GroupTravelResult,
     reason: GroupTravelReason,
+    endpoint: Option<GroupTravelEndpoint>,
 ) -> [u8; GROUP_TRAVEL_RECORD_SIZE] {
     let mut bytes = [0; GROUP_TRAVEL_RECORD_SIZE];
     bytes[0] = kind;
     bytes[1] = route as u8;
     bytes[6] = departure as u8;
-    bytes[2] = route.era() as u8;
-    bytes[3] = route.destination() as u8;
+    if let Some(endpoint) = endpoint {
+        bytes[2] = endpoint.source_map_group;
+        bytes[3] = endpoint.source_map_number;
+        bytes[7] = endpoint.target_map_group;
+        bytes[29] = endpoint.target_map_number;
+        bytes[30] = endpoint.target_x as u8;
+        bytes[31] = endpoint.target_y as u8;
+    } else {
+        bytes[2] = route.era() as u8;
+        bytes[3] = route.destination() as u8;
+    }
     bytes[4] = result as u8;
     bytes[5] = reason as u8;
     bytes[8..12].copy_from_slice(&request_id.to_le_bytes());
@@ -1284,6 +1395,7 @@ impl GroupTravelClientRecord {
             self.proposal_id,
             self.result,
             self.reason,
+            self.endpoint,
         ))
     }
     /// Decodes and strictly validates a client record.
@@ -1291,7 +1403,8 @@ impl GroupTravelClientRecord {
     /// # Errors
     /// Returns an error for size, enum, correlation, outcome, or padding violations.
     pub fn decode(bytes: &[u8]) -> Result<Self, GroupTravelCodecError> {
-        let (route, departure, request_id, proposal_id, result, reason) = decode_common(bytes)?;
+        let (route, departure, request_id, proposal_id, result, reason, endpoint) =
+            decode_common(bytes)?;
         if bytes[28] != 0 {
             return Err(GroupTravelCodecError::NonZeroPadding(28));
         }
@@ -1312,11 +1425,15 @@ impl GroupTravelClientRecord {
             proposal_id,
             result,
             reason,
+            endpoint,
         };
         value.validate()?;
         Ok(value)
     }
     fn validate(&self) -> Result<(), GroupTravelCodecError> {
+        if self.route.is_dynamic() != self.endpoint.is_some() {
+            return Err(GroupTravelCodecError::EndpointMismatch);
+        }
         if matches!(
             self.route,
             GroupTravelRoute::FerryBrineyHouseDewford
@@ -1405,6 +1522,7 @@ impl GroupTravelServerRecord {
             self.proposal_id,
             self.result,
             self.reason,
+            self.endpoint,
         );
         bytes[28] = self.remaining_seconds;
         Ok(bytes)
@@ -1414,7 +1532,8 @@ impl GroupTravelServerRecord {
     /// # Errors
     /// Returns an error for size, enum, correlation, outcome, or padding violations.
     pub fn decode(bytes: &[u8]) -> Result<Self, GroupTravelCodecError> {
-        let (route, departure, request_id, proposal_id, result, reason) = decode_common(bytes)?;
+        let (route, departure, request_id, proposal_id, result, reason, endpoint) =
+            decode_common(bytes)?;
         let kind = match bytes[0] {
             1 => GroupTravelServerKind::Requesting,
             2 => GroupTravelServerKind::Offer,
@@ -1434,11 +1553,15 @@ impl GroupTravelServerRecord {
             result,
             reason,
             remaining_seconds: bytes[28],
+            endpoint,
         };
         value.validate()?;
         Ok(value)
     }
     fn validate(&self) -> Result<(), GroupTravelCodecError> {
+        if self.route.is_dynamic() != self.endpoint.is_some() {
+            return Err(GroupTravelCodecError::EndpointMismatch);
+        }
         if matches!(
             self.route,
             GroupTravelRoute::FerryBrineyHouseDewford
@@ -1801,6 +1924,7 @@ mod tests {
                 proposal_id: [0; 16],
                 result: GroupTravelResult::None,
                 reason: GroupTravelReason::None,
+                endpoint: None,
             };
             let encoded = record.encode().unwrap();
             assert_eq!(encoded[1], route as u8);
@@ -1838,6 +1962,7 @@ mod tests {
             proposal_id: [0; 16],
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
+            endpoint: None,
         }
         .encode()
         .unwrap();
@@ -1875,12 +2000,91 @@ mod tests {
                 proposal_id: [0; 16],
                 result: GroupTravelResult::None,
                 reason: GroupTravelReason::None,
+                endpoint: None,
             };
             assert_eq!(
                 GroupTravelClientRecord::decode(&request.encode().unwrap()).unwrap(),
                 request
             );
         }
+    }
+
+    #[test]
+    fn dynamic_routes_round_trip_exact_endpoint_without_changing_record_size() {
+        let endpoint = GroupTravelEndpoint::new(7, 11, 19, 23, -3, 127);
+        let request = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::Request,
+            route: GroupTravelRoute::Dig,
+            departure: GroupTravelDeparture::Dig,
+            request_id: 41,
+            proposal_id: [0; 16],
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+            endpoint: Some(endpoint),
+        };
+        let encoded = request.encode().unwrap();
+        assert_eq!(encoded.len(), GROUP_TRAVEL_RECORD_SIZE);
+        assert_eq!(encoded[1], 164);
+        assert_eq!(encoded[6], 8);
+        assert_eq!(encoded[2], 7);
+        assert_eq!(encoded[3], 11);
+        assert_eq!(encoded[7], 19);
+        assert_eq!(encoded[29], 23);
+        assert_eq!(encoded[30], (-3_i8) as u8);
+        assert_eq!(encoded[31], 127);
+        assert_eq!(GroupTravelClientRecord::decode(&encoded).unwrap(), request);
+
+        let offer = GroupTravelServerRecord {
+            kind: GroupTravelServerKind::Offer,
+            route: GroupTravelRoute::EscapeRope,
+            departure: GroupTravelDeparture::EscapeRope,
+            request_id: 42,
+            proposal_id: [9; 16],
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+            remaining_seconds: 17,
+            endpoint: Some(endpoint),
+        };
+        let encoded = offer.encode().unwrap();
+        assert_eq!(encoded[1], 165);
+        assert_eq!(encoded[6], 9);
+        assert_eq!(encoded[28], 17);
+        assert_eq!(GroupTravelServerRecord::decode(&encoded).unwrap(), offer);
+
+        assert!(
+            GroupTravelClientRecord {
+                route: GroupTravelRoute::TrainLater,
+                departure: GroupTravelDeparture::Train,
+                endpoint: Some(endpoint),
+                ..request
+            }
+            .encode()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn teleport_reuses_fly_destinations_but_excludes_littleroot() {
+        let route = GroupTravelRoute::FlyJohtoNewbark;
+        assert_eq!(
+            GroupTravelDeparture::from_wire(7).unwrap(),
+            GroupTravelDeparture::Teleport
+        );
+        assert!(GroupTravelDeparture::Teleport.matches_route(route));
+        assert!(!GroupTravelDeparture::Teleport.matches_route(GroupTravelRoute::FlyLittleroot));
+        let request = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::Request,
+            route,
+            departure: GroupTravelDeparture::Teleport,
+            request_id: 1,
+            proposal_id: [0; 16],
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+            endpoint: None,
+        };
+        let encoded = request.encode().unwrap();
+        assert_eq!(encoded[6], 7);
+        assert_eq!(GroupTravelClientRecord::decode(&encoded).unwrap(), request);
     }
     #[test]
     fn story_marker_wire_requires_correlated_first_voyage() {
@@ -1892,6 +2096,7 @@ mod tests {
             proposal_id: [7; 16],
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
+            endpoint: None,
         };
         assert_eq!(
             GroupTravelClientRecord::decode(&marker.encode().unwrap()).unwrap(),
@@ -1942,6 +2147,7 @@ mod tests {
                 result: GroupTravelResult::None,
                 reason: GroupTravelReason::None,
                 remaining_seconds: 0,
+                endpoint: None,
             };
             assert_eq!(
                 GroupTravelServerRecord::decode(&response.encode().unwrap()).unwrap(),
@@ -1974,6 +2180,7 @@ mod tests {
                 result: GroupTravelResult::Applied,
                 reason: GroupTravelReason::None,
                 remaining_seconds: 0,
+                endpoint: None,
             };
             assert_eq!(
                 GroupTravelServerRecord::decode(&complete.encode().unwrap()).unwrap(),
@@ -2001,6 +2208,7 @@ mod tests {
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
             remaining_seconds: 0,
+            endpoint: None,
         };
         let mut encoded = record.encode().unwrap();
         assert!(GroupTravelClientRecord::decode(&encoded).is_err());
@@ -2037,6 +2245,7 @@ mod tests {
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
             remaining_seconds: 24,
+            endpoint: None,
         };
         let encoded = record.encode().unwrap();
         assert_eq!(encoded[28], 24);

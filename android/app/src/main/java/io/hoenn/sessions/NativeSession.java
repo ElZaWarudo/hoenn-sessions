@@ -8,4 +8,6 @@ final class NativeSession {
     static native boolean isActive();
     static native boolean reconnect();
     static native void signOut();
+    /** Queues a join by pairing code; the outcome arrives as a pairing_redeemed event. */
+    static native boolean redeemPairingCode(String codeOrLink);
 }

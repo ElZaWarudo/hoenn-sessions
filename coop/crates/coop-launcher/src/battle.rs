@@ -26,14 +26,15 @@ use coop_protocol::{
     BattleConsentOutcomeRecord, BattleDecision, BattleDigest, BattleFinishedRecord,
     BattleFinishedResult, BattleId, BattleJoinOfferRecord, BattleJoinResponseRecord,
     BattleManifestRecord, BattleReadyRecord, BattleReserveRejectedRecord, BattleRole,
-    BattleStartRecord, IdentityKind, PartySnapshotChunk, PauseForReconnectRecord, RegionId,
-    TrainerBattleReserveRecord, TrainerInstanceId, TurnBundleRecord, TurnResultHash,
-    identity_catalog,
+    BattleStartRecord, FriendlyBattleRules, IdentityKind, PartySnapshotChunk,
+    PauseForReconnectRecord, RegionId, TrainerBattleReserveRecord, TrainerInstanceId,
+    TurnBundleRecord, TurnResultHash, identity_catalog,
 };
 
-// A consensus view includes up to 32 full turns. Each of the two 512-byte
-// action strings can expand to six JSON bytes per control character.
-const RESPONSE_MAX_BYTES: usize = 512 * 1024;
+// A consensus view includes up to BATTLE_MAX_TURN (120) full rounds. Each of
+// the two 512-byte action strings can expand to six JSON bytes per control
+// character.
+const RESPONSE_MAX_BYTES: usize = 1024 * 1024;
 const PEER_RESPONSE_MAX_BYTES: usize = 8 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -58,6 +59,38 @@ pub enum BattleApiError {
 pub enum BattleKind {
     CooperativeTrainer,
     Friendly,
+}
+
+/// Who applies a trainer battle's rewards. `Local` battles are applied by
+/// each ROM and carry their staged party records to the server. `None` is a
+/// friendly battle: the staged records are the picked teams and nothing is
+/// rewarded.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BattleRewardMode {
+    #[default]
+    Ledger,
+    Local,
+    None,
+}
+
+impl BattleRewardMode {
+    const fn is_ledger(&self) -> bool {
+        matches!(self, Self::Ledger)
+    }
+
+    /// The snapshot commitment carries the exact staged party records.
+    const fn stages_records(self) -> bool {
+        matches!(self, Self::Local | Self::None)
+    }
+}
+
+/// A member who already beat the trainer joins a local battle as a helper.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BattleMemberRole {
+    Participant,
+    Helper,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -90,6 +123,13 @@ pub struct BattleReservationView {
     pub trainer_id: Option<TrainerInstanceId>,
     pub status: BattleStatus,
     pub expires_at: UnixTimestampMillis,
+    #[serde(default, skip_serializing_if = "BattleRewardMode::is_ledger")]
+    pub reward_mode: BattleRewardMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_roles: Option<[BattleMemberRole; 2]>,
+    /// The friendly challenge (format, levels, team size).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -175,6 +215,8 @@ struct ReserveRequest {
     kind: BattleKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     trainer_id: Option<TrainerInstanceId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    friendly_rules: Option<FriendlyBattleRules>,
     idempotency_key: IdempotencyKey,
 }
 
@@ -189,6 +231,9 @@ struct SnapshotRequest<'a> {
     api_version: ApiVersion,
     idempotency_key: IdempotencyKey,
     snapshot_hash: &'a str,
+    /// Exact staged party records, sent only for local-reward battles.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    party_records: Option<&'a [String]>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -312,6 +357,7 @@ impl ReqwestCloudApi {
         fence: LeaseFence,
         kind: BattleKind,
         trainer_id: Option<TrainerInstanceId>,
+        friendly_rules: Option<FriendlyBattleRules>,
         idempotency_key: IdempotencyKey,
     ) -> Result<BattleReservationView, BattleApiError> {
         let url = self.battle_url(group_id, None, "")?;
@@ -319,6 +365,7 @@ impl ReqwestCloudApi {
             api_version: ApiVersion::V1,
             kind,
             trainer_id: trainer_id.clone(),
+            friendly_rules,
             idempotency_key,
         };
         let view: BattleReservationView = self
@@ -332,6 +379,7 @@ impl ReqwestCloudApi {
             || view.api_version != ApiVersion::V1
             || view.kind != kind
             || view.trainer_id != trainer_id
+            || view.friendly_rules != friendly_rules
         {
             return Err(BattleApiError::Invalid);
         }
@@ -483,12 +531,14 @@ impl ReqwestCloudApi {
         fence: LeaseFence,
         idempotency_key: IdempotencyKey,
         snapshot_hash: &str,
+        party_records: Option<&[String]>,
     ) -> Result<BattleConsensusView, BattleApiError> {
         let url = self.battle_url(group_id, Some(battle_id), "/snapshot-commitments")?;
         let request = SnapshotRequest {
             api_version: ApiVersion::V1,
             idempotency_key,
             snapshot_hash,
+            party_records,
         };
         self.battle_consensus_response(
             self.battle_request(Method::POST, url, token, fence)
@@ -666,6 +716,7 @@ enum Job {
         kind: coop_protocol::BattleKind,
         trainer_region: Option<RegionId>,
         trainer_ordinal: Option<u16>,
+        friendly_rules: Option<FriendlyBattleRules>,
         key: IdempotencyKey,
     },
     Respond {
@@ -692,6 +743,7 @@ struct Tracked {
     trainer_identity: Option<(RegionId, u16)>,
     role: BattleRole,
     nonce: u32,
+    local_rewards: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -700,6 +752,7 @@ enum ConsensusJob {
     Commit {
         hash: String,
         key: IdempotencyKey,
+        records: Option<Vec<String>>,
     },
     Ready {
         digest: BattleDigest,
@@ -1021,10 +1074,12 @@ fn valid_reserve_view(
     view: &BattleReservationView,
     kind: coop_protocol::BattleKind,
     trainer_id: Option<&TrainerInstanceId>,
+    friendly_rules: Option<FriendlyBattleRules>,
     actor: CharacterId,
 ) -> bool {
     view.kind == cloud_kind(kind)
         && view.trainer_id.as_ref() == trainer_id
+        && view.friendly_rules == friendly_rules
         && view.initiator_character_id == actor
 }
 
@@ -1074,22 +1129,19 @@ fn manifest_identity(
         return None;
     }
     match (reservation.kind, reservation.trainer_id.as_ref()) {
-        (BattleKind::Friendly, None) => Some((
+        // A game-protocol-5 ROM needs the challenge in the manifest.
+        (BattleKind::Friendly, None) if reservation.friendly_rules.is_some() => Some((
             coop_protocol::BattleKind::Friendly,
             slot,
             RegionId::Unspecified,
             0,
         )),
         (BattleKind::CooperativeTrainer, Some(trainer_id)) => {
+            // The server only reserves catalogued trainers the ROM can
+            // resolve; any of them may be a co-op battle.
             let entry =
                 identity_catalog::resolve_identity(IdentityKind::Trainer, trainer_id.as_str())
                     .ok()?;
-            if !matches!(
-                entry.qualified_id,
-                "HOENN:TRAINER_WALLY_1" | "KANTO:TRAINER_BROCK"
-            ) {
-                return None;
-            }
             Some((
                 coop_protocol::BattleKind::CooperativeTrainer,
                 slot,
@@ -1568,7 +1620,7 @@ impl<'a> BattleOwner<'a> {
                     api.battle_inspect_consensus(token, tracked.group_id, tracked.battle_id, fence)
                         .await
                 }
-                ConsensusJob::Commit { hash, key } => {
+                ConsensusJob::Commit { hash, key, records } => {
                     api.battle_commit_snapshot(
                         token,
                         tracked.group_id,
@@ -1576,6 +1628,7 @@ impl<'a> BattleOwner<'a> {
                         fence,
                         *key,
                         hash,
+                        records.clone(),
                     )
                     .await
                 }
@@ -1700,6 +1753,9 @@ impl<'a> BattleOwner<'a> {
                 ConsensusJob::Commit {
                     hash: hash.clone(),
                     key: *key,
+                    records: tracked
+                        .local_rewards
+                        .then(|| self.party.iter().map(|mon| hex_string(mon)).collect()),
                 }
             } else if self.ready_from_rom
                 && !self.submitted_ready
@@ -1875,7 +1931,7 @@ impl<'a> BattleOwner<'a> {
                 .reservation
                 .member_character_ids
                 .contains(&fence.character_id)
-            || view.turns.len() > 32
+            || view.turns.len() > usize::from(coop_protocol::BATTLE_MAX_TURN)
             || view
                 .commitments
                 .iter()
@@ -2028,6 +2084,7 @@ impl<'a> BattleOwner<'a> {
                     local_member_slot,
                     trainer_region,
                     trainer_ordinal,
+                    friendly_rules: view.reservation.friendly_rules,
                 }));
                 self.manifest_delivered = true;
             }
@@ -2142,6 +2199,7 @@ impl<'a> BattleOwner<'a> {
             kind,
             trainer_region,
             trainer_ordinal,
+            friendly_rules,
             ..
         }) = self.pending_job
         {
@@ -2150,6 +2208,7 @@ impl<'a> BattleOwner<'a> {
                 kind,
                 trainer_region,
                 trainer_ordinal,
+                friendly_rules,
             });
         }
         if let Some(Job::Cancel {
@@ -2463,6 +2522,7 @@ impl<'a> BattleOwner<'a> {
                 kind: record.kind,
                 trainer_region: record.trainer_region,
                 trainer_ordinal: record.trainer_ordinal,
+                friendly_rules: record.friendly_rules,
                 key,
             }
         } else if Instant::now() >= self.next_poll {
@@ -2619,6 +2679,7 @@ impl<'a> BattleOwner<'a> {
                 kind,
                 trainer_region,
                 trainer_ordinal,
+                friendly_rules,
                 key,
             } = completion.job
             {
@@ -2629,6 +2690,7 @@ impl<'a> BattleOwner<'a> {
                             kind,
                             trainer_region,
                             trainer_ordinal,
+                            friendly_rules,
                         },
                         key,
                     ));
@@ -2888,6 +2950,7 @@ impl<'a> BattleOwner<'a> {
                             kind,
                             trainer_region,
                             trainer_ordinal,
+                            friendly_rules,
                             ..
                         } => {
                             self.queued_reserve = Some(TrainerBattleReserveRecord {
@@ -2895,6 +2958,7 @@ impl<'a> BattleOwner<'a> {
                                 kind,
                                 trainer_region,
                                 trainer_ordinal,
+                                friendly_rules,
                             })
                         }
                         Job::Respond {
@@ -3030,6 +3094,7 @@ impl<'a> BattleOwner<'a> {
                                 kind: bridge_kind(view.kind),
                                 role,
                                 request_nonce: nonce,
+                                friendly_rules: view.friendly_rules,
                             }));
                         }
                         if role == BattleRole::Requester && nonce != 0 && !was_accepted {
@@ -3094,6 +3159,7 @@ impl<'a> BattleOwner<'a> {
                         },
                         role,
                         nonce,
+                        local_rewards: view.reward_mode.stages_records(),
                     };
                     if let Some(old) = self
                         .tracked
@@ -3128,6 +3194,7 @@ impl<'a> BattleOwner<'a> {
                             kind: bridge_kind(view.kind),
                             role,
                             request_nonce: nonce,
+                            friendly_rules: view.friendly_rules,
                         }));
                     }
                     // A responder can queue its local acceptance before the
@@ -3396,13 +3463,19 @@ async fn work<A: CloudApi>(
                     api.battle_current(token.clone(), group_id, fence).await
                 }
             }
-            Job::Reserve { kind, key, .. } => api
+            Job::Reserve {
+                kind,
+                friendly_rules,
+                key,
+                ..
+            } => api
                 .battle_reserve(
                     token.clone(),
                     group_id,
                     fence,
                     cloud_kind(kind),
                     requested_trainer_id.clone(),
+                    friendly_rules,
                     key,
                 )
                 .await
@@ -3427,11 +3500,20 @@ async fn work<A: CloudApi>(
     {
         return Err(BattleApiError::Invalid);
     }
-    if let (Job::Reserve { kind, .. }, Some(view)) = (job, view.as_ref()) {
+    if let (
+        Job::Reserve {
+            kind,
+            friendly_rules,
+            ..
+        },
+        Some(view),
+    ) = (job, view.as_ref())
+    {
         if !valid_reserve_view(
             view,
             kind,
             requested_trainer_id.as_ref(),
+            friendly_rules,
             fence.character_id,
         ) {
             return Err(BattleApiError::Invalid);
@@ -3445,6 +3527,13 @@ mod tests {
     use serde_json::json;
 
     use super::{BattleApiError, BattleConsensusView, BattleKind, BattleReservationView};
+
+    const TEST_FRIENDLY_RULES: coop_protocol::FriendlyBattleRules =
+        coop_protocol::FriendlyBattleRules {
+            format: coop_protocol::FriendlyBattleFormat::Singles,
+            level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+            team_size: 1,
+        };
 
     fn reservation_json() -> serde_json::Value {
         json!({
@@ -3566,6 +3655,15 @@ mod tests {
             &view,
             BridgeKind::CooperativeTrainer,
             Some(&trainer),
+            None,
+            view.initiator_character_id
+        ));
+        // The echoed friendly challenge must match what the ROM asked for.
+        assert!(!super::valid_reserve_view(
+            &view,
+            BridgeKind::CooperativeTrainer,
+            Some(&trainer),
+            Some(TEST_FRIENDLY_RULES),
             view.initiator_character_id
         ));
         let other = TrainerInstanceId::parse("HOENN:TRAINER_WALLY_2").unwrap();
@@ -3574,6 +3672,7 @@ mod tests {
             &view,
             BridgeKind::CooperativeTrainer,
             Some(&trainer),
+            None,
             view.initiator_character_id
         ));
     }
@@ -3601,12 +3700,31 @@ mod tests {
                 518
             ))
         );
+        // Every catalogued trainer can be a co-op battle, not only Wally.
+        view.trainer_id =
+            Some(coop_protocol::TrainerInstanceId::parse("HOENN:TRAINER_CALVIN_1").unwrap());
+        let calvin = coop_protocol::identity_catalog::resolve_identity(
+            coop_protocol::IdentityKind::Trainer,
+            "HOENN:TRAINER_CALVIN_1",
+        )
+        .unwrap();
+        assert_eq!(
+            super::manifest_identity(&view, first),
+            Some((
+                coop_protocol::BattleKind::CooperativeTrainer,
+                0,
+                coop_protocol::RegionId::Hoenn,
+                calvin.ordinal.unwrap()
+            ))
+        );
         view.trainer_id =
             Some(coop_protocol::TrainerInstanceId::parse("HOENN:TRAINER_WALLY_2").unwrap());
-        assert_eq!(super::manifest_identity(&view, first), None);
         view.kind = BattleKind::Friendly;
         assert_eq!(super::manifest_identity(&view, first), None);
         view.trainer_id = None;
+        // A friendly manifest needs the challenge it was accepted with.
+        assert_eq!(super::manifest_identity(&view, second), None);
+        view.friendly_rules = Some(TEST_FRIENDLY_RULES);
         assert_eq!(
             super::manifest_identity(&view, second),
             Some((
@@ -3624,6 +3742,7 @@ mod tests {
     fn reserve_request_keeps_friendly_json_without_trainer_id() {
         let key = coop_cloud::IdempotencyKey::new(uuid::Uuid::from_u128(1)).unwrap();
         let friendly = serde_json::to_value(super::ReserveRequest {
+            friendly_rules: Some(TEST_FRIENDLY_RULES),
             api_version: coop_cloud::ApiVersion::V1,
             kind: BattleKind::Friendly,
             trainer_id: None,
@@ -3632,6 +3751,7 @@ mod tests {
         .unwrap();
         assert!(friendly.get("trainer_id").is_none());
         let trainer = serde_json::to_value(super::ReserveRequest {
+            friendly_rules: None,
             api_version: coop_cloud::ApiVersion::V1,
             kind: BattleKind::CooperativeTrainer,
             trainer_id: Some(
@@ -3674,6 +3794,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 42,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -3692,6 +3813,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 42,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -3732,6 +3854,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 42,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -3749,6 +3872,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 42,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -3810,6 +3934,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 44,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -3826,6 +3951,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 44,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -3855,6 +3981,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 43,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -3870,6 +3997,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 43,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -3910,6 +4038,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 44,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -3925,6 +4054,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 44,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -3985,6 +4115,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 46,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -4001,6 +4132,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 46,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -4028,6 +4160,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 45,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -4043,6 +4176,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 45,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -4157,6 +4291,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let record = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 7,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -4166,6 +4301,7 @@ mod tests {
         let key = owner.reserve_keys[&7];
         assert_eq!(owner.queued_reserve.take(), Some(record));
         let job = Job::Reserve {
+            friendly_rules: record.friendly_rules,
             nonce: 7,
             kind: record.kind,
             trainer_region: record.trainer_region,
@@ -4271,11 +4407,13 @@ mod tests {
             &second,
             BridgeKind::Friendly,
             None,
+            Some(TEST_FRIENDLY_RULES),
             first.initiator_character_id
         ));
         assert!(!super::valid_reserve_view(
             &second,
             BridgeKind::CooperativeTrainer,
+            None,
             None,
             fence.character_id
         ));
@@ -4288,6 +4426,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let old = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 91,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -4295,6 +4434,7 @@ mod tests {
         };
         owner.reserve(old, 1, request);
         owner.pending_job = Some(Job::Reserve {
+            friendly_rules: request.friendly_rules,
             nonce: 91,
             kind: request.kind,
             trainer_region: request.trainer_region,
@@ -4318,6 +4458,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 1,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -4334,6 +4475,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 1,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -4370,6 +4512,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 1,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -4378,6 +4521,7 @@ mod tests {
         owner.reserve(fence, 1, request);
         let key = owner.reserve_keys[&1];
         owner.pending_job = Some(Job::Reserve {
+            friendly_rules: request.friendly_rules,
             nonce: 1,
             kind: request.kind,
             trainer_region: request.trainer_region,
@@ -4397,6 +4541,7 @@ mod tests {
                     fence,
                     generation: 2,
                     job: Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: 1,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -4422,6 +4567,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let old_request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 41,
             trainer_region: Some(RegionId::Hoenn),
@@ -4430,6 +4576,7 @@ mod tests {
         owner.reserve(fence, 1, old_request);
         let old_key = owner.reserve_keys[&41];
         owner.pending_job = Some(Job::Reserve {
+            friendly_rules: old_request.friendly_rules,
             nonce: 41,
             kind: old_request.kind,
             trainer_region: old_request.trainer_region,
@@ -4484,6 +4631,7 @@ mod tests {
                     fence,
                     generation: 3,
                     job: Job::Reserve {
+                        friendly_rules: old_request.friendly_rules,
                         nonce: 41,
                         kind: old_request.kind,
                         trainer_region: old_request.trainer_region,
@@ -4517,6 +4665,7 @@ mod tests {
         let mut owner = BattleOwner::default();
         let fence = fence();
         let old_request = TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: BridgeKind::CooperativeTrainer,
             request_nonce: 41,
             trainer_region: Some(RegionId::Hoenn),
@@ -4533,6 +4682,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: Job::Reserve {
+                        friendly_rules: old_request.friendly_rules,
                         nonce: 41,
                         kind: old_request.kind,
                         trainer_region: old_request.trainer_region,
@@ -4597,8 +4747,201 @@ mod tests {
             trainer_identity: Some((coop_protocol::RegionId::Hoenn, 518)),
             role: coop_protocol::BattleRole::Requester,
             nonce: 1,
+            local_rewards: false,
         });
         (owner, fence, view)
+    }
+
+    #[test]
+    fn local_reward_views_parse_and_send_staged_records_only_when_local() {
+        let mut local = reservation_json();
+        local["trainer_id"] = json!("HOENN:TRAINER_CALVIN_1");
+        local["reward_mode"] = json!("LOCAL");
+        local["member_roles"] = json!(["PARTICIPANT", "HELPER"]);
+        let view: super::BattleReservationView = serde_json::from_value(local.clone()).unwrap();
+        assert_eq!(view.reward_mode, super::BattleRewardMode::Local);
+        assert_eq!(
+            view.member_roles,
+            Some([
+                super::BattleMemberRole::Participant,
+                super::BattleMemberRole::Helper
+            ])
+        );
+        assert_eq!(serde_json::to_value(&view).unwrap(), local);
+        let ledger: super::BattleReservationView =
+            serde_json::from_value(reservation_json()).unwrap();
+        assert_eq!(ledger.reward_mode, super::BattleRewardMode::Ledger);
+        assert_eq!(serde_json::to_value(&ledger).unwrap(), reservation_json());
+
+        let (mut owner, _fence, view) = tracked_owner();
+        owner.party = vec![vec![0xAB; coop_protocol::BATTLE_PARTY_MON_SIZE]];
+        owner.snapshot = Some(("11".repeat(32), super::new_key()));
+        owner.accepted_battle = Some(view.battle_id);
+        let tracked = owner.tracked.unwrap();
+        let super::ConsensusJob::Commit { records, .. } = owner.consensus_job(tracked) else {
+            panic!("snapshot commit expected");
+        };
+        assert_eq!(
+            records, None,
+            "ledger battles keep the anchored-save commit"
+        );
+        let local_tracked = super::Tracked {
+            local_rewards: true,
+            ..tracked
+        };
+        let super::ConsensusJob::Commit { records, .. } = owner.consensus_job(local_tracked) else {
+            panic!("snapshot commit expected");
+        };
+        assert_eq!(
+            records,
+            Some(vec!["ab".repeat(coop_protocol::BATTLE_PARTY_MON_SIZE)])
+        );
+    }
+
+    fn friendly_reservation_json() -> serde_json::Value {
+        let mut friendly = reservation_json();
+        friendly["kind"] = json!("FRIENDLY");
+        friendly.as_object_mut().unwrap().remove("trainer_id");
+        friendly["reward_mode"] = json!("NONE");
+        friendly["friendly_rules"] =
+            json!({"format": "doubles", "level_mode": "fifty", "team_size": 4});
+        friendly
+    }
+
+    #[test]
+    fn friendly_challenge_reaches_the_partner_offer_the_commit_and_the_manifest() {
+        use super::{
+            BattleDelivery, BattleOwner, Completion, ConsensusCompletion, ConsensusJob, Job,
+        };
+        use coop_protocol::{BattleRole, FriendlyBattleFormat, FriendlyLevelMode};
+
+        let view: super::BattleReservationView =
+            serde_json::from_value(friendly_reservation_json()).unwrap();
+        assert_eq!(view.reward_mode, super::BattleRewardMode::None);
+        assert_eq!(view.member_roles, None);
+        assert_eq!(
+            serde_json::to_value(&view).unwrap(),
+            friendly_reservation_json()
+        );
+        let rules = view.friendly_rules.expect("rules");
+        assert_eq!(rules.format, FriendlyBattleFormat::Doubles);
+        assert_eq!(rules.level_mode, FriendlyLevelMode::Fifty);
+        assert_eq!(rules.team_size, 4);
+
+        // The partner (not the initiator) sees the challenge in its offer.
+        let mut owner = BattleOwner::default();
+        let mut fence = fence();
+        fence.character_id = coop_cloud::CharacterId::new(
+            uuid::Uuid::parse_str("7e84b14b-91b7-4a66-9866-c86033f78f4a").unwrap(),
+        )
+        .unwrap();
+        owner.bind(fence, 1);
+        let offers = owner
+            .finish(
+                Some(Completion {
+                    fence,
+                    generation: 1,
+                    job: Job::Poll,
+                    result: Ok(Some(view.clone())),
+                }),
+                fence,
+                1,
+            )
+            .unwrap();
+        let [BattleDelivery::Offer(offer)] = offers.as_slice() else {
+            panic!("responder offer expected");
+        };
+        assert_eq!(offer.role, BattleRole::Responder);
+        assert_eq!(offer.friendly_rules, Some(rules));
+        assert_eq!(offer.encode().unwrap()[22..], [2, 1, 4]);
+
+        // Its snapshot commitment carries the picked team's exact records.
+        let tracked = owner.tracked.expect("tracked");
+        assert!(tracked.local_rewards, "a friendly battle stages its team");
+        owner.party = vec![vec![0xAB; coop_protocol::BATTLE_PARTY_MON_SIZE]; 4];
+        owner.snapshot = Some(("11".repeat(32), super::new_key()));
+        owner.accepted_battle = Some(view.battle_id);
+        let ConsensusJob::Commit { records, .. } = owner.consensus_job(tracked) else {
+            panic!("snapshot commit expected");
+        };
+        assert_eq!(records.map(|records| records.len()), Some(4));
+
+        // The manifest names the same challenge.
+        let mut reservation = friendly_reservation_json();
+        reservation["status"] = json!("ACCEPTED");
+        let consensus: super::BattleConsensusView = serde_json::from_value(json!({
+            "reservation": reservation,
+            "commitments": ["00".repeat(32), "11".repeat(32)],
+            "manifest": { "battle_id": view.battle_id, "member_character_ids": view.member_character_ids, "snapshot_hashes": ["00".repeat(32), "11".repeat(32)], "seed": "22".repeat(32) },
+            "turns": []
+        }))
+        .unwrap();
+        let deliveries = owner
+            .finish_consensus(
+                Some(ConsensusCompletion {
+                    fence,
+                    generation: 1,
+                    job: ConsensusJob::Inspect,
+                    result: Ok(consensus),
+                }),
+                fence,
+                1,
+            )
+            .unwrap();
+        let [BattleDelivery::Manifest(manifest)] = deliveries.as_slice() else {
+            panic!("manifest expected");
+        };
+        assert_eq!(manifest.kind, coop_protocol::BattleKind::Friendly);
+        assert_eq!(manifest.local_member_slot, 1);
+        assert_eq!(manifest.friendly_rules, Some(rules));
+        assert_eq!(manifest.encode().unwrap()[119..], [2, 1, 4]);
+    }
+
+    #[test]
+    fn friendly_reserve_request_carries_the_challenge_and_checks_its_echo() {
+        let key = coop_cloud::IdempotencyKey::new(uuid::Uuid::from_u128(2)).unwrap();
+        let json = serde_json::to_value(super::ReserveRequest {
+            api_version: coop_cloud::ApiVersion::V1,
+            kind: BattleKind::Friendly,
+            trainer_id: None,
+            friendly_rules: Some(TEST_FRIENDLY_RULES),
+            idempotency_key: key,
+        })
+        .unwrap();
+        assert_eq!(
+            json["friendly_rules"],
+            json!({"format": "singles", "level_mode": "as_is", "team_size": 1})
+        );
+        let view: super::BattleReservationView =
+            serde_json::from_value(friendly_reservation_json()).unwrap();
+        let actor = view.initiator_character_id;
+        let rules = view.friendly_rules;
+        assert!(super::valid_reserve_view(
+            &view,
+            coop_protocol::BattleKind::Friendly,
+            None,
+            rules,
+            actor
+        ));
+        assert!(!super::valid_reserve_view(
+            &view,
+            coop_protocol::BattleKind::Friendly,
+            None,
+            Some(TEST_FRIENDLY_RULES),
+            actor
+        ));
+        // A reserve that loses its challenge on a retry keeps the rules.
+        let record = coop_protocol::TrainerBattleReserveRecord {
+            kind: coop_protocol::BattleKind::Friendly,
+            request_nonce: 7,
+            trainer_region: None,
+            trainer_ordinal: None,
+            friendly_rules: Some(TEST_FRIENDLY_RULES),
+        };
+        let mut owner = super::BattleOwner::default();
+        let fence = fence();
+        assert!(owner.reserve(fence, 1, record).is_none());
+        assert_eq!(owner.queued_reserve, Some(record));
     }
 
     #[test]
@@ -5105,6 +5448,7 @@ mod tests {
             fence,
             1,
             coop_protocol::TrainerBattleReserveRecord {
+                friendly_rules: None,
                 request_nonce: 42,
                 kind: coop_protocol::BattleKind::CooperativeTrainer,
                 trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -5119,6 +5463,7 @@ mod tests {
             fence,
             1,
             coop_protocol::TrainerBattleReserveRecord {
+                friendly_rules: None,
                 request_nonce: 43,
                 kind: coop_protocol::BattleKind::CooperativeTrainer,
                 trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -5316,6 +5661,7 @@ mod tests {
             fence,
             1,
             coop_protocol::TrainerBattleReserveRecord {
+                friendly_rules: None,
                 request_nonce: 65,
                 kind: coop_protocol::BattleKind::CooperativeTrainer,
                 trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -5349,6 +5695,7 @@ mod tests {
             .unwrap();
         assert!(owner.cold_reconciled_once);
         let request = coop_protocol::TrainerBattleReserveRecord {
+            friendly_rules: None,
             request_nonce: 42,
             kind: coop_protocol::BattleKind::CooperativeTrainer,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -5363,6 +5710,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: super::Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: request.request_nonce,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -5436,6 +5784,7 @@ mod tests {
                     fence,
                     generation: 1,
                     job: super::Job::Reserve {
+                        friendly_rules: request.friendly_rules,
                         nonce: request.request_nonce,
                         kind: request.kind,
                         trainer_region: request.trainer_region,
@@ -5978,6 +6327,7 @@ mod tests {
             trainer_identity: Some((coop_protocol::RegionId::Hoenn, 518)),
             role: coop_protocol::BattleRole::Responder,
             nonce: 0,
+            local_rewards: false,
         });
         owner.submitted_actions = 1;
         owner.peer_delivered = true;

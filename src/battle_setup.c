@@ -35,7 +35,10 @@
 #include "gym_leader_rematch.h"
 #include "coop/identity.h"
 #include "coop/battle_consent.h"
+#include "coop/battle_items.h"
 #include "coop/battle_runtime.h"
+#include "coop/friendly_battle.h"
+#include "coop/trainer_rewards.h"
 #include "battle_frontier.h"
 #include "battle_pike.h"
 #include "battle_pyramid.h"
@@ -88,6 +91,9 @@ static void CB2_EndCoopTrainerBattle(void);
 static void RollbackCoopBattleEntry(void);
 static bool32 IsPlayerDefeated(u32 battleOutcome);
 static void DowngradeBadPoison(void);
+
+extern const u8 EventScript_CoopTrainerEncounterRelease[];
+
 #if FREE_MATCH_CALL == FALSE
 static u16 GetRematchTrainerId(u16 trainerId);
 #endif //FREE_MATCH_CALL
@@ -478,6 +484,12 @@ static void CB2_EndCoopTrainerBattle(void)
 {
     bool8 completed = FALSE;
     bool8 wasScriptedTrainerBattle;
+    bool8 requester;
+    bool8 won;
+    u8 rewardSlots[COOP_BATTLE_MULTI_PARTY_SIZE];
+    u8 rewardSlotCount;
+    u16 rewardTrainerId;
+    enum CoopTrainerRewardRole rewardRole;
 
     if (!sCoopBattleEntryPrepared)
     {
@@ -512,6 +524,9 @@ static void CB2_EndCoopTrainerBattle(void)
     if (!completed)
         memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.original_local,
                sizeof(sCoopBattlePlan.original_local));
+    /* Bag items follow the party: a completed battle keeps what its item
+     * turns used (like damage), any other end hands the items back. */
+    CoopBattleItems_Settle(completed);
     memcpy(gParties[B_TRAINER_2], sCoopOriginalPeerParty,
            sizeof(sCoopOriginalPeerParty));
     gPartiesCount[B_TRAINER_0] = sCoopOriginalLocalPartyCount;
@@ -524,10 +539,34 @@ static void CB2_EndCoopTrainerBattle(void)
         CoopBattleRuntime_CompleteBattle();
     else
         CoopBattleRuntime_DisarmEngine();
+    /* Both ROMs resolved the same opponent from the attested manifest
+     * identity; the responder never saw the requester's trainer script. */
+    rewardTrainerId = sCoopBattlePlan.opponent_trainer_id;
+    rewardSlotCount = sCoopBattlePlan.staged_local_count;
+    memcpy(rewardSlots, sCoopBattlePlan.local_slots, sizeof(rewardSlots));
     memset(&sCoopBattlePlan, 0, sizeof(sCoopBattlePlan));
     sCoopBattleEntryActive = FALSE;
     sCoopBattleEntryPrepared = FALSE;
     wasScriptedTrainerBattle = CoopBattleConsent_OnTrainerBattleEnded(completed, gBattleOutcome);
+    /* Only the member whose parked trainer script asked for this battle is
+     * the requester; read it before CoopTrainerEncounter_OnBattleEnded. */
+    requester = CoopTrainerEncounter_IsRequesterBattle();
+    won = completed && gBattleOutcome == B_OUTCOME_WON && !wasScriptedTrainerBattle;
+    /* Local rewards, once per battle and only for a completed win of an
+     * ordinary trainer (Wally/Brock keep their scripted outcome path). The
+     * party is already restored, so EXP lands on the real mons. */
+    rewardRole = CoopTrainerRewards_Apply(won, rewardTrainerId, rewardSlots,
+                                          rewardSlotCount, requester);
+    if (CoopTrainerEncounter_OnBattleEnded(completed))
+    {
+        /* An aborted encounter never resumes the parked trainer script:
+         * its post-battle path assumes a win and no flag was set. Release
+         * the field instead so the trainer can be fought again. */
+        ScriptContext_SetupScript(EventScript_CoopTrainerEncounterRelease);
+        ScriptContext_Stop();
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        return;
+    }
     if (completed && IsPlayerDefeated(gBattleOutcome)
      && NoAliveMonsForPlayer() && !FlagGet(B_FLAG_NO_WHITEOUT))
     {
@@ -538,7 +577,34 @@ static void CB2_EndCoopTrainerBattle(void)
     }
     if (completed && !IsPlayerDefeated(gBattleOutcome))
         DowngradeBadPoison();
-    SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+    if (requester && !won)
+    {
+        /* Every parked post-battle script assumes a win: a gym leader's
+         * grants the badge, a story script sets its story state, a route
+         * trainer's shows its defeat text (vanilla whites out first). A
+         * co-op loss with local mons still standing releases the field
+         * instead; the trainer stays unbeaten and its scene can replay. */
+        ScriptContext_SetupScript(EventScript_CoopTrainerEncounterRelease);
+        ScriptContext_Stop();
+    }
+    else if (rewardRole == COOP_TRAINER_REWARD_GYM_PARTNER)
+    {
+        /* The partner has no leader script of its own. Its grants are
+         * already applied; this only shows the badge and the TM. */
+        ScriptContext_SetupScript(CoopTrainerRewards_GetGymNoticeScript(rewardTrainerId));
+        ScriptContext_Stop();
+    }
+    else if (rewardRole == COOP_TRAINER_REWARD_STORY_PARTNER)
+    {
+        /* Likewise for a story battle: the state is applied; the notice
+         * hides the objects it hid and shows the item. */
+        ScriptContext_SetupScript(CoopTrainerRewards_GetStoryNoticeScript());
+        ScriptContext_Stop();
+    }
+    if (CoopTrainerRewards_HasPendingEvolutions())
+        SetMainCallback2(CB2_CoopTrainerRewardEvolutions);
+    else
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
 }
 
 static void RollbackCoopBattleEntry(void)
@@ -595,16 +661,23 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
         return FALSE;
     }
 
-    memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.staged_local,
-           sizeof(sCoopBattlePlan.staged_local));
-    for (i = COOP_BATTLE_MULTI_PARTY_SIZE; i < PARTY_SIZE; i++)
-        ZeroMonData(&gParties[B_TRAINER_0][i]);
-    memcpy(gParties[B_TRAINER_2], sCoopBattlePlan.staged_peer,
-           sizeof(sCoopBattlePlan.staged_peer));
-    for (i = COOP_BATTLE_MULTI_PARTY_SIZE; i < PARTY_SIZE; i++)
-        ZeroMonData(&gParties[B_TRAINER_2][i]);
-    gPartiesCount[B_TRAINER_0] = COOP_BATTLE_MULTI_PARTY_SIZE;
-    gPartiesCount[B_TRAINER_2] = COOP_BATTLE_MULTI_PARTY_SIZE;
+    /* Each side holds its one to three staged mons in slots 0.. and empty
+     * records after them. Both ROMs derive the same counts from the same
+     * digest-checked records, so the per-turn digest (which hashes every
+     * slot and gPartiesCount) stays identical. */
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (i < sCoopBattlePlan.staged_local_count)
+            gParties[B_TRAINER_0][i] = sCoopBattlePlan.staged_local[i];
+        else
+            ZeroMonData(&gParties[B_TRAINER_0][i]);
+        if (i < sCoopBattlePlan.staged_peer_count)
+            gParties[B_TRAINER_2][i] = sCoopBattlePlan.staged_peer[i];
+        else
+            ZeroMonData(&gParties[B_TRAINER_2][i]);
+    }
+    gPartiesCount[B_TRAINER_0] = sCoopBattlePlan.staged_local_count;
+    gPartiesCount[B_TRAINER_2] = sCoopBattlePlan.staged_peer_count;
 
     TRAINER_BATTLE_PARAM.opponentA = sCoopBattlePlan.opponent_trainer_id;
     TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;
@@ -613,11 +686,160 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
         | BATTLE_TYPE_DOUBLE | BATTLE_TYPE_TRAINER;
     gMain.savedCallback = CB2_EndCoopTrainerBattle;
 
+    /* Past the last failure point: consume the approach bookkeeping exactly
+     * as the vanilla start does, so the resumed post-battle script sees the
+     * same state. A failed entry above leaves it for the vanilla fallback.
+     * The vanilla rematch start leaves it alone, and so does this. */
+    if (!IsRematchBattleMode(sCoopOriginalTrainerBattleParameter.params.mode))
+    {
+        sNoOfPossibleTrainerRetScripts = gNoOfApproachingTrainers;
+        gNoOfApproachingTrainers = 0;
+        sShouldCheckTrainerBScript = FALSE;
+        gWhichTrainerToFaceAfterBattle = 0;
+    }
+
+    CoopTrainerRewards_Begin();
+    CoopBattleItems_Begin();
     sCoopBattleEntryActive = TRUE;
     LockPlayerFieldControls();
     FreezeObjectEvents();
     StopPlayerAvatar();
     CreateBattleStartTask(GetTrainerBattleTransition(), 0);
+    ScriptContext_Stop();
+    return TRUE;
+}
+
+/* A friendly battle against the grouped partner. Nothing it did is kept:
+ * no EXP, money, flags or items, and the whole pre-battle party (HP, PP,
+ * status, held items, forms) is copied back whatever the outcome. The
+ * terminal attestation is queued before resources are released, like a
+ * co-op trainer battle; a fault, desync or lost partner is a no contest. */
+static void CB2_EndCoopFriendlyBattle(void)
+{
+    bool8 completed = FALSE;
+    u8 result = COOP_FRIENDLY_RESULT_NO_CONTEST;
+    u8 i;
+
+    if (!sCoopBattleEntryPrepared)
+    {
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        return;
+    }
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        CoopBattleRuntime_PollTerminal();
+        if (!CoopBattleRuntime_IsEngineFaulted() && CoopBattleRuntime_IsBattleFinishedSent())
+            completed = TRUE;
+        else if (!CoopBattleRuntime_IsEngineFaulted())
+            return;
+        else
+            (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_UNAVAILABLE);
+    }
+    if (completed)
+    {
+        if (gBattleOutcome == B_OUTCOME_WON)
+            result = COOP_FRIENDLY_RESULT_WON;
+        else if (gBattleOutcome == B_OUTCOME_LOST)
+            result = COOP_FRIENDLY_RESULT_LOST;
+        else if (gBattleOutcome == B_OUTCOME_DREW)
+            result = COOP_FRIENDLY_RESULT_DRAW;
+    }
+    memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.original_local,
+           sizeof(sCoopBattlePlan.original_local));
+    memcpy(gParties[B_TRAINER_2], sCoopOriginalPeerParty,
+           sizeof(sCoopOriginalPeerParty));
+    for (i = 0; i < PARTY_SIZE; i++)
+        ZeroMonData(&gParties[B_TRAINER_1][i]);
+    gPartiesCount[B_TRAINER_0] = sCoopOriginalLocalPartyCount;
+    gPartiesCount[B_TRAINER_1] = 0;
+    gPartiesCount[B_TRAINER_2] = sCoopOriginalPeerPartyCount;
+    gBattleTypeFlags = sCoopOriginalBattleTypeFlags;
+    gPartnerTrainerId = sCoopOriginalPartnerTrainerId;
+    gTrainerBattleParameter = sCoopOriginalTrainerBattleParameter;
+    gMain.savedCallback = sCoopOriginalSavedCallback;
+    if (completed)
+        CoopBattleRuntime_CompleteBattle();
+    else
+        CoopBattleRuntime_DisarmEngine();
+    memset(&sCoopBattlePlan, 0, sizeof(sCoopBattlePlan));
+    sCoopBattleEntryActive = FALSE;
+    sCoopBattleEntryPrepared = FALSE;
+    CoopBattleConsent_OnFriendlyBattleEnded();
+    CoopFriendly_OnBattleEnded(result);
+    /* The friendly script is parked in its wait; it shows the result. */
+    SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+}
+
+bool8 BattleSetup_StartCoopFriendlyBattle(const struct Pokemon *team, u8 count)
+{
+    u8 battleId[COOP_BATTLE_ID_SIZE];
+    struct CoopBattleFriendlyRules rules;
+    u8 peerCount = 0;
+    u8 i;
+
+    if (team == NULL || sCoopBattleEntryActive || sCoopBattleEntryPrepared
+     || !CoopBattleRuntime_IsStartReleased()
+     || !CoopBattleConsent_CopyCurrentBattleId(battleId, sizeof(battleId))
+     || !CoopBattleRuntime_GetFriendlyRules(battleId, &rules)
+     || !CoopBattleRuntime_MakeFriendlyPlan(battleId, gParties[B_TRAINER_0],
+                                            gPartiesCount[B_TRAINER_0], team, count,
+                                            &sCoopBattlePlan))
+        return FALSE;
+
+    memcpy(sCoopOriginalPeerParty, gParties[B_TRAINER_2], sizeof(sCoopOriginalPeerParty));
+    sCoopOriginalLocalPartyCount = gPartiesCount[B_TRAINER_0];
+    sCoopOriginalPeerPartyCount = gPartiesCount[B_TRAINER_2];
+    sCoopOriginalBattleTypeFlags = gBattleTypeFlags;
+    sCoopOriginalSavedCallback = gMain.savedCallback;
+    sCoopOriginalPartnerTrainerId = gPartnerTrainerId;
+    sCoopOriginalTrainerBattleParameter = gTrainerBattleParameter;
+    sCoopBattleEntryPrepared = TRUE;
+    if (!CoopBattleRuntime_ArmEngine(battleId))
+    {
+        RollbackCoopBattleEntry();
+        return FALSE;
+    }
+
+    /* Both ROMs stage the same records: this ROM's team (its snapshot) at
+     * B_TRAINER_0 and the peer's snapshot at B_TRAINER_1, in pick order,
+     * each scaled to Lv. 50 on a copy when the challenge asks for it. */
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (i < count)
+            gParties[B_TRAINER_0][i] = team[i];
+        else
+            ZeroMonData(&gParties[B_TRAINER_0][i]);
+        ZeroMonData(&gParties[B_TRAINER_1][i]);
+    }
+    if (!CoopBattleRuntime_CopyPeerTeam(gParties[B_TRAINER_1], PARTY_SIZE, &peerCount)
+     || peerCount != count)
+    {
+        for (i = 0; i < PARTY_SIZE; i++)
+            ZeroMonData(&gParties[B_TRAINER_1][i]);
+        CoopBattleRuntime_DisarmEngine();
+        RollbackCoopBattleEntry();
+        return FALSE;
+    }
+    CoopFriendly_ScaleTeam(gParties[B_TRAINER_0], count, rules.level_mode);
+    CoopFriendly_ScaleTeam(gParties[B_TRAINER_1], peerCount, rules.level_mode);
+    gPartiesCount[B_TRAINER_0] = count;
+    gPartiesCount[B_TRAINER_1] = peerCount;
+
+    /* The secret-base opponent takes the staged party as it is; the
+     * battle's display name comes from the partner's records. */
+    TRAINER_BATTLE_PARAM.opponentA = TRAINER_SECRET_BASE;
+    TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;
+    /* BATTLE_TYPE_SECRET_BASE gives both sides the same item and affection
+     * rules (like a link battle) and the secret-base opponent display. */
+    gBattleTypeFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_SECRET_BASE
+        | (rules.format == COOP_BATTLE_FRIENDLY_DOUBLES ? BATTLE_TYPE_DOUBLE : 0);
+    gMain.savedCallback = CB2_EndCoopFriendlyBattle;
+
+    sCoopBattleEntryActive = TRUE;
+    LockPlayerFieldControls();
+    FreezeObjectEvents();
+    StopPlayerAvatar();
+    CreateBattleStartTask(B_TRANSITION_SLICE, MUS_VS_TRAINER);
     ScriptContext_Stop();
     return TRUE;
 }
@@ -1490,7 +1712,21 @@ void ToggleTrainerFlag(u16 trainerId)
     }
 }
 
+/* The single co-op hook for every dotrainerbattle. An eligible encounter
+ * sends a trainer reservation and parks the script right here; the consent
+ * poll later starts the co-op battle or the unchanged vanilla one. Nothing
+ * below this call has run yet, so a fallback sees the original parameters. */
 void BattleSetup_StartTrainerBattle(void)
+{
+    if (CoopTrainerEncounter_TryBegin(TRAINER_BATTLE_PARAM.opponentA))
+    {
+        ScriptContext_Stop();
+        return;
+    }
+    BattleSetup_StartVanillaTrainerBattle();
+}
+
+void BattleSetup_StartVanillaTrainerBattle(void)
 {
     if (gNoOfApproachingTrainers == 2)
     {
@@ -1707,7 +1943,20 @@ static void CB2_EndRematchBattle(void)
     }
 }
 
+/* The match-call rematch entry (special BattleSetup_StartRematchBattle).
+ * Like dotrainerbattle, an eligible encounter parks the rematch script here
+ * and the consent poll later starts the co-op or the vanilla rematch. */
 void BattleSetup_StartRematchBattle(void)
+{
+    if (CoopTrainerEncounter_TryBegin(TRAINER_BATTLE_PARAM.opponentA))
+    {
+        ScriptContext_Stop();
+        return;
+    }
+    BattleSetup_StartVanillaRematchBattle();
+}
+
+void BattleSetup_StartVanillaRematchBattle(void)
 {
     gBattleTypeFlags = BATTLE_TYPE_TRAINER;
     gMain.savedCallback = CB2_EndRematchBattle;
@@ -2276,6 +2525,74 @@ static void HandleRematchVarsOnBattleEnd(void)
 
     ClearTrainerWantRematchState(gRematchTable, TRAINER_BATTLE_PARAM.opponentA);
     SetBattledTrainersFlags();
+}
+
+bool8 IsRematchBattleMode(u8 mode)
+{
+#if FREE_MATCH_CALL == FALSE
+    return mode == TRAINER_BATTLE_REMATCH || mode == TRAINER_BATTLE_REMATCH_DOUBLE;
+#else
+    return FALSE;
+#endif //FREE_MATCH_CALL
+}
+
+/* A rematch entry is a gRematchTable column after the first that names a
+ * different trainer (the Elite Four rows repeat their own ID). */
+bool8 BattleSetup_GetRematchBaseTrainer(u16 trainerId, u16 *baseTrainerId)
+{
+    u32 i, j;
+
+    if (trainerId == TRAINER_NONE)
+        return FALSE;
+    for (i = 0; i < REMATCH_TABLE_ENTRIES; i++)
+    {
+        for (j = 1; j < REMATCHES_COUNT; j++)
+        {
+            if (gRematchTable[i].trainerIds[j] == 0)
+                break;
+            if (gRematchTable[i].trainerIds[j] == trainerId
+             && gRematchTable[i].trainerIds[0] != trainerId)
+            {
+                if (baseTrainerId != NULL)
+                    *baseTrainerId = gRematchTable[i].trainerIds[0];
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
+/* Runs fn with the vanilla end-of-battle view of the parameters (opponent A
+ * is this trainer, no opponent B), then puts the script's own back. */
+static void WithTrainerAsOpponentA(u16 trainerId, void (*fn)(void))
+{
+    TrainerBattleParameter saved = gTrainerBattleParameter;
+
+    TRAINER_BATTLE_PARAM.opponentA = trainerId;
+    TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;
+    fn();
+    gTrainerBattleParameter = saved;
+}
+
+/* CB2_EndRematchBattle's win branch without its callback and poison step. */
+static void ApplyRematchWinBookkeeping(void)
+{
+    RegisterTrainerInMatchCall();
+    SetBattledTrainersFlags();
+    if (I_VS_SEEKER_CHARGING != 0)
+        ClearRematchMovementByTrainerId();
+    ClearTrainerWantRematchState(gRematchTable, TRAINER_BATTLE_PARAM.opponentA);
+    SetBattledTrainersFlags();
+}
+
+void BattleSetup_ApplyCoopRematchWin(u16 trainerId)
+{
+    WithTrainerAsOpponentA(trainerId, ApplyRematchWinBookkeeping);
+}
+
+void BattleSetup_RegisterTrainerInMatchCall(u16 trainerId)
+{
+    WithTrainerAsOpponentA(trainerId, RegisterTrainerInMatchCall);
 }
 
 void ShouldTryGetTrainerScript(void)

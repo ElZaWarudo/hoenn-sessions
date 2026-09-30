@@ -61,6 +61,23 @@ pub struct PokemonIdentity {
     pub substructs: [[u8; SUBSTRUCT_SIZE]; 4],
 }
 
+impl PokemonIdentity {
+    /// Total experience: the growth substruct's low 21 bits plus the three
+    /// high "mastery" bits this fork stores at bits 29-31 of the same word.
+    #[must_use]
+    pub fn experience(&self) -> u32 {
+        let word = u32::from_le_bytes(self.substructs[0][4..8].try_into().unwrap());
+        (word & 0x1f_ffff) | ((word >> 29) << 21)
+    }
+}
+
+/// Where a Pokémon is stored in a save.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PokemonLocation {
+    Party(usize),
+    Pc { box_index: usize, position: usize },
+}
+
 /// An occupied record keeps the exact bytes alongside decoded identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PokemonRecord<const N: usize> {
@@ -145,6 +162,68 @@ impl ValidatedSave {
         decode_record(raw)
     }
 }
+
+impl ValidatedSave {
+    /// Finds every stored copy of the Pokémon with this personality and
+    /// original-trainer ID across the active party and all PC boxes. Species
+    /// is deliberately not part of the key, so an evolution still matches.
+    ///
+    /// # Errors
+    ///
+    /// Propagates a corrupt record anywhere in the searched storage.
+    pub fn locate_pokemon(
+        &self,
+        personality: u32,
+        ot_id: u32,
+    ) -> Result<Vec<PokemonLocation>, PokemonError> {
+        let matches = |identity: &PokemonIdentity| {
+            identity.personality == personality && identity.ot_id == ot_id
+        };
+        let mut found = Vec::new();
+        for index in 0..usize::from(self.party_count()?) {
+            if let PokemonSlot::Occupied(record) = self.party_pokemon(index)?
+                && matches(&record.identity)
+            {
+                found.push(PokemonLocation::Party(index));
+            }
+        }
+        for box_index in 0..BOX_COUNT {
+            for position in 0..BOX_SIZE {
+                if let PokemonSlot::Occupied(record) = self.pc_pokemon(box_index, position)?
+                    && matches(&record.identity)
+                {
+                    found.push(PokemonLocation::Pc {
+                        box_index,
+                        position,
+                    });
+                }
+            }
+        }
+        Ok(found)
+    }
+}
+
+/// Decodes one standalone 100-byte party record exactly as a saved party
+/// slot is decoded: checksum-verified decryption, species presence, and the
+/// egg flags. The bytes are never rewritten.
+///
+/// # Errors
+///
+/// Returns [`PokemonError::Checksum`] or [`PokemonError::MissingSpecies`] for
+/// a nonempty record that is not structurally valid.
+pub fn decode_party_record(
+    raw: [u8; PARTY_POKEMON_SIZE],
+) -> Result<PokemonSlot<PARTY_POKEMON_SIZE>, PokemonError> {
+    decode_record(raw)
+}
+
+/// Current HP of a decoded party record (`struct Pokemon.hp`, offset 86).
+#[must_use]
+pub fn party_record_hp(raw: &[u8; PARTY_POKEMON_SIZE]) -> u16 {
+    u16::from_le_bytes([raw[PARTY_HP_OFFSET], raw[PARTY_HP_OFFSET + 1]])
+}
+
+const PARTY_HP_OFFSET: usize = 86;
 
 fn decode_record<const N: usize>(raw: [u8; N]) -> Result<PokemonSlot<N>, PokemonError> {
     // ZeroMonData clears the boxed portion and sets party mail to MAIL_NONE

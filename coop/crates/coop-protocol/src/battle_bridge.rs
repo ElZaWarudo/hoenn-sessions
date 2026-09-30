@@ -7,7 +7,9 @@ use thiserror::Error;
 
 pub const BATTLE_PARTY_MON_SIZE: usize = 100;
 pub const BATTLE_MAX_ACTION_SIZE: usize = 48;
-pub const BATTLE_MAX_TURN: u16 = 32;
+/// Lockstep rounds per battle: every turn, plus every mid-battle decision
+/// round of a friendly battle (a replacement after a faint, U-turn...).
+pub const BATTLE_MAX_TURN: u16 = 120;
 pub const BATTLE_COMMIT_WIRE_SIZE: usize = 43;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -25,6 +27,104 @@ impl BattleKind {
             2 => Ok(Self::Friendly),
             _ => Err(BattleBridgeError::Value),
         }
+    }
+}
+
+/// Friendly battle format chosen by the challenger (game protocol 5).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum FriendlyBattleFormat {
+    Singles = 1,
+    /// Each player fields its first two Pokémon and controls its own side.
+    Doubles = 2,
+}
+
+/// Whether both teams battle at their own levels or as copies set to 50.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum FriendlyLevelMode {
+    AsIs = 0,
+    Fifty = 1,
+}
+
+/// The challenge a friendly battle is fought under. It travels in the
+/// reserve, the join offer and the manifest as three bytes: format, level
+/// mode, team size (1..=6, at least 2 for doubles). Each player stages that
+/// many Pokémon, in pick order, as its snapshot.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FriendlyBattleRules {
+    pub format: FriendlyBattleFormat,
+    pub level_mode: FriendlyLevelMode,
+    pub team_size: u8,
+}
+
+impl FriendlyBattleRules {
+    pub const WIRE_SIZE: usize = 3;
+
+    pub fn validate(&self) -> Result<(), BattleBridgeError> {
+        let minimum = match self.format {
+            FriendlyBattleFormat::Singles => 1,
+            FriendlyBattleFormat::Doubles => 2,
+        };
+        if self.team_size < minimum || self.team_size > 6 {
+            return Err(BattleBridgeError::Value);
+        }
+        Ok(())
+    }
+
+    pub fn to_wire(&self) -> [u8; 3] {
+        [self.format as u8, self.level_mode as u8, self.team_size]
+    }
+
+    pub fn from_wire(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
+        if bytes.len() != Self::WIRE_SIZE {
+            return Err(BattleBridgeError::Length);
+        }
+        let rules = Self {
+            format: match bytes[0] {
+                1 => FriendlyBattleFormat::Singles,
+                2 => FriendlyBattleFormat::Doubles,
+                _ => return Err(BattleBridgeError::Value),
+            },
+            level_mode: match bytes[1] {
+                0 => FriendlyLevelMode::AsIs,
+                1 => FriendlyLevelMode::Fifty,
+                _ => return Err(BattleBridgeError::Value),
+            },
+            team_size: bytes[2],
+        };
+        rules.validate()?;
+        Ok(rules)
+    }
+}
+
+/// Friendly records carry valid rules; trainer records carry none (zeros).
+fn check_friendly_rules(
+    kind: BattleKind,
+    rules: Option<FriendlyBattleRules>,
+) -> Result<(), BattleBridgeError> {
+    match (kind, rules) {
+        (BattleKind::Friendly, Some(rules)) => rules.validate(),
+        (BattleKind::CooperativeTrainer, None) => Ok(()),
+        _ => Err(BattleBridgeError::Value),
+    }
+}
+
+fn rules_wire(rules: Option<FriendlyBattleRules>) -> [u8; 3] {
+    rules.map_or([0; 3], |rules| rules.to_wire())
+}
+
+fn decode_rules(
+    kind: BattleKind,
+    bytes: &[u8],
+) -> Result<Option<FriendlyBattleRules>, BattleBridgeError> {
+    match kind {
+        BattleKind::Friendly => FriendlyBattleRules::from_wire(bytes).map(Some),
+        BattleKind::CooperativeTrainer if bytes.iter().all(|byte| *byte == 0) => Ok(None),
+        BattleKind::CooperativeTrainer => Err(BattleBridgeError::Value),
     }
 }
 
@@ -232,11 +332,16 @@ pub struct TrainerBattleReserveRecord {
     pub trainer_region: Option<RegionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trainer_ordinal: Option<u16>,
+    /// Friendly battles only (game protocol 5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
 }
 
 impl TrainerBattleReserveRecord {
-    pub const FRIENDLY_WIRE_SIZE: usize = 5;
-    pub const TRAINER_WIRE_SIZE: usize = 8;
+    /// Both kinds are eight bytes: `[5..8)` is the trainer region and
+    /// ordinal, or the friendly rules.
+    pub const WIRE_SIZE: usize = 8;
+    pub const TRAINER_WIRE_SIZE: usize = Self::WIRE_SIZE;
 
     fn validate(&self) -> Result<(), BattleBridgeError> {
         if self.request_nonce == 0
@@ -246,16 +351,12 @@ impl TrainerBattleReserveRecord {
         {
             return Err(BattleBridgeError::Value);
         }
-        Ok(())
+        check_friendly_rules(self.kind, self.friendly_rules)
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, BattleBridgeError> {
         self.validate()?;
-        let mut bytes = Vec::with_capacity(if self.trainer_ordinal.is_some() {
-            Self::TRAINER_WIRE_SIZE
-        } else {
-            Self::FRIENDLY_WIRE_SIZE
-        });
+        let mut bytes = Vec::with_capacity(Self::WIRE_SIZE);
         bytes.push(self.kind as u8);
         bytes.extend_from_slice(&self.request_nonce.to_le_bytes());
         if let Some(ordinal) = self.trainer_ordinal {
@@ -265,22 +366,31 @@ impl TrainerBattleReserveRecord {
                     .wire(),
             );
             bytes.extend_from_slice(&ordinal.to_le_bytes());
+        } else {
+            bytes.extend_from_slice(&rules_wire(self.friendly_rules));
         }
         Ok(bytes)
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
-        if bytes.len() != Self::FRIENDLY_WIRE_SIZE && bytes.len() != Self::TRAINER_WIRE_SIZE {
+        if bytes.len() != Self::WIRE_SIZE {
             return Err(BattleBridgeError::Length);
         }
+        let kind = BattleKind::from_wire(bytes[0])?;
+        let trainer = kind == BattleKind::CooperativeTrainer;
         let result = Self {
-            kind: BattleKind::from_wire(bytes[0])?,
+            kind,
             request_nonce: u32::from_le_bytes(bytes[1..5].try_into().expect("checked length")),
-            trainer_region: (bytes.len() == Self::TRAINER_WIRE_SIZE)
+            trainer_region: trainer
                 .then(|| RegionId::from_wire(bytes[5]).map_err(|_| BattleBridgeError::Value))
                 .transpose()?,
-            trainer_ordinal: (bytes.len() == Self::TRAINER_WIRE_SIZE)
+            trainer_ordinal: trainer
                 .then(|| u16::from_le_bytes(bytes[6..8].try_into().expect("checked length"))),
+            friendly_rules: if trainer {
+                None
+            } else {
+                decode_rules(kind, &bytes[5..8])?
+            },
         };
         result.validate()?;
         Ok(result)
@@ -354,6 +464,9 @@ pub struct BattleJoinOfferRecord {
     pub kind: BattleKind,
     pub role: BattleRole,
     pub request_nonce: u32,
+    /// The challenge the partner sees before it answers (friendly only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
 }
 
 /// Result of the partner's consent for the requester.  The reserve nonce is
@@ -402,7 +515,7 @@ impl BattleConsentOutcomeRecord {
 }
 
 impl BattleJoinOfferRecord {
-    pub const WIRE_SIZE: usize = 22;
+    pub const WIRE_SIZE: usize = 25;
 
     fn validate(&self) -> Result<(), BattleBridgeError> {
         check_battle_id(self.battle_id)?;
@@ -411,7 +524,7 @@ impl BattleJoinOfferRecord {
         {
             return Err(BattleBridgeError::Value);
         }
-        Ok(())
+        check_friendly_rules(self.kind, self.friendly_rules)
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, BattleBridgeError> {
@@ -420,6 +533,7 @@ impl BattleJoinOfferRecord {
         bytes.extend_from_slice(&self.battle_id.0);
         bytes.extend_from_slice(&[self.kind as u8, self.role as u8]);
         bytes.extend_from_slice(&self.request_nonce.to_le_bytes());
+        bytes.extend_from_slice(&rules_wire(self.friendly_rules));
         Ok(bytes)
     }
 
@@ -427,11 +541,13 @@ impl BattleJoinOfferRecord {
         if bytes.len() != Self::WIRE_SIZE {
             return Err(BattleBridgeError::Length);
         }
+        let kind = BattleKind::from_wire(bytes[16])?;
         let result = Self {
             battle_id: id(bytes),
-            kind: BattleKind::from_wire(bytes[16])?,
+            kind,
             role: BattleRole::from_wire(bytes[17])?,
             request_nonce: u32::from_le_bytes(bytes[18..22].try_into().expect("checked length")),
+            friendly_rules: decode_rules(kind, &bytes[22..25])?,
         };
         result.validate()?;
         Ok(result)
@@ -805,14 +921,18 @@ pub struct BattleManifestRecord {
     pub local_member_slot: u8,
     pub trainer_region: RegionId,
     pub trainer_ordinal: u16,
+    /// `[119..122)`: the friendly challenge (zeros for a trainer battle).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
 }
 
 impl BattleManifestRecord {
-    pub const WIRE_SIZE: usize = 119;
+    pub const WIRE_SIZE: usize = 122;
     fn validate_identity(&self) -> Result<(), BattleBridgeError> {
         if self.local_member_slot > 1 {
             return Err(BattleBridgeError::Value);
         }
+        check_friendly_rules(self.kind, self.friendly_rules)?;
         match self.kind {
             BattleKind::Friendly
                 if self.trainer_region == RegionId::Unspecified && self.trainer_ordinal == 0 =>
@@ -840,12 +960,14 @@ impl BattleManifestRecord {
             self.trainer_region.wire(),
         ]);
         bytes.extend_from_slice(&self.trainer_ordinal.to_le_bytes());
+        bytes.extend_from_slice(&rules_wire(self.friendly_rules));
         Ok(bytes)
     }
     pub fn decode(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
         if bytes.len() != Self::WIRE_SIZE {
             return Err(BattleBridgeError::Length);
         }
+        let kind = BattleKind::from_wire(bytes[114])?;
         let result = Self {
             battle_id: id(bytes),
             turn: turn(bytes),
@@ -854,11 +976,12 @@ impl BattleManifestRecord {
                 BattleDigest(bytes[50..82].try_into().expect("checked length")),
                 BattleDigest(bytes[82..114].try_into().expect("checked length")),
             ],
-            kind: BattleKind::from_wire(bytes[114])?,
+            kind,
             local_member_slot: bytes[115],
             trainer_region: RegionId::from_wire(bytes[116])
                 .map_err(|_| BattleBridgeError::Value)?,
             trainer_ordinal: u16::from_le_bytes([bytes[117], bytes[118]]),
+            friendly_rules: decode_rules(kind, &bytes[119..122])?,
         };
         check_turn(result.turn, true)?;
         result.validate_identity()?;
@@ -977,6 +1100,197 @@ impl AbortBattleRecord {
     }
 }
 
+/// A server-issued trade outcome (an open `TRADE` ledger entry) delivered to
+/// the ROM as bridge message `TradeCommit` (0x0119, sidecar to ROM).
+///
+/// Wire layout, exactly [`TradeCommitRecord::WIRE_SIZE`] = 128 bytes, i.e. the
+/// whole bridge payload; every multi-byte integer is little endian:
+///
+/// | offset | size | field                                                   |
+/// |-------:|-----:|---------------------------------------------------------|
+/// |      0 |   16 | `commit_id`, ledger commit UUID octets in network order |
+/// |     16 |    1 | `slot`, zero-based party slot `0..=5` (a hint, below)   |
+/// |     17 |    3 | reserved, must be zero (keeps the u32 fields aligned)   |
+/// |     20 |    4 | `outgoing_personality` of the Pokémon leaving the party |
+/// |     24 |    4 | `outgoing_ot_id` of the Pokémon leaving the party       |
+/// |     28 |  100 | `incoming_record`, the exact 100-byte party `struct Pokemon` |
+///
+/// `slot` is the party slot the trade was offered from. The player may reorder
+/// the party before the commit applies, so the ROM overwrites whichever party
+/// slot holds the outgoing personality and OT ID (trying `slot` first), and
+/// the server accepts `incoming_record` in any party slot at finalize.
+///
+/// The first 28 bytes are the [`TradeCommitAppliedRecord`] header the ROM
+/// echoes back, unchanged (including `slot`), once the party holds
+/// `incoming_record`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TradeCommitRecord {
+    pub commit_id: BattleId,
+    pub slot: u8,
+    pub outgoing_personality: u32,
+    pub outgoing_ot_id: u32,
+    #[serde(with = "mon_hex_array")]
+    pub incoming_record: [u8; BATTLE_PARTY_MON_SIZE],
+}
+
+/// ROM acknowledgement for an applied [`TradeCommitRecord`].
+///
+/// It travels as the existing `CommitApplied` (0x000B) bridge message and is
+/// distinguished from the 43-byte battle acknowledgement by its length:
+/// exactly [`TradeCommitAppliedRecord::WIRE_SIZE`] = 28 bytes, byte-identical
+/// to offsets `0..28` of the delivered `TradeCommit` payload (commit UUID,
+/// slot, three zero bytes, outgoing personality, outgoing OT ID).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TradeCommitAppliedRecord {
+    pub commit_id: BattleId,
+    pub slot: u8,
+    pub outgoing_personality: u32,
+    pub outgoing_ot_id: u32,
+}
+
+mod mon_hex_array {
+    use super::{BATTLE_PARTY_MON_SIZE, hex_digit, hex_encode};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &[u8; BATTLE_PARTY_MON_SIZE],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&hex_encode(value))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[u8; BATTLE_PARTY_MON_SIZE], D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text.len() != BATTLE_PARTY_MON_SIZE * 2 {
+            return Err(serde::de::Error::custom("invalid party mon length"));
+        }
+        let mut result = [0; BATTLE_PARTY_MON_SIZE];
+        for (slot, pair) in result.iter_mut().zip(text.as_bytes().chunks_exact(2)) {
+            let upper = hex_digit(pair[0])
+                .ok_or_else(|| serde::de::Error::custom("invalid party mon hex"))?;
+            let lower = hex_digit(pair[1])
+                .ok_or_else(|| serde::de::Error::custom("invalid party mon hex"))?;
+            *slot = (upper << 4) | lower;
+        }
+        Ok(result)
+    }
+}
+
+const TRADE_COMMIT_HEADER_SIZE: usize = 28;
+
+fn encode_trade_header(
+    commit_id: BattleId,
+    slot: u8,
+    outgoing_personality: u32,
+    outgoing_ot_id: u32,
+) -> Result<Vec<u8>, BattleBridgeError> {
+    check_battle_id(commit_id)?;
+    if slot >= 6 {
+        return Err(BattleBridgeError::Value);
+    }
+    let mut bytes = Vec::with_capacity(TradeCommitRecord::WIRE_SIZE);
+    bytes.extend_from_slice(&commit_id.0);
+    bytes.extend_from_slice(&[slot, 0, 0, 0]);
+    bytes.extend_from_slice(&outgoing_personality.to_le_bytes());
+    bytes.extend_from_slice(&outgoing_ot_id.to_le_bytes());
+    Ok(bytes)
+}
+
+fn decode_trade_header(bytes: &[u8]) -> Result<(BattleId, u8, u32, u32), BattleBridgeError> {
+    if bytes[17..20] != [0, 0, 0] {
+        return Err(BattleBridgeError::Value);
+    }
+    let commit_id = id(bytes);
+    let slot = bytes[16];
+    check_battle_id(commit_id)?;
+    if slot >= 6 {
+        return Err(BattleBridgeError::Value);
+    }
+    Ok((
+        commit_id,
+        slot,
+        u32::from_le_bytes(bytes[20..24].try_into().expect("checked length")),
+        u32::from_le_bytes(bytes[24..28].try_into().expect("checked length")),
+    ))
+}
+
+impl TradeCommitRecord {
+    pub const WIRE_SIZE: usize = TRADE_COMMIT_HEADER_SIZE + BATTLE_PARTY_MON_SIZE;
+
+    pub fn encode(&self) -> Result<Vec<u8>, BattleBridgeError> {
+        if self.incoming_record == [0; BATTLE_PARTY_MON_SIZE] {
+            return Err(BattleBridgeError::Value);
+        }
+        let mut bytes = encode_trade_header(
+            self.commit_id,
+            self.slot,
+            self.outgoing_personality,
+            self.outgoing_ot_id,
+        )?;
+        bytes.extend_from_slice(&self.incoming_record);
+        Ok(bytes)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
+        if bytes.len() != Self::WIRE_SIZE {
+            return Err(BattleBridgeError::Length);
+        }
+        let (commit_id, slot, outgoing_personality, outgoing_ot_id) = decode_trade_header(bytes)?;
+        let result = Self {
+            commit_id,
+            slot,
+            outgoing_personality,
+            outgoing_ot_id,
+            incoming_record: bytes[TRADE_COMMIT_HEADER_SIZE..]
+                .try_into()
+                .expect("checked length"),
+        };
+        result.encode()?;
+        Ok(result)
+    }
+
+    /// The acknowledgement the ROM must return for this exact commit.
+    #[must_use]
+    pub const fn applied(&self) -> TradeCommitAppliedRecord {
+        TradeCommitAppliedRecord {
+            commit_id: self.commit_id,
+            slot: self.slot,
+            outgoing_personality: self.outgoing_personality,
+            outgoing_ot_id: self.outgoing_ot_id,
+        }
+    }
+}
+
+impl TradeCommitAppliedRecord {
+    pub const WIRE_SIZE: usize = TRADE_COMMIT_HEADER_SIZE;
+
+    pub fn encode(&self) -> Result<Vec<u8>, BattleBridgeError> {
+        encode_trade_header(
+            self.commit_id,
+            self.slot,
+            self.outgoing_personality,
+            self.outgoing_ot_id,
+        )
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, BattleBridgeError> {
+        if bytes.len() != Self::WIRE_SIZE {
+            return Err(BattleBridgeError::Length);
+        }
+        let (commit_id, slot, outgoing_personality, outgoing_ot_id) = decode_trade_header(bytes)?;
+        Ok(Self {
+            commit_id,
+            slot,
+            outgoing_personality,
+            outgoing_ot_id,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1024,7 +1338,7 @@ mod tests {
         let mut invalid = bytes.clone();
         invalid[16..18].fill(0);
         assert!(BattleFinishedRecord::decode(&invalid).is_err());
-        invalid[16..18].copy_from_slice(&33_u16.to_le_bytes());
+        invalid[16..18].copy_from_slice(&(BATTLE_MAX_TURN + 1).to_le_bytes());
         assert!(BattleFinishedRecord::decode(&invalid).is_err());
         invalid[16..18].copy_from_slice(&1_u16.to_le_bytes());
         invalid[18] = 0;
@@ -1099,6 +1413,7 @@ mod tests {
             request_nonce: 0x1234_5678,
             trainer_region: Some(RegionId::Hoenn),
             trainer_ordinal: Some(0x0234),
+            friendly_rules: None,
         };
         assert_eq!(
             reserve.encode().unwrap(),
@@ -1119,11 +1434,38 @@ mod tests {
             request_nonce: 42,
             trainer_region: None,
             trainer_ordinal: None,
+            friendly_rules: Some(FriendlyBattleRules {
+                format: FriendlyBattleFormat::Doubles,
+                level_mode: FriendlyLevelMode::Fifty,
+                team_size: 4,
+            }),
         };
-        assert_eq!(friendly.encode().unwrap(), [2, 42, 0, 0, 0]);
+        assert_eq!(friendly.encode().unwrap(), [2, 42, 0, 0, 0, 2, 1, 4]);
         assert_eq!(
             TrainerBattleReserveRecord::decode(&friendly.encode().unwrap()),
             Ok(friendly)
+        );
+        // Protocol 4's five-byte friendly reserve and rule-less friendly
+        // records are gone; a trainer reserve never carries rules.
+        assert_eq!(
+            TrainerBattleReserveRecord::decode(&[2, 42, 0, 0, 0]),
+            Err(BattleBridgeError::Length)
+        );
+        assert!(
+            TrainerBattleReserveRecord {
+                friendly_rules: None,
+                ..friendly
+            }
+            .encode()
+            .is_err()
+        );
+        assert!(
+            TrainerBattleReserveRecord {
+                friendly_rules: friendly.friendly_rules,
+                ..reserve
+            }
+            .encode()
+            .is_err()
         );
         let rejected = BattleReserveRejectedRecord {
             request_nonce: 0x1234_5678,
@@ -1181,11 +1523,27 @@ mod tests {
             kind: BattleKind::Friendly,
             role: BattleRole::Responder,
             request_nonce: 0,
+            friendly_rules: Some(FriendlyBattleRules {
+                format: FriendlyBattleFormat::Singles,
+                level_mode: FriendlyLevelMode::AsIs,
+                team_size: 3,
+            }),
         };
         let offer_bytes = offer.encode().unwrap();
-        assert_eq!(offer_bytes.len(), 22);
+        assert_eq!(offer_bytes.len(), 25);
         assert_eq!(&offer_bytes[16..18], &[2, 1]);
         assert_eq!(&offer_bytes[18..22], &[0, 0, 0, 0]);
+        assert_eq!(&offer_bytes[22..25], &[1, 0, 3]);
+        let trainer_offer = BattleJoinOfferRecord {
+            kind: BattleKind::CooperativeTrainer,
+            friendly_rules: None,
+            ..offer
+        };
+        let trainer_bytes = trainer_offer.encode().unwrap();
+        assert_eq!(&trainer_bytes[22..25], &[0, 0, 0]);
+        let mut invalid = trainer_bytes;
+        invalid[24] = 1;
+        assert!(BattleJoinOfferRecord::decode(&invalid).is_err());
         assert_eq!(BattleJoinOfferRecord::decode(&offer_bytes), Ok(offer));
         let requester = BattleJoinOfferRecord {
             role: BattleRole::Requester,
@@ -1224,7 +1582,8 @@ mod tests {
         invalid[18..22].fill(0);
         assert!(BattleJoinOfferRecord::decode(&invalid).is_err());
         assert!(BattleJoinOfferRecord::decode(&[0; 18]).is_err());
-        assert!(BattleJoinOfferRecord::decode(&[0; 23]).is_err());
+        assert!(BattleJoinOfferRecord::decode(&[0; 22]).is_err());
+        assert!(BattleJoinOfferRecord::decode(&[0; 26]).is_err());
     }
 
     #[test]
@@ -1260,6 +1619,7 @@ mod tests {
             local_member_slot: 1,
             trainer_region: RegionId::Hoenn,
             trainer_ordinal: 518,
+            friendly_rules: None,
         };
         let bundle = TurnBundleRecord {
             battle_id: id(),
@@ -1321,10 +1681,11 @@ mod tests {
             local_member_slot: 1,
             trainer_region: RegionId::Kanto,
             trainer_ordinal: 0x1234,
+            friendly_rules: None,
         };
         let bytes = record.encode().unwrap();
-        assert_eq!(bytes.len(), 119);
-        assert_eq!(&bytes[114..], &[1, 1, 2, 0x34, 0x12]);
+        assert_eq!(bytes.len(), 122);
+        assert_eq!(&bytes[114..], &[1, 1, 2, 0x34, 0x12, 0, 0, 0]);
         assert_eq!(BattleManifestRecord::decode(&bytes), Ok(record));
         assert_eq!(
             BattleManifestRecord::decode(&bytes[..114]),
@@ -1338,10 +1699,26 @@ mod tests {
                 Err(BattleBridgeError::Value)
             );
         }
+        for offset in 119..122 {
+            let mut invalid = bytes.clone();
+            invalid[offset] = 1;
+            assert_eq!(
+                BattleManifestRecord::decode(&invalid),
+                Err(BattleBridgeError::Value)
+            );
+        }
         record.kind = BattleKind::Friendly;
         assert_eq!(record.encode(), Err(BattleBridgeError::Value));
         record.trainer_region = RegionId::Unspecified;
         record.trainer_ordinal = 0;
+        // A friendly manifest must name the challenge.
+        assert_eq!(record.encode(), Err(BattleBridgeError::Value));
+        record.friendly_rules = Some(FriendlyBattleRules {
+            format: FriendlyBattleFormat::Doubles,
+            level_mode: FriendlyLevelMode::AsIs,
+            team_size: 2,
+        });
+        assert_eq!(&record.encode().unwrap()[119..], &[2, 0, 2]);
         for slot in 0..=1 {
             record.local_member_slot = slot;
             assert_eq!(
@@ -1354,6 +1731,66 @@ mod tests {
         assert_eq!(
             BattleManifestRecord::decode(&invalid),
             Err(BattleBridgeError::Value)
+        );
+    }
+
+    #[test]
+    fn friendly_rules_are_bounded_and_doubles_needs_two() {
+        for (bytes, valid) in [
+            ([1, 0, 1], true),
+            ([1, 1, 6], true),
+            ([2, 0, 2], true),
+            ([2, 1, 6], true),
+            ([2, 0, 1], false),
+            ([1, 0, 0], false),
+            ([1, 0, 7], false),
+            ([3, 0, 3], false),
+            ([1, 2, 3], false),
+            ([0, 0, 3], false),
+        ] {
+            assert_eq!(
+                FriendlyBattleRules::from_wire(&bytes).is_ok(),
+                valid,
+                "{bytes:?}"
+            );
+            if valid {
+                assert_eq!(
+                    FriendlyBattleRules::from_wire(&bytes).unwrap().to_wire(),
+                    bytes
+                );
+            }
+        }
+        assert_eq!(
+            FriendlyBattleRules::from_wire(&[1, 0]),
+            Err(BattleBridgeError::Length)
+        );
+        let json = serde_json::to_value(FriendlyBattleRules {
+            format: FriendlyBattleFormat::Doubles,
+            level_mode: FriendlyLevelMode::Fifty,
+            team_size: 3,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"format": "doubles", "level_mode": "fifty", "team_size": 3})
+        );
+    }
+
+    #[test]
+    fn rounds_are_bounded_by_the_raised_turn_limit() {
+        let hash = TurnResultHash {
+            battle_id: id(),
+            turn: BATTLE_MAX_TURN,
+            digest: BattleDigest([3; 32]),
+        };
+        assert!(hash.encode().is_ok());
+        assert!(
+            TurnResultHash {
+                turn: BATTLE_MAX_TURN + 1,
+                ..hash
+            }
+            .encode()
+            .is_err()
         );
     }
 }

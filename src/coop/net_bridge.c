@@ -2,11 +2,14 @@
 #include "coop/net_bridge.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
+#include "coop/friendly_battle.h"
 #include "coop/group_travel.h"
 #include "coop/online.h"
 #include "coop/presence_runtime.h"
 #include "coop/progress.h"
 #include "coop/save.h"
+#include "coop/trade_offer.h"
+#include "coop/trade_runtime.h"
 #include "johto/bug_contest.h"
 #include "constants/map_groups.h"
 #include "../data/map_group_count.h"
@@ -51,6 +54,12 @@ struct CoopNetRuntime
     bool8 recovery_required;
     u32 online_request_id;
     bool8 online_status_valid;
+    bool8 membership_known;
+    bool8 known_grouped;
+    bool8 remote_join_possible;
+    bool8 local_join_request_pending;
+    u32 local_join_online_request_id;
+    u32 local_join_pairing_request_id;
     u32 pairing_request_id;
     bool8 pairing_status_valid;
     struct CoopPairingStatus pairing_status;
@@ -76,13 +85,13 @@ static EWRAM_DATA struct CoopNetRuntime sCoopNetRuntime = {0};
 static bool8 IsOutboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_ROM_READY
-        && type <= COOP_BRIDGE_MESSAGE_BATTLE_READY;
+        && type <= COOP_BRIDGE_MESSAGE_TRADE_OFFER_DECISION;
 }
 
 static bool8 IsInboundMessageType(u16 type)
 {
     return type >= COOP_BRIDGE_MESSAGE_SESSION_READY
-        && type <= COOP_BRIDGE_MESSAGE_GROUP_ENDED;
+        && type <= COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS;
 }
 
 static bool8 IsKnownMessageType(u16 type)
@@ -654,6 +663,13 @@ bool8 CoopNetBridge_SendOnlineRequest(const struct CoopOnlineRequest *request)
         return FALSE;
     sCoopNetRuntime.online_request_id = request->request_id;
     sCoopNetRuntime.online_status_valid = FALSE;
+    if (request->action == COOP_ONLINE_INVITE
+     || request->action == COOP_ONLINE_INVITE_LAST_PARTNER)
+    {
+        sCoopNetRuntime.local_join_request_pending = TRUE;
+        sCoopNetRuntime.local_join_online_request_id = request->request_id;
+        sCoopNetRuntime.remote_join_possible = TRUE;
+    }
     return TRUE;
 }
 
@@ -737,6 +753,12 @@ bool8 CoopNetBridge_SendPairingRequest(const struct CoopPairingRequest *request)
         return FALSE;
     sCoopNetRuntime.pairing_request_id = request->request_id;
     sCoopNetRuntime.pairing_status_valid = FALSE;
+    if (request->action == COOP_PAIRING_CREATE)
+    {
+        sCoopNetRuntime.local_join_request_pending = TRUE;
+        sCoopNetRuntime.local_join_pairing_request_id = request->request_id;
+        sCoopNetRuntime.remote_join_possible = TRUE;
+    }
     return TRUE;
 }
 
@@ -774,8 +796,27 @@ bool8 CoopNetBridge_TakeProgressNotice(u8 *kind, u8 *region, u16 *subject_id)
 
 bool8 CoopNetBridge_IsGrouped(void)
 {
-    return IsCloudSessionActive() && sCoopNetRuntime.online_status_valid
-        && (sCoopNetRuntime.online_status.flags & COOP_ONLINE_GROUPED) != 0;
+    return IsCloudSessionActive() && sCoopNetRuntime.membership_known
+        && sCoopNetRuntime.known_grouped;
+}
+
+bool8 CoopNetBridge_IsOrMayBeGrouped(void)
+{
+    /* A fresh cloud session may resume an existing group. Keep unilateral
+     * travel closed before its first authenticated status, and through later
+     * refresh or transport loss until an authenticated update confirms the
+     * group ended. */
+    return sCoopNetRuntime.known_grouped
+        || sCoopNetRuntime.remote_join_possible
+        || sCoopNetRuntime.local_join_request_pending
+        || (sCoopNetRuntime.session_epoch != 0 && CoopSave_IsOnlineEnabled()
+            && !sCoopNetRuntime.membership_known)
+        || CoopNetBridge_IsGrouped();
+}
+
+bool8 CoopNetBridge_IsSessionActive(void)
+{
+    return IsCloudSessionActive();
 }
 
 bool8 CoopNetBridge_CanSendBattle(void)
@@ -821,7 +862,7 @@ static bool8 DecodeOnlineStatus(struct CoopOnlineStatus *status, const struct Co
     u32 i;
 
     if (message->length != COOP_ONLINE_STATUS_SIZE || payload[4] > COOP_ONLINE_FAILED
-     || (payload[5] & ~63) != 0 || payload[6] > 32 || payload[7] > 32
+     || (payload[5] & ~127) != 0 || payload[6] > 32 || payload[7] > 32
      || payload[8] > 31 || payload[9] > 31
      || payload[10] > 4 || payload[11] >= (payload[10] == 0 ? 1 : payload[10])
      || ((payload[5] & COOP_ONLINE_GROUPED) && payload[10] != 0)
@@ -1052,6 +1093,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
              * but reset every presence and interaction generation first. */
             PreserveQueuedSaveDataUpdatedBeforeQueueReset();
             PreserveQueuedProgressObservationsBeforeQueueReset();
+            CoopTradeRuntime_PreserveOutbound();
             CoopBattleRuntime_PreserveOutbound();
             CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
@@ -1061,6 +1103,10 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
             sCoopNetRuntime.cloud_epoch_accepted = TRUE;
             sCoopNetRuntime.online_status_valid = FALSE;
+            sCoopNetRuntime.membership_known = FALSE;
+            sCoopNetRuntime.local_join_request_pending = FALSE;
+            sCoopNetRuntime.local_join_online_request_id = 0;
+            sCoopNetRuntime.local_join_pairing_request_id = 0;
             sCoopNetRuntime.online_request_id = 0;
             sCoopNetRuntime.pairing_status_valid = FALSE;
             sCoopNetRuntime.pairing_request_id = 0;
@@ -1088,6 +1134,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
             CoopGroupTravel_OnSessionReady();
             CoopBattleConsent_OnSessionReady();
             CoopBattleRuntime_OnSessionReady(sCoopNetRuntime.session_epoch);
+            CoopTradeOffer_OnSessionReady();
             return TRUE;
         }
         else if (sCoopNetRuntime.session_epoch != 0
@@ -1098,6 +1145,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
          * message before publishing any state for the replacement session. */
         PreserveQueuedSaveDataUpdatedBeforeQueueReset();
         PreserveQueuedProgressObservationsBeforeQueueReset();
+        CoopTradeRuntime_PreserveOutbound();
         CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
         CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
         sCoopNetRuntime.session_epoch = message->session_epoch;
@@ -1108,6 +1156,10 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         sCoopNetRuntime.observed_sidecar_heartbeat_frame = sCoopNetRuntime.frame_counter;
         sCoopNetRuntime.cloud_epoch_accepted = TRUE;
         sCoopNetRuntime.online_status_valid = FALSE;
+        sCoopNetRuntime.membership_known = FALSE;
+        sCoopNetRuntime.local_join_request_pending = FALSE;
+        sCoopNetRuntime.local_join_online_request_id = 0;
+        sCoopNetRuntime.local_join_pairing_request_id = 0;
         sCoopNetRuntime.online_request_id = 0;
         sCoopNetRuntime.pairing_status_valid = FALSE;
         sCoopNetRuntime.pairing_request_id = 0;
@@ -1128,6 +1180,7 @@ static bool8 ProcessInboundMessage(const struct CoopBridgeMessage *message)
         CoopGroupTravel_OnSessionReady();
         CoopBattleConsent_OnSessionReady();
         CoopBattleRuntime_OnSessionReady(sCoopNetRuntime.session_epoch);
+        CoopTradeOffer_OnSessionReady();
         return TRUE;
     }
 
@@ -1158,6 +1211,36 @@ invalid_invite_notice:
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED)
+    {
+        u16 i;
+
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        if (message->length != 2 || message->payload[0] > 1
+         || message->payload[1] > 1)
+            goto invalid_group_state;
+        for (i = 2; i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+            if (message->payload[i] != 0)
+                goto invalid_group_state;
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        sCoopNetRuntime.membership_known = TRUE;
+        sCoopNetRuntime.known_grouped = message->payload[0] != 0;
+        sCoopNetRuntime.remote_join_possible = message->payload[1] != 0;
+        /* The watcher is paused during artifact mutations. A frame delivered
+         * after a mutation reply is the first snapshot that may release its
+         * local guard; an older Online Refresh reply never may. */
+        sCoopNetRuntime.local_join_request_pending =
+            sCoopNetRuntime.local_join_online_request_id != 0
+            || sCoopNetRuntime.local_join_pairing_request_id != 0;
+        return FALSE;
+invalid_group_state:
+        gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+        return FALSE;
+    }
+
     if (message->type == COOP_BRIDGE_MESSAGE_PAIRING_STATUS)
     {
         struct CoopPairingStatus status = {0};
@@ -1180,6 +1263,18 @@ invalid_invite_notice:
         {
             sCoopNetRuntime.pairing_status = status;
             sCoopNetRuntime.pairing_status_valid = TRUE;
+            if (status.request_id == sCoopNetRuntime.local_join_pairing_request_id)
+            {
+                /* Wait for a watcher snapshot started after the mutation;
+                 * a concurrent Online Refresh may still hold older state. */
+                sCoopNetRuntime.remote_join_possible = TRUE;
+                sCoopNetRuntime.local_join_pairing_request_id = 0;
+            }
+            if (status.result == COOP_PAIRING_JOINED)
+            {
+                sCoopNetRuntime.membership_known = TRUE;
+                sCoopNetRuntime.known_grouped = TRUE;
+            }
         }
         return FALSE;
 invalid_pairing_status:
@@ -1201,10 +1296,22 @@ invalid_pairing_status:
             return FALSE;
         }
         sCoopNetRuntime.rx_sequence = message->sequence;
+        if (status.request_id == sCoopNetRuntime.local_join_online_request_id)
+        {
+            sCoopNetRuntime.local_join_online_request_id = 0;
+            sCoopNetRuntime.remote_join_possible = TRUE;
+        }
         if (status.request_id == sCoopNetRuntime.online_request_id)
         {
             sCoopNetRuntime.online_status = status;
             sCoopNetRuntime.online_status_valid = TRUE;
+            if (status.result == COOP_ONLINE_READY || status.result == COOP_ONLINE_SUCCESS)
+            {
+                sCoopNetRuntime.membership_known = TRUE;
+                sCoopNetRuntime.known_grouped = (status.flags & COOP_ONLINE_GROUPED) != 0;
+                sCoopNetRuntime.remote_join_possible =
+                    (status.flags & COOP_ONLINE_REMOTE_JOIN_POSSIBLE) != 0;
+            }
         }
         return FALSE;
     }
@@ -1464,6 +1571,51 @@ invalid_pairing_status:
         return FALSE;
     }
 
+    if (message->type == COOP_BRIDGE_MESSAGE_TRADE_COMMIT)
+    {
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        /* The record fills the whole payload, so there is no padding. A
+         * malformed commit is neither applied nor acknowledged. */
+        if (CoopTradeRuntime_ReceiveCommit(message->payload, message->length)
+            == COOP_TRADE_INBOUND_MALFORMED)
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        return FALSE;
+    }
+
+    if (message->type == COOP_BRIDGE_MESSAGE_TRADE_OFFER_RECEIVED
+     || message->type == COOP_BRIDGE_MESSAGE_TRADE_OFFER_STATUS)
+    {
+        u16 i;
+        bool8 accepted;
+
+        if (!IsCloudSessionActive()
+         || message->session_epoch != sCoopNetRuntime.session_epoch
+         || !IsSequenceNewer(message->sequence, sCoopNetRuntime.rx_sequence))
+            return FALSE;
+        accepted = message->length <= COOP_NET_BRIDGE_PAYLOAD_SIZE;
+        for (i = message->length; accepted && i < COOP_NET_BRIDGE_PAYLOAD_SIZE; i++)
+            if (message->payload[i] != 0)
+                accepted = FALSE;
+        if (accepted)
+            accepted = message->type == COOP_BRIDGE_MESSAGE_TRADE_OFFER_RECEIVED
+                ? CoopTradeOffer_ReceiveOffer(message->payload, message->length)
+                : CoopTradeOffer_ReceiveStatus(message->payload, message->length);
+        if (!accepted)
+        {
+            gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
+            return FALSE;
+        }
+        sCoopNetRuntime.rx_sequence = message->sequence;
+        return FALSE;
+    }
+
     /* Later milestones add handlers for the remaining documented inbound
      * messages. Until then, do not advance the receive sequence for one. */
     gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_PROTOCOL_ERROR;
@@ -1489,6 +1641,7 @@ static void ObserveSidecarHeartbeat(void)
         {
             PreserveQueuedSaveDataUpdatedBeforeQueueReset();
             PreserveQueuedProgressObservationsBeforeQueueReset();
+            CoopTradeRuntime_PreserveOutbound();
             CoopBattleRuntime_PreserveOutbound();
             CoopBridgeQueue_Init(&gCoopNetBridge.game_to_network);
             CoopBridgeQueue_Init(&gCoopNetBridge.network_to_game);
@@ -1498,6 +1651,7 @@ static void ObserveSidecarHeartbeat(void)
             CoopGroupTravel_OnTransportLost();
             CoopBattleConsent_OnTransportLost();
             CoopBattleRuntime_OnTransportLost();
+            CoopTradeOffer_OnTransportLost();
             CancelCheckpointAuthorization();
         }
     }
@@ -1522,6 +1676,9 @@ void CoopNetBridge_Init(void)
     CoopGroupTravel_Init();
     CoopBattleConsent_Init();
     CoopBattleRuntime_Init();
+    CoopTradeRuntime_Init();
+    CoopTradeOffer_Init();
+    CoopFriendly_Init();
 
     TryAnnounceRomReady();
 }
@@ -1575,6 +1732,11 @@ void CoopNetBridge_Poll(void)
     }
 
     CoopOnline_PollInviteNotice();
+    /* Runs before the checkpoint early returns below: it owns the trade
+     * checkpoint it requests and must observe the grant. */
+    CoopTradeRuntime_Poll();
+    /* The trade offer UI also owns the checkpoints it requests. */
+    CoopTradeOffer_Poll();
 
     if ((gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_SESSION_READY) == 0)
         return;

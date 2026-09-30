@@ -9,7 +9,9 @@ use coop_cloud::{
     ApiVersion, ArtifactIdentity, CharacterId, CommitId, GroupId, IdempotencyKey, LeaseFence,
     Revision, SnapshotFinalizeRequest, SnapshotId, SnapshotRecord, UnixTimestampMillis,
 };
-use coop_protocol::{RegionId, TrainerInstanceId, WorldZone, identity_catalog};
+use coop_protocol::{
+    FriendlyBattleRules, IdentityKind, RegionId, TrainerInstanceId, WorldZone, identity_catalog,
+};
 use coop_save::{CharacterSave, PokemonSlot, RegistryContract};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -20,6 +22,7 @@ use super::storage::{
     MAX_BATTLE_ACTION_BYTES, MAX_BATTLE_IDEMPOTENCY, MAX_BATTLE_IDEMPOTENCY_PER_MEMBER,
     MAX_BATTLE_RESERVATIONS, MAX_BATTLE_TURNS, Store,
 };
+use super::trainer_rules::{HOENN_STORY_BATTLES, MemberStanding, TrainerRule, trainer_rule};
 use super::{AuthenticatedActor, Phase2Error};
 
 const OP_RESERVE: &str = "battle_reserve_v1";
@@ -37,6 +40,56 @@ pub enum BattleReservationKind {
     Friendly,
 }
 
+/// Who applies the rewards of a cooperative trainer win.
+///
+/// `Ledger` is the original server progression handoff (Wally): a Won result
+/// becomes `CommitPending` and issues one commit grant per member. `Local`
+/// completes the battle on a matching Won result and issues no grant; each
+/// ROM applies the vanilla rewards itself. Records persisted before this
+/// field existed default to `Ledger`, so their behavior is unchanged.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BattleRewardMode {
+    #[default]
+    Ledger,
+    Local,
+    /// A friendly battle between the two grouped players: each member
+    /// stages exactly the challenge's team size of battle-ready records (like
+    /// `Local`, the snapshot is those records), and the result gives nothing
+    /// to anyone: no ledger entry, no grant, no member roles.
+    None,
+}
+
+impl BattleRewardMode {
+    /// Members stage the exact party records they battle with.
+    const fn stages_records(self) -> bool {
+        matches!(self, Self::Local | Self::None)
+    }
+}
+
+impl BattleRewardMode {
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    fn is_ledger(&self) -> bool {
+        *self == Self::Ledger
+    }
+}
+
+/// A member's part in a local-reward trainer battle. The requester is always
+/// a `Participant`. A partner who has already beaten a first-battle trainer,
+/// has not beaten a rematch's first battle, or is not at a gym's story point
+/// joins as a `Helper` (see `trainer_rules`).
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BattleMemberRole {
+    Participant,
+    Helper,
+}
+
+/// Number of Pokémon records a local-reward snapshot commit may carry.
+const MAX_STAGED_PARTY_RECORDS: usize = 6;
+/// Usable (non-egg, HP above zero) Pokémon each side may bring.
+const MAX_STAGED_USABLE: usize = 3;
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BattleReservationRequest {
@@ -44,6 +97,11 @@ pub struct BattleReservationRequest {
     pub kind: BattleReservationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trainer_id: Option<TrainerInstanceId>,
+    /// A friendly challenge (game protocol 5): format, level mode and team
+    /// size. Friendly reservations without rules keep the original anchored
+    /// ledger shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
     pub idempotency_key: IdempotencyKey,
 }
 
@@ -85,6 +143,17 @@ pub struct BattleReservationView {
     pub trainer_id: Option<TrainerInstanceId>,
     pub status: BattleReservationStatus,
     pub expires_at: UnixTimestampMillis,
+    /// Omitted on the wire for `Ledger` so friendly and Wally views keep
+    /// their exact pre-existing shape.
+    #[serde(default, skip_serializing_if = "BattleRewardMode::is_ledger")]
+    pub reward_mode: BattleRewardMode,
+    /// Present only for `Local` trainer battles, in `member_character_ids`
+    /// order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_roles: Option<[BattleMemberRole; 2]>,
+    /// The friendly challenge, shown to the partner before it answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -121,6 +190,18 @@ pub(crate) struct BattleReservationRecord {
     /// `commit_grants` value.
     #[serde(default)]
     commit_grant_applied: [bool; 2],
+    /// Local-reward mode only: the exact party records each member staged in
+    /// its snapshot commitment. `peer_party` serves these to the partner.
+    #[serde(default)]
+    staged_parties: [Option<StagedParty>; 2],
+}
+
+/// A validated set of 100-byte party records (lowercase hex) and the party
+/// digest computed from them.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+struct StagedParty {
+    digest: String,
+    records: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -204,6 +285,13 @@ pub struct BattleSnapshotCommitRequest {
     pub api_version: ApiVersion,
     pub idempotency_key: IdempotencyKey,
     pub snapshot_hash: String,
+    /// Required in `Local` reward mode and rejected in `Ledger` mode: 1-6
+    /// exact 100-byte party records, each as 200 lowercase hex characters
+    /// (the same encoding `BattlePeerPartyView::party_records` uses). One to
+    /// three of them must be usable (not an egg, HP above zero), and
+    /// `snapshot_hash` must equal the party digest of these records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub party_records: Option<Vec<String>>,
 }
 
 /// Confirms that this member's running ROM has loaded the published battle
@@ -304,7 +392,13 @@ impl BattleReservationRequest {
         {
             return Err(Phase2Error::InvalidRequest);
         }
-        Ok(())
+        match (self.kind, self.friendly_rules) {
+            (BattleReservationKind::CooperativeTrainer, Some(_)) => {
+                Err(Phase2Error::InvalidRequest)
+            }
+            (_, Some(rules)) if rules.validate().is_err() => Err(Phase2Error::InvalidRequest),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -409,6 +503,7 @@ fn prune_locked(state: &mut super::storage::State, now: u64) {
 
     let mut release_members = Vec::new();
     let mut remove_reservations = Vec::new();
+    let mut void_battles = Vec::new();
     for (battle_id, record) in &mut state.battle_reservations {
         let group_active = state
             .groups
@@ -431,6 +526,9 @@ fn prune_locked(state: &mut super::storage::State, now: u64) {
                 | BattleReservationStatus::CommitPending
         ) && (!group_active || record.expires_at <= now)
         {
+            if record.view.status == BattleReservationStatus::CommitPending {
+                void_battles.push(*battle_id);
+            }
             record.view.status = BattleReservationStatus::Expired;
             release_members.extend(record.view.member_character_ids);
             record.retain_until = add_ms(now, BATTLE_IDEMPOTENCY_TTL_MS).unwrap_or(u64::MAX);
@@ -440,6 +538,9 @@ fn prune_locked(state: &mut super::storage::State, now: u64) {
     }
     for battle_id in remove_reservations {
         state.battle_reservations.remove(&battle_id);
+    }
+    for battle_id in void_battles {
+        super::ledger::void_battle_entries(state, battle_id);
     }
     let live_ids: HashSet<_> = state
         .battle_reservations
@@ -477,6 +578,9 @@ fn reserve_view(
     trainer_id: Option<TrainerInstanceId>,
     status: BattleReservationStatus,
     expires_at: u64,
+    reward_mode: BattleRewardMode,
+    member_roles: Option<[BattleMemberRole; 2]>,
+    friendly_rules: Option<FriendlyBattleRules>,
 ) -> Result<BattleReservationView, Phase2Error> {
     Ok(BattleReservationView {
         api_version: ApiVersion::V1,
@@ -488,6 +592,9 @@ fn reserve_view(
         trainer_id,
         status,
         expires_at: Store::unix_timestamp(expires_at).map_err(Phase2Error::from)?,
+        reward_mode,
+        member_roles,
+        friendly_rules,
     })
 }
 
@@ -513,14 +620,97 @@ fn check_idempotency_capacity(
 /// Pokémon's exact 100-byte serialized record in party order), lowercase hex.
 /// The source is the latest finalized character.sav, not live unsaved RAM.
 fn party_digest(save: &coop_save::ValidatedSave) -> Result<String, Phase2Error> {
-    let records = party_records(save)?;
+    Ok(records_digest(&party_records(save)?))
+}
+
+/// The same party digest as [`party_digest`], over records supplied directly.
+fn records_digest(records: &[[u8; 100]]) -> String {
     let mut hash = Sha256::new();
     hash.update(b"coop-battle-party-v1\0");
     hash.update([records.len() as u8]);
     for record in records {
         hash.update(record);
     }
-    Ok(hex_string(&hash.finalize()))
+    hex_string(&hash.finalize())
+}
+
+pub(super) fn parse_hex_record(text: &str) -> Option<[u8; 100]> {
+    fn nibble(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            _ => None,
+        }
+    }
+    let bytes = text.as_bytes();
+    if bytes.len() != 200 {
+        return None;
+    }
+    let mut record = [0_u8; 100];
+    for (index, pair) in bytes.chunks_exact(2).enumerate() {
+        record[index] = (nibble(pair[0])? << 4) | nibble(pair[1])?;
+    }
+    Some(record)
+}
+
+/// Structurally validates staged party records: 1-6 occupied,
+/// checksum-valid records. Returns the party and its usable count.
+fn staged_party(records: &[String]) -> Result<(StagedParty, usize), Phase2Error> {
+    if records.is_empty() || records.len() > MAX_STAGED_PARTY_RECORDS {
+        return Err(Phase2Error::InvalidRequest);
+    }
+    let mut raw = Vec::with_capacity(records.len());
+    let mut usable = 0_usize;
+    for text in records {
+        let record = parse_hex_record(text).ok_or(Phase2Error::InvalidRequest)?;
+        match coop_save::decode_party_record(record) {
+            Ok(PokemonSlot::Occupied(pokemon)) => {
+                if !pokemon.identity.is_egg
+                    && !pokemon.identity.is_bad_egg
+                    && coop_save::party_record_hp(&record) > 0
+                {
+                    usable += 1;
+                }
+            }
+            Ok(PokemonSlot::Empty { .. }) | Err(_) => return Err(Phase2Error::InvalidRequest),
+        }
+        raw.push(record);
+    }
+    Ok((
+        StagedParty {
+            digest: records_digest(&raw),
+            records: raw.iter().map(|record| hex_string(record)).collect(),
+        },
+        usable,
+    ))
+}
+
+/// The staging rule of a reservation: a local-reward side brings one to
+/// three usable Pokémon among its records; a friendly side brings exactly
+/// the challenge's team size, every one of them battle-ready.
+fn staged_party_allowed(view: &BattleReservationView, party: &StagedParty, usable: usize) -> bool {
+    match view.reward_mode {
+        BattleRewardMode::Local => (1..=MAX_STAGED_USABLE).contains(&usable),
+        BattleRewardMode::None => view.friendly_rules.is_some_and(|rules| {
+            usize::from(rules.team_size) == party.records.len() && usable == party.records.len()
+        }),
+        BattleRewardMode::Ledger => false,
+    }
+}
+
+/// The party digest a member's commitment, manifest slot, and ready receipt
+/// must carry: the anchored save party in `Ledger` mode, or the staged
+/// records in `Local` mode (none until that member commits).
+fn expected_party_digest(record: &BattleReservationRecord, index: usize) -> Option<&str> {
+    match record.view.reward_mode {
+        BattleRewardMode::Ledger => record
+            .party_anchors
+            .as_ref()
+            .map(|anchors| anchors[index].digest.as_str()),
+        BattleRewardMode::Local | BattleRewardMode::None => record.staged_parties[index]
+            .as_ref()
+            .map(|party| party.digest.as_str()),
+    }
 }
 
 fn party_records(save: &coop_save::ValidatedSave) -> Result<Vec<[u8; 100]>, Phase2Error> {
@@ -571,12 +761,14 @@ fn snapshot_for_party(
     Ok(snapshot.clone())
 }
 
+/// Returns the anchor and what this member's save says about the requested
+/// trainer (the default standing without a trainer).
 fn party_anchor(
     store: &Store,
     character_id: CharacterId,
     snapshot: &SnapshotRecord,
-    trainer_id: Option<&TrainerInstanceId>,
-) -> Result<PartyAnchor, Phase2Error> {
+    trainer: Option<(&TrainerInstanceId, &TrainerEncounter)>,
+) -> Result<(PartyAnchor, MemberStanding), Phase2Error> {
     let sav = snapshot
         .files
         .iter()
@@ -603,51 +795,132 @@ fn party_anchor(
     if !save.coop().online_eligible() {
         return Err(Phase2Error::Conflict);
     }
-    if let Some(trainer_id) = trainer_id {
-        let encounter = trainer_encounter(trainer_id)?;
+    let mut standing = MemberStanding::default();
+    if let Some((trainer_id, encounter)) = trainer {
         if save
             .coop()
             .progress_for(encounter.region)
             .is_none_or(|progress| progress.story_checkpoint < encounter.minimum_story_checkpoint)
-            || save
-                .coop()
-                .defeated_trainer(trainer_id)
-                .map_err(|_| Phase2Error::Conflict)?
         {
             return Err(Phase2Error::Conflict);
         }
+        standing.defeated = save
+            .coop()
+            .defeated_trainer(trainer_id)
+            .map_err(|_| Phase2Error::Conflict)?;
+        match &encounter.rule {
+            TrainerRule::Ordinary => {}
+            TrainerRule::Rematch { base } => {
+                standing.base_defeated = save
+                    .coop()
+                    .defeated_trainer(base)
+                    .map_err(|_| Phase2Error::Conflict)?;
+            }
+            // Badges live in the SaveBlock1 flags of the uploaded save.
+            TrainerRule::Gym { .. } => {
+                standing.badges = save.hoenn_badges().ok_or(Phase2Error::Conflict)?;
+            }
+            // The story flags and vars live in the same SaveBlock1 arrays.
+            TrainerRule::Story { battle } => {
+                standing.story_point = HOENN_STORY_BATTLES
+                    .get(*battle)
+                    .ok_or(Phase2Error::Internal)?
+                    .at_story_point(|flag| save.event_flag(flag), |var| save.event_var(var))
+                    .ok_or(Phase2Error::Conflict)?;
+            }
+        }
     }
-    Ok(PartyAnchor {
-        snapshot_id: snapshot.snapshot_id,
-        revision: snapshot.revision,
-        digest: party_digest(&save)?,
-    })
+    Ok((
+        PartyAnchor {
+            snapshot_id: snapshot.snapshot_id,
+            revision: snapshot.revision,
+            digest: party_digest(&save)?,
+        },
+        standing,
+    ))
 }
 
 struct TrainerEncounter {
     region: RegionId,
-    map: &'static str,
+    /// The exact logical map for a server-configured story encounter. `None`
+    /// means the catalog has no map for this trainer, so the members only
+    /// need to be on the same or directly connected maps.
+    map: Option<&'static str>,
     minimum_story_checkpoint: u32,
+    reward_mode: BattleRewardMode,
+    rule: TrainerRule,
 }
 
-// Production reservations deliberately recognize only encounters whose exact
-// logical map and story gate are configured by the server. A registry entry
-// alone does not establish where a trainer can be encountered.
+const WALLY_VICTORY_ROAD: &str = "HOENN:TRAINER_WALLY_1";
+
+#[cfg(test)]
+thread_local! {
+    /// The progression-ledger path (`BattleRewardMode::Ledger`: a Won result
+    /// becomes `CommitPending` with commit grants) is no longer chosen for
+    /// any trainer, but records persisted by an older server can still be in
+    /// it. Tests of that machinery put Wally back on it for their thread.
+    static LEGACY_WALLY_LEDGER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+fn legacy_wally_ledger() -> bool {
+    LEGACY_WALLY_LEDGER.with(std::cell::Cell::get)
+}
+
+#[cfg(not(test))]
+const fn legacy_wally_ledger() -> bool {
+    false
+}
+
+// Every trainer with a persisted ordinal in the identity catalog can become a
+// cooperative battle with local rewards. Wally's Victory Road battle keeps his
+// configured story map; since A9 it is a local-reward story battle like the
+// others (the ROM's legacy Wally special stays off). The catalog carries no
+// trainer map, so other encounters are located only by the two members'
+// positions.
 fn trainer_encounter(trainer_id: &TrainerInstanceId) -> Result<TrainerEncounter, Phase2Error> {
-    identity_catalog::trainer(trainer_id).map_err(|_| Phase2Error::Conflict)?;
-    match trainer_id.as_str() {
-        "KANTO:TRAINER_BROCK" => Ok(TrainerEncounter {
-            region: RegionId::Kanto,
-            map: "PEWTER_CITY_GYM",
-            minimum_story_checkpoint: 0,
-        }),
-        "HOENN:TRAINER_WALLY_1" => Ok(TrainerEncounter {
-            region: RegionId::Hoenn,
-            map: "VICTORY_ROAD_1F",
-            minimum_story_checkpoint: 0,
-        }),
-        _ => Err(Phase2Error::Conflict),
+    let entry = identity_catalog::trainer(trainer_id).map_err(|_| Phase2Error::Conflict)?;
+    if entry.kind != IdentityKind::Trainer || entry.ordinal.is_none() {
+        return Err(Phase2Error::Conflict);
     }
+    let region = entry
+        .region
+        .ensure_concrete()
+        .map_err(|_| Phase2Error::Conflict)?;
+    let wally = trainer_id.as_str() == WALLY_VICTORY_ROAD;
+    if wally && legacy_wally_ledger() {
+        return Ok(TrainerEncounter {
+            region,
+            map: Some("VICTORY_ROAD_1F"),
+            minimum_story_checkpoint: 0,
+            reward_mode: BattleRewardMode::Ledger,
+            rule: TrainerRule::Ordinary,
+        });
+    }
+    Ok(TrainerEncounter {
+        region,
+        map: wally.then_some("VICTORY_ROAD_1F"),
+        minimum_story_checkpoint: 0,
+        reward_mode: BattleRewardMode::Local,
+        rule: trainer_rule(trainer_id),
+    })
+}
+
+/// Whether two maps of one region share a cardinal map edge (either header).
+fn maps_connected(region: RegionId, first: &str, second: &str) -> bool {
+    let (Ok(a), Ok(b)) = (
+        coop_protocol::catalog::resolve_map(region, first),
+        coop_protocol::catalog::resolve_map(region, second),
+    ) else {
+        return false;
+    };
+    coop_protocol::catalog::maps_share_edge(a.map_group, a.map_number, b.map_group, b.map_number)
+        || coop_protocol::catalog::maps_share_edge(
+            b.map_group,
+            b.map_number,
+            a.map_group,
+            a.map_number,
+        )
 }
 
 fn trainer_member_zones(
@@ -663,12 +936,25 @@ fn trainer_member_zones(
             .ok_or(Phase2Error::Conflict)
     });
     let zones = [zones[0].clone()?, zones[1].clone()?];
-    if zones[0] != zones[1]
-        || zones.iter().any(|zone| {
-            zone.region != encounter.region || zone.map != encounter.map || zone.channel != 1
-        })
-    {
-        return Err(Phase2Error::Conflict);
+    match encounter.map {
+        Some(map) => {
+            if zones[0] != zones[1]
+                || zones.iter().any(|zone| {
+                    zone.region != encounter.region || zone.map != map || zone.channel != 1
+                })
+            {
+                return Err(Phase2Error::Conflict);
+            }
+        }
+        None => {
+            if zones.iter().any(|zone| zone.region != encounter.region)
+                || zones[0].channel != zones[1].channel
+                || (zones[0].map != zones[1].map
+                    && !maps_connected(encounter.region, &zones[0].map, &zones[1].map))
+            {
+                return Err(Phase2Error::Conflict);
+            }
+        }
     }
     Ok(zones)
 }
@@ -747,6 +1033,7 @@ fn issue_commit_grants(
             used_ids.extend(grants.iter().map(|grant| grant.grant_id));
         }
     }
+    used_ids.extend(state.ledger_entries.keys().copied());
 
     let mut grants = Vec::with_capacity(2);
     for (index, member) in record.view.member_character_ids.iter().enumerate() {
@@ -832,6 +1119,10 @@ pub(crate) fn retrieve_commit_grant(
             || grant.source_snapshot_id != anchor.snapshot_id
             || grant.source_revision != anchor.revision
             || grant.source_party_digest != anchor.digest
+            || state
+                .ledger_entries
+                .get(&grant.grant_id)
+                .is_some_and(|entry| !entry.status.is_open())
         {
             return Err(Phase2Error::Conflict);
         }
@@ -891,10 +1182,10 @@ fn validate_wally_story_delta(
     source: &coop_save::ValidatedSave,
     incoming: &coop_save::ValidatedSave,
 ) -> Result<(), Phase2Error> {
-    const FLAGS_OFFSET: usize = 0x1270;
-    const FLAG_BYTES: usize = 0x960 / 8;
-    const VARS_OFFSET: usize = 0x139c;
-    const VAR_COUNT: usize = 0x418b - 0x4000 + 1;
+    const FLAGS_OFFSET: usize = coop_save::SAVE_BLOCK1_FLAGS_OFFSET;
+    const FLAG_BYTES: usize = coop_save::SAVE_BLOCK1_FLAG_BYTES;
+    const VARS_OFFSET: usize = coop_save::SAVE_BLOCK1_VARS_OFFSET;
+    const VAR_COUNT: usize = coop_save::SAVE_BLOCK1_VAR_COUNT;
     let before_flags = source
         .save_block1_range(FLAGS_OFFSET, FLAG_BYTES)
         .ok_or(Phase2Error::Conflict)?;
@@ -1052,6 +1343,7 @@ pub(crate) fn apply_commit_grant(
     {
         return Err(Phase2Error::Conflict);
     }
+    super::ledger::check_declarable(state, actor.character_id, commit_id)?;
     let retain_until = add_ms(now, BATTLE_IDEMPOTENCY_TTL_MS)?;
     let members = record.view.member_character_ids;
     let complete = {
@@ -1067,10 +1359,21 @@ pub(crate) fn apply_commit_grant(
         }
         complete
     };
+    super::ledger::mark_applied(state, commit_id, request.snapshot_id);
     if complete {
         release_battle_locks(state, battle_id, members);
     }
     Ok(true)
+}
+
+/// Whether a battle's commit grants can still be applied.
+pub(crate) fn grant_is_live(state: &super::storage::State, battle_id: Uuid, now: u64) -> bool {
+    state
+        .battle_reservations
+        .get(&battle_id)
+        .is_some_and(|record| {
+            record.view.status == BattleReservationStatus::CommitPending && record.expires_at > now
+        })
 }
 
 pub(crate) fn reserve(
@@ -1084,6 +1387,8 @@ pub(crate) fn reserve(
     let now = store.now();
     let request_fingerprint = if let Some(trainer_id) = &request.trainer_id {
         fingerprint(OP_RESERVE, &(group_id, request.kind, trainer_id))?
+    } else if let Some(rules) = request.friendly_rules {
+        fingerprint(OP_RESERVE, &(group_id, request.kind, rules))?
     } else {
         fingerprint(OP_RESERVE, &(group_id, request.kind))?
     };
@@ -1130,15 +1435,52 @@ pub(crate) fn reserve(
                 .collect::<Result<Vec<_>, _>>()?,
         ))
     })?;
-    let anchors: [PartyAnchor; 2] = expected_members
+    let trainer = request.trainer_id.as_ref().zip(encounter.as_ref());
+    let anchored: [(PartyAnchor, MemberStanding); 2] = expected_members
         .into_iter()
         .zip(snapshots.iter())
-        .map(|(member, snapshot)| {
-            party_anchor(store, member, snapshot, request.trainer_id.as_ref())
-        })
+        .map(|(member, snapshot)| party_anchor(store, member, snapshot, trainer))
         .collect::<Result<Vec<_>, _>>()?
         .try_into()
         .map_err(|_| Phase2Error::Internal)?;
+    let [
+        (first_anchor, first_standing),
+        (second_anchor, second_standing),
+    ] = anchored;
+    let standings = [first_standing, second_standing];
+    let anchors = [first_anchor, second_anchor];
+    let (reward_mode, member_roles) = match &encounter {
+        // A friendly challenge stages its teams and rewards no one.
+        None if request.friendly_rules.is_some() => (BattleRewardMode::None, None),
+        None => (BattleRewardMode::Ledger, None),
+        Some(encounter) if encounter.reward_mode == BattleRewardMode::Ledger => {
+            // The progression ledger grants the trainer to both members, so
+            // neither may have beaten it already.
+            if standings.iter().any(|standing| standing.defeated) {
+                return Err(Phase2Error::Conflict);
+            }
+            (BattleRewardMode::Ledger, None)
+        }
+        Some(encounter) => {
+            let requester = expected_members
+                .iter()
+                .position(|member| *member == actor.character_id)
+                .ok_or(Phase2Error::Forbidden)?;
+            if !encounter.rule.requester_allowed(standings[requester]) {
+                return Err(Phase2Error::Conflict);
+            }
+            (
+                BattleRewardMode::Local,
+                Some(std::array::from_fn(|index| {
+                    if index == requester || encounter.rule.participates(standings[index]) {
+                        BattleMemberRole::Participant
+                    } else {
+                        BattleMemberRole::Helper
+                    }
+                })),
+            )
+        }
+    };
     store.write_transaction(|state| {
         let members = group_and_current_members(state, actor, group_id, fence, now)?;
         prune_locked(state, now);
@@ -1190,6 +1532,16 @@ pub(crate) fn reserve(
         {
             return Err(Phase2Error::Conflict);
         }
+        // A Ledger-mode win issues one ledger entry per member, and a member
+        // may hold only one open entry.
+        if request.kind == BattleReservationKind::CooperativeTrainer
+            && reward_mode == BattleRewardMode::Ledger
+            && members
+                .iter()
+                .any(|member| super::ledger::has_open_entry(state, *member))
+        {
+            return Err(Phase2Error::Conflict);
+        }
         check_idempotency_capacity(state, actor.character_id)?;
         let battle_id = store.random_uuid().map_err(Phase2Error::from)?;
         let expires_at = add_ms(now, BATTLE_RESERVATION_TTL_MS)?;
@@ -1203,6 +1555,9 @@ pub(crate) fn reserve(
             request.trainer_id.clone(),
             BattleReservationStatus::Pending,
             expires_at,
+            reward_mode,
+            member_roles,
+            request.friendly_rules,
         )?;
         if let Some(id) = evict_id {
             state.battle_reservations.remove(&id);
@@ -1217,6 +1572,7 @@ pub(crate) fn reserve(
                 consensus: BattleConsensusState::default(),
                 commit_grants: None,
                 commit_grant_applied: [false, false],
+                staged_parties: [None, None],
             },
         );
         for member in members {
@@ -1358,6 +1714,7 @@ fn action(
         };
         check_idempotency_capacity(state, actor.character_id)?;
         let retain_until = add_ms(now, BATTLE_IDEMPOTENCY_TTL_MS)?;
+        let commit_pending = record.view.status == BattleReservationStatus::CommitPending;
         let mut view = record.view;
         view.status = next_status;
         let expires_at = if next_status == BattleReservationStatus::Accepted {
@@ -1367,6 +1724,9 @@ fn action(
         } else {
             record.expires_at
         };
+        if commit_pending {
+            super::ledger::void_battle_entries(state, battle_id);
+        }
         if !matches!(
             next_status,
             BattleReservationStatus::Pending | BattleReservationStatus::Accepted
@@ -1387,6 +1747,7 @@ fn action(
                 consensus: record.consensus,
                 commit_grants: record.commit_grants,
                 commit_grant_applied: record.commit_grant_applied,
+                staged_parties: record.staged_parties,
             },
         );
         state.battle_idempotency.insert(
@@ -1521,6 +1882,13 @@ pub(crate) fn inspect_consensus(
     })
 }
 
+/// Where the peer's party records come from: the anchored finalized save in
+/// `Ledger` mode, or the records the peer staged in `Local` mode.
+enum PeerPartySource {
+    Anchored(SnapshotRecord),
+    Staged(Vec<String>),
+}
+
 fn peer_party_source(
     state: &super::storage::State,
     actor: AuthenticatedActor,
@@ -1528,7 +1896,7 @@ fn peer_party_source(
     battle_id: Uuid,
     fence: LeaseFence,
     now: u64,
-) -> Result<(CharacterId, PartyAnchor, SnapshotRecord, String), Phase2Error> {
+) -> Result<(CharacterId, PartyAnchor, PeerPartySource, String), Phase2Error> {
     let members = group_and_current_members(state, actor, group_id, fence, now)?;
     let record = state
         .battle_reservations
@@ -1559,26 +1927,41 @@ fn peer_party_source(
     if manifest.battle_id != battle_id
         || manifest.member_character_ids != members
         || members.iter().enumerate().any(|(index, member)| {
+            let Some(expected) = expected_party_digest(record, index) else {
+                return true;
+            };
             !anchor_is_current(state, *member, &anchors[index])
-                || manifest.snapshot_hashes[index] != anchors[index].digest
+                || manifest.snapshot_hashes[index] != expected
                 || record.consensus.commitments[index]
                     .as_ref()
-                    .is_none_or(|commitment| commitment.snapshot_hash != anchors[index].digest)
+                    .is_none_or(|commitment| commitment.snapshot_hash != expected)
         })
     {
         return Err(Phase2Error::Conflict);
     }
     let peer = members[peer_index];
-    let snapshot = snapshot_for_party(state, peer)?;
-    if snapshot.snapshot_id != anchors[peer_index].snapshot_id
-        || snapshot.revision != anchors[peer_index].revision
-    {
-        return Err(Phase2Error::Conflict);
-    }
+    let source = match record.view.reward_mode {
+        BattleRewardMode::Local | BattleRewardMode::None => PeerPartySource::Staged(
+            record.staged_parties[peer_index]
+                .as_ref()
+                .ok_or(Phase2Error::Conflict)?
+                .records
+                .clone(),
+        ),
+        BattleRewardMode::Ledger => {
+            let snapshot = snapshot_for_party(state, peer)?;
+            if snapshot.snapshot_id != anchors[peer_index].snapshot_id
+                || snapshot.revision != anchors[peer_index].revision
+            {
+                return Err(Phase2Error::Conflict);
+            }
+            PeerPartySource::Anchored(snapshot)
+        }
+    };
     Ok((
         peer,
         anchors[peer_index].clone(),
-        snapshot,
+        source,
         manifest.snapshot_hashes[peer_index].clone(),
     ))
 }
@@ -1593,9 +1976,24 @@ pub(crate) fn peer_party(
     fence: LeaseFence,
 ) -> Result<BattlePeerPartyView, Phase2Error> {
     let now = store.now();
-    let (peer, anchor, snapshot, manifest_hash) = store.read_transaction(|state| {
+    let (peer, anchor, source, manifest_hash) = store.read_transaction(|state| {
         peer_party_source(state, actor, group_id, battle_id, fence, now)
     })?;
+    let snapshot = match source {
+        // Local-reward records were validated when staged and are already
+        // bound to the manifest digest; no object read is needed.
+        PeerPartySource::Staged(party_records) => {
+            return Ok(BattlePeerPartyView {
+                api_version: ApiVersion::V1,
+                battle_id,
+                peer_character_id: peer,
+                snapshot_revision: anchor.revision,
+                snapshot_hash: manifest_hash,
+                party_records,
+            });
+        }
+        PeerPartySource::Anchored(snapshot) => snapshot,
+    };
     let sav = snapshot
         .files
         .iter()
@@ -1714,6 +2112,17 @@ pub(crate) fn commit_snapshot(
     if request.api_version != ApiVersion::V1 || !valid_hash(&request.snapshot_hash) {
         return Err(Phase2Error::InvalidRequest);
     }
+    let staged = request
+        .party_records
+        .as_deref()
+        .map(staged_party)
+        .transpose()?;
+    if staged
+        .as_ref()
+        .is_some_and(|(party, _)| party.digest != request.snapshot_hash)
+    {
+        return Err(Phase2Error::InvalidRequest);
+    }
     consensus_transition(
         store,
         actor,
@@ -1723,13 +2132,28 @@ pub(crate) fn commit_snapshot(
         false,
         |record, index, store, state| {
             let anchors = record.party_anchors.as_ref().ok_or(Phase2Error::Conflict)?;
+            // The anchor still fences ownership, lease, and revision in both
+            // modes. Only Ledger mode binds the party to the finalized save.
+            let expected = match record.view.reward_mode {
+                BattleRewardMode::Ledger if staged.is_some() => {
+                    return Err(Phase2Error::InvalidRequest);
+                }
+                BattleRewardMode::Ledger => anchors[index].digest.clone(),
+                BattleRewardMode::Local | BattleRewardMode::None => {
+                    let (party, usable) = staged.as_ref().ok_or(Phase2Error::InvalidRequest)?;
+                    if !staged_party_allowed(&record.view, party, *usable) {
+                        return Err(Phase2Error::InvalidRequest);
+                    }
+                    party.digest.clone()
+                }
+            };
             if record
                 .view
                 .member_character_ids
                 .iter()
                 .enumerate()
                 .any(|(i, member)| !anchor_is_current(state, *member, &anchors[i]))
-                || request.snapshot_hash != anchors[index].digest
+                || request.snapshot_hash != expected
             {
                 return Err(Phase2Error::Conflict);
             }
@@ -1749,6 +2173,9 @@ pub(crate) fn commit_snapshot(
                 snapshot_hash: request.snapshot_hash.clone(),
                 idempotency_key: request.idempotency_key,
             });
+            if record.view.reward_mode.stages_records() {
+                record.staged_parties[index] = staged.as_ref().map(|(party, _)| party.clone());
+            }
             if let [Some(a), Some(b)] = &record.consensus.commitments {
                 let nonce = store.random_uuid().map_err(Phase2Error::from)?;
                 let seed: [u8; 32] = Sha256::digest(
@@ -1802,14 +2229,19 @@ pub(crate) fn ready(
                 .manifest
                 .as_ref()
                 .ok_or(Phase2Error::Conflict)?;
+            let expected = [0, 1]
+                .map(|member_index| expected_party_digest(record, member_index).map(str::to_owned));
+            let [Some(first), Some(second)] = expected else {
+                return Err(Phase2Error::Conflict);
+            };
+            let expected = [first, second];
             if manifest.battle_id != battle_id
                 || manifest.member_character_ids != record.view.member_character_ids
                 || record.consensus.commitments.iter().enumerate().any(
                     |(member_index, commitment)| {
                         commitment.as_ref().is_none_or(|commitment| {
-                            commitment.snapshot_hash != anchors[member_index].digest
-                                || manifest.snapshot_hashes[member_index]
-                                    != anchors[member_index].digest
+                            commitment.snapshot_hash != expected[member_index]
+                                || manifest.snapshot_hashes[member_index] != expected[member_index]
                         })
                     },
                 )
@@ -1818,7 +2250,7 @@ pub(crate) fn ready(
                         !anchor_is_current(state, *member, &anchors[member_index])
                     },
                 )
-                || request.snapshot_hash != anchors[index].digest
+                || request.snapshot_hash != expected[index]
             {
                 return Err(Phase2Error::Conflict);
             }
@@ -1840,7 +2272,7 @@ pub(crate) fn ready(
     )
 }
 
-fn hex_string(bytes: &[u8]) -> String {
+pub(super) fn hex_string(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut result = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -2144,27 +2576,30 @@ pub(crate) fn finish(
                 record.view.status = match record.view.kind {
                     BattleReservationKind::Friendly => BattleReservationStatus::Completed,
                     BattleReservationKind::CooperativeTrainer => {
-                        if first.result == BattleFinishResult::Won {
+                        if first.result == BattleFinishResult::Won
+                            && record.view.reward_mode == BattleRewardMode::Ledger
+                        {
                             BattleReservationStatus::CommitPending
                         } else {
                             BattleReservationStatus::Completed
                         }
                     }
                 };
-                // A matching trainer Won stays fenced and keeps both locks
-                // until the progression ledger (or expiry) resolves it.
-                // Friendly battles and trainer losses/draws have no
-                // progression handoff, so their Completed tombstone releases
-                // both locks immediately.
-                release = record.view.kind == BattleReservationKind::Friendly
-                    || first.result != BattleFinishResult::Won;
+                // A matching Ledger-mode trainer Won stays fenced and keeps
+                // both locks until the progression ledger (or expiry)
+                // resolves it. Friendly battles, trainer losses/draws, and
+                // Local-mode wins (each ROM applies its own vanilla rewards)
+                // have no progression handoff, so their Completed tombstone
+                // releases both locks immediately and issues no grant.
+                release = record.view.status == BattleReservationStatus::Completed;
             }
         }
 
         if record.view.status == BattleReservationStatus::CommitPending
             && record.commit_grants.is_none()
         {
-            record.commit_grants = Some(issue_commit_grants(store, state, &record)?);
+            let grants = issue_commit_grants(store, state, &record)?;
+            record.commit_grants = Some(super::ledger::issue_battle_grants(state, grants, now)?);
         }
 
         if diverged {
@@ -2311,7 +2746,7 @@ mod tests {
                 }
                 rewrite_sector_checksum(&mut bytes, logical);
             }
-            let offset = 0x139c + 2 * (0x40c3 - 0x4000);
+            let offset = coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x40c3 - 0x4000);
             let logical = 1 + offset / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
             let physical = selected_physical(&bytes, logical);
             let position = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE
@@ -2420,17 +2855,102 @@ mod tests {
         revision: u64,
         defeated: bool,
     ) -> String {
+        seed_finalized_party_defeating(
+            app,
+            actor,
+            revision,
+            defeated.then_some("HOENN:TRAINER_WALLY_1"),
+        )
+    }
+
+    fn seed_finalized_party_defeating(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        revision: u64,
+        defeated_trainer: Option<&str>,
+    ) -> String {
+        seed_finalized_progress(app, actor, revision, defeated_trainer.as_slice(), 0)
+    }
+
+    /// Sets one SaveBlock1 event flag in the selected (second) fixture slot.
+    fn write_save_block1_flag(bytes: &mut [u8], flag: usize, set: bool) {
+        let position = coop_save::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8;
+        let logical = 1 + position / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
+        let physical = selected_physical(bytes, logical);
+        let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+        let index = start + position % coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
+        if set {
+            bytes[index] |= 1 << (flag % 8);
+        } else {
+            bytes[index] &= !(1 << (flag % 8));
+        }
+        rewrite_sector_checksum(bytes, logical);
+    }
+
+    /// A finalized party save whose CSP1 records every trainer in
+    /// `defeated_trainers` and whose flags hold exactly the Hoenn `badges`.
+    fn seed_finalized_progress(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        revision: u64,
+        defeated_trainers: &[&str],
+        badges: u8,
+    ) -> String {
+        seed_finalized_story(app, actor, revision, defeated_trainers, badges, &[], &[])
+    }
+
+    /// Sets one SaveBlock1 script variable in the selected fixture slot.
+    fn write_save_block1_var(bytes: &mut [u8], var: usize, value: u16) {
+        let position = coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (var - coop_save::VARS_START);
+        for (index, byte) in value.to_le_bytes().into_iter().enumerate() {
+            let position = position + index;
+            let logical = 1 + position / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
+            let physical = selected_physical(bytes, logical);
+            let start = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE;
+            bytes[start + position % coop_save::SAVE_BLOCK3_CHUNK_OFFSET] = byte;
+            rewrite_sector_checksum(bytes, logical);
+        }
+    }
+
+    /// `seed_finalized_progress` with story flags and vars written too.
+    fn seed_finalized_story(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        revision: u64,
+        defeated_trainers: &[&str],
+        badges: u8,
+        flags: &[(usize, bool)],
+        vars: &[(usize, u16)],
+    ) -> String {
         let lease = app
             .store
             .inspect_state(|state| state.leases[&actor.character_id].contract)
             .expect("lease");
         let mut bytes = fixture_party_sav();
-        if defeated || revision > 1 {
-            let trainer = TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_WALLY_1").unwrap();
-            let ordinal = identity_catalog::trainer(&trainer)
-                .unwrap()
-                .ordinal
-                .unwrap();
+        for badge in 0..8 {
+            write_save_block1_flag(
+                &mut bytes,
+                coop_save::FLAG_BADGE01_GET + badge,
+                badges & (1 << badge) != 0,
+            );
+        }
+        for &(flag, set) in flags {
+            write_save_block1_flag(&mut bytes, flag, set);
+        }
+        for &(var, value) in vars {
+            write_save_block1_var(&mut bytes, var, value);
+        }
+        if !defeated_trainers.is_empty() || revision > 1 {
+            let ordinals: Vec<u16> = defeated_trainers
+                .iter()
+                .map(|id| {
+                    let trainer = TrainerInstanceId::parse(id).unwrap();
+                    identity_catalog::trainer(&trainer)
+                        .unwrap()
+                        .ordinal
+                        .unwrap()
+                })
+                .collect();
             let mut payload = [0_u8; coop_save::COOP_SAVE_V1_SIZE];
             for logical in 0..coop_save::SECTORS_PER_SLOT {
                 let physical = (0..coop_save::SECTORS_PER_SLOT)
@@ -2454,7 +2974,7 @@ mod tests {
                 }
             }
             payload[28..32].copy_from_slice(&(revision as u32).to_le_bytes());
-            if defeated {
+            for ordinal in &ordinals {
                 payload[68 + usize::from(ordinal / 8)] |= 1 << (ordinal % 8);
             }
             let crc = crc32fast::hash(&payload[..668]);
@@ -2559,6 +3079,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(100),
                 },
             )
@@ -2607,6 +3128,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     idempotency_key: key(102),
                     snapshot_hash: hashes[0].clone(),
+                    party_records: None,
                 },
             )
             .expect("first commitment");
@@ -2620,6 +3142,7 @@ mod tests {
                 api_version: ApiVersion::V1,
                 idempotency_key: key(103),
                 snapshot_hash: hashes[1].clone(),
+                party_records: None,
             },
         )
         .expect("second commitment")
@@ -3138,6 +3661,7 @@ mod tests {
                         .clone()
                 })
                 .expect("anchor"),
+            party_records: None,
         };
         app.commit_battle_snapshot(a, group, battle, fa, request.clone())
             .expect("commit");
@@ -3229,6 +3753,7 @@ mod tests {
                             .digest
                             .clone())
                         .expect("anchor"),
+                    party_records: None,
                 }
             ),
             Err(Phase2Error::Conflict)
@@ -3253,6 +3778,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(140),
                 },
             )
@@ -3288,6 +3814,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(142),
                 },
             )
@@ -3370,6 +3897,9 @@ mod tests {
         LeaseFence,
         LeaseFence,
     ) {
+        // Most tests below exercise the legacy ledger path through Wally;
+        // `local_wally` switches this thread back to the production rule.
+        LEGACY_WALLY_LEDGER.with(|legacy| legacy.set(true));
         let app = Phase2App::test();
         app.add_invitation("battle-a").expect("invite a");
         app.add_invitation("battle-b").expect("invite b");
@@ -3540,6 +4070,7 @@ mod tests {
             trainer_id: Some(
                 TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_WALLY_1").expect("trainer"),
             ),
+            friendly_rules: None,
             idempotency_key: key,
         };
         let first = app
@@ -3561,6 +4092,7 @@ mod tests {
                 api_version: ApiVersion::V1,
                 kind: BattleReservationKind::Friendly,
                 trainer_id: None,
+                friendly_rules: None,
                 idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(42)).expect("key"),
             },
         );
@@ -3572,6 +4104,7 @@ mod tests {
             api_version: ApiVersion::V1,
             kind: BattleReservationKind::CooperativeTrainer,
             trainer_id: Some(TrainerInstanceId::parse(trainer_id).expect("trainer syntax")),
+            friendly_rules: None,
             idempotency_key: key(number),
         }
     }
@@ -3681,6 +4214,7 @@ mod tests {
             api_version: ApiVersion::V1,
             kind: BattleReservationKind::Friendly,
             trainer_id: None,
+            friendly_rules: None,
             idempotency_key: key(515),
         };
         let json = serde_json::to_value(&friendly).unwrap();
@@ -3712,6 +4246,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(160),
                 },
             )
@@ -3807,6 +4342,7 @@ mod tests {
             api_version: ApiVersion::V1,
             idempotency_key: key(410),
             snapshot_hash: hashes[0].clone(),
+            party_records: None,
         };
         let committed = app
             .commit_battle_snapshot(a, group, battle, fa, request.clone())
@@ -3933,6 +4469,7 @@ mod tests {
             api_version: ApiVersion::V1,
             idempotency_key: key(421),
             snapshot_hash: hash,
+            party_records: None,
         };
         let deadline = app
             .store
@@ -4086,6 +4623,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(165),
                 },
             )
@@ -4151,6 +4689,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(162),
                 },
             )
@@ -4185,6 +4724,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(164),
                 },
             )
@@ -4222,6 +4762,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(150),
                 }
             ),
@@ -4236,6 +4777,7 @@ mod tests {
             api_version: ApiVersion::V1,
             idempotency_key: key(151),
             snapshot_hash: "a".repeat(64),
+            party_records: None,
         };
         assert_eq!(
             app.commit_battle_snapshot(actor_a, group_id, battle, fence_a, wrong),
@@ -4283,6 +4825,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     idempotency_key: key(152),
                     snapshot_hash: correct,
+                    party_records: None,
                 }
             ),
             Err(Phase2Error::Conflict)
@@ -4310,6 +4853,7 @@ mod tests {
                         TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_WALLY_1")
                             .expect("trainer"),
                     ),
+                    friendly_rules: None,
                     idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(51)).expect("key"),
                 },
             )
@@ -4346,6 +4890,7 @@ mod tests {
                 api_version: ApiVersion::V1,
                 kind: BattleReservationKind::Friendly,
                 trainer_id: None,
+                friendly_rules: None,
                 idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(54)).expect("key"),
             },
         );
@@ -4363,7 +4908,21 @@ mod tests {
         key_base: u128,
     ) -> String {
         let manifest = snapshots(app, a, b, group, fa, fb, battle);
-        release_start(app, a, b, group, fa, fb, battle, &manifest);
+        play_terminal_turn(app, a, b, group, fa, fb, battle, &manifest, key_base)
+    }
+
+    fn play_terminal_turn(
+        app: &Phase2App,
+        a: AuthenticatedActor,
+        b: AuthenticatedActor,
+        group: GroupId,
+        fa: LeaseFence,
+        fb: LeaseFence,
+        battle: Uuid,
+        manifest: &BattleManifest,
+        key_base: u128,
+    ) -> String {
+        release_start(app, a, b, group, fa, fb, battle, manifest);
         for (actor, fence, number, action) in [
             (a, fa, key_base, "member-0"),
             (b, fb, key_base + 1, "member-1"),
@@ -4801,6 +5360,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(773),
                 },
             )
@@ -4993,7 +5553,7 @@ mod tests {
             Err(Phase2Error::Conflict)
         );
         let mut forged_bytes = wally_story_save(true, true);
-        let offset = 0x139c + 2 * (0x4020 - 0x4000);
+        let offset = coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x4020 - 0x4000);
         let logical = 1 + offset / coop_save::SAVE_BLOCK3_CHUNK_OFFSET;
         let physical = selected_physical(&forged_bytes, logical);
         let position = (coop_save::SECTORS_PER_SLOT + physical) * coop_save::SECTOR_SIZE
@@ -5177,5 +5737,1105 @@ mod tests {
                     .expect("locks released")
             );
         }
+    }
+
+    // ---- Local-reward trainer battles -------------------------------------
+
+    const LOCAL_TRAINER: &str = "HOENN:TRAINER_SAWYER_1";
+
+    /// A checksum-valid party record with personality and OT ID zero, so the
+    /// growth substruct is stored unencrypted at offset 32.
+    fn party_record(species: u8, hp: u16, egg: bool) -> [u8; 100] {
+        let mut mon = [0_u8; 100];
+        mon[19] = if egg { 2 | 4 } else { 2 };
+        mon[28] = species;
+        mon[32] = species;
+        mon[86..88].copy_from_slice(&hp.to_le_bytes());
+        mon
+    }
+
+    fn usable(species: u8) -> [u8; 100] {
+        party_record(species, 20, false)
+    }
+
+    fn local_commit(records: &[[u8; 100]], number: u128) -> BattleSnapshotCommitRequest {
+        BattleSnapshotCommitRequest {
+            api_version: ApiVersion::V1,
+            idempotency_key: key(number),
+            snapshot_hash: records_digest(records),
+            party_records: Some(records.iter().map(|record| hex_string(record)).collect()),
+        }
+    }
+
+    fn place(
+        app: &Phase2App,
+        actor: AuthenticatedActor,
+        region: RegionId,
+        map: &str,
+        channel: u16,
+    ) {
+        app.store
+            .write_transaction(|state| {
+                state
+                    .characters
+                    .get_mut(&actor.character_id)
+                    .unwrap()
+                    .state
+                    .world_zone = WorldZone::new(region, map, channel).unwrap();
+                Ok::<_, Phase2Error>(())
+            })
+            .unwrap();
+    }
+
+    /// Two grouped members on connected Hoenn routes (Route 104 and 105).
+    fn local_fixture() -> (
+        Phase2App,
+        AuthenticatedActor,
+        AuthenticatedActor,
+        GroupId,
+        LeaseFence,
+        LeaseFence,
+    ) {
+        let (app, a, b, group, fa, fb) = fixture();
+        place(&app, a, RegionId::Hoenn, "ROUTE104", 1);
+        place(&app, b, RegionId::Hoenn, "ROUTE105", 1);
+        (app, a, b, group, fa, fb)
+    }
+
+    fn local_accepted() -> (
+        Phase2App,
+        AuthenticatedActor,
+        AuthenticatedActor,
+        GroupId,
+        LeaseFence,
+        LeaseFence,
+        Uuid,
+    ) {
+        let (app, a, b, group, fa, fb) = local_fixture();
+        let reservation = app
+            .reserve_battle(a, group, fa, trainer_request(900, LOCAL_TRAINER))
+            .expect("local reserve");
+        app.accept_battle(
+            b,
+            group,
+            reservation.battle_id,
+            fb,
+            BattleReservationActionRequest {
+                api_version: ApiVersion::V1,
+                idempotency_key: key(901),
+            },
+        )
+        .expect("accept");
+        (app, a, b, group, fa, fb, reservation.battle_id)
+    }
+
+    fn role_of(view: &BattleReservationView, actor: AuthenticatedActor) -> BattleMemberRole {
+        let index = view
+            .member_character_ids
+            .iter()
+            .position(|member| *member == actor.character_id)
+            .expect("member");
+        view.member_roles.expect("roles")[index]
+    }
+
+    #[test]
+    fn local_trainer_reserves_with_partner_on_connected_map() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(910, LOCAL_TRAINER))
+            .expect("connected maps reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+        assert_eq!(view.status, BattleReservationStatus::Pending);
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(json["reward_mode"], "LOCAL");
+        assert_eq!(
+            json["member_roles"],
+            serde_json::json!(["PARTICIPANT", "PARTICIPANT"])
+        );
+        assert_eq!(
+            serde_json::from_value::<BattleReservationView>(json).unwrap(),
+            view
+        );
+
+        // The same map also qualifies.
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(&app, b, RegionId::Hoenn, "ROUTE104", 1);
+        assert!(
+            app.reserve_battle(a, group, fa, trainer_request(911, LOCAL_TRAINER))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn local_trainer_rejects_unconnected_map_channel_and_region() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(&app, b, RegionId::Hoenn, "LITTLEROOT_TOWN", 1);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(920, LOCAL_TRAINER)),
+            Err(Phase2Error::Conflict)
+        );
+        place(&app, b, RegionId::Hoenn, "ROUTE105", 2);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(921, LOCAL_TRAINER)),
+            Err(Phase2Error::Conflict)
+        );
+        place(&app, a, RegionId::Kanto, "PALLET_TOWN", 1);
+        place(&app, b, RegionId::Kanto, "PALLET_TOWN", 1);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(922, LOCAL_TRAINER)),
+            Err(Phase2Error::Conflict)
+        );
+        // A syntactically valid trainer outside the identity catalog is
+        // still rejected wherever the members stand.
+        place(&app, a, RegionId::Hoenn, "ROUTE104", 1);
+        place(&app, b, RegionId::Hoenn, "ROUTE104", 1);
+        assert_eq!(
+            app.reserve_battle(
+                a,
+                group,
+                fa,
+                trainer_request(923, "HOENN:TRAINER_FABRICATED")
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        assert!(
+            app.reserve_battle(a, group, fa, trainer_request(924, LOCAL_TRAINER))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn partner_who_beat_the_trainer_joins_as_helper() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        seed_finalized_party_defeating(&app, b, 2, Some(LOCAL_TRAINER));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(930, LOCAL_TRAINER))
+            .expect("helper partner reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Helper);
+        let json = serde_json::to_value(&view).unwrap();
+        let roles = json["member_roles"].as_array().unwrap();
+        assert!(roles.contains(&serde_json::json!("HELPER")));
+    }
+
+    #[test]
+    fn requester_who_beat_the_trainer_is_rejected() {
+        let (app, a, b, group, fa, fb) = local_fixture();
+        seed_finalized_party_defeating(&app, a, 2, Some(LOCAL_TRAINER));
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(940, LOCAL_TRAINER)),
+            Err(Phase2Error::Conflict)
+        );
+        // The partner who has not beaten it may still request, with the
+        // first member helping.
+        let view = app
+            .reserve_battle(b, group, fb, trainer_request(941, LOCAL_TRAINER))
+            .expect("partner requests");
+        assert_eq!(role_of(&view, a), BattleMemberRole::Helper);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+    }
+
+    const CALVIN_1: &str = "HOENN:TRAINER_CALVIN_1";
+    const CALVIN_2: &str = "HOENN:TRAINER_CALVIN_2";
+    const BRAWLY_1: &str = "HOENN:TRAINER_BRAWLY_1";
+
+    #[test]
+    fn rematch_requires_the_requester_to_have_beaten_the_first_battle() {
+        let (app, a, _, group, fa, _) = local_fixture();
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(1000, CALVIN_2)),
+            Err(Phase2Error::Conflict)
+        );
+        seed_finalized_party_defeating(&app, a, 2, Some(CALVIN_1));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1001, CALVIN_2))
+            .expect("rematch reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn rematch_already_won_at_this_stage_can_be_fought_again() {
+        let (app, a, _, group, fa, _) = local_fixture();
+        // The old rule rejected a requester who had beaten the trainer; a
+        // rematch at its last stage is exactly that.
+        seed_finalized_progress(&app, a, 2, &[CALVIN_1, CALVIN_2], 0);
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1010, CALVIN_2))
+            .expect("rematch at a beaten stage");
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn rematch_partner_role_follows_the_first_battle() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        seed_finalized_party_defeating(&app, a, 2, Some(CALVIN_1));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1020, CALVIN_2))
+            .expect("helper partner");
+        assert_eq!(role_of(&view, b), BattleMemberRole::Helper);
+
+        let (app, a, b, group, fa, _) = local_fixture();
+        seed_finalized_party_defeating(&app, a, 2, Some(CALVIN_1));
+        seed_finalized_party_defeating(&app, b, 2, Some(CALVIN_1));
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1021, CALVIN_2))
+            .expect("participant partner");
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn gym_reservation_requires_the_requester_to_lack_the_badge() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(&app, a, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        place(&app, b, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        seed_finalized_progress(&app, a, 2, &[], 0b0000_0011);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(1030, BRAWLY_1)),
+            Err(Phase2Error::Conflict)
+        );
+        seed_finalized_progress(&app, a, 3, &[], 0b0000_0001);
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1031, BRAWLY_1))
+            .expect("gym reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn gym_partner_participates_only_at_the_same_story_point() {
+        for (partner_badges, expected) in [
+            (0b0000_0001, BattleMemberRole::Participant), // Brawly is next
+            (0b0000_0000, BattleMemberRole::Helper),      // behind: no Stone Badge
+            (0b0000_0011, BattleMemberRole::Helper),      // already has it
+            (0b0000_0101, BattleMemberRole::Helper),      // a later badge, not this one
+        ] {
+            let (app, a, b, group, fa, _) = local_fixture();
+            place(&app, a, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+            place(&app, b, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+            seed_finalized_progress(&app, a, 2, &[], 0b0000_0001);
+            seed_finalized_progress(&app, b, 2, &[], partner_badges);
+            let view = app
+                .reserve_battle(a, group, fa, trainer_request(1040, BRAWLY_1))
+                .expect("gym reserve");
+            assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+            assert_eq!(
+                role_of(&view, b),
+                expected,
+                "partner badges {partner_badges:#b}"
+            );
+        }
+    }
+
+    #[test]
+    fn gym_role_ignores_a_stale_leader_defeat_bit() {
+        // The badge, not the trainer bit, decides a gym: a partner whose
+        // save recorded the leader but not the badge still participates.
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(&app, a, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        place(&app, b, RegionId::Hoenn, "DEWFORD_TOWN_GYM", 1);
+        seed_finalized_progress(&app, a, 2, &[], 0b0000_0001);
+        seed_finalized_progress(&app, b, 2, &[BRAWLY_1], 0b0000_0001);
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1050, BRAWLY_1))
+            .expect("gym reserve");
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn local_commit_serves_exact_staged_records_as_peer_party() {
+        let (app, a, b, group, fa, fb, battle) = local_accepted();
+        // The staged parties differ from the finalized save party; Local
+        // mode does not require equality with the anchored save.
+        let party_a = [usable(7), party_record(8, 0, false)];
+        let party_b = [usable(9), usable(10), party_record(11, 30, true)];
+        let first = app
+            .commit_battle_snapshot(a, group, battle, fa, local_commit(&party_a, 950))
+            .expect("first local commit");
+        assert!(first.manifest.is_none());
+        // Exact replay is accepted without change.
+        assert!(
+            app.commit_battle_snapshot(a, group, battle, fa, local_commit(&party_a, 950))
+                .is_ok()
+        );
+        let manifest = app
+            .commit_battle_snapshot(b, group, battle, fb, local_commit(&party_b, 951))
+            .expect("second local commit")
+            .manifest
+            .expect("manifest");
+        assert_eq!(
+            manifest.snapshot_hashes,
+            [records_digest(&party_a), records_digest(&party_b)]
+        );
+        let for_a = app
+            .battle_peer_party(a, group, battle, fa)
+            .expect("a reads b");
+        assert_eq!(for_a.peer_character_id, b.character_id);
+        assert_eq!(for_a.snapshot_hash, records_digest(&party_b));
+        assert_eq!(
+            for_a.party_records,
+            party_b.iter().map(|r| hex_string(r)).collect::<Vec<_>>()
+        );
+        let for_b = app
+            .battle_peer_party(b, group, battle, fb)
+            .expect("b reads a");
+        assert_eq!(for_b.peer_character_id, a.character_id);
+        assert_eq!(
+            for_b.party_records,
+            party_a.iter().map(|r| hex_string(r)).collect::<Vec<_>>()
+        );
+        // Ready receipts are bound to the staged digests.
+        let view = release_start(&app, a, b, group, fa, fb, battle, &manifest);
+        assert!(view.start_released);
+    }
+
+    #[test]
+    fn local_commit_rejects_malformed_unusable_and_oversized_parties() {
+        let (app, a, _, group, fa, _, battle) = local_accepted();
+        let commit = |request| app.commit_battle_snapshot(a, group, battle, fa, request);
+
+        let mut missing = local_commit(&[usable(1)], 960);
+        missing.party_records = None;
+        assert_eq!(commit(missing), Err(Phase2Error::InvalidRequest));
+
+        let mut bad_checksum = usable(1);
+        bad_checksum[28] ^= 0xff;
+        assert_eq!(
+            commit(local_commit(&[bad_checksum], 961)),
+            Err(Phase2Error::InvalidRequest)
+        );
+
+        let mut short = local_commit(&[usable(1)], 962);
+        short.party_records.as_mut().unwrap()[0].pop();
+        assert_eq!(commit(short), Err(Phase2Error::InvalidRequest));
+
+        let mut upper = local_commit(&[usable(10)], 963);
+        let text = upper.party_records.as_mut().unwrap();
+        text[0] = text[0].to_uppercase();
+        assert_eq!(commit(upper), Err(Phase2Error::InvalidRequest));
+
+        assert_eq!(
+            commit(local_commit(&[[0_u8; 100]], 964)),
+            Err(Phase2Error::InvalidRequest)
+        );
+        assert_eq!(
+            commit(local_commit(
+                &[party_record(1, 0, false), party_record(2, 20, true)],
+                965
+            )),
+            Err(Phase2Error::InvalidRequest)
+        );
+        assert_eq!(
+            commit(local_commit(
+                &[usable(1), usable(2), usable(3), usable(4)],
+                966
+            )),
+            Err(Phase2Error::InvalidRequest)
+        );
+        assert_eq!(
+            commit(local_commit(&[party_record(1, 0, false); 7], 967)),
+            Err(Phase2Error::InvalidRequest)
+        );
+        let mut wrong_hash = local_commit(&[usable(1)], 968);
+        wrong_hash.snapshot_hash = records_digest(&[usable(2)]);
+        assert_eq!(commit(wrong_hash), Err(Phase2Error::InvalidRequest));
+        assert!(
+            app.store
+                .inspect_state(|state| {
+                    let record = &state.battle_reservations[&battle];
+                    record.consensus.commitments.iter().all(Option::is_none)
+                        && record.staged_parties.iter().all(Option::is_none)
+                })
+                .unwrap()
+        );
+        // Three usable plus fainted and egg records is the upper bound.
+        assert!(
+            commit(local_commit(
+                &[
+                    usable(1),
+                    usable(2),
+                    usable(3),
+                    party_record(4, 0, false),
+                    party_record(5, 9, true),
+                ],
+                969
+            ))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn ledger_battles_reject_staged_party_records() {
+        let (app, a, _, group, fa, _, battle) = accepted();
+        assert_eq!(
+            app.commit_battle_snapshot(a, group, battle, fa, local_commit(&[usable(1)], 970)),
+            Err(Phase2Error::InvalidRequest)
+        );
+    }
+
+    #[test]
+    fn local_win_completes_releases_locks_and_issues_no_grants() {
+        let (app, a, b, group, fa, fb, battle) = local_accepted();
+        app.commit_battle_snapshot(a, group, battle, fa, local_commit(&[usable(1)], 980))
+            .expect("a commit");
+        let manifest = app
+            .commit_battle_snapshot(b, group, battle, fb, local_commit(&[usable(2)], 981))
+            .expect("b commit")
+            .manifest
+            .expect("manifest");
+        let hash = play_terminal_turn(&app, a, b, group, fa, fb, battle, &manifest, 982);
+        let finish = |actor, fence, number| {
+            app.finish_battle(
+                actor,
+                group,
+                battle,
+                fence,
+                BattleFinishRequest {
+                    api_version: ApiVersion::V1,
+                    idempotency_key: key(number),
+                    result: BattleFinishResult::Won,
+                    turn: 1,
+                    state_hash: hash.clone(),
+                },
+            )
+        };
+        let first = finish(a, fa, 990).expect("first finish");
+        assert_eq!(first.status, BattleReservationStatus::Accepted);
+        let second = finish(b, fb, 991).expect("second finish");
+        assert_eq!(second.status, BattleReservationStatus::Completed);
+        assert_eq!(second.reward_mode, BattleRewardMode::Local);
+        let (grants, locked) = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.battle_reservations[&battle].commit_grants.clone(),
+                    state.active_battle_by_member.contains_key(&a.character_id)
+                        || state.active_battle_by_member.contains_key(&b.character_id),
+                )
+            })
+            .unwrap();
+        assert!(grants.is_none());
+        assert!(!locked);
+        assert_eq!(
+            retrieve_commit_grant(&app.store, a, group, battle, fa),
+            Err(Phase2Error::Conflict)
+        );
+        assert_eq!(app.current_battle(a, group, fa), Err(Phase2Error::NotFound));
+        // Exact retry replays the terminal receipt.
+        assert_eq!(
+            finish(b, fb, 991).expect("replay").status,
+            BattleReservationStatus::Completed
+        );
+        // Both members are free for a new battle.
+        assert!(
+            app.reserve_battle(a, group, fa, trainer_request(992, LOCAL_TRAINER))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn legacy_wally_ledger_keeps_its_unchanged_wire_shape() {
+        let (app, a, _, group, fa, _) = fixture();
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(995, "HOENN:TRAINER_WALLY_1"))
+            .expect("wally reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Ledger);
+        assert_eq!(view.member_roles, None);
+        let json = serde_json::to_value(&view).unwrap();
+        assert!(json.get("reward_mode").is_none());
+        assert!(json.get("member_roles").is_none());
+
+        let (_, _, _, _, _, _, reservation, grants) = pending_wally();
+        assert_eq!(reservation.reward_mode, BattleRewardMode::Ledger);
+        assert_eq!(grants.len(), 2);
+    }
+
+    const FLAG_DEFEATED_WALLY_VICTORY_ROAD: usize = 0x7e;
+    const VAR_VICTORY_ROAD_1F_STATE: usize = 0x40c3;
+    const VAR_ELITE_4_STATE: usize = 0x409c;
+    const FLAG_DEFEATED_ELITE_4_SIDNEY: usize = 0x4fb;
+
+    /// The production rule: Wally's Victory Road battle is a local-reward
+    /// story battle (A9). Both members stand on Victory Road 1F.
+    fn local_wally() -> (
+        Phase2App,
+        AuthenticatedActor,
+        AuthenticatedActor,
+        GroupId,
+        LeaseFence,
+        LeaseFence,
+    ) {
+        let fixture = fixture();
+        LEGACY_WALLY_LEDGER.with(|legacy| legacy.set(false));
+        fixture
+    }
+
+    #[test]
+    fn wally_is_a_local_story_battle_with_a_story_point_partner_role() {
+        for (partner_flag, partner_var, expected) in [
+            (false, 0, BattleMemberRole::Participant), // same story point
+            (false, 1, BattleMemberRole::Helper),      // already past it
+            (true, 0, BattleMemberRole::Helper),       // flag already set
+        ] {
+            let (app, a, b, group, fa, _) = local_wally();
+            // A lagging requester save (Wally already recorded) is not
+            // refused: its own story script decides on the ROM.
+            seed_finalized_story(
+                &app,
+                a,
+                2,
+                &[],
+                0xff,
+                &[(FLAG_DEFEATED_WALLY_VICTORY_ROAD, true)],
+                &[(VAR_VICTORY_ROAD_1F_STATE, 1)],
+            );
+            seed_finalized_story(
+                &app,
+                b,
+                2,
+                &[],
+                0xff,
+                &[(FLAG_DEFEATED_WALLY_VICTORY_ROAD, partner_flag)],
+                &[(VAR_VICTORY_ROAD_1F_STATE, partner_var)],
+            );
+            let view = app
+                .reserve_battle(a, group, fa, trainer_request(1100, "HOENN:TRAINER_WALLY_1"))
+                .expect("wally reserve");
+            assert_eq!(view.reward_mode, BattleRewardMode::Local);
+            assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+            assert_eq!(role_of(&view, b), expected, "{partner_flag} {partner_var}");
+        }
+    }
+
+    #[test]
+    fn wally_story_battle_keeps_the_exact_victory_road_map() {
+        let (app, a, b, group, fa, _) = local_wally();
+        place(&app, b, RegionId::Hoenn, "VICTORY_ROAD_B1F", 1);
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer_request(1110, "HOENN:TRAINER_WALLY_1")),
+            Err(Phase2Error::Conflict)
+        );
+    }
+
+    #[test]
+    fn elite_four_partner_participates_only_in_the_same_room_run() {
+        for (partner_var, sidney_beaten, expected) in [
+            (1, false, BattleMemberRole::Participant),
+            (2, false, BattleMemberRole::Helper), // a room further
+            (1, true, BattleMemberRole::Helper),  // already beat Sidney
+        ] {
+            let (app, a, b, group, fa, _) = local_fixture();
+            place(&app, a, RegionId::Hoenn, "EVER_GRANDE_CITY_SIDNEYS_ROOM", 1);
+            place(&app, b, RegionId::Hoenn, "EVER_GRANDE_CITY_SIDNEYS_ROOM", 1);
+            seed_finalized_story(&app, a, 2, &[], 0xff, &[], &[(VAR_ELITE_4_STATE, 1)]);
+            seed_finalized_story(
+                &app,
+                b,
+                2,
+                &[],
+                0xff,
+                &[(FLAG_DEFEATED_ELITE_4_SIDNEY, sidney_beaten)],
+                &[(VAR_ELITE_4_STATE, partner_var)],
+            );
+            let view = app
+                .reserve_battle(a, group, fa, trainer_request(1120, "HOENN:TRAINER_SIDNEY"))
+                .expect("elite four reserve");
+            assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+            assert_eq!(role_of(&view, b), expected, "{partner_var} {sidney_beaten}");
+        }
+    }
+
+    #[test]
+    fn helper_story_battles_never_make_the_partner_a_participant() {
+        let (app, a, b, group, fa, _) = local_fixture();
+        place(
+            &app,
+            a,
+            RegionId::Hoenn,
+            "EVER_GRANDE_CITY_CHAMPIONS_ROOM",
+            1,
+        );
+        place(
+            &app,
+            b,
+            RegionId::Hoenn,
+            "EVER_GRANDE_CITY_CHAMPIONS_ROOM",
+            1,
+        );
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(1130, "HOENN:TRAINER_WALLACE"))
+            .expect("champion reserve");
+        assert_eq!(view.reward_mode, BattleRewardMode::Local);
+        assert_eq!(role_of(&view, a), BattleMemberRole::Participant);
+        assert_eq!(role_of(&view, b), BattleMemberRole::Helper);
+        // An ordinary story entry (an admin whose script only shows text)
+        // keeps the trainer-flag rule.
+        let (app, a, b, group, fa, _) = local_fixture();
+        let view = app
+            .reserve_battle(
+                a,
+                group,
+                fa,
+                trainer_request(1131, "HOENN:TRAINER_TABITHA_MT_CHIMNEY"),
+            )
+            .expect("admin reserve");
+        assert_eq!(role_of(&view, b), BattleMemberRole::Participant);
+    }
+
+    #[test]
+    fn records_persisted_before_reward_mode_default_to_ledger() {
+        let (app, a, _, group, fa, _) = local_fixture();
+        let view = app
+            .reserve_battle(a, group, fa, trainer_request(996, LOCAL_TRAINER))
+            .unwrap();
+        let record = app
+            .store
+            .inspect_state(|state| state.battle_reservations[&view.battle_id].clone())
+            .unwrap();
+        let mut json = serde_json::to_value(&record).unwrap();
+        json.as_object_mut().unwrap().remove("staged_parties");
+        let view_json = json["view"].as_object_mut().unwrap();
+        view_json.remove("reward_mode");
+        view_json.remove("member_roles");
+        let legacy: BattleReservationRecord = serde_json::from_value(json).unwrap();
+        assert_eq!(legacy.view.reward_mode, BattleRewardMode::Ledger);
+        assert_eq!(legacy.view.member_roles, None);
+        assert_eq!(legacy.staged_parties, [None, None]);
+    }
+
+    #[test]
+    fn wally_grants_are_ledger_entries_served_applied_and_voided() {
+        use super::super::ledger::{ExpectedDelta, LedgerOrigin, LedgerStatus, TrainerStoryPolicy};
+        let (app, a, b, group, fa, fb, reservation, grants) = pending_wally();
+        let entries = app
+            .store
+            .inspect_state(|state| {
+                grants.clone().map(|grant| {
+                    (
+                        state.ledger_entries[&grant.grant_id].clone(),
+                        state
+                            .ledger_open_by_character
+                            .get(&grant.character_id)
+                            .copied(),
+                    )
+                })
+            })
+            .expect("ledger");
+        for ((entry, open), grant) in entries.iter().zip(&grants) {
+            assert_eq!(*open, Some(grant.grant_id));
+            assert_eq!(entry.character_id, grant.character_id);
+            assert_eq!(
+                entry.origin,
+                LedgerOrigin::Battle {
+                    battle_id: reservation.battle_id
+                }
+            );
+            assert_eq!(entry.base_snapshot_id, grant.source_snapshot_id);
+            assert_eq!(entry.status, LedgerStatus::Issued);
+            let ExpectedDelta::TrainerWin {
+                trainer_id, story, ..
+            } = &entry.expected
+            else {
+                panic!("trainer delta");
+            };
+            assert_eq!(*trainer_id, grant.trainer_id);
+            assert_eq!(*story, TrainerStoryPolicy::WallyVictoryRoad);
+        }
+
+        // The ledger route serves the same capability the grant route does.
+        let view = super::super::ledger::open_for_character(&app.store, a, a.character_id, fa)
+            .expect("open wally entry");
+        assert_eq!(view.commit_id, grants[0].grant_id);
+        assert_eq!(view.status, LedgerStatus::Delivered);
+        assert_eq!(
+            retrieve_commit_grant(&app.store, a, group, reservation.battle_id, fa),
+            Ok(grants[0].clone())
+        );
+
+        let source = validated_fixture_save(&fixture_party_sav(), 1);
+        let incoming = validated_fixture_save(&wally_story_save(true, true), 2);
+        let request_a = finalize_request_for_grant(&app, a, grants[0].grant_id, 1_100);
+        assert_eq!(
+            app.store.write_transaction(|state| {
+                super::super::ledger::apply_on_finalize(
+                    state,
+                    a,
+                    &request_a,
+                    &source,
+                    &incoming,
+                    app.store.now(),
+                )
+            }),
+            Ok(true)
+        );
+        let applied = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.ledger_entries[&grants[0].grant_id].clone(),
+                    state.ledger_open_by_character.contains_key(&a.character_id),
+                )
+            })
+            .expect("applied");
+        assert_eq!(applied.0.status, LedgerStatus::Applied);
+        assert_eq!(applied.0.applied_snapshot_id, Some(request_a.snapshot_id));
+        assert!(!applied.1);
+        assert_eq!(
+            super::super::ledger::open_for_character(&app.store, a, a.character_id, fa),
+            Err(Phase2Error::NotFound)
+        );
+
+        // The unapplied member's entry is voided when the reservation ends.
+        app.store
+            .write_transaction(|state| {
+                state
+                    .battle_reservations
+                    .get_mut(&reservation.battle_id)
+                    .expect("reservation")
+                    .expires_at = 0;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("expire reservation");
+        assert_eq!(
+            super::super::ledger::open_for_character(&app.store, b, b.character_id, fb),
+            Err(Phase2Error::NotFound)
+        );
+        prune_expired(&app.store).expect("prune");
+        let voided = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.ledger_entries[&grants[1].grant_id].status,
+                    state.ledger_open_by_character.contains_key(&b.character_id),
+                )
+            })
+            .expect("voided");
+        assert_eq!(voided, (LedgerStatus::Voided, false));
+    }
+
+    #[test]
+    fn ledger_mode_reservation_is_refused_while_a_member_has_an_open_entry() {
+        let (app, a, b, group, fa, _) = fixture();
+        app.store
+            .write_transaction(|state| {
+                let commit_id = CommitId::new(Uuid::from_u128(0x1ed9)).expect("commit id");
+                let snapshot_id = state.characters[&b.character_id]
+                    .active_snapshot
+                    .expect("snapshot");
+                super::super::ledger::issue(
+                    state,
+                    vec![super::super::ledger::LedgerEntry {
+                        commit_id,
+                        character_id: b.character_id,
+                        origin: super::super::ledger::LedgerOrigin::Trade {
+                            offer_id: coop_cloud::TradeOfferId::new(Uuid::from_u128(0x1eda))
+                                .expect("offer"),
+                        },
+                        base_snapshot_id: snapshot_id,
+                        base_revision: Revision::new(1),
+                        expected: super::super::ledger::ExpectedDelta::Trade {
+                            slot: coop_cloud::PartyPosition::new(0).expect("slot"),
+                            outgoing: super::super::ledger::PokemonKey {
+                                personality: 0,
+                                ot_id: 0,
+                            },
+                            incoming_raw: fixture_party_sav_record(),
+                            incoming_key: super::super::ledger::PokemonKey {
+                                personality: 0,
+                                ot_id: 0,
+                            },
+                        },
+                        status: super::super::ledger::LedgerStatus::Issued,
+                        issued_at: 0,
+                        applied_snapshot_id: None,
+                    }],
+                )
+            })
+            .expect("open entry");
+        assert_eq!(
+            app.reserve_battle(
+                a,
+                group,
+                fa,
+                trainer_request(1_200, "HOENN:TRAINER_WALLY_1")
+            ),
+            Err(Phase2Error::Conflict)
+        );
+    }
+    fn friendly_rules(team_size: u8) -> FriendlyBattleRules {
+        FriendlyBattleRules {
+            format: coop_protocol::FriendlyBattleFormat::Singles,
+            level_mode: coop_protocol::FriendlyLevelMode::Fifty,
+            team_size,
+        }
+    }
+
+    fn friendly_request(number: u128, rules: FriendlyBattleRules) -> BattleReservationRequest {
+        BattleReservationRequest {
+            api_version: ApiVersion::V1,
+            kind: BattleReservationKind::Friendly,
+            trainer_id: None,
+            friendly_rules: Some(rules),
+            idempotency_key: key(number),
+        }
+    }
+
+    fn friendly_accepted(
+        rules: FriendlyBattleRules,
+    ) -> (
+        Phase2App,
+        AuthenticatedActor,
+        AuthenticatedActor,
+        GroupId,
+        LeaseFence,
+        LeaseFence,
+        Uuid,
+    ) {
+        let (app, a, b, group, fa, fb) = fixture();
+        let reservation = app
+            .reserve_battle(a, group, fa, friendly_request(1_300, rules))
+            .expect("friendly reserve");
+        app.accept_battle(
+            b,
+            group,
+            reservation.battle_id,
+            fb,
+            BattleReservationActionRequest {
+                api_version: ApiVersion::V1,
+                idempotency_key: key(1_301),
+            },
+        )
+        .expect("accept");
+        (app, a, b, group, fa, fb, reservation.battle_id)
+    }
+
+    #[test]
+    fn friendly_challenge_reserves_with_no_rewards_roles_or_trainer() {
+        let (app, a, b, group, fa, fb) = fixture();
+        let rules = friendly_rules(3);
+        let view = app
+            .reserve_battle(a, group, fa, friendly_request(1_310, rules))
+            .expect("reserve");
+        assert_eq!(view.kind, BattleReservationKind::Friendly);
+        assert_eq!(view.reward_mode, BattleRewardMode::None);
+        assert_eq!(view.member_roles, None);
+        assert_eq!(view.trainer_id, None);
+        assert_eq!(view.friendly_rules, Some(rules));
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(json["reward_mode"], "NONE");
+        assert_eq!(
+            json["friendly_rules"],
+            serde_json::json!({"format": "singles", "level_mode": "fifty", "team_size": 3})
+        );
+        assert!(json.get("member_roles").is_none());
+        // The partner sees the same challenge before answering.
+        let seen = app.current_battle(b, group, fb).expect("partner view");
+        assert_eq!(seen.friendly_rules, Some(rules));
+        // An exact retry replays; the same key with other rules conflicts.
+        assert_eq!(
+            app.reserve_battle(a, group, fa, friendly_request(1_310, rules)),
+            Ok(view.clone())
+        );
+        assert_eq!(
+            app.reserve_battle(a, group, fa, friendly_request(1_310, friendly_rules(4))),
+            Err(Phase2Error::Conflict)
+        );
+    }
+
+    #[test]
+    fn friendly_rules_are_validated_and_never_ride_a_trainer_reservation() {
+        let (app, a, _, group, fa, _) = fixture();
+        let mut trainer = trainer_request(1_320, "HOENN:TRAINER_WALLY_1");
+        trainer.friendly_rules = Some(friendly_rules(2));
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer),
+            Err(Phase2Error::InvalidRequest)
+        );
+        for rules in [
+            friendly_rules(0),
+            friendly_rules(7),
+            FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Doubles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            },
+        ] {
+            assert_eq!(
+                app.reserve_battle(a, group, fa, friendly_request(1_321, rules)),
+                Err(Phase2Error::InvalidRequest)
+            );
+        }
+    }
+
+    #[test]
+    fn friendly_commit_stages_exactly_the_team_size_of_battle_ready_records() {
+        let (app, a, b, group, fa, fb, battle) = friendly_accepted(friendly_rules(2));
+        let commit = |actor, fence, request| {
+            app.commit_battle_snapshot(actor, group, battle, fence, request)
+        };
+        let mut missing = local_commit(&[usable(1), usable(2)], 1_330);
+        missing.party_records = None;
+        assert_eq!(commit(a, fa, missing), Err(Phase2Error::InvalidRequest));
+        // Wrong size, a fainted pick and an egg are refused.
+        for (records, number) in [
+            (vec![usable(1)], 1_331),
+            (vec![usable(1), usable(2), usable(3)], 1_332),
+            (vec![usable(1), party_record(2, 0, false)], 1_333),
+            (vec![usable(1), party_record(2, 20, true)], 1_334),
+        ] {
+            assert_eq!(
+                commit(a, fa, local_commit(&records, number)),
+                Err(Phase2Error::InvalidRequest)
+            );
+        }
+        let team_a = [usable(7), usable(8)];
+        let team_b = [usable(9), usable(10)];
+        assert!(commit(a, fa, local_commit(&team_a, 1_335)).is_ok());
+        let manifest = commit(b, fb, local_commit(&team_b, 1_336))
+            .expect("second commit")
+            .manifest
+            .expect("manifest");
+        assert_eq!(
+            manifest.snapshot_hashes,
+            [records_digest(&team_a), records_digest(&team_b)]
+        );
+        // Each member reads the other's exact picks as its opponent side.
+        let for_a = app
+            .battle_peer_party(a, group, battle, fa)
+            .expect("a reads b");
+        assert_eq!(
+            for_a.party_records,
+            team_b.iter().map(|r| hex_string(r)).collect::<Vec<_>>()
+        );
+        let for_b = app
+            .battle_peer_party(b, group, battle, fb)
+            .expect("b reads a");
+        assert_eq!(
+            for_b.party_records,
+            team_a.iter().map(|r| hex_string(r)).collect::<Vec<_>>()
+        );
+        assert!(release_start(&app, a, b, group, fa, fb, battle, &manifest).start_released);
+    }
+
+    #[test]
+    fn friendly_result_completes_without_ledger_entries_grants_or_locks() {
+        let (app, a, b, group, fa, fb, battle) = friendly_accepted(friendly_rules(1));
+        app.commit_battle_snapshot(a, group, battle, fa, local_commit(&[usable(1)], 1_340))
+            .expect("a commit");
+        let manifest = app
+            .commit_battle_snapshot(b, group, battle, fb, local_commit(&[usable(2)], 1_341))
+            .expect("b commit")
+            .manifest
+            .expect("manifest");
+        let hash = play_terminal_turn(&app, a, b, group, fa, fb, battle, &manifest, 1_342);
+        let finish = |actor, fence, number, result| {
+            app.finish_battle(
+                actor,
+                group,
+                battle,
+                fence,
+                BattleFinishRequest {
+                    api_version: ApiVersion::V1,
+                    idempotency_key: key(number),
+                    result,
+                    turn: 1,
+                    state_hash: hash.clone(),
+                },
+            )
+        };
+        // Trainer results never finish a friendly battle.
+        assert_eq!(
+            finish(a, fa, 1_349, BattleFinishResult::Won),
+            Err(Phase2Error::InvalidRequest)
+        );
+        assert_eq!(
+            finish(a, fa, 1_350, BattleFinishResult::Member1Won)
+                .expect("first finish")
+                .status,
+            BattleReservationStatus::Accepted
+        );
+        let done = finish(b, fb, 1_351, BattleFinishResult::Member1Won).expect("second finish");
+        assert_eq!(done.status, BattleReservationStatus::Completed);
+        assert_eq!(done.reward_mode, BattleRewardMode::None);
+        let (grants, open, locked) = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.battle_reservations[&battle].commit_grants.clone(),
+                    super::super::ledger::has_open_entry(state, a.character_id)
+                        || super::super::ledger::has_open_entry(state, b.character_id),
+                    state.active_battle_by_member.contains_key(&a.character_id)
+                        || state.active_battle_by_member.contains_key(&b.character_id),
+                )
+            })
+            .unwrap();
+        assert!(grants.is_none());
+        assert!(!open);
+        assert!(!locked);
+        assert_eq!(
+            retrieve_commit_grant(&app.store, a, group, battle, fa),
+            Err(Phase2Error::Conflict)
+        );
+        // The pair is free for the next challenge.
+        assert!(
+            app.reserve_battle(b, group, fb, friendly_request(1_352, friendly_rules(6)))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn rounds_beyond_the_former_thirty_two_turn_cap_are_accepted() {
+        let (app, a, b, group, fa, fb, battle) = friendly_accepted(friendly_rules(1));
+        app.commit_battle_snapshot(a, group, battle, fa, local_commit(&[usable(1)], 1_360))
+            .expect("a commit");
+        let manifest = app
+            .commit_battle_snapshot(b, group, battle, fb, local_commit(&[usable(2)], 1_361))
+            .expect("b commit")
+            .manifest
+            .expect("manifest");
+        release_start(&app, a, b, group, fa, fb, battle, &manifest);
+        let mut number = 1_400;
+        for turn in 1..=40_u16 {
+            for (actor, fence) in [(a, fa), (b, fb)] {
+                number += 1;
+                app.submit_battle_action(
+                    actor,
+                    group,
+                    battle,
+                    fence,
+                    BattleActionIntentRequest {
+                        api_version: ApiVersion::V1,
+                        idempotency_key: key(number),
+                        turn,
+                        action: "01000000".to_owned(),
+                    },
+                )
+                .expect("action");
+            }
+            for (actor, fence) in [(a, fa), (b, fb)] {
+                number += 1;
+                app.acknowledge_battle_hash(
+                    actor,
+                    group,
+                    battle,
+                    fence,
+                    BattleStateHashRequest {
+                        api_version: ApiVersion::V1,
+                        idempotency_key: key(number),
+                        turn,
+                        state_hash: "b".repeat(64),
+                    },
+                )
+                .expect("hash");
+            }
+        }
+        let view = app
+            .inspect_battle_consensus(a, group, battle, fa)
+            .expect("consensus");
+        assert_eq!(view.turns.len(), 40);
     }
 }

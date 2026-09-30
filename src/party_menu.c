@@ -81,6 +81,7 @@
 #include "constants/party_menu.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
+#include "coop/battle_items.h"
 
 enum {
     MENU_SUMMARY,
@@ -4201,6 +4202,13 @@ bool8 FieldCallback_PrepareFadeInFromMenu(void)
     return TRUE;
 }
 
+bool8 FieldCallback_PrepareFadeInForGroupTravel(void)
+{
+    FadeInFromBlack();
+    CreateTask(Task_FieldMoveWaitForFade, 8);
+    return TRUE;
+}
+
 // Same as above, but removes follower Pokémon
 bool8 FieldCallback_PrepareFadeInForTeleport(void)
 {
@@ -4838,11 +4846,32 @@ static bool32 IsItemFlute(enum Item item)
     return FALSE;
 }
 
+// Co-op trainer battle: each player uses items only on its own Pokemon.
+static const u8 *CoopRefusesPartnerMon(void)
+{
+    struct Pokemon *party = NULL;
+    s8 partySlot = 0;
+
+    if (!CoopBattleItems_IsBagOpen())
+        return NULL;
+    GetPartyAndSlotFromPartyMenuId(gPartyMenu.slotId, &party, &partySlot);
+    return CoopBattleItems_RefuseTarget(party);
+}
+
 // Battle scripts called in HandleAction_UseItem
 void ItemUseCB_BattleScript(u8 taskId, TaskFunc task)
 {
     struct Pokemon *mon = GetPartyMonFromPartyMenuId(gPartyMenu.slotId);
-    if (CannotUseItemsInBattle(gSpecialVar_ItemId, mon))
+    const u8 *coopRefusal = CoopRefusesPartnerMon();
+    if (coopRefusal != NULL)
+    {
+        gPartyMenuUseExitCallback = FALSE;
+        PlaySE(SE_SELECT);
+        DisplayPartyMenuMessage(coopRefusal, TRUE);
+        ScheduleBgCopyTilemapToVram(2);
+        gTasks[taskId].func = task;
+    }
+    else if (CannotUseItemsInBattle(gSpecialVar_ItemId, mon))
     {
         gPartyMenuUseExitCallback = FALSE;
         PlaySE(SE_SELECT);
@@ -4855,7 +4884,10 @@ void ItemUseCB_BattleScript(u8 taskId, TaskFunc task)
         gBattleStruct->itemPartyIndex[gBattlerInMenuId] = GetPartyIdFromBattleSlot(gPartyMenu.slotId);
         gPartyMenuUseExitCallback = TRUE;
         PlaySE(SE_SELECT);
-        if (!IsItemFlute(gSpecialVar_ItemId))
+        // Co-op trainer battle: the item leaves the bag when its turn runs.
+        if (CoopBattleItems_IsBagOpen())
+            CoopBattleItems_ChooseTarget(mon);
+        else if (!IsItemFlute(gSpecialVar_ItemId))
             RemoveBagItem(gSpecialVar_ItemId, 1);
         ScheduleBgCopyTilemapToVram(2);
         gTasks[taskId].func = task;
@@ -4864,6 +4896,16 @@ void ItemUseCB_BattleScript(u8 taskId, TaskFunc task)
 
 void ItemUseCB_BattleChooseMove(u8 taskId, TaskFunc task)
 {
+    const u8 *coopRefusal = CoopRefusesPartnerMon();
+    if (coopRefusal != NULL)
+    {
+        gPartyMenuUseExitCallback = FALSE;
+        PlaySE(SE_SELECT);
+        DisplayPartyMenuMessage(coopRefusal, TRUE);
+        ScheduleBgCopyTilemapToVram(2);
+        gTasks[taskId].func = task;
+        return;
+    }
     PlaySE(SE_SELECT);
     DisplayPartyMenuStdMessage(PARTY_MSG_RESTORE_WHICH_MOVE);
     ShowMoveSelectWindow(gPartyMenu.slotId);
@@ -5468,7 +5510,10 @@ static void TryUseItemOnMove(u8 taskId)
             gBattleStruct->itemPartyIndex[gBattlerInMenuId] = GetPartyIdFromBattleSlot(gPartyMenu.slotId);
             gBattleStruct->itemMoveIndex[gBattlerInMenuId] = ptr->data1;
             gPartyMenuUseExitCallback = TRUE;
-            RemoveBagItem(gSpecialVar_ItemId, 1);
+            if (CoopBattleItems_IsBagOpen())
+                CoopBattleItems_ChooseTarget(mon);
+            else
+                RemoveBagItem(gSpecialVar_ItemId, 1);
             ScheduleBgCopyTilemapToVram(2);
             gTasks[taskId].func = Task_ClosePartyMenuAfterText;
         }

@@ -140,6 +140,9 @@ async fn online_http_inbox_accept_decline_and_symmetric_leave_use_real_server() 
         .online_snapshot(two.access_token.clone(), two_request.clone())
         .await
         .unwrap();
+    /* The real launcher request must opt into the server's safety bit.
+     * Without its header, the conservative legacy fallback is true. */
+    assert!(!inbox.remote_join_possible);
     assert_eq!(inbox.incoming.len(), 1);
     assert_eq!(inbox.incoming[0].username.as_str(), "onlineone");
     assert_eq!(

@@ -35,7 +35,7 @@ final class BridgeConnection implements AutoCloseable {
             Socket s=new Socket();synchronized(networkLock){if(closed){s.close();return;}socket=s;}
             s.connect(new InetSocketAddress("127.0.0.1",port),3000);s.setSoTimeout(3000);s.setTcpNoDelay(true);
             OutputStream output=s.getOutputStream();InputStream input=s.getInputStream();
-            output.write(("{\"secret\":\""+secret+"\",\"bridge_abi\":1,\"protocol_version\":1}\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            output.write(("{\"secret\":\""+secret+"\",\"bridge_abi\":"+BridgeFrame.BRIDGE_ABI+",\"protocol_version\":"+BridgeFrame.PROTOCOL_VERSION+"}\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
             ByteArrayOutputStream line=new ByteArrayOutputStream();int c;
             while((c=input.read())!=-1){line.write(c);if(line.size()>256)throw new IOException();if(c==10)break;}
             if(!line.toString("US-ASCII").equals("{\"ok\":true}\n"))throw new SecurityException();

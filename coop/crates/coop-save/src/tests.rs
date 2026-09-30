@@ -19,6 +19,10 @@ fn stock_mgba_first_save_matches_linked_rom_sector_checksums() {
     assert_eq!(save.coop().save_generation, 1);
     assert!(save.coop().online_eligible());
     assert!(save.rtc_trailer().is_some());
+    // A new game starts with 3000; this pins the money and key offsets to a
+    // genuine save rather than to the validator's own synthetic layout.
+    assert_eq!(save.money(), Some(3000));
+    assert_eq!(save.party_count(), Ok(0));
 }
 
 #[test]
@@ -789,6 +793,14 @@ fn trade_rejects_empty_corrupt_and_mail_without_mutating_inputs() {
         trade_party_pokemon(&mail, 0, &right, 0),
         Err(TradeError::Mail { .. })
     ));
+    let PokemonSlot::Occupied(with_mail) = mail.party_pokemon(0).unwrap() else {
+        panic!("mail fixture slot is occupied");
+    };
+    let PokemonSlot::Occupied(without_mail) = left.party_pokemon(0).unwrap() else {
+        panic!("fixture slot is occupied");
+    };
+    assert!(crate::party_record_holds_mail(&with_mail));
+    assert!(!crate::party_record_holds_mail(&without_mail));
     assert_eq!(left.raw_bytes(), original);
     assert_eq!(right.rtc_trailer(), Some(&[9; RTC_TRAILER_SIZE]));
 }
@@ -1320,4 +1332,120 @@ fn checksum_ignores_partial_words_and_uses_end_around_fold() {
     assert_eq!(sector_checksum(&[1, 2, 3]), 0);
     assert_eq!(sector_checksum(&[0xff; 4]), 0xfffe);
     assert_eq!(sector_checksum(&[0xff; 8]), 0xfffd);
+}
+
+#[test]
+fn reads_hoenn_badge_flags_in_gym_order() {
+    let mut bytes = valid_image(20, 21);
+    // Stone, Knuckle and Heat: badges 1, 2 and 4 (bits 0, 1 and 3). The
+    // synthetic filler may hold any bits, so every badge flag is written.
+    for badge in 0..8 {
+        let flag = crate::FLAG_BADGE01_GET + badge;
+        let offset = crate::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8;
+        let save = parse(&bytes, TEST_REGISTRY).unwrap();
+        let current = save.save_block1_range(offset, 1).unwrap()[0];
+        let mask = 1 << (flag % 8);
+        let value = if [0, 1, 3].contains(&badge) {
+            current | mask
+        } else {
+            current & !mask
+        };
+        write_logical_range(&mut bytes, SaveSlot::Second, 1, offset, &[value]);
+    }
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.hoenn_badges(), Some(0b0000_1011));
+    assert_eq!(save.event_flag(crate::FLAG_BADGE01_GET + 2), Some(false));
+    assert_eq!(save.event_flag(crate::SAVE_BLOCK1_FLAG_BYTES * 8), None);
+}
+
+#[test]
+fn reads_script_vars_as_var_get_does() {
+    let mut bytes = valid_image(20, 21);
+    // VAR_ROUTE110_STATE (0x4069) and the last saved variable.
+    let last = crate::VARS_START + crate::SAVE_BLOCK1_VAR_COUNT - 1;
+    for (var, value) in [(0x4069_usize, 0x0102_u16), (last, 7)] {
+        let offset = crate::SAVE_BLOCK1_VARS_OFFSET + 2 * (var - crate::VARS_START);
+        write_logical_range(
+            &mut bytes,
+            SaveSlot::Second,
+            1,
+            offset,
+            &value.to_le_bytes(),
+        );
+    }
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.event_var(0x4069), Some(0x0102));
+    assert_eq!(save.event_var(last), Some(7));
+    assert_eq!(save.event_var(last + 1), None);
+    assert_eq!(save.event_var(crate::VARS_START - 1), None);
+}
+
+#[test]
+fn reads_money_trainer_flags_experience_and_locates_pokemon() {
+    let mut bytes = valid_image(20, 21);
+    // Money is stored XOR the SaveBlock2 encryption key, as GetMoney reads it.
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        0,
+        crate::SAVE_BLOCK2_ENCRYPTION_KEY_OFFSET,
+        &0x5a5a_1234_u32.to_le_bytes(),
+    );
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        1,
+        crate::SAVE_BLOCK1_MONEY_OFFSET,
+        &(3000_u32 ^ 0x5a5a_1234).to_le_bytes(),
+    );
+    // Trainer 0x2A is flag TRAINER_FLAGS_START + 0x2A.
+    let flag = crate::TRAINER_FLAGS_START + 0x2a;
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        1,
+        crate::SAVE_BLOCK1_FLAGS_OFFSET + flag / 8,
+        &[1 << (flag % 8)],
+    );
+    let box_raw = golden_box_pokemon();
+    let mut party_raw = [0_u8; 100];
+    party_raw[..80].copy_from_slice(&box_raw);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x238, &party_raw);
+    write_logical_range(&mut bytes, SaveSlot::Second, 1, 0x234, &[1]);
+    // Empty PC slots are zeroed in real saves; clear the synthetic filler.
+    write_logical_range(
+        &mut bytes,
+        SaveSlot::Second,
+        6,
+        4,
+        &vec![0; crate::pokemon::BOX_COUNT * crate::pokemon::BOX_SIZE * 80],
+    );
+    write_logical_range(&mut bytes, SaveSlot::Second, 6, 4 + 49 * 80, &box_raw);
+    let save = parse(&bytes, TEST_REGISTRY).unwrap();
+    assert_eq!(save.selected_slot(), SaveSlot::Second);
+
+    assert_eq!(save.money(), Some(3000));
+    assert_eq!(save.trainer_flag(0x2a), Some(true));
+    assert_eq!(save.trainer_flag(0x2b), Some(false));
+    let past_end =
+        u16::try_from(crate::TRAINER_FLAGS_END - crate::TRAINER_FLAGS_START + 1).unwrap();
+    assert_eq!(save.trainer_flag(past_end), None);
+
+    let PokemonSlot::Occupied(party) = save.party_pokemon(0).unwrap() else {
+        panic!("party record must be occupied")
+    };
+    // The ROM's golden vector asserts MON_DATA_EXP == 12345.
+    assert_eq!(party.identity.experience(), 12_345);
+    assert_eq!(
+        save.locate_pokemon(party.identity.personality, party.identity.ot_id)
+            .unwrap(),
+        vec![
+            crate::PokemonLocation::Party(0),
+            crate::PokemonLocation::Pc {
+                box_index: 1,
+                position: 19
+            }
+        ]
+    );
+    assert!(save.locate_pokemon(1, 2).unwrap().is_empty());
 }

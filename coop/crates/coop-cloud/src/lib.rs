@@ -34,7 +34,7 @@ pub use group::{
     GroupTravelSceneReceiptRequest, GroupView, MAX_WORLD_REVISION, PairingCode, PartnerStatus,
     PartnerStatusResponse, RedeemPairingCodeRequest, RedeemPairingCodeResponse, RouteId,
     StoryTravelRecoveryAction, StoryTravelRecoveryActionRequest, StoryTravelRecoveryOutcome,
-    StoryTravelRecoveryResolutionView, StoryTravelRecoveryView,
+    StoryTravelRecoveryResolutionView, StoryTravelRecoveryView, pairing_code_from_join_text,
 };
 pub use ids::{
     BridgeAbiVersion, CharacterId, ClientInstanceId, CommitId, GameBuildId, GroupId,
@@ -49,8 +49,8 @@ pub use online::{
 };
 pub use presence::{RuntimeBuildIdentity, RuntimeLeaseFence, StableRuntimeSession};
 pub use realtime::{
-    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, GroupEndedV1, InteractionRejectReason,
-    InteractionRejectedV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
+    CURRENT_REALTIME_VERSION, ClientRealtimeFrameV1, GroupEndedV1, GroupStartedV1,
+    InteractionRejectReason, InteractionRejectedV1, MAX_PRESENCE_CLIENT_TEXT_FRAME_BYTES,
     MAX_PRESENCE_SERVER_TEXT_FRAME_BYTES, MintRealtimeTicketRequest, MintRealtimeTicketResponse,
     PRESENCE_INTERPOLATION_DELAY_MS, PRESENCE_SEND_RATE_HZ, PRESENCE_STALE_MS, PresenceReadyV1,
     ProgressFeedEventV1, ProgressFeedResponse, REALTIME_TICKET_ENCODED_LEN,
@@ -84,8 +84,8 @@ pub use snapshot::{
     SnapshotRestoreResponse, UploadCapabilityUrl, UploadMethod, UploadTarget,
 };
 pub use trade::{
-    PartyPosition, TradeDecision, TradeDecisionRequest, TradeOfferRequest, TradeOfferStatus,
-    TradeOfferView,
+    PartyPosition, TradeDecision, TradeDecisionRequest, TradeOfferCurrentView, TradeOfferRequest,
+    TradeOfferStatus, TradeOfferView, TradeOfferedPokemon, TradePokemonKey,
 };
 
 #[cfg(test)]
@@ -314,7 +314,8 @@ mod tests {
         assert!(SessionEpoch::new(0).is_err());
         assert!(serde_json::from_str::<ApiVersion>("2").is_err());
         assert!(BridgeAbiVersion::new(2).is_err());
-        assert!(ProtocolVersion::new(2).is_err());
+        assert!(ProtocolVersion::new(5).is_ok());
+        assert!(ProtocolVersion::new(6).is_err());
     }
 
     #[test]
@@ -942,6 +943,8 @@ mod tests {
         for value in [0, 2] {
             assert!(serde_json::from_value::<ApiVersion>(json!(value)).is_err());
             assert!(serde_json::from_value::<BridgeAbiVersion>(json!(value)).is_err());
+        }
+        for value in [0, 6] {
             assert!(serde_json::from_value::<ProtocolVersion>(json!(value)).is_err());
         }
         assert!(serde_json::from_value::<Username>(json!("A".repeat(33))).is_err());

@@ -6,6 +6,7 @@
 #include "battle_gimmick.h"
 #include "battle_util.h"
 #include "config_changes.h"
+#include "coop/battle_runtime.h"
 #include "constants/johto_content.h"
 #include "event_data.h"
 #include "region_map.h"
@@ -110,6 +111,24 @@ static u32 ScaleHp(u32 hp, u32 oldMax, u32 newMax)
     return min(newMax, max(1, hp * newMax / max(1, oldMax)));
 }
 
+void BattleCaps_SetMonLevel(struct Pokemon *mon, u8 level)
+{
+    enum Species species;
+    u32 hp, oldMaxHp, exp;
+
+    if (mon == NULL || level == 0 || level > MAX_LEVEL
+     || GetMonData(mon, MON_DATA_SPECIES) == SPECIES_NONE || GetMonData(mon, MON_DATA_IS_EGG))
+        return;
+    species = GetMonData(mon, MON_DATA_SPECIES);
+    hp = GetMonData(mon, MON_DATA_HP);
+    oldMaxHp = GetMonData(mon, MON_DATA_MAX_HP);
+    exp = gExperienceTables[gSpeciesInfo[species].growthRate][level];
+    SetMonData(mon, MON_DATA_EXP, &exp);
+    CalculateMonStats(mon);
+    hp = ScaleHp(hp, oldMaxHp, GetMonData(mon, MON_DATA_MAX_HP));
+    SetMonData(mon, MON_DATA_HP, &hp);
+}
+
 static u32 HpAfterStatChange(u32 hp, u32 oldMax, u32 newMax)
 {
     return hp == 0 ? 0 : min(newMax, hp + (newMax > oldMax ? newMax - oldMax : 0));
@@ -174,6 +193,10 @@ void BeginBattleLevelCaps(void)
                           | BATTLE_TYPE_FRONTIER | BATTLE_TYPE_TRAINER_HILL | BATTLE_TYPE_EREADER_TRAINER
                           | BATTLE_TYPE_FIRST_BATTLE | BATTLE_TYPE_SAFARI | BATTLE_TYPE_CATCH_TUTORIAL
                           | BATTLE_TYPE_POKEDUDE | BATTLE_TYPE_RAID)))
+        return;
+    // Co-op battles hash both parties every turn and restore them afterwards.
+    // Projecting only the local copy would split the digest from the peer.
+    if (CoopBattleRuntime_IsEngineActive())
         return;
     // The test runner uses recorded playback to drive ordinary wild battles.
     if ((gBattleTypeFlags & BATTLE_TYPE_RECORDED) && !(gTestRunnerEnabled && (gBattleTypeFlags & BATTLE_TYPE_IS_MASTER)))

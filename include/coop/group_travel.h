@@ -14,6 +14,9 @@ enum CoopGroupTravelDepartureContext
     COOP_GROUP_TRAVEL_DEPARTURE_GATE,
     COOP_GROUP_TRAVEL_DEPARTURE_FLY,
     COOP_GROUP_TRAVEL_DEPARTURE_CABLE_CAR,
+    COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT,
+    COOP_GROUP_TRAVEL_DEPARTURE_DIG,
+    COOP_GROUP_TRAVEL_DEPARTURE_ESCAPE_ROPE,
 };
 
 void CoopGroupTravel_Init(void);
@@ -24,6 +27,11 @@ enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFromScript(u8 route, u8 dep
  * Littleroot as a fixed destination until the cloud Fly-point ledger grows a
  * destination selector. */
 enum CoopGroupTravelBeginResult CoopGroupTravel_BeginFly(u8 route);
+enum CoopGroupTravelBeginResult CoopGroupTravel_BeginTeleport(void);
+bool8 CoopGroupTravel_CanTeleport(void);
+bool8 CoopGroupTravel_CanEscape(void);
+enum CoopGroupTravelBeginResult CoopGroupTravel_BeginDig(void);
+enum CoopGroupTravelBeginResult CoopGroupTravel_BeginEscapeRope(void);
 bool8 CoopGroupTravel_Cancel(void);
 enum CoopGroupTravelOfferState CoopGroupTravel_GetOffer(struct CoopGroupTravelRecord *offer);
 bool8 CoopGroupTravel_RespondToOffer(bool8 accept);

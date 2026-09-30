@@ -2,10 +2,16 @@
 #include "coop/battle_runtime.h"
 #include "coop/battle_consent.h"
 #include "coop/net_bridge.h"
+#include "coop/identity.h"
+#include "coop/region.h"
 #include "battle.h"
+#include "battle_util.h"
 #include "random.h"
 #include "pokemon.h"
+#include "item.h"
 #include "constants/battle.h"
+#include "constants/characters.h"
+#include "constants/items.h"
 #include "constants/opponents.h"
 #include "constants/species.h"
 #include "coop/generated_regional_identities.h"
@@ -23,7 +29,8 @@ struct CoopBattleRuntime
 {
     u32 epoch;
     u8 manifest[COOP_BATTLE_MANIFEST_SIZE];
-    struct CoopBattleTurnBundle bundles[COOP_BATTLE_MAX_TURN];
+    /* A ring: a bundle is consumed before the next round can be formed. */
+    struct CoopBattleTurnBundle bundles[COOP_BATTLE_BUNDLE_QUEUE];
     u16 latest_turn;
     u8 queued_bundles;
     u8 consumed_bundles;
@@ -36,7 +43,8 @@ struct CoopBattleRuntime
     u8 next_peer_party_slot;
     u8 peer_party[6][COOP_BATTLE_PARTY_MON_SIZE];
     u16 last_action_turn;
-    u8 last_action[COOP_BATTLE_ACTION_SIZE];
+    u8 last_action[COOP_BATTLE_MAX_MEMBER_ACTION_BYTES];
+    u8 last_action_length;
     u16 last_hash_turn;
     u16 last_taken_turn;
     struct CoopBattleReplayRecord replay[COOP_BATTLE_REPLAY_CAPACITY];
@@ -71,12 +79,25 @@ struct CoopBattleRuntime
     bool8 terminal_commit_pending;
     bool8 terminal_commit_accepted;
     u8 terminal_commit[COOP_BATTLE_COMMIT_SIZE];
-    struct CoopBattleAction engine_peer_action;
+    struct CoopBattleAction engine_peer_actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 engine_peer_action_count;
+    /* Latched by ArmEngine: an abort clears the manifest while the engine
+     * is still unwinding the battle. */
+    bool8 engine_friendly;
+    bool8 engine_doubles;
+    u8 engine_local_slot;
 };
 
 static EWRAM_DATA struct CoopBattleRuntime sBattleRuntime = {0};
 
+/* The staged counts occupy former padding; the EWRAM plan must not grow. */
+_Static_assert(offsetof(struct CoopBattleStartupPlan, original_local) == 32,
+               "co-op startup plan counts must fit in existing padding");
+
 static void ClearTerminalCommit(void);
+static bool8 DecodeActionList(const u8 *bytes, u16 length,
+                              struct CoopBattleAction *actions, u8 *count);
+static bool8 ActionsFitBattle(const struct CoopBattleAction *actions, u8 count, bool8 friendly);
 
 static bool8 IsValidId(const u8 *id)
 {
@@ -98,23 +119,66 @@ static u16 ReadManifestTrainerOrdinal(const u8 *payload)
         | ((u16)payload[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET + 1] << 8);
 }
 
+/* Any trainer identity in the ROM registry that maps back to a legacy trainer
+ * ID is battleable. Unknown ordinals and identities without a legacy ID stay
+ * rejected wherever the former Wally/Brock allowlist rejected them. */
+static bool8 IsCatalogTrainer(u8 region, u16 ordinal)
+{
+    return CoopIdentity_ResolveTrainerLegacyId(region, ordinal, NULL);
+}
+
+bool8 CoopBattleRuntime_IsValidFriendlyRules(const struct CoopBattleFriendlyRules *rules)
+{
+    if (rules == NULL || rules->count == 0 || rules->count > PARTY_SIZE
+     || (rules->level_mode != COOP_BATTLE_FRIENDLY_LEVELS_AS_IS
+      && rules->level_mode != COOP_BATTLE_FRIENDLY_LEVELS_50))
+        return FALSE;
+    if (rules->format == COOP_BATTLE_FRIENDLY_SINGLES)
+        return TRUE;
+    /* Each side fields two Pokemon at once. */
+    return rules->format == COOP_BATTLE_FRIENDLY_DOUBLES && rules->count >= 2;
+}
+
+bool8 CoopBattleRuntime_DecodeFriendlyRules(const u8 *bytes, struct CoopBattleFriendlyRules *rules)
+{
+    struct CoopBattleFriendlyRules decoded;
+
+    if (bytes == NULL || rules == NULL)
+        return FALSE;
+    decoded.format = bytes[0];
+    decoded.level_mode = bytes[1];
+    decoded.count = bytes[2];
+    if (!CoopBattleRuntime_IsValidFriendlyRules(&decoded))
+        return FALSE;
+    *rules = decoded;
+    return TRUE;
+}
+
+void CoopBattleRuntime_EncodeFriendlyRules(const struct CoopBattleFriendlyRules *rules, u8 *bytes)
+{
+    bytes[0] = rules->format;
+    bytes[1] = rules->level_mode;
+    bytes[2] = rules->count;
+}
+
 static bool8 IsValidManifestIdentity(const u8 *payload)
 {
     u8 kind = payload[COOP_BATTLE_MANIFEST_KIND_OFFSET];
     u8 slot = payload[COOP_BATTLE_MANIFEST_MEMBER_SLOT_OFFSET];
     u8 region = payload[COOP_BATTLE_MANIFEST_REGION_OFFSET];
     u16 ordinal = ReadManifestTrainerOrdinal(payload);
+    const u8 *rules = &payload[COOP_BATTLE_MANIFEST_RULES_OFFSET];
+    struct CoopBattleFriendlyRules decoded;
 
     if (slot > 1)
         return FALSE;
     if (kind == COOP_BATTLE_MANIFEST_KIND_FRIENDLY)
-        return region == COOP_REGION_UNSPECIFIED && ordinal == 0;
-    if (kind != COOP_BATTLE_MANIFEST_KIND_TRAINER)
+        return region == COOP_REGION_UNSPECIFIED && ordinal == 0
+            && CoopBattleRuntime_DecodeFriendlyRules(rules, &decoded);
+    if (kind != COOP_BATTLE_MANIFEST_KIND_TRAINER
+     || rules[0] != 0 || rules[1] != 0 || rules[2] != 0)
         return FALSE;
-    return (region == COOP_REGION_HOENN
-         && ordinal == COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL)
-        || (region == COOP_REGION_KANTO
-         && ordinal == COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL);
+    return IsCatalogTrainer(region, ordinal);
 }
 
 static bool8 IsCurrentBattle(const u8 *payload)
@@ -144,6 +208,7 @@ static void ClearBattle(void)
     memset(sBattleRuntime.peer_party, 0, sizeof(sBattleRuntime.peer_party));
     sBattleRuntime.last_action_turn = 0;
     memset(sBattleRuntime.last_action, 0, sizeof(sBattleRuntime.last_action));
+    sBattleRuntime.last_action_length = 0;
     sBattleRuntime.last_hash_turn = 0;
     sBattleRuntime.last_taken_turn = 0;
     sBattleRuntime.ready_sent = FALSE;
@@ -185,7 +250,8 @@ static void ClearBattle(void)
     sBattleRuntime.engine_faulted = was_active;
     sBattleRuntime.engine_action_submitted = FALSE;
     sBattleRuntime.engine_bundle_ready = FALSE;
-    memset(&sBattleRuntime.engine_peer_action, 0, sizeof(sBattleRuntime.engine_peer_action));
+    memset(sBattleRuntime.engine_peer_actions, 0, sizeof(sBattleRuntime.engine_peer_actions));
+    sBattleRuntime.engine_peer_action_count = 0;
 }
 
 void CoopBattleRuntime_Init(void)
@@ -265,14 +331,6 @@ static u64 ReadCommitRevision(const u8 *payload)
     return revision;
 }
 
-static bool8 IsValidCommitTrainer(u8 region, u16 ordinal)
-{
-    return (region == COOP_REGION_HOENN
-         && ordinal == COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL)
-        || (region == COOP_REGION_KANTO
-         && ordinal == COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL);
-}
-
 static void ClearTerminalCommit(void)
 {
     memset(sBattleRuntime.terminal_battle_id, 0,
@@ -298,8 +356,8 @@ static void RetainTerminalIdentity(void)
     sBattleRuntime.terminal_trainer_ordinal = ReadManifestTrainerOrdinal(sBattleRuntime.manifest);
     sBattleRuntime.terminal_identity_valid =
         IsValidId(sBattleRuntime.terminal_battle_id)
-        && IsValidCommitTrainer(sBattleRuntime.terminal_trainer_region,
-                                sBattleRuntime.terminal_trainer_ordinal);
+        && IsCatalogTrainer(sBattleRuntime.terminal_trainer_region,
+                            sBattleRuntime.terminal_trainer_ordinal);
 }
 
 void CoopBattleRuntime_OnTransportLost(void)
@@ -548,37 +606,58 @@ bool8 CoopBattleRuntime_PreparePartnerParty(const u8 *battle_id,
     u8 i;
 
     if (battle_id == NULL || local_party == NULL || prepared == NULL
-     || local_count < COOP_BATTLE_MULTI_PARTY_SIZE || local_count > PARTY_SIZE
+     || local_count == 0 || local_count > PARTY_SIZE
      || sizeof(struct Pokemon) != COOP_BATTLE_PARTY_MON_SIZE
      || !sBattleRuntime.session_ready || !sBattleRuntime.manifest_valid
      || memcmp(battle_id, sBattleRuntime.manifest, COOP_BATTLE_ID_SIZE) != 0
-     || sBattleRuntime.peer_party_count < COOP_BATTLE_MULTI_PARTY_SIZE
+     || sBattleRuntime.peer_party_count == 0
      || sBattleRuntime.peer_party_count > PARTY_SIZE
      || sBattleRuntime.next_peer_party_slot != sBattleRuntime.peer_party_count)
         return FALSE;
 
-    /* Select the first three usable mons in their original snapshot order.
-     * Every source slot remains available for later battle restoration. */
-    for (i = 0; i < sBattleRuntime.peer_party_count; i++)
-        if (IsUsableBattleMon(sBattleRuntime.peer_party[i])
-         && selected_peer < COOP_BATTLE_MULTI_PARTY_SIZE)
+    /* Select up to the first three usable mons in their original snapshot
+     * order. Both ROMs run this same selection over byte-identical records
+     * (the peer snapshot is digest-checked against the manifest), so each
+     * member's staged side and its size agree on both ROMs. Every source slot
+     * remains available for later battle restoration. */
+    for (i = 0; i < sBattleRuntime.peer_party_count
+              && selected_peer < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+        if (IsUsableBattleMon(sBattleRuntime.peer_party[i]))
             peer_slots[selected_peer++] = i;
-    if (selected_peer != COOP_BATTLE_MULTI_PARTY_SIZE)
+    if (selected_peer == 0)
         return FALSE;
 
     for (i = 0; i < local_count && selected_local < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
         if (IsUsableBattleMon(&local_party[i]))
             local_slots[selected_local++] = i;
-    if (selected_local != COOP_BATTLE_MULTI_PARTY_SIZE)
+    if (selected_local == 0)
         return FALSE;
 
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
     {
-        prepared->local_slots[i] = local_slots[i];
-        prepared->peer_slots[i] = peer_slots[i];
-        memcpy(&prepared->local[i], &local_party[local_slots[i]], sizeof(struct Pokemon));
-        memcpy(&prepared->peer[i], sBattleRuntime.peer_party[peer_slots[i]], sizeof(struct Pokemon));
+        if (i < selected_local)
+        {
+            prepared->local_slots[i] = local_slots[i];
+            memcpy(&prepared->local[i], &local_party[local_slots[i]], sizeof(struct Pokemon));
+        }
+        else
+        {
+            prepared->local_slots[i] = COOP_BATTLE_UNUSED_SLOT;
+            ZeroMonData(&prepared->local[i]);
+        }
+        if (i < selected_peer)
+        {
+            prepared->peer_slots[i] = peer_slots[i];
+            memcpy(&prepared->peer[i], sBattleRuntime.peer_party[peer_slots[i]], sizeof(struct Pokemon));
+        }
+        else
+        {
+            prepared->peer_slots[i] = COOP_BATTLE_UNUSED_SLOT;
+            ZeroMonData(&prepared->peer[i]);
+        }
     }
+    prepared->local_count = selected_local;
+    prepared->peer_count = selected_peer;
     return TRUE;
 }
 
@@ -590,6 +669,7 @@ bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
     struct CoopBattlePreparedParty prepared;
     struct CoopBattleManifestIdentity identity;
     u8 local_digest[COOP_BATTLE_DIGEST_SIZE];
+    enum CoopRegion active_region;
     u16 opponent_trainer_id;
     u8 i;
 
@@ -603,13 +683,16 @@ bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
                &sBattleRuntime.manifest[50 + identity.local_member_slot * COOP_BATTLE_DIGEST_SIZE],
                sizeof(local_digest)) != 0)
         return FALSE;
-    if (identity.trainer_region == COOP_REGION_HOENN
-     && identity.trainer_ordinal == COOP_TRAINER_HOENN_TRAINER_WALLY_1_ORDINAL)
-        opponent_trainer_id = TRAINER_WALLY_VR_1;
-    else if (identity.trainer_region == COOP_REGION_KANTO
-          && identity.trainer_ordinal == COOP_TRAINER_KANTO_TRAINER_BROCK_ORDINAL)
-        opponent_trainer_id = TRAINER_LEADER_BROCK;
-    else
+    /* The responder resolves the opponent from the attested identity, and
+     * only while standing in that identity's region: an ordinal is never
+     * interpreted against another region's trainer table. */
+    if (!CoopRegion_TryGetActive(&active_region)
+     || active_region != identity.trainer_region
+     || !CoopIdentity_ResolveTrainerLegacyId(identity.trainer_region,
+                                             identity.trainer_ordinal,
+                                             &opponent_trainer_id)
+     || opponent_trainer_id == TRAINER_NONE
+     || opponent_trainer_id >= TRAINERS_COUNT)
         return FALSE;
     if (!CoopBattleRuntime_PreparePartnerParty(battle_id, local_party,
                                                local_count, &prepared))
@@ -624,12 +707,81 @@ bool8 CoopBattleRuntime_MakeStartupPlan(const u8 *battle_id,
     plan->opponent_trainer_id = opponent_trainer_id;
     memset(plan->original_local, 0, sizeof(plan->original_local));
     memcpy(plan->original_local, local_party, local_count * sizeof(struct Pokemon));
+    plan->staged_local_count = prepared.local_count;
+    plan->staged_peer_count = prepared.peer_count;
     for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
     {
         plan->local_slots[i] = prepared.local_slots[i];
         plan->peer_slots[i] = prepared.peer_slots[i];
         memcpy(&plan->staged_local[i], &prepared.local[i], sizeof(struct Pokemon));
         memcpy(&plan->staged_peer[i], &prepared.peer[i], sizeof(struct Pokemon));
+    }
+    return TRUE;
+}
+
+bool8 CoopBattleRuntime_CopyPeerTeam(struct Pokemon *team, u8 capacity, u8 *count)
+{
+    u8 i;
+
+    if (team == NULL || count == NULL || !sBattleRuntime.manifest_valid
+     || sBattleRuntime.peer_party_count == 0
+     || sBattleRuntime.peer_party_count > capacity
+     || sBattleRuntime.next_peer_party_slot != sBattleRuntime.peer_party_count)
+        return FALSE;
+    for (i = 0; i < sBattleRuntime.peer_party_count; i++)
+        memcpy(&team[i], sBattleRuntime.peer_party[i], sizeof(struct Pokemon));
+    *count = sBattleRuntime.peer_party_count;
+    return TRUE;
+}
+
+bool8 CoopBattleRuntime_MakeFriendlyPlan(const u8 *battle_id,
+                                         const struct Pokemon *local_party,
+                                         u8 local_count,
+                                         const struct Pokemon *team,
+                                         u8 team_count,
+                                         struct CoopBattleStartupPlan *plan)
+{
+    struct CoopBattleManifestIdentity identity;
+    struct CoopBattleFriendlyRules rules;
+    u8 digest[COOP_BATTLE_DIGEST_SIZE];
+    u8 i;
+
+    if (plan == NULL || local_party == NULL || team == NULL || battle_id == NULL
+     || local_count == 0 || local_count > PARTY_SIZE
+     || !CoopBattleRuntime_GetManifestIdentity(battle_id, &identity)
+     || identity.kind != COOP_BATTLE_MANIFEST_KIND_FRIENDLY
+     || !CoopBattleRuntime_GetFriendlyRules(battle_id, &rules)
+     || team_count != rules.count
+     || sBattleRuntime.peer_party_count != rules.count
+     || sBattleRuntime.next_peer_party_slot != sBattleRuntime.peer_party_count
+     || !CoopBattleRuntime_ComputePartyDigest(team, team_count, digest, sizeof(digest))
+     || memcmp(digest,
+               &sBattleRuntime.manifest[50 + identity.local_member_slot * COOP_BATTLE_DIGEST_SIZE],
+               sizeof(digest)) != 0)
+        return FALSE;
+    /* Both sides bring exactly the agreed number of battle-ready Pokemon. */
+    for (i = 0; i < team_count; i++)
+        if (!IsUsableBattleMon(&team[i]) || !IsUsableBattleMon(sBattleRuntime.peer_party[i]))
+            return FALSE;
+
+    memset(plan, 0, sizeof(*plan));
+    memcpy(plan->battle_id, battle_id, COOP_BATTLE_ID_SIZE);
+    plan->local_member_slot = identity.local_member_slot;
+    plan->member_battler_positions[0] = identity.local_member_slot == 0
+        ? B_POSITION_PLAYER_LEFT : B_POSITION_OPPONENT_LEFT;
+    plan->member_battler_positions[1] = identity.local_member_slot == 1
+        ? B_POSITION_PLAYER_LEFT : B_POSITION_OPPONENT_LEFT;
+    plan->member_party_trainers[0] = identity.local_member_slot == 0 ? B_TRAINER_0 : B_TRAINER_1;
+    plan->member_party_trainers[1] = identity.local_member_slot == 1 ? B_TRAINER_0 : B_TRAINER_1;
+    plan->opponent_trainer_id = TRAINER_NONE;
+    /* All six records, empty ones included, so the restore is byte-exact. */
+    memcpy(plan->original_local, local_party, sizeof(plan->original_local));
+    plan->staged_local_count = team_count;
+    plan->staged_peer_count = team_count;
+    for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+    {
+        plan->local_slots[i] = COOP_BATTLE_UNUSED_SLOT;
+        plan->peer_slots[i] = COOP_BATTLE_UNUSED_SLOT;
     }
     return TRUE;
 }
@@ -645,15 +797,17 @@ bool8 CoopBattleRuntime_RestoreLocalParty(const struct CoopBattleStartupPlan *pl
     if (plan == NULL || battle_id == NULL || battled_local == NULL
      || restored_local == NULL
      || !IsValidId(plan->battle_id)
-     || memcmp(plan->battle_id, battle_id, COOP_BATTLE_ID_SIZE) != 0)
+     || memcmp(plan->battle_id, battle_id, COOP_BATTLE_ID_SIZE) != 0
+     || plan->staged_local_count == 0
+     || plan->staged_local_count > COOP_BATTLE_MULTI_PARTY_SIZE)
         return FALSE;
-    for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+    for (i = 0; i < plan->staged_local_count; i++)
         if (plan->local_slots[i] >= PARTY_SIZE)
             return FALSE;
 
-    memcpy(fought, battled_local, sizeof(fought));
+    memcpy(fought, battled_local, plan->staged_local_count * sizeof(struct Pokemon));
     memmove(restored_local, plan->original_local, sizeof(plan->original_local));
-    for (i = 0; i < COOP_BATTLE_MULTI_PARTY_SIZE; i++)
+    for (i = 0; i < plan->staged_local_count; i++)
         memcpy(&restored_local[plan->local_slots[i]], &fought[i],
                sizeof(struct Pokemon));
     return TRUE;
@@ -664,7 +818,10 @@ enum CoopBattleInboundResult CoopBattleRuntime_ReceiveTurnBundle(const u8 *paylo
     u16 turn;
     u8 firstLength;
     u8 secondLength;
-    struct CoopBattleAction checked;
+    u8 checkedCount;
+    u8 localLength;
+    bool8 friendly;
+    struct CoopBattleAction checked[COOP_BATTLE_MAX_MEMBER_ACTIONS];
     const u8 *localAction;
     if (payload == NULL || length < 22 || length > 116 || !IsValidId(payload))
         return COOP_BATTLE_INBOUND_MALFORMED;
@@ -683,21 +840,33 @@ enum CoopBattleInboundResult CoopBattleRuntime_ReceiveTurnBundle(const u8 *paylo
     if (sBattleRuntime.session_ready
      && (!IsCurrentBattle(payload)
       || sBattleRuntime.queued_bundles >= COOP_BATTLE_MAX_TURN
+      || (u8)(sBattleRuntime.queued_bundles - sBattleRuntime.consumed_bundles)
+         >= COOP_BATTLE_BUNDLE_QUEUE
       || turn != sBattleRuntime.latest_turn + 1))
         return COOP_BATTLE_INBOUND_IGNORED;
-    if (!CoopBattleRuntime_DecodeAction(payload + 20, firstLength, &checked)
-     || !CoopBattleRuntime_DecodeAction(payload + 20 + firstLength, secondLength, &checked))
+    friendly = sBattleRuntime.manifest_valid
+        && sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] == COOP_BATTLE_MANIFEST_KIND_FRIENDLY;
+    if (!DecodeActionList(payload + 20, firstLength, checked, &checkedCount)
+     || !ActionsFitBattle(checked, checkedCount, friendly)
+     || !DecodeActionList(payload + 20 + firstLength, secondLength, checked, &checkedCount)
+     || !ActionsFitBattle(checked, checkedCount, friendly))
         return COOP_BATTLE_INBOUND_MALFORMED;
     if (!sBattleRuntime.session_ready)
         return COOP_BATTLE_INBOUND_IGNORED;
     localAction = payload + 20;
+    localLength = firstLength;
     if (sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_MEMBER_SLOT_OFFSET] == 1)
+    {
         localAction += firstLength;
+        localLength = secondLength;
+    }
     if (turn != sBattleRuntime.last_action_turn
-     || memcmp(localAction, sBattleRuntime.last_action, COOP_BATTLE_ACTION_SIZE) != 0)
+     || localLength != sBattleRuntime.last_action_length
+     || memcmp(localAction, sBattleRuntime.last_action, localLength) != 0)
         return COOP_BATTLE_INBOUND_MALFORMED;
     {
-        struct CoopBattleTurnBundle *bundle = &sBattleRuntime.bundles[sBattleRuntime.queued_bundles];
+        struct CoopBattleTurnBundle *bundle =
+            &sBattleRuntime.bundles[sBattleRuntime.queued_bundles % COOP_BATTLE_BUNDLE_QUEUE];
         memset(bundle, 0, sizeof(*bundle));
         memcpy(bundle->battle_id, payload, COOP_BATTLE_ID_SIZE);
         bundle->turn = turn;
@@ -759,6 +928,37 @@ bool8 CoopBattleRuntime_HasManifest(void)
     return sBattleRuntime.manifest_valid;
 }
 
+u32 CoopBattleRuntime_DeriveOpponentSeed(const u8 *manifest, u16 trainer_id)
+{
+    static const u8 tag[] = {'C', 'O', 'O', 'P', '-', 'O', 'P', 'P'};
+    u32 hash = 2166136261u;
+    u8 i;
+
+    for (i = 0; i < sizeof(tag); i++)
+        hash = (hash ^ tag[i]) * 16777619u;
+    for (i = 0; i < COOP_BATTLE_ID_SIZE; i++)
+        hash = (hash ^ manifest[i]) * 16777619u;
+    for (i = 18; i < 50; i++)
+        hash = (hash ^ manifest[i]) * 16777619u;
+    hash = (hash ^ (trainer_id & 0xFF)) * 16777619u;
+    hash = (hash ^ (trainer_id >> 8)) * 16777619u;
+    /* FNV-1a leaves its low bits weakly mixed; finish with fmix32. */
+    hash ^= hash >> 16;
+    hash *= 0x85EBCA6Bu;
+    hash ^= hash >> 13;
+    hash *= 0xC2B2AE35u;
+    hash ^= hash >> 16;
+    return hash;
+}
+
+bool8 CoopBattleRuntime_GetOpponentSeed(u16 trainer_id, u32 *seed)
+{
+    if (!sBattleRuntime.manifest_valid || seed == NULL)
+        return FALSE;
+    *seed = CoopBattleRuntime_DeriveOpponentSeed(sBattleRuntime.manifest, trainer_id);
+    return TRUE;
+}
+
 bool8 CoopBattleRuntime_GetManifest(u8 *payload, u16 capacity)
 {
     if (!sBattleRuntime.manifest_valid || payload == NULL
@@ -766,6 +966,16 @@ bool8 CoopBattleRuntime_GetManifest(u8 *payload, u16 capacity)
         return FALSE;
     memcpy(payload, sBattleRuntime.manifest, COOP_BATTLE_MANIFEST_SIZE);
     return TRUE;
+}
+
+bool8 CoopBattleRuntime_GetFriendlyRules(const u8 *battle_id, struct CoopBattleFriendlyRules *rules)
+{
+    if (!sBattleRuntime.session_ready || battle_id == NULL || rules == NULL
+     || !IsCurrentBattle(battle_id)
+     || sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] != COOP_BATTLE_MANIFEST_KIND_FRIENDLY)
+        return FALSE;
+    return CoopBattleRuntime_DecodeFriendlyRules(&sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET],
+                                                 rules);
 }
 
 bool8 CoopBattleRuntime_GetManifestIdentity(const u8 *battle_id,
@@ -804,9 +1014,9 @@ enum CoopBattleInboundResult CoopBattleRuntime_ReceiveBattleCommit(const u8 *pay
     if (payload == NULL || length != COOP_BATTLE_COMMIT_SIZE
      || !IsValidId(payload + COOP_BATTLE_COMMIT_BATTLE_ID_OFFSET)
      || !IsNonzeroBytes(payload + COOP_BATTLE_COMMIT_ID_OFFSET, COOP_BATTLE_ID_SIZE)
-     || !IsValidCommitTrainer(payload[COOP_BATTLE_COMMIT_REGION_OFFSET],
-                              payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET]
-                              | ((u16)payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET + 1] << 8))
+     || !IsCatalogTrainer(payload[COOP_BATTLE_COMMIT_REGION_OFFSET],
+                          payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET]
+                          | ((u16)payload[COOP_BATTLE_COMMIT_TRAINER_ORDINAL_OFFSET + 1] << 8))
      || !IsNonzeroBytes(payload + COOP_BATTLE_COMMIT_SOURCE_REVISION_OFFSET, 8))
         return COOP_BATTLE_INBOUND_MALFORMED;
 
@@ -873,6 +1083,14 @@ void CoopBattleRuntime_TestSetReadyForStart(void)
     sBattleRuntime.peer_party_count = 1;
     sBattleRuntime.next_peer_party_slot = 1;
 }
+
+/* Stands in for an accepted BATTLE_FINISHED frame so field tests can end a
+ * co-op battle as completed without replaying its turns. */
+void CoopBattleRuntime_TestSetBattleFinishedSent(void)
+{
+    sBattleRuntime.terminal_sent = TRUE;
+    sBattleRuntime.terminal_pending = FALSE;
+}
 #endif
 
 bool8 CoopBattleRuntime_RequestAbort(u8 reason)
@@ -909,20 +1127,74 @@ bool8 CoopBattleRuntime_EncodeAction(const struct CoopBattleAction *action,
     if (action == NULL || bytes == NULL || capacity < sizeof(encoded))
         return FALSE;
     encoded[0] = action->kind;
-    encoded[1] = action->index;
-    encoded[2] = action->target;
-    encoded[3] = 0;
+    if (action->kind == COOP_BATTLE_ACTION_ITEM)
+    {
+        if (action->index > 0xF || action->target > 0xF)
+            return FALSE;
+        encoded[1] = action->item;
+        encoded[2] = action->item >> 8;
+        encoded[3] = action->index | (action->target << 4);
+    }
+    else
+    {
+        encoded[1] = action->index;
+        encoded[2] = action->target;
+        encoded[3] = 0;
+    }
     if (!CoopBattleRuntime_DecodeAction(encoded, sizeof(encoded), &checked))
         return FALSE;
     memcpy(bytes, encoded, sizeof(encoded));
     return TRUE;
 }
 
+/* Items whose battle effect runs the same on both ROMs from the shared
+ * battle state. Balls, escape items, the Poke Flute and the e-Reader berry
+ * (its effect is this save's own berry) are refused. */
+bool8 CoopBattleRuntime_IsSharedBattleItem(u16 item)
+{
+    if (item == ITEM_NONE || item >= ITEMS_COUNT || item == ITEM_ENIGMA_BERRY_E_READER)
+        return FALSE;
+    switch (GetItemBattleUsage(item))
+    {
+    case EFFECT_ITEM_RESTORE_HP:
+    case EFFECT_ITEM_CURE_STATUS:
+    case EFFECT_ITEM_HEAL_AND_CURE_STATUS:
+    case EFFECT_ITEM_INCREASE_STAT:
+    case EFFECT_ITEM_SET_MIST:
+    case EFFECT_ITEM_SET_FOCUS_ENERGY:
+    case EFFECT_ITEM_REVIVE:
+    case EFFECT_ITEM_RESTORE_PP:
+    case EFFECT_ITEM_INCREASE_ALL_STATS:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 bool8 CoopBattleRuntime_DecodeAction(const u8 *bytes, u16 length,
                                     struct CoopBattleAction *action)
 {
-    if (bytes == NULL || action == NULL || length != COOP_BATTLE_ACTION_SIZE
-     || bytes[3] != 0)
+    u16 item;
+
+    if (bytes == NULL || action == NULL || length != COOP_BATTLE_ACTION_SIZE)
+        return FALSE;
+    if (bytes[0] == COOP_BATTLE_ACTION_ITEM)
+    {
+        item = bytes[1] | ((u16)bytes[2] << 8);
+        /* A trainer battle member stages at most three Pokemon; only a
+         * one-move PP item names a move. */
+        if (!CoopBattleRuntime_IsSharedBattleItem(item)
+         || (bytes[3] & 0xF) >= COOP_BATTLE_MULTI_PARTY_SIZE
+         || (bytes[3] >> 4) >= MAX_MON_MOVES
+         || ((bytes[3] >> 4) != 0 && GetItemBattleUsage(item) != EFFECT_ITEM_RESTORE_PP))
+            return FALSE;
+        action->kind = COOP_BATTLE_ACTION_ITEM;
+        action->index = bytes[3] & 0xF;
+        action->target = bytes[3] >> 4;
+        action->item = item;
+        return TRUE;
+    }
+    if (bytes[3] != 0)
         return FALSE;
     switch (bytes[0])
     {
@@ -932,11 +1204,14 @@ bool8 CoopBattleRuntime_DecodeAction(const u8 *bytes, u16 length,
         break;
     case COOP_BATTLE_ACTION_SWITCH:
     case COOP_BATTLE_ACTION_FORCED_SWITCH:
-        if (bytes[1] >= COOP_BATTLE_MULTI_PARTY_SIZE || bytes[2] != 0)
+        /* A friendly side holds up to six staged Pokemon. A trainer battle's
+         * partner controller still refuses an empty staged record. */
+        if (bytes[1] >= PARTY_SIZE || bytes[2] != 0)
             return FALSE;
         break;
     case COOP_BATTLE_ACTION_NO_ACTION:
     case COOP_BATTLE_ACTION_AUTO_MOVE:
+    case COOP_BATTLE_ACTION_FORFEIT:
         if (bytes[1] != 0 || bytes[2] != 0)
             return FALSE;
         break;
@@ -946,7 +1221,48 @@ bool8 CoopBattleRuntime_DecodeAction(const u8 *bytes, u16 length,
     action->kind = bytes[0];
     action->index = bytes[1];
     action->target = bytes[2];
+    action->item = ITEM_NONE;
     return TRUE;
+}
+
+/* Friendly battles keep the bag closed: an item action is never valid in
+ * one, whichever member sent it. */
+static bool8 ActionsFitBattle(const struct CoopBattleAction *actions, u8 count, bool8 friendly)
+{
+    u8 i;
+
+    if (!friendly)
+        return TRUE;
+    for (i = 0; i < count; i++)
+        if (actions[i].kind == COOP_BATTLE_ACTION_ITEM)
+            return FALSE;
+    return TRUE;
+}
+
+/* A member's action is one 4-byte action, or two for a friendly doubles
+ * member (its left battler, then its right one). */
+static bool8 DecodeActionList(const u8 *bytes, u16 length,
+                              struct CoopBattleAction *actions, u8 *count)
+{
+    u8 i;
+    u8 n = length / COOP_BATTLE_ACTION_SIZE;
+
+    if (bytes == NULL || actions == NULL || count == NULL
+     || (length != COOP_BATTLE_ACTION_SIZE
+      && length != COOP_BATTLE_MAX_MEMBER_ACTION_BYTES))
+        return FALSE;
+    for (i = 0; i < n; i++)
+        if (!CoopBattleRuntime_DecodeAction(bytes + i * COOP_BATTLE_ACTION_SIZE,
+                                            COOP_BATTLE_ACTION_SIZE, &actions[i]))
+            return FALSE;
+    *count = n;
+    return TRUE;
+}
+
+/* Actions per member per round for the armed engine. */
+static u8 EngineMemberActionCount(void)
+{
+    return sBattleRuntime.engine_friendly && sBattleRuntime.engine_doubles ? 2 : 1;
 }
 
 u8 CoopBattleRuntime_TranslateTarget(u8 position, u8 local_member_slot)
@@ -961,15 +1277,23 @@ u8 CoopBattleRuntime_TranslateTarget(u8 position, u8 local_member_slot)
 
 bool8 CoopBattleRuntime_ArmEngine(const u8 *battle_id)
 {
+    u8 kind;
+
     if (battle_id == NULL || !sBattleRuntime.session_ready
      || !IsCurrentBattle(battle_id) || sBattleRuntime.engine_active
-     || sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] != COOP_BATTLE_MANIFEST_KIND_TRAINER
      || sBattleRuntime.latest_turn != 0
-     || sBattleRuntime.peer_party_count < COOP_BATTLE_MULTI_PARTY_SIZE
+     || sBattleRuntime.peer_party_count == 0
      || sBattleRuntime.next_peer_party_slot != sBattleRuntime.peer_party_count)
+        return FALSE;
+    kind = sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET];
+    if (kind != COOP_BATTLE_MANIFEST_KIND_TRAINER && kind != COOP_BATTLE_MANIFEST_KIND_FRIENDLY)
         return FALSE;
     sBattleRuntime.engine_active = TRUE;
     sBattleRuntime.engine_faulted = FALSE;
+    sBattleRuntime.engine_friendly = kind == COOP_BATTLE_MANIFEST_KIND_FRIENDLY;
+    sBattleRuntime.engine_doubles = sBattleRuntime.engine_friendly
+        && sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] == COOP_BATTLE_FRIENDLY_DOUBLES;
+    sBattleRuntime.engine_local_slot = sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_MEMBER_SLOT_OFFSET];
     RetainTerminalIdentity();
     return TRUE;
 }
@@ -980,12 +1304,60 @@ void CoopBattleRuntime_DisarmEngine(void)
     sBattleRuntime.engine_faulted = FALSE;
     sBattleRuntime.engine_action_submitted = FALSE;
     sBattleRuntime.engine_bundle_ready = FALSE;
-    memset(&sBattleRuntime.engine_peer_action, 0, sizeof(sBattleRuntime.engine_peer_action));
+    sBattleRuntime.engine_friendly = FALSE;
+    sBattleRuntime.engine_doubles = FALSE;
+    sBattleRuntime.engine_local_slot = 0;
+    memset(sBattleRuntime.engine_peer_actions, 0, sizeof(sBattleRuntime.engine_peer_actions));
+    sBattleRuntime.engine_peer_action_count = 0;
 }
 
 bool8 CoopBattleRuntime_IsEngineActive(void)
 {
     return sBattleRuntime.engine_active;
+}
+
+bool8 CoopBattleRuntime_IsFriendlyEngine(void)
+{
+    return sBattleRuntime.engine_active && sBattleRuntime.engine_friendly;
+}
+
+bool8 CoopBattleRuntime_IsFriendlyDoubles(void)
+{
+    return CoopBattleRuntime_IsFriendlyEngine() && sBattleRuntime.engine_doubles;
+}
+
+u8 CoopBattleRuntime_CanonicalBattler(u8 battler)
+{
+    /* Friendly battler IDs are canonical by construction. The trainer
+     * layout keeps the local member at PLAYER_LEFT (battler 0) and the peer
+     * at PLAYER_RIGHT (battler 2) on both ROMs. */
+    if (!sBattleRuntime.engine_active || sBattleRuntime.engine_friendly
+     || sBattleRuntime.engine_local_slot != 1 || battler >= MAX_BATTLERS_COUNT)
+        return battler;
+    if (battler == B_POSITION_PLAYER_LEFT || battler == B_POSITION_PLAYER_RIGHT)
+        return battler ^ B_POSITION_PLAYER_RIGHT;
+    return battler;
+}
+
+bool8 CoopBattleRuntime_IsTrainerEngine(void)
+{
+    return sBattleRuntime.engine_active && !sBattleRuntime.engine_friendly;
+}
+
+bool8 CoopBattleRuntime_CopyPartnerName(u8 *dst)
+{
+    if (dst == NULL || !CoopBattleRuntime_IsTrainerEngine())
+        return FALSE;
+    /* Writes PLAYER_NAME_LENGTH characters and EOS. */
+    GetMonData(&gParties[B_TRAINER_2][0], MON_DATA_OT_NAME, dst);
+    if (dst[0] == EOS)
+        return FALSE;
+    return TRUE;
+}
+
+u8 CoopBattleRuntime_PartnerGender(void)
+{
+    return GetMonData(&gParties[B_TRAINER_2][0], MON_DATA_OT_GENDER) == FEMALE ? FEMALE : MALE;
 }
 
 bool8 CoopBattleRuntime_IsEngineFaulted(void)
@@ -1002,7 +1374,7 @@ u8 CoopBattleRuntime_EngineLocalMemberSlot(void)
 {
     if (!sBattleRuntime.engine_active)
         return 0xFF;
-    return sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_MEMBER_SLOT_OFFSET];
+    return sBattleRuntime.engine_local_slot;
 }
 
 bool8 CoopBattleRuntime_IsLocalActionSubmitted(void)
@@ -1010,47 +1382,85 @@ bool8 CoopBattleRuntime_IsLocalActionSubmitted(void)
     return sBattleRuntime.engine_active && sBattleRuntime.engine_action_submitted;
 }
 
-bool8 CoopBattleRuntime_SubmitLocalAction(const struct CoopBattleAction *action)
+bool8 CoopBattleRuntime_SubmitLocalActions(const struct CoopBattleAction *actions, u8 count)
 {
-    u8 encoded[COOP_BATTLE_ACTION_SIZE];
+    u8 encoded[COOP_BATTLE_MAX_MEMBER_ACTION_BYTES];
+    u8 i;
 
-    if (!sBattleRuntime.engine_active || sBattleRuntime.engine_faulted
-     || sBattleRuntime.engine_action_submitted
-     || !CoopBattleRuntime_EncodeAction(action, encoded, sizeof(encoded))
-     || !CoopBattleRuntime_SendActionIntent(sBattleRuntime.manifest,
+    if (actions == NULL || !sBattleRuntime.engine_active || sBattleRuntime.engine_faulted
+     || sBattleRuntime.engine_action_submitted || count != EngineMemberActionCount()
+     || !ActionsFitBattle(actions, count, sBattleRuntime.engine_friendly))
+        return FALSE;
+    for (i = 0; i < count; i++)
+        if (!CoopBattleRuntime_EncodeAction(&actions[i], encoded + i * COOP_BATTLE_ACTION_SIZE,
+                                            COOP_BATTLE_ACTION_SIZE))
+            return FALSE;
+    if (!CoopBattleRuntime_SendActionIntent(sBattleRuntime.manifest,
                                             sBattleRuntime.latest_turn + 1,
-                                            encoded, sizeof(encoded)))
+                                            encoded, count * COOP_BATTLE_ACTION_SIZE))
         return FALSE;
     sBattleRuntime.engine_action_submitted = TRUE;
     return TRUE;
 }
 
-bool8 CoopBattleRuntime_PollPeerAction(struct CoopBattleAction *action)
+bool8 CoopBattleRuntime_SubmitLocalAction(const struct CoopBattleAction *action)
+{
+    return CoopBattleRuntime_SubmitLocalActions(action, 1);
+}
+
+bool8 CoopBattleRuntime_GetLocalActions(struct CoopBattleAction *actions, u8 *count)
+{
+    if (!sBattleRuntime.engine_active || !sBattleRuntime.engine_action_submitted)
+        return FALSE;
+    return DecodeActionList(sBattleRuntime.last_action, sBattleRuntime.last_action_length,
+                            actions, count);
+}
+
+bool8 CoopBattleRuntime_PollPeerActions(struct CoopBattleAction *actions, u8 *count)
 {
     struct CoopBattleTurnBundle bundle;
     const u8 *peer;
     u8 peerLength;
+    u8 decoded;
 
     if (!sBattleRuntime.engine_active || sBattleRuntime.engine_faulted
      || !sBattleRuntime.engine_action_submitted
      || !sBattleRuntime.session_ready || !CoopNetBridge_CanSendBattle()
      || sBattleRuntime.replay_next < sBattleRuntime.replay_count
-     || sBattleRuntime.pause_valid || action == NULL)
+     || sBattleRuntime.pause_valid || actions == NULL || count == NULL)
         return FALSE;
     if (!sBattleRuntime.engine_bundle_ready)
     {
         if (!CoopBattleRuntime_TakeTurnBundle(&bundle))
             return FALSE;
-        if (sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_MEMBER_SLOT_OFFSET] == 0)
+        if (sBattleRuntime.engine_local_slot == 0)
             peer = bundle.second_action, peerLength = bundle.second_length;
         else
             peer = bundle.first_action, peerLength = bundle.first_length;
-        if (!CoopBattleRuntime_DecodeAction(peer, peerLength,
-                                            &sBattleRuntime.engine_peer_action))
+        if (!DecodeActionList(peer, peerLength, sBattleRuntime.engine_peer_actions, &decoded)
+         || decoded != EngineMemberActionCount())
+        {
+            /* A peer action for the wrong format is a protocol fault. */
+            sBattleRuntime.engine_faulted = TRUE;
             return FALSE;
+        }
+        sBattleRuntime.engine_peer_action_count = decoded;
         sBattleRuntime.engine_bundle_ready = TRUE;
     }
-    *action = sBattleRuntime.engine_peer_action;
+    memcpy(actions, sBattleRuntime.engine_peer_actions,
+           sBattleRuntime.engine_peer_action_count * sizeof(actions[0]));
+    *count = sBattleRuntime.engine_peer_action_count;
+    return TRUE;
+}
+
+bool8 CoopBattleRuntime_PollPeerAction(struct CoopBattleAction *action)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+
+    if (action == NULL || !CoopBattleRuntime_PollPeerActions(actions, &count))
+        return FALSE;
+    *action = actions[0];
     return TRUE;
 }
 
@@ -1093,14 +1503,15 @@ void CoopBattleRuntime_FinishEngineTurn(void)
         return;
     sBattleRuntime.engine_action_submitted = FALSE;
     sBattleRuntime.engine_bundle_ready = FALSE;
-    memset(&sBattleRuntime.engine_peer_action, 0, sizeof(sBattleRuntime.engine_peer_action));
+    memset(sBattleRuntime.engine_peer_actions, 0, sizeof(sBattleRuntime.engine_peer_actions));
+    sBattleRuntime.engine_peer_action_count = 0;
 }
 
 bool8 CoopBattleRuntime_TakeTurnBundle(struct CoopBattleTurnBundle *bundle)
 {
     if (sBattleRuntime.consumed_bundles >= sBattleRuntime.queued_bundles || bundle == NULL)
         return FALSE;
-    *bundle = sBattleRuntime.bundles[sBattleRuntime.consumed_bundles++];
+    *bundle = sBattleRuntime.bundles[sBattleRuntime.consumed_bundles++ % COOP_BATTLE_BUNDLE_QUEUE];
     sBattleRuntime.last_taken_turn = bundle->turn;
     return TRUE;
 }
@@ -1170,7 +1581,8 @@ bool8 CoopBattleRuntime_SendActionIntent(const u8 *battle_id, u16 turn,
                                          const u8 *action, u16 action_size)
 {
     u8 payload[19 + COOP_BATTLE_MAX_ACTION_SIZE];
-    struct CoopBattleAction checked;
+    struct CoopBattleAction checked[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 checkedCount;
 
     if (battle_id == NULL || action == NULL || action_size == 0
      || action_size > COOP_BATTLE_MAX_ACTION_SIZE || turn == 0
@@ -1179,7 +1591,7 @@ bool8 CoopBattleRuntime_SendActionIntent(const u8 *battle_id, u16 turn,
      || sBattleRuntime.replay_next < sBattleRuntime.replay_count
      || turn != sBattleRuntime.latest_turn + 1
      || turn != sBattleRuntime.last_action_turn + 1
-     || !CoopBattleRuntime_DecodeAction(action, action_size, &checked))
+     || !DecodeActionList(action, action_size, checked, &checkedCount))
         return FALSE;
     memcpy(payload, battle_id, COOP_BATTLE_ID_SIZE);
     payload[16] = turn;
@@ -1190,7 +1602,8 @@ bool8 CoopBattleRuntime_SendActionIntent(const u8 *battle_id, u16 turn,
                                              payload, 19 + action_size))
         return FALSE;
     sBattleRuntime.last_action_turn = turn;
-    memcpy(sBattleRuntime.last_action, action, COOP_BATTLE_ACTION_SIZE);
+    memcpy(sBattleRuntime.last_action, action, action_size);
+    sBattleRuntime.last_action_length = action_size;
     return TRUE;
 }
 
@@ -1493,8 +1906,10 @@ static void CoopBattleDigest_U32(struct CoopBattleSha256 *context, u32 value)
     CoopBattleDigest_Bytes(context, bytes, sizeof(bytes));
 }
 
+/* volatiles is mon->volatiles or a copy with canonical battler references. */
 static void CoopBattleDigest_BattlePokemon(struct CoopBattleSha256 *context,
-                                           const struct BattlePokemon *mon)
+                                           const struct BattlePokemon *mon,
+                                           const struct Volatiles *volatiles)
 {
     u8 i;
 
@@ -1532,7 +1947,7 @@ static void CoopBattleDigest_BattlePokemon(struct CoopBattleSha256 *context,
     /* Volatile bitfields are the protocol's versioned engine representation;
      * this fixed-size byte serialization includes every volatile timer and
      * target without copying compiler padding from the surrounding mon. */
-    CoopBattleDigest_Bytes(context, &mon->volatiles, sizeof(mon->volatiles));
+    CoopBattleDigest_Bytes(context, volatiles, sizeof(*volatiles));
     CoopBattleDigest_U32(context, mon->otId);
     CoopBattleDigest_U8(context, mon->metLevel);
     CoopBattleDigest_U8(context, mon->isShiny);
@@ -1572,28 +1987,124 @@ static void CoopBattleDigest_Party(struct CoopBattleSha256 *context,
         CoopBattleDigest_Bytes(context, &gParties[trainer][i], sizeof(struct Pokemon));
 }
 
+/* Stored battler references, in the trainer layout's local numbering, as the
+ * canonical battler both ROMs agree on (CoopBattleRuntime_CanonicalBattler
+ * swaps local 0 and 2 on member 1's ROM and is its own inverse). A raw ID
+ * whose unset value 0 would read as local battler 0 is hashed only while its
+ * flag says it is set; "battler + 1" fields keep 0 as unset; out-of-range
+ * sentinels (0xFF, MAX_BATTLERS_COUNT) pass through unchanged. */
+static u8 CoopBattleDigest_CanonicalRef(bool32 set, u8 battler)
+{
+    return set ? CoopBattleRuntime_CanonicalBattler(battler) : 0;
+}
+
+static u8 CoopBattleDigest_CanonicalRefPlusOne(u8 value)
+{
+    return value == 0 ? 0 : CoopBattleRuntime_CanonicalBattler(value - 1) + 1;
+}
+
+static u8 CoopBattleDigest_CanonicalMask(u8 mask);
+
+static void CoopBattleDigest_CanonicalVolatiles(struct Volatiles *v)
+{
+    v->skyDropTarget = CoopBattleDigest_CanonicalRefPlusOne(v->skyDropTarget);
+    v->infatuation = CoopBattleDigest_CanonicalRefPlusOne(v->infatuation);
+    v->leechSeed = CoopBattleDigest_CanonicalRefPlusOne(v->leechSeed);
+    v->battlerWithSureHit = CoopBattleDigest_CanonicalRefPlusOne(v->battlerWithSureHit);
+    v->wrappedBy = CoopBattleDigest_CanonicalRef(v->wrapped, v->wrappedBy);
+    v->stickySyrupedBy = CoopBattleDigest_CanonicalRef(v->syrupBomb, v->stickySyrupedBy);
+    v->battlerPreventingEscape = CoopBattleDigest_CanonicalRef(v->escapePrevention,
+                                                               v->battlerPreventingEscape);
+    v->octolockedBy = CoopBattleDigest_CanonicalRef(v->octolock, v->octolockedBy);
+}
+
+/* position is where this ROM draws the battler; canonical_position is the
+ * one both ROMs agree on (member 0 at PLAYER_LEFT, member 1 at
+ * PLAYER_RIGHT), which is what is hashed. Battler references inside the
+ * battler's state are hashed as canonical IDs. */
 static void CoopBattleDigest_Battler(struct CoopBattleSha256 *context,
-                                     enum BattlerPosition position)
+                                     enum BattlerPosition position,
+                                     enum BattlerPosition canonical_position)
 {
     enum BattlerId battler = CoopBattleDigest_BattlerAt(position);
+    struct Volatiles volatiles;
+    struct ProtectStruct protect;
+    struct SpecialStatus special;
+    struct BattlerState state;
+    struct FutureSight futureSight;
+    u8 i;
 
-    CoopBattleDigest_U8(context, position);
+    CoopBattleDigest_U8(context, canonical_position);
     if (battler == MAX_BATTLERS_COUNT)
     {
         CoopBattleDigest_U8(context, 0xFF);
         return;
     }
     CoopBattleDigest_U8(context, gBattlerPartyIndexes[battler]);
-    CoopBattleDigest_BattlePokemon(context, &gBattleMons[battler]);
-    CoopBattleDigest_Bytes(context, &gProtectStructs[battler], sizeof(gProtectStructs[battler]));
-    CoopBattleDigest_Bytes(context, &gSpecialStatuses[battler], sizeof(gSpecialStatuses[battler]));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->battlerState[battler], sizeof(gBattleStruct->battlerState[battler]));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->futureSight[battler], sizeof(gBattleStruct->futureSight[battler]));
+    volatiles = gBattleMons[battler].volatiles;
+    CoopBattleDigest_CanonicalVolatiles(&volatiles);
+    CoopBattleDigest_BattlePokemon(context, &gBattleMons[battler], &volatiles);
+
+    /* Counter/Mirror Coat sources are set together with their damage (+1);
+     * revengeDoubled is a mask of the battlers that hit this one. */
+    protect = gProtectStructs[battler];
+    protect.physicalBattlerId = CoopBattleDigest_CanonicalRef(protect.physicalDmg != 0, protect.physicalBattlerId);
+    protect.specialBattlerId = CoopBattleDigest_CanonicalRef(protect.specialDmg != 0, protect.specialBattlerId);
+    protect.revengeDoubled = CoopBattleDigest_CanonicalMask(protect.revengeDoubled);
+    CoopBattleDigest_Bytes(context, &protect, sizeof(protect));
+
+    /* changedStatsBattlerId is per-action scratch with no "set" flag (the
+     * whole struct is cleared after every action), so it is left out. */
+    special = gSpecialStatuses[battler];
+    special.changedStatsBattlerId = 0;
+    special.backUpTarget = CoopBattleDigest_CanonicalRefPlusOne(special.backUpTarget);
+    CoopBattleDigest_Bytes(context, &special, sizeof(special));
+
+    /* targetsDone is indexed by target battler; lastMoveTarget (Instruct)
+     * is only meaningful once the battler has used a move. */
+    state = gBattleStruct->battlerState[battler];
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+        state.targetsDone[i] = gBattleStruct->battlerState[battler].targetsDone[CoopBattleRuntime_CanonicalBattler(i)];
+    state.lastMoveTarget = CoopBattleDigest_CanonicalRef(gLastMoves[battler] != MOVE_NONE, state.lastMoveTarget);
+    CoopBattleDigest_Bytes(context, &state, sizeof(state));
+
+    /* Future Sight/Doom Desire: the attacker's battler ID while pending. */
+    futureSight = gBattleStruct->futureSight[battler];
+    futureSight.battlerIndex = CoopBattleDigest_CanonicalRef(futureSight.counter != 0, futureSight.battlerIndex);
+    CoopBattleDigest_Bytes(context, &futureSight, sizeof(futureSight));
+    /* Wish stores the wisher's own party slot, not a battler. */
     CoopBattleDigest_Bytes(context, &gBattleStruct->wish[battler], sizeof(gBattleStruct->wish[battler]));
+}
+
+/* Trainer layout: each ROM keeps its own member at battler 0, so on member
+ * 1's ROM battlers 0 and 2 are swapped. Battler-indexed state is hashed in
+ * canonical battler order. */
+static void CoopBattleDigest_PerBattler(struct CoopBattleSha256 *context,
+                                        const void *base, u16 element_size)
+{
+    u8 i;
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+        CoopBattleDigest_Bytes(context,
+                               (const u8 *)base + CoopBattleRuntime_CanonicalBattler(i) * element_size,
+                               element_size);
+}
+
+static u8 CoopBattleDigest_CanonicalMask(u8 mask)
+{
+    u8 canonical = 0;
+    u8 i;
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+        if (mask & (1u << CoopBattleRuntime_CanonicalBattler(i)))
+            canonical |= 1u << i;
+    return canonical;
 }
 
 static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
 {
+    struct SideTimer sideTimer;
+    u32 hitMarker;
     static const u8 version_tag[] = {'C', 'O', 'O', 'P', '-', 'B', 'A', 'T', 'T', 'L', 'E'};
     enum BattleTrainer member0_trainer;
     enum BattleTrainer member1_trainer;
@@ -1618,13 +2129,19 @@ static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
     CoopBattleDigest_Party(context, 3, B_TRAINER_3);
     /* PartyState carries delayed held-item, form, and sent-out effects that
      * are not represented by the six serialized party records. */
-    CoopBattleDigest_Bytes(context, gBattleStruct->partyState,
-                           sizeof(gBattleStruct->partyState));
+    CoopBattleDigest_Bytes(context, gBattleStruct->partyState[member0_trainer],
+                           sizeof(gBattleStruct->partyState[member0_trainer]));
+    CoopBattleDigest_Bytes(context, gBattleStruct->partyState[member1_trainer],
+                           sizeof(gBattleStruct->partyState[member1_trainer]));
+    CoopBattleDigest_Bytes(context, gBattleStruct->partyState[B_TRAINER_1],
+                           sizeof(gBattleStruct->partyState[B_TRAINER_1]));
+    CoopBattleDigest_Bytes(context, gBattleStruct->partyState[B_TRAINER_3],
+                           sizeof(gBattleStruct->partyState[B_TRAINER_3]));
 
-    CoopBattleDigest_Battler(context, CoopBattleDigest_MemberPosition(0));
-    CoopBattleDigest_Battler(context, CoopBattleDigest_MemberPosition(1));
-    CoopBattleDigest_Battler(context, B_POSITION_OPPONENT_LEFT);
-    CoopBattleDigest_Battler(context, B_POSITION_OPPONENT_RIGHT);
+    CoopBattleDigest_Battler(context, CoopBattleDigest_MemberPosition(0), B_POSITION_PLAYER_LEFT);
+    CoopBattleDigest_Battler(context, CoopBattleDigest_MemberPosition(1), B_POSITION_PLAYER_RIGHT);
+    CoopBattleDigest_Battler(context, B_POSITION_OPPONENT_LEFT, B_POSITION_OPPONENT_LEFT);
+    CoopBattleDigest_Battler(context, B_POSITION_OPPONENT_RIGHT, B_POSITION_OPPONENT_RIGHT);
 
     CoopBattleDigest_Bytes(context, &gRngValue, sizeof(gRngValue));
     CoopBattleDigest_Bytes(context, &gRng2Value, sizeof(gRng2Value));
@@ -1632,15 +2149,171 @@ static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
     CoopBattleDigest_U8(context, gBattleOutcome);
     CoopBattleDigest_U16(context, gBattleTurnCounter);
     CoopBattleDigest_U8(context, gBattlersCount);
-    CoopBattleDigest_U8(context, gAbsentBattlerFlags);
-    CoopBattleDigest_U32(context, gHitMarker);
+    CoopBattleDigest_U8(context, CoopBattleDigest_CanonicalMask(gAbsentBattlerFlags));
+    hitMarker = gHitMarker & ~(HITMARKER_FAINTED(0) | HITMARKER_FAINTED(1)
+                             | HITMARKER_FAINTED(2) | HITMARKER_FAINTED(3));
+    CoopBattleDigest_U32(context, hitMarker);
+    CoopBattleDigest_U8(context, CoopBattleDigest_CanonicalMask(gHitMarker >> 28));
     CoopBattleDigest_U16(context, gBattleWeather);
     CoopBattleDigest_U8(context, gBattleEnvironment);
     CoopBattleDigest_U32(context, gFieldStatuses);
     CoopBattleDigest_Bytes(context, &gFieldTimers, sizeof(gFieldTimers));
     CoopBattleDigest_Bytes(context, gSideStatuses, sizeof(gSideStatuses));
-    CoopBattleDigest_Bytes(context, gSideTimers, sizeof(gSideTimers));
+    /* Sides are the same on both ROMs; the Sticky Web setter (while the web
+     * is on that side, 0xFF otherwise) and the Follow Me target (while its
+     * timer runs) are battlers. */
+    for (i = 0; i < NUM_BATTLE_SIDES; i++)
+    {
+        sideTimer = gSideTimers[i];
+        sideTimer.stickyWebBattlerId = IsHazardOnSide(i, HAZARDS_STICKY_WEB)
+            ? CoopBattleRuntime_CanonicalBattler(sideTimer.stickyWebBattlerId) : 0xFF;
+        sideTimer.followmeTarget = CoopBattleDigest_CanonicalRef(sideTimer.followmeTimer != 0, sideTimer.followmeTarget);
+        CoopBattleDigest_Bytes(context, &sideTimer, sizeof(sideTimer));
+    }
+    /* Its battler fields are loop counters over speed order, not IDs. */
     CoopBattleDigest_Bytes(context, &gBattleStruct->eventState, sizeof(gBattleStruct->eventState));
+    /* moveTarget is left out: it holds battler IDs, and an unset entry (0)
+     * names a different member on each ROM. It is a selection input that
+     * the exchanged actions already carry. */
+    CoopBattleDigest_PerBattler(context, gBattleStruct->chosenMovePositions, sizeof(gBattleStruct->chosenMovePositions[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->monToSwitchIntoId, sizeof(gBattleStruct->monToSwitchIntoId[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->battlerPartyIndexes, sizeof(gBattleStruct->battlerPartyIndexes[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->battlerPartyOrders, sizeof(gBattleStruct->battlerPartyOrders[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->lastTakenMove, sizeof(gBattleStruct->lastTakenMove[0]));
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+        CoopBattleDigest_PerBattler(context,
+                                    gBattleStruct->lastTakenMoveFrom[CoopBattleRuntime_CanonicalBattler(i)],
+                                    sizeof(gBattleStruct->lastTakenMoveFrom[0][0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->passiveHpUpdate, sizeof(gBattleStruct->passiveHpUpdate[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->moveDamage, sizeof(gBattleStruct->moveDamage[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->moveResultFlags, sizeof(gBattleStruct->moveResultFlags[0]));
+    CoopBattleDigest_Bytes(context, gBattleStruct->hazardsQueue, sizeof(gBattleStruct->hazardsQueue));
+    CoopBattleDigest_Bytes(context, gBattleStruct->numHazards, sizeof(gBattleStruct->numHazards));
+    /* Z-Move: viable/viewing and possibleZMoves are this ROM's own move-
+     * selection UI (computed for the local battler only); healReplacement
+     * is a battler mask. */
+    CoopBattleDigest_U8(context, CoopBattleDigest_CanonicalMask(gBattleStruct->zmove.healReplacement));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->zmove.baseMoves, sizeof(gBattleStruct->zmove.baseMoves[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->dynamax.dynamaxTurns, sizeof(gBattleStruct->dynamax.dynamaxTurns[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->dynamax.baseMoves, sizeof(gBattleStruct->dynamax.baseMoves[0]));
+    CoopBattleDigest_U16(context, gBattleStruct->dynamax.lastUsedBaseMove);
+    CoopBattleDigest_U8(context, gBattleStruct->hazardsCounter);
+    CoopBattleDigest_U8(context, gBattleStruct->submoveAnnouncement);
+    CoopBattleDigest_U8(context, gBattleStruct->effectsBeforeUsingMoveDone);
+    CoopBattleDigest_PerBattler(context, gBattleStruct->prevTurnSpecies, sizeof(gBattleStruct->prevTurnSpecies[0]));
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+    {
+        battler = CoopBattleDigest_BattlerAt((enum BattlerPosition)i);
+        CoopBattleDigest_U8(context, battler == MAX_BATTLERS_COUNT ? 0xFF : gBattlerPositions[battler]);
+    }
+}
+
+/* Friendly battles: each ROM draws its own member at the bottom, so side-
+ * and trainer-indexed state is mirrored on member 1's ROM. Battler IDs are
+ * canonical (member 0 owns battlers 0 and 2), so battler-indexed state and
+ * battler references hash as they are; everything mirrored is hashed in
+ * member order instead. The animation-only RNG stream is left out: each
+ * player's battle-scene option decides whether animations draw from it. */
+static enum BattleTrainer CoopFriendlyDigest_MemberTrainer(u8 member)
+{
+    return member == sBattleRuntime.engine_local_slot ? B_TRAINER_0 : B_TRAINER_1;
+}
+
+static u8 CoopFriendlyDigest_Position(u8 position)
+{
+    if (sBattleRuntime.engine_local_slot == 1 && position <= B_POSITION_OPPONENT_RIGHT)
+        return position ^ BIT_SIDE;
+    return position;
+}
+
+/* The battle outcome from member 0's point of view. */
+static u8 CoopFriendlyDigest_Outcome(u8 outcome)
+{
+    if (sBattleRuntime.engine_local_slot == 1)
+    {
+        if (outcome == B_OUTCOME_WON)
+            return B_OUTCOME_LOST;
+        if (outcome == B_OUTCOME_LOST)
+            return B_OUTCOME_WON;
+    }
+    return outcome;
+}
+
+static void CoopFriendlyDigest_BattleState(struct CoopBattleSha256 *context)
+{
+    static const u8 version_tag[] = {'C', 'O', 'O', 'P', '-', 'F', 'R', 'I', 'E', 'N', 'D'};
+    struct EventStates events;
+    struct SideTimer sideTimer;
+    enum BattleSide member0Side;
+    enum BattleTrainer trainer;
+    u8 member;
+    u8 i;
+
+    CoopBattleDigest_Bytes(context, version_tag, sizeof(version_tag));
+    CoopBattleDigest_U8(context, COOP_BATTLE_DIGEST_VERSION);
+    CoopBattleDigest_Bytes(context, &sBattleRuntime.manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET],
+                           COOP_BATTLE_FRIENDLY_RULES_SIZE);
+    for (member = 0; member < 2; member++)
+    {
+        trainer = CoopFriendlyDigest_MemberTrainer(member);
+        CoopBattleDigest_U8(context, member);
+        CoopBattleDigest_U8(context, gPartiesCount[trainer]);
+        for (i = 0; i < PARTY_SIZE; i++)
+            CoopBattleDigest_Bytes(context, &gParties[trainer][i], sizeof(struct Pokemon));
+        CoopBattleDigest_Bytes(context, gBattleStruct->partyState[trainer],
+                               sizeof(gBattleStruct->partyState[trainer]));
+    }
+
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+    {
+        CoopBattleDigest_U8(context, i);
+        if (i >= gBattlersCount)
+        {
+            CoopBattleDigest_U8(context, 0xFF);
+            continue;
+        }
+        CoopBattleDigest_U8(context, CoopFriendlyDigest_Position(gBattlerPositions[i]));
+        CoopBattleDigest_U8(context, gBattlerPartyIndexes[i]);
+        CoopBattleDigest_BattlePokemon(context, &gBattleMons[i], &gBattleMons[i].volatiles);
+        CoopBattleDigest_Bytes(context, &gProtectStructs[i], sizeof(gProtectStructs[i]));
+        CoopBattleDigest_Bytes(context, &gSpecialStatuses[i], sizeof(gSpecialStatuses[i]));
+        CoopBattleDigest_Bytes(context, &gBattleStruct->battlerState[i], sizeof(gBattleStruct->battlerState[i]));
+        CoopBattleDigest_Bytes(context, &gBattleStruct->futureSight[i], sizeof(gBattleStruct->futureSight[i]));
+        CoopBattleDigest_Bytes(context, &gBattleStruct->wish[i], sizeof(gBattleStruct->wish[i]));
+    }
+
+    CoopBattleDigest_Bytes(context, &gRngValue, sizeof(gRngValue));
+    CoopBattleDigest_U32(context, gBattleTypeFlags);
+    CoopBattleDigest_U8(context, CoopFriendlyDigest_Outcome(gBattleOutcome));
+    CoopBattleDigest_U16(context, gBattleTurnCounter);
+    CoopBattleDigest_U8(context, gBattlersCount);
+    CoopBattleDigest_U8(context, gAbsentBattlerFlags);
+    /* HITMARKER_RUN marks this ROM's own forfeit choice before the round is
+     * exchanged; the forfeit itself is part of the exchanged actions. */
+    CoopBattleDigest_U32(context, gHitMarker & ~HITMARKER_RUN);
+    CoopBattleDigest_U16(context, gBattleWeather);
+    CoopBattleDigest_U8(context, gBattleEnvironment);
+    CoopBattleDigest_U32(context, gFieldStatuses);
+    CoopBattleDigest_Bytes(context, &gFieldTimers, sizeof(gFieldTimers));
+
+    member0Side = sBattleRuntime.engine_local_slot == 0 ? B_SIDE_PLAYER : B_SIDE_OPPONENT;
+    for (member = 0; member < 2; member++)
+    {
+        enum BattleSide side = member == 0 ? member0Side : (member0Side ^ BIT_SIDE);
+
+        CoopBattleDigest_U32(context, gSideStatuses[side]);
+        sideTimer = gSideTimers[side];
+        /* A side number, mirrored on member 1's ROM. */
+        sideTimer.stickyWebBattlerSide = 0;
+        CoopBattleDigest_Bytes(context, &sideTimer, sizeof(sideTimer));
+        CoopBattleDigest_Bytes(context, gBattleStruct->hazardsQueue[side],
+                               sizeof(gBattleStruct->hazardsQueue[side]));
+        CoopBattleDigest_U8(context, gBattleStruct->numHazards[side]);
+    }
+
+    events = gBattleStruct->eventState;
+    events.battlerSide = 0;
+    CoopBattleDigest_Bytes(context, &events, sizeof(events));
     CoopBattleDigest_Bytes(context, gBattleStruct->moveTarget, sizeof(gBattleStruct->moveTarget));
     CoopBattleDigest_Bytes(context, gBattleStruct->chosenMovePositions, sizeof(gBattleStruct->chosenMovePositions));
     CoopBattleDigest_Bytes(context, gBattleStruct->monToSwitchIntoId, sizeof(gBattleStruct->monToSwitchIntoId));
@@ -1651,19 +2324,12 @@ static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
     CoopBattleDigest_Bytes(context, gBattleStruct->passiveHpUpdate, sizeof(gBattleStruct->passiveHpUpdate));
     CoopBattleDigest_Bytes(context, gBattleStruct->moveDamage, sizeof(gBattleStruct->moveDamage));
     CoopBattleDigest_Bytes(context, gBattleStruct->moveResultFlags, sizeof(gBattleStruct->moveResultFlags));
-    CoopBattleDigest_Bytes(context, gBattleStruct->hazardsQueue, sizeof(gBattleStruct->hazardsQueue));
-    CoopBattleDigest_Bytes(context, gBattleStruct->numHazards, sizeof(gBattleStruct->numHazards));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->zmove, sizeof(gBattleStruct->zmove));
+    CoopBattleDigest_Bytes(context, gBattleStruct->zmove.baseMoves, sizeof(gBattleStruct->zmove.baseMoves));
     CoopBattleDigest_Bytes(context, &gBattleStruct->dynamax, sizeof(gBattleStruct->dynamax));
     CoopBattleDigest_U8(context, gBattleStruct->hazardsCounter);
     CoopBattleDigest_U8(context, gBattleStruct->submoveAnnouncement);
     CoopBattleDigest_U8(context, gBattleStruct->effectsBeforeUsingMoveDone);
     CoopBattleDigest_Bytes(context, gBattleStruct->prevTurnSpecies, sizeof(gBattleStruct->prevTurnSpecies));
-    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
-    {
-        battler = CoopBattleDigest_BattlerAt((enum BattlerPosition)i);
-        CoopBattleDigest_U8(context, battler == MAX_BATTLERS_COUNT ? 0xFF : gBattlerPositions[battler]);
-    }
 }
 
 bool8 CoopBattleRuntime_ComputeBattleDigest(u8 *digest, u16 capacity)
@@ -1675,7 +2341,10 @@ bool8 CoopBattleRuntime_ComputeBattleDigest(u8 *digest, u16 capacity)
      || gBattleStruct == NULL)
         return FALSE;
     CoopBattleSha256_Init(&context);
-    CoopBattleDigest_BattleState(&context);
+    if (sBattleRuntime.engine_friendly)
+        CoopFriendlyDigest_BattleState(&context);
+    else
+        CoopBattleDigest_BattleState(&context);
     CoopBattleSha256_Final(&context, digest);
     return TRUE;
 }
@@ -1730,6 +2399,12 @@ bool8 CoopBattleRuntime_SendBattleFinished(const u8 *battle_id, u16 turn,
 bool8 CoopBattleRuntime_IsTurnHashPending(void)
 {
     return sBattleRuntime.hash_pending;
+}
+
+bool8 CoopBattleRuntime_IsTerminalReported(void)
+{
+    return sBattleRuntime.terminal_pending || sBattleRuntime.terminal_sent
+        || (sBattleRuntime.hash_pending && sBattleRuntime.pending_hash_outcome != 0);
 }
 
 enum CoopBattleTurnReportResult CoopBattleRuntime_RetryTurnHash(void)
@@ -1797,6 +2472,59 @@ enum CoopBattleTurnReportResult CoopBattleRuntime_TestReportTurnDigest(u16 turn,
     return ReportTurnDigest(turn, outcome, digest);
 }
 #endif
+
+void CoopBattleRuntime_EndDecisionRound(void)
+{
+    if (!sBattleRuntime.engine_active || !sBattleRuntime.engine_bundle_ready)
+        return;
+    sBattleRuntime.engine_action_submitted = FALSE;
+    sBattleRuntime.engine_bundle_ready = FALSE;
+    memset(sBattleRuntime.engine_peer_actions, 0, sizeof(sBattleRuntime.engine_peer_actions));
+    sBattleRuntime.engine_peer_action_count = 0;
+}
+
+u16 CoopBattleRuntime_CurrentRound(void)
+{
+    return sBattleRuntime.last_taken_turn;
+}
+
+bool8 CoopBattleRuntime_IsRoundHashed(void)
+{
+    return !sBattleRuntime.hash_pending
+        && sBattleRuntime.last_hash_turn == sBattleRuntime.last_taken_turn;
+}
+
+enum CoopBattleTurnReportResult CoopBattleRuntime_FlushRoundHash(void)
+{
+    if (!sBattleRuntime.engine_active || sBattleRuntime.engine_faulted)
+        return COOP_BATTLE_TURN_REPORT_INVALID;
+    if (sBattleRuntime.hash_pending)
+        return CoopBattleRuntime_RetryTurnHash();
+    if (sBattleRuntime.last_hash_turn == sBattleRuntime.last_taken_turn)
+        return COOP_BATTLE_TURN_REPORT_SENT;
+    return CoopBattleRuntime_ReportTurnState(sBattleRuntime.last_taken_turn, 0);
+}
+
+bool8 CoopBattleRuntime_FinishOnLastHash(u8 outcome)
+{
+    /* pending_hash_digest still holds the digest that was sent last. */
+    if (!sBattleRuntime.engine_active || sBattleRuntime.engine_faulted
+     || outcome == 0 || !CoopBattleRuntime_IsRoundHashed()
+     || sBattleRuntime.last_hash_turn == 0 || sBattleRuntime.terminal_pending
+     || sBattleRuntime.terminal_sent)
+        return FALSE;
+    memcpy(sBattleRuntime.terminal_digest, sBattleRuntime.pending_hash_digest,
+           sizeof(sBattleRuntime.terminal_digest));
+    sBattleRuntime.terminal_turn = sBattleRuntime.last_hash_turn;
+    sBattleRuntime.terminal_result = CoopBattleRuntime_FinishedResult(outcome);
+    sBattleRuntime.terminal_pending = TRUE;
+    (void)CoopBattleRuntime_SendBattleFinished(sBattleRuntime.manifest,
+                                                sBattleRuntime.terminal_turn,
+                                                sBattleRuntime.terminal_result,
+                                                sBattleRuntime.terminal_digest,
+                                                sizeof(sBattleRuntime.terminal_digest));
+    return TRUE;
+}
 
 enum CoopBattleTurnReportResult CoopBattleRuntime_ReportTurnState(u16 turn, u8 outcome)
 {

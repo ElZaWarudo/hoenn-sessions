@@ -194,6 +194,7 @@ TEST("Cloud Coop battle consent matches a reservation nonce before accepting its
 
     offer[0] = 1; // Nonzero battle UUID.
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     offer[17] = 0; // Requester.
     memcpy(&offer[18], &message.payload[1], 4);
     offer[18] ^= 1;
@@ -246,6 +247,7 @@ TEST("Cloud Coop battle consent keeps a pending reserve through transport downti
     CoopBattleConsent_OnSessionReady();
     offer[0] = 1;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(&offer[18], &message.payload[1], 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
 }
@@ -458,7 +460,7 @@ TEST("Cloud Coop battle offer survives the paused Yes No prompt")
     CoopBattleConsent_Poll();
     EXPECT(ArePlayerFieldControlsLocked());
     ScriptContext_Stop();
-    gMain.vblankCounter1 += 30 * 60 + 1;
+    gMain.vblankCounter1 += COOP_TRAINER_ENCOUNTER_OFFER_FRAMES; // Trainer offers decline at 10 s.
     CoopBattleConsent_Poll();
     EXPECT(!ArePlayerFieldControlsLocked());
     gSpecialVar_0x8004 = 1;
@@ -642,6 +644,307 @@ TEST("Cloud Coop Online ignores stale responses and clears status on rearm")
     EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
     CoopNetBridge_Poll();
     EXPECT(!CoopNetBridge_GetOnlineStatus(&status));
+}
+
+TEST("Known group membership blocks unilateral travel through refresh and disconnect")
+{
+    struct CoopOnlineRequest request = { .request_id = 1, .action = COOP_ONLINE_REFRESH };
+    struct CoopBridgeMessage message;
+    u8 payload[COOP_ONLINE_STATUS_SIZE] = {0};
+
+    InitTestBridge();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    InitOnlineTestBridge();
+    /* Before the first authenticated status, the cloud session may resume an
+     * existing group; no vanilla travel may run yet. */
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    payload[0] = 1;
+    payload[5] = COOP_ONLINE_GROUPED;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 2, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    request.request_id = 2;
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    payload[0] = 2;
+    payload[4] = COOP_ONLINE_UNAVAILABLE;
+    payload[5] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 3, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    gCoopNetBridge.status_flags &= ~COOP_BRIDGE_STATUS_SESSION_READY;
+    EXPECT(!CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    gCoopNetBridge.status_flags |= COOP_BRIDGE_STATUS_SESSION_READY;
+    request.request_id = 3;
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    payload[0] = 3;
+    payload[4] = COOP_ONLINE_READY;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 4, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Authenticated group state updates clear unknown membership and reject malformed frames")
+{
+    struct CoopBridgeMessage message;
+    u8 payload[2] = {0};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(!CoopNetBridge_IsGrouped());
+
+    payload[0] = 1;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopNetBridge_IsGrouped());
+
+    payload[0] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 6, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    payload[0] = 2;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    payload[0] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, payload, sizeof(payload)));
+    message.payload[1] = 1;
+    message.payload[2] = 1;
+    message.checksum = CoopBridgeMessage_ComputeChecksum(&message);
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, payload, sizeof(payload)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(!CoopNetBridge_IsGrouped());
+}
+
+TEST("Pairing redemption keeps group travel guarded until membership refresh")
+{
+    struct CoopPairingRequest request = { .request_id = 1, .action = COOP_PAIRING_REDEEM,
+                                          .code = {'A', 'B', 'C', '-', 'D', 'E', 'F'} };
+    struct CoopBridgeMessage message;
+    u8 ungrouped[2] = {0};
+    u8 joined[COOP_PAIRING_RECORD_SIZE] = {1, 0, 0, 0, COOP_PAIRING_JOINED};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, ungrouped, sizeof(ungrouped)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopNetBridge_SendPairingRequest(&request));
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_PAIRING_STATUS,
+                                 3, 7, joined, sizeof(joined)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Outgoing invite blocks travel before its reply and until the artifact expires")
+{
+    struct CoopOnlineRequest request = { .request_id = 1, .view_id = 1,
+                                         .action = COOP_ONLINE_INVITE };
+    struct CoopBridgeMessage message;
+    u8 state[2] = {0};
+    u8 status[COOP_ONLINE_STATUS_SIZE] = {1};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopNetBridge_SendOnlineRequest(&request));
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    /* An earlier watcher result cannot release the request's local latch. */
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    status[5] = COOP_ONLINE_REMOTE_JOIN_POSSIBLE;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 4, 7, status, sizeof(status)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    state[1] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 5, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Remote invitation artifact guards travel without a formed group")
+{
+    struct CoopBridgeMessage message;
+    u8 state[2] = {0, 1};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsGrouped());
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    state[1] = 2;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR);
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+
+    state[1] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Pairing code creation guards travel through delayed watcher status")
+{
+    struct CoopPairingRequest request = { .request_id = 1, .action = COOP_PAIRING_CREATE };
+    struct CoopBridgeMessage message;
+    u8 state[2] = {0};
+    u8 created[COOP_PAIRING_RECORD_SIZE] = {1, 0, 0, 0, COOP_PAIRING_CREATED,
+                                             'A', 'B', 'C', '-', 'D', 'E', 'F'};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopNetBridge_SendPairingRequest(&request));
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 3, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_PAIRING_STATUS,
+                                 4, 7, created, sizeof(created)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 5, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Older Online Refresh cannot release a newly created pairing code")
+{
+    struct CoopPairingRequest pairing = { .request_id = 1, .action = COOP_PAIRING_CREATE };
+    struct CoopOnlineRequest refresh = { .request_id = 1, .action = COOP_ONLINE_REFRESH };
+    struct CoopBridgeMessage message;
+    u8 state[2] = {0};
+    u8 status[COOP_ONLINE_STATUS_SIZE] = {1};
+    u8 created[COOP_PAIRING_RECORD_SIZE] = {1, 0, 0, 0, COOP_PAIRING_CREATED,
+                                             'A', 'B', 'C', '-', 'D', 'E', 'F'};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopNetBridge_SendPairingRequest(&pairing));
+    EXPECT(CoopNetBridge_SendOnlineRequest(&refresh));
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_PAIRING_STATUS,
+                                 3, 7, created, sizeof(created)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_ONLINE_STATUS,
+                                 4, 7, status, sizeof(status)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    state[1] = 1;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 5, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    state[1] = 0;
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 6, 7, state, sizeof(state)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+}
+
+TEST("Same epoch reconnect waits for fresh group membership")
+{
+    struct CoopBridgeMessage message;
+    u8 ungrouped[2] = {0};
+
+    InitOnlineTestBridge();
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 2, 7, ungrouped, sizeof(ungrouped)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
+                                 3, 7, NULL, 0));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(CoopNetBridge_IsOrMayBeGrouped());
+    EXPECT(!CoopNetBridge_IsGrouped());
+
+    EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_GROUP_STATE_CHANGED,
+                                 4, 7, ungrouped, sizeof(ungrouped)));
+    EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
+    CoopNetBridge_Poll();
+    EXPECT(!CoopNetBridge_IsOrMayBeGrouped());
 }
 
 TEST("Cloud Coop Online preserves full names and rejects invalid page indices")
@@ -1353,6 +1656,7 @@ TEST("Cloud Coop peer party chunks remain read only and survive same epoch recon
     EstablishTestCloudSession();
     manifest[0] = 7;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
     memcpy(chunk, manifest, COOP_BATTLE_ID_SIZE);
@@ -1388,6 +1692,7 @@ TEST("Cloud Coop peer party chunks remain read only and survive same epoch recon
     EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR));
     manifest[0] = 9;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
                                   9, 18, NULL, 0));
     EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
@@ -1404,6 +1709,7 @@ TEST("Cloud Coop rejects malformed peer party but ignores stale battle chunks")
     EstablishTestCloudSession();
     manifest[0] = 7;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
     chunk[0] = 8;
@@ -1439,6 +1745,7 @@ TEST("Cloud Coop battle snapshot publishes raw mon chunks only for the consent b
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     offer[0] = 1;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, message.payload + 1, 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
@@ -1495,6 +1802,7 @@ TEST("Cloud Coop battle intent and hash fence turns and retry after a full queue
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(!CoopBattleRuntime_SendActionIntent(other_id, 1, action, sizeof(action)));
     EXPECT(!CoopBattleRuntime_SendActionIntent(manifest, 0, action, sizeof(action)));
@@ -1570,6 +1878,7 @@ TEST("Cloud Coop same epoch replacement replays unread battle records after ROM 
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     offer[0] = 7;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, message.payload + 1, 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
@@ -1578,6 +1887,7 @@ TEST("Cloud Coop same epoch replacement replays unread battle records after ROM 
     manifest[0] = 7;
 
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_SendActionIntent(manifest, 1, action, sizeof(action)));
     bundle[0] = 7;
@@ -1684,12 +1994,14 @@ TEST("Cloud Coop heartbeat stale replays unread battle records on reconnect")
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     offer[0] = 7;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, message.payload + 1, 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
     EXPECT(CoopBattleRuntime_SendPartySnapshot(offer, 0, 1, (const u8 *)&mon, sizeof(mon)));
     manifest[0] = 7;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_SendActionIntent(manifest, 1, action, sizeof(action)));
     bundle[0] = 7;
@@ -1774,6 +2086,7 @@ TEST("Cloud Coop accepted battle consent survives its offer deadline")
     EstablishTestCloudSession();
     offer[0] = 9;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     offer[17] = 1;
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     gMain.callback1 = CB1_Overworld;
@@ -1961,6 +2274,7 @@ TEST("Cloud Coop copies responder battle ID only after local accept and clears i
     EstablishTestCloudSession();
     offer[0] = 13;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     offer[17] = 1;
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     EXPECT(!CoopBattleConsent_CopyCurrentBattleId(copied, sizeof(copied)));
@@ -2011,6 +2325,7 @@ TEST("Cloud Coop requester keeps declined outcome after matching abort")
     EXPECT_EQ(outbound.type, COOP_BRIDGE_MESSAGE_TRAINER_BATTLE_RESERVE);
     offer[0] = 9;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, outbound.payload + 1, 4);
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_JOIN_OFFER, 2, offer, sizeof(offer));
     EXPECT(CoopBattleConsent_IsCurrentBattle(offer));
@@ -2039,6 +2354,7 @@ TEST("Cloud Coop matching abort clears stale accepted consent")
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&outbound));
     offer[0] = 8;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, outbound.payload + 1, 4);
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_JOIN_OFFER, 2, offer, sizeof(offer));
     memcpy(outcome, offer, COOP_BATTLE_ID_SIZE);
@@ -2071,6 +2387,7 @@ TEST("Cloud Coop battle transport retains a bounded manifest and ordered turns")
     EstablishTestCloudSession();
     manifest[0] = 0xA1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     manifest[18] = 0x52;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_HasManifest());
@@ -2128,9 +2445,11 @@ TEST("Cloud Coop battle transport distinguishes malformed records from stale bat
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     manifest[0] = 2;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 3, manifest, sizeof(manifest));
     EXPECT_EQ(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR, 0);
     bundle[0] = 2;
@@ -2149,6 +2468,7 @@ TEST("Cloud Coop battle transport distinguishes malformed records from stale bat
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_HasManifest());
     EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY, 3, 17, NULL, 0));
@@ -2172,6 +2492,7 @@ TEST("Cloud Coop battle transport soft-drops skipped turns without losing the ex
     EstablishTestCloudSession();
     manifest[0] = 3;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_SendActionIntent(manifest, 1, action, sizeof(action)));
     bundle[0] = 3;
@@ -2209,6 +2530,7 @@ TEST("Cloud Coop battle pause clears when its turn bundle arrives")
     EstablishTestCloudSession();
     manifest[0] = 4;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     pause[0] = 4;
     pause[16] = 1;
@@ -2237,6 +2559,7 @@ TEST("Cloud Coop battle transport rejects nonzero padding and invalid pause fiel
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST,
                                   2, 17, manifest, sizeof(manifest)));
     message.payload[sizeof(manifest)] = 1;
@@ -2249,6 +2572,7 @@ TEST("Cloud Coop battle transport rejects nonzero padding and invalid pause fiel
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     pause[0] = 1;
     pause[18] = 2;

@@ -9,12 +9,15 @@ pub mod desktop;
 pub mod epoch;
 pub mod group_travel;
 pub mod keychain;
+pub mod ledger;
+pub mod live_requests;
 pub mod online;
 pub mod process;
 pub mod realtime;
 pub mod recovery;
 pub mod session;
 pub mod trade;
+pub mod trade_offer;
 pub mod update;
 #[cfg(windows)]
 pub mod windows_mgba_supervisor;
@@ -349,6 +352,14 @@ impl AuthApi for ReqwestCloudApi {
 }
 
 impl CloudApi for ReqwestCloudApi {
+    fn ledger_open(
+        &self,
+        token: coop_cloud::AccessToken,
+        character_id: CharacterId,
+        fence: coop_cloud::LeaseFence,
+    ) -> ledger::LedgerFuture<'_, Option<ledger::LedgerEntryView>> {
+        self.ledger_open_http(token, character_id, fence)
+    }
     fn story_travel_recovery(
         &self,
         token: coop_cloud::AccessToken,
@@ -385,11 +396,20 @@ impl CloudApi for ReqwestCloudApi {
         fence: coop_cloud::LeaseFence,
         key: coop_cloud::IdempotencyKey,
         hash: &str,
+        party_records: Option<Vec<String>>,
     ) -> battle::BattleFuture<'_, battle::BattleConsensusView> {
         let hash = hash.to_owned();
         Box::pin(async move {
-            self.battle_commit_snapshot_http(&token, group_id, battle_id, fence, key, &hash)
-                .await
+            self.battle_commit_snapshot_http(
+                &token,
+                group_id,
+                battle_id,
+                fence,
+                key,
+                &hash,
+                party_records.as_deref(),
+            )
+            .await
         })
     }
     fn battle_ready(
@@ -457,11 +477,20 @@ impl CloudApi for ReqwestCloudApi {
         fence: coop_cloud::LeaseFence,
         kind: battle::BattleKind,
         trainer_id: Option<coop_protocol::TrainerInstanceId>,
+        friendly_rules: Option<coop_protocol::FriendlyBattleRules>,
         key: coop_cloud::IdempotencyKey,
     ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
         Box::pin(async move {
-            self.reserve_battle_http(&token, group_id, fence, kind, trainer_id, key)
-                .await
+            self.reserve_battle_http(
+                &token,
+                group_id,
+                fence,
+                kind,
+                trainer_id,
+                friendly_rules,
+                key,
+            )
+            .await
         })
     }
     fn battle_current(
@@ -544,6 +573,12 @@ impl CloudApi for ReqwestCloudApi {
     ) -> online::OnlineFuture<'_, coop_cloud::RedeemPairingCodeResponse> {
         self.pairing_redeem_http(token, request)
     }
+    fn partner_status(
+        &self,
+        token: coop_cloud::AccessToken,
+    ) -> online::OnlineFuture<'_, coop_cloud::PartnerStatusResponse> {
+        self.partner_status_http(token)
+    }
     fn group_travel_create(
         &self,
         token: coop_cloud::AccessToken,
@@ -608,6 +643,43 @@ impl CloudApi for ReqwestCloudApi {
         request: coop_cloud::OnlineSnapshotRequest,
     ) -> online::OnlineFuture<'_, coop_cloud::OnlineSnapshotResponse> {
         self.online_snapshot_http(token, request)
+    }
+
+    fn trade_offer_create(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeOfferRequest,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_create_http(token, group_id, request)
+    }
+
+    fn trade_offer_get(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        offer_id: coop_cloud::TradeOfferId,
+        fence: coop_cloud::LeaseFence,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_get_http(token, group_id, offer_id, fence)
+    }
+
+    fn trade_offer_current(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        fence: coop_cloud::LeaseFence,
+    ) -> trade_offer::TradeOfferFuture<'_, Option<coop_cloud::TradeOfferCurrentView>> {
+        self.trade_offer_current_http(token, group_id, fence)
+    }
+
+    fn trade_offer_decide(
+        &self,
+        token: coop_cloud::AccessToken,
+        group_id: coop_cloud::GroupId,
+        request: coop_cloud::TradeDecisionRequest,
+    ) -> trade_offer::TradeOfferFuture<'_, coop_cloud::TradeOfferView> {
+        self.trade_offer_decide_http(token, group_id, request)
     }
 
     fn online_action(

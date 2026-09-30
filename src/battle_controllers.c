@@ -101,8 +101,11 @@ bool32 BattlerIsWally(enum BattlerId battlerId)
 
 bool32 BattlerHasAi(enum BattlerId battlerId)
 {
+    /* A friendly battle's opponent side is the partner, driven by its
+     * exchanged actions; no AI runs for either side. */
     if (CoopBattleRuntime_IsEngineActive()
-     && GetBattlerPosition(battlerId) == B_POSITION_PLAYER_RIGHT)
+     && (CoopBattleRuntime_IsFriendlyEngine()
+      || GetBattlerPosition(battlerId) == B_POSITION_PLAYER_RIGHT))
         return FALSE;
     switch (gBattlerBattleController[battlerId])
     {
@@ -217,6 +220,10 @@ static void InitBtlControllersInternal(void)
         bool32 isPlayerPrimary;
         if (isLink)
             isPlayerPrimary = (isMaster || (isDouble && isMulti));
+        else if (CoopBattleRuntime_IsFriendlyEngine())
+            /* Canonical battler IDs: member 0 owns battlers 0 and 2 on both
+             * ROMs, so member 1 draws them on the opponent side. */
+            isPlayerPrimary = CoopBattleRuntime_EngineLocalMemberSlot() == 0;
         else if (!isRecorded)
             isPlayerPrimary = TRUE;
         else if (isDouble)
@@ -3299,6 +3306,13 @@ void FreeShinyStars(void)
 
 enum BattleTrainer GetBattlerTrainer(enum BattlerId battler)
 {
+    /* A secret-base battle's party follows the drawn side. That is the
+     * battler parity in the vanilla layout; in a friendly co-op battle
+     * (which borrows the secret-base opponent) member 1's ROM draws battler
+     * 0 on the opponent side, and its own team is still B_TRAINER_0. This
+     * hot path avoids a runtime call. */
+    if (gBattleTypeFlags & BATTLE_TYPE_SECRET_BASE)
+        return (enum BattleTrainer)GetBattlerSide(battler);
     if (gBattleTypeFlags & BATTLE_TYPE_LINK && gBattleTypeFlags & BATTLE_TYPE_MULTI)
     {
         switch (gBattlerBattleController[battler])

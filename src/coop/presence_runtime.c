@@ -249,6 +249,13 @@ void CoopPresenceRuntime_HidePartnerName(void)
         HidePartnerName();
 }
 
+#if TESTING
+u8 CoopPresenceRuntime_TestNameWindow(void)
+{
+    return sCoopPresenceRuntime.name_window;
+}
+#endif
+
 static void UpdatePartnerName(const struct CoopPresenceRemote *remote)
 {
     struct WindowTemplate window = {
@@ -1231,6 +1238,23 @@ static u16 FollowerGraphicsId(u16 species, u8 flags)
     return graphics_id;
 }
 
+/* The partner's form id selects the form species to draw.  GetFormSpeciesId
+ * does not bound its table index, so an unknown form keeps the sent species. */
+static u16 RemoteFollowerSpecies(u16 species, u8 form)
+{
+    const u16 *forms = GetSpeciesFormTable(species);
+    u8 i;
+
+    if (forms == NULL)
+        return species;
+    for (i = 0; i <= form; i++)
+    {
+        if (forms[i] == FORM_SPECIES_END)
+            return species;
+    }
+    return forms[form];
+}
+
 static void ClearFollowerIdentity(void)
 {
     sCoopPresenceRuntime.follower_owned = FALSE;
@@ -1353,6 +1377,7 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
     u8 object_id;
     u8 created_id;
     u16 generation;
+    u16 species;
 
     if (remote == NULL || !sCoopPresenceRuntime.remote_companion_valid
      || remote->handle != sCoopPresenceRuntime.remote_companion_handle
@@ -1364,17 +1389,21 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
         target_x = map_x;
         target_y = (s16)(map_y + 1);
     }
-    graphics_id = FollowerGraphicsId(sCoopPresenceRuntime.remote_companion_species,
-                                     sCoopPresenceRuntime.remote_companion_flags);
+    species = RemoteFollowerSpecies(sCoopPresenceRuntime.remote_companion_species,
+                                    sCoopPresenceRuntime.remote_companion_form);
+    graphics_id = FollowerGraphicsId(species, sCoopPresenceRuntime.remote_companion_flags);
     graphics = GetObjectEventGraphicsInfo(graphics_id);
     if (graphics == NULL)
         return FALSE;
+    /* Species sprites use a dynamic palette that the spawn path loads from
+     * the graphics id; it is not in the static object-event palette table. */
     if (graphics->paletteTag != TAG_NONE
+     && graphics->paletteTag != OBJ_EVENT_PAL_TAG_DYNAMIC
      && LoadObjectEventPalette(graphics->paletteTag) == 0xFF)
         return FALSE;
 
     if (sCoopPresenceRuntime.follower_owned
-     && (sCoopPresenceRuntime.follower_species != sCoopPresenceRuntime.remote_companion_species
+     && (sCoopPresenceRuntime.follower_species != species
       || sCoopPresenceRuntime.follower_flags != sCoopPresenceRuntime.remote_companion_flags))
         RemoveFollowerRenderer();
 
@@ -1402,7 +1431,7 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
             sCoopPresenceRuntime.follower_object_id = object_id;
             sCoopPresenceRuntime.follower_sprite_id = gObjectEvents[object_id].spriteId;
             sCoopPresenceRuntime.follower_generation = generation;
-            sCoopPresenceRuntime.follower_species = sCoopPresenceRuntime.remote_companion_species;
+            sCoopPresenceRuntime.follower_species = species;
             sCoopPresenceRuntime.follower_flags = sCoopPresenceRuntime.remote_companion_flags;
             sCoopPresenceRuntime.follower_x = target_x;
             sCoopPresenceRuntime.follower_y = target_y;
@@ -1420,7 +1449,7 @@ static bool8 EnsureFollowerRenderer(const struct CoopPresenceRemote *remote,
             sCoopPresenceRuntime.follower_owned = TRUE;
             sCoopPresenceRuntime.follower_object_id = object_id;
             sCoopPresenceRuntime.follower_sprite_id = object_event->spriteId;
-            sCoopPresenceRuntime.follower_species = sCoopPresenceRuntime.remote_companion_species;
+            sCoopPresenceRuntime.follower_species = species;
             sCoopPresenceRuntime.follower_flags = sCoopPresenceRuntime.remote_companion_flags;
             sCoopPresenceRuntime.follower_x = object_event->currentCoords.x;
             sCoopPresenceRuntime.follower_y = object_event->currentCoords.y;
@@ -1553,6 +1582,10 @@ static bool8 ReadLeadCompanion(u16 *species, u8 *form, u8 *flags)
             continue;
         if (GetMonData(&gPlayerParty[i], MON_DATA_IS_EGG))
             continue;
+        /* Unown letters live in the personality, not MON_DATA_SPECIES; the
+         * local follower draws the letter form, so publish that form too. */
+        if (candidate == SPECIES_UNOWN)
+            candidate = (u16)GetUnownSpeciesId(GetMonData(&gPlayerParty[i], MON_DATA_PERSONALITY));
         *species = candidate;
         *form = GetFormIdFromFormSpeciesId(candidate);
         *flags = IsMonShiny(&gPlayerParty[i]) ? COOP_PRESENCE_COMPANION_FLAG_SHINY : 0;
@@ -1708,17 +1741,27 @@ static const struct WindowTemplate sPartnerInteractionWindow = {
 };
 
 static const u8 sPartnerInteractionTitle[] = _("Nearby player");
-static const u8 sPartnerInteractionWave[] = _("Greet");
+static const u8 sPartnerInteractionWave[] = _("Wave");
 static const u8 sPartnerInteractionTrade[] = _("Trade");
 static const u8 sPartnerInteractionBattle[] = _("Battle");
 static const u8 sPartnerInteractionTravel[] = _("Travel together");
 static const u8 sPartnerInteractionCheck[] = _("Check Pokemon");
 static const u8 sPartnerInteractionUnavailable[] = _("That option is not available yet.");
 static const u8 sPartnerInteractionTravelHint[] = _("Use FLY or a travel gate together.");
-static const u8 sPartnerInteractionWaved[] = _("You greeted them.");
+static const u8 sPartnerInteractionWaved[] = _("You waved at them.");
 static const u8 sPartnerInteractionSent[] = _("Calling nearby player.");
 static const u8 sPartnerInteractionLeadPrefix[] = _("Partner's lead: ");
 static const u8 sPartnerInteractionNoLead[] = _("Partner's lead is unknown.");
+
+enum
+{
+    PARTNER_INTERACTION_WAVE,
+    PARTNER_INTERACTION_TRADE,
+    PARTNER_INTERACTION_BATTLE,
+    PARTNER_INTERACTION_TRAVEL,
+    PARTNER_INTERACTION_CHECK,
+    PARTNER_INTERACTION_COUNT,
+};
 
 static void DrawPartnerInteractionMenu(void)
 {
@@ -1757,27 +1800,16 @@ static bool8 CanChoosePartnerFlyDestination(void)
     return FALSE;
 }
 
-static void Task_PartnerInteractionMenu(u8 taskId)
+static void RunPartnerInteraction(s8 selection)
 {
-    s8 selection = Menu_ProcessInputNoWrap();
-
-    if (selection == MENU_NOTHING_CHOSEN)
-        return;
-    if (selection == MENU_B_PRESSED || selection < 0
-     || selection >= 5)
-    {
-        ClosePartnerInteractionMenu();
-        return;
-    }
-    ClosePartnerInteractionMenu();
-    if (selection == 0)
+    if (selection == PARTNER_INTERACTION_WAVE)
     {
         if (CoopPresenceRuntime_TryEmote(COOP_PRESENCE_EMOTE_HEART))
             (void)ShowFieldAutoScrollMessage(sPartnerInteractionWaved);
         else
             (void)ShowFieldAutoScrollMessage(sPartnerInteractionUnavailable);
     }
-    else if (selection == 4)
+    else if (selection == PARTNER_INTERACTION_CHECK)
     {
         u16 species = sCoopPresenceRuntime.remote_companion_species;
 
@@ -1792,7 +1824,7 @@ static void Task_PartnerInteractionMenu(u8 taskId)
         else
             (void)ShowFieldAutoScrollMessage(sPartnerInteractionNoLead);
     }
-    else if (selection == 3)
+    else if (selection == PARTNER_INTERACTION_TRAVEL)
     {
         if (CanChoosePartnerFlyDestination())
             CoopRegionMap_OpenPartnerFlyMap();
@@ -1801,11 +1833,45 @@ static void Task_PartnerInteractionMenu(u8 taskId)
     }
     else
     {
-        /* Trade and battle need their own consent and gameplay
-         * protocols. Keep the menu honest until those protocols are ready. */
+        /* Trade needs the gameplay ledger, and a partner-versus-partner
+         * battle needs an opponent-side lockstep engine. Keep the menu
+         * honest until those are ready. */
         (void)ShowFieldAutoScrollMessage(sPartnerInteractionUnavailable);
     }
 }
+
+static void Task_PartnerInteractionMenu(u8 taskId)
+{
+    s8 selection = Menu_ProcessInputNoWrap();
+
+    if (selection == MENU_NOTHING_CHOSEN)
+        return;
+    ClosePartnerInteractionMenu();
+    if (selection == MENU_B_PRESSED || selection < 0
+     || selection >= PARTNER_INTERACTION_COUNT)
+        return;
+    RunPartnerInteraction(selection);
+}
+
+#if TESTING
+u8 CoopPresenceRuntime_TestInteractionMenuTask(void)
+{
+    return sCoopPresenceRuntime.interaction_menu_task;
+}
+
+/* Choose a menu entry exactly as the menu task does after input. */
+bool8 CoopPresenceRuntime_TestChooseInteraction(s8 selection)
+{
+    if (sCoopPresenceRuntime.interaction_menu_task == TASK_NONE)
+        return FALSE;
+    ClosePartnerInteractionMenu();
+    if (selection == MENU_B_PRESSED || selection < 0
+     || selection >= PARTNER_INTERACTION_COUNT)
+        return TRUE;
+    RunPartnerInteraction(selection);
+    return TRUE;
+}
+#endif
 
 static void OpenPartnerInteractionMenu(void)
 {
@@ -1834,7 +1900,8 @@ static void OpenPartnerInteractionMenu(void)
     sCoopPresenceRuntime.interaction_menu_controls_locked = TRUE;
     DrawStdWindowFrame(sCoopPresenceRuntime.interaction_menu_window, FALSE);
     DrawPartnerInteractionMenu();
-    InitMenuInUpperLeftCornerNormal(sCoopPresenceRuntime.interaction_menu_window, 5, 0);
+    InitMenuInUpperLeftCornerNormal(sCoopPresenceRuntime.interaction_menu_window,
+                                    PARTNER_INTERACTION_COUNT, 0);
 }
 
 static void ClosePartnerInteractionMenu(void)
@@ -2453,6 +2520,38 @@ enum CoopPresenceInteractionResult CoopPresenceRuntime_TryInteract(void)
             COOP_BRIDGE_MESSAGE_INTERACT_REMOTE_PLAYER, payload, sizeof(payload)))
         (void)ShowFieldAutoScrollMessage(sPartnerInteractionSent);
     return COOP_PRESENCE_INTERACTION_CONSUMED_NO_LOCK;
+}
+
+/* Reads only the reducer, never the renderer: a trainer script locks field
+ * controls and retires the partner sprite, but the partner is still there.
+ * The same freshness and projection rules as TryInteract apply, so a stale,
+ * hidden, unconnected or off-view partner is never "nearby". */
+bool8 CoopPresenceRuntime_IsPartnerNearby(u8 maxTiles)
+{
+    const struct CoopPresenceRemote *remote;
+    s16 map_x;
+    s16 map_y;
+    s32 dx;
+    s32 dy;
+
+    if (!sCoopPresenceRuntime.initialized || !sCoopPresenceRuntime.transport_ready
+     || gSaveBlock1Ptr == NULL
+     || !CoopPresenceReducer_IsVisible(&sCoopPresenceRuntime.reducer)
+     || sCoopPresenceRuntime.frame_counter - sCoopPresenceRuntime.last_lifecycle_frame
+        >= COOP_PRESENCE_RUNTIME_STALE_FRAMES)
+        return FALSE;
+    remote = CoopPresenceReducer_GetRemote(&sCoopPresenceRuntime.reducer);
+    if (remote == NULL
+     || !RemoteMapIsLocalOrConnected(&remote->state.pose.location)
+     || !RemoteCoordinatesValid(remote, &map_x, &map_y))
+        return FALSE;
+    dx = (s32)map_x - ((s32)gSaveBlock1Ptr->pos.x + MAP_OFFSET);
+    dy = (s32)map_y - ((s32)gSaveBlock1Ptr->pos.y + MAP_OFFSET);
+    if (dx < 0)
+        dx = -dx;
+    if (dy < 0)
+        dy = -dy;
+    return dx <= maxTiles && dy <= maxTiles;
 }
 
 const struct CoopPresenceReducer *CoopPresenceRuntime_GetReducer(void)

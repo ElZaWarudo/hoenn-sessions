@@ -1817,6 +1817,7 @@ impl ControlChannel {
                 | ControlCommand::RemoteCompanion(_)
                 | ControlCommand::RemoteSocialSignal(_)
                 | ControlCommand::ProgressEvent(_)
+                | ControlCommand::GroupStateChanged { .. }
                 | ControlCommand::GroupEnded(_)
         ) || generation != self.lifecycle_generation()
         {
@@ -2446,6 +2447,9 @@ async fn run_control_reader(
             | ControlEvent::TurnResultHash(_)
             | ControlEvent::BattleFinished(_)
             | ControlEvent::CommitApplied(_)
+            | ControlEvent::TradeCommitApplied(_)
+            | ControlEvent::TradeOfferRequest(_)
+            | ControlEvent::TradeOfferDecision(_)
             | ControlEvent::CommandResult { .. } => {
                 let sent = tokio::select! {
                     biased;
@@ -3795,6 +3799,9 @@ impl SupervisedChildren {
                 | ControlEvent::TurnResultHash(_)
                 | ControlEvent::BattleFinished(_)
                 | ControlEvent::CommitApplied(_)
+                | ControlEvent::TradeCommitApplied(_)
+                | ControlEvent::TradeOfferRequest(_)
+                | ControlEvent::TradeOfferDecision(_)
                 | ControlEvent::RomPresenceReset => return false,
             }
         }

@@ -72,7 +72,9 @@ pub(crate) const BATTLE_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 pub(crate) const MAX_BATTLE_RESERVATIONS: usize = 1_024;
 pub(crate) const MAX_BATTLE_IDEMPOTENCY: usize = 4_096;
 pub(crate) const MAX_BATTLE_IDEMPOTENCY_PER_MEMBER: usize = 64;
-pub(crate) const MAX_BATTLE_TURNS: usize = 32;
+/// Lockstep rounds per battle: turns plus a friendly battle's replacement
+/// rounds (coop_protocol::BATTLE_MAX_TURN).
+pub(crate) const MAX_BATTLE_TURNS: usize = coop_protocol::BATTLE_MAX_TURN as usize;
 pub(crate) const MAX_BATTLE_ACTION_BYTES: usize = 512;
 /// Recent observational progress entries retained for each active or
 /// recently closed group. This is deliberately small because the feed is a
@@ -823,6 +825,9 @@ pub(crate) struct TradeOfferRecord {
     #[serde(default)]
     pub consents: [bool; 2],
     pub expires_at: u64,
+    /// The initiator's offered Pokémon, read at creation for an open offer.
+    #[serde(default)]
+    pub offered: Option<coop_cloud::TradeOfferedPokemon>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -1168,6 +1173,13 @@ pub struct State {
     #[serde(default)]
     pub(crate) battle_idempotency:
         HashMap<(CharacterId, IdempotencyKey), super::battles::BattleIdempotencyRecord>,
+    /// Level 1 outcome ledger. Missing on states persisted before the ledger
+    /// existed, which simply have no entries.
+    #[serde(default)]
+    pub(crate) ledger_entries: HashMap<CommitId, super::ledger::LedgerEntry>,
+    /// At most one open (`Issued` or `Delivered`) entry per character.
+    #[serde(default)]
+    pub(crate) ledger_open_by_character: HashMap<CharacterId, CommitId>,
 }
 
 /// Feed history is useful only for active groups. Remove it as soon as a

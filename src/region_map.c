@@ -2943,7 +2943,7 @@ static void CB_ExitFlyMap(void)
             FreeRegionMapIconResources();
 
             if (sFlyMap->choseFlyLocation
-                && !CoopNetBridge_IsGrouped()
+                && !CoopNetBridge_IsOrMayBeGrouped()
                 && !sPartnerFlyMap
                 && JohtoTravel_GetPendingDestination() != JOHTO_TRAVEL_DESTINATION_NONE
                 && (!JohtoTravel_RecordCurrentHeal(
@@ -2960,7 +2960,7 @@ static void CB_ExitFlyMap(void)
                 bool8 returnToBag = gFlightCallFromBag;
                 bool8 returnToPartner = sPartnerFlyMap;
 
-                if (returnToPartner || CoopNetBridge_IsGrouped())
+                if (returnToPartner || CoopNetBridge_IsOrMayBeGrouped())
                 {
                     u8 route = CoopRegionMap_GroupFlyRouteForSelection(
                         tempRegionMap->mapSecId, tempRegionMap->posWithinMapSec);

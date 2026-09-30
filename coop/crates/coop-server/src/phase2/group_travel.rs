@@ -10,7 +10,7 @@ use coop_cloud::{
     StoryTravelRecoveryAction, StoryTravelRecoveryActionRequest, StoryTravelRecoveryOutcome,
     StoryTravelRecoveryResolutionView, StoryTravelRecoveryView, UnixTimestampMillis,
 };
-use coop_protocol::{GroupTravelDeparture, RegionId, WorldZone};
+use coop_protocol::{GroupTravelDeparture, GroupTravelEndpoint, RegionId, WorldZone, all_maps};
 use sha2::{Digest, Sha256};
 
 use super::storage::{
@@ -55,6 +55,9 @@ struct RouteDefinition {
     /// proposal, but the source map is intentionally not a wildcard in the
     /// public view: it is recorded as the group's current zone.
     source_any: bool,
+    /// Dig and Escape Rope carry their source and destination endpoint in the
+    /// ROM record instead of using a catalog-fixed route destination.
+    dynamic: bool,
     minimum_badges: u8,
     minimum_story_checkpoint: u32,
 }
@@ -71,6 +74,7 @@ fn route(
         source,
         destination,
         source_any: false,
+        dynamic: false,
         minimum_badges: badges,
         minimum_story_checkpoint: story,
     }
@@ -84,6 +88,20 @@ fn fly_route(id: &'static str, destination: WorldZone) -> RouteDefinition {
         source: WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).expect("map catalog"),
         destination,
         source_any: true,
+        dynamic: false,
+        minimum_badges: 0,
+        minimum_story_checkpoint: 0,
+    }
+}
+
+fn dynamic_route(id: &'static str) -> RouteDefinition {
+    let placeholder = WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).expect("map catalog");
+    RouteDefinition {
+        id,
+        source: placeholder.clone(),
+        destination: placeholder,
+        source_any: false,
+        dynamic: true,
         minimum_badges: 0,
         minimum_story_checkpoint: 0,
     }
@@ -149,6 +167,8 @@ fn consent_route_catalog() -> Vec<RouteDefinition> {
     let mt_chimney_cable_car =
         || WorldZone::new(RegionId::Hoenn, "MT_CHIMNEY_CABLE_CAR_STATION", 1).expect("map catalog");
     let mut catalog = vec![
+        dynamic_route("HOENN:DIG"),
+        dynamic_route("HOENN:ESCAPE_ROPE"),
         route(
             "HOENN:ROUTE112_MT_CHIMNEY_CABLE_CAR",
             route112_cable_car(),
@@ -808,7 +828,13 @@ fn story_save_matches_route(id: &str, save: &coop_save::ValidatedSave) -> bool {
 }
 
 fn departure_matches_route(route: &RouteDefinition, departure: GroupTravelDeparture) -> bool {
-    if route.id.ends_with("_TRAIN") {
+    if route.dynamic {
+        matches!(
+            (route.id, departure),
+            ("HOENN:DIG", GroupTravelDeparture::Dig)
+                | ("HOENN:ESCAPE_ROPE", GroupTravelDeparture::EscapeRope)
+        )
+    } else if route.id.ends_with("_TRAIN") {
         departure == GroupTravelDeparture::Train
     } else if route.id.ends_with("_FERRY") {
         departure == GroupTravelDeparture::Ferry
@@ -822,9 +848,66 @@ fn departure_matches_route(route: &RouteDefinition, departure: GroupTravelDepart
         departure == GroupTravelDeparture::CableCar
     } else if route.source_any {
         departure == GroupTravelDeparture::Fly
+            || (departure == GroupTravelDeparture::Teleport && route.id != "HOENN:FLY_LITTLEROOT")
     } else {
         false
     }
+}
+
+fn endpoint_matches_zone(endpoint: GroupTravelEndpoint, zone: &WorldZone) -> bool {
+    zone.map_entry().is_ok_and(|entry| {
+        entry.map_group == u16::from(endpoint.source_map_group)
+            && entry.map_number == u16::from(endpoint.source_map_number)
+    })
+}
+
+fn dynamic_destination(
+    endpoint: GroupTravelEndpoint,
+    channel: u16,
+) -> Result<WorldZone, Phase2Error> {
+    // ROM coordinates are nonnegative tile coordinates encoded as signed
+    // bytes.  Reject negative values before they can become a server-side
+    // destination, while i8 already bounds the upper edge at 127.
+    if endpoint.source_map_group > 127
+        || endpoint.source_map_number > 127
+        || endpoint.target_map_group > 127
+        || endpoint.target_map_number > 127
+        || endpoint.target_x < 0
+        || endpoint.target_y < 0
+    {
+        return Err(Phase2Error::Forbidden);
+    }
+    let entry = all_maps()
+        .iter()
+        .find(|entry| {
+            entry.map_group == u16::from(endpoint.target_map_group)
+                && entry.map_number == u16::from(endpoint.target_map_number)
+        })
+        .ok_or(Phase2Error::Forbidden)?;
+    let source = all_maps()
+        .iter()
+        .find(|entry| {
+            entry.map_group == u16::from(endpoint.source_map_group)
+                && entry.map_number == u16::from(endpoint.source_map_number)
+        })
+        .ok_or(Phase2Error::Forbidden)?;
+    if !source.allow_escaping {
+        return Err(Phase2Error::Forbidden);
+    }
+    let target_x = u8::try_from(endpoint.target_x).map_err(|_| Phase2Error::Forbidden)?;
+    let target_y = u8::try_from(endpoint.target_y).map_err(|_| Phase2Error::Forbidden)?;
+    if u16::from(target_x) >= entry.width || u16::from(target_y) >= entry.height {
+        return Err(Phase2Error::Forbidden);
+    }
+    if !source.escape_targets().iter().any(|target| {
+        target.map_group == endpoint.target_map_group
+            && target.map_number == endpoint.target_map_number
+            && target.x == target_x
+            && target.y == target_y
+    }) {
+        return Err(Phase2Error::Forbidden);
+    }
+    WorldZone::new(entry.region, entry.map, channel).map_err(|_| Phase2Error::Forbidden)
 }
 
 pub(super) fn request_fingerprint<T: serde::Serialize>(
@@ -1444,17 +1527,6 @@ pub(crate) fn inspect_group(
     })
 }
 
-/// The former direct travel operation is intentionally denied for every caller.
-/// Group movement is committed only by accepting a live consent proposal.
-pub(crate) fn travel(
-    _store: &Store,
-    _actor: AuthenticatedActor,
-    _group_id: GroupId,
-    _request: &coop_cloud::GroupTravelRequest,
-) -> Result<coop_cloud::GroupTravelResponse, Phase2Error> {
-    Err(Phase2Error::Forbidden)
-}
-
 fn proposal_candidates(store: &Store) -> Result<Vec<GroupTravelProposalId>, Phase2Error> {
     (0..MAX_ID_CANDIDATES)
         .map(|_| {
@@ -1827,9 +1899,22 @@ pub(crate) fn create_travel_proposal(
             return Err(Phase2Error::Conflict);
         }
         let group_record = state.groups.get(&group_id).ok_or(Phase2Error::NotFound)?;
-        if !definition.source_any && group_record.zone != definition.source {
+        if !definition.source_any && !definition.dynamic && group_record.zone != definition.source {
             return Err(Phase2Error::Forbidden);
         }
+        let endpoint = if definition.dynamic {
+            let endpoint = request.endpoint.ok_or(Phase2Error::Forbidden)?;
+            if !endpoint_matches_zone(endpoint, &group_record.zone) {
+                return Err(Phase2Error::Forbidden);
+            }
+            Some(endpoint)
+        } else {
+            None
+        };
+        let destination = endpoint
+            .map(|endpoint| dynamic_destination(endpoint, group_record.zone.channel))
+            .transpose()?
+            .unwrap_or_else(|| definition.destination.clone());
         active_member_lease(state, members[0], now)?;
         active_member_lease(state, members[1], now)?;
         let first = state
@@ -1841,10 +1926,19 @@ pub(crate) fn create_travel_proposal(
             .get(&members[1])
             .ok_or(Phase2Error::Internal)?;
         if !definition.source_any
+            && !definition.dynamic
             && (first.state.world_zone != definition.source
                 || second.state.world_zone != definition.source)
         {
             return Err(Phase2Error::Forbidden);
+        }
+        if definition.dynamic {
+            let endpoint = endpoint.ok_or(Phase2Error::Forbidden)?;
+            if !endpoint_matches_zone(endpoint, &first.state.world_zone)
+                || !endpoint_matches_zone(endpoint, &second.state.world_zone)
+            {
+                return Err(Phase2Error::Forbidden);
+            }
         }
         let proposal_id = candidates
             .iter()
@@ -1874,12 +1968,9 @@ pub(crate) fn create_travel_proposal(
             responder_character_id: responder,
             route_id: request.route_id.clone(),
             departure: request.departure,
-            source: if definition.source_any {
-                group_record.zone.clone()
-            } else {
-                definition.source.clone()
-            },
-            destination: definition.destination,
+            source: group_record.zone.clone(),
+            destination,
+            endpoint,
             expected_group_zone_revision: group_record.zone_revision,
             expected_members,
             status: GroupTravelProposalStatus::Pending,
@@ -2095,8 +2186,22 @@ pub(crate) fn act_on_travel_proposal(
                 } else {
                     consent_route_definition(snapshot.route_id.as_str())?
                 };
-                if (!definition.source_any && definition.source != snapshot.source)
-                    || definition.destination != snapshot.destination
+                let endpoint = if definition.dynamic {
+                    Some(snapshot.endpoint.ok_or(Phase2Error::Conflict)?)
+                } else {
+                    if snapshot.endpoint.is_some() {
+                        return Err(Phase2Error::Conflict);
+                    }
+                    None
+                };
+                let destination = endpoint
+                    .map(|endpoint| dynamic_destination(endpoint, snapshot.source.channel))
+                    .transpose()?
+                    .unwrap_or_else(|| definition.destination.clone());
+                if ((!definition.source_any && !definition.dynamic)
+                    && definition.source != snapshot.source)
+                    || (!definition.dynamic && definition.destination != snapshot.destination)
+                    || (definition.dynamic && destination != snapshot.destination)
                     || !departure_matches_route(&definition, snapshot.departure)
                 {
                     return Err(Phase2Error::Conflict);
@@ -2110,17 +2215,27 @@ pub(crate) fn act_on_travel_proposal(
                 {
                     return Err(Phase2Error::Conflict);
                 }
+                if let Some(endpoint) = endpoint {
+                    if !endpoint_matches_zone(endpoint, &group_record.zone) {
+                        return Err(Phase2Error::Conflict);
+                    }
+                }
                 let mut revisions = [0_u64; 2];
                 for (index, member) in members.iter().copied().enumerate() {
                     let character = state.characters.get(&member).ok_or(Phase2Error::Internal)?;
-                    if (!definition.source_any && character.state.world_zone != snapshot.source)
+                    if ((!definition.source_any && !definition.dynamic)
+                        && character.state.world_zone != snapshot.source)
                         || character.world_revision
                             != snapshot.expected_members[index].world_revision
                         || snapshot.expected_members[index].character_id != member
                     {
                         return Err(Phase2Error::Conflict);
                     }
-                    if definition.source_any {
+                    if let Some(endpoint) = endpoint {
+                        if !endpoint_matches_zone(endpoint, &character.state.world_zone) {
+                            return Err(Phase2Error::Conflict);
+                        }
+                    } else if definition.source_any {
                         // The ROM checks its vanilla Fly visit flag before
                         // proposing or consenting. Cloud Fly-point progress
                         // can lag until a save checkpoint, so require regional
@@ -2194,21 +2309,22 @@ pub(crate) fn act_on_travel_proposal(
                             world_revision: revisions[1],
                         },
                     ],
-                    destination: snapshot.destination.clone(),
+                    destination: destination.clone(),
+                    endpoint,
                 });
                 for (index, member) in members.iter().copied().enumerate() {
                     let character = state.characters.get_mut(&member).expect("member exists");
-                    character.state.world_zone = snapshot.destination.clone();
+                    character.state.world_zone = destination.clone();
                     character.world_revision = revisions[index];
                 }
                 if let Some(member_world_zones) = state.group_member_world_zones.get_mut(&group_id)
                 {
                     for zone in member_world_zones {
-                        *zone = snapshot.destination.clone();
+                        *zone = destination.clone();
                     }
                 }
                 let record = state.groups.get_mut(&group_id).expect("group exists");
-                record.zone = snapshot.destination.clone();
+                record.zone = destination;
                 record.zone_revision = zone_revision;
                 state
                     .group_travel_proposals
@@ -2861,6 +2977,7 @@ pub(crate) fn receipt_story_scene(
             group_zone_revision: zone_revision,
             members: member_views,
             destination: snapshot_view.destination,
+            endpoint: snapshot_view.endpoint,
         });
         record.retain_until = Some(store.now().saturating_add(TRAVEL_PROPOSAL_REPLAY_TTL_MS));
         let committed = record.view.clone();
@@ -2900,6 +3017,379 @@ mod tests {
                 GroupTravelDeparture::Ferry
             ));
         }
+    }
+
+    #[test]
+    fn dynamic_endpoint_uses_catalog_maps_and_nonnegative_rom_coordinates() {
+        let source = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1)
+            .unwrap()
+            .map_entry()
+            .unwrap();
+        let target = WorldZone::new(RegionId::Hoenn, "ROUTE106", 1)
+            .unwrap()
+            .map_entry()
+            .unwrap();
+        let endpoint = GroupTravelEndpoint::new(
+            u8::try_from(source.map_group).unwrap(),
+            u8::try_from(source.map_number).unwrap(),
+            u8::try_from(target.map_group).unwrap(),
+            u8::try_from(target.map_number).unwrap(),
+            48,
+            17,
+        );
+        assert_eq!(
+            dynamic_destination(endpoint, 7).unwrap(),
+            WorldZone::new(RegionId::Hoenn, "ROUTE106", 7).unwrap()
+        );
+        assert!(dynamic_destination(GroupTravelEndpoint::new(0, 21, 0, 21, -1, 0), 1,).is_err());
+        assert!(dynamic_destination(GroupTravelEndpoint::new(0, 21, 255, 255, 0, 0), 1,).is_err());
+        assert!(dynamic_destination(GroupTravelEndpoint::new(128, 21, 0, 21, 0, 0), 1,).is_err());
+        assert!(dynamic_destination(GroupTravelEndpoint::new(0, 21, 0, 21, 127, 127), 1,).is_err());
+        assert!(dynamic_destination(GroupTravelEndpoint::new(0, 9, 0, 21, 0, 0), 1,).is_err());
+    }
+
+    fn granite_cave_escape(target: &str, x: i8, y: i8) -> GroupTravelEndpoint {
+        let source = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1)
+            .unwrap()
+            .map_entry()
+            .unwrap();
+        let target = WorldZone::new(RegionId::Hoenn, target, 1)
+            .unwrap()
+            .map_entry()
+            .unwrap();
+        GroupTravelEndpoint::new(
+            u8::try_from(source.map_group).unwrap(),
+            u8::try_from(source.map_number).unwrap(),
+            u8::try_from(target.map_group).unwrap(),
+            u8::try_from(target.map_number).unwrap(),
+            x,
+            y,
+        )
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one dynamic proposal is followed from rejection cases through replay"
+    )]
+    fn escape_rope_from_granite_cave_commits_exact_route106_exit_and_replays() {
+        let app = super::super::Phase2App::test();
+        let (first, first_lease, second, second_lease, group_id) = two_member_group(&app);
+        let source = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).expect("source");
+        set_consent_progress(&app, group_id, [first, second], source.clone());
+        let propose = |endpoint| {
+            GroupTravelProposalRequest::new_with_departure_and_endpoint(
+                first_lease.fence(),
+                "HOENN:ESCAPE_ROPE",
+                GroupTravelDeparture::EscapeRope,
+                Some(endpoint),
+                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+            )
+            .expect("request")
+        };
+
+        // A crafted request cannot pick another catalog map, even one that is
+        // a real map with in-bounds coordinates.
+        assert_eq!(
+            create_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                &propose(granite_cave_escape("LITTLEROOT_TOWN", 5, 5)),
+            ),
+            Err(Phase2Error::Forbidden)
+        );
+        // Nor can it move the real exit to a tile outside Route 106.
+        assert_eq!(
+            create_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                &propose(granite_cave_escape("ROUTE106", 48, 127)),
+            ),
+            Err(Phase2Error::Forbidden)
+        );
+        assert_eq!(
+            create_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                &propose(granite_cave_escape("ROUTE106", 48, 18)),
+            ),
+            Err(Phase2Error::Forbidden)
+        );
+        // The source map must be where the group actually is.
+        let mut wrong_source = granite_cave_escape("ROUTE106", 48, 17);
+        wrong_source.source_map_number = wrong_source.source_map_number.wrapping_add(1);
+        assert_eq!(
+            create_travel_proposal(&app.store, first, group_id, &propose(wrong_source)),
+            Err(Phase2Error::Forbidden)
+        );
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(state.groups[&group_id].zone, source);
+                assert!(!state.live_group_travel_by_group.contains_key(&group_id));
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("rejections leave cloud state untouched");
+
+        let endpoint = granite_cave_escape("ROUTE106", 48, 17);
+        let destination = WorldZone::new(RegionId::Hoenn, "ROUTE106", 1).expect("destination");
+        let create = propose(endpoint);
+        let proposal =
+            create_travel_proposal(&app.store, first, group_id, &create).expect("proposal");
+        assert_eq!(proposal.status, GroupTravelProposalStatus::Pending);
+        assert_eq!(proposal.source, source);
+        assert_eq!(proposal.destination, destination);
+        assert_eq!(proposal.endpoint, Some(endpoint));
+        assert_eq!(
+            create_travel_proposal(&app.store, first, group_id, &create).expect("create replay"),
+            proposal
+        );
+
+        let accept = GroupTravelActionRequest::new(
+            second_lease.fence(),
+            GroupTravelAction::Accept,
+            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+        );
+        let committed =
+            act_on_travel_proposal(&app.store, second, group_id, proposal.proposal_id, &accept)
+                .expect("accept");
+        assert_eq!(committed.status, GroupTravelProposalStatus::Committed);
+        let commit = committed.commit.as_ref().expect("commit payload");
+        assert_eq!(commit.destination, destination);
+        assert_eq!(commit.endpoint, Some(endpoint));
+        assert_eq!(
+            act_on_travel_proposal(&app.store, second, group_id, proposal.proposal_id, &accept)
+                .expect("accept replay"),
+            committed
+        );
+        assert_eq!(
+            get_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                proposal.proposal_id,
+                first_lease.fence(),
+            )
+            .expect("requester view"),
+            committed
+        );
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(state.groups[&group_id].zone, destination);
+                for member in [first, second] {
+                    assert_eq!(
+                        state.characters[&member.character_id].state.world_zone,
+                        destination
+                    );
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("committed zone");
+    }
+
+    #[test]
+    fn dynamic_create_rejects_non_escaping_sources_and_stray_members() {
+        let app = super::super::Phase2App::test();
+        let (first, first_lease, second, _, group_id) = two_member_group(&app);
+        let dig = |endpoint, key| {
+            GroupTravelProposalRequest::new_with_departure_and_endpoint(
+                first_lease.fence(),
+                "HOENN:DIG",
+                GroupTravelDeparture::Dig,
+                Some(endpoint),
+                key,
+            )
+            .expect("request")
+        };
+
+        // Route 106 forbids escaping, so even its own exit tile is refused.
+        let route106 = WorldZone::new(RegionId::Hoenn, "ROUTE106", 1).expect("route");
+        set_consent_progress(&app, group_id, [first, second], route106.clone());
+        let route_entry = route106.map_entry().expect("entry");
+        let (group, number) = (
+            u8::try_from(route_entry.map_group).unwrap(),
+            u8::try_from(route_entry.map_number).unwrap(),
+        );
+        assert_eq!(
+            create_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                &dig(
+                    GroupTravelEndpoint::new(group, number, group, number, 48, 17),
+                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+                ),
+            ),
+            Err(Phase2Error::Forbidden)
+        );
+
+        // The group is in Granite Cave but the partner's zone is elsewhere.
+        let cave = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).expect("cave");
+        set_consent_progress(&app, group_id, [first, second], cave);
+        app.store
+            .write_transaction(|state| {
+                state
+                    .characters
+                    .get_mut(&second.character_id)
+                    .ok_or(Phase2Error::Internal)?
+                    .state
+                    .world_zone = route106.clone();
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("partner elsewhere");
+        assert_eq!(
+            create_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                &dig(
+                    granite_cave_escape("ROUTE106", 48, 17),
+                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+                ),
+            ),
+            Err(Phase2Error::Forbidden)
+        );
+    }
+
+    #[test]
+    fn dynamic_accept_and_replay_bind_the_exact_endpoint() {
+        let app = super::super::Phase2App::test();
+        let (first, first_lease, second, second_lease, group_id) = two_member_group(&app);
+        let cave = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).expect("cave");
+        set_consent_progress(&app, group_id, [first, second], cave.clone());
+        let key = IdempotencyKey::new(Uuid::new_v4()).expect("key");
+        let request = |endpoint| {
+            GroupTravelProposalRequest::new_with_departure_and_endpoint(
+                first_lease.fence(),
+                "HOENN:ESCAPE_ROPE",
+                GroupTravelDeparture::EscapeRope,
+                Some(endpoint),
+                key,
+            )
+            .expect("request")
+        };
+        let proposal = create_travel_proposal(
+            &app.store,
+            first,
+            group_id,
+            &request(granite_cave_escape("ROUTE106", 48, 17)),
+        )
+        .expect("proposal");
+        // Reusing the key for another endpoint cannot alias the proposal.
+        assert_eq!(
+            create_travel_proposal(
+                &app.store,
+                first,
+                group_id,
+                &request(granite_cave_escape("ROUTE106", 47, 17)),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+
+        // A partner who left the source map before consenting cannot commit.
+        app.store
+            .write_transaction(|state| {
+                state
+                    .characters
+                    .get_mut(&second.character_id)
+                    .ok_or(Phase2Error::Internal)?
+                    .state
+                    .world_zone = WorldZone::new(RegionId::Hoenn, "ROUTE106", 1)
+                    .map_err(|_| Phase2Error::Internal)?;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("partner left");
+        assert_eq!(
+            act_on_travel_proposal(
+                &app.store,
+                second,
+                group_id,
+                proposal.proposal_id,
+                &GroupTravelActionRequest::new(
+                    second_lease.fence(),
+                    GroupTravelAction::Accept,
+                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+                ),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(state.groups[&group_id].zone, cave);
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("zone unchanged");
+    }
+
+    #[test]
+    fn dynamic_accept_rejects_a_snapshot_whose_destination_disagrees_with_its_endpoint() {
+        let app = super::super::Phase2App::test();
+        let (first, first_lease, second, second_lease, group_id) = two_member_group(&app);
+        let source = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).expect("source");
+        set_consent_progress(&app, group_id, [first, second], source.clone());
+        let proposal = create_travel_proposal(
+            &app.store,
+            first,
+            group_id,
+            &GroupTravelProposalRequest::new_with_departure_and_endpoint(
+                first_lease.fence(),
+                "HOENN:DIG",
+                GroupTravelDeparture::Dig,
+                Some(granite_cave_escape("ROUTE106", 48, 17)),
+                IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+            )
+            .expect("request"),
+        )
+        .expect("proposal");
+        app.store
+            .write_transaction(|state| {
+                state
+                    .group_travel_proposals
+                    .get_mut(&proposal.proposal_id)
+                    .expect("proposal")
+                    .view
+                    .destination = WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1)
+                    .map_err(|_| Phase2Error::Internal)?;
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("tamper");
+        assert_eq!(
+            act_on_travel_proposal(
+                &app.store,
+                second,
+                group_id,
+                proposal.proposal_id,
+                &GroupTravelActionRequest::new(
+                    second_lease.fence(),
+                    GroupTravelAction::Accept,
+                    IdempotencyKey::new(Uuid::new_v4()).expect("key"),
+                ),
+            ),
+            Err(Phase2Error::Conflict)
+        );
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(state.groups[&group_id].zone, source);
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("zone unchanged");
+    }
+
+    #[test]
+    fn teleport_uses_consent_fly_routes_except_littleroot() {
+        let destination = consent_route_definition("JOHTO:FLY_NEW_BARK_TOWN").unwrap();
+        assert!(destination.source_any);
+        assert!(departure_matches_route(
+            &destination,
+            GroupTravelDeparture::Teleport
+        ));
+        let littleroot = consent_route_definition("HOENN:FLY_LITTLEROOT").unwrap();
+        assert!(!departure_matches_route(
+            &littleroot,
+            GroupTravelDeparture::Teleport
+        ));
     }
 
     #[test]
@@ -3006,7 +3496,6 @@ mod tests {
         }
     }
     use coop_cloud::CharacterCloudState;
-    use coop_cloud::GroupTravelRequest;
     use coop_cloud::{
         AcquireLeaseRequest, ClientInstanceId, CreateGroupInvitationRequest, IdempotencyKey,
         InvitationCode, OnlineAction, OnlineActionRequest, OnlineActionResponse,
@@ -3176,6 +3665,85 @@ mod tests {
             second_lease,
             accepted.group.group_id,
         )
+    }
+
+    #[test]
+    fn pairing_code_groups_players_on_their_own_maps_without_moving_them() {
+        let app = super::super::Phase2App::test();
+        let (inviter, inviter_lease) = account(&app, "pairhost", "pair-host");
+        let (joiner, joiner_lease) = account(&app, "pairjoin", "pair-join");
+        let zones = [
+            (
+                inviter,
+                WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).expect("cave"),
+            ),
+            (
+                joiner,
+                WorldZone::new(RegionId::Hoenn, "ROUTE105", 1).expect("route"),
+            ),
+        ];
+        app.store
+            .write_transaction(|state| {
+                for (actor, zone) in &zones {
+                    state
+                        .characters
+                        .get_mut(&actor.character_id)
+                        .ok_or(Phase2Error::Internal)?
+                        .state
+                        .world_zone = zone.clone();
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("separate maps");
+        let revisions_before = app
+            .store
+            .read_transaction(|state| {
+                Ok::<_, Phase2Error>(
+                    zones
+                        .each_ref()
+                        .map(|(actor, _)| state.characters[&actor.character_id].world_revision),
+                )
+            })
+            .expect("revisions");
+
+        let code = super::super::pairing::create_code(
+            &app.store,
+            inviter,
+            &coop_cloud::CreatePairingCodeRequest::new(inviter_lease.fence()),
+        )
+        .expect("code");
+        let joined = super::super::pairing::redeem_code(
+            &app.store,
+            joiner,
+            &coop_cloud::RedeemPairingCodeRequest::new(joiner_lease.fence(), code.code),
+        )
+        .expect("redeem forms the group immediately");
+
+        let group_id = joined.group.group_id;
+        let view_zone = |actor: AuthenticatedActor| {
+            let index = joined
+                .group
+                .members
+                .iter()
+                .position(|member| member.character_id == actor.character_id)
+                .expect("member");
+            joined.group.member_world_zones[index].clone()
+        };
+        for (actor, zone) in &zones {
+            assert_eq!(&view_zone(*actor), zone);
+        }
+        app.store
+            .read_transaction(|state| {
+                assert_eq!(state.groups[&group_id].status, GroupStatus::Active);
+                for (index, (actor, zone)) in zones.iter().enumerate() {
+                    assert_eq!(state.active_group_by_member[&actor.character_id], group_id);
+                    let character = &state.characters[&actor.character_id];
+                    assert_eq!(&character.state.world_zone, zone);
+                    assert_eq!(character.world_revision, revisions_before[index]);
+                }
+                Ok::<_, Phase2Error>(())
+            })
+            .expect("members stay put");
     }
 
     #[test]
@@ -3787,16 +4355,19 @@ mod tests {
             "SEAGALLOP:BIRTH_VERMILION_FERRY",
         ];
         let catalog = consent_route_catalog();
-        assert_eq!(catalog.len(), 162);
+        // Dig and Escape Rope lead the catalog as the two dynamic routes.
+        assert_eq!(catalog.len(), 164);
+        assert_eq!(catalog[0].id, "HOENN:DIG");
+        assert_eq!(catalog[1].id, "HOENN:ESCAPE_ROPE");
         assert_eq!(
             catalog.last().expect("story route").id,
             BILL_ONE_CINNABAR_ROUTE_ID
         );
-        assert_eq!(catalog[14].id, "HOENN:FLY_LITTLEROOT");
+        assert_eq!(catalog[16].id, "HOENN:FLY_LITTLEROOT");
         assert_eq!(
             catalog
                 .iter()
-                .skip(15)
+                .skip(17)
                 .take(expected.len())
                 .map(|route| route.id)
                 .collect::<Vec<_>>(),
@@ -4525,17 +5096,6 @@ mod tests {
             .expect("proposal");
         assert_eq!(proposal.status, GroupTravelProposalStatus::Pending);
 
-        let legacy = GroupTravelRequest::new(
-            first_lease.fence(),
-            "HOENN:SLATEPORT_SEVII_FERRY",
-            IdempotencyKey::new(Uuid::new_v4()).expect("key"),
-        )
-        .expect("travel request");
-        assert_eq!(
-            travel(&app.store, first, group_id, &legacy),
-            Err(Phase2Error::Forbidden)
-        );
-
         let decline = GroupTravelActionRequest::new(
             second_lease.fence(),
             GroupTravelAction::Decline,
@@ -4545,10 +5105,6 @@ mod tests {
             act_on_travel_proposal(&app.store, second, group_id, proposal.proposal_id, &decline)
                 .expect("decline");
         assert_eq!(declined.status, GroupTravelProposalStatus::Declined);
-        assert_eq!(
-            travel(&app.store, first, group_id, &legacy),
-            Err(Phase2Error::Forbidden)
-        );
     }
 
     #[test]
@@ -4900,15 +5456,16 @@ mod tests {
             inspect_group(&app.store, first_actor, group_id, first_lease.fence()),
             Err(Phase2Error::Authentication)
         );
-        let travel_request = GroupTravelRequest::new(
+        let proposal_request = GroupTravelProposalRequest::new_with_departure(
             first_lease.fence(),
-            "HOENN:SLATEPORT_SEVII_FERRY",
+            "HOENN:FLY_LITTLEROOT",
+            GroupTravelDeparture::Fly,
             IdempotencyKey::new(Uuid::new_v4()).expect("key"),
         )
-        .expect("travel request");
+        .expect("proposal request");
         assert_eq!(
-            travel(&app.store, first_actor, group_id, &travel_request),
-            Err(Phase2Error::Forbidden)
+            create_travel_proposal(&app.store, first_actor, group_id, &proposal_request),
+            Err(Phase2Error::Authentication)
         );
 
         app.store
@@ -5317,16 +5874,14 @@ mod tests {
             })
             .expect("state");
         fail_writes.store(true, Ordering::Release);
-        let request = GroupTravelRequest::new(
+        let request = GroupTravelProposalRequest::new_with_departure(
             first_lease.fence(),
-            "HOENN:SLATEPORT_SEVII_FERRY",
+            "HOENN:FLY_LITTLEROOT",
+            GroupTravelDeparture::Fly,
             IdempotencyKey::new(Uuid::new_v4()).expect("key"),
         )
-        .expect("travel");
-        assert_eq!(
-            app.travel_group(first_actor, group_id, request),
-            Err(Phase2Error::Forbidden)
-        );
+        .expect("proposal request");
+        assert!(create_travel_proposal(&app.store, first_actor, group_id, &request).is_err());
         let after = app
             .store
             .inspect_state(|state| {
@@ -6107,7 +6662,10 @@ mod tests {
         // SaveBlock1 scene facts change; seal each affected flash sector.
         for (offset, data) in [
             (0x04_usize, &[0_u8, 11][..]),
-            (0x14b8, &[0, 0][..]),
+            (
+                coop_save::SAVE_BLOCK1_VARS_OFFSET + 2 * (0x408e - 0x4000),
+                &[0, 0][..],
+            ),
             (0x1270 + 0x26, &[0x04][..]),
             (0x1270 + 0x5c, &[0x40][..]),
         ] {

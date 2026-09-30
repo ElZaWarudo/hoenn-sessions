@@ -11,6 +11,7 @@
 #include "battle_controllers.h"
 #include "move.h"
 #include "constants/battle_move_resolution.h"
+#include "coop/battle_runtime.h"
 
 static void ValidateBattlers(void);
 static enum Move GetOriginallyUsedMove(enum Move chosenMove);
@@ -886,8 +887,10 @@ static enum CancelerResult CancelerSetTargets(struct BattleCalcValues *cv)
         }
         else if (IsDoubleBattle() && moveTarget == TARGET_FOES_AND_ALLY)
         {
-            for (enum BattlerId battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+            for (enum BattlerId i = 0; i < gBattlersCount; i++)
             {
+                enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(i);
+
                 if (battlerDef == cv->battlerAtk)
                     continue;
 
@@ -1298,7 +1301,7 @@ static enum CancelerResult CancelerMoveEffectFailureTarget(struct BattleCalcValu
 
     while (gBattleStruct->eventState.atkCancelerBattler < gBattlersCount)
     {
-        enum BattlerId battlerDef = gBattleStruct->eventState.atkCancelerBattler++;
+        enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(gBattleStruct->eventState.atkCancelerBattler++);
 
         if (ShouldSkipFailureCheckOnBattler(cv->battlerAtk, battlerDef, TRUE))
             continue;
@@ -1955,7 +1958,7 @@ static enum CancelerResult CancelerNotFullyProtected(struct BattleCalcValues *cv
 {
     while (gBattleStruct->eventState.atkCancelerBattler < gBattlersCount)
     {
-        enum BattlerId battlerDef = gBattleStruct->eventState.atkCancelerBattler++;
+        enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(gBattleStruct->eventState.atkCancelerBattler++);
 
         if (ShouldSkipFailureCheckOnBattler(cv->battlerAtk, battlerDef, TRUE))
             continue;
@@ -2544,8 +2547,10 @@ static enum MoveEndResult MoveEndSymbiosis(void)
 {
     enum MoveEndResult result = MOVEEND_RESULT_CONTINUE;
 
-    for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(i);
+
         if ((gSpecialStatuses[battler].berryReduced
               || (GetConfig(B_SYMBIOSIS_GEMS) >= GEN_7 && gSpecialStatuses[battler].gemBoost))
             && TryTriggerSymbiosis(battler, BATTLE_PARTNER(battler)))
@@ -2801,8 +2806,10 @@ static enum MoveEndResult MoveEndMirrorMove(void)
 
 static void SortBattlersByRawSpeed(u8 battlers[])
 {
+    /* Ties depend on the starting order: the canonical one in a co-op
+     * trainer battle (the identity otherwise). */
     for (u32 i = 0; i < gBattlersCount; i++)
-        battlers[i] = i;
+        battlers[i] = CoopBattleRuntime_CanonicalBattler(i);
 
     for (u32 i = 0; i < gBattlersCount; i++)
     {
@@ -3362,8 +3369,10 @@ static enum MoveEndResult MoveEndAbilityEffectFoesFainted(void)
 
 static enum MoveEndResult MoveEndShellTrap(void)
 {
-    for (enum BattlerId battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(i);
+
         if (battlerDef == gBattlerAttacker || IsBattlerAlly(battlerDef, gBattlerAttacker))
             continue;
 
@@ -3403,7 +3412,7 @@ static enum MoveEndResult MoveEndKeeMarangaHpThresholdItemTarget(void)
 {
     while (gBattleStruct->eventState.moveEndBattler < gBattlersCount)
     {
-        enum BattlerId battlerDef = gBattleStruct->eventState.moveEndBattler++;
+        enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(gBattleStruct->eventState.moveEndBattler++);
         if (battlerDef == gBattlerAttacker)
             continue;
         enum HoldEffect holdEffect = GetBattlerHoldEffect(battlerDef);
@@ -3646,7 +3655,7 @@ static enum MoveEndResult MoveEndItemsEffectsAll(void)
 {
     while (gBattleStruct->eventState.moveEndBattler < gBattlersCount)
     {
-        enum BattlerId battler = gBattleStruct->eventState.moveEndBattler++;
+        enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(gBattleStruct->eventState.moveEndBattler++);
         enum HoldEffect holdEffect = GetBattlerHoldEffect(battler);
         if (ItemBattleEffects(battler, 0, holdEffect, IsOnStatusChangeActivation)
          || ItemBattleEffects(battler, 0, holdEffect, IsOnHpThresholdActivation))
@@ -4186,9 +4195,11 @@ static enum Move GetMirrorMoveMove(void)
 
     for (validMovesCount = 0, i = 0; i < gBattlersCount; i++)
     {
-        if (i != gBattlerAttacker)
+        enum BattlerId from = CoopBattleRuntime_CanonicalBattler(i);
+
+        if (from != gBattlerAttacker)
         {
-            move = gBattleStruct->lastTakenMoveFrom[gBattlerAttacker][i];
+            move = gBattleStruct->lastTakenMoveFrom[gBattlerAttacker][from];
             if (move != MOVE_NONE && move != MOVE_UNAVAILABLE)
             {
                 validMoves[validMovesCount] = move;

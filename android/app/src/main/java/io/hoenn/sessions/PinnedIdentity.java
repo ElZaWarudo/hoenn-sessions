@@ -26,7 +26,7 @@ final class PinnedIdentity {
         for(int i=0;i<64;i++) { Object value=sig.get(i); if(!(value instanceof Integer) || (int)value<0 || (int)value>255) throw new SecurityException("Firma inválida"); signature[i]=(byte)(int)value; }
         byte[] bytes=new JsonCanonicalizer(m.toString()).getEncodedUTF8();
         if (!verifySignature(hex(PUBLIC_KEY), bytes, signature)) throw new SecurityException("Firma inválida");
-        if(m.length()!=17 || m.getInt("package_version")!=1 || !character.equals(m.getString("character_id")) || m.getLong("revision")!=revision || revision<1 || m.getLong("parent_revision")!=revision-1 || !romHash.equals(m.getString("rom_sha256")) || !build.equals(m.getString("game_build_id")) || m.getInt("bridge_abi")!=1 || m.getInt("protocol_version")!=1) throw new SecurityException("Paquete incompatible");
+        if(m.length()!=17 || m.getInt("package_version")!=1 || !character.equals(m.getString("character_id")) || m.getLong("revision")!=revision || revision<1 || m.getLong("parent_revision")!=revision-1 || !romHash.equals(m.getString("rom_sha256")) || !build.equals(m.getString("game_build_id")) || m.getInt("bridge_abi")!=1 || m.getInt("protocol_version")!=BridgeFrame.PROTOCOL_VERSION) throw new SecurityException("Paquete incompatible");
         return m;
     }
     static boolean verifySignature(byte[] key, byte[] message, byte[] signature) {

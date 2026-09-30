@@ -726,7 +726,16 @@ pub enum ServerRealtimeFrameV1 {
     RemoteCompanion(RemoteCompanionV1),
     RemoteSocialSignal(RemoteSignalV1),
     ProgressEvent(ProgressFeedEventV1),
+    GroupStarted(GroupStartedV1),
     GroupEnded(GroupEndedV1),
+}
+
+/// A committed group delivered to one authenticated runtime session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupStartedV1 {
+    pub group_id: GroupId,
+    pub session_epoch: crate::SessionEpoch,
 }
 
 /// Reconnect grace ended and the server durably closed this group.
@@ -771,6 +780,7 @@ enum ServerFramePayload {
     RemoteCompanion(RemoteCompanionV1),
     RemoteSocialSignal(RemoteSignalV1),
     ProgressEvent(ProgressFeedEventV1),
+    GroupStarted(GroupStartedV1),
     GroupEnded(GroupEndedV1),
 }
 
@@ -832,6 +842,14 @@ impl ServerRealtimeFrameV1 {
     #[must_use]
     pub fn group_ended(group_id: GroupId) -> Self {
         Self::GroupEnded(GroupEndedV1 { group_id })
+    }
+
+    #[must_use]
+    pub fn group_started(group_id: GroupId, session_epoch: crate::SessionEpoch) -> Self {
+        Self::GroupStarted(GroupStartedV1 {
+            group_id,
+            session_epoch,
+        })
     }
 
     #[must_use]
@@ -906,6 +924,12 @@ impl Serialize for ServerRealtimeFrameV1 {
                 payload,
             }
             .serialize(serializer),
+            Self::GroupStarted(payload) => ServerFrameWire {
+                realtime_version: RealtimeVersion::v1(),
+                kind: "GROUP_STARTED",
+                payload,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -956,6 +980,9 @@ impl<'de> Deserialize<'de> for ServerRealtimeFrameV1 {
                 Ok(Self::ProgressEvent(event))
             }
             ("GROUP_ENDED", ServerFramePayload::GroupEnded(event)) => Ok(Self::GroupEnded(event)),
+            ("GROUP_STARTED", ServerFramePayload::GroupStarted(event)) => {
+                Ok(Self::GroupStarted(event))
+            }
             _ => Err(serde::de::Error::custom("invalid server realtime frame")),
         }
     }
@@ -1063,6 +1090,7 @@ impl fmt::Display for ServerRealtimeFrameV1 {
             Self::InteractionRejected(_) => "INTERACTION_REJECTED",
             Self::ProgressEvent(_) => "PROGRESS_EVENT",
             Self::GroupEnded(_) => "GROUP_ENDED",
+            Self::GroupStarted(_) => "GROUP_STARTED",
         })
     }
 }
@@ -1072,6 +1100,18 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+
+    #[test]
+    fn group_started_frame_round_trips_with_group_and_session_identity() {
+        let group_id = GroupId::new(uuid::Uuid::from_u128(0x701)).unwrap();
+        let epoch = crate::SessionEpoch::new(7).unwrap();
+        let frame = ServerRealtimeFrameV1::group_started(group_id, epoch);
+        let encoded = encode_server_realtime_frame(&frame).unwrap();
+        assert_eq!(decode_server_realtime_frame(&encoded).unwrap(), frame);
+        let value: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(value["type"], "GROUP_STARTED");
+        assert_eq!(value["payload"]["session_epoch"], 7);
+    }
     use crate::{
         BridgeAbiVersion, CharacterId, ClientInstanceId, GameBuildId, LeaseFence, MgbaVersion,
         ProtocolVersion, SessionEpoch, SessionId, Sha256Digest,

@@ -2166,19 +2166,160 @@ EventScript_CoopBattleConsentCoop::
 	goto EventScript_CoopBattleConsentRespond
 
 EventScript_CoopBattleConsentFriendly::
+	special Special_CoopFriendlyBufferRules
+	goto_if_eq VAR_RESULT, FALSE, EventScript_CoopFriendlyCantAccept
 	special Special_CoopBattleConsentMarkPrompt
 	msgbox Text_CoopBattleConsentFriendly, MSGBOX_YESNO
+	copyvar VAR_0x8004, VAR_RESULT
+	special Special_CoopBattleConsentRespond
+	goto_if_eq VAR_0x8004, NO, EventScript_CoopBattleConsentFriendlyEnd
+	special Special_CoopFriendlyBeginResponderPicks
+	goto_if_eq VAR_RESULT, FALSE, EventScript_CoopFriendlyResult
+	goto EventScript_CoopFriendlyPickLoop
+
+EventScript_CoopFriendlyCantAccept::
+	setvar VAR_0x8004, NO
+	special Special_CoopBattleConsentRespond
+	msgbox Text_CoopFriendlyNotEnough, MSGBOX_DEFAULT
+	closemessage
+EventScript_CoopBattleConsentFriendlyEnd::
+	end
 
 EventScript_CoopBattleConsentRespond::
 	copyvar VAR_0x8004, VAR_RESULT
 	special Special_CoopBattleConsentRespond
 	end
 
+@ ONLINE > Battle partner (src/coop/friendly_battle.c). The first pick step
+@ sends the challenge; both players then pick their team in order and the
+@ field stays locked until the battle has been fought or called off.
+EventScript_CoopFriendlyChallenge::
+	lockall
+EventScript_CoopFriendlyPickLoop::
+	special Special_CoopFriendlyBufferPick
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopFriendlyResult
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopFriendlyWait
+	msgbox Text_CoopFriendlyPick, MSGBOX_DEFAULT
+	closemessage
+	special ChoosePartyMon
+	waitstate
+	special Special_CoopFriendlyPickMon
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopFriendlyPickRefused
+	goto EventScript_CoopFriendlyPickLoop
+
+EventScript_CoopFriendlyPickRefused::
+	msgbox Text_CoopFriendlyPickRefused, MSGBOX_DEFAULT
+	goto EventScript_CoopFriendlyPickLoop
+
+EventScript_CoopFriendlyWait::
+	message Text_CoopFriendlyWaiting
+	waitmessage
+	special Special_CoopFriendlyWait
+	waitstate
+EventScript_CoopFriendlyResult::
+	special Special_CoopFriendlyBufferResult
+	msgbox gStringVar4, MSGBOX_DEFAULT
+	closemessage
+	special Special_CoopFriendlyFinish
+	releaseall
+	end
+
+Text_CoopFriendlyPick:
+	.string "Choose POKéMON {STR_VAR_1} of {STR_VAR_2}.$"
+
+Text_CoopFriendlyPickRefused:
+	.string "That POKéMON can't battle\nor is already chosen.$"
+
+Text_CoopFriendlyWaiting:
+	.string "Waiting for your partner…\nB: Cancel$"
+
+Text_CoopFriendlyNotEnough:
+	.string "Your partner wants to battle,\nbut you need {STR_VAR_3} POKéMON.$"
+
+@ Replaces the parked trainer script after an aborted co-op trainer battle
+@ or a requester's lost co-op battle: no flag was set, so the trainer stays fightable.
+EventScript_CoopTrainerEncounterRelease::
+	releaseall
+	end
+
+@ ONLINE > Trade with partner (src/coop/trade_offer.c). The field stays
+@ locked from the party selection until the outcome is shown.
+EventScript_CoopTradeRequest::
+	lockall
+	special ChoosePartyMon
+	waitstate
+	goto_if_ge VAR_0x8004, PARTY_SIZE, EventScript_CoopTradeRelease
+	special Special_CoopTradeBeginOffer
+	goto_if_eq VAR_RESULT, FALSE, EventScript_CoopTradeResult
+	message Text_CoopTradeWaiting
+	waitmessage
+	special Special_CoopTradeWait
+	waitstate
+EventScript_CoopTradeResult::
+	special Special_CoopTradeBufferResult
+	msgbox gStringVar4, MSGBOX_DEFAULT
+	closemessage
+EventScript_CoopTradeRelease::
+	special Special_CoopTradeFinish
+	releaseall
+	end
+
+@ The partner's offer, started by the trade offer poll when the field is free.
+EventScript_CoopTradeOffer::
+	lockall
+	special Special_CoopTradeBufferOffer
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopTradeResult
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopTradeOfferEgg
+	msgbox Text_CoopTradeOffer, MSGBOX_YESNO
+	goto EventScript_CoopTradeOfferAnswer
+
+EventScript_CoopTradeOfferEgg::
+	msgbox Text_CoopTradeOfferEgg, MSGBOX_YESNO
+EventScript_CoopTradeOfferAnswer::
+	goto_if_eq VAR_RESULT, NO, EventScript_CoopTradeOfferDecline
+	special Special_CoopTradeBufferOffer
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopTradeResult
+	msgbox Text_CoopTradeChoose, MSGBOX_DEFAULT
+	closemessage
+	special ChoosePartyMon
+	waitstate
+	special Special_CoopTradeRespond
+	goto_if_eq VAR_RESULT, 2, EventScript_CoopTradeRelease
+	goto_if_eq VAR_RESULT, 0, EventScript_CoopTradeResult
+	message Text_CoopTradeTrading
+	waitmessage
+	special Special_CoopTradeWait
+	waitstate
+	goto EventScript_CoopTradeResult
+
+EventScript_CoopTradeOfferDecline::
+	setvar VAR_0x8004, PARTY_SIZE
+	special Special_CoopTradeRespond
+	goto EventScript_CoopTradeRelease
+
+Text_CoopTradeWaiting:
+	.string "Waiting for your partner…\nB: Cancel$"
+
+Text_CoopTradeOffer:
+	.string "Your partner offers {STR_VAR_1}\n({STR_VAR_2} Lv. {STR_VAR_3}). Trade?$"
+
+Text_CoopTradeOfferEgg:
+	.string "Your partner offers an EGG.\nTrade?$"
+
+Text_CoopTradeChoose:
+	.string "Choose a POKéMON to give.$"
+
+Text_CoopTradeTrading:
+	.string "Trading with your partner…$"
+
+	.include "data/scripts/coop_gym_rewards.inc"
+	.include "data/scripts/coop_story_rewards.inc"
+
 Text_CoopBattleConsentCoop:
 	.string "Battle alongside your partner?$"
 
 Text_CoopBattleConsentFriendly:
-	.string "Battle your partner?$"
+	.string "Battle your partner? {STR_VAR_1},\n{STR_VAR_2}, {STR_VAR_3} POKéMON each.$"
 
 EventScript_CoopGroupTravelOffer_Invalid::
 	setvar VAR_0x8004, 0

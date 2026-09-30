@@ -1,0 +1,489 @@
+# Co-op battles for every trainer, and the multiplayer outcome ledger
+
+Decisions (2026-09-29): every trainer encounter can become a co-op battle;
+until the ledger covers battles, each ROM applies vanilla rewards locally
+(option A). The server ledger covers multiplayer outcomes only (Level 1):
+trades and co-op battle results. Solo progress stays trusted.
+
+Co-op battle rules chosen:
+- Single-Pokémon trainers field a second Pokémon at the same level, from
+  their own pool or the same species with a seeded personality.
+- Gym leaders keep their full team in co-op (no three-Pokémon cap).
+- A gym win gives the badge, TM and story flags to each player who has not
+  earned them and is at the same story point; otherwise the partner helps.
+- A player needs one usable Pokémon to join; each side brings one to three.
+
+## A. Co-op battles for every trainer
+
+Findings that shape the work:
+
+- EXP is suppressed in co-op (`src/battle_util.c`, the engine-active branch)
+  because level-ups during battle would desynchronize the per-turn digest,
+  which hashes both parties. EXP must be applied after the party restore.
+- The server anchors a member's party to the last finalized cloud save; on a
+  route the live party (HP/EXP) rarely matches, so most reservations would
+  fail. Local-reward mode anchors to the party records the ROM uploads.
+- A trainer win currently becomes `CommitPending` and waits for a Wally-only
+  save validator. Local mode completes the battle instead.
+- Wally/Brock are hard-coded in three ROM places and in `trainer_encounter`;
+  the server also requires both players on the trainer's exact map.
+- `PreparePartnerParty` needs three usable mons per side; co-op opponents are
+  capped at three (`halfTeam`).
+
+Order (effort):
+
+1. Server `reward_mode = Local`, per-member role (participant/helper), party
+   records in the snapshot commit, generated trainer encounter catalog,
+   partner on the same or a connected map (3-4 d).
+2. Launcher forwards the party records (1 d).
+3. ROM runtime: remove allowlists, reverse trainer lookup, 1-3 mons per side
+   (2-3 d).
+4. Single hook in `BattleSetup_StartTrainerBattle`: eligibility, 10 s partner
+   offer, vanilla fallback that preserves the script flow, abort script,
+   re-sight cooldown (3 d, ~6 B EWRAM).
+5. Rewards: trainer flag, money (not for helpers), deferred EXP with
+   evolution after the party restore (4-5 d, ~16 B EWRAM).
+6. Second opponent mon for single-mon trainers, seeded identically (2 d).
+7. Rematches; 8. gyms; 9. story battles (per-trainer responder scripts,
+   checkpoint comparison, re-enable Wally).
+
+Eligibility: grouped; partner presence fresh, visible, on the same or a
+connected map within 12 tiles; trainer resolves to a server identity; not a
+two-trainer approach, early rival, pyramid, trainer hill, secret base, sky
+battle, or NPC-partner battle; ROUTE class during phase 1.
+
+## B. Level 1 multiplayer outcome ledger
+
+What exists: battle commit grants (Wally only), `CommitApplied`
+acknowledgement, `pending_applied_commit` in finalize, dead trade staging
+that the running ROM never applies.
+
+Model: `LedgerEntry { commit_id, character_id, origin (battle|trade),
+base_snapshot_id, base_revision, expected delta, status
+Issued->Delivered->Applied|Voided }`, at most one open entry per character,
+idempotent issuance, entries never expire while open, persisted through the
+serialized `State`.
+
+Expected deltas: a trade slot's exact 100-byte record and the outgoing
+Pokémon gone from party and boxes; a trainer win's CSP1 bit and vanilla
+trainer flag, with money bounded by the vanilla formula.
+
+Finalize: a declared entry must match exactly or the snapshot is rejected;
+an undeclared entry whose evidence already appears is rejected; no evidence
+means a pre-apply save and is accepted; replays return the stored record;
+lost uploads are redelivered from a new `GET ledger/open`.
+
+Wire: reuse `BattleCommit`/`CommitApplied`; add `TradeCommit` (0x0119);
+the ROM applies the trade, acknowledges, and requests a checkpoint with
+controls locked. Bump the game protocol 2 -> 3.
+
+Order (effort): coop-save accessors (2 d); ledger model and issuance (3 d);
+finalize validation replacing the Wally-only path (3 d); trade issuance and
+GET route (2 d); launcher redelivery (3 d); codec, ROM trade apply,
+auto-checkpoint, manifest (4 d); end-to-end fault tests (3 d).
+
+Already fixed while planning: SaveBlock1 vars were read at the stale 0x139C
+offset (real 0x13FC); see `include/coop/save_layout.h`.
+
+Follow-ups recorded while implementing B2/B3:
+- Prune Applied/Voided ledger entries after a retention window (keep an id
+  tombstone); issuance and lookup currently scan all entries.
+- The ROM trade apply must checkpoint before any trade evolution: finalize
+  requires the traded slot to hold exactly the server's record.
+- Wally entries are voided when their CommitPending reservation expires or is
+  cancelled, so a lapsed Wally battle cannot block trades forever.
+
+Follow-ups recorded while implementing A4-A5 and B5-B6:
+- A trade commit names a party slot. If the player reorders the party
+  before it applies, the ROM rejects it and the open entry blocks that
+  character's ledger. Either apply by personality/OT ID anywhere in the
+  party, or let the server void an entry the ROM reports as rejected.
+- The ROM refuses trade records that carry mail; the server should not
+  issue a trade for a Pokémon holding mail.
+- Helper/participant can disagree between server (last cloud save) and
+  ROM (live trainer flag); money follows the ROM until the ledger covers
+  battles.
+- Co-op EXP learns new moves only into free slots (no replace prompt),
+  applies EXP in opponent-slot order, and skips Pay Day, battle-special
+  evolutions and match-call registration.
+- The badge level cap is skipped in co-op battles (it projected only the
+  local copy of the party).
+
+Follow-ups recorded while implementing A7-A8:
+- Rematches: `special BattleSetup_StartRematchBattle` has the same co-op hook
+  as dotrainerbattle; the fallback starts the vanilla rematch. A player who
+  has beaten the first battle is a participant (rematch prize); only the
+  requester's ROM records the vanilla rematch win (flag, match-call
+  registration, cleared rematch state). The server table mirrors
+  `gRematchTable` and a test parses the C source.
+- Gyms: the eight Hoenn leaders (and their rematches) are eligible; Kanto
+  and Johto leaders and Brock's special stay vanilla. The partner's grants
+  are `data/scripts/coop_gym_rewards.inc` (from each gym's `scripts.inc`)
+  plus the TM in C; map redraws, Norman's walk-out cutscene and the
+  match-call registration messages are not replayed on the partner.
+- Server gym roles read the FLAG_BADGE01..08 flags of the last finalized
+  save. A character that also progressed a Kanto campaign in the same save
+  shares those flags; the ROM decides the rewards either way.
+- A lost co-op gym battle (local mons still standing) releases the field
+  instead of resuming the leader's script, which would grant the badge.
+- A requester's co-op loss against a route trainer with local mons still
+  standing resumes the trainer's post-battle script (defeat text) instead
+  of releasing the field; no flag or money is given. Gyms already release.
+  Fixed in A9: every requester loss (route, rematch, gym, story) releases.
+
+### A9: Hoenn story battles
+
+Rule: story flags go to both players if the partner is at the same story
+point; otherwise the partner helps (EXP only, no money, no flags). The
+requester's own post-battle script always runs as in vanilla after a win;
+a requester loss with local mons standing releases the field (the trainer
+stays unbeaten and its scene can replay; an object that walked up to the
+player stays there until the map reloads). "Same story point" is the
+concrete state the requester's script needed before the battle: the
+battle's story flag clear, its story var at that value, and the trainer's
+object not hidden. A GRANT battle's partner gets the pure flag/var/item
+state of the post-battle script (`data/scripts/coop_story_rewards.inc`);
+objects it hides that are on the partner's screen are removed by the
+notice, as the next map load would. HELPER battles drive a scene the
+partner's map cannot rebuild. ORDINARY entries only show text, so the
+trainer flag decides as for a route trainer. Tables: `sCoopStoryBattles`
+and `sCoopStoryTrainers` (`src/coop/trainer_rewards.c`), mirrored by
+`HOENN_STORY_BATTLES` in `trainer_rules.rs` (a test parses the C tables
+and the flag/var headers).
+
+Inventory (from `data/maps/*/scripts.inc`; NI = trainerbattle_no_intro,
+CS = trainerbattle_single with a post-battle script):
+
+| Battle | Trainers | Map script | Mode | Post-battle script sets | Partner |
+|---|---|---|---|---|---|
+| Rival, Route 103 | MAY/BRENDAN_ROUTE_103_* | Route103 Rival (object) | NI | rival leaves; BIRCH_LAB_STATE 4, OLDALE_RIVAL_STATE 1, DEFEATED_RIVAL_ROUTE103, lab/Oldale rival shown | GRANT (flag clear, rival shown) |
+| Rival, Rustboro / Route 104 | MAY/BRENDAN_RUSTBORO_* | RustboroCity and Route104 (optional) | NI | DEFEATED_RIVAL_RUSTBORO or DEFEATED_RIVAL_ROUTE_104 | HELPER: one trainer ID for two battles; the partner cannot tell which |
+| Rival, Route 110 | MAY/BRENDAN_ROUTE_110_* | Route110 RivalTrigger (coord, ROUTE110_STATE 0) | NI | Dowsing Machine, rival bikes away, ROUTE110_STATE 1 | GRANT (var 0, rival shown) |
+| Rival, Route 119 | MAY/BRENDAN_ROUTE_119_* | Route119 RivalTrigger (coord, ROUTE119_STATE 0) | NI | HM Fly + RECEIVED_HM_FLY, ROUTE119_STATE 1, Scott scene (SCOTT_STATE +1) | GRANT (var 0, no Fly) |
+| Rival, Lilycove | MAY/BRENDAN_LILYCOVE_* | LilycoveCity Rival (optional) | NI | rival flies away, MET_RIVAL_LILYCOVE, rival's bedroom shown | GRANT (flag clear, rival shown; bedroom follows the partner's own rival) |
+| Wally, Mauville | WALLY_MAUVILLE | MauvilleCity Wally | NI (called) | Wally/uncle leave, DEFEATED_WALLY_MAUVILLE, Verdanturf Wally shown, first Wally call, Scott scene | GRANT (flag clear, Wally shown) |
+| Wally, Victory Road | WALLY_VR_1 | VictoryRoad_1F trigger (VICTORY_ROAD_1F_STATE 0) | NI after the legacy special (off) | DEFEATED_WALLY_VICTORY_ROAD, entrance Wally shown, state 1/2 | GRANT (var 0, flag clear); the partner's Wally waits at spot 1 |
+| Wally, Victory Road exit | WALLY_VR_2 (+VR_3..5 rematches) | VictoryRoad_1F ExitWally | single / rematch | text | ORDINARY / rematch rule |
+| Grunt, Petalburg Woods | GRUNT_PETALBURG_WOODS | PetalburgWoods (coord) | NI | grunt flees, researcher gives Great Ball, scene | HELPER |
+| Grunt, Rusturf Tunnel | GRUNT_RUSTURF_TUNNEL | RusturfTunnel | NI | Devon Goods, Briney and Peeko scene, Rustboro state | HELPER |
+| Grunts, Oceanic Museum | GRUNT_MUSEUM_1/2 | SlateportCity_OceanicMuseum_2F | NI | Archie scene, party healed, Devon Parts handed over | HELPER |
+| Grunt, Jagged Pass | GRUNT_JAGGED_PASS | JaggedPass MagmaHideoutGuard | NI | BEAT_MAGMA_GRUNT_JAGGED_PASS | GRANT (flag clear, guard shown) |
+| Grunts, Aqua Hideout | GRUNT_AQUA_HIDEOUT_1..4 | AquaHideout_1F/B1F/B2F | CS | text | ORDINARY (trainer flag) |
+| Matt | MATT | AquaHideout_B2F | CS | submarine leaves; TEAM_AQUA_ESCAPED_IN_SUBMARINE, Lilycove grunts hidden | GRANT (flag clear, grunts shown) |
+| Shelly, Weather Institute | SHELLY_WEATHER_INSTITUTE | Route119_WeatherInstitute_2F | CS | Aqua leaves, gift Castform (givemon), institute state | HELPER (gift Pokémon and scene) |
+| Shelly, Seafloor; Tabitha, Mt. Chimney and Magma Hideout | SHELLY_SEAFLOOR_CAVERN, TABITHA_MT_CHIMNEY, TABITHA_MAGMA_HIDEOUT | their maps | single | text | ORDINARY (trainer flag) |
+| Maxie, Mt. Chimney | MAXIE_MT_CHIMNEY | MtChimney Maxie | NI | Magma and Aqua leave; DEFEATED_EVIL_TEAM_MT_CHIMNEY, Cozmo and cookie lady flags | GRANT (flag clear, Magma shown) |
+| Maxie, Magma Hideout | MAXIE_MAGMA_HIDEOUT | MagmaHideout_4F | NI after Groudon awakens | Groudon gone, Slateport states, GROUDON_AWAKENED | HELPER (pre-battle awakening only on the requester) |
+| Archie, Seafloor Cavern | ARCHIE | SeafloorCavern_Room9 | NI | Kyogre awakens, weather, warp | HELPER |
+| Grunts, Space Center | GRUNT_SPACE_CENTER_2/5/6/7 | MossdeepCity_SpaceCenter_1F/2F | NI | stair guard and center vars inside the Maxie/Tabitha scene | HELPER |
+| Elite Four | SIDNEY, PHOEBE, GLACIA, DRAKE | EverGrandeCity_*Room | NI | DEFEATED_ELITE_4_*, door opens (Drake: fan counter) | GRANT (flag clear, ELITE_4_STATE = 1..4, i.e. in that room); the notice opens the door when the partner stands in it |
+| Champion | WALLACE | EverGrandeCity_ChampionsRoom | NI | rival and Birch scene, Hall of Fame, credits | HELPER (never run on the partner) |
+| Steven, Meteor Falls | STEVEN | MeteorFalls_StevensCave | NI | DEFEATED_METEOR_FALLS_STEVEN | GRANT (flag clear) |
+
+Out of scope: Steven's multi battle with Maxie and Tabitha at the Space
+Center (an NPC-partner battle), the Kanto early-rival mode (Hoenn's rivals
+use no-intro battles), two-trainer approaches, frontier brains and Kanto.
+
+Party size: gym leaders, Aqua/Magma admins and leaders, the Elite Four and
+the champion field their whole team; rivals, Wally, Steven and grunts keep
+the three cap and the second-mon rule. The Elite Four is a gauntlet: each
+side's staged mons keep their HP and PP after each battle (the party
+restore preserves the battle changes), exactly as vanilla carries the party
+from room to room.
+
+Wally: the legacy special (`Special_CoopBattleConsentBeginWally`) and its
+ledger commit stay off; the script's `trainerbattle_no_intro` goes through
+the shared co-op hook with local rewards. The server moved Wally from the
+ledger to `Local` with the story rule and keeps his exact Victory Road map.
+The ledger path remains for persisted `CommitPending` records; its tests
+opt back in per thread.
+
+Server: story battles are `TrainerRule::Story`; the requester is always
+allowed (its own story script reached the battle, and Elite Four flags are
+cleared on each run, so a lagging save must not refuse it); the partner
+participates only in a GRANT battle at its story point, read from the
+SaveBlock1 flags and vars of the last finalized save
+(`ValidatedSave::event_var`, `COOP_SAVE_LAYOUT_VARS_START`). The ROM stays
+authoritative for the local rewards.
+
+Follow-ups recorded while implementing A9:
+- A partner's story role on the server can lag its live ROM (last cloud
+  save); money and grants follow the ROM.
+- Story grants skip presentation-only parts (walk-outs, fly-away, Scott,
+  submarine, fades). The Route 119 Scott and Mauville Scott `SCOTT_STATE`
+  increments are applied.
+- The no-intro story grunts that were already eligible as route trainers
+  (Petalburg Woods, Rusturf, Museum, Space Center) are now HELPER: before
+  A9 their partner got the trainer flag and prize without the story state.
+- A requester loss in a scripted scene (a coord-triggered rival) leaves the
+  approaching object where it stopped; re-stepping on the trigger replays
+  the approach from there until the map reloads.
+
+### B8: In-game trade UI (game protocol 4)
+
+Entry point: ONLINE > "Trade with partner" (grouped only, between "Where is
+my partner?" and "Leave group"); no start menu change. Flow: party menu,
+checkpoint, `TradeOfferRequest` (0x0016), launcher creates the offer,
+`TradeOfferStatus` (0x011B) back; the partner's launcher polls
+`GET .../trade-offers/current` every 3 s and sends `TradeOfferReceived`
+(0x011A); the partner's ROM prompts when the field is free (45 s), picks a
+Pokémon, checkpoints and sends `TradeOfferDecision` (0x0017). Accepted
+offers issue the ledger entries; the existing `TradeCommit` delivery
+applies them. Mail and a player's last non-egg Pokémon are refused at
+selection; eggs are allowed (the server allows them).
+
+Server changes the UI forced:
+- The existing offer anchored the partner's slot and revision at creation,
+  but the partner picks after seeing the offer and checkpoints first. An
+  *open* offer (no `partner_slot`/`partner_expected_revision`) re-anchors
+  the accepting side to its current head, fence and chosen slot at accept
+  time; strict offers keep the old rules.
+- `own_pokemon` (personality, OT ID) on the offer and the accept: a slot
+  that no longer holds the picked Pokémon is `Conflict` (stale head).
+- Open offers read the initiator's slot at creation (mail refused before
+  the partner is asked) and keep a species/level/egg/nickname summary.
+- New `GET /v1/groups/{group_id}/trade-offers/current`; offer TTL 30 s ->
+  60 s to fit poll, prompt, party menu and checkpoint.
+
+Follow-ups recorded while implementing B8:
+- Nicknames cross as the 10 boxed bytes; 11-12 character nicknames of this
+  fork are shown truncated in the partner's prompt.
+- A cancel lost to a transport outage can race the partner's accept; the
+  trade then completes atomically through the ledger anyway.
+- After an accept the field stays locked until the `TradeCommit` arrives
+  (10 s cap); a commit later than that finds the Pokémon by personality,
+  so moving it to the PC in that window still rejects the commit.
+- The partner's Yes/No box is not closed when the requester withdraws; the
+  withdrawal is shown when it is answered.
+- Not verified with two real players yet.
+
+## C. Friendly battles (4.6), decided 2026-09-29
+
+- Singles and doubles, on the existing lockstep engine: each ROM stages the
+  peer's party as the opponent and takes the peer's actions instead of AI;
+  positions are mirrored so each player sees their own side at the bottom.
+- The challenger picks "levels as is" or "scale all to 50" per challenge;
+  the other player sees it before accepting (scaling uses a temporary copy
+  like the badge level cap).
+- The challenge sets a count of 1-6; each player picks that many Pokemon
+  when accepting.
+- No EXP, money or flags; parties are restored exactly.
+- Fix first: an accepted friendly offer leaves CONSENT_ACCEPTED with no
+  local deadline.
+- Order: after the in-game trade UI.
+
+### C1: Friendly battles as built (game protocol 5)
+
+Entry point: ONLINE > "Battle partner" (grouped only, after "Trade with
+partner"). The page sets Format (Singles/Doubles), Levels (As is/All
+Lv. 50) and Count (1-6; doubles needs 2); "Send" checks the local party
+holds that many usable Pokemon, then the challenger picks the team in order
+and waits. The partner sees format, levels and count in the Yes/No prompt;
+"Yes" is refused (with a message) when their party cannot field the count,
+otherwise they pick the same count in order. A 30 s offer and a 90 s
+start deadline apply; the deadline fix sets the local start deadline on
+every entry to CONSENT_ACCEPTED (friendly 90 s, trainer encounters their
+existing start budget), so an accepted offer that never starts cancels
+itself (friendly: "timed out") instead of locking the field.
+
+Wire (game protocol 4 -> 5, no new message types):
+- `TrainerBattleReserve` is 8 bytes for both kinds. Friendly bytes 5..8 are
+  the rules: format (1 singles, 2 doubles), level mode (0 as is, 1 fifty),
+  count (1-6, doubles >= 2). Trainer reserves carry zeroes there.
+- `BattleJoinOffer` is 25 bytes, `BattleManifest` 122 bytes; the last three
+  bytes of each are the same rules (zero for trainer battles). ROM, sidecar,
+  launcher and Android all validate them.
+- Max turn index 32 -> 120 (`COOP_BATTLE_MAX_TURN`, `BATTLE_MAX_TURN`,
+  server `MAX_BATTLE_TURNS`): a 6v6 needs more decision rounds than a
+  trainer battle.
+- Server: `friendly_rules` on the reserve request and the reservation view
+  (part of the idempotency fingerprint); friendly reservations have
+  `reward_mode = NONE`, no member roles, stage exactly `team_size` usable
+  records per member and never touch the outcome ledger.
+
+Battle model:
+- Canonical battler IDs on both ROMs: member 0 owns battlers 0/2, member 1
+  owns 1/3. Member 1's ROM draws with the player side at the opponent
+  positions (`isPlayerPrimary = FALSE`), so each player sees their own
+  Pokemon at the bottom while both engines run identical battler IDs,
+  speed-tie order and RNG.
+- Battle type TRAINER | SECRET_BASE (| DOUBLE), opponent
+  TRAINER_SECRET_BASE: with SECRET_BASE the own side is always
+  `gParties[B_TRAINER_0]` and the peer `gParties[B_TRAINER_1]`, item
+  effects like Knock Off/Trick treat both sides the same way, AI items are
+  off and the opponent's name/sprite come from the peer's lead OT. Terrain
+  is forced to BUILDING, battle style to SET, obedience to "obeys" while
+  the engine runs, AI data is not computed.
+- The teams are copies staged into `gParties`; the real party (all six
+  records, empties included) is saved in the plan and copied back
+  byte-exactly at the end. Lv. 50 rewrites the copies' level, EXP (from the
+  growth table) and stats and scales current HP; species do not change.
+  No EXP, money, items or flags change.
+- Actions: each member sends its move/switch/forfeit choices per decision
+  round (doubles: two 4-byte actions, one per own battler, targets as
+  canonical battler IDs). The opponent controller replays the peer's
+  choices instead of AI. A forced switch after a faint is its own lockstep
+  round. Run asks "Forfeit the match?"; a forfeit is a lockstep action and
+  ends the battle as a loss for the forfeiter on both ROMs.
+- Digest: a friendly battle hashes both parties in member order, battlers
+  by canonical ID and position, side state in member order and the outcome
+  from member 0's view, so both ROMs hash the same bytes. The terminal hash
+  is also reported for a KO in the middle of a turn (this also fixes
+  trainer co-op, which only reported at end of turn).
+- Endings: WON/LOST/DRAW from the battle; a disconnect, desync or local
+  fault ends as "no contest" and restores the party the same way.
+
+Known gaps:
+- Determinism of the full engine across two real ROMs (mirrored draw,
+  every move effect in doubles) is verified by unit tests on one ROM with
+  both member views, not yet by two real players.
+- Items cannot be used in friendly battles (Bag is refused; see C2 for co-op
+  trainer battles).
+- The launcher's generated `dist/bridge_manifest.json`, the Android asset
+  manifest and `bridge/generated_addresses.lua` need regenerating for
+  protocol 5.
+
+### C2: Bag in co-op trainer battles
+
+Co-op trainer battles open the Bag; friendly battles keep refusing it (the
+selection script, `CoopBattleItems_IsBagOpen()` is FALSE, and an item action
+in a friendly bundle or submission is rejected).
+
+- Action (no game-protocol bump): `COOP_BATTLE_ACTION_ITEM = 7` in the same
+  4-byte action: kind, item ID (u16 LE), then the acting member's own staged
+  party slot (0-2) in the low nibble and, for a one-move PP item (Ether), the
+  move slot in bits 4-5. Only restore-HP, cure-status, heal-and-cure, X items,
+  Dire Hit, Guard Spec, revive and PP items decode; balls, escape items, the
+  Poke Flute, the e-Reader berry and items without a battle use never do. The
+  server, sidecar and launcher treat actions as opaque bytes and need no
+  change.
+- Choosing an item applies and removes nothing. The party menu records the
+  chosen Pokemon; when the choice is confirmed the ROM resolves its slot in
+  its own party and sends the action. On the resolved turn both ROMs run the
+  vanilla `HandleAction_UseItem` and item battle script with the same
+  battler, item, party slot and move slot (the partner controller replays
+  the peer's item into its `OPENBAG` step). Items, switches and ball throws
+  are listed in canonical battler order, and the move list draws its Quick
+  Claw/Draw rolls in that order, so both ROMs order them identically.
+- The X item friendship bonus is skipped while the engine runs (it reads the
+  local map section). Multi-battle item scripts now only treat the partner
+  battler as the target when both battlers share a party (vanilla compared
+  party indexes from two different parties, and a Revive could send the
+  revived Pokemon into the partner's empty position). The peer's item is
+  announced as the partner's, not as "You used".
+- Bag: the acting ROM removes the item (if consumed: not flutes or key
+  items) when `HandleAction_UseItem` runs it, once, and records it (six item
+  kinds per battle; a seventh kind is refused at selection). A completed
+  battle keeps the removals, as its party keeps HP/PP/status like damage; an
+  abort, desync or no contest restores the pre-battle party and returns the
+  recorded items. The partner's ROM never touches its own Bag.
+- Refused at selection, before anything is sent, with a message: the items
+  above, a target in the partner's party (a Revive on its fainted Pokemon
+  too), and everything the vanilla trainer-battle Bag refuses (no-bag var,
+  Sky Drop, embargo, "won't have any effect").
+
+- Trainer digest: a two-view test showed that the co-op trainer digest was
+  not canonical (it hashed each ROM's own position byte for the members, the
+  trainer-indexed party state and the battler-indexed arrays in local order),
+  so identical states hashed differently on the two ROMs. It now hashes the
+  members' canonical positions, party state in member order, battler arrays,
+  absent flags and fainted hit markers in canonical battler order, and leaves
+  out `moveTarget` (battler IDs; an unset 0 names a different member on each
+  ROM). Battler references inside volatiles, Future Sight/Wish and the
+  Z-Move/Dynamax structs were still hashed as stored (fixed in C3).
+- Tests: the recorded partner controller (test runner) now replays a
+  partner's bag item like the recorded player's.
+
+Known gaps: the item effects are checked by unit tests of both member views
+(the effect commands and the digest) and by multi battles with the acting
+member in either seat, not yet by two real ROMs; the Bag UI refusals are not
+driven by a test. (The peer's item message named the partner as the in-game
+partner trainer; C3 names the other player.)
+
+### C3: Canonical battler references
+
+In a co-op trainer battle each ROM keeps its own member at battler 0 and
+position PLAYER_LEFT, so member 1's ROM numbers the two member battlers the
+other way round (`CoopBattleRuntime_CanonicalBattler` swaps local 0 and 2
+there; it is the identity in vanilla battles, friendly battles and on member
+0's ROM, and it is its own inverse). Friendly battles already number every
+battler canonically on both ROMs, so battler references and battler-order
+loops agree there; nothing in C3 changes them.
+
+Digest (trainer battles only; no protocol change, same 32-byte digest):
+- Stored battler IDs hash as canonical IDs. "Battler + 1" fields keep 0 as
+  unset: Leech Seed seeder, Infatuation target, Lock-On/Mind Reader target
+  (`battlerWithSureHit`), Sky Drop target, Instruct/Me First backup target
+  (`backUpTarget`). Raw IDs whose unset 0 would read as local battler 0 hash
+  only while their flag is set (0 otherwise): `wrappedBy` (wrapped), Mean
+  Look/Block/Jaw Lock `battlerPreventingEscape` (escapePrevention),
+  `octolockedBy` (octolock), `stickySyrupedBy` (syrupBomb), Counter/Mirror
+  Coat `physicalBattlerId`/`specialBattlerId` (their damage, stored +1),
+  Future Sight/Doom Desire attacker (counter), Follow Me target (its timer),
+  Instruct's `lastMoveTarget` (the battler has a last move). The Sticky Web
+  setter keeps 0xFF as unset. `changedStatsBattlerId` is per-action scratch
+  cleared after every action with no flag, so it is left out.
+- Battler masks are converted bit by bit: Revenge/Avalanche
+  `revengeDoubled`, Z-Move `healReplacement`.
+- Per-battler arrays hash in canonical order: each battler's `targetsDone`,
+  Z-Move base moves, Dynamax turns and base moves. Z-Move `viable`,
+  `viewing` and `possibleZMoves` are this ROM's own move-selection UI and are
+  left out.
+- No battler reference: Encore/Disable (moves and timers), Yawn, Perish
+  Song, Taunt, Torment, Curse, Substitute, Wish (the wisher's own party
+  slot, hashed in canonical battler order already).
+
+Engine (behaviour, co-op trainer battles only; the identity elsewhere):
+equal-speed ties and anything that orders or picks battlers by ID or
+position went by the local numbering, so the two ROMs resolved the same turn
+differently (other RNG draws per battler, other faint and switch-in order).
+Now canonical:
+- `SortBattlersBySpeed` breaks ties by canonical battler (end of turn: Future
+  Sight, Wish, Leech Seed, Perish Song, Yawn, residual damage, Emergency
+  Exit; switch-in abilities and hazards; `sortbattlers` scripts; Pickpocket,
+  Magician, Eject Pack, gimmick and Focus Punch order);
+  `SortBattlersByRawSpeed` starts from canonical order (Magic Bounce, Eject
+  Button/Red Card, Eject Pack/White Herb after stat changes).
+- Spread moves: accuracy, damage/critical rolls and the next-target walk
+  (secondary effects) in canonical order; the first target of a
+  foes-and-ally move; per-target canceler loops.
+- A foe's picks among the members: random targets (Outrage, Thrash, Petal
+  Dance, called moves), the default opposing target, `GetTargetBySlot`,
+  Trace's random target, Imposter's diagonal, Pickup's random battler,
+  Forewarn's tie list, Mirror Move's random pick.
+- Replacement order after simultaneous faints (`HandleFaintedMonActions`,
+  `openpartyscreen`/`switchineffects` fainted-multiple), Custap/Quick
+  Claw/Quick Draw activation, Dancer ties, Symbiosis, Shell Trap, item
+  triggers after a move, G-Max Sandblast/Centiferno wrap rolls, Shell Side
+  Arm tie rolls, and the opponent AI's doubles target scoring and tie pick.
+
+Name: the partner in co-op trainer battle messages ("sent out", "withdrew",
+"used <item>", any attacker-trainer message) is the other player's name, the
+OT name of the lead Pokemon it staged (as friendly battles name the
+opponent; at most 7 characters + EOS, read from the staged party, so no new
+RAM), without a trainer class. The partner's back sprite is the Brendan/May
+player back pic of that lead's OT gender instead of Steven's. Vanilla Steven
+battles are unchanged.
+
+Tests (`test/coop/battle_canonical.c`, both member views on one ROM): Leech
+Seed, Encore/Disable, Attract, Future Sight, Wish, Yawn, Perish Song,
+Wrap/Mean Look/Octolock/Syrup Bomb, Lock-On/Sky Drop, Counter sources and
+other references, a Z-Move and a Dynamax state, each from member-0-owned,
+member-1-owned and foe attackers, give equal digests on both views (and a
+different digest when the other member is the attacker); speed ties, random
+targets, spread-move targets and target slots are canonical; an end of turn
+with two Future Sights, a Doom Desire, three Leech Seeds, a Wish and two
+Yawns landing together runs the same effects in the same order on both
+views and ends with equal digests; the partner's name is in the message
+buffer.
+
+Known gaps (only a two-ROM live battle can confirm): the rest of the opponent
+AI (switching, item and per-target scoring internals) was not audited for
+battler-order RNG; the Mega/Z ring check in multi battles reads each ROM's
+own bag for the local battler only (the co-op engine refuses gimmick
+selection, but an opponent's usable gimmick is unaffected); critical-hit
+evolution counters count by party index of the wrong trainer for the
+partner (local, not hashed); a Z-Move or Dynamax cannot be chosen in co-op
+(gimmick selection fails the engine; Dynamax is disabled by config), so
+those digest cases are state-level only; message-only order differences
+remain.

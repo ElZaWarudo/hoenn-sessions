@@ -66,6 +66,8 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
     }
     private volatile BridgeConnection connection;
     private volatile boolean cooperative;
+    /** A hoenn-sessions://join/ link waiting for a running game and the player's consent. */
+    private String pendingJoinLink;
     private long lastSeenSaveSerial,lastAcceptedSaveSerial,lastCloudRevision;
     private boolean savePending;
     private long nextEvidenceAt;
@@ -293,6 +295,26 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         controller.clear();
         synchronized(NativeCore.class){try{if(connection!=null)connection.close();}finally{connection=null;NativeCore.close();cooperative=false;}}
         NativeSession.acknowledgeStopped();
+        captureJoinLink(getIntent());
+    }
+    private void captureJoinLink(Intent intent){
+        android.net.Uri data=intent!=null && Intent.ACTION_VIEW.equals(intent.getAction())?intent.getData():null;
+        if(data==null || !"hoenn-sessions".equals(data.getScheme()) || !"join".equals(data.getHost()))return;
+        pendingJoinLink=data.toString();
+        offerPendingJoin();
+    }
+    private void offerPendingJoin(){
+        String link=pendingJoinLink;if(link==null)return;
+        if(connection==null){showStatus(getString(R.string.join_after_start));return;}
+        pendingJoinLink=null;
+        String code=android.net.Uri.parse(link).getLastPathSegment();
+        new AlertDialog.Builder(this).setTitle(R.string.join_partner_title)
+            .setMessage(getString(R.string.join_partner_message,code==null?"":code.toUpperCase(java.util.Locale.ROOT)))
+            .setNegativeButton(R.string.cancel,null)
+            .setPositiveButton(R.string.join_partner_confirm,(dialog,which)->{
+                // Rust validates the code; a false return means it was malformed or no session runs.
+                if(!NativeSession.redeemPairingCode(link))showStatus(getString(R.string.join_unavailable));
+            }).show();
     }
     private void pollSession() throws Exception {
         String raw;while((raw=NativeSession.poll())!=null){JSONObject event=new JSONObject(raw);String type=event.getString("type");
@@ -308,6 +330,10 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
                 long[] evidence=NativeCore.saveEvidence();lastSeenSaveSerial=evidence!=null&&evidence.length>0?evidence[0]:0;lastAcceptedSaveSerial=lastSeenSaveSerial;savePending=false;
                 setConnection(getString(R.string.connection_online),0xFF80CBC4);setCloudRevision(lastCloudRevision);
                 showStatus(getString(R.string.session_acquired,event.getLong("epoch"),event.getLong("revision"),event.getBoolean("signature_verified")?getString(R.string.signature_verified):getString(R.string.first_save_pending)));
+                offerPendingJoin();
+            }else if(type.equals("pairing_redeemed")){
+                String result=event.getString("result");
+                showStatus(getString(result.equals("joined")?R.string.join_joined:result.equals("refused")?R.string.join_refused:R.string.join_unavailable));
             }else if(type.equals("stop")){
                 closeCore();session.markReady();
             }else if(type.equals("saved")){
@@ -482,7 +508,7 @@ public final class MainActivity extends Activity implements GameRenderer.Host {
         setConnection(getString(R.string.connection_reconnecting),0xFFFFD180);
         return getString(R.string.retry_countdown,reason,waitMs/1000,retry);
     }
-    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String result=ApkUpdate.handleInstallResult(this,intent);if(result!=null)showStatus(result);}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String result=ApkUpdate.handleInstallResult(this,intent);if(result!=null)showStatus(result);captureJoinLink(intent);}
     private final Runnable resumeRetry=new Runnable(){@Override public void run(){
         if(session.isDestroyed()||!session.isResumed()||savedAccount==null)return;
         if(NativeSession.isActive()||session.isStarting()){hostHandler.postDelayed(this,500);return;}

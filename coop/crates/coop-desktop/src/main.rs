@@ -51,10 +51,18 @@ fn run_windows() -> std::process::ExitCode {
     if has_saved_account && matches!(bootstrap, BootstrapInput::Clean) {
         app.resume_saved_session();
     }
+    // The bootstrapper forwards `hoenn-sessions://join/` links through a small
+    // inbox file so a link can also reach an already-running window.
+    if let Some(inbox) = std::env::var_os("HOENN_SESSIONS_JOIN_INBOX") {
+        app.set_join_inbox(std::path::PathBuf::from(inbox));
+    }
+    if let Some(link) = std::env::args().nth(1) {
+        let _ = app.prefill_join(&link);
+    }
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size([600.0, 420.0])
-            .with_min_inner_size([600.0, 420.0]),
+            .with_inner_size([600.0, 540.0])
+            .with_min_inner_size([600.0, 540.0]),
         ..Default::default()
     };
     let result = eframe::run_native(

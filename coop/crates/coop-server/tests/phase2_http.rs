@@ -1650,6 +1650,27 @@ async fn phase2_binary_http_flow(address: SocketAddr) -> TestResult<()> {
     .await?;
     expect_status(&response, 401);
 
+    // The outcome ledger has no open entry for a fresh character.
+    let response = request(
+        address,
+        "GET",
+        &format!("/v1/characters/{}/ledger/open", lease.character_id),
+        &fence_headers(&access, &lease),
+        &[],
+    )
+    .await?;
+    expect_status(&response, 404);
+    expect_no_store(&response);
+    let response = request(
+        address,
+        "GET",
+        &format!("/v1/characters/{}/ledger/open", lease.character_id),
+        &auth_headers(&access),
+        &[],
+    )
+    .await?;
+    assert_ne!(response.status, 200);
+
     let sav = valid_character_sav();
     let pending = b"[]".to_vec();
     let sav_file = SnapshotFile::from_bytes(ArtifactIdentity::CharacterSav, &sav)?;

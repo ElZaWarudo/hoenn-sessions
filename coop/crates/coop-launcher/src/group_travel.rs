@@ -11,8 +11,9 @@ use coop_cloud::{
     StoryTravelRecoveryResolutionView, StoryTravelRecoveryView,
 };
 use coop_protocol::{
-    GroupTravelClientKind, GroupTravelClientRecord, GroupTravelDeparture, GroupTravelReason,
-    GroupTravelResult, GroupTravelRoute, GroupTravelServerKind, GroupTravelServerRecord,
+    GroupTravelClientKind, GroupTravelClientRecord, GroupTravelDeparture, GroupTravelEndpoint,
+    GroupTravelReason, GroupTravelResult, GroupTravelRoute, GroupTravelServerKind,
+    GroupTravelServerRecord,
 };
 use reqwest::{Method, StatusCode, Url};
 use thiserror::Error;
@@ -353,6 +354,7 @@ struct PendingCreate {
     group_id: GroupId,
     route: GroupTravelRoute,
     departure: GroupTravelDeparture,
+    endpoint: Option<GroupTravelEndpoint>,
     request_id: u32,
     request: GroupTravelProposalRequest,
     cancel_requested: bool,
@@ -374,6 +376,7 @@ struct TrackedProposal {
     proposal_id: GroupTravelProposalId,
     route: GroupTravelRoute,
     departure: GroupTravelDeparture,
+    endpoint: Option<GroupTravelEndpoint>,
     request_id: u32,
     role: Role,
     status: GroupTravelProposalStatus,
@@ -410,6 +413,7 @@ struct TerminalReplay {
     generation: u32,
     route: GroupTravelRoute,
     departure: GroupTravelDeparture,
+    endpoint: Option<GroupTravelEndpoint>,
     request_id: u32,
     proposal_id: [u8; 16],
     record: GroupTravelServerRecord,
@@ -871,9 +875,10 @@ impl<'a> GroupTravelOwner<'a> {
             if pending.record.route == r.route
                 && pending.record.departure == r.departure
                 && pending.record.request_id == r.request_id
+                && pending.record.endpoint == r.endpoint
             {
                 self.queue_outbound(
-                    requesting_record(r.route, r.departure, r.request_id),
+                    requesting_record(r.route, r.departure, r.request_id, r.endpoint),
                     DeliveryDisposition::Retain,
                 );
             } else {
@@ -885,9 +890,13 @@ impl<'a> GroupTravelOwner<'a> {
             return Ok(());
         }
         if let Some(p) = &self.pending_create {
-            if p.route == r.route && p.departure == r.departure && p.request_id == r.request_id {
+            if p.route == r.route
+                && p.departure == r.departure
+                && p.request_id == r.request_id
+                && p.endpoint == r.endpoint
+            {
                 self.queue_outbound(
-                    requesting_record(r.route, r.departure, r.request_id),
+                    requesting_record(r.route, r.departure, r.request_id, r.endpoint),
                     DeliveryDisposition::Retain,
                 );
             } else {
@@ -903,6 +912,7 @@ impl<'a> GroupTravelOwner<'a> {
                 && t.route == r.route
                 && t.departure == r.departure
                 && t.request_id == r.request_id
+                && t.endpoint == r.endpoint
             {
                 self.queue_for_tracked_state();
             } else {
@@ -920,16 +930,17 @@ impl<'a> GroupTravelOwner<'a> {
                 cancel_requested: false,
             });
             self.queue_outbound(
-                requesting_record(r.route, r.departure, r.request_id),
+                requesting_record(r.route, r.departure, r.request_id, r.endpoint),
                 DeliveryDisposition::Retain,
             );
             self.next_poll = tokio::time::Instant::now();
             return Ok(());
         };
-        let request = GroupTravelProposalRequest::new_with_departure(
+        let request = GroupTravelProposalRequest::new_with_departure_and_endpoint(
             fence,
             route_id(r.route),
             r.departure,
+            r.endpoint,
             new_idempotency_key()?,
         )
         .map_err(|_| SessionError::Realtime)?;
@@ -937,13 +948,14 @@ impl<'a> GroupTravelOwner<'a> {
             group_id,
             route: r.route,
             departure: r.departure,
+            endpoint: r.endpoint,
             request_id: r.request_id,
             request,
             cancel_requested: false,
         });
         self.next_poll = tokio::time::Instant::now();
         self.queue_outbound(
-            requesting_record(r.route, r.departure, r.request_id),
+            requesting_record(r.route, r.departure, r.request_id, r.endpoint),
             DeliveryDisposition::Retain,
         );
         Ok(())
@@ -983,6 +995,7 @@ impl<'a> GroupTravelOwner<'a> {
             && pending.record.route == r.route
             && pending.record.departure == r.departure
             && pending.record.request_id == r.request_id
+            && pending.record.endpoint == r.endpoint
         {
             pending.cancel_requested = true;
             return Ok(());
@@ -991,6 +1004,7 @@ impl<'a> GroupTravelOwner<'a> {
             && p.route == r.route
             && p.departure == r.departure
             && p.request_id == r.request_id
+            && p.endpoint == r.endpoint
         {
             p.cancel_requested = true;
             return Ok(());
@@ -1167,6 +1181,7 @@ impl<'a> GroupTravelOwner<'a> {
                             live.group_id == pending.group_id
                                 && live.route == pending.route
                                 && live.departure == pending.departure
+                                && live.endpoint == pending.endpoint
                                 && live.request_id == pending.request_id
                                 && live.request.idempotency_key == pending.request.idempotency_key
                                 && live.cancel_requested
@@ -1196,6 +1211,7 @@ impl<'a> GroupTravelOwner<'a> {
                                     kind: GroupTravelClientKind::Request,
                                     route: pending.route,
                                     departure: pending.departure,
+                                    endpoint: pending.endpoint,
                                     request_id: pending.request_id,
                                     proposal_id: [0; 16],
                                     result: GroupTravelResult::None,
@@ -1416,6 +1432,7 @@ impl<'a> GroupTravelOwner<'a> {
             || v.status != GroupTravelProposalStatus::Pending
             || route_from_id(v.route_id.as_str()) != Some(p.route)
             || v.departure != p.departure
+            || v.endpoint != p.endpoint
         {
             return Err(SessionError::Realtime);
         }
@@ -1424,6 +1441,7 @@ impl<'a> GroupTravelOwner<'a> {
             proposal_id: v.proposal_id,
             route: p.route,
             departure: p.departure,
+            endpoint: p.endpoint,
             request_id: p.request_id,
             role: Role::Requester,
             status: v.status,
@@ -1474,6 +1492,7 @@ impl<'a> GroupTravelOwner<'a> {
                 proposal_id: v.proposal_id,
                 route,
                 departure: v.departure,
+                endpoint: v.endpoint,
                 request_id: request_id_from_proposal(v.proposal_id),
                 role,
                 status: v.status,
@@ -1495,6 +1514,7 @@ impl<'a> GroupTravelOwner<'a> {
             || t.proposal_id != v.proposal_id
             || t.route != route
             || t.departure != v.departure
+            || t.endpoint != v.endpoint
             || t.role != role
         {
             return Err(SessionError::Realtime);
@@ -1564,7 +1584,7 @@ impl<'a> GroupTravelOwner<'a> {
             _ => return,
         };
         let record = if kind == GroupTravelServerKind::Requesting {
-            let mut record = requesting_record(t.route, t.departure, t.request_id);
+            let mut record = requesting_record(t.route, t.departure, t.request_id, t.endpoint);
             record.remaining_seconds = remaining_vote_seconds(t);
             record
         } else {
@@ -1611,6 +1631,7 @@ impl<'a> GroupTravelOwner<'a> {
             generation,
             route: record.route,
             departure: record.departure,
+            endpoint: record.endpoint,
             request_id: record.request_id,
             proposal_id: record.proposal_id,
             record,
@@ -1631,7 +1652,10 @@ impl<'a> GroupTravelOwner<'a> {
                 && t.proposal_id == [0; 16]
                 && t.generation == generation
                 && t.request_id == r.request_id;
-            (t.route == r.route && t.departure == r.departure && (exact_proposal || scoped_zero))
+            (t.route == r.route
+                && t.departure == r.departure
+                && t.endpoint == r.endpoint
+                && (exact_proposal || scoped_zero))
                 .then_some((t.record, t.disposition))
         })
     }
@@ -1639,6 +1663,7 @@ impl<'a> GroupTravelOwner<'a> {
 fn record_matches(t: &TrackedProposal, r: GroupTravelClientRecord, zero: bool) -> bool {
     t.route == r.route
         && t.departure == r.departure
+        && t.endpoint == r.endpoint
         && t.request_id == r.request_id
         && (proposal_bytes(t.proposal_id) == r.proposal_id || (zero && r.proposal_id == [0; 16]))
 }
@@ -1851,6 +1876,15 @@ fn validate_view(
     if !v.departure.matches_route(route) {
         return Err(SessionError::Realtime);
     }
+    if route.is_dynamic() != v.endpoint.is_some() {
+        return Err(SessionError::Realtime);
+    }
+    if let Some(e) = v.endpoint
+        && !(zone_is_map(&v.source, e.source_map_group, e.source_map_number)
+            && zone_is_map(&v.destination, e.target_map_group, e.target_map_number))
+    {
+        return Err(SessionError::Realtime);
+    }
     if v.api_version != ApiVersion::V1
         || v.group_id != g
         || (v.requester_character_id != f.character_id
@@ -1867,7 +1901,18 @@ fn validate_view(
     {
         return Err(SessionError::Realtime);
     }
+    if let Some(c) = &v.commit
+        && (c.endpoint != v.endpoint || c.destination != v.destination)
+    {
+        return Err(SessionError::Realtime);
+    }
     Ok(())
+}
+/// Whether a cloud zone names the numeric ROM map carried by a dynamic endpoint.
+fn zone_is_map(zone: &coop_protocol::WorldZone, group: u8, number: u8) -> bool {
+    zone.map_entry().is_ok_and(|entry| {
+        entry.map_group == u16::from(group) && entry.map_number == u16::from(number)
+    })
 }
 fn new_idempotency_key() -> Result<IdempotencyKey, SessionError> {
     IdempotencyKey::new(uuid::Uuid::new_v4()).map_err(|_| SessionError::Realtime)
@@ -1897,6 +1942,7 @@ fn requesting_record(
     route: GroupTravelRoute,
     departure: GroupTravelDeparture,
     request_id: u32,
+    endpoint: Option<GroupTravelEndpoint>,
 ) -> GroupTravelServerRecord {
     GroupTravelServerRecord {
         kind: GroupTravelServerKind::Requesting,
@@ -1907,6 +1953,7 @@ fn requesting_record(
         result: GroupTravelResult::None,
         reason: GroupTravelReason::None,
         remaining_seconds: 0,
+        endpoint,
     }
 }
 fn server_record(
@@ -1924,6 +1971,7 @@ fn server_record(
         result,
         reason,
         remaining_seconds: 0,
+        endpoint: t.endpoint,
     }
 }
 fn abort_before_create(
@@ -1939,6 +1987,7 @@ fn abort_before_create(
         result: GroupTravelResult::None,
         reason,
         remaining_seconds: 0,
+        endpoint: r.endpoint,
     }
 }
 const fn is_story_route(route: GroupTravelRoute) -> bool {
@@ -1952,6 +2001,8 @@ const fn is_story_route(route: GroupTravelRoute) -> bool {
 
 const fn route_id(r: GroupTravelRoute) -> &'static str {
     match r {
+        GroupTravelRoute::Dig => "HOENN:DIG",
+        GroupTravelRoute::EscapeRope => "HOENN:ESCAPE_ROPE",
         GroupTravelRoute::TrainOriginal => "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
         GroupTravelRoute::TrainLater => "JOHTO:GOLDENROD_KANTO_LATER_TRAIN",
         GroupTravelRoute::FerryOriginal => "JOHTO:OLIVINE_KANTO_ORIGINAL_FERRY",
@@ -2124,6 +2175,8 @@ const fn route_id(r: GroupTravelRoute) -> &'static str {
 }
 fn route_from_id(id: &str) -> Option<GroupTravelRoute> {
     [
+        GroupTravelRoute::Dig,
+        GroupTravelRoute::EscapeRope,
         GroupTravelRoute::TrainOriginal,
         GroupTravelRoute::TrainLater,
         GroupTravelRoute::FerryOriginal,
@@ -2329,6 +2382,7 @@ mod tests {
             departure: GroupTravelDeparture::Train,
             source: WorldZone::new(RegionId::Johto, "GOLDENROD_CITY", 1).unwrap(),
             destination: d.clone(),
+            endpoint: None,
             expected_group_zone_revision: 4,
             expected_members: [
                 GroupMemberView {
@@ -2356,6 +2410,7 @@ mod tests {
                     },
                 ],
                 destination: d,
+                endpoint: None,
             }),
             applied_by: [false, false],
             scene_marked_by: [false, false],
@@ -2379,6 +2434,7 @@ mod tests {
             } else {
                 GroupTravelReason::None
             },
+            endpoint: None,
         }
     }
     fn api() -> ReqwestCloudApi {
@@ -2393,6 +2449,7 @@ mod tests {
             proposal_id: pid(),
             route: GroupTravelRoute::TrainLater,
             departure: GroupTravelDeparture::Train,
+            endpoint: None,
             request_id: 7,
             role,
             status,
@@ -2755,6 +2812,7 @@ mod tests {
             group_id: gid(),
             route: GroupTravelRoute::TrainLater,
             departure: GroupTravelDeparture::Train,
+            endpoint: None,
             request_id: 7,
             request: request.clone(),
             cancel_requested: false,
@@ -2871,6 +2929,7 @@ mod tests {
                 route: GroupTravelRoute::TrainLater,
                 departure: GroupTravelDeparture::Train,
                 request_id: 7,
+                endpoint: None,
                 request,
                 cancel_requested: false,
             }),
@@ -2961,6 +3020,7 @@ mod tests {
             route: GroupTravelRoute::TrainLater,
             departure: GroupTravelDeparture::Train,
             request_id: 7,
+            endpoint: None,
             request: create_request,
             cancel_requested: false,
         };
@@ -3094,6 +3154,7 @@ mod tests {
             proposal_id: proposal_bytes(pid()),
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
+            endpoint: None,
         };
         owner.handle(f, 1, marker).unwrap();
         assert!(owner.tracked.as_ref().unwrap().pending_marker);
@@ -3170,6 +3231,7 @@ mod tests {
                 proposal_id: proposal_bytes(pid()),
                 result: GroupTravelResult::None,
                 reason: GroupTravelReason::None,
+                endpoint: None,
             };
             owner.handle(f, 1, marker).unwrap();
             let mut accepted = awaiting.clone();
@@ -3229,6 +3291,7 @@ mod tests {
             proposal_id: proposal_bytes(pid()),
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
+            endpoint: None,
         };
         owner.handle(marker_fence, 1, complete).unwrap();
         let token = owner.story_checkpoint_token(marker_fence).unwrap();
@@ -3325,6 +3388,7 @@ mod tests {
                     proposal_id: proposal_bytes(pid()),
                     result: GroupTravelResult::None,
                     reason: GroupTravelReason::None,
+                    endpoint: None,
                 },
             )
             .unwrap();
@@ -3350,6 +3414,7 @@ mod tests {
             proposal_id: [0; 16],
             result: GroupTravelResult::None,
             reason: GroupTravelReason::None,
+            endpoint: None,
         };
         owner.handle(fence(cid(1)), 1, record).unwrap();
         assert_eq!(
@@ -3358,6 +3423,78 @@ mod tests {
         );
         assert!(owner.pending_request.is_some());
         assert!(owner.tracked.is_none());
+    }
+
+    #[test]
+    fn dynamic_view_must_agree_with_endpoint_and_commit() {
+        let cave = WorldZone::new(RegionId::Hoenn, "GRANITE_CAVE_1F", 1).unwrap();
+        let exit = WorldZone::new(RegionId::Hoenn, "ROUTE106", 1).unwrap();
+        let (c, r) = (cave.map_entry().unwrap(), exit.map_entry().unwrap());
+        let endpoint = GroupTravelEndpoint::new(
+            u8::try_from(c.map_group).unwrap(),
+            u8::try_from(c.map_number).unwrap(),
+            u8::try_from(r.map_group).unwrap(),
+            u8::try_from(r.map_number).unwrap(),
+            48,
+            17,
+        );
+        let mut view = proposal(GroupTravelProposalStatus::Committed);
+        view.route_id = RouteId::new(route_id(GroupTravelRoute::EscapeRope)).unwrap();
+        view.departure = GroupTravelDeparture::EscapeRope;
+        view.source = cave;
+        view.destination = exit.clone();
+        view.endpoint = Some(endpoint);
+        let commit = view.commit.as_mut().unwrap();
+        commit.destination = exit;
+        commit.endpoint = Some(endpoint);
+        let f = fence(cid(1));
+        assert!(validate_view(&view, gid(), f).is_ok());
+
+        let mut wrong_destination = view.clone();
+        wrong_destination.destination =
+            WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).unwrap();
+        assert!(validate_view(&wrong_destination, gid(), f).is_err());
+
+        let mut wrong_commit = view.clone();
+        wrong_commit.commit.as_mut().unwrap().endpoint = Some(GroupTravelEndpoint {
+            target_x: 47,
+            ..endpoint
+        });
+        assert!(validate_view(&wrong_commit, gid(), f).is_err());
+
+        let mut commit_elsewhere = view.clone();
+        commit_elsewhere.commit.as_mut().unwrap().destination =
+            WorldZone::new(RegionId::Hoenn, "LITTLEROOT_TOWN", 1).unwrap();
+        assert!(validate_view(&commit_elsewhere, gid(), f).is_err());
+
+        let mut missing = view;
+        missing.endpoint = None;
+        assert!(validate_view(&missing, gid(), f).is_err());
+    }
+
+    #[test]
+    fn dynamic_endpoint_is_preserved_in_pending_and_abort_records() {
+        let endpoint = GroupTravelEndpoint::new(0, 9, 0, 10, 4, 6);
+        let record = GroupTravelClientRecord {
+            kind: GroupTravelClientKind::Request,
+            route: GroupTravelRoute::Dig,
+            departure: GroupTravelDeparture::Dig,
+            request_id: 7,
+            proposal_id: [0; 16],
+            result: GroupTravelResult::None,
+            reason: GroupTravelReason::None,
+            endpoint: Some(endpoint),
+        };
+        let mut owner = GroupTravelOwner::default();
+        owner.handle(fence(cid(1)), 1, record).unwrap();
+        assert_eq!(owner.outbound.unwrap().record.endpoint, Some(endpoint));
+
+        let mut changed = record;
+        changed.endpoint = Some(GroupTravelEndpoint::new(0, 9, 0, 11, 4, 6));
+        owner.handle(fence(cid(1)), 1, changed).unwrap();
+        let abort = owner.outbound.unwrap().record;
+        assert_eq!(abort.kind, GroupTravelServerKind::Abort);
+        assert_eq!(abort.endpoint, changed.endpoint);
     }
 
     #[test]

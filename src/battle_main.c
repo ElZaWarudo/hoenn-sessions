@@ -1,8 +1,10 @@
 #include "global.h"
 #include "battle_caps.h"
 #include "battle.h"
+#include "coop/battle_items.h"
 #include "coop/battle_runtime.h"
 #include "coop/net_bridge.h"
+#include "coop/trainer_rewards.h"
 #include "battle_anim.h"
 #include "battle_ai_main.h"
 #include "battle_ai_record.h"
@@ -76,6 +78,7 @@
 #include "constants/items.h"
 #include "constants/moves.h"
 #include "constants/party_menu.h"
+#include "constants/region_map_sections.h"
 #include "constants/rgb.h"
 #include "constants/songs.h"
 #include "constants/trainer_slide.h"
@@ -133,6 +136,7 @@ static void HandleEndTurn_BattleLost(void);
 static void HandleEndTurn_RanFromBattle(void);
 static void HandleEndTurn_MonFled(void);
 static void HandleEndTurn_FinishBattle(void);
+static void HandleCoopTerminalReport(void);
 static u32 Crc32B (const u8 *data, u32 size);
 static u32 GeneratePartyHash(const struct Trainer *trainer, u32 i);
 
@@ -602,6 +606,10 @@ static void CB2_InitBattleInternal(void)
     if (!DEBUG_OVERWORLD_MENU || (DEBUG_OVERWORLD_MENU && !gIsDebugBattle))
         gBattleEnvironment = BattleSetup_GetEnvironmentId();
     if (gBattleTypeFlags & BATTLE_TYPE_RECORDED)
+        gBattleEnvironment = BATTLE_ENVIRONMENT_BUILDING;
+    /* The two players stand on different maps; both ROMs need the same
+     * environment (Secret Power, Nature Power, Camouflage). */
+    if (CoopBattleRuntime_IsFriendlyEngine())
         gBattleEnvironment = BATTLE_ENVIRONMENT_BUILDING;
     if (TestRunner_Battle_GetForcedEnvironment())
         gBattleEnvironment = TestRunner_Battle_GetForcedEnvironment() - 1;
@@ -1947,9 +1955,117 @@ void CustomTrainerPartyAssignMoves(struct Pokemon *mon, const struct TrainerMon 
     }
 }
 
-u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer *trainer, bool32 halfTeam, u32 battleTypeFlags)
+/* One trainer party entry, exactly as CreateNPCTrainerPartyFromTrainer has
+ * always created it. slot is the party slot (Dynamax/Tera bits); level is
+ * the entry's own level except for the co-op second opponent mon. */
+static void CreateTrainerPartyMon(struct Pokemon *mon, const struct Trainer *trainer,
+                                  const struct TrainerMon *partyEntry, u32 slot,
+                                  u32 personalityHash, u8 level)
 {
     u32 personalityValue;
+    s32 ball = -1;
+    struct OriginalTrainerId otId = OTID_STRUCT_RANDOM_NO_SHINY;
+    u32 abilityNum = 0;
+
+    if (trainer->battleType != TRAINER_BATTLE_TYPE_SINGLES)
+        personalityValue = 0x80;
+    else if (trainer->gender == TRAINER_GENDER_FEMALE)
+        personalityValue = 0x78; // Use personality more likely to result in a female Pokémon
+    else
+        personalityValue = 0x88; // Use personality more likely to result in a male Pokémon
+
+    personalityValue += personalityHash << 8;
+    if (partyEntry->gender == TRAINER_MON_MALE)
+        personalityValue = (personalityValue & 0xFFFFFF00) | GeneratePersonalityForGender(MON_MALE, partyEntry->species);
+    else if (partyEntry->gender == TRAINER_MON_FEMALE)
+        personalityValue = (personalityValue & 0xFFFFFF00) | GeneratePersonalityForGender(MON_FEMALE, partyEntry->species);
+    else if (partyEntry->gender == TRAINER_MON_RANDOM_GENDER)
+        personalityValue = (personalityValue & 0xFFFFFF00) | GeneratePersonalityForGender(Random() & 1 ? MON_MALE : MON_FEMALE, partyEntry->species);
+    ModifyPersonalityForNature(&personalityValue, partyEntry->nature);
+    if (partyEntry->isShiny)
+    {
+        otId.method = OT_ID_PRESET;
+        otId.value = HIHALF(personalityValue) ^ LOHALF(personalityValue);
+    }
+    CreateMon(mon, partyEntry->species, level, personalityValue, otId);
+    SetMonData(mon, MON_DATA_HELD_ITEM, &partyEntry->heldItem);
+
+    CustomTrainerPartyAssignMoves(mon, partyEntry);
+    SetMonData(mon, MON_DATA_IVS, &partyEntry->iv);
+    if (partyEntry->ev != NULL)
+    {
+        SetMonData(mon, MON_DATA_HP_EV, &(partyEntry->ev[0]));
+        SetMonData(mon, MON_DATA_ATK_EV, &(partyEntry->ev[1]));
+        SetMonData(mon, MON_DATA_DEF_EV, &(partyEntry->ev[2]));
+        SetMonData(mon, MON_DATA_SPATK_EV, &(partyEntry->ev[3]));
+        SetMonData(mon, MON_DATA_SPDEF_EV, &(partyEntry->ev[4]));
+        SetMonData(mon, MON_DATA_SPEED_EV, &(partyEntry->ev[5]));
+    }
+    if (partyEntry->ability != ABILITY_NONE)
+    {
+        const struct SpeciesInfo *speciesInfo = &gSpeciesInfo[partyEntry->species];
+        u32 maxAbilityNum = ARRAY_COUNT(speciesInfo->abilities);
+        for (abilityNum = 0; abilityNum < maxAbilityNum; ++abilityNum)
+        {
+            if (speciesInfo->abilities[abilityNum] == partyEntry->ability)
+                break;
+        }
+        assertf(abilityNum < maxAbilityNum, "illegal ability %S for %S", gAbilitiesInfo[partyEntry->ability].name, speciesInfo->speciesName);
+    }
+    else if (B_TRAINER_MON_RANDOM_ABILITY)
+    {
+        const struct SpeciesInfo *speciesInfo = &gSpeciesInfo[partyEntry->species];
+        abilityNum = personalityHash % 3;
+        while (speciesInfo->abilities[abilityNum] == ABILITY_NONE)
+        {
+            abilityNum--;
+        }
+    }
+    SetMonData(mon, MON_DATA_ABILITY_NUM, &abilityNum);
+    SetMonData(mon, MON_DATA_FRIENDSHIP, &(partyEntry->friendship));
+    if (partyEntry->ball < POKEBALL_COUNT)
+    {
+        ball = partyEntry->ball;
+        SetMonData(mon, MON_DATA_POKEBALL, &ball);
+    }
+    if (partyEntry->nickname != NULL)
+    {
+        SetMonData(mon, MON_DATA_NICKNAME, partyEntry->nickname);
+    }
+    if (partyEntry->isShiny)
+    {
+        bool32 data = TRUE;
+        SetMonData(mon, MON_DATA_IS_SHINY, &data);
+    }
+    if (partyEntry->dynamaxLevel > 0)
+    {
+        u32 data = partyEntry->dynamaxLevel;
+        if (partyEntry->shouldUseDynamax)
+            gBattleStruct->opponentMonCanDynamax |= 1 << slot;
+        SetMonData(mon, MON_DATA_DYNAMAX_LEVEL, &data);
+    }
+    if (partyEntry->gigantamaxFactor)
+    {
+        u32 data = partyEntry->gigantamaxFactor;
+        SetMonData(mon, MON_DATA_GIGANTAMAX_FACTOR, &data);
+    }
+    if (partyEntry->teraType > 0)
+    {
+        gBattleStruct->opponentMonCanTera |= 1 << slot;
+        enum Type data = partyEntry->teraType;
+        SetMonData(mon, MON_DATA_TERA_TYPE, &data);
+    }
+    CalculateMonStats(mon);
+
+    if (B_TRAINER_CLASS_POKE_BALLS >= GEN_7 && ball == -1)
+    {
+        ball = gTrainerClasses[trainer->trainerClass].ball ?: ITEM_POKE_BALL;
+        SetMonData(mon, MON_DATA_POKEBALL, &ball);
+    }
+}
+
+static u8 CreateNPCTrainerPartyInternal(struct Pokemon *party, const struct Trainer *trainer, bool32 halfTeam, u32 battleTypeFlags, u32 *firstMonIndex)
+{
     u8 monsCount;
     if (battleTypeFlags & BATTLE_TYPE_TRAINER && !(battleTypeFlags & (BATTLE_TYPE_FRONTIER
                                                                         | BATTLE_TYPE_EREADER_TRAINER
@@ -1974,112 +2090,98 @@ u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer 
 
         for (s32 i = 0; i < monsCount; i++)
         {
-            u32 monIndex = monIndices[i];
-            s32 ball = -1;
-            u32 personalityHash = GeneratePartyHash(trainer, i);
-            const struct TrainerMon *partyData = trainer->party;
-            struct OriginalTrainerId otId = OTID_STRUCT_RANDOM_NO_SHINY;
-            u32 abilityNum = 0;
+            const struct TrainerMon *partyEntry = &trainer->party[monIndices[i]];
 
-            if (trainer->battleType != TRAINER_BATTLE_TYPE_SINGLES)
-                personalityValue = 0x80;
-            else if (trainer->gender == TRAINER_GENDER_FEMALE)
-                personalityValue = 0x78; // Use personality more likely to result in a female Pokémon
-            else
-                personalityValue = 0x88; // Use personality more likely to result in a male Pokémon
-
-            personalityValue += personalityHash << 8;
-            if (partyData[monIndex].gender == TRAINER_MON_MALE)
-                personalityValue = (personalityValue & 0xFFFFFF00) | GeneratePersonalityForGender(MON_MALE, partyData[monIndex].species);
-            else if (partyData[monIndex].gender == TRAINER_MON_FEMALE)
-                personalityValue = (personalityValue & 0xFFFFFF00) | GeneratePersonalityForGender(MON_FEMALE, partyData[monIndex].species);
-            else if (partyData[monIndex].gender == TRAINER_MON_RANDOM_GENDER)
-                personalityValue = (personalityValue & 0xFFFFFF00) | GeneratePersonalityForGender(Random() & 1 ? MON_MALE : MON_FEMALE, partyData[monIndex].species);
-            ModifyPersonalityForNature(&personalityValue, partyData[monIndex].nature);
-            if (partyData[monIndex].isShiny)
-            {
-                otId.method = OT_ID_PRESET;
-                otId.value = HIHALF(personalityValue) ^ LOHALF(personalityValue);
-            }
-            CreateMon(&party[i], partyData[monIndex].species, partyData[monIndex].lvl, personalityValue, otId);
-            SetMonData(&party[i], MON_DATA_HELD_ITEM, &partyData[monIndex].heldItem);
-
-            CustomTrainerPartyAssignMoves(&party[i], &partyData[monIndex]);
-            SetMonData(&party[i], MON_DATA_IVS, &(partyData[monIndex].iv));
-            if (partyData[monIndex].ev != NULL)
-            {
-                SetMonData(&party[i], MON_DATA_HP_EV, &(partyData[monIndex].ev[0]));
-                SetMonData(&party[i], MON_DATA_ATK_EV, &(partyData[monIndex].ev[1]));
-                SetMonData(&party[i], MON_DATA_DEF_EV, &(partyData[monIndex].ev[2]));
-                SetMonData(&party[i], MON_DATA_SPATK_EV, &(partyData[monIndex].ev[3]));
-                SetMonData(&party[i], MON_DATA_SPDEF_EV, &(partyData[monIndex].ev[4]));
-                SetMonData(&party[i], MON_DATA_SPEED_EV, &(partyData[monIndex].ev[5]));
-            }
-            if (partyData[monIndex].ability != ABILITY_NONE)
-            {
-                const struct SpeciesInfo *speciesInfo = &gSpeciesInfo[partyData[monIndex].species];
-                u32 maxAbilityNum = ARRAY_COUNT(speciesInfo->abilities);
-                for (abilityNum = 0; abilityNum < maxAbilityNum; ++abilityNum)
-                {
-                    if (speciesInfo->abilities[abilityNum] == partyData[monIndex].ability)
-                        break;
-                }
-                assertf(abilityNum < maxAbilityNum, "illegal ability %S for %S", gAbilitiesInfo[partyData[monIndex].ability].name, speciesInfo->speciesName);
-            }
-            else if (B_TRAINER_MON_RANDOM_ABILITY)
-            {
-                const struct SpeciesInfo *speciesInfo = &gSpeciesInfo[partyData[monIndex].species];
-                abilityNum = personalityHash % 3;
-                while (speciesInfo->abilities[abilityNum] == ABILITY_NONE)
-                {
-                    abilityNum--;
-                }
-            }
-            SetMonData(&party[i], MON_DATA_ABILITY_NUM, &abilityNum);
-            SetMonData(&party[i], MON_DATA_FRIENDSHIP, &(partyData[monIndex].friendship));
-            if (partyData[monIndex].ball < POKEBALL_COUNT)
-            {
-                ball = partyData[monIndex].ball;
-                SetMonData(&party[i], MON_DATA_POKEBALL, &ball);
-            }
-            if (partyData[monIndex].nickname != NULL)
-            {
-                SetMonData(&party[i], MON_DATA_NICKNAME, partyData[monIndex].nickname);
-            }
-            if (partyData[monIndex].isShiny)
-            {
-                bool32 data = TRUE;
-                SetMonData(&party[i], MON_DATA_IS_SHINY, &data);
-            }
-            if (partyData[monIndex].dynamaxLevel > 0)
-            {
-                u32 data = partyData[monIndex].dynamaxLevel;
-                if (partyData[monIndex].shouldUseDynamax)
-                    gBattleStruct->opponentMonCanDynamax |= 1 << i;
-                SetMonData(&party[i], MON_DATA_DYNAMAX_LEVEL, &data);
-            }
-            if (partyData[monIndex].gigantamaxFactor)
-            {
-                u32 data = partyData[monIndex].gigantamaxFactor;
-                SetMonData(&party[i], MON_DATA_GIGANTAMAX_FACTOR, &data);
-            }
-            if (partyData[monIndex].teraType > 0)
-            {
-                gBattleStruct->opponentMonCanTera |= 1 << i;
-                enum Type data = partyData[monIndex].teraType;
-                SetMonData(&party[i], MON_DATA_TERA_TYPE, &data);
-            }
-            CalculateMonStats(&party[i]);
-
-            if (B_TRAINER_CLASS_POKE_BALLS >= GEN_7 && ball == -1)
-            {
-                ball = gTrainerClasses[trainer->trainerClass].ball ?: ITEM_POKE_BALL;
-                SetMonData(&party[i], MON_DATA_POKEBALL, &ball);
-            }
+            CreateTrainerPartyMon(&party[i], trainer, partyEntry, i,
+                                  GeneratePartyHash(trainer, i), partyEntry->lvl);
         }
+        if (firstMonIndex != NULL && monsCount != 0)
+            *firstMonIndex = monIndices[0];
     }
 
     return trainer->partySize;
+}
+
+u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer *trainer, bool32 halfTeam, u32 battleTypeFlags)
+{
+    return CreateNPCTrainerPartyInternal(party, trainer, halfTeam, battleTypeFlags, NULL);
+}
+
+/* Co-op opponent records are hashed byte for byte by the per-turn digest,
+ * so nothing may come from the local save or map: CreateBoxMon stamps the
+ * local player's name and gender as OT and the local map section as met
+ * location. Replace those with trainer data both ROMs share. */
+static void CanonicalizeCoopOpponentMon(struct Pokemon *mon, const struct Trainer *trainer)
+{
+    u8 otName[PLAYER_NAME_LENGTH + 1];
+    u8 nickname[POKEMON_NAME_BUFFER_SIZE];
+    u8 value;
+    u32 i;
+
+    memset(otName, EOS, sizeof(otName));
+    for (i = 0; i < PLAYER_NAME_LENGTH && trainer->trainerName[i] != EOS; i++)
+        otName[i] = trainer->trainerName[i];
+    SetMonData(mon, MON_DATA_OT_NAME, otName);
+    value = trainer->gender;
+    SetMonData(mon, MON_DATA_OT_GENDER, &value);
+    value = MAPSEC_NONE;
+    SetMonData(mon, MON_DATA_MET_LOCATION, &value);
+    /* CreateBoxMon copies the species name through an uninitialized stack
+     * buffer, so the nickname bytes after its terminator are whatever that
+     * ROM's stack held. Pad them with EOS (a custom nickname is kept). */
+    memset(nickname, EOS, sizeof(nickname));
+    GetMonData(mon, MON_DATA_NICKNAME, nickname);
+    for (i = 0; i < POKEMON_NAME_LENGTH && nickname[i] != EOS; i++)
+        ;
+    for (; i < sizeof(nickname); i++)
+        nickname[i] = EOS;
+    SetMonData(mon, MON_DATA_NICKNAME, nickname);
+}
+
+/* The second mon a single-mon trainer fields in a co-op battle: another
+ * member of the trainer's own pool when it defines one, else the same entry
+ * with its own personality, always at the first mon's level. Every choice,
+ * including the draws inside CreateMon, comes from seed alone: the battle
+ * RNG is swapped out for the duration and restored untouched. */
+static void CreateCoopSecondTrainerMon(struct Pokemon *party, const struct Trainer *trainer,
+                                       u32 firstMonIndex, u32 seed)
+{
+    rng_value_t savedRng = gRngValue;
+    const struct TrainerMon *partyEntry = &trainer->party[firstMonIndex];
+    u8 level = GetMonData(&party[0], MON_DATA_LEVEL);
+    u32 pick;
+
+    SeedRng(seed);
+    if (trainer->poolSize > 1 && firstMonIndex < trainer->poolSize)
+    {
+        pick = Random32() % (trainer->poolSize - 1);
+        if (pick >= firstMonIndex)
+            pick++;
+        partyEntry = &trainer->party[pick];
+    }
+    CreateTrainerPartyMon(&party[1], trainer, partyEntry, 1, Random32(), level);
+    gRngValue = savedRng;
+}
+
+u8 CreateCoopTrainerParty(struct Pokemon *party, const struct Trainer *trainer, u32 battleTypeFlags, u32 seed)
+{
+    u32 firstMonIndex = 0xFFFFFFFF;
+    u32 i;
+    /* Gym leaders, story admins and bosses, the Elite Four and the champion
+     * keep their whole team; everyone else fields at most three against the
+     * two players' one to three each. Both ROMs read the same trainer data,
+     * so they agree on the size. */
+    bool32 halfTeam = !CoopTrainerRewards_IsFullTeamClass(trainer->trainerClass);
+    u8 retVal = CreateNPCTrainerPartyInternal(party, trainer, halfTeam, battleTypeFlags, &firstMonIndex);
+
+    if (firstMonIndex == 0xFFFFFFFF)
+        return retVal;
+    if (trainer->partySize == 1)
+        CreateCoopSecondTrainerMon(party, trainer, firstMonIndex, seed);
+    for (i = 0; i < PARTY_SIZE; i++)
+        if (GetMonData(&party[i], MON_DATA_SPECIES) != SPECIES_NONE)
+            CanonicalizeCoopOpponentMon(&party[i], trainer);
+    return retVal;
 }
 
 static enum BattleTrainer GetBattlerTrainerFromParty(struct Pokemon *party)
@@ -2089,7 +2191,8 @@ static enum BattleTrainer GetBattlerTrainerFromParty(struct Pokemon *party)
 
 static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum)
 {
-    u8 retVal;
+    const struct Trainer *trainer;
+    struct Trainer tempTrainer;
     bool32 halfTeam = (BattleSideHasTwoTrainers(GetBattlerTrainerFromParty(party) & BIT_SIDE) && !AreMultiPartiesFullTeams());
 
     /* The co-op runtime always stages a three-mon side.  Keep the supported
@@ -2102,7 +2205,6 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum)
         return 0;
     if (GetTrainerStructFromId(trainerNum)->overrideTrainer)
     {
-        struct Trainer tempTrainer;
         memcpy(&tempTrainer, GetTrainerStructFromId(trainerNum), sizeof(struct Trainer));
         const struct Trainer *origTrainer = GetTrainerStructFromId(tempTrainer.overrideTrainer);
 
@@ -2112,13 +2214,24 @@ static u8 CreateNPCTrainerParty(struct Pokemon *party, u16 trainerNum)
         if (tempTrainer.partySize == 0)
             tempTrainer.partySize = origTrainer->partySize;
 
-        retVal = CreateNPCTrainerPartyFromTrainer(party, (const struct Trainer *)(&tempTrainer), halfTeam, gBattleTypeFlags);
+        trainer = &tempTrainer;
     }
     else
     {
-        retVal = CreateNPCTrainerPartyFromTrainer(party, GetTrainerStructFromId(trainerNum), halfTeam, gBattleTypeFlags);
+        trainer = GetTrainerStructFromId(trainerNum);
     }
-    return retVal;
+
+    /* The co-op opponent (always B_TRAINER_1; B_TRAINER_3 stays empty) is
+     * built from data both ROMs share, see CreateCoopTrainerParty. */
+    if (CoopBattleRuntime_IsEngineActive() && party == gParties[B_TRAINER_1])
+    {
+        u32 seed;
+
+        if (CoopBattleRuntime_GetOpponentSeed(trainerNum, &seed))
+            return CreateCoopTrainerParty(party, trainer, gBattleTypeFlags, seed);
+        CoopBattleRuntime_FailEngine();
+    }
+    return CreateNPCTrainerPartyFromTrainer(party, trainer, halfTeam, gBattleTypeFlags);
 }
 
 void CreateTrainerPartyForPlayer(void)
@@ -3213,6 +3326,10 @@ static void ClearSetBScriptingStruct(void)
 
     gBattleScripting.windowsType = temp;
     gBattleScripting.battleStyle = gSaveBlock2Ptr->optionsBattleStyle;
+    /* Shift's "Will you switch?" is a local-only choice; both ROMs must ask
+     * the same questions. */
+    if (CoopBattleRuntime_IsFriendlyEngine())
+        gBattleScripting.battleStyle = OPTIONS_BATTLE_STYLE_SET;
     #if TESTING
     gBattleScripting.battleStyle = OPTIONS_BATTLE_STYLE_SET;
     #endif
@@ -4145,12 +4262,23 @@ bool32 EndTurnEvents(void) // Called from Battle Script
 
     if (gBattleOutcome != 0)
     {
-        if (CoopBattleRuntime_IsEngineActive())
+        if (CoopBattleRuntime_IsFriendlyEngine() && CoopBattleRuntime_IsRoundHashed())
+        {
+            /* A replacement round inside this end of turn already hashed the
+             * final state; attest the battle on that round. */
+            if (!CoopBattleRuntime_FinishOnLastHash(gBattleOutcome))
+            {
+                CoopBattleRuntime_FailEngine();
+                return TRUE;
+            }
+        }
+        else if (CoopBattleRuntime_IsEngineActive())
         {
             /* This is the first point at which the terminal end-turn effects
              * and volatile cleanup are stable. Keep the digest before the
              * terminal presentation starts mutating battle globals. */
-            coopTurn = gBattleResults.battleTurnCounter + 1;
+            coopTurn = CoopBattleRuntime_IsFriendlyEngine()
+                ? CoopBattleRuntime_CurrentRound() : gBattleResults.battleTurnCounter + 1;
             report = CoopBattleRuntime_ReportTurnState(coopTurn, gBattleOutcome);
             if (report == COOP_BATTLE_TURN_REPORT_PENDING)
                 return TRUE;
@@ -4195,9 +4323,14 @@ bool32 EndTurnEvents(void) // Called from Battle Script
     BattlePutTextOnWindow(gText_EmptyString3, B_WIN_MSG);
     AssignUsableGimmicks();
     SetShellSideArmCategory();
-    if (CoopBattleRuntime_IsEngineActive())
+    if (CoopBattleRuntime_IsFriendlyEngine() && CoopBattleRuntime_IsRoundHashed())
     {
-        coopTurn = gBattleResults.battleTurnCounter;
+        /* A replacement round already hashed this turn's end state. */
+    }
+    else if (CoopBattleRuntime_IsEngineActive())
+    {
+        coopTurn = CoopBattleRuntime_IsFriendlyEngine()
+            ? CoopBattleRuntime_CurrentRound() : gBattleResults.battleTurnCounter;
         report = CoopBattleRuntime_ReportTurnState(coopTurn, 0);
         if (report == COOP_BATTLE_TURN_REPORT_PENDING)
             return TRUE;
@@ -4374,8 +4507,17 @@ static void TrySubmitCoopPlayerAction(void)
     case B_ACTION_NOTHING_FAINTED:
         action.kind = COOP_BATTLE_ACTION_NO_ACTION;
         break;
+    case B_ACTION_USE_ITEM:
+        /* Nothing was applied or taken from the bag yet: both ROMs run the
+         * item when the turn resolves. */
+        if (!CoopBattleItems_MakeAction(battler, &action))
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+        break;
     default:
-        /* Bag, run and other actions require a shared action contract. */
+        /* Run and other actions require a shared action contract. */
         CoopBattleRuntime_FailEngine();
         return;
     }
@@ -4385,6 +4527,288 @@ static void TrySubmitCoopPlayerAction(void)
         return;
     }
     CoopBattleRuntime_SubmitLocalAction(&action);
+}
+
+bool32 IsBattleInActionSelection(void)
+{
+    return gBattleMainFunc == HandleTurnActionSelectionState;
+}
+
+/* Friendly battles: member m acts for battler m (and m + 2 in doubles). */
+static u8 CoopFriendlyMemberActionCount(void)
+{
+    return CoopBattleRuntime_IsFriendlyDoubles() ? 2 : 1;
+}
+
+static void TrySubmitCoopFriendlyActions(void)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS] = {0};
+    u8 localSlot = CoopBattleRuntime_EngineLocalMemberSlot();
+    u8 count = CoopFriendlyMemberActionCount();
+    bool32 forfeit = FALSE;
+    u8 slot;
+
+    if (CoopBattleRuntime_IsEngineFaulted() || CoopBattleRuntime_IsLocalActionSubmitted())
+        return;
+    for (slot = 0; slot < count; slot++)
+    {
+        enum BattlerId battler = localSlot + slot * 2;
+
+        if (battler >= gBattlersCount || !IsOnPlayerSide(battler)
+         || gBattleCommunication[battler] != STATE_WAIT_ACTION_CONFIRMED)
+            return;
+    }
+    for (slot = 0; slot < count; slot++)
+    {
+        enum BattlerId battler = localSlot + slot * 2;
+
+        switch (gChosenActionByBattler[battler])
+        {
+        case B_ACTION_USE_MOVE:
+            if (gBattleMons[battler].volatiles.multipleTurns
+             || gBattleMons[battler].volatiles.rechargeTimer > 0)
+            {
+                actions[slot].kind = COOP_BATTLE_ACTION_AUTO_MOVE;
+                break;
+            }
+            if ((gBattleStruct->gimmick.toActivate & (1u << battler))
+             || gBattleStruct->moveTarget[battler] >= gBattlersCount)
+            {
+                CoopBattleRuntime_FailEngine();
+                return;
+            }
+            /* Battler IDs are canonical in a friendly battle. */
+            actions[slot].kind = COOP_BATTLE_ACTION_MOVE;
+            actions[slot].index = gBattleStruct->chosenMovePositions[battler];
+            actions[slot].target = gBattleStruct->moveTarget[battler];
+            break;
+        case B_ACTION_SWITCH:
+            actions[slot].kind = COOP_BATTLE_ACTION_SWITCH;
+            actions[slot].index = gBattleStruct->monToSwitchIntoId[battler];
+            break;
+        case B_ACTION_NOTHING_FAINTED:
+            actions[slot].kind = COOP_BATTLE_ACTION_NO_ACTION;
+            break;
+        case B_ACTION_RUN:
+            /* The forfeit question was answered Yes. */
+            forfeit = TRUE;
+            break;
+        default:
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+    }
+    if (forfeit)
+    {
+        for (slot = 0; slot < count; slot++)
+            actions[slot] = (struct CoopBattleAction){ .kind = COOP_BATTLE_ACTION_FORFEIT };
+    }
+    CoopBattleRuntime_SubmitLocalActions(actions, count);
+}
+
+static void TryBindCoopFriendlyAutomaticPeerActions(void)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+    u8 expectedKind;
+
+    if (CoopBattleRuntime_IsEngineFaulted() || !CoopBattleRuntime_IsLocalActionSubmitted())
+        return;
+    for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+    {
+        if (IsOnPlayerSide(battler) || gBattleCommunication[battler] != STATE_WAIT_ACTION_CONFIRMED)
+            continue;
+        if (gChosenActionByBattler[battler] == B_ACTION_NOTHING_FAINTED)
+            expectedKind = COOP_BATTLE_ACTION_NO_ACTION;
+        else if (gChosenActionByBattler[battler] == B_ACTION_USE_MOVE
+              && (gBattleMons[battler].volatiles.multipleTurns
+               || gBattleMons[battler].volatiles.rechargeTimer > 0))
+            expectedKind = COOP_BATTLE_ACTION_AUTO_MOVE;
+        else
+            continue;
+        if (!CoopBattleRuntime_PollPeerActions(actions, &count))
+            return;
+        if ((battler >> 1) >= count
+         || (actions[battler >> 1].kind != expectedKind
+          && actions[battler >> 1].kind != COOP_BATTLE_ACTION_FORFEIT))
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+    }
+}
+
+/* A forfeit ends the battle before the turn runs: the forfeiting member
+ * loses (both at once is a draw). The state is hashed with that outcome. */
+static void HandleCoopFriendlyForfeit(void)
+{
+    enum CoopBattleTurnReportResult report;
+
+    if (CoopBattleRuntime_IsTurnHashPending())
+        report = CoopBattleRuntime_RetryTurnHash();
+    else
+        report = CoopBattleRuntime_ReportTurnState(CoopBattleRuntime_CurrentRound(), gBattleOutcome);
+    if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+        return;
+    if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    gCurrentActionFuncId = 0;
+    gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+}
+
+static bool32 TryResolveCoopFriendlyForfeit(void)
+{
+    struct CoopBattleAction local[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    struct CoopBattleAction peer[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 localCount, peerCount;
+    bool32 localForfeit, peerForfeit;
+
+    if (!CoopBattleRuntime_GetLocalActions(local, &localCount)
+     || !CoopBattleRuntime_PollPeerActions(peer, &peerCount))
+        return FALSE;
+    localForfeit = local[0].kind == COOP_BATTLE_ACTION_FORFEIT;
+    peerForfeit = peer[0].kind == COOP_BATTLE_ACTION_FORFEIT;
+    if (!localForfeit && !peerForfeit)
+        return FALSE;
+    CoopBattleRuntime_FinishEngineTurn();
+    gHitMarker &= ~HITMARKER_RUN;
+    if (localForfeit && peerForfeit)
+        gBattleOutcome = B_OUTCOME_DREW;
+    else
+        gBattleOutcome = localForfeit ? B_OUTCOME_LOST : B_OUTCOME_WON;
+    gBattleMainFunc = HandleCoopFriendlyForfeit;
+    return TRUE;
+}
+
+/* A replacement pick (a faint, U-turn, Baton Pass, Revival Blessing...) is a
+ * lockstep round of its own. The turn's state is hashed first, then this
+ * ROM's picks (or NO_ACTION) are exchanged, then the round's own state is
+ * hashed; both ROMs do this at the same engine point. Returns TRUE with the
+ * party index (PARTY_SIZE for none) once this battler's pick is known. */
+static bool32 IsCoopChoosePokemonPending(enum BattlerId battler)
+{
+    return IsBattleControllerActiveOnLocal(battler)
+        && gBattleResources->bufferA[battler][0] == CONTROLLER_CHOOSEPOKEMON;
+}
+
+bool32 CoopFriendly_ResolveChoosePokemon(enum BattlerId battler, u8 localChoice, u8 *partyIndex)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count = CoopFriendlyMemberActionCount();
+    u8 slot = battler >> 1;
+    enum CoopBattleTurnReportResult report;
+    struct CoopBattleAction action;
+
+    if (!CoopBattleRuntime_IsFriendlyEngine() || CoopBattleRuntime_IsEngineFaulted()
+     || partyIndex == NULL || slot >= count)
+        return FALSE;
+    if (!CoopBattleRuntime_IsLocalActionSubmitted())
+    {
+        if (IsOnPlayerSide(battler) && !(gBattleStruct->coopDecisionMask & (1u << slot)))
+        {
+            gBattleStruct->coopDecisionIndex[slot] = localChoice;
+            gBattleStruct->coopDecisionMask |= 1u << slot;
+        }
+        for (enum BattlerId i = 0; i < gBattlersCount; i++)
+            if (IsOnPlayerSide(i) && IsCoopChoosePokemonPending(i)
+             && !(gBattleStruct->coopDecisionMask & (1u << (i >> 1))))
+                return FALSE;
+        report = CoopBattleRuntime_FlushRoundHash();
+        if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+            return FALSE;
+        if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+        {
+            CoopBattleRuntime_FailEngine();
+            return FALSE;
+        }
+        for (u8 i = 0; i < count; i++)
+        {
+            actions[i] = (struct CoopBattleAction){ .kind = COOP_BATTLE_ACTION_NO_ACTION };
+            if ((gBattleStruct->coopDecisionMask & (1u << i))
+             && gBattleStruct->coopDecisionIndex[i] < PARTY_SIZE)
+            {
+                actions[i].kind = COOP_BATTLE_ACTION_FORCED_SWITCH;
+                actions[i].index = gBattleStruct->coopDecisionIndex[i];
+            }
+        }
+        if (!CoopBattleRuntime_SubmitLocalActions(actions, count))
+            return FALSE;
+    }
+    if (!CoopBattleRuntime_PollPeerActions(actions, &count) || slot >= count)
+        return FALSE;
+    report = CoopBattleRuntime_FlushRoundHash();
+    if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+        return FALSE;
+    if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+    {
+        CoopBattleRuntime_FailEngine();
+        return FALSE;
+    }
+    if (IsOnPlayerSide(battler))
+    {
+        *partyIndex = (gBattleStruct->coopDecisionMask & (1u << slot))
+            ? gBattleStruct->coopDecisionIndex[slot] : PARTY_SIZE;
+        return TRUE;
+    }
+    action = actions[slot];
+    if (action.kind == COOP_BATTLE_ACTION_NO_ACTION)
+    {
+        *partyIndex = PARTY_SIZE;
+        return TRUE;
+    }
+    if (action.kind != COOP_BATTLE_ACTION_FORCED_SWITCH
+     || GetMonData(&GetBattlerParty(battler)[action.index], MON_DATA_SPECIES) == SPECIES_NONE)
+    {
+        CoopBattleRuntime_FailEngine();
+        return FALSE;
+    }
+    *partyIndex = action.index;
+    return TRUE;
+}
+
+/* Called after a controller answered a replacement pick. */
+void CoopFriendly_FinishChoosePokemon(void)
+{
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
+        if (IsCoopChoosePokemonPending(i))
+            return;
+    gBattleStruct->coopDecisionMask = 0;
+    CoopBattleRuntime_EndDecisionRound();
+}
+
+/* During action selection the peer's switch target is part of its action. */
+bool32 CoopFriendly_GetPeerSwitch(enum BattlerId battler, u8 *partyIndex)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+
+    if (partyIndex == NULL || !CoopBattleRuntime_PollPeerActions(actions, &count)
+     || (battler >> 1) >= count)
+        return FALSE;
+    if (actions[battler >> 1].kind != COOP_BATTLE_ACTION_SWITCH
+     || GetMonData(&GetBattlerParty(battler)[actions[battler >> 1].index], MON_DATA_SPECIES) == SPECIES_NONE)
+    {
+        CoopBattleRuntime_FailEngine();
+        return FALSE;
+    }
+    *partyIndex = actions[battler >> 1].index;
+    return TRUE;
+}
+
+/* The peer's action for one of its battlers (friendly). */
+bool32 CoopFriendly_GetPeerAction(enum BattlerId battler, struct CoopBattleAction *action)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+
+    if (action == NULL || !CoopBattleRuntime_PollPeerActions(actions, &count)
+     || (battler >> 1) >= count)
+        return FALSE;
+    *action = actions[battler >> 1];
+    return TRUE;
 }
 
 static void TryBindCoopAutomaticPeerAction(void)
@@ -4487,10 +4911,17 @@ static void HandleTurnActionSelectionState(void)
             if (!IsBattleControllerActiveOrPendingSyncAnywhere(battler))
             {
                 if (CoopBattleRuntime_IsEngineActive()
-                 && position == B_POSITION_PLAYER_LEFT
+                 && (CoopBattleRuntime_IsFriendlyEngine() ? IsOnPlayerSide(battler)
+                                                          : position == B_POSITION_PLAYER_LEFT)
                  && gBattleResources->bufferB[battler][1] != B_ACTION_USE_MOVE
                  && gBattleResources->bufferB[battler][1] != B_ACTION_SWITCH
-                 && gBattleResources->bufferB[battler][1] != B_ACTION_NOTHING_FAINTED)
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_NOTHING_FAINTED
+                 /* The bag becomes an item action in a trainer battle and is
+                  * refused below in a friendly one. Friendly: Run asks to
+                  * forfeit. */
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_USE_ITEM
+                 && !(CoopBattleRuntime_IsFriendlyEngine()
+                   && gBattleResources->bufferB[battler][1] == B_ACTION_RUN))
                 {
                     CoopBattleRuntime_FailEngine();
                     return;
@@ -4563,6 +4994,8 @@ static void HandleTurnActionSelectionState(void)
                                             | BATTLE_TYPE_EREADER_TRAINER
                                             | BATTLE_TYPE_RECORDED_LINK))
                                             && !gTestRunnerEnabled)
+                                            // Or in a friendly co-op battle
+                                            || CoopBattleRuntime_IsFriendlyEngine()
                                             // Or if currently held by Sky Drop
                                             || gBattleMons[battler].volatiles.semiInvulnerable == STATE_SKY_DROP_TARGET)
                     {
@@ -4941,7 +5374,12 @@ static void HandleTurnActionSelectionState(void)
         }
     }
 
-    if (CoopBattleRuntime_IsEngineActive())
+    if (CoopBattleRuntime_IsFriendlyEngine())
+    {
+        TrySubmitCoopFriendlyActions();
+        TryBindCoopFriendlyAutomaticPeerActions();
+    }
+    else if (CoopBattleRuntime_IsEngineActive())
     {
         TrySubmitCoopPlayerAction();
         TryBindCoopAutomaticPeerAction();
@@ -4953,6 +5391,8 @@ static void HandleTurnActionSelectionState(void)
         if (CoopBattleRuntime_IsEngineActive())
         {
             if (!CoopBattleRuntime_IsEngineTurnReady())
+                return;
+            if (CoopBattleRuntime_IsFriendlyEngine() && TryResolveCoopFriendlyForfeit())
                 return;
             CoopBattleRuntime_FinishEngineTurn();
         }
@@ -5269,8 +5709,10 @@ s32 GetWhichBattlerFaster(struct BattleCalcValues *calcValues, bool32 ignoreChos
     s32 strikesFirst = GetWhichBattlerFasterOrTies(calcValues, ignoreChosenMoves);
     if (strikesFirst == 0)
     {
-        s32 order1 = sBattlerOrders[gBattleStruct->speedTieBreaks][calcValues->battlerAtk];
-        s32 order2 = sBattlerOrders[gBattleStruct->speedTieBreaks][calcValues->battlerDef];
+        /* Co-op ROMs number the two members' battlers differently in the
+         * trainer layout; break ties on the battler both ROMs agree on. */
+        s32 order1 = sBattlerOrders[gBattleStruct->speedTieBreaks][CoopBattleRuntime_CanonicalBattler(calcValues->battlerAtk)];
+        s32 order2 = sBattlerOrders[gBattleStruct->speedTieBreaks][CoopBattleRuntime_CanonicalBattler(calcValues->battlerDef)];
         if (order1 < order2)
             strikesFirst = 1;
         else
@@ -5340,8 +5782,13 @@ static void SetActionsAndBattlersTurnOrder(void)
             u32 quickClawRandom[MAX_BATTLERS_COUNT] = {0};
             u32 quickDrawRandom[MAX_BATTLERS_COUNT] = {0};
 
-            for (battler = 0; battler < gBattlersCount; battler++)
+            /* Items and switches act in list order, and the move list
+             * draws Quick Claw/Draw rolls in list order: a co-op trainer
+             * battle lists battlers by the canonical ID both ROMs share
+             * (the identity everywhere else). */
+            for (enum BattlerId canonical = 0; canonical < gBattlersCount; canonical++)
             {
+                battler = CoopBattleRuntime_CanonicalBattler(canonical);
                 if (gChosenActionByBattler[battler] == B_ACTION_USE_ITEM
                   || gChosenActionByBattler[battler] == B_ACTION_SWITCH
                   || gChosenActionByBattler[battler] == B_ACTION_THROW_BALL)
@@ -5351,8 +5798,9 @@ static void SetActionsAndBattlersTurnOrder(void)
                     turnOrderId++;
                 }
             }
-            for (battler = 0; battler < gBattlersCount; battler++)
+            for (enum BattlerId canonical = 0; canonical < gBattlersCount; canonical++)
             {
+                battler = CoopBattleRuntime_CanonicalBattler(canonical);
                 if (gChosenActionByBattler[battler] != B_ACTION_USE_ITEM
                   && gChosenActionByBattler[battler] != B_ACTION_SWITCH
                   && gChosenActionByBattler[battler] != B_ACTION_THROW_BALL)
@@ -5394,6 +5842,14 @@ static void SetActionsAndBattlersTurnOrder(void)
     gBattleMainFunc = CheckChangingTurnOrderEffects;
     gBattleStruct->quickClawBattlerId = 0;
 }
+
+#if TESTING
+/* Co-op tests order a staged turn's actions exactly as the engine does. */
+void CoopBattle_TestSetTurnOrder(void)
+{
+    SetActionsAndBattlersTurnOrder();
+}
+#endif
 
 static void TurnValuesCleanUp(bool8 var0)
 {
@@ -5590,7 +6046,8 @@ static void CheckChangingTurnOrderEffects(void)
     {
         while (gBattleStruct->quickClawBattlerId < gBattlersCount)
         {
-            battler = gBattlerAttacker = gBattleStruct->quickClawBattlerId;
+            /* Custap/Quick Claw/Quick Draw activate in canonical order. */
+            battler = gBattlerAttacker = CoopBattleRuntime_CanonicalBattler(gBattleStruct->quickClawBattlerId);
             gBattleStruct->quickClawBattlerId++;
             if (gChosenActionByBattler[battler] == B_ACTION_USE_MOVE
              && GetMoveEffect(gChosenMoveByBattler[battler]) != EFFECT_FOCUS_PUNCH   // quick claw message doesn't need to activate here
@@ -5684,7 +6141,39 @@ static void RunTurnActionsFunctions(void)
     sTurnActionsFuncsTable[gCurrentActionFuncId]();
 
     if (gCurrentTurnActionNumber >= gBattlersCount) // everyone did their actions, turn finished
-        gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+    {
+        /* A co-op battle decided inside the turn (a knockout) never reaches
+         * EndTurnEvents; attest its terminal state here first. */
+        if (gBattleOutcome != 0 && CoopBattleRuntime_IsEngineActive()
+         && !CoopBattleRuntime_IsEngineFaulted() && !CoopBattleRuntime_IsTerminalReported())
+            gBattleMainFunc = HandleCoopTerminalReport;
+        else
+            gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+    }
+}
+
+static void HandleCoopTerminalReport(void)
+{
+    enum CoopBattleTurnReportResult report;
+
+    if (CoopBattleRuntime_IsTurnHashPending())
+        report = CoopBattleRuntime_RetryTurnHash();
+    else if (CoopBattleRuntime_IsFriendlyEngine() && CoopBattleRuntime_IsRoundHashed())
+        report = CoopBattleRuntime_FinishOnLastHash(gBattleOutcome)
+            ? COOP_BATTLE_TURN_REPORT_SENT : COOP_BATTLE_TURN_REPORT_INVALID;
+    else
+        report = CoopBattleRuntime_ReportTurnState(CoopBattleRuntime_IsFriendlyEngine()
+                                                   ? CoopBattleRuntime_CurrentRound()
+                                                   : gBattleResults.battleTurnCounter + 1,
+                                                   gBattleOutcome);
+    if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+        return;
+    if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
 }
 
 static void HandleEndTurn_BattleWon(void)
@@ -5694,7 +6183,9 @@ static void HandleEndTurn_BattleWon(void)
     if (CoopBattleRuntime_IsEngineActive())
     {
         /* Keep the terminal script side-effect free.  The dormant co-op
-         * callback owns the eventual server result and party restoration. */
+         * callback owns the eventual server result and party restoration.
+         * The prize is paid there too; only its multiplier is captured. */
+        CoopTrainerRewards_OnBattleWon(gBattleStruct->moneyMultiplier);
         BattleStopLowHpSound();
         gBattlescriptCurrInstr = BattleScript_FrontierTrainerBattleWon;
     }
@@ -5759,8 +6250,10 @@ static void HandleEndTurn_BattleLost(void)
     if (CoopBattleRuntime_IsEngineActive())
     {
         /* Do not run the normal partner whiteout branch: it deducts money and
-         * routes through vanilla trainer-loss handling. */
-        gBattlescriptCurrInstr = BattleScript_LocalBattleLostEnd;
+         * routes through vanilla trainer-loss handling. A friendly battle has
+         * no prize at all, so it ends without the prize text. */
+        gBattlescriptCurrInstr = CoopBattleRuntime_IsFriendlyEngine()
+            ? BattleScript_LocalBattleLostEnd_ : BattleScript_LocalBattleLostEnd;
     }
     else if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
     {

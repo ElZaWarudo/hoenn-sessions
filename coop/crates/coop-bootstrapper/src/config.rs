@@ -99,6 +99,11 @@ impl InstallRoots {
         self.state_root.join("bootstrap.lock")
     }
 
+    /// Where a `hoenn-sessions://join/` link leaves its code for the app.
+    pub fn join_inbox_path(&self) -> PathBuf {
+        self.state_root.join("join-link.txt")
+    }
+
     pub fn onboarding_path(&self) -> PathBuf {
         self.install_root.join(APP_DIRECTORY).join(ONBOARDING_FILE)
     }

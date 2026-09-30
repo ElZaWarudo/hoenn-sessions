@@ -2,7 +2,7 @@ use crc32fast::Hasher;
 use thiserror::Error;
 
 pub const BRIDGE_ABI_VERSION: u16 = 1;
-pub const GAME_PROTOCOL_VERSION: u16 = 1;
+pub const GAME_PROTOCOL_VERSION: u16 = 5;
 pub const BRIDGE_PAYLOAD_SIZE: usize = 128;
 pub const BRIDGE_FRAME_SIZE: usize = 144;
 const CHECKSUM_OFFSET: usize = 140;
@@ -40,6 +40,12 @@ pub enum MessageType {
     ProgressObservation = 0x0013,
     BattleAbortRequest = 0x0014,
     BattleReady = 0x0015,
+    /// The ROM offers a party Pokémon to its partner, or withdraws the offer
+    /// (`coop_protocol::TradeOfferRequestRecord`, 16 bytes).
+    TradeOfferRequest = 0x0016,
+    /// The partner's answer to a received offer
+    /// (`coop_protocol::TradeOfferDecisionRecord`, 16 bytes).
+    TradeOfferDecision = 0x0017,
     SessionReady = 0x0100,
     RemotePlayerSpawn = 0x0101,
     RemotePlayerUpdate = 0x0102,
@@ -65,6 +71,16 @@ pub enum MessageType {
     BattleReserveRejected = 0x0116,
     BattleStart = 0x0117,
     GroupEnded = 0x0118,
+    /// A server-issued trade outcome. The payload is exactly the 128-byte
+    /// `coop_protocol::TradeCommitRecord` layout; the ROM acknowledges it with
+    /// a 28-byte `CommitApplied` (`coop_protocol::TradeCommitAppliedRecord`).
+    TradeCommit = 0x0119,
+    /// The partner offers a Pokémon (`coop_protocol::TradeOfferReceivedRecord`,
+    /// 20 bytes).
+    TradeOfferReceived = 0x011A,
+    /// Where an offer stands (`coop_protocol::TradeOfferStatusRecord`, 12
+    /// bytes).
+    TradeOfferStatus = 0x011B,
 }
 
 impl MessageType {
@@ -90,7 +106,9 @@ impl MessageType {
             | Self::SocialSignal
             | Self::ProgressObservation
             | Self::BattleAbortRequest
-            | Self::BattleReady => Direction::RomToSidecar,
+            | Self::BattleReady
+            | Self::TradeOfferRequest
+            | Self::TradeOfferDecision => Direction::RomToSidecar,
             Self::PairingRequest => Direction::RomToSidecar,
             Self::SessionReady
             | Self::RemotePlayerSpawn
@@ -114,9 +132,12 @@ impl MessageType {
             Self::PairingStatus => Direction::SidecarToRom,
             Self::PeerPartyChunk => Direction::SidecarToRom,
             Self::BattleConsentOutcome => Direction::SidecarToRom,
-            Self::BattleReserveRejected | Self::BattleStart | Self::GroupEnded => {
-                Direction::SidecarToRom
-            }
+            Self::BattleReserveRejected
+            | Self::BattleStart
+            | Self::GroupEnded
+            | Self::TradeCommit
+            | Self::TradeOfferReceived
+            | Self::TradeOfferStatus => Direction::SidecarToRom,
         }
     }
 }
@@ -147,6 +168,8 @@ impl TryFrom<u16> for MessageType {
             0x0013 => Self::ProgressObservation,
             0x0014 => Self::BattleAbortRequest,
             0x0015 => Self::BattleReady,
+            0x0016 => Self::TradeOfferRequest,
+            0x0017 => Self::TradeOfferDecision,
             0x0100 => Self::SessionReady,
             0x0101 => Self::RemotePlayerSpawn,
             0x0102 => Self::RemotePlayerUpdate,
@@ -172,6 +195,9 @@ impl TryFrom<u16> for MessageType {
             0x0116 => Self::BattleReserveRejected,
             0x0117 => Self::BattleStart,
             0x0118 => Self::GroupEnded,
+            0x0119 => Self::TradeCommit,
+            0x011A => Self::TradeOfferReceived,
+            0x011B => Self::TradeOfferStatus,
             _ => return Err(FrameCodecError::UnknownMessageType(value)),
         };
         Ok(message_type)
@@ -516,6 +542,11 @@ mod tests {
         };
         let id = BattleId([7; 16]);
         let manifest = BattleManifestRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             battle_id: id,
             turn: 0,
             seed: BattleDigest([1; 32]),
@@ -593,6 +624,189 @@ mod tests {
         );
     }
 
+    fn trade_commit_fixture() -> coop_protocol::TradeCommitRecord {
+        let mut incoming_record = [0_u8; 100];
+        for (index, byte) in incoming_record.iter_mut().enumerate() {
+            *byte = u8::try_from(index).unwrap() ^ 0x5A;
+        }
+        coop_protocol::TradeCommitRecord {
+            commit_id: coop_protocol::BattleId(
+                *b"\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10",
+            ),
+            slot: 4,
+            outgoing_personality: 0xDEAD_BEEF,
+            outgoing_ot_id: 0x0102_0304,
+            incoming_record,
+        }
+    }
+
+    #[test]
+    fn trade_commit_fills_the_payload_with_the_documented_layout() {
+        let record = trade_commit_fixture();
+        let payload = record.encode().unwrap();
+        assert_eq!(payload.len(), BRIDGE_PAYLOAD_SIZE);
+        assert_eq!(coop_protocol::TradeCommitRecord::WIRE_SIZE, 128);
+        assert_eq!(&payload[0..16], &record.commit_id.0);
+        assert_eq!(payload[16], 4);
+        assert_eq!(&payload[17..20], &[0, 0, 0]);
+        assert_eq!(&payload[20..24], &[0xEF, 0xBE, 0xAD, 0xDE]);
+        assert_eq!(&payload[24..28], &[0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(&payload[28..128], &record.incoming_record);
+
+        let frame = BridgeFrame::new(MessageType::TradeCommit, 11, 9, &payload).unwrap();
+        let bytes = frame.encode();
+        assert_eq!(&bytes[0..2], &0x0119_u16.to_le_bytes());
+        assert_eq!(&bytes[2..4], &128_u16.to_le_bytes());
+        assert_eq!(frame.direction(), Direction::SidecarToRom);
+        assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
+        let decoded = BridgeFrame::decode_for(&bytes, Direction::SidecarToRom).unwrap();
+        assert_eq!(
+            coop_protocol::TradeCommitRecord::decode(decoded.payload()),
+            Ok(record)
+        );
+        assert_eq!(MessageType::try_from(0x0119), Ok(MessageType::TradeCommit));
+    }
+
+    #[test]
+    fn trade_commit_rejects_invalid_records() {
+        use coop_protocol::{BattleBridgeError, TradeCommitRecord};
+        let record = trade_commit_fixture();
+        let payload = record.encode().unwrap();
+        for (offset, value) in [(16, 6_u8), (17, 1), (19, 1)] {
+            let mut bad = payload.clone();
+            bad[offset] = value;
+            assert_eq!(
+                TradeCommitRecord::decode(&bad),
+                Err(BattleBridgeError::Value)
+            );
+        }
+        let mut zero_id = payload.clone();
+        zero_id[0..16].fill(0);
+        assert_eq!(
+            TradeCommitRecord::decode(&zero_id),
+            Err(BattleBridgeError::Value)
+        );
+        let mut empty_mon = payload.clone();
+        empty_mon[28..].fill(0);
+        assert_eq!(
+            TradeCommitRecord::decode(&empty_mon),
+            Err(BattleBridgeError::Value)
+        );
+        assert_eq!(
+            TradeCommitRecord::decode(&payload[..127]),
+            Err(BattleBridgeError::Length)
+        );
+        let json = serde_json::to_value(record).unwrap();
+        assert_eq!(json["incoming_record"].as_str().unwrap().len(), 200);
+        assert_eq!(
+            serde_json::from_value::<TradeCommitRecord>(json).unwrap(),
+            record
+        );
+    }
+
+    #[test]
+    fn trade_offer_messages_have_fixed_types_directions_and_single_frames() {
+        use coop_protocol::{
+            TradeOfferAction, TradeOfferDecision, TradeOfferDecisionRecord, TradeOfferOutcome,
+            TradeOfferReceivedRecord, TradeOfferRequestRecord, TradeOfferRole,
+            TradeOfferStatusRecord,
+        };
+        let request = TradeOfferRequestRecord {
+            action: TradeOfferAction::Offer,
+            slot: 1,
+            request_id: 7,
+            personality: 0x0BAD_F00D,
+            ot_id: 0x2222_4444,
+        };
+        let decision = TradeOfferDecisionRecord {
+            decision: TradeOfferDecision::Accept,
+            slot: 0,
+            offer_token: 9,
+            personality: 1,
+            ot_id: 2,
+        };
+        let received = TradeOfferReceivedRecord {
+            offer_token: 9,
+            species: 263,
+            level: 4,
+            is_egg: false,
+            nickname: [0xFF; 10],
+        };
+        let status = TradeOfferStatusRecord {
+            role: TradeOfferRole::Requester,
+            outcome: TradeOfferOutcome::Pending,
+            request_id: 7,
+            offer_token: 9,
+        };
+        for (message_type, wire, direction, payload) in [
+            (
+                MessageType::TradeOfferRequest,
+                0x0016_u16,
+                Direction::RomToSidecar,
+                request.encode().unwrap(),
+            ),
+            (
+                MessageType::TradeOfferDecision,
+                0x0017,
+                Direction::RomToSidecar,
+                decision.encode().unwrap(),
+            ),
+            (
+                MessageType::TradeOfferReceived,
+                0x011A,
+                Direction::SidecarToRom,
+                received.encode().unwrap(),
+            ),
+            (
+                MessageType::TradeOfferStatus,
+                0x011B,
+                Direction::SidecarToRom,
+                status.encode().unwrap(),
+            ),
+        ] {
+            assert_eq!(MessageType::try_from(wire), Ok(message_type));
+            assert_eq!(message_type as u16, wire);
+            assert_eq!(message_type.direction(), direction);
+            let frame = BridgeFrame::new(message_type, 3, 9, &payload).unwrap();
+            let bytes = frame.encode();
+            assert_eq!(bytes.len(), BRIDGE_FRAME_SIZE);
+            assert_eq!(&bytes[0..2], &wire.to_le_bytes());
+            assert!(BridgeFrame::decode_for(&bytes, direction).is_ok());
+            let other = if direction == Direction::RomToSidecar {
+                Direction::SidecarToRom
+            } else {
+                Direction::RomToSidecar
+            };
+            assert!(BridgeFrame::decode_for(&bytes, other).is_err());
+        }
+        assert_eq!(
+            TradeOfferRequestRecord::decode(&request.encode().unwrap()),
+            Ok(request)
+        );
+        assert_eq!(
+            TradeOfferStatusRecord::decode(&status.encode().unwrap()),
+            Ok(status)
+        );
+        assert!(MessageType::try_from(0x0018).is_err());
+        assert!(MessageType::try_from(0x011C).is_err());
+    }
+
+    #[test]
+    fn trade_commit_ack_is_the_28_byte_header_on_commit_applied() {
+        use coop_protocol::{BattleCommitRecord, TradeCommitAppliedRecord};
+        let record = trade_commit_fixture();
+        let ack = record.applied();
+        let payload = ack.encode().unwrap();
+        assert_eq!(payload.len(), TradeCommitAppliedRecord::WIRE_SIZE);
+        assert_eq!(payload.len(), 28);
+        assert_eq!(payload, record.encode().unwrap()[..28]);
+        assert_ne!(payload.len(), BattleCommitRecord::WIRE_SIZE);
+        let frame = BridgeFrame::new(MessageType::CommitApplied, 5, 9, &payload).unwrap();
+        let decoded = BridgeFrame::decode_for(&frame.encode(), Direction::RomToSidecar).unwrap();
+        assert_eq!(TradeCommitAppliedRecord::decode(decoded.payload()), Ok(ack));
+        assert!(BattleCommitRecord::decode(decoded.payload()).is_err());
+    }
+
     #[test]
     fn battle_consent_message_types_preserve_direction_and_exact_payloads() {
         use coop_protocol::{
@@ -602,6 +816,11 @@ mod tests {
         };
         let id = BattleId([7; 16]);
         let reserve = TrainerBattleReserveRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             kind: BattleKind::Friendly,
             request_nonce: 42,
             trainer_region: None,
@@ -612,6 +831,11 @@ mod tests {
             decision: BattleDecision::Accept,
         };
         let offer = BattleJoinOfferRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             battle_id: id,
             kind: BattleKind::Friendly,
             role: BattleRole::Responder,
@@ -628,7 +852,8 @@ mod tests {
         let payload = offer.encode().unwrap();
         let frame = BridgeFrame::new(MessageType::BattleJoinOffer, 3, 9, &payload).unwrap();
         assert_eq!(frame.direction(), Direction::SidecarToRom);
-        assert_eq!(frame.payload().len(), 22);
+        assert_eq!(frame.payload().len(), BattleJoinOfferRecord::WIRE_SIZE);
+        assert_eq!(frame.payload().len(), 25);
         assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
 
         let outcome = BattleConsentOutcomeRecord {

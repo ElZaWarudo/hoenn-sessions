@@ -8,6 +8,7 @@
 #include "item.h"
 #include "johto/kanto_travel.h"
 #include "johto/save.h"
+#include "overworld.h"
 #include "region_map.h"
 #include "script.h"
 #include "start_menu.h"
@@ -306,6 +307,12 @@ TEST("Group travel rejects unapproved or unmaterialized script departures")
     ScriptContext_SetupScript(EventScript_CoopGroupTravelOffer);
     EXPECT_EQ(CoopGroupTravel_BeginFromScript(COOP_GROUP_TRAVEL_ROUTE_FERRY_ORIGINAL,
                                               COOP_GROUP_TRAVEL_DEPARTURE_TRAIN),
+              COOP_GROUP_TRAVEL_BEGIN_REJECTED);
+    EXPECT_EQ(CoopGroupTravel_BeginFromScript(COOP_GROUP_TRAVEL_ROUTE_DIG,
+                                              COOP_GROUP_TRAVEL_DEPARTURE_DIG),
+              COOP_GROUP_TRAVEL_BEGIN_REJECTED);
+    EXPECT_EQ(CoopGroupTravel_BeginFromScript(COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE,
+                                              COOP_GROUP_TRAVEL_DEPARTURE_ESCAPE_ROPE),
               COOP_GROUP_TRAVEL_BEGIN_REJECTED);
     EndDepartureScript();
 }
@@ -1704,6 +1711,170 @@ TEST("Group Fly vote restores its field lock after the map returns")
     UnlockPlayerFieldControls();
     if (!wasVisited)
         FlagClear(FLAG_VISITED_LITTLEROOT_TOWN);
+}
+
+TEST("Group Teleport uses the exact last heal point and waits for consent")
+{
+    const struct HealLocation *heal = GetHealLocation(HEAL_LOCATION_JOHTO_NEW_BARK_TOWN);
+    struct CoopGroupTravelRecord offer = Record(COOP_GROUP_TRAVEL_SERVER_OFFER, 8, 41, 6);
+
+    ResetGroupTravelFixture();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_OnSessionReady();
+    MaterializeDeparture(MAP_ROUTE104);
+    gSaveBlock1Ptr->lastHealLocation.mapGroup = heal->mapGroup;
+    gSaveBlock1Ptr->lastHealLocation.mapNum = heal->mapNum;
+    gSaveBlock1Ptr->lastHealLocation.warpId = WARP_ID_NONE;
+    gSaveBlock1Ptr->lastHealLocation.x = heal->x;
+    gSaveBlock1Ptr->lastHealLocation.y = heal->y;
+    EXPECT(CoopGroupTravel_CanTeleport());
+    EXPECT_EQ(CoopGroupTravel_BeginTeleport(), COOP_GROUP_TRAVEL_BEGIN_WAITING);
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->route, 8);
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->departure, COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT);
+    EXPECT(CoopGroupTravelProtocol_ValidateClient(CoopGroupTravel_TestRecord()));
+    EXPECT(ArePlayerFieldControlsLocked());
+
+    CoopGroupTravel_Init();
+    UnlockPlayerFieldControls();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    offer.departure = COOP_GROUP_TRAVEL_DEPARTURE_TELEPORT;
+    EXPECT(CoopGroupTravelProtocol_ValidateServer(&offer));
+    gSaveBlock1Ptr->lastHealLocation.x++;
+    EXPECT(!CoopGroupTravel_CanTeleport());
+    EXPECT_EQ(CoopGroupTravel_BeginTeleport(), COOP_GROUP_TRAVEL_BEGIN_REJECTED);
+    CoopGroupTravel_Init();
+}
+
+static struct CoopGroupTravelRecord EscapeRecord(u8 kind, u8 route, u32 request)
+{
+    struct CoopGroupTravelRecord record = {0};
+    record.kind = kind;
+    record.route = route;
+    record.departure = route == COOP_GROUP_TRAVEL_ROUTE_DIG
+        ? COOP_GROUP_TRAVEL_DEPARTURE_DIG
+        : COOP_GROUP_TRAVEL_DEPARTURE_ESCAPE_ROPE;
+    record.era = MAP_GROUP(MAP_GRANITE_CAVE_1F);
+    record.destination = MAP_NUM(MAP_GRANITE_CAVE_1F);
+    record.reserved0 = MAP_GROUP(MAP_ROUTE106);
+    record.reserved1[0] = MAP_NUM(MAP_ROUTE106);
+    record.reserved1[1] = 48;
+    record.reserved1[2] = 17;
+    record.request_id = request;
+    memset(record.proposal_id, 7, sizeof(record.proposal_id));
+    return record;
+}
+
+TEST("Group Dig encodes a fixed escape endpoint and rejects changes")
+{
+    struct CoopGroupTravelRecord reply;
+    bool8 oldAllowEscaping = gMapHeader.allowEscaping;
+
+    ResetGroupTravelFixture();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_OnSessionReady();
+    MaterializeDeparture(MAP_GRANITE_CAVE_1F);
+    gMapHeader.allowEscaping = TRUE;
+    SetEscapeWarp(MAP_GROUP(MAP_ROUTE106), MAP_NUM(MAP_ROUTE106),
+                  WARP_ID_NONE, 48, 17);
+    EXPECT(CoopGroupTravel_CanEscape());
+    EXPECT_EQ(CoopGroupTravel_BeginDig(), COOP_GROUP_TRAVEL_BEGIN_WAITING);
+    EXPECT(CoopGroupTravelProtocol_ValidateClient(CoopGroupTravel_TestRecord()));
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->era, MAP_GROUP(MAP_GRANITE_CAVE_1F));
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->reserved1[2], 17);
+    reply = *CoopGroupTravel_TestRecord();
+    reply.kind = COOP_GROUP_TRAVEL_SERVER_REQUESTING;
+    reply.reserved1[2] = 18;
+    EXPECT(!CoopGroupTravel_ReceiveServer(&reply));
+    reply.reserved1[2] = 17;
+    EXPECT(CoopGroupTravel_ReceiveServer(&reply));
+    gMapHeader.allowEscaping = oldAllowEscaping;
+    CoopGroupTravel_Init();
+    UnlockPlayerFieldControls();
+}
+
+TEST("Group Dig offer refuses an escape endpoint changed before consent")
+{
+    struct CoopGroupTravelRecord offer = EscapeRecord(
+        COOP_GROUP_TRAVEL_SERVER_OFFER, COOP_GROUP_TRAVEL_ROUTE_DIG, 42);
+    bool8 oldAllowEscaping = gMapHeader.allowEscaping;
+
+    ResetGroupTravelFixture();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_OnSessionReady();
+    MaterializeDeparture(MAP_GRANITE_CAVE_1F);
+    gMapHeader.allowEscaping = TRUE;
+    SetEscapeWarp(MAP_GROUP(MAP_ROUTE106), MAP_NUM(MAP_ROUTE106),
+                  WARP_ID_NONE, 48, 17);
+    EXPECT(CoopGroupTravelProtocol_ValidateServer(&offer));
+    EXPECT(CoopGroupTravel_ReceiveServer(&offer));
+    CoopGroupTravel_Poll();
+    SetEscapeWarp(MAP_GROUP(MAP_ROUTE106), MAP_NUM(MAP_ROUTE106),
+                  WARP_ID_NONE, 48, 18);
+    EXPECT(CoopGroupTravel_RespondToOffer(TRUE));
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->result,
+              COOP_GROUP_TRAVEL_RESULT_DECLINED);
+    gMapHeader.allowEscaping = oldAllowEscaping;
+    CoopGroupTravel_Init();
+    UnlockPlayerFieldControls();
+}
+
+TEST("Group Dig commit stages the agreed warp and replays only at its arrival")
+{
+    struct CoopGroupTravelRecord commit;
+    bool8 oldAllowEscaping = gMapHeader.allowEscaping;
+
+    ResetGroupTravelFixture();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_OnSessionReady();
+    MaterializeDeparture(MAP_GRANITE_CAVE_1F);
+    gMapHeader.allowEscaping = TRUE;
+    SetEscapeWarp(MAP_GROUP(MAP_ROUTE106), MAP_NUM(MAP_ROUTE106),
+                  WARP_ID_NONE, 48, 17);
+    EXPECT_EQ(CoopGroupTravel_BeginDig(), COOP_GROUP_TRAVEL_BEGIN_WAITING);
+    commit = *CoopGroupTravel_TestRecord();
+    commit.kind = COOP_GROUP_TRAVEL_SERVER_COMMIT;
+    memset(commit.proposal_id, 9, sizeof(commit.proposal_id));
+    EXPECT(CoopGroupTravel_ReceiveServer(&commit));
+    DiscardSimulatedWarp();
+
+    CoopGroupTravel_Init();
+    CoopGroupTravel_TestSetGrouped(TRUE);
+    CoopGroupTravel_TestSetSafe(TRUE);
+    CoopGroupTravel_OnSessionReady();
+    MaterializeDeparture(MAP_ROUTE106);
+    gSaveBlock1Ptr->pos.x = 48;
+    gSaveBlock1Ptr->pos.y = 18;
+    EXPECT(!CoopGroupTravel_ReceiveServer(&commit));
+    gSaveBlock1Ptr->pos.y = 17;
+    EXPECT(CoopGroupTravel_ReceiveServer(&commit));
+    EXPECT_EQ(CoopGroupTravel_TestRecord()->kind, COOP_GROUP_TRAVEL_CLIENT_APPLIED);
+    gMapHeader.allowEscaping = oldAllowEscaping;
+    CoopGroupTravel_Init();
+    UnlockPlayerFieldControls();
+}
+
+TEST("Group Escape Rope validates its source and exact arrival")
+{
+    struct CoopGroupTravelRecord record = EscapeRecord(
+        COOP_GROUP_TRAVEL_CLIENT_REQUEST, COOP_GROUP_TRAVEL_ROUTE_ESCAPE_ROPE, 43);
+
+    memset(record.proposal_id, 0, sizeof(record.proposal_id));
+    EXPECT(CoopGroupTravelProtocol_ValidateClient(&record));
+    record.kind = COOP_GROUP_TRAVEL_SERVER_OFFER;
+    memset(record.proposal_id, 7, sizeof(record.proposal_id));
+    EXPECT(CoopGroupTravelProtocol_ValidateServer(&record));
+    record.reserved1[1] = 128;
+    EXPECT(!CoopGroupTravelProtocol_ValidateServer(&record));
+    record.reserved1[1] = 48;
+    record.reserved0 = 255;
+    EXPECT(!CoopGroupTravelProtocol_ValidateServer(&record));
+    record.reserved0 = MAP_GROUP(MAP_ROUTE106);
+    record.era = 255;
+    EXPECT(!CoopGroupTravelProtocol_ValidateServer(&record));
 }
 
 TEST("Group travel refreshes offer countdown from server updates")

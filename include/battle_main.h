@@ -93,6 +93,17 @@ void SwitchInClearSetData(enum BattlerId battler, struct Volatiles *volatilesCop
 void FaintClearSetData(enum BattlerId battler);
 void BattleTurnPassed(void);
 bool32 EndTurnEvents(void);
+struct CoopBattleAction;
+/* TRUE while the engine is collecting the turn's actions. */
+bool32 IsBattleInActionSelection(void);
+/* Co-op friendly battles (see battle_main.c). */
+bool32 CoopFriendly_ResolveChoosePokemon(enum BattlerId battler, u8 localChoice, u8 *partyIndex);
+void CoopFriendly_FinishChoosePokemon(void);
+bool32 CoopFriendly_GetPeerSwitch(enum BattlerId battler, u8 *partyIndex);
+bool32 CoopFriendly_GetPeerAction(enum BattlerId battler, struct CoopBattleAction *action);
+#if TESTING
+void CoopBattle_TestSetTurnOrder(void);
+#endif
 u8 IsRunningFromBattleImpossible(enum BattlerId battler);
 void SwitchTwoBattlersInParty(enum BattlerId battler, enum BattlerId battler2);
 void SwitchPartyOrder(enum BattlerId battler);
@@ -109,6 +120,14 @@ enum Type GetDynamicMoveType(struct Pokemon *mon, enum Move move, enum BattlerId
 void SetTypeBeforeUsingMove(enum Move move, enum BattlerId battler);
 bool32 IsWildMonSmart(void);
 u8 CreateNPCTrainerPartyFromTrainer(struct Pokemon *party, const struct Trainer *trainer, bool32 firstTrainer, u32 battleTypeFlags);
+/* The co-op opponent party: the half-team party (the full team of a gym
+ * leader, admin, boss, Elite Four member or champion,
+ * CoopTrainerRewards_IsFullTeamClass), plus a second mon at the
+ * same level when the trainer has exactly one (a pool member, else the same
+ * entry with its own personality), with OT data taken from the trainer. The
+ * second mon depends only on trainer and seed, and leaves the battle RNG
+ * exactly as it found it. */
+u8 CreateCoopTrainerParty(struct Pokemon *party, const struct Trainer *trainer, u32 battleTypeFlags, u32 seed);
 void ModifyPersonalityForNature(u32 *personality, u32 newNature);
 u32 GeneratePersonalityForGender(u32 gender, enum Species species);
 void CustomTrainerPartyAssignMoves(struct Pokemon *mon, const struct TrainerMon *partyEntry);

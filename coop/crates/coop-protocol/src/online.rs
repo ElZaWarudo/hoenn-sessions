@@ -247,7 +247,7 @@ impl OnlineStatus {
     /// Rejects invalid paging, flags, correlation, or non-ASCII names.
     pub fn encode(&self) -> Result<[u8; ONLINE_STATUS_SIZE], OnlineError> {
         if self.request_id == 0
-            || self.flags & !63 != 0
+            || self.flags & !127 != 0
             || self.nearby_count > 32
             || self.incoming_count > 32
             || self.nearby_page >= self.nearby_count.max(1)

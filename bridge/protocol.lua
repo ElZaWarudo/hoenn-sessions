@@ -3,7 +3,7 @@ local protocol = {}
 protocol.MESSAGE_SIZE = 144
 protocol.PAYLOAD_SIZE = 128
 protocol.ABI_VERSION = 1
-protocol.PROTOCOL_VERSION = 1
+protocol.PROTOCOL_VERSION = 5
 
 protocol.types = {
   ROM_READY = 0x0001,
@@ -25,6 +25,8 @@ protocol.types = {
   SOCIAL_SIGNAL = 0x0011,
   BATTLE_ABORT_REQUEST = 0x0014,
   BATTLE_READY = 0x0015,
+  TRADE_OFFER_REQUEST = 0x0016,
+  TRADE_OFFER_DECISION = 0x0017,
   SESSION_READY = 0x0100,
   REMOTE_PLAYER_SPAWN = 0x0101,
   REMOTE_PLAYER_UPDATE = 0x0102,
@@ -45,6 +47,9 @@ protocol.types = {
   BATTLE_RESERVE_REJECTED = 0x0116,
   BATTLE_START = 0x0117,
   GROUP_ENDED = 0x0118,
+  TRADE_COMMIT = 0x0119,
+  TRADE_OFFER_RECEIVED = 0x011A,
+  TRADE_OFFER_STATUS = 0x011B,
 }
 
 local function is_integer(value)
@@ -54,13 +59,13 @@ end
 function protocol.is_outbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.ROM_READY
-    and message_type <= protocol.types.BATTLE_READY
+    and message_type <= protocol.types.TRADE_OFFER_DECISION
 end
 
 function protocol.is_inbound(message_type)
   return is_integer(message_type)
     and message_type >= protocol.types.SESSION_READY
-    and message_type <= protocol.types.GROUP_ENDED
+    and message_type <= protocol.types.TRADE_OFFER_STATUS
 end
 
 protocol.GROUP_TRAVEL_RECORD_SIZE = 32

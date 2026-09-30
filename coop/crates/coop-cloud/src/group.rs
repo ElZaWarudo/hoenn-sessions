@@ -4,7 +4,7 @@ use crate::{
     ApiVersion, CharacterId, ClientInstanceId, IdError, IdempotencyKey, LeaseFence, Revision,
     SessionEpoch, SessionId, UnixTimestampMillis, ids::deserialize_bounded_string,
 };
-use coop_protocol::{GroupTravelDeparture, RegionId, WorldZone};
+use coop_protocol::{GroupTravelDeparture, GroupTravelEndpoint, RegionId, WorldZone};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
@@ -493,6 +493,20 @@ impl PairingCode {
 
 const PAIRING_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
+/// Extracts a pairing code from a `hoenn-sessions://join/<code>` link or a
+/// bare code, ignoring surrounding space, letter case, and one trailing slash.
+#[must_use]
+pub fn pairing_code_from_join_text(text: &str) -> Option<PairingCode> {
+    let text = text.trim();
+    let prefix = GROUP_PAIRING_CODE_LINK_PREFIX;
+    let code = match text.get(..prefix.len()) {
+        Some(head) if head.eq_ignore_ascii_case(prefix) => &text[prefix.len()..],
+        _ => text,
+    };
+    let code = code.strip_suffix('/').unwrap_or(code);
+    PairingCode::new(code.to_ascii_uppercase()).ok()
+}
+
 impl Serialize for PairingCode {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -808,6 +822,9 @@ pub struct GroupTravelProposalRequest {
     pub session_epoch: SessionEpoch,
     pub client_instance_id: ClientInstanceId,
     pub idempotency_key: IdempotencyKey,
+    /// Dynamic Dig/Escape Rope endpoints are omitted for legacy static routes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
 }
 
 impl GroupTravelProposalRequest {
@@ -828,6 +845,10 @@ impl GroupTravelProposalRequest {
             GroupTravelDeparture::Gate
         } else if route_id.as_str() == "HOENN:FLY_LITTLEROOT" {
             GroupTravelDeparture::Fly
+        } else if route_id.as_str() == "HOENN:DIG" {
+            GroupTravelDeparture::Dig
+        } else if route_id.as_str() == "HOENN:ESCAPE_ROPE" {
+            GroupTravelDeparture::EscapeRope
         } else if route_id.as_str().ends_with("_CABLE_CAR") {
             GroupTravelDeparture::CableCar
         } else {
@@ -845,6 +866,20 @@ impl GroupTravelProposalRequest {
         departure: GroupTravelDeparture,
         idempotency_key: IdempotencyKey,
     ) -> Result<Self, GroupError> {
+        Self::new_with_departure_and_endpoint(fence, route_id, departure, None, idempotency_key)
+    }
+
+    /// Creates a proposal request with an optional dynamic endpoint.
+    ///
+    /// The endpoint is required for Dig and Escape Rope and must be omitted
+    /// for all legacy static routes.
+    pub fn new_with_departure_and_endpoint(
+        fence: LeaseFence,
+        route_id: impl Into<String>,
+        departure: GroupTravelDeparture,
+        endpoint: Option<GroupTravelEndpoint>,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<Self, GroupError> {
         let request = Self {
             api_version: ApiVersion::V1,
             route_id: RouteId::new(route_id)?,
@@ -855,9 +890,21 @@ impl GroupTravelProposalRequest {
             session_epoch: fence.session_epoch,
             client_instance_id: fence.client_instance_id,
             idempotency_key,
+            endpoint,
         };
         request.validate()?;
         Ok(request)
+    }
+
+    /// Alias retained for callers that already have an explicit endpoint.
+    pub fn new_with_endpoint(
+        fence: LeaseFence,
+        route_id: impl Into<String>,
+        departure: GroupTravelDeparture,
+        endpoint: Option<GroupTravelEndpoint>,
+        idempotency_key: IdempotencyKey,
+    ) -> Result<Self, GroupError> {
+        Self::new_with_departure_and_endpoint(fence, route_id, departure, endpoint, idempotency_key)
     }
 
     #[must_use]
@@ -877,6 +924,10 @@ impl GroupTravelProposalRequest {
     pub fn validate(&self) -> Result<(), GroupError> {
         if self.api_version.value() != 1 {
             return Err(GroupError::InvalidApiVersion);
+        }
+        let dynamic = matches!(self.route_id.as_str(), "HOENN:DIG" | "HOENN:ESCAPE_ROPE");
+        if dynamic != self.endpoint.is_some() {
+            return Err(GroupError::InvalidRouteId);
         }
         Ok(())
     }
@@ -899,6 +950,8 @@ impl<'de> Deserialize<'de> for GroupTravelProposalRequest {
             session_epoch: SessionEpoch,
             client_instance_id: ClientInstanceId,
             idempotency_key: IdempotencyKey,
+            #[serde(default)]
+            endpoint: Option<GroupTravelEndpoint>,
         }
         let wire = Wire::deserialize(deserializer)?;
         let request = Self {
@@ -911,6 +964,7 @@ impl<'de> Deserialize<'de> for GroupTravelProposalRequest {
             session_epoch: wire.session_epoch,
             client_instance_id: wire.client_instance_id,
             idempotency_key: wire.idempotency_key,
+            endpoint: wire.endpoint,
         };
         request.validate().map_err(serde::de::Error::custom)?;
         Ok(request)
@@ -1066,6 +1120,9 @@ pub struct GroupTravelCommit {
     pub group_zone_revision: u64,
     pub members: [GroupMemberView; 2],
     pub destination: WorldZone,
+    /// Dynamic endpoint retained verbatim for replay and delivery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
 }
 
 /// Persistent proposal state delivered to either group member.
@@ -1081,6 +1138,9 @@ pub struct GroupTravelProposalView {
     pub departure: GroupTravelDeparture,
     pub source: WorldZone,
     pub destination: WorldZone,
+    /// Dynamic endpoint retained verbatim for replay and delivery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<GroupTravelEndpoint>,
     pub expected_group_zone_revision: u64,
     pub expected_members: [GroupMemberView; 2],
     pub status: GroupTravelProposalStatus,
@@ -1227,6 +1287,62 @@ mod tests {
         assert!(serde_json::from_value::<GroupTravelActionRequest>(value.clone()).is_ok());
         value["action"] = json!("applied");
         assert!(serde_json::from_value::<GroupTravelActionRequest>(value).is_err());
+    }
+
+    #[test]
+    fn join_text_accepts_links_and_bare_codes_only() {
+        let code = |text| pairing_code_from_join_text(text).map(|code| code.as_str().to_owned());
+        assert_eq!(
+            code("hoenn-sessions://join/ABC-234"),
+            Some("ABC-234".to_owned())
+        );
+        assert_eq!(
+            code(" HOENN-SESSIONS://JOIN/abc-234/ "),
+            Some("ABC-234".to_owned())
+        );
+        assert_eq!(code("abc-234"), Some("ABC-234".to_owned()));
+        for bad in [
+            "",
+            "hoenn-sessions://join/",
+            "hoenn-sessions://join/ABC-234/extra",
+            "hoenn-sessions://other/ABC-234",
+            "https://join/ABC-234",
+            "ABC-1I0",
+            "ABCD234",
+            "hoenn-sessions://join/ABC-234?x=1",
+            "h\u{e9}enn-sessions://join/ABC-234",
+        ] {
+            assert_eq!(code(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn dynamic_proposal_endpoint_is_optional_only_for_legacy_routes() {
+        let static_proposal = GroupTravelProposalRequest::new_with_departure(
+            sample_fence(),
+            "JOHTO:GOLDENROD_KANTO_ORIGINAL_TRAIN",
+            GroupTravelDeparture::Train,
+            id(IdempotencyKey::new, 15),
+        )
+        .expect("static proposal");
+        let static_json = serde_json::to_value(&static_proposal).expect("static json");
+        assert!(static_json.get("endpoint").is_none());
+
+        let endpoint = GroupTravelEndpoint::new(0, 9, 0, 10, 4, 6);
+        let dynamic = GroupTravelProposalRequest::new_with_endpoint(
+            sample_fence(),
+            "HOENN:DIG",
+            GroupTravelDeparture::Dig,
+            Some(endpoint),
+            id(IdempotencyKey::new, 16),
+        )
+        .expect("dynamic proposal");
+        let dynamic_json = serde_json::to_value(&dynamic).expect("dynamic json");
+        assert_eq!(dynamic_json["endpoint"]["source_map_group"], 0);
+        assert_eq!(
+            serde_json::from_value::<GroupTravelProposalRequest>(dynamic_json).unwrap(),
+            dynamic
+        );
     }
 
     #[test]
