@@ -61,6 +61,7 @@
 static bool32 TryRemoveScreens(enum BattlerId battler);
 static bool32 IsUnnerveAbilityOnOpposingSide(enum BattlerId battler);
 static u32 GetFlingPowerFromItemId(enum Item itemId);
+static bool32 CantPickupCanonicalItem(u32 canonical);
 static bool32 IsNonVolatileStatusBlocked(enum BattlerId battlerDef, enum Ability abilityDef, bool32 abilityAffected, const u8 *battleScript, enum ResultOption option);
 static bool32 CanSleepDueToSleepClause(enum BattlerId battlerAtk, enum BattlerId battlerDef, enum ResultOption option);
 static bool32 IsOpposingSideEmpty(enum BattlerId battler);
@@ -1812,10 +1813,13 @@ bool32 HandleFaintedMonActions(void)
         case FAINTED_ACTIONS_GIVE_EXP:
             do
             {
-                gBattlerFainted = gBattlerTarget = gBattleStruct->eventState.faintedActionBattler;
-                if (gBattleMons[gBattleStruct->eventState.faintedActionBattler].hp == 0
-                 && !(gBattleStruct->givenExpMons & (1u << gBattlerPartyIndexes[gBattleStruct->eventState.faintedActionBattler]))
-                 && !(gAbsentBattlerFlags & (1u << gBattleStruct->eventState.faintedActionBattler)))
+                /* faintedActionBattler counts in canonical battler order. */
+                enum BattlerId fainted = CoopBattleRuntime_CanonicalBattler(gBattleStruct->eventState.faintedActionBattler);
+
+                gBattlerFainted = gBattlerTarget = fainted;
+                if (gBattleMons[fainted].hp == 0
+                 && !(gBattleStruct->givenExpMons & (1u << gBattlerPartyIndexes[fainted]))
+                 && !(gAbsentBattlerFlags & (1u << fainted)))
                 {
                     if (!CoopBattleRuntime_IsEngineActive())
                     {
@@ -1826,7 +1830,7 @@ bool32 HandleFaintedMonActions(void)
                     /* Co-op: record who earned the EXP; it is applied to
                      * the local party after the battle (hashed state is
                      * left untouched). */
-                    CoopTrainerRewards_RecordFaint(gBattleStruct->eventState.faintedActionBattler);
+                    CoopTrainerRewards_RecordFaint(fainted);
                 }
             } while (++gBattleStruct->eventState.faintedActionBattler != gBattlersCount);
             gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_WAIT_STATE;
@@ -1863,9 +1867,11 @@ bool32 HandleFaintedMonActions(void)
         case FAINTED_ACTIONS_HANDLE_FAINTED_MON:
             do
             {
-                gBattlerFainted = gBattlerTarget = gBattleStruct->eventState.faintedActionBattler;
-                if (gBattleMons[gBattleStruct->eventState.faintedActionBattler].hp == 0
-                 && !(gAbsentBattlerFlags & (1u << gBattleStruct->eventState.faintedActionBattler)))
+                enum BattlerId fainted = CoopBattleRuntime_CanonicalBattler(gBattleStruct->eventState.faintedActionBattler);
+
+                gBattlerFainted = gBattlerTarget = fainted;
+                if (gBattleMons[fainted].hp == 0
+                 && !(gAbsentBattlerFlags & (1u << fainted)))
                 {
                     BattleScriptExecute(BattleScript_HandleFaintedMon);
                     gBattleStruct->eventState.faintedAction = FAINTED_ACTIONS_HANDLE_NEXT_BATTLER;
@@ -2107,14 +2113,16 @@ static void ForewarnChooseMove(enum BattlerId battler)
     // Put all moves
     for (count = 0, i = 0; i < MAX_BATTLERS_COUNT; i++)
     {
-        if (IsBattlerAlive(i) && !IsBattlerAlly(i, battler))
+        enum BattlerId foe = CoopBattleRuntime_CanonicalBattler(i);
+
+        if (IsBattlerAlive(foe) && !IsBattlerAlly(foe, battler))
         {
             for (j = 0; j < MAX_MON_MOVES; j++)
             {
-                if (gBattleMons[i].moves[j] == MOVE_NONE)
+                if (gBattleMons[foe].moves[j] == MOVE_NONE)
                     continue;
-                data[count].moveId = gBattleMons[i].moves[j];
-                data[count].battler = i;
+                data[count].moveId = gBattleMons[foe].moves[j];
+                data[count].battler = foe;
                 switch (GetMoveEffect(data[count].moveId))
                 {
                 case EFFECT_OHKO:
@@ -2981,8 +2989,10 @@ static bool32 TryDancer(void)
     if (!IsDanceMove(gCurrentMove))
         return FALSE;
 
-    for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(i);
+
         if (gBattleMons[battler].volatiles.activateDancer && !gSpecialStatuses[battler].dancerUsedMove)
         {
             if (!anyDancerQueued || (gBattleMons[battler].speed < gBattleMons[dancerBattler].speed))
@@ -3076,7 +3086,7 @@ u32 AbilityBattleEffects(enum AbilityEffect caseID, enum BattlerId battler, enum
                 {
                     if (!gAbilitiesInfo[gBattleMons[target1].ability].cantBeTraced && gBattleMons[target1].hp != 0
                         && !gAbilitiesInfo[gBattleMons[target2].ability].cantBeTraced && gBattleMons[target2].hp != 0)
-                        chosenTarget = GetBattlerAtPosition((RandomPercentage(RNG_TRACE, 50) * 2) | side), effect++;
+                        chosenTarget = CoopBattleRuntime_CanonicalBattler(GetBattlerAtPosition((RandomPercentage(RNG_TRACE, 50) * 2) | side)), effect++;
                     else if (!gAbilitiesInfo[gBattleMons[target1].ability].cantBeTraced && gBattleMons[target1].hp != 0)
                         chosenTarget = target1, effect++;
                     else if (!gAbilitiesInfo[gBattleMons[target2].ability].cantBeTraced && gBattleMons[target2].hp != 0)
@@ -3101,7 +3111,7 @@ u32 AbilityBattleEffects(enum AbilityEffect caseID, enum BattlerId battler, enum
         case ABILITY_IMPOSTER:
             if (gBattleStruct->battlerState[battler].switchIn)
             {
-                enum BattlerId diagonalBattler = BATTLE_OPPOSITE(battler);
+                enum BattlerId diagonalBattler = CoopBattleRuntime_CanonicalBattler(BATTLE_OPPOSITE(CoopBattleRuntime_CanonicalBattler(battler)));
                 if (IsDoubleBattle())
                     diagonalBattler = BATTLE_PARTNER(diagonalBattler);
 
@@ -3601,7 +3611,7 @@ u32 AbilityBattleEffects(enum AbilityEffect caseID, enum BattlerId battler, enum
                 if (gBattleMons[battler].item == ITEM_NONE
                  && PickupHasValidTarget(battler))
                 {
-                    gBattlerTarget = RandomUniformExcept(RNG_PICKUP, 0, gBattlersCount - 1, CantPickupItem);
+                    gBattlerTarget = CoopBattleRuntime_CanonicalBattler(RandomUniformExcept(RNG_PICKUP, 0, gBattlersCount - 1, CantPickupCanonicalItem));
                     gLastUsedItem = GetBattlerPartyState(gBattlerTarget)->usedHeldItem;
                     BattleScriptCall(BattleScript_PickupActivates);
                     effect++;
@@ -5484,13 +5494,14 @@ u32 SetRandomTarget(enum BattlerId battlerAtk)
 
     if (IsDoubleBattle())
     {
-        target = GetBattlerAtPosition(targets[GetBattlerSide(battlerAtk)][RandomUniform(RNG_RANDOM_TARGET, 0, 1)]);
+        /* The rolled position is a canonical one (co-op trainer battles). */
+        target = CoopBattleRuntime_CanonicalBattler(GetBattlerAtPosition(targets[GetBattlerSide(battlerAtk)][RandomUniform(RNG_RANDOM_TARGET, 0, 1)]));
         if (!IsBattlerAlive(target))
             target ^= BIT_FLANK;
     }
     else
     {
-        target = GetBattlerAtPosition(targets[GetBattlerSide(battlerAtk)][0]);
+        target = CoopBattleRuntime_CanonicalBattler(GetBattlerAtPosition(targets[GetBattlerSide(battlerAtk)][0]));
     }
 
     return target;
@@ -5520,13 +5531,13 @@ u32 GetBattleMoveTarget(enum Move move, enum MoveTarget moveTarget)
     case TARGET_DEPENDS:
     case TARGET_BOTH:
     case TARGET_FOES_AND_ALLY:
-        targetBattler = GetOpposingSideBattler(gBattlerAttacker);
+        targetBattler = CoopBattleRuntime_CanonicalBattler(GetOpposingSideBattler(gBattlerAttacker));
         if (IsDoubleBattle() && !IsBattlerAlive(targetBattler))
             targetBattler ^= BIT_FLANK;
         break;
 
     case TARGET_OPPONENTS_FIELD:
-        targetBattler = GetOpposingSideBattler(gBattlerAttacker);
+        targetBattler = CoopBattleRuntime_CanonicalBattler(GetOpposingSideBattler(gBattlerAttacker));
         break;
 
     case TARGET_ALLY:
@@ -9117,6 +9128,10 @@ void SortBattlersBySpeed(enum BattlerId *battlers, bool32 slowToFast)
     int i, j, currSpeed;
     enum BattlerId currBattler;
     u16 speeds[MAX_BATTLERS_COUNT] = {0};
+    /* Co-op trainer battles: the two ROMs number the member battlers
+     * differently, so equal speeds are ordered by the canonical battler
+     * both ROMs share instead of by input (battler ID) order. */
+    bool32 canonicalTies = CoopBattleRuntime_IsTrainerEngine();
 
     for (i = 0; i < gBattlersCount; i++)
     {
@@ -9132,7 +9147,9 @@ void SortBattlersBySpeed(enum BattlerId *battlers, bool32 slowToFast)
 
         if (slowToFast)
         {
-            while (j >= 0 && speeds[j] > currSpeed)
+            while (j >= 0 && (speeds[j] > currSpeed
+                           || (canonicalTies && speeds[j] == currSpeed
+                            && CoopBattleRuntime_CanonicalBattler(battlers[j]) > CoopBattleRuntime_CanonicalBattler(currBattler))))
             {
                 battlers[j + 1] = battlers[j];
                 speeds[j + 1] = speeds[j];
@@ -9141,7 +9158,9 @@ void SortBattlersBySpeed(enum BattlerId *battlers, bool32 slowToFast)
         }
         else
         {
-            while (j >= 0 && speeds[j] < currSpeed)
+            while (j >= 0 && (speeds[j] < currSpeed
+                           || (canonicalTies && speeds[j] == currSpeed
+                            && CoopBattleRuntime_CanonicalBattler(battlers[j]) > CoopBattleRuntime_CanonicalBattler(currBattler))))
             {
                 battlers[j + 1] = battlers[j];
                 speeds[j + 1] = speeds[j];
@@ -9341,6 +9360,12 @@ bool32 CantPickupItem(u32 _battler)
     return !(IsBattlerAlive(battler) && GetBattlerPartyState(battler)->usedHeldItem && gBattleStruct->battlerState[battler].canPickupItem);
 }
 
+/* RandomUniformExcept for RNG_PICKUP rolls a canonical battler. */
+static bool32 CantPickupCanonicalItem(u32 canonical)
+{
+    return CantPickupItem(CoopBattleRuntime_CanonicalBattler(canonical));
+}
+
 bool32 PickupHasValidTarget(enum BattlerId battler)
 {
     for (enum BattlerId i = 0; i < gBattlersCount; i++)
@@ -9416,18 +9441,22 @@ bool32 CanTargetBattler(enum BattlerId battlerAtk, enum BattlerId battlerDef, en
 
 u32 GetNextTarget(u32 moveTarget, bool32 excludeCurrent)
 {
-    enum BattlerId battler;
-    for (battler = 0; battler < MAX_BATTLERS_COUNT; battler++)
+    enum BattlerId battler = MAX_BATTLERS_COUNT;
+    u32 i;
+
+    /* Spread-move targets (and their RNG rolls) in canonical order. */
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
     {
+        battler = CoopBattleRuntime_CanonicalBattler(i);
         if (battler == gBattlerAttacker || !IsBattlerAlive(battler))
             continue;
 
         if (!(excludeCurrent && battler == gBattlerTarget)
          && !gBattleStruct->battlerState[gBattlerAttacker].targetsDone[battler]
          && (!IsBattlerAlly(battler, gBattlerAttacker) || moveTarget == TARGET_FOES_AND_ALLY))
-            break;
+            return battler;
     }
-    return battler;
+    return MAX_BATTLERS_COUNT;
 }
 
 void CopyMonLevelAndBaseStatsToBattleMon(enum BattlerId battler, struct Pokemon *mon)
@@ -9695,8 +9724,9 @@ void SetShellSideArmCategory(void)
     if (gBattleTypeFlags & BATTLE_TYPE_SAFARI)
         return;
 
-    for (battlerAtk = 0; battlerAtk < gBattlersCount; battlerAtk++)
+    for (u32 i = 0; i < gBattlersCount; i++)
     {
+        battlerAtk = CoopBattleRuntime_CanonicalBattler(i);
         attackerAtkStat = gBattleMons[battlerAtk].attack;
         statStage = gBattleMons[battlerAtk].statStages[STAT_ATK];
         attackerAtkStat *= gStatStageRatios[statStage][0];
@@ -9707,8 +9737,9 @@ void SetShellSideArmCategory(void)
         attackerSpAtkStat *= gStatStageRatios[statStage][0];
         attackerSpAtkStat /= gStatStageRatios[statStage][1];
 
-        for (battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+        for (u32 j = 0; j < gBattlersCount; j++)
         {
+            battlerDef = CoopBattleRuntime_CanonicalBattler(j);
             if (battlerAtk == battlerDef)
                 continue;
 
@@ -10940,9 +10971,9 @@ enum BattlerId GetTargetBySlot(enum BattlerId battlerAtk, enum BattlerId battler
     case B_BATTLER_1:
         return BATTLE_PARTNER(battlerAtk);
     case B_BATTLER_2:
-        return LEFT_FOE(battlerAtk);
+        return CoopBattleRuntime_CanonicalBattler(LEFT_FOE(battlerAtk));
     case B_BATTLER_3:
-        return RIGHT_FOE(battlerAtk);
+        return CoopBattleRuntime_CanonicalBattler(RIGHT_FOE(battlerAtk));
     default:
         errorf("Illegal battler");
         return B_BATTLER_0;

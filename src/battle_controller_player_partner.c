@@ -204,7 +204,11 @@ static enum TrainerPicID PlayerPartnerGetTrainerBackPicId(enum DifficultyLevel d
 {
     enum TrainerPicID trainerPicId;
 
-    if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
+    /* A co-op partner is another player: the player back pic of its
+     * gender (the OT gender of its lead), not the in-game partner's. */
+    if (CoopBattleRuntime_IsTrainerEngine())
+        trainerPicId = GetPlayerTrainerPic(CoopBattleRuntime_PartnerGender(), GAME_VERSION);
+    else if (gBattleTypeFlags & BATTLE_TYPE_INGAME_PARTNER)
         trainerPicId = gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerPic;
     else
         trainerPicId = GetPlayerTrainerPic(gSaveBlock2Ptr->playerGender, GAME_VERSION);
@@ -444,7 +448,9 @@ static void PlayerPartnerHandleIntroTrainerBallThrow(enum BattlerId battler)
     const u16 *trainerPal;
     enum DifficultyLevel difficulty = GetBattlePartnerDifficultyLevel(gPartnerTrainerId);
 
-    if (gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
+    if (CoopBattleRuntime_IsTrainerEngine())
+        trainerPal = GetTrainerBackPicPalette(PlayerPartnerGetTrainerBackPicId(difficulty));
+    else if (gPartnerTrainerId > TRAINER_PARTNER(PARTNER_NONE))
         trainerPal = GetTrainerBackPicPalette(gBattlePartners[difficulty][gPartnerTrainerId - TRAINER_PARTNER(PARTNER_NONE)].trainerPic);
     else if (IsAiVsAiBattle())
         trainerPal = GetTrainerFrontPicPalette(GetTrainerPicFromId(gPartnerTrainerId));

@@ -6046,7 +6046,8 @@ static void CheckChangingTurnOrderEffects(void)
     {
         while (gBattleStruct->quickClawBattlerId < gBattlersCount)
         {
-            battler = gBattlerAttacker = gBattleStruct->quickClawBattlerId;
+            /* Custap/Quick Claw/Quick Draw activate in canonical order. */
+            battler = gBattlerAttacker = CoopBattleRuntime_CanonicalBattler(gBattleStruct->quickClawBattlerId);
             gBattleStruct->quickClawBattlerId++;
             if (gChosenActionByBattler[battler] == B_ACTION_USE_MOVE
              && GetMoveEffect(gChosenMoveByBattler[battler]) != EFFECT_FOCUS_PUNCH   // quick claw message doesn't need to activate here

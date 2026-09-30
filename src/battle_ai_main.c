@@ -924,8 +924,12 @@ static u32 ChooseMoveOrAction_Doubles(enum BattlerId battler)
     u32 mostViableMovesNo;
     s32 mostMovePoints;
 
-    for (enum BattlerId battlerIndex = 0; battlerIndex < MAX_BATTLERS_COUNT; battlerIndex++)
+    /* Targets are scored (drawing RNG ties) and listed in canonical order:
+     * a co-op trainer battle runs this AI on both ROMs. */
+    for (u32 i = 0; i < MAX_BATTLERS_COUNT; i++)
     {
+        enum BattlerId battlerIndex = CoopBattleRuntime_CanonicalBattler(i);
+
         if (gBattleMons[battlerIndex].hp == 0)
         {
             actionOrMoveIndex[battlerIndex] = 0xFF;
@@ -1005,12 +1009,14 @@ static u32 ChooseMoveOrAction_Doubles(enum BattlerId battler)
         }
     }
 
-    mostMovePoints = bestMovePointsForTarget[0];
-    mostViableTargetsArray[0] = 0;
+    mostMovePoints = bestMovePointsForTarget[CoopBattleRuntime_CanonicalBattler(0)];
+    mostViableTargetsArray[0] = CoopBattleRuntime_CanonicalBattler(0);
     mostViableTargetsNo = 1;
 
-    for (enum BattlerId battlerIndex = 1; battlerIndex < MAX_BATTLERS_COUNT; battlerIndex++)
+    for (u32 i = 1; i < MAX_BATTLERS_COUNT; i++)
     {
+        enum BattlerId battlerIndex = CoopBattleRuntime_CanonicalBattler(i);
+
         if (mostMovePoints == bestMovePointsForTarget[battlerIndex])
         {
             mostViableTargetsArray[mostViableTargetsNo] = battlerIndex;

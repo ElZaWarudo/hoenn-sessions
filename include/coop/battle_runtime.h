@@ -218,6 +218,16 @@ bool8 CoopBattleRuntime_IsFriendlyDoubles(void);
  * mirrored (its own battlers at the bottom). Trainer battles swap the two
  * player battlers on member 1's ROM. Returns the battler both ROMs agree on. */
 u8 CoopBattleRuntime_CanonicalBattler(u8 battler);
+/* A co-op trainer battle runs the engine (not a friendly one): the member
+ * battlers are numbered differently on the two ROMs, so engine code that
+ * orders or picks battlers by ID or position goes through the canonical
+ * battler (vanilla battles are unaffected: the mapping is the identity). */
+bool8 CoopBattleRuntime_IsTrainerEngine(void);
+/* Co-op trainer battles: the partner is the other player, named by the OT
+ * of the lead Pokemon it staged (as friendly battles name the opponent).
+ * dst takes PLAYER_NAME_LENGTH + 1 bytes; FALSE outside such a battle. */
+bool8 CoopBattleRuntime_CopyPartnerName(u8 *dst);
+u8 CoopBattleRuntime_PartnerGender(void);
 bool8 CoopBattleRuntime_IsEngineFaulted(void);
 bool8 CoopBattleRuntime_IsSessionReady(void);
 u8 CoopBattleRuntime_EngineLocalMemberSlot(void);

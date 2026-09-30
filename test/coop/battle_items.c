@@ -171,6 +171,7 @@ static void StageTrainerView(u8 slot, struct Pokemon *member0, struct Pokemon *m
     memset(gSpecialStatuses, 0, sizeof(gSpecialStatuses));
     memset(gSideStatuses, 0, sizeof(gSideStatuses));
     memset(gSideTimers, 0, sizeof(gSideTimers));
+    memset(gLastMoves, 0, sizeof(gLastMoves));
     gAbsentBattlerFlags = 0;
     gBattleOutcome = 0;
     gHitMarker = 0;

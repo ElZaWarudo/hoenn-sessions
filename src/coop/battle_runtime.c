@@ -5,10 +5,12 @@
 #include "coop/identity.h"
 #include "coop/region.h"
 #include "battle.h"
+#include "battle_util.h"
 #include "random.h"
 #include "pokemon.h"
 #include "item.h"
 #include "constants/battle.h"
+#include "constants/characters.h"
 #include "constants/items.h"
 #include "constants/opponents.h"
 #include "constants/species.h"
@@ -1337,6 +1339,27 @@ u8 CoopBattleRuntime_CanonicalBattler(u8 battler)
     return battler;
 }
 
+bool8 CoopBattleRuntime_IsTrainerEngine(void)
+{
+    return sBattleRuntime.engine_active && !sBattleRuntime.engine_friendly;
+}
+
+bool8 CoopBattleRuntime_CopyPartnerName(u8 *dst)
+{
+    if (dst == NULL || !CoopBattleRuntime_IsTrainerEngine())
+        return FALSE;
+    /* Writes PLAYER_NAME_LENGTH characters and EOS. */
+    GetMonData(&gParties[B_TRAINER_2][0], MON_DATA_OT_NAME, dst);
+    if (dst[0] == EOS)
+        return FALSE;
+    return TRUE;
+}
+
+u8 CoopBattleRuntime_PartnerGender(void)
+{
+    return GetMonData(&gParties[B_TRAINER_2][0], MON_DATA_OT_GENDER) == FEMALE ? FEMALE : MALE;
+}
+
 bool8 CoopBattleRuntime_IsEngineFaulted(void)
 {
     return sBattleRuntime.engine_active && sBattleRuntime.engine_faulted;
@@ -1883,8 +1906,10 @@ static void CoopBattleDigest_U32(struct CoopBattleSha256 *context, u32 value)
     CoopBattleDigest_Bytes(context, bytes, sizeof(bytes));
 }
 
+/* volatiles is mon->volatiles or a copy with canonical battler references. */
 static void CoopBattleDigest_BattlePokemon(struct CoopBattleSha256 *context,
-                                           const struct BattlePokemon *mon)
+                                           const struct BattlePokemon *mon,
+                                           const struct Volatiles *volatiles)
 {
     u8 i;
 
@@ -1922,7 +1947,7 @@ static void CoopBattleDigest_BattlePokemon(struct CoopBattleSha256 *context,
     /* Volatile bitfields are the protocol's versioned engine representation;
      * this fixed-size byte serialization includes every volatile timer and
      * target without copying compiler padding from the surrounding mon. */
-    CoopBattleDigest_Bytes(context, &mon->volatiles, sizeof(mon->volatiles));
+    CoopBattleDigest_Bytes(context, volatiles, sizeof(*volatiles));
     CoopBattleDigest_U32(context, mon->otId);
     CoopBattleDigest_U8(context, mon->metLevel);
     CoopBattleDigest_U8(context, mon->isShiny);
@@ -1962,14 +1987,52 @@ static void CoopBattleDigest_Party(struct CoopBattleSha256 *context,
         CoopBattleDigest_Bytes(context, &gParties[trainer][i], sizeof(struct Pokemon));
 }
 
+/* Stored battler references, in the trainer layout's local numbering, as the
+ * canonical battler both ROMs agree on (CoopBattleRuntime_CanonicalBattler
+ * swaps local 0 and 2 on member 1's ROM and is its own inverse). A raw ID
+ * whose unset value 0 would read as local battler 0 is hashed only while its
+ * flag says it is set; "battler + 1" fields keep 0 as unset; out-of-range
+ * sentinels (0xFF, MAX_BATTLERS_COUNT) pass through unchanged. */
+static u8 CoopBattleDigest_CanonicalRef(bool32 set, u8 battler)
+{
+    return set ? CoopBattleRuntime_CanonicalBattler(battler) : 0;
+}
+
+static u8 CoopBattleDigest_CanonicalRefPlusOne(u8 value)
+{
+    return value == 0 ? 0 : CoopBattleRuntime_CanonicalBattler(value - 1) + 1;
+}
+
+static u8 CoopBattleDigest_CanonicalMask(u8 mask);
+
+static void CoopBattleDigest_CanonicalVolatiles(struct Volatiles *v)
+{
+    v->skyDropTarget = CoopBattleDigest_CanonicalRefPlusOne(v->skyDropTarget);
+    v->infatuation = CoopBattleDigest_CanonicalRefPlusOne(v->infatuation);
+    v->leechSeed = CoopBattleDigest_CanonicalRefPlusOne(v->leechSeed);
+    v->battlerWithSureHit = CoopBattleDigest_CanonicalRefPlusOne(v->battlerWithSureHit);
+    v->wrappedBy = CoopBattleDigest_CanonicalRef(v->wrapped, v->wrappedBy);
+    v->stickySyrupedBy = CoopBattleDigest_CanonicalRef(v->syrupBomb, v->stickySyrupedBy);
+    v->battlerPreventingEscape = CoopBattleDigest_CanonicalRef(v->escapePrevention,
+                                                               v->battlerPreventingEscape);
+    v->octolockedBy = CoopBattleDigest_CanonicalRef(v->octolock, v->octolockedBy);
+}
+
 /* position is where this ROM draws the battler; canonical_position is the
  * one both ROMs agree on (member 0 at PLAYER_LEFT, member 1 at
- * PLAYER_RIGHT), which is what is hashed. */
+ * PLAYER_RIGHT), which is what is hashed. Battler references inside the
+ * battler's state are hashed as canonical IDs. */
 static void CoopBattleDigest_Battler(struct CoopBattleSha256 *context,
                                      enum BattlerPosition position,
                                      enum BattlerPosition canonical_position)
 {
     enum BattlerId battler = CoopBattleDigest_BattlerAt(position);
+    struct Volatiles volatiles;
+    struct ProtectStruct protect;
+    struct SpecialStatus special;
+    struct BattlerState state;
+    struct FutureSight futureSight;
+    u8 i;
 
     CoopBattleDigest_U8(context, canonical_position);
     if (battler == MAX_BATTLERS_COUNT)
@@ -1978,11 +2041,38 @@ static void CoopBattleDigest_Battler(struct CoopBattleSha256 *context,
         return;
     }
     CoopBattleDigest_U8(context, gBattlerPartyIndexes[battler]);
-    CoopBattleDigest_BattlePokemon(context, &gBattleMons[battler]);
-    CoopBattleDigest_Bytes(context, &gProtectStructs[battler], sizeof(gProtectStructs[battler]));
-    CoopBattleDigest_Bytes(context, &gSpecialStatuses[battler], sizeof(gSpecialStatuses[battler]));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->battlerState[battler], sizeof(gBattleStruct->battlerState[battler]));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->futureSight[battler], sizeof(gBattleStruct->futureSight[battler]));
+    volatiles = gBattleMons[battler].volatiles;
+    CoopBattleDigest_CanonicalVolatiles(&volatiles);
+    CoopBattleDigest_BattlePokemon(context, &gBattleMons[battler], &volatiles);
+
+    /* Counter/Mirror Coat sources are set together with their damage (+1);
+     * revengeDoubled is a mask of the battlers that hit this one. */
+    protect = gProtectStructs[battler];
+    protect.physicalBattlerId = CoopBattleDigest_CanonicalRef(protect.physicalDmg != 0, protect.physicalBattlerId);
+    protect.specialBattlerId = CoopBattleDigest_CanonicalRef(protect.specialDmg != 0, protect.specialBattlerId);
+    protect.revengeDoubled = CoopBattleDigest_CanonicalMask(protect.revengeDoubled);
+    CoopBattleDigest_Bytes(context, &protect, sizeof(protect));
+
+    /* changedStatsBattlerId is per-action scratch with no "set" flag (the
+     * whole struct is cleared after every action), so it is left out. */
+    special = gSpecialStatuses[battler];
+    special.changedStatsBattlerId = 0;
+    special.backUpTarget = CoopBattleDigest_CanonicalRefPlusOne(special.backUpTarget);
+    CoopBattleDigest_Bytes(context, &special, sizeof(special));
+
+    /* targetsDone is indexed by target battler; lastMoveTarget (Instruct)
+     * is only meaningful once the battler has used a move. */
+    state = gBattleStruct->battlerState[battler];
+    for (i = 0; i < MAX_BATTLERS_COUNT; i++)
+        state.targetsDone[i] = gBattleStruct->battlerState[battler].targetsDone[CoopBattleRuntime_CanonicalBattler(i)];
+    state.lastMoveTarget = CoopBattleDigest_CanonicalRef(gLastMoves[battler] != MOVE_NONE, state.lastMoveTarget);
+    CoopBattleDigest_Bytes(context, &state, sizeof(state));
+
+    /* Future Sight/Doom Desire: the attacker's battler ID while pending. */
+    futureSight = gBattleStruct->futureSight[battler];
+    futureSight.battlerIndex = CoopBattleDigest_CanonicalRef(futureSight.counter != 0, futureSight.battlerIndex);
+    CoopBattleDigest_Bytes(context, &futureSight, sizeof(futureSight));
+    /* Wish stores the wisher's own party slot, not a battler. */
     CoopBattleDigest_Bytes(context, &gBattleStruct->wish[battler], sizeof(gBattleStruct->wish[battler]));
 }
 
@@ -2013,6 +2103,7 @@ static u8 CoopBattleDigest_CanonicalMask(u8 mask)
 
 static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
 {
+    struct SideTimer sideTimer;
     u32 hitMarker;
     static const u8 version_tag[] = {'C', 'O', 'O', 'P', '-', 'B', 'A', 'T', 'T', 'L', 'E'};
     enum BattleTrainer member0_trainer;
@@ -2068,7 +2159,17 @@ static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
     CoopBattleDigest_U32(context, gFieldStatuses);
     CoopBattleDigest_Bytes(context, &gFieldTimers, sizeof(gFieldTimers));
     CoopBattleDigest_Bytes(context, gSideStatuses, sizeof(gSideStatuses));
-    CoopBattleDigest_Bytes(context, gSideTimers, sizeof(gSideTimers));
+    /* Sides are the same on both ROMs; the Sticky Web setter (while the web
+     * is on that side, 0xFF otherwise) and the Follow Me target (while its
+     * timer runs) are battlers. */
+    for (i = 0; i < NUM_BATTLE_SIDES; i++)
+    {
+        sideTimer = gSideTimers[i];
+        sideTimer.stickyWebBattlerId = IsHazardOnSide(i, HAZARDS_STICKY_WEB)
+            ? CoopBattleRuntime_CanonicalBattler(sideTimer.stickyWebBattlerId) : 0xFF;
+        sideTimer.followmeTarget = CoopBattleDigest_CanonicalRef(sideTimer.followmeTimer != 0, sideTimer.followmeTarget);
+        CoopBattleDigest_Bytes(context, &sideTimer, sizeof(sideTimer));
+    }
     /* Its battler fields are loop counters over speed order, not IDs. */
     CoopBattleDigest_Bytes(context, &gBattleStruct->eventState, sizeof(gBattleStruct->eventState));
     /* moveTarget is left out: it holds battler IDs, and an unset entry (0)
@@ -2088,8 +2189,14 @@ static void CoopBattleDigest_BattleState(struct CoopBattleSha256 *context)
     CoopBattleDigest_PerBattler(context, gBattleStruct->moveResultFlags, sizeof(gBattleStruct->moveResultFlags[0]));
     CoopBattleDigest_Bytes(context, gBattleStruct->hazardsQueue, sizeof(gBattleStruct->hazardsQueue));
     CoopBattleDigest_Bytes(context, gBattleStruct->numHazards, sizeof(gBattleStruct->numHazards));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->zmove, sizeof(gBattleStruct->zmove));
-    CoopBattleDigest_Bytes(context, &gBattleStruct->dynamax, sizeof(gBattleStruct->dynamax));
+    /* Z-Move: viable/viewing and possibleZMoves are this ROM's own move-
+     * selection UI (computed for the local battler only); healReplacement
+     * is a battler mask. */
+    CoopBattleDigest_U8(context, CoopBattleDigest_CanonicalMask(gBattleStruct->zmove.healReplacement));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->zmove.baseMoves, sizeof(gBattleStruct->zmove.baseMoves[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->dynamax.dynamaxTurns, sizeof(gBattleStruct->dynamax.dynamaxTurns[0]));
+    CoopBattleDigest_PerBattler(context, gBattleStruct->dynamax.baseMoves, sizeof(gBattleStruct->dynamax.baseMoves[0]));
+    CoopBattleDigest_U16(context, gBattleStruct->dynamax.lastUsedBaseMove);
     CoopBattleDigest_U8(context, gBattleStruct->hazardsCounter);
     CoopBattleDigest_U8(context, gBattleStruct->submoveAnnouncement);
     CoopBattleDigest_U8(context, gBattleStruct->effectsBeforeUsingMoveDone);
@@ -2167,7 +2274,7 @@ static void CoopFriendlyDigest_BattleState(struct CoopBattleSha256 *context)
         }
         CoopBattleDigest_U8(context, CoopFriendlyDigest_Position(gBattlerPositions[i]));
         CoopBattleDigest_U8(context, gBattlerPartyIndexes[i]);
-        CoopBattleDigest_BattlePokemon(context, &gBattleMons[i]);
+        CoopBattleDigest_BattlePokemon(context, &gBattleMons[i], &gBattleMons[i].volatiles);
         CoopBattleDigest_Bytes(context, &gProtectStructs[i], sizeof(gProtectStructs[i]));
         CoopBattleDigest_Bytes(context, &gSpecialStatuses[i], sizeof(gSpecialStatuses[i]));
         CoopBattleDigest_Bytes(context, &gBattleStruct->battlerState[i], sizeof(gBattleStruct->battlerState[i]));

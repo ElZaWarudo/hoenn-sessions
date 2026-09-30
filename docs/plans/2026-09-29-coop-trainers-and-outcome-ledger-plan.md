@@ -390,12 +390,100 @@ in a friendly bundle or submission is rejected).
   absent flags and fainted hit markers in canonical battler order, and leaves
   out `moveTarget` (battler IDs; an unset 0 names a different member on each
   ROM). Battler references inside volatiles, Future Sight/Wish and the
-  Z-Move/Dynamax structs are still hashed as stored.
+  Z-Move/Dynamax structs were still hashed as stored (fixed in C3).
 - Tests: the recorded partner controller (test runner) now replays a
   partner's bag item like the recorded player's.
 
 Known gaps: the item effects are checked by unit tests of both member views
 (the effect commands and the digest) and by multi battles with the acting
 member in either seat, not yet by two real ROMs; the Bag UI refusals are not
-driven by a test; the peer's item message names the partner as the in-game
-partner trainer.
+driven by a test. (The peer's item message named the partner as the in-game
+partner trainer; C3 names the other player.)
+
+### C3: Canonical battler references
+
+In a co-op trainer battle each ROM keeps its own member at battler 0 and
+position PLAYER_LEFT, so member 1's ROM numbers the two member battlers the
+other way round (`CoopBattleRuntime_CanonicalBattler` swaps local 0 and 2
+there; it is the identity in vanilla battles, friendly battles and on member
+0's ROM, and it is its own inverse). Friendly battles already number every
+battler canonically on both ROMs, so battler references and battler-order
+loops agree there; nothing in C3 changes them.
+
+Digest (trainer battles only; no protocol change, same 32-byte digest):
+- Stored battler IDs hash as canonical IDs. "Battler + 1" fields keep 0 as
+  unset: Leech Seed seeder, Infatuation target, Lock-On/Mind Reader target
+  (`battlerWithSureHit`), Sky Drop target, Instruct/Me First backup target
+  (`backUpTarget`). Raw IDs whose unset 0 would read as local battler 0 hash
+  only while their flag is set (0 otherwise): `wrappedBy` (wrapped), Mean
+  Look/Block/Jaw Lock `battlerPreventingEscape` (escapePrevention),
+  `octolockedBy` (octolock), `stickySyrupedBy` (syrupBomb), Counter/Mirror
+  Coat `physicalBattlerId`/`specialBattlerId` (their damage, stored +1),
+  Future Sight/Doom Desire attacker (counter), Follow Me target (its timer),
+  Instruct's `lastMoveTarget` (the battler has a last move). The Sticky Web
+  setter keeps 0xFF as unset. `changedStatsBattlerId` is per-action scratch
+  cleared after every action with no flag, so it is left out.
+- Battler masks are converted bit by bit: Revenge/Avalanche
+  `revengeDoubled`, Z-Move `healReplacement`.
+- Per-battler arrays hash in canonical order: each battler's `targetsDone`,
+  Z-Move base moves, Dynamax turns and base moves. Z-Move `viable`,
+  `viewing` and `possibleZMoves` are this ROM's own move-selection UI and are
+  left out.
+- No battler reference: Encore/Disable (moves and timers), Yawn, Perish
+  Song, Taunt, Torment, Curse, Substitute, Wish (the wisher's own party
+  slot, hashed in canonical battler order already).
+
+Engine (behaviour, co-op trainer battles only; the identity elsewhere):
+equal-speed ties and anything that orders or picks battlers by ID or
+position went by the local numbering, so the two ROMs resolved the same turn
+differently (other RNG draws per battler, other faint and switch-in order).
+Now canonical:
+- `SortBattlersBySpeed` breaks ties by canonical battler (end of turn: Future
+  Sight, Wish, Leech Seed, Perish Song, Yawn, residual damage, Emergency
+  Exit; switch-in abilities and hazards; `sortbattlers` scripts; Pickpocket,
+  Magician, Eject Pack, gimmick and Focus Punch order);
+  `SortBattlersByRawSpeed` starts from canonical order (Magic Bounce, Eject
+  Button/Red Card, Eject Pack/White Herb after stat changes).
+- Spread moves: accuracy, damage/critical rolls and the next-target walk
+  (secondary effects) in canonical order; the first target of a
+  foes-and-ally move; per-target canceler loops.
+- A foe's picks among the members: random targets (Outrage, Thrash, Petal
+  Dance, called moves), the default opposing target, `GetTargetBySlot`,
+  Trace's random target, Imposter's diagonal, Pickup's random battler,
+  Forewarn's tie list, Mirror Move's random pick.
+- Replacement order after simultaneous faints (`HandleFaintedMonActions`,
+  `openpartyscreen`/`switchineffects` fainted-multiple), Custap/Quick
+  Claw/Quick Draw activation, Dancer ties, Symbiosis, Shell Trap, item
+  triggers after a move, G-Max Sandblast/Centiferno wrap rolls, Shell Side
+  Arm tie rolls, and the opponent AI's doubles target scoring and tie pick.
+
+Name: the partner in co-op trainer battle messages ("sent out", "withdrew",
+"used <item>", any attacker-trainer message) is the other player's name, the
+OT name of the lead Pokemon it staged (as friendly battles name the
+opponent; at most 7 characters + EOS, read from the staged party, so no new
+RAM), without a trainer class. The partner's back sprite is the Brendan/May
+player back pic of that lead's OT gender instead of Steven's. Vanilla Steven
+battles are unchanged.
+
+Tests (`test/coop/battle_canonical.c`, both member views on one ROM): Leech
+Seed, Encore/Disable, Attract, Future Sight, Wish, Yawn, Perish Song,
+Wrap/Mean Look/Octolock/Syrup Bomb, Lock-On/Sky Drop, Counter sources and
+other references, a Z-Move and a Dynamax state, each from member-0-owned,
+member-1-owned and foe attackers, give equal digests on both views (and a
+different digest when the other member is the attacker); speed ties, random
+targets, spread-move targets and target slots are canonical; an end of turn
+with two Future Sights, a Doom Desire, three Leech Seeds, a Wish and two
+Yawns landing together runs the same effects in the same order on both
+views and ends with equal digests; the partner's name is in the message
+buffer.
+
+Known gaps (only a two-ROM live battle can confirm): the rest of the opponent
+AI (switching, item and per-target scoring internals) was not audited for
+battler-order RNG; the Mega/Z ring check in multi battles reads each ROM's
+own bag for the local battler only (the co-op engine refuses gimmick
+selection, but an opponent's usable gimmick is unaffected); critical-hit
+evolution counters count by party index of the wrong trainer for the
+partner (local, not hashed); a Z-Move or Dynamax cannot be chosen in co-op
+(gimmick selection fails the engine; Dynamax is disabled by config), so
+those digest cases are state-level only; message-only order differences
+remain.

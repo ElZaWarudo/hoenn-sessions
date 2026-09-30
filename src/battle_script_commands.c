@@ -76,6 +76,7 @@
 #include "follower_npc.h"
 #include "load_save.h"
 #include "coop/battle_items.h"
+#include "coop/battle_runtime.h"
 #include "coop/net_bridge.h"
 
 // Helper for accessing command arguments and advancing gBattlescriptCurrInstr.
@@ -1108,8 +1109,11 @@ static void AccuracyCheck(bool32 recalcDragonDarts, const u8 *nextInstr, const u
     enum MoveTarget moveTarget = GetBattlerMoveTargetType(gBattlerAttacker, gCurrentMove);
     bool32 calcSpreadMove = IsSpreadMove(moveTarget);
 
-    for (enum BattlerId battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+    /* Spread-move accuracy rolls in canonical battler order. */
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(i);
+
         if (gBattleStruct->calculatedSpreadMoveAccuracy)
             break;
 
@@ -1289,8 +1293,11 @@ static void Cmd_damagecalc(void)
 
     if (IsSpreadMove(GetBattlerMoveTargetType(gBattlerAttacker, gCurrentMove)))
     {
-        for (enum BattlerId battlerDef = 0; battlerDef < gBattlersCount; battlerDef++)
+        /* Damage and critical-hit rolls in canonical battler order. */
+        for (enum BattlerId i = 0; i < gBattlersCount; i++)
         {
+            enum BattlerId battlerDef = CoopBattleRuntime_CanonicalBattler(i);
+
             if (IsBattlerInvalidForSpreadMove(gBattlerAttacker, battlerDef))
                 continue;
 
@@ -3428,8 +3435,10 @@ void SetMoveEffect(enum BattlerId battlerAtk, enum BattlerId effectBattler, enum
     case MOVE_EFFECT_SANDBLAST_SIDE:
     case MOVE_EFFECT_FIRE_SPIN_SIDE:
         // Affects both opponents, but doesn't print strings so we can handle it here.
-        for (enum BattlerId battler = 0; battler < MAX_BATTLERS_COUNT; ++battler)
+        for (enum BattlerId i = 0; i < MAX_BATTLERS_COUNT; ++i)
         {
+            enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(i);
+
             if (!IsBattlerAlly(battler, effectBattler))
                 continue;
             if (!gBattleMons[battler].volatiles.wrapped)
@@ -5646,13 +5655,16 @@ static void Cmd_openpartyscreen(void)
 
         hitmarkerFaintBits = gHitMarker >> 28;
 
+        /* Fainted battlers are replaced in canonical battler order. */
         gBattlerFainted = 0;
-        while (!((1u << gBattlerFainted) & hitmarkerFaintBits)
+        while (!((1u << CoopBattleRuntime_CanonicalBattler(gBattlerFainted)) & hitmarkerFaintBits)
                && gBattlerFainted < gBattlersCount)
             gBattlerFainted++;
 
         if (gBattlerFainted == gBattlersCount)
             gBattlescriptCurrInstr = failInstr;
+        else
+            gBattlerFainted = CoopBattleRuntime_CanonicalBattler(gBattlerFainted);
     }
     else
     {
@@ -5814,14 +5826,20 @@ static void Cmd_switchineffects(void)
 
     if (cmd->battler == BS_FAINTED_MULTIPLE_1)
     {
+        /* Counts in canonical battler order (the identity outside a co-op
+         * trainer battle); gBattlersCount still ends the list. */
+        u32 next = CoopBattleRuntime_CanonicalBattler(gBattlerFainted);
+
         do // Increment fainted battler
         {
-            gBattlerFainted++;
-            if (gBattlerFainted >= gBattlersCount)
+            next++;
+            if (next >= gBattlersCount)
                 break;
-            if (gHitMarker & HITMARKER_FAINTED(gBattlerFainted) && !(gAbsentBattlerFlags & (1u << gBattlerFainted)))
+            if (gHitMarker & HITMARKER_FAINTED(CoopBattleRuntime_CanonicalBattler(next))
+             && !(gAbsentBattlerFlags & (1u << CoopBattleRuntime_CanonicalBattler(next))))
                 break;
         } while (1);
+        gBattlerFainted = next >= gBattlersCount ? next : CoopBattleRuntime_CanonicalBattler(next);
     }
 
     gBattleStruct->eventState.switchIn = 0;
@@ -14587,8 +14605,10 @@ void BS_GetTotemBoost(void)
 void BS_ActivateItemEffects(void)
 {
     NATIVE_ARGS();
-    for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
     {
+        enum BattlerId battler = CoopBattleRuntime_CanonicalBattler(i);
+
         if (ItemBattleEffects(battler, 0, GetBattlerHoldEffect(battler), IsForceTriggerItemActivation))
             return;
     }
