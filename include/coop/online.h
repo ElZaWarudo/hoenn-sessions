@@ -17,6 +17,9 @@ void CoopOnline_TestPoll(void);
 bool8 CoopOnline_TestPending(void);
 u8 CoopOnline_TestResult(void);
 bool8 CoopOnline_TestIsLocationPage(void);
+struct CoopBattleFriendlyRules;
+bool8 CoopOnline_TestIsBattlePage(void);
+void CoopOnline_TestGetBattleRules(struct CoopBattleFriendlyRules *rules);
 #endif
 
 #endif

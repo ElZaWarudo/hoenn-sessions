@@ -188,7 +188,7 @@ assert(protocol.types.TRADE_OFFER_REQUEST == 0x0016)
 assert(protocol.types.TRADE_OFFER_DECISION == 0x0017)
 assert(not protocol.is_outbound(0x0018))
 assert(not protocol.is_inbound(protocol.types.TRADE_OFFER_REQUEST))
-assert(protocol.PROTOCOL_VERSION == 4)
+assert(protocol.PROTOCOL_VERSION == 5)
 assert(not protocol.is_outbound(protocol.types.BATTLE_RESERVE_REJECTED))
 local reserve_rejected = assert(protocol.encode({
   type = protocol.types.BATTLE_RESERVE_REJECTED, sequence = 4,

@@ -72,7 +72,9 @@ pub(crate) const BATTLE_IDEMPOTENCY_TTL_MS: u64 = 24 * 60 * 60 * 1_000;
 pub(crate) const MAX_BATTLE_RESERVATIONS: usize = 1_024;
 pub(crate) const MAX_BATTLE_IDEMPOTENCY: usize = 4_096;
 pub(crate) const MAX_BATTLE_IDEMPOTENCY_PER_MEMBER: usize = 64;
-pub(crate) const MAX_BATTLE_TURNS: usize = 32;
+/// Lockstep rounds per battle: turns plus a friendly battle's replacement
+/// rounds (coop_protocol::BATTLE_MAX_TURN).
+pub(crate) const MAX_BATTLE_TURNS: usize = coop_protocol::BATTLE_MAX_TURN as usize;
 pub(crate) const MAX_BATTLE_ACTION_BYTES: usize = 512;
 /// Recent observational progress entries retained for each active or
 /// recently closed group. This is deliberately small because the feed is a

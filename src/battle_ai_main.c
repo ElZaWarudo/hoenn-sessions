@@ -13,6 +13,7 @@
 #include "battle_setup.h"
 #include "battle_z_move.h"
 #include "battle_terastal.h"
+#include "coop/battle_runtime.h"
 #include "data.h"
 #include "debug.h"
 #include "event_data.h"
@@ -750,6 +751,10 @@ void SetAiLogicDataForTurn(struct AiLogicData *aiData)
     memset(aiData, 0, sizeof(struct AiLogicData));
     gAiBattleData->aiUsingGimmick = 0;
     if (!(gBattleTypeFlags & BATTLE_TYPE_HAS_AI) && !IsWildMonSmart())
+        return;
+    /* No AI plays a friendly co-op battle; its per-side predictions would
+     * run for different battlers on the two ROMs. */
+    if (CoopBattleRuntime_IsFriendlyEngine())
         return;
 
        gAiLogicData->aiCalcInProgress = TRUE;

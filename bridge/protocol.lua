@@ -3,7 +3,7 @@ local protocol = {}
 protocol.MESSAGE_SIZE = 144
 protocol.PAYLOAD_SIZE = 128
 protocol.ABI_VERSION = 1
-protocol.PROTOCOL_VERSION = 4
+protocol.PROTOCOL_VERSION = 5
 
 protocol.types = {
   ROM_READY = 0x0001,

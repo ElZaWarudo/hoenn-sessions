@@ -6,6 +6,8 @@
 
 #define REMATCHES_COUNT 5
 
+struct Pokemon;
+
 struct RematchTrainer
 {
     u16 trainerIds[REMATCHES_COUNT];
@@ -94,6 +96,10 @@ void BattleSetup_StartVanillaTrainerBattle(void);
 /* Starts the server-authorized co-op trainer battle path. The caller must
  * have a validated trainer manifest and a complete peer party snapshot. */
 bool8 BattleSetup_StartCoopTrainerBattle(void);
+/* Starts a released friendly battle against the grouped partner. team is
+ * this ROM's picked team (the snapshot it sent); the partner's team comes
+ * from the peer snapshot. The whole party is restored afterwards. */
+bool8 BattleSetup_StartCoopFriendlyBattle(const struct Pokemon *team, u8 count);
 /* special BattleSetup_StartRematchBattle: the same co-op hook as
  * BattleSetup_StartTrainerBattle, for the match-call rematch modes. */
 void BattleSetup_StartRematchBattle(void);

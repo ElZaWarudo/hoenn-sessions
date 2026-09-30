@@ -10,6 +10,11 @@
 /* Slot index recorded for a staged entry beyond the member's staged count. */
 #define COOP_BATTLE_UNUSED_SLOT 0xFF
 #define COOP_BATTLE_ACTION_SIZE 4
+/* A friendly doubles member acts for two battlers per round. */
+#define COOP_BATTLE_MAX_MEMBER_ACTIONS 2
+#define COOP_BATTLE_MAX_MEMBER_ACTION_BYTES (COOP_BATTLE_ACTION_SIZE * COOP_BATTLE_MAX_MEMBER_ACTIONS)
+/* Turn bundles are consumed one round at a time; a small ring suffices. */
+#define COOP_BATTLE_BUNDLE_QUEUE 4
 #define COOP_BATTLE_DIGEST_VERSION 1
 // Requests server cancellation for the currently tracked battle. The ROM waits
 // for the terminal ABORT_BATTLE before clearing its battle state.
@@ -25,6 +30,8 @@ enum CoopBattleActionKind
     COOP_BATTLE_ACTION_FORCED_SWITCH = 3,
     COOP_BATTLE_ACTION_NO_ACTION = 4,
     COOP_BATTLE_ACTION_AUTO_MOVE = 5,
+    /* Friendly battles only: the member gives up (Run). */
+    COOP_BATTLE_ACTION_FORFEIT = 6,
 };
 
 struct CoopBattleAction
@@ -76,6 +83,20 @@ struct CoopBattleManifestIdentity
     u8 trainer_region;
     u16 trainer_ordinal;
 };
+
+/* The challenge a friendly battle was accepted with. */
+struct CoopBattleFriendlyRules
+{
+    u8 format;     // COOP_BATTLE_FRIENDLY_SINGLES / _DOUBLES
+    u8 level_mode; // COOP_BATTLE_FRIENDLY_LEVELS_AS_IS / _50
+    u8 count;      // 1..6 Pokemon per side (2..6 for doubles)
+};
+
+bool8 CoopBattleRuntime_IsValidFriendlyRules(const struct CoopBattleFriendlyRules *rules);
+/* Reads/writes the three rule bytes shared by the reserve, offer and manifest. */
+bool8 CoopBattleRuntime_DecodeFriendlyRules(const u8 *bytes, struct CoopBattleFriendlyRules *rules);
+void CoopBattleRuntime_EncodeFriendlyRules(const struct CoopBattleFriendlyRules *rules, u8 *bytes);
+bool8 CoopBattleRuntime_GetFriendlyRules(const u8 *battle_id, struct CoopBattleFriendlyRules *rules);
 
 enum CoopBattleInboundResult
 {
@@ -131,6 +152,21 @@ bool8 CoopBattleRuntime_RestoreLocalParty(const struct CoopBattleStartupPlan *pl
                                          const u8 *battle_id,
                                          const struct Pokemon *battled_local,
                                          struct Pokemon *restored_local);
+/* Friendly battles. local_party holds PARTY_SIZE records (the live party);
+ * team is the ordered selection (rules.count records) this ROM sent as its
+ * snapshot; it must match the manifest's digest for the local member, and
+ * the peer's complete snapshot must hold rules.count usable records. On
+ * success the plan holds the battle ID, the member slot and all six
+ * pre-battle records (original_local) for a byte-exact restore; staged
+ * counts are rules.count. Nothing live changes. */
+bool8 CoopBattleRuntime_MakeFriendlyPlan(const u8 *battle_id,
+                                         const struct Pokemon *local_party,
+                                         u8 local_count,
+                                         const struct Pokemon *team,
+                                         u8 team_count,
+                                         struct CoopBattleStartupPlan *plan);
+/* Copies the peer's staged records (the opponent side of a friendly battle). */
+bool8 CoopBattleRuntime_CopyPeerTeam(struct Pokemon *team, u8 capacity, u8 *count);
 enum CoopBattleInboundResult CoopBattleRuntime_ReceiveTurnBundle(const u8 *payload, u16 length);
 enum CoopBattleInboundResult CoopBattleRuntime_ReceivePause(const u8 *payload, u16 length);
 enum CoopBattleInboundResult CoopBattleRuntime_ReceiveAbort(const u8 *payload, u16 length);
@@ -163,12 +199,34 @@ u8 CoopBattleRuntime_TranslateTarget(u8 position, u8 local_member_slot);
 bool8 CoopBattleRuntime_ArmEngine(const u8 *battle_id);
 void CoopBattleRuntime_DisarmEngine(void);
 bool8 CoopBattleRuntime_IsEngineActive(void);
+/* Latched at arm time, so they stay stable through a fault/abort cleanup. */
+bool8 CoopBattleRuntime_IsFriendlyEngine(void);
+bool8 CoopBattleRuntime_IsFriendlyDoubles(void);
+/* Friendly battles number battlers canonically: member 0 owns battlers 0/2
+ * and member 1 owns battlers 1/3 on both ROMs; member 1's ROM draws them
+ * mirrored (its own battlers at the bottom). Trainer battles swap the two
+ * player battlers on member 1's ROM. Returns the battler both ROMs agree on. */
+u8 CoopBattleRuntime_CanonicalBattler(u8 battler);
 bool8 CoopBattleRuntime_IsEngineFaulted(void);
 bool8 CoopBattleRuntime_IsSessionReady(void);
 u8 CoopBattleRuntime_EngineLocalMemberSlot(void);
 bool8 CoopBattleRuntime_IsLocalActionSubmitted(void);
 bool8 CoopBattleRuntime_SubmitLocalAction(const struct CoopBattleAction *action);
 bool8 CoopBattleRuntime_PollPeerAction(struct CoopBattleAction *action);
+/* Friendly: one action per member battler (1 singles, 2 doubles). */
+bool8 CoopBattleRuntime_SubmitLocalActions(const struct CoopBattleAction *actions, u8 count);
+bool8 CoopBattleRuntime_PollPeerActions(struct CoopBattleAction *actions, u8 *count);
+/* The local actions of the round in progress (after SubmitLocalActions). */
+bool8 CoopBattleRuntime_GetLocalActions(struct CoopBattleAction *actions, u8 *count);
+/* Friendly: a decision round ends once every controller took its actions. */
+void CoopBattleRuntime_EndDecisionRound(void);
+/* The round whose bundle was taken last (0 before the first turn). */
+u16 CoopBattleRuntime_CurrentRound(void);
+/* TRUE once the current round's state hash has been sent. */
+bool8 CoopBattleRuntime_IsRoundHashed(void);
+/* Ends the battle on the last hashed round (a decision round already hashed
+ * the final state) with the given local-perspective battle outcome. */
+bool8 CoopBattleRuntime_FinishOnLastHash(u8 outcome);
 /* Used when the native engine bypasses B2's controller for an automatic turn. */
 bool8 CoopBattleRuntime_ConfirmPeerAutomaticAction(u8 expected_kind);
 /* Latch a local unsupported/desynced decision until battle cleanup disarms. */
@@ -209,7 +267,13 @@ enum CoopBattleTurnReportResult
 };
 enum CoopBattleTurnReportResult CoopBattleRuntime_ReportTurnState(u16 turn, u8 outcome);
 bool8 CoopBattleRuntime_IsTurnHashPending(void);
+/* The terminal attestation was captured (sent, or waiting for the bridge). */
+bool8 CoopBattleRuntime_IsTerminalReported(void);
 enum CoopBattleTurnReportResult CoopBattleRuntime_RetryTurnHash(void);
+/* Friendly: a decision inside a turn (a replacement after a faint, U-turn)
+ * is a round of its own. The turn's state is hashed first, at the same
+ * point on both ROMs, so the next round's action can be accepted. */
+enum CoopBattleTurnReportResult CoopBattleRuntime_FlushRoundHash(void);
 #if TESTING
 enum CoopBattleTurnReportResult CoopBattleRuntime_TestReportTurnDigest(u16 turn, u8 outcome,
                                                                       const u8 *digest);

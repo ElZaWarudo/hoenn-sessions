@@ -2,7 +2,7 @@ use crc32fast::Hasher;
 use thiserror::Error;
 
 pub const BRIDGE_ABI_VERSION: u16 = 1;
-pub const GAME_PROTOCOL_VERSION: u16 = 4;
+pub const GAME_PROTOCOL_VERSION: u16 = 5;
 pub const BRIDGE_PAYLOAD_SIZE: usize = 128;
 pub const BRIDGE_FRAME_SIZE: usize = 144;
 const CHECKSUM_OFFSET: usize = 140;
@@ -542,6 +542,11 @@ mod tests {
         };
         let id = BattleId([7; 16]);
         let manifest = BattleManifestRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             battle_id: id,
             turn: 0,
             seed: BattleDigest([1; 32]),
@@ -811,6 +816,11 @@ mod tests {
         };
         let id = BattleId([7; 16]);
         let reserve = TrainerBattleReserveRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             kind: BattleKind::Friendly,
             request_nonce: 42,
             trainer_region: None,
@@ -821,6 +831,11 @@ mod tests {
             decision: BattleDecision::Accept,
         };
         let offer = BattleJoinOfferRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             battle_id: id,
             kind: BattleKind::Friendly,
             role: BattleRole::Responder,
@@ -837,7 +852,8 @@ mod tests {
         let payload = offer.encode().unwrap();
         let frame = BridgeFrame::new(MessageType::BattleJoinOffer, 3, 9, &payload).unwrap();
         assert_eq!(frame.direction(), Direction::SidecarToRom);
-        assert_eq!(frame.payload().len(), 22);
+        assert_eq!(frame.payload().len(), BattleJoinOfferRecord::WIRE_SIZE);
+        assert_eq!(frame.payload().len(), 25);
         assert!(frame.ensure_direction(Direction::RomToSidecar).is_err());
 
         let outcome = BattleConsentOutcomeRecord {

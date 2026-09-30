@@ -47,7 +47,10 @@ TEST("Cloud Coop action codec keeps member targets canonical and rejects invalid
     bytes[1] = 2;
     bytes[2] = 0;
     EXPECT(CoopBattleRuntime_DecodeAction(bytes, sizeof(bytes), &decoded));
+    /* A friendly side stages up to six Pokemon. */
     bytes[1] = COOP_BATTLE_MULTI_PARTY_SIZE;
+    EXPECT(CoopBattleRuntime_DecodeAction(bytes, sizeof(bytes), &decoded));
+    bytes[1] = PARTY_SIZE;
     EXPECT(!CoopBattleRuntime_DecodeAction(bytes, sizeof(bytes), &decoded));
     bytes[0] = COOP_BATTLE_ACTION_NO_ACTION;
     bytes[1] = 0;
@@ -88,6 +91,8 @@ static void ReceiveManifest(u8 id)
 
     manifest[0] = id;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_MANIFEST_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(manifest, sizeof(manifest)),
               COOP_BATTLE_INBOUND_ACCEPTED);
 }
@@ -242,6 +247,16 @@ TEST("Cloud Coop battle manifest rejects malformed identity and exact old size")
     manifest[COOP_BATTLE_MANIFEST_REGION_OFFSET] = 0;
     manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET] = 0;
     manifest[COOP_BATTLE_MANIFEST_TRAINER_ORDINAL_OFFSET + 1] = 0;
+    /* Game protocol 5: a friendly manifest names its challenge. */
+    EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(manifest, sizeof(manifest)), COOP_BATTLE_INBOUND_MALFORMED);
+    EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(manifest, 119), COOP_BATTLE_INBOUND_MALFORMED);
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_DOUBLES;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 1] = COOP_BATTLE_FRIENDLY_LEVELS_50;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
+    EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(manifest, sizeof(manifest)), COOP_BATTLE_INBOUND_MALFORMED);
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 7;
+    EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(manifest, sizeof(manifest)), COOP_BATTLE_INBOUND_MALFORMED);
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 2;
     EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(manifest, sizeof(manifest)), COOP_BATTLE_INBOUND_ACCEPTED);
     EXPECT(CoopBattleRuntime_GetManifestIdentity(id, &identity));
     EXPECT_EQ(identity.kind, COOP_BATTLE_MANIFEST_KIND_FRIENDLY);

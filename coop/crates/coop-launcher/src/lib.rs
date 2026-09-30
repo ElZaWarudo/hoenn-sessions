@@ -477,11 +477,20 @@ impl CloudApi for ReqwestCloudApi {
         fence: coop_cloud::LeaseFence,
         kind: battle::BattleKind,
         trainer_id: Option<coop_protocol::TrainerInstanceId>,
+        friendly_rules: Option<coop_protocol::FriendlyBattleRules>,
         key: coop_cloud::IdempotencyKey,
     ) -> battle::BattleFuture<'_, battle::BattleReservationView> {
         Box::pin(async move {
-            self.reserve_battle_http(&token, group_id, fence, kind, trainer_id, key)
-                .await
+            self.reserve_battle_http(
+                &token,
+                group_id,
+                fence,
+                kind,
+                trainer_id,
+                friendly_rules,
+                key,
+            )
+            .await
         })
     }
     fn battle_current(

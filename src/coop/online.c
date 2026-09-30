@@ -3,6 +3,7 @@
 #include "coop/net_bridge.h"
 #include "coop/presence_runtime.h"
 #include "coop/trade_offer.h"
+#include "coop/friendly_battle.h"
 #include "event_object_lock.h"
 #include "event_object_movement.h"
 #include "field_player_avatar.h"
@@ -25,8 +26,36 @@
 #define PAIRING_TIMEOUT_FRAMES 600
 /* HandleInput's result that closes the menu and starts the trade script. */
 #define ONLINE_CLOSE_FOR_TRADE 2
+/* ... and the friendly battle challenge with the rules on the page. */
+#define ONLINE_CLOSE_FOR_BATTLE 3
 
-enum OnlinePage { ONLINE_HOME, ONLINE_NEARBY, ONLINE_INCOMING, ONLINE_OUTGOING, ONLINE_LOCATION, ONLINE_PAIRING, ONLINE_PAIRING_ENTRY, ONLINE_LAST_PARTNER };
+/* Grouped ONLINE entries. */
+enum
+{
+    ONLINE_GROUPED_NEARBY,
+    ONLINE_GROUPED_INCOMING,
+    ONLINE_GROUPED_OUTGOING,
+    ONLINE_GROUPED_WHERE,
+    ONLINE_GROUPED_TRADE,
+    ONLINE_GROUPED_BATTLE,
+    ONLINE_GROUPED_LEAVE,
+    ONLINE_GROUPED_REFRESH,
+    ONLINE_GROUPED_BACK,
+    ONLINE_GROUPED_COUNT,
+};
+
+/* Battle partner page rows. */
+enum
+{
+    ONLINE_BATTLE_FORMAT,
+    ONLINE_BATTLE_LEVELS,
+    ONLINE_BATTLE_COUNT,
+    ONLINE_BATTLE_SEND,
+    ONLINE_BATTLE_BACK,
+    ONLINE_BATTLE_ROWS,
+};
+
+enum OnlinePage { ONLINE_HOME, ONLINE_NEARBY, ONLINE_INCOMING, ONLINE_OUTGOING, ONLINE_LOCATION, ONLINE_PAIRING, ONLINE_PAIRING_ENTRY, ONLINE_LAST_PARTNER, ONLINE_BATTLE };
 
 static EWRAM_DATA struct CoopOnlineStatus sStatus;
 static EWRAM_DATA u32 sRequestSerial;
@@ -46,6 +75,7 @@ static EWRAM_DATA u8 sCode[8];
 static EWRAM_DATA u8 sCodePosition;
 static EWRAM_DATA bool8 sInvitePrompt;
 static EWRAM_DATA bool8 sMenuOpen;
+static EWRAM_DATA struct CoopBattleFriendlyRules sBattleRules;
 
 static const struct WindowTemplate sOnlineWindow = {
     .bg = 0, .tilemapLeft = 2, .tilemapTop = 1,
@@ -81,6 +111,15 @@ static const u8 sYesJoin[] = _("Yes - join");
 static const u8 sNoDecline[] = _("No - decline");
 static const u8 sLeave[] = _("Leave group");
 static const u8 sTradeWithPartner[] = _("Trade with partner");
+static const u8 sBattlePartner[] = _("Battle partner");
+static const u8 sBattleFormat[] = _("Format: ");
+static const u8 sBattleLevels[] = _("Levels: ");
+static const u8 sBattleLevelsAsIs[] = _("as they are");
+static const u8 sBattleLevels50[] = _("all at Lv. 50");
+static const u8 sBattleCount[] = _("POKéMON each: ");
+static const u8 sBattleSend[] = _("Send challenge");
+static const u8 sBattleHint[] = _("Choose the rules.");
+static const u8 sBattleControls[] = _("LEFT/RIGHT or A: change");
 static const u8 sRefresh[] = _("Refresh");
 static const u8 sBack[] = _("Back");
 static const u8 sInvite[] = _("Send invitation");
@@ -107,6 +146,70 @@ static const u8 sPaging[] = _("LEFT/RIGHT: page   B: back");
 static const u8 sCursorText[] = {CHAR_RIGHT_ARROW, EOS};
 
 static bool8 CanAct(u8 action);
+
+/* Rules the challenger can send with the current party. */
+static u8 BattleMaxCount(void)
+{
+    u8 usable = CoopFriendly_CountUsableMons();
+    return usable > PARTY_SIZE ? PARTY_SIZE : usable;
+}
+
+static u8 BattleMinCount(void)
+{
+    return sBattleRules.format == COOP_BATTLE_FRIENDLY_DOUBLES ? 2 : 1;
+}
+
+static void ResetBattleRules(void)
+{
+    u8 max = BattleMaxCount();
+
+    sBattleRules.format = COOP_BATTLE_FRIENDLY_SINGLES;
+    sBattleRules.level_mode = COOP_BATTLE_FRIENDLY_LEVELS_AS_IS;
+    sBattleRules.count = max < 3 ? (max == 0 ? 1 : max) : 3;
+}
+
+static bool8 BattleRulesSendable(void)
+{
+    return CoopBattleRuntime_IsValidFriendlyRules(&sBattleRules)
+        && sBattleRules.count <= BattleMaxCount()
+        && CoopFriendly_CanBegin();
+}
+
+static void ChangeBattleRule(u8 row, s8 delta)
+{
+    u8 max = BattleMaxCount();
+
+    switch (row)
+    {
+    case ONLINE_BATTLE_FORMAT:
+        if (sBattleRules.format == COOP_BATTLE_FRIENDLY_SINGLES)
+        {
+            /* Doubles needs two Pokemon on each side. */
+            if (max < 2)
+                return;
+            sBattleRules.format = COOP_BATTLE_FRIENDLY_DOUBLES;
+            if (sBattleRules.count < 2)
+                sBattleRules.count = 2;
+        }
+        else
+        {
+            sBattleRules.format = COOP_BATTLE_FRIENDLY_SINGLES;
+        }
+        break;
+    case ONLINE_BATTLE_LEVELS:
+        sBattleRules.level_mode = sBattleRules.level_mode == COOP_BATTLE_FRIENDLY_LEVELS_AS_IS
+            ? COOP_BATTLE_FRIENDLY_LEVELS_50 : COOP_BATTLE_FRIENDLY_LEVELS_AS_IS;
+        break;
+    case ONLINE_BATTLE_COUNT:
+        if (max < BattleMinCount())
+            return;
+        if (delta < 0)
+            sBattleRules.count = sBattleRules.count <= BattleMinCount() ? max : sBattleRules.count - 1;
+        else
+            sBattleRules.count = sBattleRules.count >= max ? BattleMinCount() : sBattleRules.count + 1;
+        break;
+    }
+}
 
 static void Print(const u8 *text, u8 x, u8 y)
 {
@@ -144,7 +247,8 @@ static u8 OptionCount(void)
     if (sPage == ONLINE_PAIRING) return 3;
     if (sPage == ONLINE_PAIRING_ENTRY) return 0;
     if (sPage == ONLINE_LAST_PARTNER) return 2;
-    return sPage == ONLINE_HOME ? (sStatus.flags & COOP_ONLINE_GROUPED ? 8 : (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER ? 7 : 6))
+    if (sPage == ONLINE_BATTLE) return ONLINE_BATTLE_ROWS;
+    return sPage == ONLINE_HOME ? (sStatus.flags & COOP_ONLINE_GROUPED ? ONLINE_GROUPED_COUNT : (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER ? 7 : 6))
                                : (sPage == ONLINE_LOCATION ? 2 : (sPage == ONLINE_INCOMING ? 5 : 4));
 }
 
@@ -160,6 +264,7 @@ static const u8 *ResultText(void)
         if (sPairingStatus.result == COOP_PAIRING_UNAVAILABLE) return sPairingUnavailable;
         return sPairingReady;
     }
+    if (sPage == ONLINE_BATTLE) return sBattleHint;
     if (sPending) return sLastAction == COOP_ONLINE_REFRESH ? sLoading : sSending;
     switch (sStatus.result)
     {
@@ -187,12 +292,14 @@ static bool8 OptionEnabled(u8 option)
     if (sPairingPending) return FALSE;
     if (sPage == ONLINE_PAIRING) return TRUE;
     if (sPage == ONLINE_LAST_PARTNER) return option != 0 || CanAct(COOP_ONLINE_INVITE_LAST_PARTNER);
+    if (sPage == ONLINE_BATTLE) return option != ONLINE_BATTLE_SEND || BattleRulesSendable();
     if (sPage == ONLINE_HOME)
     {
         if (!(sStatus.flags & COOP_ONLINE_GROUPED)) return TRUE;
-        // A trade needs a known group and an idle co-op session.
-        if (option == 4) return CanAct(COOP_ONLINE_LEAVE) && CoopTradeOffer_CanBegin();
-        return option != 5 || CanAct(COOP_ONLINE_LEAVE);
+        // A trade or a battle needs a known group and an idle co-op session.
+        if (option == ONLINE_GROUPED_TRADE) return CanAct(COOP_ONLINE_LEAVE) && CoopTradeOffer_CanBegin();
+        if (option == ONLINE_GROUPED_BATTLE) return CanAct(COOP_ONLINE_LEAVE) && CoopFriendly_CanBegin();
+        return option != ONLINE_GROUPED_LEAVE || CanAct(COOP_ONLINE_LEAVE);
     }
     if (sPage == ONLINE_LOCATION) return TRUE;
     if (sPage == ONLINE_NEARBY)
@@ -219,8 +326,9 @@ static void Draw(void)
     bool8 known = sStatus.request_id != 0 && (sStatus.result == COOP_ONLINE_READY || sStatus.result == COOP_ONLINE_SUCCESS);
     u8 pageText[8];
     u8 *end;
-    const u8 *options[8];
+    const u8 *options[ONLINE_GROUPED_COUNT];
     u8 locationName[32];
+    u8 ruleText[3][32];
     const struct MapHeader *mapHeader;
     if (sWindowId == WINDOW_NONE) return;
     if (sPage != ONLINE_PAIRING_ENTRY && sCursor >= OptionCount()) sCursor = OptionCount() - 1;
@@ -258,7 +366,7 @@ static void Draw(void)
         CopyWindowToVram(sWindowId, COPYWIN_GFX);
         return;
     }
-    Print(sInvitePrompt ? sJoinQuestion : (sPage == ONLINE_HOME ? sOnline : (sPage == ONLINE_NEARBY ? sNearby : (sPage == ONLINE_INCOMING ? sIncoming : (sPage == ONLINE_OUTGOING ? sOutgoing : (sPage == ONLINE_LAST_PARTNER ? sLastPartner : sWhere))))), 8, 0);
+    Print(sInvitePrompt ? sJoinQuestion : (sPage == ONLINE_HOME ? sOnline : (sPage == ONLINE_NEARBY ? sNearby : (sPage == ONLINE_INCOMING ? sIncoming : (sPage == ONLINE_OUTGOING ? sOutgoing : (sPage == ONLINE_LAST_PARTNER ? sLastPartner : (sPage == ONLINE_BATTLE ? sBattlePartner : sWhere)))))), 8, 0);
     Print(ResultText(), 8, 14);
     if (sPage == ONLINE_HOME)
     {
@@ -267,8 +375,9 @@ static void Draw(void)
         options[0] = sNearby; options[1] = sIncoming; options[2] = sOutgoing;
         if (sStatus.flags & COOP_ONLINE_GROUPED)
         {
-            options[3] = sWhere; options[4] = sTradeWithPartner; options[5] = sLeave;
-            options[6] = sRefresh; options[7] = sBack;
+            options[ONLINE_GROUPED_WHERE] = sWhere; options[ONLINE_GROUPED_TRADE] = sTradeWithPartner;
+            options[ONLINE_GROUPED_BATTLE] = sBattlePartner; options[ONLINE_GROUPED_LEAVE] = sLeave;
+            options[ONLINE_GROUPED_REFRESH] = sRefresh; options[ONLINE_GROUPED_BACK] = sBack;
         }
         else if (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER)
         { options[3] = sLastPartner; options[4] = sPairing; options[5] = sRefresh; options[6] = sBack; }
@@ -296,6 +405,19 @@ static void Draw(void)
         if (known && (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER)) PrintName(sStatus.last_partner_name, 32);
         else Print(sUnknown, 8, 32);
         options[0] = sInviteLastPartner; options[1] = sBack;
+    }
+    else if (sPage == ONLINE_BATTLE)
+    {
+        StringCopy(StringCopy(ruleText[0], sBattleFormat), CoopFriendly_FormatName(sBattleRules.format));
+        StringCopy(StringCopy(ruleText[1], sBattleLevels),
+                   sBattleRules.level_mode == COOP_BATTLE_FRIENDLY_LEVELS_50 ? sBattleLevels50 : sBattleLevelsAsIs);
+        ConvertIntToDecimalStringN(StringCopy(ruleText[2], sBattleCount), sBattleRules.count,
+                                   STR_CONV_MODE_LEFT_ALIGN, 1);
+        options[ONLINE_BATTLE_FORMAT] = ruleText[0];
+        options[ONLINE_BATTLE_LEVELS] = ruleText[1];
+        options[ONLINE_BATTLE_COUNT] = ruleText[2];
+        options[ONLINE_BATTLE_SEND] = sBattleSend;
+        options[ONLINE_BATTLE_BACK] = sBack;
     }
     else
     {
@@ -337,12 +459,13 @@ static void Draw(void)
     for (i = 0; i < OptionCount(); i++)
     {
         static const u8 disabledColors[] = {TEXT_COLOR_WHITE, TEXT_COLOR_LIGHT_GRAY, TEXT_COLOR_WHITE};
-        u8 optionY = sPage == ONLINE_HOME ? 60 + i * (OptionCount() > 7 ? 10 : 11) : 66 + i * 12;
+        u8 optionY = sPage == ONLINE_HOME ? 60 + i * (OptionCount() > 8 ? 9 : (OptionCount() > 7 ? 10 : 11)) : 66 + i * 12;
         if (OptionEnabled(i)) Print(options[i], 16, optionY);
         else AddTextPrinterParameterized3(sWindowId, FONT_SMALL, 16, optionY, disabledColors, TEXT_SKIP_DRAW, options[i]);
     }
-    Print(sCursorText, 4, sPage == ONLINE_HOME ? 60 + sCursor * (OptionCount() > 7 ? 10 : 11) : 66 + sCursor * 12);
-    if (sPage != ONLINE_HOME && sPage != ONLINE_LOCATION) Print(sPaging, 8, 130);
+    Print(sCursorText, 4, sPage == ONLINE_HOME ? 60 + sCursor * (OptionCount() > 8 ? 9 : (OptionCount() > 7 ? 10 : 11)) : 66 + sCursor * 12);
+    if (sPage == ONLINE_BATTLE) Print(sBattleControls, 8, 130);
+    else if (sPage != ONLINE_HOME && sPage != ONLINE_LOCATION) Print(sPaging, 8, 130);
     CopyWindowToVram(sWindowId, COPYWIN_GFX);
 }
 
@@ -488,18 +611,41 @@ static bool8 HandleInput(u16 keys)
     if (keys & DPAD_UP) sCursor = sCursor == 0 ? OptionCount() - 1 : sCursor - 1;
     if (keys & DPAD_DOWN) sCursor = (sCursor + 1) % OptionCount();
     if (keys & (DPAD_UP | DPAD_DOWN)) Draw();
+    if (sPage == ONLINE_BATTLE)
+    {
+        if (sCursor <= ONLINE_BATTLE_COUNT && (keys & (DPAD_LEFT | DPAD_RIGHT | A_BUTTON)))
+        {
+            ChangeBattleRule(sCursor, (keys & DPAD_LEFT) ? -1 : 1);
+            Draw();
+        }
+        else if (sCursor == ONLINE_BATTLE_SEND && (keys & A_BUTTON) && OptionEnabled(ONLINE_BATTLE_SEND))
+        {
+            return ONLINE_CLOSE_FOR_BATTLE;
+        }
+        return FALSE;
+    }
     if (sPending || sPairingPending) return FALSE;
     if (sPage != ONLINE_HOME && sPage != ONLINE_LOCATION && sPage != ONLINE_PAIRING && sPage != ONLINE_LAST_PARTNER && (keys & (DPAD_LEFT | DPAD_RIGHT))) NextPage(keys & DPAD_LEFT ? -1 : 1);
     if (!(keys & A_BUTTON)) return FALSE;
     if (sPage == ONLINE_HOME)
     {
         if (sCursor < 3) { sPage = sCursor == 0 ? ONLINE_NEARBY : (sCursor == 1 ? ONLINE_INCOMING : ONLINE_OUTGOING); sCursor = 0; Send(COOP_ONLINE_REFRESH, 0); }
-        else if (sCursor == 3 && (sStatus.flags & COOP_ONLINE_GROUPED)) { sPage = ONLINE_LOCATION; sCursor = 0; Draw(); }
-        else if (sCursor == 4 && (sStatus.flags & COOP_ONLINE_GROUPED))
+        else if (sCursor == ONLINE_GROUPED_WHERE && (sStatus.flags & COOP_ONLINE_GROUPED)) { sPage = ONLINE_LOCATION; sCursor = 0; Draw(); }
+        else if (sCursor == ONLINE_GROUPED_TRADE && (sStatus.flags & COOP_ONLINE_GROUPED))
         {
-            if (OptionEnabled(4)) return ONLINE_CLOSE_FOR_TRADE;
+            if (OptionEnabled(ONLINE_GROUPED_TRADE)) return ONLINE_CLOSE_FOR_TRADE;
         }
-        else if (sCursor == 5 && (sStatus.flags & COOP_ONLINE_GROUPED)) Send(COOP_ONLINE_LEAVE, 0);
+        else if (sCursor == ONLINE_GROUPED_BATTLE && (sStatus.flags & COOP_ONLINE_GROUPED))
+        {
+            if (OptionEnabled(ONLINE_GROUPED_BATTLE))
+            {
+                ResetBattleRules();
+                sPage = ONLINE_BATTLE;
+                sCursor = 0;
+                Draw();
+            }
+        }
+        else if (sCursor == ONLINE_GROUPED_LEAVE && (sStatus.flags & COOP_ONLINE_GROUPED)) Send(COOP_ONLINE_LEAVE, 0);
         else if (!(sStatus.flags & COOP_ONLINE_GROUPED) && (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER) && sCursor == 3) { sPage = ONLINE_LAST_PARTNER; sCursor = 0; Draw(); }
         else if (!(sStatus.flags & COOP_ONLINE_GROUPED) && sCursor == (sStatus.flags & COOP_ONLINE_HAS_LAST_PARTNER ? 4 : 3)) { sPage = ONLINE_PAIRING; sCursor = 0; sPairingStatusValid = FALSE; Draw(); }
         else Send(COOP_ONLINE_REFRESH, 0);
@@ -575,6 +721,8 @@ static void Task_Online(u8 taskId)
         DestroyTask(taskId);
         if (close == ONLINE_CLOSE_FOR_TRADE)
             CoopTradeOffer_StartRequestScript();
+        else if (close == ONLINE_CLOSE_FOR_BATTLE)
+            CoopFriendly_StartChallengeScript(&sBattleRules);
     }
 }
 
@@ -641,6 +789,8 @@ u8 CoopOnline_TestResult(void) { return sStatus.result; }
 bool8 CoopOnline_TestIsLocationPage(void) { return sPage == ONLINE_LOCATION; }
 bool8 CoopOnline_TestIsLastPartnerPage(void) { return sPage == ONLINE_LAST_PARTNER; }
 bool8 CoopOnline_TestIsPairingPage(void) { return sPage == ONLINE_PAIRING; }
+bool8 CoopOnline_TestIsBattlePage(void) { return sPage == ONLINE_BATTLE; }
+void CoopOnline_TestGetBattleRules(struct CoopBattleFriendlyRules *rules) { *rules = sBattleRules; }
 const u8 *CoopOnline_TestResultText(void) { return ResultText(); }
 // Mirrors Draw's ONLINE_LAST_PARTNER body: the name printed, or NULL for "Status not available."
 const u8 *CoopOnline_TestLastPartnerName(void)

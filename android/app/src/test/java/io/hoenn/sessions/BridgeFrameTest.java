@@ -33,9 +33,10 @@ public class BridgeFrameTest {
         assertThrows(SecurityException.class,()->NativeBridge.pushInbound(f,43));
     }
     @Test public void rejectsManifestHeaderDrift() {
-        byte[] memory=new byte[24];ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN).putInt(1347109711).putShort((short)1).putShort((short)4).putInt(65536);
-        NativeBridge.validate(memory);memory[6]=1;
-        assertThrows(SecurityException.class,()->NativeBridge.validate(memory));memory[6]=4;memory[8]^=1;
+        // Game protocol 5: friendly battle rules in the reserve, offer and manifest.
+        byte[] memory=new byte[24];ByteBuffer.wrap(memory).order(ByteOrder.LITTLE_ENDIAN).putInt(1347109711).putShort((short)1).putShort((short)5).putInt(65536);
+        NativeBridge.validate(memory);memory[6]=4;
+        assertThrows(SecurityException.class,()->NativeBridge.validate(memory));memory[6]=5;memory[8]^=1;
         assertThrows(SecurityException.class,()->NativeBridge.validate(memory));
     }
 }

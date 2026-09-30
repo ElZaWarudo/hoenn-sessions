@@ -6,8 +6,10 @@
 #include "battle_controllers.h"
 #include "battle_dome.h"
 #include "battle_interface.h"
+#include "battle_main.h"
 #include "battle_message.h"
 #include "battle_setup.h"
+#include "coop/battle_runtime.h"
 #include "battle_tv.h"
 #include "battle_z_move.h"
 #include "battle_gimmick.h"
@@ -1597,6 +1599,25 @@ static void WaitForMonSelection(enum BattlerId battler)
 {
     if (gMain.callback2 == BattleMainCB2 && !gPaletteFade.active)
     {
+        /* Friendly battles: a replacement pick outside action selection is
+         * exchanged with the partner before the engine may use it. */
+        if (CoopBattleRuntime_IsFriendlyEngine() && !IsBattleInActionSelection())
+        {
+            u8 chosen = gPartyMenuUseExitCallback == TRUE ? gSelectedMonPartyId : PARTY_SIZE;
+            u8 partyIndex;
+
+            if (!CoopFriendly_ResolveChoosePokemon(battler, chosen, &partyIndex))
+                return;
+            if (partyIndex < PARTY_SIZE)
+                BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, partyIndex, gBattlePartyCurrentOrder);
+            else
+                BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, PARTY_SIZE, NULL);
+            if (gBattleResources->bufferA[battler][1] == PARTY_ACTION_SEND_OUT)
+                PrintLinkStandbyMsg();
+            BtlController_Complete(battler);
+            CoopFriendly_FinishChoosePokemon();
+            return;
+        }
         if (gPartyMenuUseExitCallback == TRUE)
             BtlController_EmitChosenMonReturnValue(battler, B_COMM_TO_ENGINE, gSelectedMonPartyId, gBattlePartyCurrentOrder);
         else

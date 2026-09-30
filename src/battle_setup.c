@@ -36,6 +36,7 @@
 #include "coop/identity.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
+#include "coop/friendly_battle.h"
 #include "coop/trainer_rewards.h"
 #include "battle_frontier.h"
 #include "battle_pike.h"
@@ -699,6 +700,141 @@ bool8 BattleSetup_StartCoopTrainerBattle(void)
     FreezeObjectEvents();
     StopPlayerAvatar();
     CreateBattleStartTask(GetTrainerBattleTransition(), 0);
+    ScriptContext_Stop();
+    return TRUE;
+}
+
+/* A friendly battle against the grouped partner. Nothing it did is kept:
+ * no EXP, money, flags or items, and the whole pre-battle party (HP, PP,
+ * status, held items, forms) is copied back whatever the outcome. The
+ * terminal attestation is queued before resources are released, like a
+ * co-op trainer battle; a fault, desync or lost partner is a no contest. */
+static void CB2_EndCoopFriendlyBattle(void)
+{
+    bool8 completed = FALSE;
+    u8 result = COOP_FRIENDLY_RESULT_NO_CONTEST;
+    u8 i;
+
+    if (!sCoopBattleEntryPrepared)
+    {
+        SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+        return;
+    }
+    if (CoopBattleRuntime_IsEngineActive())
+    {
+        CoopBattleRuntime_PollTerminal();
+        if (!CoopBattleRuntime_IsEngineFaulted() && CoopBattleRuntime_IsBattleFinishedSent())
+            completed = TRUE;
+        else if (!CoopBattleRuntime_IsEngineFaulted())
+            return;
+        else
+            (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_UNAVAILABLE);
+    }
+    if (completed)
+    {
+        if (gBattleOutcome == B_OUTCOME_WON)
+            result = COOP_FRIENDLY_RESULT_WON;
+        else if (gBattleOutcome == B_OUTCOME_LOST)
+            result = COOP_FRIENDLY_RESULT_LOST;
+        else if (gBattleOutcome == B_OUTCOME_DREW)
+            result = COOP_FRIENDLY_RESULT_DRAW;
+    }
+    memcpy(gParties[B_TRAINER_0], sCoopBattlePlan.original_local,
+           sizeof(sCoopBattlePlan.original_local));
+    memcpy(gParties[B_TRAINER_2], sCoopOriginalPeerParty,
+           sizeof(sCoopOriginalPeerParty));
+    for (i = 0; i < PARTY_SIZE; i++)
+        ZeroMonData(&gParties[B_TRAINER_1][i]);
+    gPartiesCount[B_TRAINER_0] = sCoopOriginalLocalPartyCount;
+    gPartiesCount[B_TRAINER_1] = 0;
+    gPartiesCount[B_TRAINER_2] = sCoopOriginalPeerPartyCount;
+    gBattleTypeFlags = sCoopOriginalBattleTypeFlags;
+    gPartnerTrainerId = sCoopOriginalPartnerTrainerId;
+    gTrainerBattleParameter = sCoopOriginalTrainerBattleParameter;
+    gMain.savedCallback = sCoopOriginalSavedCallback;
+    if (completed)
+        CoopBattleRuntime_CompleteBattle();
+    else
+        CoopBattleRuntime_DisarmEngine();
+    memset(&sCoopBattlePlan, 0, sizeof(sCoopBattlePlan));
+    sCoopBattleEntryActive = FALSE;
+    sCoopBattleEntryPrepared = FALSE;
+    CoopBattleConsent_OnFriendlyBattleEnded();
+    CoopFriendly_OnBattleEnded(result);
+    /* The friendly script is parked in its wait; it shows the result. */
+    SetMainCallback2(CB2_ReturnToFieldContinueScriptPlayMapMusic);
+}
+
+bool8 BattleSetup_StartCoopFriendlyBattle(const struct Pokemon *team, u8 count)
+{
+    u8 battleId[COOP_BATTLE_ID_SIZE];
+    struct CoopBattleFriendlyRules rules;
+    u8 peerCount = 0;
+    u8 i;
+
+    if (team == NULL || sCoopBattleEntryActive || sCoopBattleEntryPrepared
+     || !CoopBattleRuntime_IsStartReleased()
+     || !CoopBattleConsent_CopyCurrentBattleId(battleId, sizeof(battleId))
+     || !CoopBattleRuntime_GetFriendlyRules(battleId, &rules)
+     || !CoopBattleRuntime_MakeFriendlyPlan(battleId, gParties[B_TRAINER_0],
+                                            gPartiesCount[B_TRAINER_0], team, count,
+                                            &sCoopBattlePlan))
+        return FALSE;
+
+    memcpy(sCoopOriginalPeerParty, gParties[B_TRAINER_2], sizeof(sCoopOriginalPeerParty));
+    sCoopOriginalLocalPartyCount = gPartiesCount[B_TRAINER_0];
+    sCoopOriginalPeerPartyCount = gPartiesCount[B_TRAINER_2];
+    sCoopOriginalBattleTypeFlags = gBattleTypeFlags;
+    sCoopOriginalSavedCallback = gMain.savedCallback;
+    sCoopOriginalPartnerTrainerId = gPartnerTrainerId;
+    sCoopOriginalTrainerBattleParameter = gTrainerBattleParameter;
+    sCoopBattleEntryPrepared = TRUE;
+    if (!CoopBattleRuntime_ArmEngine(battleId))
+    {
+        RollbackCoopBattleEntry();
+        return FALSE;
+    }
+
+    /* Both ROMs stage the same records: this ROM's team (its snapshot) at
+     * B_TRAINER_0 and the peer's snapshot at B_TRAINER_1, in pick order,
+     * each scaled to Lv. 50 on a copy when the challenge asks for it. */
+    for (i = 0; i < PARTY_SIZE; i++)
+    {
+        if (i < count)
+            gParties[B_TRAINER_0][i] = team[i];
+        else
+            ZeroMonData(&gParties[B_TRAINER_0][i]);
+        ZeroMonData(&gParties[B_TRAINER_1][i]);
+    }
+    if (!CoopBattleRuntime_CopyPeerTeam(gParties[B_TRAINER_1], PARTY_SIZE, &peerCount)
+     || peerCount != count)
+    {
+        for (i = 0; i < PARTY_SIZE; i++)
+            ZeroMonData(&gParties[B_TRAINER_1][i]);
+        CoopBattleRuntime_DisarmEngine();
+        RollbackCoopBattleEntry();
+        return FALSE;
+    }
+    CoopFriendly_ScaleTeam(gParties[B_TRAINER_0], count, rules.level_mode);
+    CoopFriendly_ScaleTeam(gParties[B_TRAINER_1], peerCount, rules.level_mode);
+    gPartiesCount[B_TRAINER_0] = count;
+    gPartiesCount[B_TRAINER_1] = peerCount;
+
+    /* The secret-base opponent takes the staged party as it is; the
+     * battle's display name comes from the partner's records. */
+    TRAINER_BATTLE_PARAM.opponentA = TRAINER_SECRET_BASE;
+    TRAINER_BATTLE_PARAM.opponentB = TRAINER_NONE;
+    /* BATTLE_TYPE_SECRET_BASE gives both sides the same item and affection
+     * rules (like a link battle) and the secret-base opponent display. */
+    gBattleTypeFlags = BATTLE_TYPE_TRAINER | BATTLE_TYPE_SECRET_BASE
+        | (rules.format == COOP_BATTLE_FRIENDLY_DOUBLES ? BATTLE_TYPE_DOUBLE : 0);
+    gMain.savedCallback = CB2_EndCoopFriendlyBattle;
+
+    sCoopBattleEntryActive = TRUE;
+    LockPlayerFieldControls();
+    FreezeObjectEvents();
+    StopPlayerAvatar();
+    CreateBattleStartTask(B_TRANSITION_SLICE, MUS_VS_TRAINER);
     ScriptContext_Stop();
     return TRUE;
 }

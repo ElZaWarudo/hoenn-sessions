@@ -10639,6 +10639,7 @@ mod tests {
     #[tokio::test]
     async fn battle_consent_frames_enforce_readiness_epoch_sequence_and_payload() {
         let reserve = coop_protocol::TrainerBattleReserveRecord {
+            friendly_rules: None,
             kind: coop_protocol::BattleKind::CooperativeTrainer,
             request_nonce: 42,
             trainer_region: Some(coop_protocol::RegionId::Hoenn),
@@ -10892,6 +10893,11 @@ mod tests {
             rearm_after_reboot: false,
         };
         let record = coop_protocol::BattleJoinOfferRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             battle_id: coop_protocol::BattleId([7; 16]),
             kind: coop_protocol::BattleKind::Friendly,
             role: coop_protocol::BattleRole::Responder,

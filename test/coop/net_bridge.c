@@ -194,6 +194,7 @@ TEST("Cloud Coop battle consent matches a reservation nonce before accepting its
 
     offer[0] = 1; // Nonzero battle UUID.
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     offer[17] = 0; // Requester.
     memcpy(&offer[18], &message.payload[1], 4);
     offer[18] ^= 1;
@@ -246,6 +247,7 @@ TEST("Cloud Coop battle consent keeps a pending reserve through transport downti
     CoopBattleConsent_OnSessionReady();
     offer[0] = 1;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(&offer[18], &message.payload[1], 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
 }
@@ -1654,6 +1656,7 @@ TEST("Cloud Coop peer party chunks remain read only and survive same epoch recon
     EstablishTestCloudSession();
     manifest[0] = 7;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
     memcpy(chunk, manifest, COOP_BATTLE_ID_SIZE);
@@ -1689,6 +1692,7 @@ TEST("Cloud Coop peer party chunks remain read only and survive same epoch recon
     EXPECT(!(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR));
     manifest[0] = 9;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY,
                                   9, 18, NULL, 0));
     EXPECT(CoopNetBridge_EnqueueNetworkToGame(&message));
@@ -1705,6 +1709,7 @@ TEST("Cloud Coop rejects malformed peer party but ignores stale battle chunks")
     EstablishTestCloudSession();
     manifest[0] = 7;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
     chunk[0] = 8;
@@ -1740,6 +1745,7 @@ TEST("Cloud Coop battle snapshot publishes raw mon chunks only for the consent b
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     offer[0] = 1;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, message.payload + 1, 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
@@ -1796,6 +1802,7 @@ TEST("Cloud Coop battle intent and hash fence turns and retry after a full queue
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(!CoopBattleRuntime_SendActionIntent(other_id, 1, action, sizeof(action)));
     EXPECT(!CoopBattleRuntime_SendActionIntent(manifest, 0, action, sizeof(action)));
@@ -1871,6 +1878,7 @@ TEST("Cloud Coop same epoch replacement replays unread battle records after ROM 
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     offer[0] = 7;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, message.payload + 1, 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
@@ -1879,6 +1887,7 @@ TEST("Cloud Coop same epoch replacement replays unread battle records after ROM 
     manifest[0] = 7;
 
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_SendActionIntent(manifest, 1, action, sizeof(action)));
     bundle[0] = 7;
@@ -1985,12 +1994,14 @@ TEST("Cloud Coop heartbeat stale replays unread battle records on reconnect")
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&message));
     offer[0] = 7;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, message.payload + 1, 4);
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     CreateMon(&mon, SPECIES_BULBASAUR, 5, 1, OTID_STRUCT_PRESET(1));
     EXPECT(CoopBattleRuntime_SendPartySnapshot(offer, 0, 1, (const u8 *)&mon, sizeof(mon)));
     manifest[0] = 7;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_SendActionIntent(manifest, 1, action, sizeof(action)));
     bundle[0] = 7;
@@ -2075,6 +2086,7 @@ TEST("Cloud Coop accepted battle consent survives its offer deadline")
     EstablishTestCloudSession();
     offer[0] = 9;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     offer[17] = 1;
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     gMain.callback1 = CB1_Overworld;
@@ -2262,6 +2274,7 @@ TEST("Cloud Coop copies responder battle ID only after local accept and clears i
     EstablishTestCloudSession();
     offer[0] = 13;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     offer[17] = 1;
     EXPECT(CoopBattleConsent_ReceiveOffer(offer, sizeof(offer)));
     EXPECT(!CoopBattleConsent_CopyCurrentBattleId(copied, sizeof(copied)));
@@ -2312,6 +2325,7 @@ TEST("Cloud Coop requester keeps declined outcome after matching abort")
     EXPECT_EQ(outbound.type, COOP_BRIDGE_MESSAGE_TRAINER_BATTLE_RESERVE);
     offer[0] = 9;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, outbound.payload + 1, 4);
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_JOIN_OFFER, 2, offer, sizeof(offer));
     EXPECT(CoopBattleConsent_IsCurrentBattle(offer));
@@ -2340,6 +2354,7 @@ TEST("Cloud Coop matching abort clears stale accepted consent")
     EXPECT(CoopNetBridge_DequeueGameToNetwork(&outbound));
     offer[0] = 8;
     offer[16] = COOP_BATTLE_KIND_FRIENDLY;
+    offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; offer[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET + 2] = 1;
     memcpy(offer + 18, outbound.payload + 1, 4);
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_JOIN_OFFER, 2, offer, sizeof(offer));
     memcpy(outcome, offer, COOP_BATTLE_ID_SIZE);
@@ -2372,6 +2387,7 @@ TEST("Cloud Coop battle transport retains a bounded manifest and ordered turns")
     EstablishTestCloudSession();
     manifest[0] = 0xA1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     manifest[18] = 0x52;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_HasManifest());
@@ -2429,9 +2445,11 @@ TEST("Cloud Coop battle transport distinguishes malformed records from stale bat
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     manifest[0] = 2;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 3, manifest, sizeof(manifest));
     EXPECT_EQ(gCoopNetBridge.status_flags & COOP_BRIDGE_STATUS_PROTOCOL_ERROR, 0);
     bundle[0] = 2;
@@ -2450,6 +2468,7 @@ TEST("Cloud Coop battle transport distinguishes malformed records from stale bat
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_HasManifest());
     EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_SESSION_READY, 3, 17, NULL, 0));
@@ -2473,6 +2492,7 @@ TEST("Cloud Coop battle transport soft-drops skipped turns without losing the ex
     EstablishTestCloudSession();
     manifest[0] = 3;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     EXPECT(CoopBattleRuntime_SendActionIntent(manifest, 1, action, sizeof(action)));
     bundle[0] = 3;
@@ -2510,6 +2530,7 @@ TEST("Cloud Coop battle pause clears when its turn bundle arrives")
     EstablishTestCloudSession();
     manifest[0] = 4;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     pause[0] = 4;
     pause[16] = 1;
@@ -2538,6 +2559,7 @@ TEST("Cloud Coop battle transport rejects nonzero padding and invalid pause fiel
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     EXPECT(CoopBridgeMessage_Seal(&message, COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST,
                                   2, 17, manifest, sizeof(manifest)));
     message.payload[sizeof(manifest)] = 1;
@@ -2550,6 +2572,7 @@ TEST("Cloud Coop battle transport rejects nonzero padding and invalid pause fiel
     EstablishTestCloudSession();
     manifest[0] = 1;
     manifest[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_KIND_FRIENDLY;
+    manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES; manifest[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     DeliverTestBattleRecord(COOP_BRIDGE_MESSAGE_BATTLE_MANIFEST, 2, manifest, sizeof(manifest));
     pause[0] = 1;
     pause[18] = 2;

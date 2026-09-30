@@ -10,6 +10,8 @@
 #include "coop/net_bridge.h"
 #include "coop/save.h"
 #include "coop/trade_offer.h"
+#include "coop/battle_consent.h"
+#include "coop/friendly_battle.h"
 #include "pokemon.h"
 #include "test/test.h"
 
@@ -459,8 +461,8 @@ TEST("Cloud Coop grouped Online omits Last partner even with the flag")
     EXPECT(!CoopOnline_TestIsLastPartnerPage());
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
     EXPECT(!CoopOnline_TestInput(B_BUTTON));
-    for (i = 0; i < 5; i++) CoopOnline_TestInput(DPAD_DOWN);
-    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Index 5 is Leave group, not Pair by code.
+    for (i = 0; i < 6; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Index 6 is Leave group, not Pair by code.
     ready = MenuRequest();
     EXPECT_EQ(ready.payload[8], COOP_ONLINE_LEAVE);
     EXPECT(!CoopOnline_TestIsPairingPage());
@@ -487,7 +489,80 @@ TEST("Cloud Coop grouped Online offers Trade with partner only when a trade can 
     // Index 4 closes the menu and starts the trade script; nothing is sent yet.
     EXPECT_EQ(CoopOnline_TestInput(A_BUTTON), 2);
     EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
-    // Eight entries: Back sits at index 7.
-    for (i = 0; i < 3; i++) CoopOnline_TestInput(DPAD_DOWN);
+    // Nine entries: Back sits at index 8.
+    for (i = 0; i < 4; i++) CoopOnline_TestInput(DPAD_DOWN);
     EXPECT_EQ(CoopOnline_TestInput(A_BUTTON), TRUE);
+}
+
+TEST("Cloud Coop grouped Online offers Battle partner and its rules only when a battle can start")
+{
+    struct CoopBridgeMessage ready;
+    struct CoopBattleFriendlyRules rules;
+    u8 i;
+    ZeroPlayerPartyMons();
+    CreateMon(&gPlayerParty[0], SPECIES_TREECKO, 5, 0x01020304, OTID_STRUCT_PRESET(0x0A0B0C0D));
+    CalculateMonStats(&gPlayerParty[0]);
+    gPlayerPartyCount = CalculatePlayerPartyCount();
+    InitOnlineMenu();
+    ready = MenuRequest();
+    ReplyStatus(&ready, COOP_ONLINE_READY, COOP_ONLINE_GROUPED, NULL);
+    EXPECT(CoopFriendly_CanBegin());
+    // Index 5, between Trade with partner and Leave group, opens the rules.
+    for (i = 0; i < 5; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(CoopOnline_TestIsBattlePage());
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.format, COOP_BATTLE_FRIENDLY_SINGLES);
+    EXPECT_EQ(rules.level_mode, COOP_BATTLE_FRIENDLY_LEVELS_AS_IS);
+    EXPECT_EQ(rules.count, 1); // one usable Pokemon
+    // Doubles needs two Pokemon on each side; the count cannot exceed the party.
+    EXPECT(!CoopOnline_TestInput(DPAD_RIGHT));
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(DPAD_RIGHT));
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.format, COOP_BATTLE_FRIENDLY_SINGLES);
+    EXPECT_EQ(rules.level_mode, COOP_BATTLE_FRIENDLY_LEVELS_50);
+    EXPECT_EQ(rules.count, 1);
+
+    CreateMon(&gPlayerParty[1], SPECIES_ZIGZAGOON, 4, 0x0BADF00D, OTID_STRUCT_PRESET(0x22224444));
+    CalculateMonStats(&gPlayerParty[1]);
+    CreateMon(&gPlayerParty[2], SPECIES_WURMPLE, 3, 0x0BADF00E, OTID_STRUCT_PRESET(0x22224444));
+    CalculateMonStats(&gPlayerParty[2]);
+    gPlayerPartyCount = CalculatePlayerPartyCount();
+    CoopOnline_TestInput(DPAD_UP);
+    CoopOnline_TestInput(DPAD_UP);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON)); // Doubles
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.format, COOP_BATTLE_FRIENDLY_DOUBLES);
+    EXPECT_EQ(rules.count, 2);
+    CoopOnline_TestInput(DPAD_DOWN);
+    CoopOnline_TestInput(DPAD_DOWN);
+    CoopOnline_TestInput(DPAD_RIGHT); // 3
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.count, 3);
+    CoopOnline_TestInput(DPAD_RIGHT); // wraps to the doubles minimum
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.count, 2);
+    CoopOnline_TestInput(DPAD_LEFT); // wraps to the party maximum
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.count, 3);
+    // Send closes the menu for the challenge script; nothing is sent yet.
+    CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT_EQ(CoopOnline_TestInput(A_BUTTON), 3);
+    EXPECT(CoopBridgeQueue_IsEmpty(&gCoopNetBridge.game_to_network));
+    CoopOnline_TestGetBattleRules(&rules);
+    EXPECT_EQ(rules.format, COOP_BATTLE_FRIENDLY_DOUBLES);
+    EXPECT_EQ(rules.level_mode, COOP_BATTLE_FRIENDLY_LEVELS_50);
+    EXPECT_EQ(rules.count, 3);
+
+    // A co-op battle request in flight disables the entry.
+    EXPECT(!CoopOnline_TestInput(B_BUTTON));
+    EXPECT(!CoopOnline_TestIsBattlePage());
+    EXPECT(CoopBattleConsent_Begin(COOP_BATTLE_KIND_FRIENDLY));
+    EXPECT(!CoopFriendly_CanBegin());
+    for (i = 0; i < 5; i++) CoopOnline_TestInput(DPAD_DOWN);
+    EXPECT(!CoopOnline_TestInput(A_BUTTON));
+    EXPECT(!CoopOnline_TestIsBattlePage());
 }

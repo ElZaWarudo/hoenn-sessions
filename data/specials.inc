@@ -698,3 +698,10 @@ gSpecials::
 	def_special Special_CoopTradeWait
 	def_special Special_CoopTradeBufferResult
 	def_special Special_CoopTradeFinish
+	def_special Special_CoopFriendlyBufferRules
+	def_special Special_CoopFriendlyBeginResponderPicks
+	def_special Special_CoopFriendlyBufferPick
+	def_special Special_CoopFriendlyPickMon
+	def_special Special_CoopFriendlyWait
+	def_special Special_CoopFriendlyBufferResult
+	def_special Special_CoopFriendlyFinish

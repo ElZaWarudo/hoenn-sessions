@@ -93,6 +93,14 @@ void SwitchInClearSetData(enum BattlerId battler, struct Volatiles *volatilesCop
 void FaintClearSetData(enum BattlerId battler);
 void BattleTurnPassed(void);
 bool32 EndTurnEvents(void);
+struct CoopBattleAction;
+/* TRUE while the engine is collecting the turn's actions. */
+bool32 IsBattleInActionSelection(void);
+/* Co-op friendly battles (see battle_main.c). */
+bool32 CoopFriendly_ResolveChoosePokemon(enum BattlerId battler, u8 localChoice, u8 *partyIndex);
+void CoopFriendly_FinishChoosePokemon(void);
+bool32 CoopFriendly_GetPeerSwitch(enum BattlerId battler, u8 *partyIndex);
+bool32 CoopFriendly_GetPeerAction(enum BattlerId battler, struct CoopBattleAction *action);
 u8 IsRunningFromBattleImpossible(enum BattlerId battler);
 void SwitchTwoBattlersInParty(enum BattlerId battler, enum BattlerId battler2);
 void SwitchPartyOrder(enum BattlerId battler);

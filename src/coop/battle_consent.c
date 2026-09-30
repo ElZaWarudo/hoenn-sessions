@@ -1,6 +1,7 @@
 #include "global.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
+#include "coop/friendly_battle.h"
 #include "battle.h"
 #include "battle_setup.h"
 #include "coop/identity.h"
@@ -101,6 +102,8 @@ struct ConsentRuntime
     u8 brock_request_state;
     u16 wally_approach_side;
     u32 cooldown_deadline;
+    /* The rules of the friendly offer on screen (responder). */
+    u8 offer_rules[COOP_BATTLE_FRIENDLY_RULES_SIZE];
 };
 
 static EWRAM_DATA struct ConsentRuntime sConsent = {0};
@@ -208,6 +211,22 @@ static void CancelResponderOffer(void)
     ClearState();
 }
 
+/* An accepted battle must start in time; otherwise the reservation is
+ * called off locally instead of holding the consent forever. */
+static void EnterAccepted(void)
+{
+    sConsent.state = CONSENT_ACCEPTED;
+    sConsent.startup_attempted = FALSE;
+    sConsent.deadline_frame = gMain.vblankCounter1
+        + (sConsent.kind == COOP_BATTLE_KIND_FRIENDLY
+           ? COOP_FRIENDLY_START_FRAMES : COOP_TRAINER_ENCOUNTER_START_FRAMES);
+}
+
+static bool8 IsFriendlyConsent(void)
+{
+    return sConsent.kind == COOP_BATTLE_KIND_FRIENDLY && sConsent.state != CONSENT_IDLE;
+}
+
 static void ClearOutcome(void)
 {
     memset(sConsent.outcome_battle_id, 0, sizeof(sConsent.outcome_battle_id));
@@ -228,7 +247,7 @@ static bool8 SendDecision(void)
                                              payload, sizeof(payload)))
         return FALSE;
     if (sConsent.decision)
-        sConsent.state = CONSENT_ACCEPTED;
+        EnterAccepted();
     else
     {
         memcpy(sConsent.declined_battle_id, sConsent.battle_id, COOP_BATTLE_ID_SIZE);
@@ -381,6 +400,8 @@ void CoopBattleConsent_OnSessionReady(void)
     if (sConsent.session_epoch != 0 && sConsent.session_epoch != epoch)
     {
         bool8 commit_was_pending = sConsent.state == CONSENT_COMMIT_PENDING;
+        if (IsFriendlyConsent())
+            CoopFriendly_End(COOP_FRIENDLY_RESULT_UNAVAILABLE);
         /* A commit grant is only valid in the lease epoch that produced the
          * terminal battle. Release the waiting script as a failed co-op
          * result if that epoch is replaced. */
@@ -425,9 +446,10 @@ void CoopBattleConsent_OnTransportLost(void)
         ClearState();
 }
 
-static bool8 BeginRequest(u8 kind, enum CoopRegion region, u16 trainer_ordinal)
+static bool8 BeginRequest(u8 kind, enum CoopRegion region, u16 trainer_ordinal,
+                          const struct CoopBattleFriendlyRules *rules)
 {
-    u8 payload[COOP_BATTLE_TRAINER_RESERVE_SIZE];
+    u8 payload[COOP_BATTLE_RESERVE_SIZE];
     u16 length;
     u32 nonce;
 
@@ -435,9 +457,10 @@ static bool8 BeginRequest(u8 kind, enum CoopRegion region, u16 trainer_ordinal)
      || !CoopNetBridge_CanSendBattle()
      || CoopBattleRuntime_HasPendingOutboundReplay())
         return FALSE;
+    if (kind == COOP_BATTLE_KIND_FRIENDLY && !CoopBattleRuntime_IsValidFriendlyRules(rules))
+        return FALSE;
     ClearOutcome();
-    length = kind == COOP_BATTLE_KIND_COOPERATIVE_TRAINER
-        ? COOP_BATTLE_TRAINER_RESERVE_SIZE : COOP_BATTLE_RESERVE_SIZE;
+    length = COOP_BATTLE_RESERVE_SIZE;
     /* A ROM restart can happen under the same launcher lease. Start each
      * request from the game's timer-seeded RNG so the restarted ROM does not
      * reuse the previous boot's first nonce. The counter also distinguishes
@@ -455,6 +478,10 @@ static bool8 BeginRequest(u8 kind, enum CoopRegion region, u16 trainer_ordinal)
         payload[5] = region;
         payload[6] = trainer_ordinal;
         payload[7] = trainer_ordinal >> 8;
+    }
+    else
+    {
+        CoopBattleRuntime_EncodeFriendlyRules(rules, &payload[5]);
     }
     if (!CoopNetBridge_EnqueueGameToNetwork(COOP_BRIDGE_MESSAGE_TRAINER_BATTLE_RESERVE,
                                              payload, length))
@@ -475,9 +502,68 @@ static bool8 BeginRequest(u8 kind, enum CoopRegion region, u16 trainer_ordinal)
 
 bool8 CoopBattleConsent_Begin(u8 kind)
 {
+    struct CoopBattleFriendlyRules rules;
+
     if (kind != COOP_BATTLE_KIND_FRIENDLY)
         return FALSE;
-    return BeginRequest(kind, COOP_REGION_UNSPECIFIED, 0);
+    CoopFriendly_GetRules(&rules);
+    return BeginRequest(kind, COOP_REGION_UNSPECIFIED, 0, &rules);
+}
+
+bool8 CoopBattleConsent_BeginFriendly(const struct CoopBattleFriendlyRules *rules)
+{
+    return BeginRequest(COOP_BATTLE_KIND_FRIENDLY, COOP_REGION_UNSPECIFIED, 0, rules);
+}
+
+bool8 CoopBattleConsent_IsIdle(void)
+{
+    return sConsent.state == CONSENT_IDLE && sConsent.session_ready
+        && sConsent.encounter_state == ENCOUNTER_NONE
+        && sConsent.wally_request_state == WALLY_REQUEST_NONE
+        && sConsent.brock_request_state == BROCK_REQUEST_NONE;
+}
+
+bool8 CoopBattleConsent_GetOfferRules(struct CoopBattleFriendlyRules *rules)
+{
+    if (sConsent.kind != COOP_BATTLE_KIND_FRIENDLY || sConsent.request_nonce != 0
+     || (sConsent.state != CONSENT_OFFER_READY && sConsent.state != CONSENT_RESPONDING
+      && sConsent.state != CONSENT_ACCEPTED))
+        return FALSE;
+    return CoopBattleRuntime_DecodeFriendlyRules(sConsent.offer_rules, rules);
+}
+
+/* The partner said Yes: the friendly script now owns the field lock it
+ * started under and releases it itself. */
+bool8 CoopBattleConsent_TakeFriendlyPromptLock(void)
+{
+    if (sConsent.kind != COOP_BATTLE_KIND_FRIENDLY
+     || (sConsent.state != CONSENT_RESPONDING && sConsent.state != CONSENT_ACCEPTED))
+        return FALSE;
+    sConsent.controls_locked = FALSE;
+    return TRUE;
+}
+
+/* Calls off this ROM's friendly reservation before the battle starts. A
+ * request without a battle ID stays absorbable as an abandoned nonce. */
+void CoopBattleConsent_CancelFriendly(void)
+{
+    u32 nonce = sConsent.request_nonce;
+
+    if (!IsFriendlyConsent() || sConsent.startup_attempted)
+        return;
+    if (IsValidId(sConsent.battle_id))
+        SendRequesterCancel(sConsent.battle_id);
+    ClearState();
+    sConsent.request_nonce = nonce;
+    ClearOutcome();
+}
+
+void CoopBattleConsent_OnFriendlyBattleEnded(void)
+{
+    if (sConsent.kind != COOP_BATTLE_KIND_FRIENDLY)
+        return;
+    ClearState();
+    ClearOutcome();
 }
 
 bool8 CoopBattleConsent_BeginTrainer(u16 legacy_trainer_id)
@@ -488,7 +574,7 @@ bool8 CoopBattleConsent_BeginTrainer(u16 legacy_trainer_id)
     if (!CoopRegion_TryGetActive(&region)
      || !CoopIdentity_ResolveTrainerOrdinal(region, legacy_trainer_id, &ordinal))
         return FALSE;
-    return BeginRequest(COOP_BATTLE_KIND_COOPERATIVE_TRAINER, region, ordinal);
+    return BeginRequest(COOP_BATTLE_KIND_COOPERATIVE_TRAINER, region, ordinal, NULL);
 }
 
 bool8 CoopBattleConsent_ReceiveReserveRejected(const u8 *payload, u16 length)
@@ -505,6 +591,12 @@ bool8 CoopBattleConsent_ReceiveReserveRejected(const u8 *payload, u16 length)
      || sConsent.state != CONSENT_REQUESTING
      || request_nonce != sConsent.request_nonce)
         return FALSE;
+    if (sConsent.kind == COOP_BATTLE_KIND_FRIENDLY)
+    {
+        ClearState();
+        CoopFriendly_End(COOP_FRIENDLY_RESULT_UNAVAILABLE);
+        return TRUE;
+    }
     ClearState();
     /* A trainer encounter falls back to its vanilla battle silently. */
     if (sConsent.encounter_state == ENCOUNTER_NONE)
@@ -517,6 +609,9 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
     u8 kind;
     u8 role;
     u32 request_nonce;
+    const u8 *rulesBytes;
+    struct CoopBattleFriendlyRules rules = {0};
+    struct CoopBattleFriendlyRules ownRules;
 
     if (payload == NULL || length != COOP_BATTLE_JOIN_OFFER_SIZE)
         return FALSE;
@@ -524,12 +619,17 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
     role = payload[COOP_BATTLE_ID_SIZE + 1];
     request_nonce = payload[18] | ((u32)payload[19] << 8)
         | ((u32)payload[20] << 16) | ((u32)payload[21] << 24);
+    rulesBytes = &payload[COOP_BATTLE_JOIN_OFFER_RULES_OFFSET];
     if (!sConsent.session_ready
      || !IsValidId(payload)
      || (kind != COOP_BATTLE_KIND_COOPERATIVE_TRAINER
       && kind != COOP_BATTLE_KIND_FRIENDLY)
      || role > 1 || (role == 0 && request_nonce == 0)
      || (role == 1 && request_nonce != 0))
+        return FALSE;
+    if (kind == COOP_BATTLE_KIND_FRIENDLY
+        ? !CoopBattleRuntime_DecodeFriendlyRules(rulesBytes, &rules)
+        : (rulesBytes[0] | rulesBytes[1] | rulesBytes[2]) != 0)
         return FALSE;
     if (role == 0)
     {
@@ -546,6 +646,14 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
         if (sConsent.state != CONSENT_REQUESTING || sConsent.kind != kind
          || sConsent.request_nonce != request_nonce)
             return FALSE;
+        if (kind == COOP_BATTLE_KIND_FRIENDLY)
+        {
+            /* The server must echo the challenge this ROM sent. */
+            CoopFriendly_GetRules(&ownRules);
+            if (ownRules.format != rules.format || ownRules.level_mode != rules.level_mode
+             || ownRules.count != rules.count)
+                return FALSE;
+        }
         memcpy(sConsent.battle_id, payload, COOP_BATTLE_ID_SIZE);
         sConsent.state = CONSENT_WAITING;
         /* A parked trainer encounter keeps the deadline it started with. */
@@ -570,14 +678,18 @@ bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length)
         sConsent.kind = kind;
         sConsent.state = CONSENT_OFFER_DEFERRED;
         sConsent.request_nonce = 0;
+        memcpy(sConsent.offer_rules, rulesBytes, COOP_BATTLE_FRIENDLY_RULES_SIZE);
         /* A trainer encounter is waiting in front of the requester's
-         * trainer, so its prompt is short; friendly battles keep 30 s. */
+         * trainer, so its prompt is short. A friendly prompt must be answered
+         * inside the server's 30 s reservation window. */
         if (kind == COOP_BATTLE_KIND_COOPERATIVE_TRAINER)
         {
             sConsent.deadline_frame = gMain.vblankCounter1
                 + COOP_TRAINER_ENCOUNTER_OFFER_FRAMES;
             return TRUE;
         }
+        sConsent.deadline_frame = gMain.vblankCounter1 + COOP_FRIENDLY_OFFER_FRAMES;
+        return TRUE;
     }
     sConsent.deadline_frame = gMain.vblankCounter1 + 30 * 60;
     return TRUE;
@@ -626,12 +738,22 @@ bool8 CoopBattleConsent_ReceiveOutcome(const u8 *payload, u16 length)
     sConsent.outcome = outcome;
     if (outcome != COOP_BATTLE_CONSENT_ACCEPTED)
     {
+        if (sConsent.kind == COOP_BATTLE_KIND_FRIENDLY)
+        {
+            /* The outcome record stays for an exact replay; the consent is
+             * free again and the waiting challenger is told why. */
+            ClearState();
+            CoopFriendly_End(outcome == COOP_BATTLE_CONSENT_DECLINED
+                             ? COOP_FRIENDLY_RESULT_DECLINED
+                             : COOP_FRIENDLY_RESULT_NO_ANSWER);
+            return TRUE;
+        }
         sConsent.state = CONSENT_OUTCOME_READY;
         sConsent.deadline_frame = 0;
     }
-    else
+    else if (sConsent.state != CONSENT_ACCEPTED)
     {
-        sConsent.state = CONSENT_ACCEPTED;
+        EnterAccepted();
     }
     return TRUE;
 }
@@ -658,9 +780,16 @@ bool8 CoopBattleConsent_ReceiveAbort(const u8 *payload, u16 length)
          * later script query. Declined/expired outcomes remain queryable so
          * the player can be told why the consent did not proceed. */
         bool8 clear_accepted = sConsent.outcome == COOP_BATTLE_CONSENT_ACCEPTED;
+        bool8 friendly = IsFriendlyConsent();
         CancelResponderOffer();
         if (clear_accepted)
             ClearOutcome();
+        if (friendly)
+            CoopFriendly_End(payload[COOP_BATTLE_ID_SIZE] == COOP_BATTLE_ABORT_CANCELED
+                             ? COOP_FRIENDLY_RESULT_WITHDRAWN
+                             : payload[COOP_BATTLE_ID_SIZE] == COOP_BATTLE_ABORT_EXPIRED
+                               ? COOP_FRIENDLY_RESULT_NO_ANSWER
+                               : COOP_FRIENDLY_RESULT_UNAVAILABLE);
     }
     if (memcmp(sConsent.declined_battle_id, payload, COOP_BATTLE_ID_SIZE) == 0)
         memset(sConsent.declined_battle_id, 0, COOP_BATTLE_ID_SIZE);
@@ -698,6 +827,49 @@ bool8 CoopBattleConsent_GetOutcomeRecord(u8 *battle_id, u32 *request_nonce, u8 *
     *request_nonce = sConsent.outcome_request_nonce;
     *outcome = sConsent.outcome;
     return TRUE;
+}
+
+/* The friendly script waits with the field locked (parked) once the team
+ * is picked; only then does this ROM send its team as the snapshot. */
+static bool8 IsParkedFriendlyOverworld(void)
+{
+    return CoopFriendly_IsWaiting()
+        && gMain.callback1 == CB1_Overworld && gMain.callback2 == CB2_Overworld
+        && !gPaletteFade.active && ArePlayerFieldControlsLocked()
+        && !ScriptContext_IsEnabled();
+}
+
+static void PollFriendlyStart(void)
+{
+    struct Pokemon team[PARTY_SIZE];
+    u8 count;
+
+    if (!IsParkedFriendlyOverworld())
+        return;
+    count = CoopFriendly_BuildTeam(team);
+    if (count == 0)
+    {
+        CoopBattleConsent_CancelFriendly();
+        CoopFriendly_End(COOP_FRIENDLY_RESULT_UNAVAILABLE);
+        return;
+    }
+    if (!CoopBattleRuntime_HasManifest())
+        (void)CoopBattleRuntime_PollLocalSnapshot(sConsent.battle_id, team, count);
+    else
+        (void)CoopBattleRuntime_TrySendReady(sConsent.battle_id, team, count);
+    if (!CoopBattleRuntime_IsStartReleased() || sConsent.startup_attempted)
+        return;
+    sConsent.startup_attempted = TRUE;
+    HideFieldMessageBox();
+    if (BattleSetup_StartCoopFriendlyBattle(team, count))
+    {
+        CoopFriendly_OnBattleStarted();
+        return;
+    }
+    (void)CoopBattleRuntime_RequestAbort(COOP_BATTLE_ABORT_UNAVAILABLE);
+    ClearState();
+    ClearOutcome();
+    CoopFriendly_End(COOP_FRIENDLY_RESULT_UNAVAILABLE);
 }
 
 void CoopBattleConsent_Poll(void)
@@ -747,13 +919,44 @@ void CoopBattleConsent_Poll(void)
         return;
     if (!sConsent.session_ready)
         return;
-    /* A queued acceptance remains bound to this battle until an abort or a
-     * new session. The offer deadline only limits an unanswered offer. */
+    /* An unanswered offer or request expires at its deadline. */
     if (sConsent.state != CONSENT_ACCEPTED
      && (s32)(sConsent.deadline_frame - gMain.vblankCounter1) <= 0)
     {
+        if (sConsent.kind == COOP_BATTLE_KIND_FRIENDLY
+         && (sConsent.state == CONSENT_REQUESTING || sConsent.state == CONSENT_WAITING))
+        {
+            /* The challenger stops waiting; the late answer is absorbed. */
+            CoopBattleConsent_CancelFriendly();
+            CoopFriendly_End(COOP_FRIENDLY_RESULT_NO_ANSWER);
+            return;
+        }
         ExpireResponderOffer();
         ResumeTrainerScriptIfReady();
+        return;
+    }
+    /* An accepted battle that has not started by its deadline is called off
+     * (the server's accepted window is ten minutes). A parked trainer
+     * encounter keeps its own deadline in PollTrainerEncounter. */
+    if (sConsent.state == CONSENT_ACCEPTED && !sConsent.startup_attempted
+     && sConsent.encounter_state == ENCOUNTER_NONE
+     && sConsent.wally_request_state == WALLY_REQUEST_NONE
+     && sConsent.brock_request_state == BROCK_REQUEST_NONE
+     && !CoopBattleRuntime_IsEngineActive()
+     && (s32)(sConsent.deadline_frame - gMain.vblankCounter1) <= 0)
+    {
+        if (sConsent.kind == COOP_BATTLE_KIND_FRIENDLY)
+        {
+            CoopBattleConsent_CancelFriendly();
+            CoopFriendly_End(COOP_FRIENDLY_RESULT_TIMED_OUT);
+        }
+        else
+        {
+            SendRequesterCancel(sConsent.battle_id);
+            ClearState();
+            if (sConsent.outcome == COOP_BATTLE_CONSENT_ACCEPTED)
+                ClearOutcome();
+        }
         return;
     }
     if (sConsent.state == CONSENT_OFFER_DEFERRED && IsSafeOverworld())
@@ -765,6 +968,9 @@ void CoopBattleConsent_Poll(void)
     }
     if (sConsent.state == CONSENT_RESPONDING)
         (void)SendDecision();
+    if (sConsent.state == CONSENT_ACCEPTED
+     && sConsent.kind == COOP_BATTLE_KIND_FRIENDLY)
+        PollFriendlyStart();
     if (sConsent.state == CONSENT_ACCEPTED
      && sConsent.kind == COOP_BATTLE_KIND_COOPERATIVE_TRAINER
      && (IsSafeOverworld() || IsSafeTrainerRequestOverworld()))

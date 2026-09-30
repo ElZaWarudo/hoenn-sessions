@@ -271,3 +271,73 @@ Follow-ups recorded while implementing B8:
 - Fix first: an accepted friendly offer leaves CONSENT_ACCEPTED with no
   local deadline.
 - Order: after the in-game trade UI.
+
+### C1: Friendly battles as built (game protocol 5)
+
+Entry point: ONLINE > "Battle partner" (grouped only, after "Trade with
+partner"). The page sets Format (Singles/Doubles), Levels (As is/All
+Lv. 50) and Count (1-6; doubles needs 2); "Send" checks the local party
+holds that many usable Pokemon, then the challenger picks the team in order
+and waits. The partner sees format, levels and count in the Yes/No prompt;
+"Yes" is refused (with a message) when their party cannot field the count,
+otherwise they pick the same count in order. A 30 s offer and a 90 s
+start deadline apply; the deadline fix sets the local start deadline on
+every entry to CONSENT_ACCEPTED (friendly 90 s, trainer encounters their
+existing start budget), so an accepted offer that never starts cancels
+itself (friendly: "timed out") instead of locking the field.
+
+Wire (game protocol 4 -> 5, no new message types):
+- `TrainerBattleReserve` is 8 bytes for both kinds. Friendly bytes 5..8 are
+  the rules: format (1 singles, 2 doubles), level mode (0 as is, 1 fifty),
+  count (1-6, doubles >= 2). Trainer reserves carry zeroes there.
+- `BattleJoinOffer` is 25 bytes, `BattleManifest` 122 bytes; the last three
+  bytes of each are the same rules (zero for trainer battles). ROM, sidecar,
+  launcher and Android all validate them.
+- Max turn index 32 -> 120 (`COOP_BATTLE_MAX_TURN`, `BATTLE_MAX_TURN`,
+  server `MAX_BATTLE_TURNS`): a 6v6 needs more decision rounds than a
+  trainer battle.
+- Server: `friendly_rules` on the reserve request and the reservation view
+  (part of the idempotency fingerprint); friendly reservations have
+  `reward_mode = NONE`, no member roles, stage exactly `team_size` usable
+  records per member and never touch the outcome ledger.
+
+Battle model:
+- Canonical battler IDs on both ROMs: member 0 owns battlers 0/2, member 1
+  owns 1/3. Member 1's ROM draws with the player side at the opponent
+  positions (`isPlayerPrimary = FALSE`), so each player sees their own
+  Pokemon at the bottom while both engines run identical battler IDs,
+  speed-tie order and RNG.
+- Battle type TRAINER | SECRET_BASE (| DOUBLE), opponent
+  TRAINER_SECRET_BASE: with SECRET_BASE the own side is always
+  `gParties[B_TRAINER_0]` and the peer `gParties[B_TRAINER_1]`, item
+  effects like Knock Off/Trick treat both sides the same way, AI items are
+  off and the opponent's name/sprite come from the peer's lead OT. Terrain
+  is forced to BUILDING, battle style to SET, obedience to "obeys" while
+  the engine runs, AI data is not computed.
+- The teams are copies staged into `gParties`; the real party (all six
+  records, empties included) is saved in the plan and copied back
+  byte-exactly at the end. Lv. 50 rewrites the copies' level, EXP (from the
+  growth table) and stats and scales current HP; species do not change.
+  No EXP, money, items or flags change.
+- Actions: each member sends its move/switch/forfeit choices per decision
+  round (doubles: two 4-byte actions, one per own battler, targets as
+  canonical battler IDs). The opponent controller replays the peer's
+  choices instead of AI. A forced switch after a faint is its own lockstep
+  round. Run asks "Forfeit the match?"; a forfeit is a lockstep action and
+  ends the battle as a loss for the forfeiter on both ROMs.
+- Digest: a friendly battle hashes both parties in member order, battlers
+  by canonical ID and position, side state in member order and the outcome
+  from member 0's view, so both ROMs hash the same bytes. The terminal hash
+  is also reported for a KO in the middle of a turn (this also fixes
+  trainer co-op, which only reported at end of turn).
+- Endings: WON/LOST/DRAW from the battle; a disconnect, desync or local
+  fault ends as "no contest" and restores the party the same way.
+
+Known gaps:
+- Determinism of the full engine across two real ROMs (mirrored draw,
+  every move effect in doubles) is verified by unit tests on one ROM with
+  both member views, not yet by two real players.
+- Items cannot be used in friendly battles (Bag is refused).
+- The launcher's generated `dist/bridge_manifest.json`, the Android asset
+  manifest and `bridge/generated_addresses.lua` need regenerating for
+  protocol 5.

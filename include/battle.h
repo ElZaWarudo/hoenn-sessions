@@ -710,6 +710,10 @@ struct BattleStruct
     u32 dancerSavedAttacker:3;
     u32 dancerSavedTarget:3;
     u32 padding:7;
+    // Co-op friendly battles: this ROM's replacement picks for the decision
+    // round in progress, by member battler slot (PARTY_SIZE: none).
+    u8 coopDecisionIndex[2];
+    u8 coopDecisionMask;
 };
 
 struct AiBattleData

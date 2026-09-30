@@ -2,6 +2,7 @@
 #include "coop/net_bridge.h"
 #include "coop/battle_consent.h"
 #include "coop/battle_runtime.h"
+#include "coop/friendly_battle.h"
 #include "coop/group_travel.h"
 #include "coop/online.h"
 #include "coop/presence_runtime.h"
@@ -1677,6 +1678,7 @@ void CoopNetBridge_Init(void)
     CoopBattleRuntime_Init();
     CoopTradeRuntime_Init();
     CoopTradeOffer_Init();
+    CoopFriendly_Init();
 
     TryAnnounceRomReady();
 }

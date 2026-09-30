@@ -135,6 +135,7 @@ static void HandleEndTurn_BattleLost(void);
 static void HandleEndTurn_RanFromBattle(void);
 static void HandleEndTurn_MonFled(void);
 static void HandleEndTurn_FinishBattle(void);
+static void HandleCoopTerminalReport(void);
 static u32 Crc32B (const u8 *data, u32 size);
 static u32 GeneratePartyHash(const struct Trainer *trainer, u32 i);
 
@@ -604,6 +605,10 @@ static void CB2_InitBattleInternal(void)
     if (!DEBUG_OVERWORLD_MENU || (DEBUG_OVERWORLD_MENU && !gIsDebugBattle))
         gBattleEnvironment = BattleSetup_GetEnvironmentId();
     if (gBattleTypeFlags & BATTLE_TYPE_RECORDED)
+        gBattleEnvironment = BATTLE_ENVIRONMENT_BUILDING;
+    /* The two players stand on different maps; both ROMs need the same
+     * environment (Secret Power, Nature Power, Camouflage). */
+    if (CoopBattleRuntime_IsFriendlyEngine())
         gBattleEnvironment = BATTLE_ENVIRONMENT_BUILDING;
     if (TestRunner_Battle_GetForcedEnvironment())
         gBattleEnvironment = TestRunner_Battle_GetForcedEnvironment() - 1;
@@ -3320,6 +3325,10 @@ static void ClearSetBScriptingStruct(void)
 
     gBattleScripting.windowsType = temp;
     gBattleScripting.battleStyle = gSaveBlock2Ptr->optionsBattleStyle;
+    /* Shift's "Will you switch?" is a local-only choice; both ROMs must ask
+     * the same questions. */
+    if (CoopBattleRuntime_IsFriendlyEngine())
+        gBattleScripting.battleStyle = OPTIONS_BATTLE_STYLE_SET;
     #if TESTING
     gBattleScripting.battleStyle = OPTIONS_BATTLE_STYLE_SET;
     #endif
@@ -4252,12 +4261,23 @@ bool32 EndTurnEvents(void) // Called from Battle Script
 
     if (gBattleOutcome != 0)
     {
-        if (CoopBattleRuntime_IsEngineActive())
+        if (CoopBattleRuntime_IsFriendlyEngine() && CoopBattleRuntime_IsRoundHashed())
+        {
+            /* A replacement round inside this end of turn already hashed the
+             * final state; attest the battle on that round. */
+            if (!CoopBattleRuntime_FinishOnLastHash(gBattleOutcome))
+            {
+                CoopBattleRuntime_FailEngine();
+                return TRUE;
+            }
+        }
+        else if (CoopBattleRuntime_IsEngineActive())
         {
             /* This is the first point at which the terminal end-turn effects
              * and volatile cleanup are stable. Keep the digest before the
              * terminal presentation starts mutating battle globals. */
-            coopTurn = gBattleResults.battleTurnCounter + 1;
+            coopTurn = CoopBattleRuntime_IsFriendlyEngine()
+                ? CoopBattleRuntime_CurrentRound() : gBattleResults.battleTurnCounter + 1;
             report = CoopBattleRuntime_ReportTurnState(coopTurn, gBattleOutcome);
             if (report == COOP_BATTLE_TURN_REPORT_PENDING)
                 return TRUE;
@@ -4302,9 +4322,14 @@ bool32 EndTurnEvents(void) // Called from Battle Script
     BattlePutTextOnWindow(gText_EmptyString3, B_WIN_MSG);
     AssignUsableGimmicks();
     SetShellSideArmCategory();
-    if (CoopBattleRuntime_IsEngineActive())
+    if (CoopBattleRuntime_IsFriendlyEngine() && CoopBattleRuntime_IsRoundHashed())
     {
-        coopTurn = gBattleResults.battleTurnCounter;
+        /* A replacement round already hashed this turn's end state. */
+    }
+    else if (CoopBattleRuntime_IsEngineActive())
+    {
+        coopTurn = CoopBattleRuntime_IsFriendlyEngine()
+            ? CoopBattleRuntime_CurrentRound() : gBattleResults.battleTurnCounter;
         report = CoopBattleRuntime_ReportTurnState(coopTurn, 0);
         if (report == COOP_BATTLE_TURN_REPORT_PENDING)
             return TRUE;
@@ -4494,6 +4519,288 @@ static void TrySubmitCoopPlayerAction(void)
     CoopBattleRuntime_SubmitLocalAction(&action);
 }
 
+bool32 IsBattleInActionSelection(void)
+{
+    return gBattleMainFunc == HandleTurnActionSelectionState;
+}
+
+/* Friendly battles: member m acts for battler m (and m + 2 in doubles). */
+static u8 CoopFriendlyMemberActionCount(void)
+{
+    return CoopBattleRuntime_IsFriendlyDoubles() ? 2 : 1;
+}
+
+static void TrySubmitCoopFriendlyActions(void)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS] = {0};
+    u8 localSlot = CoopBattleRuntime_EngineLocalMemberSlot();
+    u8 count = CoopFriendlyMemberActionCount();
+    bool32 forfeit = FALSE;
+    u8 slot;
+
+    if (CoopBattleRuntime_IsEngineFaulted() || CoopBattleRuntime_IsLocalActionSubmitted())
+        return;
+    for (slot = 0; slot < count; slot++)
+    {
+        enum BattlerId battler = localSlot + slot * 2;
+
+        if (battler >= gBattlersCount || !IsOnPlayerSide(battler)
+         || gBattleCommunication[battler] != STATE_WAIT_ACTION_CONFIRMED)
+            return;
+    }
+    for (slot = 0; slot < count; slot++)
+    {
+        enum BattlerId battler = localSlot + slot * 2;
+
+        switch (gChosenActionByBattler[battler])
+        {
+        case B_ACTION_USE_MOVE:
+            if (gBattleMons[battler].volatiles.multipleTurns
+             || gBattleMons[battler].volatiles.rechargeTimer > 0)
+            {
+                actions[slot].kind = COOP_BATTLE_ACTION_AUTO_MOVE;
+                break;
+            }
+            if ((gBattleStruct->gimmick.toActivate & (1u << battler))
+             || gBattleStruct->moveTarget[battler] >= gBattlersCount)
+            {
+                CoopBattleRuntime_FailEngine();
+                return;
+            }
+            /* Battler IDs are canonical in a friendly battle. */
+            actions[slot].kind = COOP_BATTLE_ACTION_MOVE;
+            actions[slot].index = gBattleStruct->chosenMovePositions[battler];
+            actions[slot].target = gBattleStruct->moveTarget[battler];
+            break;
+        case B_ACTION_SWITCH:
+            actions[slot].kind = COOP_BATTLE_ACTION_SWITCH;
+            actions[slot].index = gBattleStruct->monToSwitchIntoId[battler];
+            break;
+        case B_ACTION_NOTHING_FAINTED:
+            actions[slot].kind = COOP_BATTLE_ACTION_NO_ACTION;
+            break;
+        case B_ACTION_RUN:
+            /* The forfeit question was answered Yes. */
+            forfeit = TRUE;
+            break;
+        default:
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+    }
+    if (forfeit)
+    {
+        for (slot = 0; slot < count; slot++)
+            actions[slot] = (struct CoopBattleAction){ .kind = COOP_BATTLE_ACTION_FORFEIT };
+    }
+    CoopBattleRuntime_SubmitLocalActions(actions, count);
+}
+
+static void TryBindCoopFriendlyAutomaticPeerActions(void)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+    u8 expectedKind;
+
+    if (CoopBattleRuntime_IsEngineFaulted() || !CoopBattleRuntime_IsLocalActionSubmitted())
+        return;
+    for (enum BattlerId battler = 0; battler < gBattlersCount; battler++)
+    {
+        if (IsOnPlayerSide(battler) || gBattleCommunication[battler] != STATE_WAIT_ACTION_CONFIRMED)
+            continue;
+        if (gChosenActionByBattler[battler] == B_ACTION_NOTHING_FAINTED)
+            expectedKind = COOP_BATTLE_ACTION_NO_ACTION;
+        else if (gChosenActionByBattler[battler] == B_ACTION_USE_MOVE
+              && (gBattleMons[battler].volatiles.multipleTurns
+               || gBattleMons[battler].volatiles.rechargeTimer > 0))
+            expectedKind = COOP_BATTLE_ACTION_AUTO_MOVE;
+        else
+            continue;
+        if (!CoopBattleRuntime_PollPeerActions(actions, &count))
+            return;
+        if ((battler >> 1) >= count
+         || (actions[battler >> 1].kind != expectedKind
+          && actions[battler >> 1].kind != COOP_BATTLE_ACTION_FORFEIT))
+        {
+            CoopBattleRuntime_FailEngine();
+            return;
+        }
+    }
+}
+
+/* A forfeit ends the battle before the turn runs: the forfeiting member
+ * loses (both at once is a draw). The state is hashed with that outcome. */
+static void HandleCoopFriendlyForfeit(void)
+{
+    enum CoopBattleTurnReportResult report;
+
+    if (CoopBattleRuntime_IsTurnHashPending())
+        report = CoopBattleRuntime_RetryTurnHash();
+    else
+        report = CoopBattleRuntime_ReportTurnState(CoopBattleRuntime_CurrentRound(), gBattleOutcome);
+    if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+        return;
+    if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    gCurrentActionFuncId = 0;
+    gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+}
+
+static bool32 TryResolveCoopFriendlyForfeit(void)
+{
+    struct CoopBattleAction local[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    struct CoopBattleAction peer[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 localCount, peerCount;
+    bool32 localForfeit, peerForfeit;
+
+    if (!CoopBattleRuntime_GetLocalActions(local, &localCount)
+     || !CoopBattleRuntime_PollPeerActions(peer, &peerCount))
+        return FALSE;
+    localForfeit = local[0].kind == COOP_BATTLE_ACTION_FORFEIT;
+    peerForfeit = peer[0].kind == COOP_BATTLE_ACTION_FORFEIT;
+    if (!localForfeit && !peerForfeit)
+        return FALSE;
+    CoopBattleRuntime_FinishEngineTurn();
+    gHitMarker &= ~HITMARKER_RUN;
+    if (localForfeit && peerForfeit)
+        gBattleOutcome = B_OUTCOME_DREW;
+    else
+        gBattleOutcome = localForfeit ? B_OUTCOME_LOST : B_OUTCOME_WON;
+    gBattleMainFunc = HandleCoopFriendlyForfeit;
+    return TRUE;
+}
+
+/* A replacement pick (a faint, U-turn, Baton Pass, Revival Blessing...) is a
+ * lockstep round of its own. The turn's state is hashed first, then this
+ * ROM's picks (or NO_ACTION) are exchanged, then the round's own state is
+ * hashed; both ROMs do this at the same engine point. Returns TRUE with the
+ * party index (PARTY_SIZE for none) once this battler's pick is known. */
+static bool32 IsCoopChoosePokemonPending(enum BattlerId battler)
+{
+    return IsBattleControllerActiveOnLocal(battler)
+        && gBattleResources->bufferA[battler][0] == CONTROLLER_CHOOSEPOKEMON;
+}
+
+bool32 CoopFriendly_ResolveChoosePokemon(enum BattlerId battler, u8 localChoice, u8 *partyIndex)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count = CoopFriendlyMemberActionCount();
+    u8 slot = battler >> 1;
+    enum CoopBattleTurnReportResult report;
+    struct CoopBattleAction action;
+
+    if (!CoopBattleRuntime_IsFriendlyEngine() || CoopBattleRuntime_IsEngineFaulted()
+     || partyIndex == NULL || slot >= count)
+        return FALSE;
+    if (!CoopBattleRuntime_IsLocalActionSubmitted())
+    {
+        if (IsOnPlayerSide(battler) && !(gBattleStruct->coopDecisionMask & (1u << slot)))
+        {
+            gBattleStruct->coopDecisionIndex[slot] = localChoice;
+            gBattleStruct->coopDecisionMask |= 1u << slot;
+        }
+        for (enum BattlerId i = 0; i < gBattlersCount; i++)
+            if (IsOnPlayerSide(i) && IsCoopChoosePokemonPending(i)
+             && !(gBattleStruct->coopDecisionMask & (1u << (i >> 1))))
+                return FALSE;
+        report = CoopBattleRuntime_FlushRoundHash();
+        if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+            return FALSE;
+        if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+        {
+            CoopBattleRuntime_FailEngine();
+            return FALSE;
+        }
+        for (u8 i = 0; i < count; i++)
+        {
+            actions[i] = (struct CoopBattleAction){ .kind = COOP_BATTLE_ACTION_NO_ACTION };
+            if ((gBattleStruct->coopDecisionMask & (1u << i))
+             && gBattleStruct->coopDecisionIndex[i] < PARTY_SIZE)
+            {
+                actions[i].kind = COOP_BATTLE_ACTION_FORCED_SWITCH;
+                actions[i].index = gBattleStruct->coopDecisionIndex[i];
+            }
+        }
+        if (!CoopBattleRuntime_SubmitLocalActions(actions, count))
+            return FALSE;
+    }
+    if (!CoopBattleRuntime_PollPeerActions(actions, &count) || slot >= count)
+        return FALSE;
+    report = CoopBattleRuntime_FlushRoundHash();
+    if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+        return FALSE;
+    if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+    {
+        CoopBattleRuntime_FailEngine();
+        return FALSE;
+    }
+    if (IsOnPlayerSide(battler))
+    {
+        *partyIndex = (gBattleStruct->coopDecisionMask & (1u << slot))
+            ? gBattleStruct->coopDecisionIndex[slot] : PARTY_SIZE;
+        return TRUE;
+    }
+    action = actions[slot];
+    if (action.kind == COOP_BATTLE_ACTION_NO_ACTION)
+    {
+        *partyIndex = PARTY_SIZE;
+        return TRUE;
+    }
+    if (action.kind != COOP_BATTLE_ACTION_FORCED_SWITCH
+     || GetMonData(&GetBattlerParty(battler)[action.index], MON_DATA_SPECIES) == SPECIES_NONE)
+    {
+        CoopBattleRuntime_FailEngine();
+        return FALSE;
+    }
+    *partyIndex = action.index;
+    return TRUE;
+}
+
+/* Called after a controller answered a replacement pick. */
+void CoopFriendly_FinishChoosePokemon(void)
+{
+    for (enum BattlerId i = 0; i < gBattlersCount; i++)
+        if (IsCoopChoosePokemonPending(i))
+            return;
+    gBattleStruct->coopDecisionMask = 0;
+    CoopBattleRuntime_EndDecisionRound();
+}
+
+/* During action selection the peer's switch target is part of its action. */
+bool32 CoopFriendly_GetPeerSwitch(enum BattlerId battler, u8 *partyIndex)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+
+    if (partyIndex == NULL || !CoopBattleRuntime_PollPeerActions(actions, &count)
+     || (battler >> 1) >= count)
+        return FALSE;
+    if (actions[battler >> 1].kind != COOP_BATTLE_ACTION_SWITCH
+     || GetMonData(&GetBattlerParty(battler)[actions[battler >> 1].index], MON_DATA_SPECIES) == SPECIES_NONE)
+    {
+        CoopBattleRuntime_FailEngine();
+        return FALSE;
+    }
+    *partyIndex = actions[battler >> 1].index;
+    return TRUE;
+}
+
+/* The peer's action for one of its battlers (friendly). */
+bool32 CoopFriendly_GetPeerAction(enum BattlerId battler, struct CoopBattleAction *action)
+{
+    struct CoopBattleAction actions[COOP_BATTLE_MAX_MEMBER_ACTIONS];
+    u8 count;
+
+    if (action == NULL || !CoopBattleRuntime_PollPeerActions(actions, &count)
+     || (battler >> 1) >= count)
+        return FALSE;
+    *action = actions[battler >> 1];
+    return TRUE;
+}
+
 static void TryBindCoopAutomaticPeerAction(void)
 {
     enum BattlerId peer = GetBattlerAtPosition(B_POSITION_PLAYER_RIGHT);
@@ -4594,10 +4901,15 @@ static void HandleTurnActionSelectionState(void)
             if (!IsBattleControllerActiveOrPendingSyncAnywhere(battler))
             {
                 if (CoopBattleRuntime_IsEngineActive()
-                 && position == B_POSITION_PLAYER_LEFT
+                 && (CoopBattleRuntime_IsFriendlyEngine() ? IsOnPlayerSide(battler)
+                                                          : position == B_POSITION_PLAYER_LEFT)
                  && gBattleResources->bufferB[battler][1] != B_ACTION_USE_MOVE
                  && gBattleResources->bufferB[battler][1] != B_ACTION_SWITCH
-                 && gBattleResources->bufferB[battler][1] != B_ACTION_NOTHING_FAINTED)
+                 && gBattleResources->bufferB[battler][1] != B_ACTION_NOTHING_FAINTED
+                 /* Friendly: Run asks to forfeit; the bag is refused below. */
+                 && !(CoopBattleRuntime_IsFriendlyEngine()
+                   && (gBattleResources->bufferB[battler][1] == B_ACTION_RUN
+                    || gBattleResources->bufferB[battler][1] == B_ACTION_USE_ITEM)))
                 {
                     CoopBattleRuntime_FailEngine();
                     return;
@@ -4670,6 +4982,8 @@ static void HandleTurnActionSelectionState(void)
                                             | BATTLE_TYPE_EREADER_TRAINER
                                             | BATTLE_TYPE_RECORDED_LINK))
                                             && !gTestRunnerEnabled)
+                                            // Or in a friendly co-op battle
+                                            || CoopBattleRuntime_IsFriendlyEngine()
                                             // Or if currently held by Sky Drop
                                             || gBattleMons[battler].volatiles.semiInvulnerable == STATE_SKY_DROP_TARGET)
                     {
@@ -5048,7 +5362,12 @@ static void HandleTurnActionSelectionState(void)
         }
     }
 
-    if (CoopBattleRuntime_IsEngineActive())
+    if (CoopBattleRuntime_IsFriendlyEngine())
+    {
+        TrySubmitCoopFriendlyActions();
+        TryBindCoopFriendlyAutomaticPeerActions();
+    }
+    else if (CoopBattleRuntime_IsEngineActive())
     {
         TrySubmitCoopPlayerAction();
         TryBindCoopAutomaticPeerAction();
@@ -5060,6 +5379,8 @@ static void HandleTurnActionSelectionState(void)
         if (CoopBattleRuntime_IsEngineActive())
         {
             if (!CoopBattleRuntime_IsEngineTurnReady())
+                return;
+            if (CoopBattleRuntime_IsFriendlyEngine() && TryResolveCoopFriendlyForfeit())
                 return;
             CoopBattleRuntime_FinishEngineTurn();
         }
@@ -5376,8 +5697,10 @@ s32 GetWhichBattlerFaster(struct BattleCalcValues *calcValues, bool32 ignoreChos
     s32 strikesFirst = GetWhichBattlerFasterOrTies(calcValues, ignoreChosenMoves);
     if (strikesFirst == 0)
     {
-        s32 order1 = sBattlerOrders[gBattleStruct->speedTieBreaks][calcValues->battlerAtk];
-        s32 order2 = sBattlerOrders[gBattleStruct->speedTieBreaks][calcValues->battlerDef];
+        /* Co-op ROMs number the two members' battlers differently in the
+         * trainer layout; break ties on the battler both ROMs agree on. */
+        s32 order1 = sBattlerOrders[gBattleStruct->speedTieBreaks][CoopBattleRuntime_CanonicalBattler(calcValues->battlerAtk)];
+        s32 order2 = sBattlerOrders[gBattleStruct->speedTieBreaks][CoopBattleRuntime_CanonicalBattler(calcValues->battlerDef)];
         if (order1 < order2)
             strikesFirst = 1;
         else
@@ -5791,7 +6114,39 @@ static void RunTurnActionsFunctions(void)
     sTurnActionsFuncsTable[gCurrentActionFuncId]();
 
     if (gCurrentTurnActionNumber >= gBattlersCount) // everyone did their actions, turn finished
-        gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+    {
+        /* A co-op battle decided inside the turn (a knockout) never reaches
+         * EndTurnEvents; attest its terminal state here first. */
+        if (gBattleOutcome != 0 && CoopBattleRuntime_IsEngineActive()
+         && !CoopBattleRuntime_IsEngineFaulted() && !CoopBattleRuntime_IsTerminalReported())
+            gBattleMainFunc = HandleCoopTerminalReport;
+        else
+            gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
+    }
+}
+
+static void HandleCoopTerminalReport(void)
+{
+    enum CoopBattleTurnReportResult report;
+
+    if (CoopBattleRuntime_IsTurnHashPending())
+        report = CoopBattleRuntime_RetryTurnHash();
+    else if (CoopBattleRuntime_IsFriendlyEngine() && CoopBattleRuntime_IsRoundHashed())
+        report = CoopBattleRuntime_FinishOnLastHash(gBattleOutcome)
+            ? COOP_BATTLE_TURN_REPORT_SENT : COOP_BATTLE_TURN_REPORT_INVALID;
+    else
+        report = CoopBattleRuntime_ReportTurnState(CoopBattleRuntime_IsFriendlyEngine()
+                                                   ? CoopBattleRuntime_CurrentRound()
+                                                   : gBattleResults.battleTurnCounter + 1,
+                                                   gBattleOutcome);
+    if (report == COOP_BATTLE_TURN_REPORT_PENDING)
+        return;
+    if (report == COOP_BATTLE_TURN_REPORT_INVALID)
+    {
+        CoopBattleRuntime_FailEngine();
+        return;
+    }
+    gBattleMainFunc = sEndTurnFuncsTable[gBattleOutcome & 0x7F];
 }
 
 static void HandleEndTurn_BattleWon(void)
@@ -5868,8 +6223,10 @@ static void HandleEndTurn_BattleLost(void)
     if (CoopBattleRuntime_IsEngineActive())
     {
         /* Do not run the normal partner whiteout branch: it deducts money and
-         * routes through vanilla trainer-loss handling. */
-        gBattlescriptCurrInstr = BattleScript_LocalBattleLostEnd;
+         * routes through vanilla trainer-loss handling. A friendly battle has
+         * no prize at all, so it ends without the prize text. */
+        gBattlescriptCurrInstr = CoopBattleRuntime_IsFriendlyEngine()
+            ? BattleScript_LocalBattleLostEnd_ : BattleScript_LocalBattleLostEnd;
     }
     else if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
     {

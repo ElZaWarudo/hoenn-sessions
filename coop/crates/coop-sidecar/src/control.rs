@@ -1035,6 +1035,11 @@ mod tests {
         let command = ControlCommand::BattleManifest {
             session_epoch: 9,
             record: BattleManifestRecord {
+                friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                    format: coop_protocol::FriendlyBattleFormat::Singles,
+                    level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                    team_size: 1,
+                }),
                 battle_id,
                 turn: 0,
                 seed: coop_protocol::BattleDigest([0xCD; 32]),
@@ -1089,6 +1094,11 @@ mod tests {
     fn battle_consent_control_records_are_typed_strict_and_bounded() {
         let battle_id = coop_protocol::BattleId([7; 16]);
         let event = ControlEvent::TrainerBattleReserve(TrainerBattleReserveRecord {
+            friendly_rules: Some(coop_protocol::FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Singles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            }),
             kind: coop_protocol::BattleKind::Friendly,
             request_nonce: 42,
             trainer_region: None,
@@ -1106,6 +1116,7 @@ mod tests {
         let command = ControlCommand::BattleJoinOffer {
             session_epoch: 9,
             record: BattleJoinOfferRecord {
+                friendly_rules: None,
                 battle_id,
                 kind: coop_protocol::BattleKind::CooperativeTrainer,
                 role: coop_protocol::BattleRole::Requester,

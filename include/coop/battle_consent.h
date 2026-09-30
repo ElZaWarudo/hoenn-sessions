@@ -3,6 +3,7 @@
 
 #include "gba/types.h"
 #include "coop/battle_protocol.h"
+#include "coop/battle_runtime.h"
 
 enum CoopBattleKind
 {
@@ -12,7 +13,18 @@ enum CoopBattleKind
 
 void CoopBattleConsent_Init(void);
 void CoopBattleConsent_Poll(void);
+/* Friendly: sends the reserve with the friendly battle rules currently held
+ * by coop/friendly_battle.c (singles, as is, one Pokemon while idle). */
 bool8 CoopBattleConsent_Begin(u8 kind);
+bool8 CoopBattleConsent_BeginFriendly(const struct CoopBattleFriendlyRules *rules);
+/* Nothing in flight: no request, offer, accepted battle or encounter. */
+bool8 CoopBattleConsent_IsIdle(void);
+/* The rules of the friendly offer being answered (responder). */
+bool8 CoopBattleConsent_GetOfferRules(struct CoopBattleFriendlyRules *rules);
+bool8 CoopBattleConsent_TakeFriendlyPromptLock(void);
+/* Withdraws this ROM's friendly reservation before its battle starts. */
+void CoopBattleConsent_CancelFriendly(void);
+void CoopBattleConsent_OnFriendlyBattleEnded(void);
 /* The trainer's engine ID is resolved in the active region before sending. */
 bool8 CoopBattleConsent_BeginTrainer(u16 legacy_trainer_id);
 bool8 CoopBattleConsent_ReceiveOffer(const u8 *payload, u16 length);

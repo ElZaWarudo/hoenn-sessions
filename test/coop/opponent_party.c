@@ -190,6 +190,8 @@ TEST("Cloud Coop opponent seed hashes only bytes both ROMs share")
     EXPECT(!CoopBattleRuntime_GetOpponentSeed(TRAINER_CALVIN_1, &seed));
     CoopBattleRuntime_OnSessionReady(61);
     member0[COOP_BATTLE_MANIFEST_KIND_OFFSET] = COOP_BATTLE_MANIFEST_KIND_FRIENDLY;
+    member0[COOP_BATTLE_MANIFEST_RULES_OFFSET] = COOP_BATTLE_FRIENDLY_SINGLES;
+    member0[COOP_BATTLE_MANIFEST_RULES_OFFSET + 2] = 1;
     EXPECT_EQ(CoopBattleRuntime_ReceiveManifest(member0, sizeof(member0)),
               COOP_BATTLE_INBOUND_ACCEPTED);
     EXPECT(CoopBattleRuntime_GetOpponentSeed(TRAINER_CALVIN_1, &seed0));

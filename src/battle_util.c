@@ -5553,6 +5553,10 @@ enum Obedience GetAttackerObedienceForAction(void)
 
     if (gBattleTypeFlags & (BATTLE_TYPE_LINK | BATTLE_TYPE_RECORDED_LINK))
         return OBEYS;
+    /* Obedience reads the local player's badges and OT; the same battler is
+     * the other player's on the partner's ROM. Co-op mons always obey. */
+    if (CoopBattleRuntime_IsEngineActive())
+        return OBEYS;
     if (BattlerHasAi(gBattlerAttacker))
         return OBEYS;
 

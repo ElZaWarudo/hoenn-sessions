@@ -9,7 +9,9 @@ use coop_cloud::{
     ApiVersion, ArtifactIdentity, CharacterId, CommitId, GroupId, IdempotencyKey, LeaseFence,
     Revision, SnapshotFinalizeRequest, SnapshotId, SnapshotRecord, UnixTimestampMillis,
 };
-use coop_protocol::{IdentityKind, RegionId, TrainerInstanceId, WorldZone, identity_catalog};
+use coop_protocol::{
+    FriendlyBattleRules, IdentityKind, RegionId, TrainerInstanceId, WorldZone, identity_catalog,
+};
 use coop_save::{CharacterSave, PokemonSlot, RegistryContract};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -51,6 +53,18 @@ pub enum BattleRewardMode {
     #[default]
     Ledger,
     Local,
+    /// A friendly battle between the two grouped players: each member
+    /// stages exactly the challenge's team size of battle-ready records (like
+    /// `Local`, the snapshot is those records), and the result gives nothing
+    /// to anyone: no ledger entry, no grant, no member roles.
+    None,
+}
+
+impl BattleRewardMode {
+    /// Members stage the exact party records they battle with.
+    const fn stages_records(self) -> bool {
+        matches!(self, Self::Local | Self::None)
+    }
 }
 
 impl BattleRewardMode {
@@ -83,6 +97,11 @@ pub struct BattleReservationRequest {
     pub kind: BattleReservationKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trainer_id: Option<TrainerInstanceId>,
+    /// A friendly challenge (game protocol 5): format, level mode and team
+    /// size. Friendly reservations without rules keep the original anchored
+    /// ledger shape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
     pub idempotency_key: IdempotencyKey,
 }
 
@@ -132,6 +151,9 @@ pub struct BattleReservationView {
     /// order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_roles: Option<[BattleMemberRole; 2]>,
+    /// The friendly challenge, shown to the partner before it answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friendly_rules: Option<FriendlyBattleRules>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -370,7 +392,13 @@ impl BattleReservationRequest {
         {
             return Err(Phase2Error::InvalidRequest);
         }
-        Ok(())
+        match (self.kind, self.friendly_rules) {
+            (BattleReservationKind::CooperativeTrainer, Some(_)) => {
+                Err(Phase2Error::InvalidRequest)
+            }
+            (_, Some(rules)) if rules.validate().is_err() => Err(Phase2Error::InvalidRequest),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -552,6 +580,7 @@ fn reserve_view(
     expires_at: u64,
     reward_mode: BattleRewardMode,
     member_roles: Option<[BattleMemberRole; 2]>,
+    friendly_rules: Option<FriendlyBattleRules>,
 ) -> Result<BattleReservationView, Phase2Error> {
     Ok(BattleReservationView {
         api_version: ApiVersion::V1,
@@ -565,6 +594,7 @@ fn reserve_view(
         expires_at: Store::unix_timestamp(expires_at).map_err(Phase2Error::from)?,
         reward_mode,
         member_roles,
+        friendly_rules,
     })
 }
 
@@ -623,9 +653,9 @@ pub(super) fn parse_hex_record(text: &str) -> Option<[u8; 100]> {
     Some(record)
 }
 
-/// Structurally validates a local-reward party: 1-6 occupied,
-/// checksum-valid records with one to three usable Pokémon.
-fn staged_party(records: &[String]) -> Result<StagedParty, Phase2Error> {
+/// Structurally validates staged party records: 1-6 occupied,
+/// checksum-valid records. Returns the party and its usable count.
+fn staged_party(records: &[String]) -> Result<(StagedParty, usize), Phase2Error> {
     if records.is_empty() || records.len() > MAX_STAGED_PARTY_RECORDS {
         return Err(Phase2Error::InvalidRequest);
     }
@@ -646,13 +676,26 @@ fn staged_party(records: &[String]) -> Result<StagedParty, Phase2Error> {
         }
         raw.push(record);
     }
-    if !(1..=MAX_STAGED_USABLE).contains(&usable) {
-        return Err(Phase2Error::InvalidRequest);
+    Ok((
+        StagedParty {
+            digest: records_digest(&raw),
+            records: raw.iter().map(|record| hex_string(record)).collect(),
+        },
+        usable,
+    ))
+}
+
+/// The staging rule of a reservation: a local-reward side brings one to
+/// three usable Pokémon among its records; a friendly side brings exactly
+/// the challenge's team size, every one of them battle-ready.
+fn staged_party_allowed(view: &BattleReservationView, party: &StagedParty, usable: usize) -> bool {
+    match view.reward_mode {
+        BattleRewardMode::Local => (1..=MAX_STAGED_USABLE).contains(&usable),
+        BattleRewardMode::None => view.friendly_rules.is_some_and(|rules| {
+            usize::from(rules.team_size) == party.records.len() && usable == party.records.len()
+        }),
+        BattleRewardMode::Ledger => false,
     }
-    Ok(StagedParty {
-        digest: records_digest(&raw),
-        records: raw.iter().map(|record| hex_string(record)).collect(),
-    })
 }
 
 /// The party digest a member's commitment, manifest slot, and ready receipt
@@ -664,7 +707,7 @@ fn expected_party_digest(record: &BattleReservationRecord, index: usize) -> Opti
             .party_anchors
             .as_ref()
             .map(|anchors| anchors[index].digest.as_str()),
-        BattleRewardMode::Local => record.staged_parties[index]
+        BattleRewardMode::Local | BattleRewardMode::None => record.staged_parties[index]
             .as_ref()
             .map(|party| party.digest.as_str()),
     }
@@ -1344,6 +1387,8 @@ pub(crate) fn reserve(
     let now = store.now();
     let request_fingerprint = if let Some(trainer_id) = &request.trainer_id {
         fingerprint(OP_RESERVE, &(group_id, request.kind, trainer_id))?
+    } else if let Some(rules) = request.friendly_rules {
+        fingerprint(OP_RESERVE, &(group_id, request.kind, rules))?
     } else {
         fingerprint(OP_RESERVE, &(group_id, request.kind))?
     };
@@ -1405,6 +1450,8 @@ pub(crate) fn reserve(
     let standings = [first_standing, second_standing];
     let anchors = [first_anchor, second_anchor];
     let (reward_mode, member_roles) = match &encounter {
+        // A friendly challenge stages its teams and rewards no one.
+        None if request.friendly_rules.is_some() => (BattleRewardMode::None, None),
         None => (BattleRewardMode::Ledger, None),
         Some(encounter) if encounter.reward_mode == BattleRewardMode::Ledger => {
             // The progression ledger grants the trainer to both members, so
@@ -1510,6 +1557,7 @@ pub(crate) fn reserve(
             expires_at,
             reward_mode,
             member_roles,
+            request.friendly_rules,
         )?;
         if let Some(id) = evict_id {
             state.battle_reservations.remove(&id);
@@ -1893,7 +1941,7 @@ fn peer_party_source(
     }
     let peer = members[peer_index];
     let source = match record.view.reward_mode {
-        BattleRewardMode::Local => PeerPartySource::Staged(
+        BattleRewardMode::Local | BattleRewardMode::None => PeerPartySource::Staged(
             record.staged_parties[peer_index]
                 .as_ref()
                 .ok_or(Phase2Error::Conflict)?
@@ -2071,7 +2119,7 @@ pub(crate) fn commit_snapshot(
         .transpose()?;
     if staged
         .as_ref()
-        .is_some_and(|party| party.digest != request.snapshot_hash)
+        .is_some_and(|(party, _)| party.digest != request.snapshot_hash)
     {
         return Err(Phase2Error::InvalidRequest);
     }
@@ -2091,11 +2139,13 @@ pub(crate) fn commit_snapshot(
                     return Err(Phase2Error::InvalidRequest);
                 }
                 BattleRewardMode::Ledger => anchors[index].digest.clone(),
-                BattleRewardMode::Local => staged
-                    .as_ref()
-                    .ok_or(Phase2Error::InvalidRequest)?
-                    .digest
-                    .clone(),
+                BattleRewardMode::Local | BattleRewardMode::None => {
+                    let (party, usable) = staged.as_ref().ok_or(Phase2Error::InvalidRequest)?;
+                    if !staged_party_allowed(&record.view, party, *usable) {
+                        return Err(Phase2Error::InvalidRequest);
+                    }
+                    party.digest.clone()
+                }
             };
             if record
                 .view
@@ -2123,8 +2173,8 @@ pub(crate) fn commit_snapshot(
                 snapshot_hash: request.snapshot_hash.clone(),
                 idempotency_key: request.idempotency_key,
             });
-            if record.view.reward_mode == BattleRewardMode::Local {
-                record.staged_parties[index] = staged.clone();
+            if record.view.reward_mode.stages_records() {
+                record.staged_parties[index] = staged.as_ref().map(|(party, _)| party.clone());
             }
             if let [Some(a), Some(b)] = &record.consensus.commitments {
                 let nonce = store.random_uuid().map_err(Phase2Error::from)?;
@@ -3029,6 +3079,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(100),
                 },
             )
@@ -3727,6 +3778,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(140),
                 },
             )
@@ -3762,6 +3814,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(142),
                 },
             )
@@ -4017,6 +4070,7 @@ mod tests {
             trainer_id: Some(
                 TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_WALLY_1").expect("trainer"),
             ),
+            friendly_rules: None,
             idempotency_key: key,
         };
         let first = app
@@ -4038,6 +4092,7 @@ mod tests {
                 api_version: ApiVersion::V1,
                 kind: BattleReservationKind::Friendly,
                 trainer_id: None,
+                friendly_rules: None,
                 idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(42)).expect("key"),
             },
         );
@@ -4049,6 +4104,7 @@ mod tests {
             api_version: ApiVersion::V1,
             kind: BattleReservationKind::CooperativeTrainer,
             trainer_id: Some(TrainerInstanceId::parse(trainer_id).expect("trainer syntax")),
+            friendly_rules: None,
             idempotency_key: key(number),
         }
     }
@@ -4158,6 +4214,7 @@ mod tests {
             api_version: ApiVersion::V1,
             kind: BattleReservationKind::Friendly,
             trainer_id: None,
+            friendly_rules: None,
             idempotency_key: key(515),
         };
         let json = serde_json::to_value(&friendly).unwrap();
@@ -4189,6 +4246,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(160),
                 },
             )
@@ -4565,6 +4623,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(165),
                 },
             )
@@ -4630,6 +4689,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(162),
                 },
             )
@@ -4664,6 +4724,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(164),
                 },
             )
@@ -4701,6 +4762,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(150),
                 }
             ),
@@ -4791,6 +4853,7 @@ mod tests {
                         TrainerInstanceId::new(RegionId::Hoenn, "TRAINER_WALLY_1")
                             .expect("trainer"),
                     ),
+                    friendly_rules: None,
                     idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(51)).expect("key"),
                 },
             )
@@ -4827,6 +4890,7 @@ mod tests {
                 api_version: ApiVersion::V1,
                 kind: BattleReservationKind::Friendly,
                 trainer_id: None,
+                friendly_rules: None,
                 idempotency_key: IdempotencyKey::new(uuid::Uuid::from_u128(54)).expect("key"),
             },
         );
@@ -5296,6 +5360,7 @@ mod tests {
                     api_version: ApiVersion::V1,
                     kind: BattleReservationKind::Friendly,
                     trainer_id: None,
+                    friendly_rules: None,
                     idempotency_key: key(773),
                 },
             )
@@ -6500,5 +6565,277 @@ mod tests {
             ),
             Err(Phase2Error::Conflict)
         );
+    }
+    fn friendly_rules(team_size: u8) -> FriendlyBattleRules {
+        FriendlyBattleRules {
+            format: coop_protocol::FriendlyBattleFormat::Singles,
+            level_mode: coop_protocol::FriendlyLevelMode::Fifty,
+            team_size,
+        }
+    }
+
+    fn friendly_request(number: u128, rules: FriendlyBattleRules) -> BattleReservationRequest {
+        BattleReservationRequest {
+            api_version: ApiVersion::V1,
+            kind: BattleReservationKind::Friendly,
+            trainer_id: None,
+            friendly_rules: Some(rules),
+            idempotency_key: key(number),
+        }
+    }
+
+    fn friendly_accepted(
+        rules: FriendlyBattleRules,
+    ) -> (
+        Phase2App,
+        AuthenticatedActor,
+        AuthenticatedActor,
+        GroupId,
+        LeaseFence,
+        LeaseFence,
+        Uuid,
+    ) {
+        let (app, a, b, group, fa, fb) = fixture();
+        let reservation = app
+            .reserve_battle(a, group, fa, friendly_request(1_300, rules))
+            .expect("friendly reserve");
+        app.accept_battle(
+            b,
+            group,
+            reservation.battle_id,
+            fb,
+            BattleReservationActionRequest {
+                api_version: ApiVersion::V1,
+                idempotency_key: key(1_301),
+            },
+        )
+        .expect("accept");
+        (app, a, b, group, fa, fb, reservation.battle_id)
+    }
+
+    #[test]
+    fn friendly_challenge_reserves_with_no_rewards_roles_or_trainer() {
+        let (app, a, b, group, fa, fb) = fixture();
+        let rules = friendly_rules(3);
+        let view = app
+            .reserve_battle(a, group, fa, friendly_request(1_310, rules))
+            .expect("reserve");
+        assert_eq!(view.kind, BattleReservationKind::Friendly);
+        assert_eq!(view.reward_mode, BattleRewardMode::None);
+        assert_eq!(view.member_roles, None);
+        assert_eq!(view.trainer_id, None);
+        assert_eq!(view.friendly_rules, Some(rules));
+        let json = serde_json::to_value(&view).unwrap();
+        assert_eq!(json["reward_mode"], "NONE");
+        assert_eq!(
+            json["friendly_rules"],
+            serde_json::json!({"format": "singles", "level_mode": "fifty", "team_size": 3})
+        );
+        assert!(json.get("member_roles").is_none());
+        // The partner sees the same challenge before answering.
+        let seen = app.current_battle(b, group, fb).expect("partner view");
+        assert_eq!(seen.friendly_rules, Some(rules));
+        // An exact retry replays; the same key with other rules conflicts.
+        assert_eq!(
+            app.reserve_battle(a, group, fa, friendly_request(1_310, rules)),
+            Ok(view.clone())
+        );
+        assert_eq!(
+            app.reserve_battle(a, group, fa, friendly_request(1_310, friendly_rules(4))),
+            Err(Phase2Error::Conflict)
+        );
+    }
+
+    #[test]
+    fn friendly_rules_are_validated_and_never_ride_a_trainer_reservation() {
+        let (app, a, _, group, fa, _) = fixture();
+        let mut trainer = trainer_request(1_320, "HOENN:TRAINER_WALLY_1");
+        trainer.friendly_rules = Some(friendly_rules(2));
+        assert_eq!(
+            app.reserve_battle(a, group, fa, trainer),
+            Err(Phase2Error::InvalidRequest)
+        );
+        for rules in [
+            friendly_rules(0),
+            friendly_rules(7),
+            FriendlyBattleRules {
+                format: coop_protocol::FriendlyBattleFormat::Doubles,
+                level_mode: coop_protocol::FriendlyLevelMode::AsIs,
+                team_size: 1,
+            },
+        ] {
+            assert_eq!(
+                app.reserve_battle(a, group, fa, friendly_request(1_321, rules)),
+                Err(Phase2Error::InvalidRequest)
+            );
+        }
+    }
+
+    #[test]
+    fn friendly_commit_stages_exactly_the_team_size_of_battle_ready_records() {
+        let (app, a, b, group, fa, fb, battle) = friendly_accepted(friendly_rules(2));
+        let commit = |actor, fence, request| {
+            app.commit_battle_snapshot(actor, group, battle, fence, request)
+        };
+        let mut missing = local_commit(&[usable(1), usable(2)], 1_330);
+        missing.party_records = None;
+        assert_eq!(commit(a, fa, missing), Err(Phase2Error::InvalidRequest));
+        // Wrong size, a fainted pick and an egg are refused.
+        for (records, number) in [
+            (vec![usable(1)], 1_331),
+            (vec![usable(1), usable(2), usable(3)], 1_332),
+            (vec![usable(1), party_record(2, 0, false)], 1_333),
+            (vec![usable(1), party_record(2, 20, true)], 1_334),
+        ] {
+            assert_eq!(
+                commit(a, fa, local_commit(&records, number)),
+                Err(Phase2Error::InvalidRequest)
+            );
+        }
+        let team_a = [usable(7), usable(8)];
+        let team_b = [usable(9), usable(10)];
+        assert!(commit(a, fa, local_commit(&team_a, 1_335)).is_ok());
+        let manifest = commit(b, fb, local_commit(&team_b, 1_336))
+            .expect("second commit")
+            .manifest
+            .expect("manifest");
+        assert_eq!(
+            manifest.snapshot_hashes,
+            [records_digest(&team_a), records_digest(&team_b)]
+        );
+        // Each member reads the other's exact picks as its opponent side.
+        let for_a = app
+            .battle_peer_party(a, group, battle, fa)
+            .expect("a reads b");
+        assert_eq!(
+            for_a.party_records,
+            team_b.iter().map(|r| hex_string(r)).collect::<Vec<_>>()
+        );
+        let for_b = app
+            .battle_peer_party(b, group, battle, fb)
+            .expect("b reads a");
+        assert_eq!(
+            for_b.party_records,
+            team_a.iter().map(|r| hex_string(r)).collect::<Vec<_>>()
+        );
+        assert!(release_start(&app, a, b, group, fa, fb, battle, &manifest).start_released);
+    }
+
+    #[test]
+    fn friendly_result_completes_without_ledger_entries_grants_or_locks() {
+        let (app, a, b, group, fa, fb, battle) = friendly_accepted(friendly_rules(1));
+        app.commit_battle_snapshot(a, group, battle, fa, local_commit(&[usable(1)], 1_340))
+            .expect("a commit");
+        let manifest = app
+            .commit_battle_snapshot(b, group, battle, fb, local_commit(&[usable(2)], 1_341))
+            .expect("b commit")
+            .manifest
+            .expect("manifest");
+        let hash = play_terminal_turn(&app, a, b, group, fa, fb, battle, &manifest, 1_342);
+        let finish = |actor, fence, number, result| {
+            app.finish_battle(
+                actor,
+                group,
+                battle,
+                fence,
+                BattleFinishRequest {
+                    api_version: ApiVersion::V1,
+                    idempotency_key: key(number),
+                    result,
+                    turn: 1,
+                    state_hash: hash.clone(),
+                },
+            )
+        };
+        // Trainer results never finish a friendly battle.
+        assert_eq!(
+            finish(a, fa, 1_349, BattleFinishResult::Won),
+            Err(Phase2Error::InvalidRequest)
+        );
+        assert_eq!(
+            finish(a, fa, 1_350, BattleFinishResult::Member1Won)
+                .expect("first finish")
+                .status,
+            BattleReservationStatus::Accepted
+        );
+        let done = finish(b, fb, 1_351, BattleFinishResult::Member1Won).expect("second finish");
+        assert_eq!(done.status, BattleReservationStatus::Completed);
+        assert_eq!(done.reward_mode, BattleRewardMode::None);
+        let (grants, open, locked) = app
+            .store
+            .inspect_state(|state| {
+                (
+                    state.battle_reservations[&battle].commit_grants.clone(),
+                    super::super::ledger::has_open_entry(state, a.character_id)
+                        || super::super::ledger::has_open_entry(state, b.character_id),
+                    state.active_battle_by_member.contains_key(&a.character_id)
+                        || state.active_battle_by_member.contains_key(&b.character_id),
+                )
+            })
+            .unwrap();
+        assert!(grants.is_none());
+        assert!(!open);
+        assert!(!locked);
+        assert_eq!(
+            retrieve_commit_grant(&app.store, a, group, battle, fa),
+            Err(Phase2Error::Conflict)
+        );
+        // The pair is free for the next challenge.
+        assert!(
+            app.reserve_battle(b, group, fb, friendly_request(1_352, friendly_rules(6)))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn rounds_beyond_the_former_thirty_two_turn_cap_are_accepted() {
+        let (app, a, b, group, fa, fb, battle) = friendly_accepted(friendly_rules(1));
+        app.commit_battle_snapshot(a, group, battle, fa, local_commit(&[usable(1)], 1_360))
+            .expect("a commit");
+        let manifest = app
+            .commit_battle_snapshot(b, group, battle, fb, local_commit(&[usable(2)], 1_361))
+            .expect("b commit")
+            .manifest
+            .expect("manifest");
+        release_start(&app, a, b, group, fa, fb, battle, &manifest);
+        let mut number = 1_400;
+        for turn in 1..=40_u16 {
+            for (actor, fence) in [(a, fa), (b, fb)] {
+                number += 1;
+                app.submit_battle_action(
+                    actor,
+                    group,
+                    battle,
+                    fence,
+                    BattleActionIntentRequest {
+                        api_version: ApiVersion::V1,
+                        idempotency_key: key(number),
+                        turn,
+                        action: "01000000".to_owned(),
+                    },
+                )
+                .expect("action");
+            }
+            for (actor, fence) in [(a, fa), (b, fb)] {
+                number += 1;
+                app.acknowledge_battle_hash(
+                    actor,
+                    group,
+                    battle,
+                    fence,
+                    BattleStateHashRequest {
+                        api_version: ApiVersion::V1,
+                        idempotency_key: key(number),
+                        turn,
+                        state_hash: "b".repeat(64),
+                    },
+                )
+                .expect("hash");
+            }
+        }
+        let view = app
+            .inspect_battle_consensus(a, group, battle, fa)
+            .expect("consensus");
+        assert_eq!(view.turns.len(), 40);
     }
 }
